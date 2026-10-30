@@ -87,22 +87,35 @@ pub(crate) fn opened_with(messages: &[Message]) -> Option<String> {
 /// What [`agents_md`] reads for a thread working at `root` on a computer reached through the
 /// port, read there through `home`, the person's home on it, which `root` is inside: their own
 /// instructions (`.glave/AGENTS.md` in the home), then every AGENTS.md from the repository's
-/// root down to `root`, never above the home, file by file as they are sent ([`compose`]). A
-/// file that is not there, or that the computer refuses to read, is left out; any other
-/// failure (the computer or its home gone) fails the read, so nothing half read is taken for
-/// it.
+/// root down to `root`, never above the home, file by file as they are sent ([`compose`]).
 pub(crate) async fn agents_md_on(
     home: &Workspace,
     root: &Path,
 ) -> Result<Vec<InstructionsFile>, ComputerError> {
-    let base = home.root();
-    let mut files = vec![base.join(PERSONAL)];
+    let mut files = vec![home.root().join(PERSONAL)];
     files.extend(
         dirs_on(home, root)
             .await?
             .iter()
             .map(|dir| dir.join(AGENTS_MD)),
     );
+    read_on(home, files).await
+}
+
+/// The person's own instructions on their own computer, read there through `home`, their home
+/// on it, as [`agents_md_on`] reads them: what a chat opens with, as on a laptop.
+pub(crate) async fn personal_on(home: &Workspace) -> Result<Vec<InstructionsFile>, ComputerError> {
+    read_on(home, vec![home.root().join(PERSONAL)]).await
+}
+
+/// `files`, read through `home`, in order, within [`MAX_BYTES`] together. A file that is not
+/// there, or that the computer refuses to read, is left out; any other failure (the computer or
+/// its home gone) fails the read, so nothing half read is taken for it.
+async fn read_on(
+    home: &Workspace,
+    files: Vec<PathBuf>,
+) -> Result<Vec<InstructionsFile>, ComputerError> {
+    let base = home.root();
     let mut read = Sections::default();
     for file in files {
         if read.full() {
@@ -111,13 +124,16 @@ pub(crate) async fn agents_md_on(
         let Some(path) = inside(base, &file) else {
             continue;
         };
+        if !there(home, &path).await? {
+            continue;
+        }
         match home.read(&path).await {
             Ok(bytes) => read.add(
                 &file,
                 file.clone(),
                 &String::from_utf8_lossy(bytes.as_slice()),
             ),
-            Err(ComputerError::NotFound(_) | ComputerError::Refused(_)) => {}
+            Err(ComputerError::Refused(_)) => {}
             Err(error) => return Err(error),
         }
     }
@@ -134,17 +150,23 @@ async fn dirs_on(home: &Workspace, root: &Path) -> Result<Vec<PathBuf>, Computer
         let Some(git) = inside(base, &dir.join(".git")) else {
             continue;
         };
-        match home.computers().stat(home.info().id, &git).await {
-            Ok(stat) if stat.kind.is_some() => {
-                dirs.reverse();
-                return Ok(dirs);
-            }
-            // A path with nothing there is `Ok`, so not found here means the home is gone.
-            Ok(_) | Err(ComputerError::Refused(_)) => {}
-            Err(error) => return Err(error),
+        if there(home, &git).await? {
+            dirs.reverse();
+            return Ok(dirs);
         }
     }
     Ok(vec![root.to_path_buf()])
+}
+
+/// Whether something is at `path` in `home`, one the computer lets glave see. A path with
+/// nothing there answers so, so one not found means the home itself is gone: an error, never
+/// taken for an empty folder.
+async fn there(home: &Workspace, path: &str) -> Result<bool, ComputerError> {
+    match home.computers().stat(home.info().id, path).await {
+        Ok(stat) => Ok(stat.kind.is_some()),
+        Err(ComputerError::Refused(_)) => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 /// `path` as the home at `base` names it: relative to it.
@@ -303,6 +325,30 @@ mod tests {
         assert_eq!(load(&inner, None), None);
         std::fs::write(inner.join(AGENTS_MD), "Ours.").unwrap();
         assert_eq!(load(&inner, None).unwrap().files, [inner.join(AGENTS_MD)]);
+    }
+
+    #[test]
+    fn a_home_its_computer_no_longer_has_is_a_failed_read_not_an_empty_one() {
+        use glave_computer::LocalComputers;
+        use glave_ports::computer::{Computers as _, Environment, Sources};
+        use std::sync::Arc;
+
+        let root = folder("gone-home");
+        let read = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let computers = LocalComputers::new(root.join("copies"), std::env::vars_os());
+                let computer = computers.create(&Environment::host()).await.unwrap();
+                let sources = Sources::Folder {
+                    path: root.to_string_lossy().into_owned(),
+                };
+                let info = computers.open(computer.id, &sources).await.unwrap();
+                computers.close(info.id).await.unwrap();
+                let home = Workspace::new(Arc::new(computers), info);
+                personal_on(&home).await
+            });
+        assert!(read.is_err(), "{read:?}");
     }
 
     #[test]

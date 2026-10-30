@@ -254,3 +254,74 @@ fn a_project_s_thread_opens_with_its_last_read_and_reaches_the_computer_only_for
         serving.abort();
     });
 }
+
+#[test]
+fn a_chat_on_a_person_s_computer_opens_with_their_own_instructions_as_last_read_there() {
+    let server = folder("chat-server");
+    let computer = folder("chat-computer");
+    let home = computer.join("home");
+    let scratch = home.join(".glave/scratch");
+    std::fs::create_dir_all(&scratch).unwrap();
+    block_on!(async {
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
+        let computers = LocalComputers::new(computer.join("copies"), environment);
+        let computers = Arc::new(computers.with_scratch(&scratch));
+        let (reached, serving) = home_across_the_wire(computers, &home).await;
+        let own = home.join(".glave/AGENTS.md");
+        let write = format!("printf 'Be brief.\\n' > '{}'", own.display());
+        let helper = json!({ "description": "look", "prompt": "Look around." });
+        let answers = vec![
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+            answer(None, vec![("agent", helper)], StopReason::ToolUse),
+            answer(Some("Nothing to see."), vec![], StopReason::EndTurn),
+            answer(Some("It saw nothing."), vec![], StopReason::EndTurn),
+            answer(
+                None,
+                vec![("bash", json!({ "command": write }))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Noted."), vec![], StopReason::EndTurn),
+            answer(Some("Hey."), vec![], StopReason::EndTurn),
+        ];
+        let mut settings = settings();
+        settings.subagents = true;
+        let (harness, seen) =
+            harness_seeing(&server, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
+        let first = Arc::new(Sleepy::new(&reached, &scratch));
+        let harness = harness.with_homes(Some(Arc::clone(&first) as Arc<dyn Homes>));
+        let opening = |request: usize| texts(&seen.lock().unwrap()[request].messages[0])[0].clone();
+
+        // A chat that only talks asks nothing of the computer, and nothing was kept yet.
+        let mut chat = thread_in(&harness, Place::Scratch).await;
+        turn(&harness, &mut chat, "hello").await;
+        assert_eq!(opening(0), "hello");
+        turn(&harness, &mut chat, "ask a helper").await;
+        assert_eq!(
+            first.asked(),
+            0,
+            "a chat that only talks, or whose subagent only talks, asks nothing"
+        );
+
+        // A command that writes the person's own instructions, read there as its turn ends.
+        turn(&harness, &mut chat, "be brief from now on").await;
+        assert!(first.asked() > 0, "the command asks for it");
+
+        // The next chat, on a server that has not reached the computer since, opens with them,
+        // for its own folder, and asks nothing.
+        let later = Arc::new(Sleepy::new(&reached, &scratch));
+        let harness = harness.with_homes(Some(Arc::clone(&later) as Arc<dyn Homes>));
+        let mut next = thread_in(&harness, Place::Scratch).await;
+        turn(&harness, &mut next, "hey").await;
+        assert_eq!(
+            later.asked(),
+            0,
+            "a chat started and talked to asks nothing"
+        );
+        let opening = opening(6);
+        let root = scratch.join(next.id.to_string());
+        let heading = format!("# AGENTS.md instructions for {}", root.display());
+        assert!(opening.starts_with(&heading), "{opening}");
+        assert!(opening.contains("Be brief."), "{opening}");
+        serving.abort();
+    });
+}

@@ -3,13 +3,13 @@
 //! their home, rather than on the harness's computer. Their folders, worktrees and scratch
 //! folders are opened on it as they would be here; a scratch folder or a project's folder is
 //! planned without waking it, and the first tool call that needs the computer wakes it (decision
-//! 6). What a thread in a project's folder there opens with is read there too, through the
-//! computer port, only when glave has just used the computer (its folder made, or a turn that
-//! changed files there ending), and kept: a thread there opens with what was kept.
+//! 6). What a thread in a project's folder or a chat there opens with is read there too,
+//! through the computer port, only when glave has just used the computer (its folder made, or a
+//! turn that changed files there ending), and kept: a thread there opens with what was kept.
 
 mod kept;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{ComputerKind, InstructionsFile, Opened, PrincipalId, WorkspaceBound};
@@ -118,11 +118,11 @@ where
     }
 
     /// What a thread in `scope` for `person`, working on their own computer where `bound` says,
-    /// opens with (decision 6): in a project's folder, what was last read there and kept, so
-    /// starting it never reaches the computer; in a worktree, which woke the computer to be
-    /// made, what is read there now through the computer port. Either way their own
-    /// instructions and the folder's AGENTS.md (`agents_md_on`), never the server's. In a
-    /// scratch folder nothing.
+    /// opens with (decision 6), never the server's: in a project's folder, their own
+    /// instructions and the folder's AGENTS.md (`agents_md_on`) as last read there and kept; in
+    /// a chat's scratch folder, their own instructions as last read and kept; so starting it
+    /// never reaches the computer. In a worktree, which woke the computer to be made, what is
+    /// read there now.
     pub(crate) async fn instructions_at_home(
         &self,
         scope: Scope,
@@ -130,39 +130,39 @@ where
         person: Option<PrincipalId>,
     ) -> Option<String> {
         let root = Path::new(&bound.root);
-        match &bound.opened {
-            Opened::Folder { .. } => self.last_read(scope, root).await,
-            Opened::Worktree { .. } => {
-                let read = self.read_at_home(scope, person, root).await.ok()?;
-                crate::instructions::compose(root, &read)
+        let files = match &bound.opened {
+            Opened::Folder { .. } => self.last_read(scope, root).await?,
+            Opened::Scratch { .. } => {
+                let (home, _) = self.home_of(scope, person).ok()?;
+                self.last_read(scope, home.root()).await?
             }
-            Opened::Scratch { .. } | Opened::Clone { .. } => None,
-        }
+            Opened::Worktree { .. } => self.read_at_home(scope, person, bound).await.ok()?.0,
+            Opened::Clone { .. } => return None,
+        };
+        crate::instructions::compose(root, &files)
     }
 
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
     /// a command or changed a file there, which the computer is awake for: what a compaction
-    /// opens the conversation with and, kept, what the next thread in its folder opens with.
+    /// opens the conversation with and, kept, what the next thread in its folder, or the next
+    /// chat, opens with.
     pub(crate) async fn refresh_at_home(&self, thread: &mut Thread) {
         let Some(home) = thread.home.as_mut().filter(|home| home.changed) else {
             return;
         };
         home.changed = false;
         let bound = home.bound.clone();
-        if !matches!(
-            bound.opened,
-            Opened::Folder { .. } | Opened::Worktree { .. }
-        ) {
+        if matches!(bound.opened, Opened::Clone { .. }) {
             return;
         }
-        let root = Path::new(&bound.root);
-        let Ok(read) = self.read_at_home(thread.scope, thread.for_, root).await else {
+        let Ok((read, kept_for)) = self.read_at_home(thread.scope, thread.for_, &bound).await
+        else {
             return;
         };
-        if matches!(bound.opened, Opened::Folder { .. }) {
-            self.keep_read(thread.scope, root, read.clone()).await;
+        if let Some(kept_for) = kept_for {
+            self.keep_read(thread.scope, &kept_for, read.clone()).await;
         }
-        thread.instructions = crate::instructions::compose(root, &read);
+        thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read);
     }
 
     /// Reads what a thread in the project folder at `root` in `scope` opens with through
@@ -176,17 +176,31 @@ where
         }
     }
 
-    /// What a thread at `root` on the own computer of `person` opens with, read there now
-    /// through its planned home, which wakes it if it sleeps: only for a computer glave has
-    /// just used.
+    /// What a thread of `person` working on their own computer where `bound` says opens with,
+    /// read there now through its planned home, which wakes it if it sleeps, so only for a
+    /// computer glave has just used; and where it is kept: for a project's folder, the folder;
+    /// for a chat, which reads only the person's own, their home; a worktree's is not kept.
     async fn read_at_home(
         &self,
         scope: Scope,
         person: Option<PrincipalId>,
-        root: &Path,
-    ) -> Result<Vec<InstructionsFile>, HarnessError> {
+        bound: &WorkspaceBound,
+    ) -> Result<(Vec<InstructionsFile>, Option<PathBuf>), HarnessError> {
         let (home, _) = self.home_of(scope, person)?;
-        Ok(crate::instructions::agents_md_on(&home, root).await?)
+        let root = Path::new(&bound.root);
+        Ok(match bound.opened {
+            Opened::Scratch { .. } => (
+                crate::instructions::personal_on(&home).await?,
+                Some(home.root().to_path_buf()),
+            ),
+            Opened::Folder { .. } => (
+                crate::instructions::agents_md_on(&home, root).await?,
+                Some(root.to_path_buf()),
+            ),
+            Opened::Worktree { .. } | Opened::Clone { .. } => {
+                (crate::instructions::agents_md_on(&home, root).await?, None)
+            }
+        })
     }
 }
 
@@ -198,6 +212,17 @@ pub(crate) struct AtHome {
     /// Whether its turn ran a command or changed a file there, so what it opens with is read
     /// there again as the turn ends.
     pub(crate) changed: bool,
+}
+
+impl AtHome {
+    /// The same place, with nothing changed there yet: a subagent's, working where its parent
+    /// does.
+    pub(crate) fn fresh(&self) -> Self {
+        Self {
+            bound: self.bound.clone(),
+            changed: false,
+        }
+    }
 }
 
 /// Where a thread works on its person's own computer, from `bound`, its latest binding; `None`
