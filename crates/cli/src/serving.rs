@@ -375,11 +375,34 @@ impl Listening {
     }
 }
 
-/// Listens on `address`, and on ::1 beside it at 127.0.0.1 ([`beside`]), at once. Where it is
-/// the usual port, free when it was looked at and taken since, as by a second server starting
-/// beside this one (which then finds the lock held): any free one, as when it was taken
-/// before. An origin naming that port then refuses to start ([`served_at`]); one of
-/// `localhost` without a port follows it.
+/// Where the person's server listens when nothing else is chosen, bound in the step that finds
+/// it free, so no other program takes it between: 127.0.0.1 at the usual port when it is free
+/// there and at ::1, which `localhost` also stands for, else at a port that is, else at any
+/// free one.
+pub(crate) async fn listen_here() -> anyhow::Result<Listening> {
+    let ports = std::iter::once(crate::server::PORT).chain(std::iter::repeat_n(0, 8));
+    for port in ports {
+        if let Some(listening) = free_here(port).await {
+            return Ok(listening);
+        }
+    }
+    listen(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await
+}
+
+/// Listening at `port` (any free one for 0), at 127.0.0.1 and beside it at ::1; none when
+/// either is taken. Any other trouble at ::1 is kept for [`localhost_beside`] to weigh.
+async fn free_here(port: u16) -> Option<Listening> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await.ok()?;
+    match beside(listener.local_addr().ok()?).await {
+        Err(error) if error.kind() == ErrorKind::AddrInUse => None,
+        beside => Some(Listening { listener, beside }),
+    }
+}
+
+/// Listens on `address`, which the person chose, and on ::1 beside it at 127.0.0.1
+/// ([`beside`]), at once. Where it is the usual port and taken: any free one. An origin naming
+/// that port then refuses to start ([`served_at`]); one of `localhost` without a port follows
+/// it.
 pub(crate) async fn listen(address: SocketAddr) -> anyhow::Result<Listening> {
     let listener = bind(address).await?;
     let beside = beside(listener.local_addr()?).await;
@@ -451,6 +474,28 @@ fn here(bound: SocketAddr) -> SocketAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_port_is_free_here_only_at_both_loopback_addresses_and_stays_held() {
+        glave_ports::block_on!(async {
+            let listening = free_here(0).await.unwrap();
+            let port = listening.address().unwrap().port();
+            assert_ne!(port, 0);
+            // Found free and bound in one step: no other program takes it meanwhile.
+            let taken = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await;
+            assert_eq!(taken.unwrap_err().kind(), ErrorKind::AddrInUse);
+            let v6 = listening.beside.unwrap().unwrap();
+            assert_eq!(
+                v6.local_addr().unwrap().port(),
+                port,
+                "the same port beside it"
+            );
+
+            let held = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+            let port = held.local_addr().unwrap().port();
+            assert!(free_here(port).await.is_none(), "taken at [::1]");
+        });
+    }
 
     #[test]
     fn a_loopback_listener_holds_its_port_at_both_addresses_so_localhost_is_this_server() {
