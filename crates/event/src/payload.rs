@@ -41,7 +41,10 @@ pub(crate) mod workspace;
 pub use approval::{ApprovalDecided, ApprovalRequested, Lifted, OutsideSandbox, Verdict};
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
-pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
+pub use catalog::{
+    Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,
+    Reasoning, TokenPrice,
+};
 pub use caution::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use certificate::{AcmeRegistered, CertificateIssued};
 pub use chosen::{EffortChosen, ModelChosen, Permissions, PermissionsChosen};

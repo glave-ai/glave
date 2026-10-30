@@ -107,6 +107,7 @@ mod tests {
             url: None,
             listed: At::from(SystemClock.now()),
             models: models.iter().map(|id| CatalogModel::new(*id)).collect(),
+            providers: Vec::new(),
         }
     }
 

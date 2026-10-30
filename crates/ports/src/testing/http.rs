@@ -62,14 +62,24 @@ impl FakeHttp {
     /// Starts answering every request with `status` and the JSON `body`, until its requests are
     /// asked for or it is dropped.
     pub fn always(status: u16, body: &str) -> io::Result<Self> {
+        let body = body.to_owned();
+        Self::answering(move |_, _| (status, body.clone()))
+    }
+
+    /// Starts answering each request with the status and JSON body `answer` gives for its
+    /// method and path, as a stand-in for a whole API, until its requests are asked for or it
+    /// is dropped.
+    pub fn answering(
+        answer: impl Fn(&str, &str) -> (u16, String) + Send + 'static,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let host = listener.local_addr()?.to_string();
         let received = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
-        let (log, stopping, body) = (Arc::clone(&received), Arc::clone(&stop), body.to_owned());
+        let (log, stopping) = (Arc::clone(&received), Arc::clone(&stop));
         let thread = std::thread::spawn(move || {
             loop {
-                let answered = answer(&listener, status, &body);
+                let answered = answer_with(&listener, &answer);
                 if stopping.load(Ordering::SeqCst) {
                     return;
                 }
@@ -119,8 +129,17 @@ impl Drop for FakeHttp {
 
 /// Takes the next connection, reads its request and answers `status` with `body`.
 fn answer(listener: &TcpListener, status: u16, body: &str) -> io::Result<Received> {
+    answer_with(listener, &|_, _| (status, body.to_owned()))
+}
+
+/// Takes the next connection, reads its request and answers what `answer` gives for it.
+fn answer_with(
+    listener: &TcpListener,
+    answer: &dyn Fn(&str, &str) -> (u16, String),
+) -> io::Result<Received> {
     let (mut stream, _) = listener.accept()?;
     let request = read(&stream)?;
+    let (status, body) = answer(&request.method, &request.path);
     write!(
         stream,
         "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\

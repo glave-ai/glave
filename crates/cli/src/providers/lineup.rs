@@ -7,10 +7,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
-use glave_event::{Catalog, ProviderConnected};
+use glave_event::{Catalog, ProviderConnected, ProviderKind};
 use glave_gateway::{Gateway, Target};
 use glave_ports::settings::Judge;
 use glave_session::Models;
+use glave_session::protocol::ModelInfo;
 
 use crate::config::Endpoint;
 use crate::gateway::remote::Remote;
@@ -126,23 +127,7 @@ impl Lineup {
             targets.into_iter().map(|(_, target)| target).collect(),
             &allowed,
         )?;
-        let describe = |group: &[&Target]| {
-            let mut cards = Vec::new();
-            let mut providers = Vec::new();
-            for target in group {
-                let (own, service) = about
-                    .get(&target.name)
-                    .cloned()
-                    .unwrap_or_else(|| (None, service_name(&target.provider)));
-                cards.extend(cards_for(&target.model, own, catalogs));
-                providers.push(service);
-            }
-            let first = group.first();
-            let id = first.map_or("", |target| target.model.as_str());
-            let entry = self.entries.iter().find(|entry| entry.id.trim() == id);
-            let name = entry.and_then(|e| e.name.as_deref());
-            describe::info(id, &cards, providers, name, first.copied())
-        };
+        let describe = |group: &[&Target]| self.described(group, &about, catalogs);
         let models = Models {
             default: Some((endpoint.model.clone(), endpoint.provider.provider.clone())),
             offered: offered(&gateway, describe),
@@ -182,4 +167,33 @@ pub(crate) fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Opt
             endpoint
         }),
     ))
+}
+
+impl Lineup {
+    /// The entry for the model `group` serves, each of its targets described by its own
+    /// service's card, `about` says which, or another's of the same model, and with who serves
+    /// it through the first that is a router.
+    fn described(
+        &self,
+        group: &[&Target],
+        about: &HashMap<String, (Option<&Catalog>, String)>,
+        catalogs: &[Catalog],
+    ) -> ModelInfo {
+        let (mut cards, mut providers, mut routed) = (Vec::new(), Vec::new(), None);
+        for target in group {
+            let (own, service) = about
+                .get(&target.name)
+                .cloned()
+                .unwrap_or_else(|| (None, service_name(&target.provider)));
+            cards.extend(cards_for(&target.model, own, catalogs));
+            providers.push(service);
+            let openrouter = own.filter(|own| own.kind == ProviderKind::Openrouter);
+            routed = routed.or_else(|| Some((openrouter?, target.model.as_str())));
+        }
+        let first = group.first();
+        let id = first.map_or("", |target| target.model.as_str());
+        let entry = self.entries.iter().find(|entry| entry.id.trim() == id);
+        let name = entry.and_then(|e| e.name.as_deref());
+        describe::info(id, &cards, providers, name, first.copied(), routed)
+    }
 }

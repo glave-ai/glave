@@ -521,6 +521,89 @@
       ],
       "type": "object"
     },
+    "EndpointInfo": {
+      "description": "One provider serving a model through a router, as the router says, for a client to filter\nand choose by. What the router does not say is absent, never guessed.",
+      "properties": {
+        "based_in": {
+          "description": "The country it is based in, an ISO 3166-1 alpha-2 code such as `US`, when the router\nsays.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "description": "The context window this provider serves the model with, in tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "datacenters": {
+          "description": "The countries its datacenters are in, when the router says; absent when it does not,\nwhich says nothing of where they are.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "keeps_nothing": {
+          "description": "Whether it keeps nothing of what it is sent (zero data retention). Every provider\nthat serves glave through a router is one that never trains on it.",
+          "type": "boolean"
+        },
+        "max_output": {
+          "description": "The longest answer this provider gives, in tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "precision": {
+          "$ref": "#/$defs/Precision",
+          "description": "How precisely it serves the model's weights."
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenPrice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What its tokens cost."
+        },
+        "provider": {
+          "description": "The provider's name, such as `DeepInfra`.",
+          "type": "string"
+        },
+        "slug": {
+          "description": "What a person's filters name it by, such as `deepinfra`.",
+          "type": "string"
+        },
+        "speed": {
+          "description": "How many tokens a second it answered with: the router's median over the half hour\nbefore its catalog was read, when it says.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "slug",
+        "precision",
+        "keeps_nothing"
+      ],
+      "type": "object"
+    },
     "ErrorData": {
       "anyOf": [
         {
@@ -1038,6 +1121,13 @@
         "default": {
           "description": "Whether threads that choose no model use this one. Exactly one model is the default.",
           "type": "boolean"
+        },
+        "endpoints": {
+          "description": "Each provider that serves it through a router (OpenRouter), as the router's catalog\nlists them; none where no router serves it.",
+          "items": {
+            "$ref": "#/$defs/EndpointInfo"
+          },
+          "type": "array"
         },
         "id": {
           "description": "What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by.",
@@ -1565,6 +1655,36 @@
         "status"
       ],
       "type": "object"
+    },
+    "Precision": {
+      "description": "How precisely a provider serves a model's weights, from how it says they are stored.",
+      "oneOf": [
+        {
+          "const": "unstated",
+          "description": "It does not say.",
+          "type": "string"
+        },
+        {
+          "const": "four_bit",
+          "description": "Four bits a weight: `int4`, `fp4`, `mxfp4`, `nvfp4`.",
+          "type": "string"
+        },
+        {
+          "const": "six_bit",
+          "description": "Six bits a weight: `fp6`.",
+          "type": "string"
+        },
+        {
+          "const": "eight_bit",
+          "description": "Eight bits a weight: `int8`, `fp8`, `mxfp8`.",
+          "type": "string"
+        },
+        {
+          "const": "full",
+          "description": "The weights as they were trained: `fp16`, `bf16`, `fp32`.",
+          "type": "string"
+        }
+      ]
     },
     "Principal": {
       "additionalProperties": false,
