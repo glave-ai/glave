@@ -46,17 +46,29 @@ where
         scope: Scope,
         person: Option<PrincipalId>,
     ) -> Result<(Arc<Workspace>, ComputerKind), HarnessError> {
-        let (Some(homes), Some(person)) = (&self.homes, person) else {
-            return Ok((Arc::clone(&self.workspace), ComputerKind::Local));
-        };
-        let planned = homes.home(scope.org(), person)?;
-        let home = Workspace::new(planned.computers, planned.home);
-        // Their git sign-ins reach their computer as they reach this one: asked at each use.
-        let home = match self.workspace.credentials() {
-            Some(credentials) => home.with_credentials(Arc::clone(credentials)),
-            None => home,
-        };
-        Ok((Arc::new(home), ComputerKind::Person))
+        match person.and_then(|person| self.own_home(scope.org(), person)) {
+            Some(home) => Ok((Arc::new(home?), ComputerKind::Person)),
+            None => Ok((Arc::clone(&self.workspace), ComputerKind::Local)),
+        }
+    }
+
+    /// The home of `person`'s own computer in `org`, as planned, never woken, where people have
+    /// computers of their own: where their threads work and their projects' folders are made.
+    /// `None` where they have none.
+    pub fn own_home(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> Option<Result<Workspace, HarnessError>> {
+        let homes = self.homes.as_ref()?;
+        Some(homes.home(org, person).map_err(Into::into).map(|planned| {
+            let home = Workspace::new(planned.computers, planned.home);
+            // Their git sign-ins reach their computer as they reach this one: asked at each use.
+            match self.workspace.credentials() {
+                Some(credentials) => home.with_credentials(Arc::clone(credentials)),
+                None => home,
+            }
+        }))
     }
 
     /// Opens `thread`'s workspace on its person's own computer when it works there and has none

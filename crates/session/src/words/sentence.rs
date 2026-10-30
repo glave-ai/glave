@@ -261,6 +261,8 @@ sentences! {
         "only the person on the computer glave runs on removes a project",
     NewFolderOnlyHere = "new-folder-only-here"
         "a project's folder is on the computer glave runs on, so only the person there can give one",
+    FolderOnlyMadeThere = "folder-only-made-there"
+        "a project's folder on your cloud computer is a new one or a repository cloned there",
     LookOnlyHere = "look-only-here"
         "a project's folder is on the computer glave runs on, so only the person there can look for one",
     FoldersOnlyHere = "folders-only-here"

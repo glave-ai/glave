@@ -1,0 +1,88 @@
+name: computer image
+
+# glave's computer image (images/computer, specs/computers.md, decision 12), for x86-64 and
+# arm64. Built on a pull request that changes it, published nowhere. Published weekly, so
+# Wolfi's fixes reach it, and when run by hand: pushed to GitHub's container registry under
+# the day it was built, and attested there with GitHub's build provenance. glave itself is not
+# in it (it is copied in at each wake), so it follows Wolfi, not glave's releases. A deployment
+# names it by the digest the run's summary prints (`[computers] image`). CI's `kind` job builds
+# and tests the same Dockerfile on every push.
+on:
+  pull_request:
+    paths:
+      - images/computer/**
+      - .github/workflows/computer-image.yml
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computer-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # The only job in the repository that writes packages: the image, and its attestation.
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/glave-ai/glave-computer
+      PUBLISH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # arm64 built under QEMU, both by a BuildKit release: each pinned by digest, as the
+      # image's base is, since this job can write packages.
+      - name: A builder for both processors
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
+          docker buildx create --use --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Sign in to GitHub's container registry
+        if: env.PUBLISH == 'true'
+        env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # GitHub's attestation below is the image's provenance, so BuildKit adds none of its own.
+      # On a pull request the image is built and left in the builder.
+      - name: Build, and push unless on a pull request
+        id: push
+        run: |
+          tag="$IMAGE:$(date -u +%Y-%m-%d)"
+          output=$([ "$PUBLISH" = true ] && echo --push || echo --output=type=cacheonly)
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+            --tag "$tag" --metadata-file "$RUNNER_TEMP/image.json" "$output" images/computer
+          [ "$PUBLISH" = true ] || exit 0
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
+          case "$digest" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "no digest for the pushed image: $digest" >&2; exit 1 ;;
+          esac
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "glave's computer image, \`$tag\`: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest@v4
+        if: env.PUBLISH == 'true'
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      # A package's first push is private, and only its settings page makes it public, once.
+      - name: Anyone can pull it
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          docker logout ghcr.io
+          if ! docker buildx imagetools inspect "$IMAGE@$DIGEST" >/dev/null; then
+            echo "::error::$IMAGE is not public: an organization owner makes it public once, in the package's settings"
+            exit 1
+          fi
