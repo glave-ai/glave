@@ -97,7 +97,8 @@ pub struct Choices {
     pub acme: Option<Chosen<String>>,
     /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
     pub provider: Option<Chosen<ProviderFile>>,
-    /// The GitHub app people sign in to GitHub through in the browser, if one is set up.
+    /// The GitHub app people sign in to GitHub through in the browser, if one is set up; glave's
+    /// own otherwise.
     pub github: Option<Chosen<GithubFile>>,
     /// The mail server glave sends through, if one is set up.
     pub email: Option<Chosen<EmailFile>>,

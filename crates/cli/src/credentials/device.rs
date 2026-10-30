@@ -1,9 +1,9 @@
-//! Signing in to GitHub in the browser, through the GitHub App `[github]` names: GitHub's device
-//! flow. glave asks GitHub for a code, the person enters it on GitHub's page and approves the
-//! app, and glave, polling no faster than GitHub allows, receives a user token. The device code
-//! that redeems it never leaves glave: a client names the sign-in by a flow id of its own. A
-//! GitHub App's user token lasts eight hours and comes with a refresh token, which renews it
-//! without a client secret, since it came from the device flow.
+//! Signing in to GitHub in the browser, through the GitHub App `[github]` names, or glave's
+//! own: GitHub's device flow. glave asks GitHub for a code, the person enters it on GitHub's
+//! page and approves the app, and glave, polling no faster than GitHub allows, receives a user
+//! token. The device code that redeems it never leaves glave: a client names the sign-in by a
+//! flow id of its own. A GitHub App's user token lasts eight hours and comes with a refresh
+//! token, which renews it without a client secret, since it came from the device flow.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -34,6 +34,12 @@ const SHORTEST_INTERVAL: u64 = 1;
 const LONGEST_SAID: usize = 300;
 /// The longest a token is taken to last, in seconds: a year.
 const LONGEST_TOKEN: i64 = 366 * 24 * 3600;
+
+/// glave's own GitHub App, `glave-ai`, which signs people in where `[github]` names none: its
+/// client id is public.
+const OWN_CLIENT_ID: &str = "Iv23liU5bL1a8inEeAkT";
+/// Its name in its URL.
+const OWN_APP: &str = "glave-ai";
 
 /// The GitHub App sign-ins go through.
 #[derive(Debug, Clone)]
@@ -79,6 +85,15 @@ impl Github {
             url: CredentialHost::named(url, Forge::Github)?.url,
             app: file.app.as_deref().map(str::trim).map(str::to_owned),
         })
+    }
+
+    /// glave's own app, on github.com.
+    pub(super) fn own() -> Self {
+        Self {
+            client_id: OWN_CLIENT_ID.to_owned(),
+            url: "https://github.com".to_owned(),
+            app: Some(OWN_APP.to_owned()),
+        }
     }
 
     /// The page where the person installs the app on their account or organizations and

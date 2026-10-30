@@ -120,7 +120,8 @@ async fn sign_in(server: &mut Reached) -> anyhow::Result<()> {
             .await?
         {
             Reply::Credential { credential } => {
-                break said_connected(server, &credential).await;
+                said_connected(&credential);
+                break choose_repositories(server).await;
             }
             Reply::Waiting { .. } => {}
             _ => bail!("glave answered credential/device/poll with something else"),
@@ -159,19 +160,22 @@ async fn connect(
     let Reply::Credential { credential } = server.request(request).await? else {
         bail!("glave answered credential/connect with something else");
     };
-    said_connected(server, &credential).await
+    said_connected(&credential);
+    Ok(())
 }
 
-/// Says what was connected and what glave can do with it, and where to choose the
-/// repositories GitHub's app may use.
-async fn said_connected(server: &mut Reached, credential: &CredentialInfo) -> anyhow::Result<()> {
+/// Says what was connected and what glave can do with it.
+fn said_connected(credential: &CredentialInfo) {
     println!("Connected {}", shown(credential));
     println!("  {}", can(credential));
-    if credential.forge == Forge::Github
-        && let Reply::Credentials {
-            install: Some(install),
-            ..
-        } = server.request(Request::CredentialList {}).await?
+}
+
+/// Says where to choose the repositories GitHub's app may use, after signing in through it.
+async fn choose_repositories(server: &mut Reached) -> anyhow::Result<()> {
+    if let Reply::Credentials {
+        install: Some(install),
+        ..
+    } = server.request(Request::CredentialList {}).await?
     {
         println!("Choose the repositories glave may use at {install}");
     }

@@ -109,7 +109,14 @@ fn a_pasted_token_is_checked_kept_sealed_and_signs_the_next_command_in() {
     assert!(results.contains(FAKE_COMMIT), "git signed in: {results}");
 
     let listed = served.call("credential/list", &json!({}));
-    assert_eq!(listed["result"]["device"], false, "no GitHub app set up");
+    assert_eq!(
+        listed["result"]["device"], true,
+        "glave's own app: {listed}"
+    );
+    assert_eq!(
+        listed["result"]["install"],
+        "https://github.com/apps/glave-ai/installations/new"
+    );
     let id = listed["result"]["credentials"][0]["id"].clone();
     let removed = served.call("credential/remove", &json!({"credential": id}));
     assert_eq!(removed["result"], json!({}), "{removed}");
