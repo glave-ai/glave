@@ -132,7 +132,7 @@ impl Here {
             home: None,
             temp: None,
         };
-        Waking::home(wake, home, &self.scratch(person).to_string_lossy())
+        Waking::home(wake, None, home, &self.scratch(person).to_string_lossy())
     }
 }
 

@@ -117,7 +117,7 @@ impl Computers for Ledger {
             } else {
                 Ending::Exited { code: 0 }
             };
-            Ok(Finished { ending, millis: 0 })
+            Ok(Finished::new(ending, 0))
         })
     }
 

@@ -84,7 +84,7 @@ fn planned_at(
         home: None,
         temp: None,
     };
-    Waking::home(wake, home, planned)
+    Waking::home(wake, None, home, planned)
 }
 
 /// The scratch folder `name`, planned on `home`.

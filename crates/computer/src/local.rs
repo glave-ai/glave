@@ -12,6 +12,7 @@ pub(crate) mod git;
 mod listing;
 mod on_path;
 mod paths;
+mod pressure;
 mod process;
 mod project;
 mod registry;
@@ -75,6 +76,9 @@ pub struct LocalComputers {
     background: Backgrounds,
     /// Where its commands are recorded while they run, each owned by its workspace.
     processes: Processes,
+    /// The cgroup it runs in, where Linux counts the time its commands are held at its CPU
+    /// limit.
+    cgroup: Option<PathBuf>,
 }
 
 impl LocalComputers {
@@ -98,6 +102,7 @@ impl LocalComputers {
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
             background: Backgrounds::default(),
+            cgroup: pressure::cgroup(),
             processes: Processes::unrecorded(),
         }
     }
@@ -354,6 +359,7 @@ impl LocalComputers {
         Keep {
             background: &self.background,
             workspace,
+            cgroup: self.cgroup.as_deref(),
         }
     }
 

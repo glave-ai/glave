@@ -114,10 +114,10 @@ impl Computers for Faulty {
             if command.sandbox.is_some() && self.stuck_sandbox.load(Ordering::SeqCst) {
                 self.limits.lock().unwrap().push(command.timeout_secs);
                 let after_secs = command.timeout_secs.unwrap_or(120);
-                return Ok(Finished {
-                    ending: Ending::TimedOut { after_secs },
-                    millis: after_secs * 1000,
-                });
+                return Ok(Finished::new(
+                    Ending::TimedOut { after_secs },
+                    after_secs * 1000,
+                ));
             }
             self.inner.run(workspace, command, output, cancel).await
         })
