@@ -43,11 +43,12 @@ commands:
                     dist-workspace.toml names), where only the job that publishes can write
   try-org           build the web app and glave, and serve a throwaway glave for people who
                     share this computer (origin http://localhost:<port>, a key file in a temp
-                    folder, nothing of your own glave, its settings or the keychain): you sign
-                    in with the link it prints, someone you invite in a private window; its
-                    model a stand-in that answers every message and says what each answer cost;
-                    with --credits, every organization pays from credits you add (glave
-                    credits); Ctrl-C stops it and removes it all
+                    folder, nothing of your own glave, its settings or the keychain): it opens
+                    in your browser signed in, and again on Enter, an Admin, a Member and an
+                    invite already in it; someone you invite in a private window; its model a
+                    stand-in that answers every message and says what each answer cost; with
+                    --credits, every organization pays from credits you add (glave credits);
+                    Ctrl-C stops it and removes it all
   bench [args]      run benchmarks under the machine-wide benchmark lock
   eval [args]       run the harness on the eval tasks against real models and grade the
                     results (see `cargo xtask eval --help`); the model endpoint comes from the

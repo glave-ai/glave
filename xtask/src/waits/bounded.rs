@@ -30,22 +30,35 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "xtask/src/try_org.rs",
-        "ended = child.wait() => {",
+        "ended = child.wait() => ended.map(drop).map_err(failed),",
         1,
         "the throwaway glave the person at the terminal tries by hand, until they stop it with \
          Ctrl-C, a hang-up or the end of what started xtask: the arms beside it",
     ),
     (
         "xtask/src/try_org.rs",
-        "_ = hangup.recv() => {}",
+        "_ = interrupt.recv() => Ok(()),",
+        1,
+        "Ctrl-C itself, from the person at the terminal",
+    ),
+    (
+        "xtask/src/try_org.rs",
+        "_ = hangup.recv() => Ok(()),",
         1,
         "a hang-up itself, from the terminal the person closes",
     ),
     (
         "xtask/src/try_org.rs",
-        "_ = terminate.recv() => {}",
+        "_ = terminate.recv() => Ok(()),",
         1,
         "a request to stop itself, from the person or the system",
+    ),
+    (
+        "xtask/src/try_org.rs",
+        "while enter.recv().await.is_some() {",
+        1,
+        "the person pressing Enter, while what stops try-org (Ctrl-C, a hang-up, a stop, \
+         the end of what started it or of glave) stops the wait beside it",
     ),
     (
         "crates/session/src/turn.rs",

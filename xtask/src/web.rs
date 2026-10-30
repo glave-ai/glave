@@ -59,8 +59,7 @@ pub(crate) fn check(threads: &[(&str, String)]) -> Result<(), String> {
     )?;
     // The service the end-to-end tests sign in to, beside that glave.
     crate::cmd::run("cargo", &TEST_SERVER)?;
-    let glave = target_directory()?.join("debug/glave");
-    let glave = ("GLAVE_BIN", glave.display().to_string());
+    let glave = ("GLAVE_BIN", debug_glave()?.display().to_string());
     npm(&web, &["run", "check"], &[threads, &[glave]].concat())
 }
 
@@ -68,6 +67,11 @@ pub(crate) fn check(threads: &[(&str, String)]) -> Result<(), String> {
 /// the workspace's own `target/`, as `cargo metadata` reports it.
 fn target_directory() -> Result<PathBuf, String> {
     target_directory_in(&crate::workspace::metadata()?)
+}
+
+/// The glave `cargo build` and `cargo run` make in this workspace, unoptimised.
+pub(crate) fn debug_glave() -> Result<PathBuf, String> {
+    Ok(target_directory()?.join("debug/glave"))
 }
 
 /// The `target_directory` in `cargo metadata`'s JSON.
