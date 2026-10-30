@@ -1,16 +1,16 @@
 //! A person's filters among a router's providers (`specs/gateway.md`, "A person's filters"):
 //! none until they choose, their choice kept in their settings ledger so every server on one
 //! store reads the same, what no one can have meant refused, and read for each call of their
-//! work as the gateway asks, refused while no server answers.
+//! work as the gateway asks, refused while no server answers; and `model/list` saying, to each
+//! caller, which of their filters hide each provider.
 
 use std::sync::Arc;
 
-use glave_event::RawEvent;
-use glave_event::{Filters, MaxPrice, Serve, Sort};
+use glave_event::{Filters, Hides, MaxPrice, Precision, RawEvent, Serve, Sort, TokenPrice};
 use glave_gateway::Filtering;
 use glave_ports::{Caller, EventLog, Failure, Payer, ProjectKind, ProviderError, Scope};
 use glave_session::PersonFilters;
-use glave_session::protocol::{Reply, Request, code};
+use glave_session::protocol::{EndpointInfo, ModelInfo, Reply, Request, code};
 use glave_session::signin::person;
 
 use crate::support::*;
@@ -23,6 +23,34 @@ fn grace() -> Caller {
         person: Some(person("https://id.example.com", "grace").unwrap()),
         ..Caller::default()
     }
+}
+
+/// One of `slug`'s endpoints, based in `home`, keeping what it is sent.
+fn endpoint(slug: &str, home: &str) -> EndpointInfo {
+    EndpointInfo {
+        provider: slug.to_uppercase(),
+        slug: slug.to_owned(),
+        based_in: Some(home.to_owned()),
+        datacenters: None,
+        precision: Precision::EightBit,
+        context: None,
+        max_output: None,
+        price: Some(TokenPrice {
+            input: 100_000,
+            output: 400_000,
+            cache_read: None,
+        }),
+        keeps_nothing: false,
+        speed: None,
+        hidden_by: Vec::new(),
+    }
+}
+
+/// DeepSeek V4.1 Flash as a router serves it, from China and the US.
+fn flash() -> ModelInfo {
+    let mut model = ModelInfo::new(FLASH);
+    model.endpoints = vec![endpoint("deepseek", "CN"), endpoint("fireworks", "US")];
+    model
 }
 
 fn us_only() -> Filters {
@@ -234,5 +262,41 @@ fn once_its_server_is_gone_every_call_that_asks_is_refused() {
             panic!("refused");
         };
         assert!(reason.contains("stopping"), "{reason}");
+    });
+}
+
+#[test]
+fn model_list_says_which_of_the_caller_s_filters_hide_each_provider() {
+    let dir = folder("filters-listed");
+    block_on!(async {
+        let mut setup = Setup::new(Vec::new());
+        setup.models = vec![flash()];
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let (ada, grace) = (Caller::default(), grace());
+        set(&server, &ada, us_only()).await;
+        let hidden = |caller: Caller| {
+            let server = &server;
+            async move {
+                let Ok(Reply::Models { models }) =
+                    server.request_as(&caller, Request::ModelList {}).await
+                else {
+                    panic!("the models");
+                };
+                let flash = models.into_iter().find(|model| model.id == FLASH).unwrap();
+                let hides = flash.endpoints.into_iter().map(|e| (e.slug, e.hidden_by));
+                hides.collect::<Vec<_>>()
+            }
+        };
+        assert_eq!(
+            hidden(ada).await,
+            [
+                ("deepseek".to_owned(), vec![Hides::BasedIn]),
+                ("fireworks".to_owned(), Vec::new()),
+            ]
+        );
+        assert!(
+            hidden(grace).await.iter().all(|(_, by)| by.is_empty()),
+            "another person's list, by their own filters"
+        );
     });
 }

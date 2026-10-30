@@ -6,7 +6,8 @@
 use std::sync::PoisonError;
 
 use glave_event::{Body, ThreadId};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_gateway::{Facts, hidden_by};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::server::Server;
@@ -55,16 +56,33 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers `model/list`.
-    pub(crate) fn list_models(&self) -> Reply {
-        Reply::Models {
-            models: self
-                .inner
-                .models
-                .read()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
+    /// Answers `model/list`: each model with which of `caller`'s filters hide each provider a
+    /// router serves it from. Their filters are read only where a router serves a model.
+    pub(crate) async fn list_models(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let mut models = self
+            .inner
+            .models
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if models.iter().all(|model| model.endpoints.is_empty()) {
+            return Ok(Reply::Models { models });
         }
+        let filters = self.kept_filters(caller).await?;
+        for endpoint in models.iter_mut().flat_map(|model| &mut model.endpoints) {
+            // As the gateway reads a router's catalog (`glave_gateway::filtering::facts`), so
+            // what the list says hidden is what no call goes to.
+            let facts = Facts {
+                slug: &endpoint.slug,
+                home: endpoint.based_in.as_deref(),
+                datacenters: endpoint.datacenters.as_deref(),
+                precision: endpoint.precision,
+                price: endpoint.price,
+                keeps_nothing: endpoint.keeps_nothing,
+            };
+            endpoint.hidden_by = hidden_by(&facts, &filters);
+        }
+        Ok(Reply::Models { models })
     }
 
     /// Replaces the models threads may be sent to, telling the harness which read no images.

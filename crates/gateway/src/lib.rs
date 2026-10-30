@@ -31,7 +31,7 @@ mod telemetry;
 
 pub use budget::{BudgetKey, Budgets, OverBudget};
 pub use credits::{Account, Credits, CreditsError};
-pub use filtering::{Filtering, Router};
+pub use filtering::{Facts, Filtering, Router, hidden_by};
 pub use gateway::Gateway;
 pub use price::Price;
 pub use routes::{RouteError, Routes};

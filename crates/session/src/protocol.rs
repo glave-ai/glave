@@ -42,7 +42,7 @@ pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
-pub use glave_event::{Filters, Grouping, Permissions, TurnResult};
+pub use glave_event::{Filters, Grouping, Hides, Permissions, TurnResult};
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};

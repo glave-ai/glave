@@ -5,15 +5,16 @@
 //! that port, with a key file there and nothing of the person's own glave: not their
 //! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. Its model is a
 //! stand-in on this computer (`model.rs`) that answers every chat and says what each answer
-//! cost; with `--credits`, every organization pays for it from credits whoever runs the glave
-//! adds (`specs/gateway.md`, "Credits"). Its organization starts with people in it, an Admin
-//! and a Member who joined by invites, and an invite waiting (`seed.rs`), so its Admin has
-//! something to show at once. Once the server is ready, xtask opens it in the person's
-//! browser, signed in, as `glave` alone does, and again each time the person presses Enter in
-//! its window, so no link can expire on them. On Ctrl-C, a hang-up, the end of the program
-//! that started xtask or the server's own end, it stops the server and removes the folder.
-//! glave's lifeline stops the server if xtask is killed outright; a folder such a run left is
-//! removed by the next, which finds its lock free.
+//! cost, and stands in for OpenRouter for an account connected with any key; with `--credits`,
+//! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
+//! "Credits"). Its organization starts with people in it, an Admin and a Member who joined by
+//! invites, and an invite waiting (`seed.rs`), so its Admin has something to show at once. Once
+//! the server is ready, xtask opens it in the person's browser, signed in, as `glave` alone
+//! does, and again each time the person presses Enter in its window, so no link can expire on
+//! them. On Ctrl-C, a hang-up, the end of the program that started xtask or the server's own
+//! end, it stops the server and removes the folder. glave's lifeline stops the server if xtask
+//! is killed outright; a folder such a run left is removed by the next, which finds its lock
+//! free.
 
 use std::fs::{File, TryLockError};
 use std::io::IsTerminal as _;
@@ -30,6 +31,7 @@ use tokio::sync::mpsc;
 const RUNS: &str = "glave-try-org";
 
 mod model;
+mod router;
 mod seed;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
@@ -122,6 +124,10 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
             .env("GLAVE_HOME", &home)
             .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
             .env("GLAVE_MODEL", model::MODEL)
+            .env(
+                "GLAVE_OPENROUTER_URL",
+                format!("{}{}", model.url, model::OPENROUTER),
+            )
             .current_dir(root)
             .no_input();
         let mut child = processes
@@ -136,6 +142,8 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
              localhost address glave prints\n\
              xtask: its model is a stand-in that answers every message the same, and says each \
              answer cost $0.10\n\
+             xtask: to try choosing who serves a model, connect OpenRouter with any key: the \
+             stand-in serves sample models from sample providers\n\
              xtask: it runs until Ctrl-C in this window, which stops it and removes it all; \
              press Enter here to open it in your browser again",
             folder.display()
