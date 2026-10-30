@@ -6728,9 +6728,11 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "glave-identity",
  "glave-ports",
  "glave-process",
  "jiff",
+ "reqwest",
  "serde_json",
  "syn 3.0.6",
  "tokio",

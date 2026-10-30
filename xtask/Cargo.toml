@@ -13,6 +13,9 @@ autotests = false
 # the one clock (`cargo xtask package-age`), and the fake HTTP server `try-org`'s stand-in model
 # answers from (`conformance`).
 glave-ports = { workspace = true, features = ["conformance"] }
+# The sample people `try-org`'s organization starts with join as browsers do, with a passkey
+# made in software.
+glave-identity = { workspace = true, features = ["fake-authenticator"] }
 # What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
 # however xtask ends: glave's lifeline.
 glave-process.workspace = true
@@ -22,6 +25,9 @@ jiff.workspace = true
 # Reading JSON: the generated API schema the web client's types are written from, and
 # package-lock.json, the registries' answers and GitHub's event (`cargo xtask package-age`).
 serde_json.workspace = true
+# Calling the session API over HTTP as the owner and those people do (`try-org`; already in the
+# tree, under glave-identity).
+reqwest.workspace = true
 # Reading the items each library crate exports (`cargo xtask unused-pub`; already in the
 # tree, under the derive macros).
 syn.workspace = true

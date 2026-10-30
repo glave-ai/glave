@@ -1,8 +1,7 @@
 //! When a package version was published, as its registry says: crates.io's API, a version's
 //! `created_at`, asked as its crawler policy asks (a User-Agent that says who is asking, at
 //! most one request a second); and the npm registry's document for a package, its `time` for
-//! each version. Asked with curl, as xtask asks git and cargo, so xtask builds no HTTP client
-//! of its own for a few requests per change.
+//! each version. Asked with curl, as xtask asks git and cargo.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
