@@ -8,6 +8,7 @@ import {
   inject,
   model,
   signal,
+  untracked,
 } from '@angular/core';
 import type { OrgRole } from '@glave/client';
 import {
@@ -26,7 +27,8 @@ import { ServerService } from '../../services/server.service';
 
 /**
  * Inviting someone to the organization: their email, if the inviter has it, and what they can
- * do, Member or Admin; then the invite's link, with whether glave emailed it, to copy and send.
+ * do, Member or Admin, where the server shows the organization (alone in one it shows no one
+ * yet, a Member); then the invite's link, with whether glave emailed it, to copy and send.
  */
 @Component({
   selector: 'app-invite-dialog',
@@ -74,6 +76,12 @@ export class InviteDialogComponent {
   protected readonly problem = signal<string | null>(null);
   protected readonly made = signal<Made | null>(null);
   protected readonly showing = signal(false);
+  /**
+   * Whether the inviter chooses what they can do: where the server shows them the organization
+   * they are an admin of, as it said when the dialog opened. Alone, with none shown yet, the
+   * first is a Member.
+   */
+  protected readonly chooses = signal(false);
   /** Whether glave sends the link to an address: where it doesn't, none is asked for. */
   protected readonly emails = this.server.email;
   protected readonly makeLabel = computed(() => (this.busy() ? this.copy.making : this.copy.make));
@@ -98,6 +106,8 @@ export class InviteDialogComponent {
         this.email.set('');
         this.role.set('member');
         this.problem.set(null);
+        // As it is now: the invite this dialog makes changes it, for the next.
+        this.chooses.set(untracked(this.server.admin));
       }
     });
   }

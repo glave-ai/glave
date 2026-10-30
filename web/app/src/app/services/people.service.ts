@@ -2,6 +2,7 @@ import { Service, inject, signal } from '@angular/core';
 import { ApiError, type InviteInfo, type OrgRole, type PersonInfo } from '@glave/client';
 
 import { unreached } from '../lib/text';
+import { ServerService } from './server.service';
 import { SessionService } from './session.service';
 
 /** An invite just made: the link that opens it, this once, and the invite itself. */
@@ -18,12 +19,14 @@ const LISTED = 1_000;
  * `invite/list`): giving someone a role, taking them out, inviting someone and cancelling an
  * invite. What each person is to the caller (themselves, the roles they may give them,
  * whether they may remove them) is the server's word. Each change reads both lists again, so
- * what shows is what the server keeps. Each says `null` when it worked, else why not, in the
+ * what shows is what the server keeps, and asks the server again what exists, since an invite
+ * waiting shows the organization. Each says `null` when it worked, else why not, in the
  * server's sentence when it refused.
  */
 @Service()
 export class PeopleService {
   private readonly session = inject(SessionService);
+  private readonly server = inject(ServerService);
   private readonly listed = signal<readonly PersonInfo[]>([]);
   private readonly waiting = signal<readonly InviteInfo[]>([]);
   private readonly read = signal(Date.now());
@@ -74,10 +77,13 @@ export class PeopleService {
     try {
       const params = email === null ? { role } : { role, email };
       const { code, invite } = await this.session.call('invite/create', params);
-      await this.load();
       return { link: `${origin}/#invite=${code}`, invite };
     } catch (error: unknown) {
       return error instanceof ApiError ? error.message : unreached();
+    } finally {
+      // Refused or not, so what shows is what the server keeps: an invite may wait though
+      // its email was not sent.
+      await Promise.all([this.load(), this.server.reread()]);
     }
   }
 
@@ -90,7 +96,7 @@ export class PeopleService {
       await change();
       return null;
     });
-    const reread = await this.load();
+    const [reread] = await Promise.all([this.load(), this.server.reread()]);
     return refused ?? reread;
   }
 

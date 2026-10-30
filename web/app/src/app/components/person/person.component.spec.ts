@@ -88,6 +88,39 @@ describe('PersonComponent', () => {
     await expectAccessible(root);
   });
 
+  it('gives way to Admin once the person’s first invite waits, as the server then says', async () => {
+    const alone = { ...SERVER, origin: 'https://glave.example', invites: true };
+    const shown = { ...alone, exists: { organization: true, workers: false }, role: 'owner' };
+    const made = {
+      id: 'i',
+      role: 'member',
+      by: { kind: 'person', id: 'p' },
+      made: '2026-10-29T12:00:00.000Z',
+      expires: '2026-11-05T12:00:00.000Z',
+    };
+    let invited = false;
+    const fake = new FakeSession()
+      .answer('server/discover', () => (invited ? shown : alone))
+      .answer('invite/create', () => {
+        invited = true;
+        return { invite: made, code: 'c0de' };
+      });
+    TestBed.configureTestingModule({
+      providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
+    });
+    await TestBed.inject(ServerService).load();
+    const fixture = TestBed.createComponent(PersonComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    root.querySelector<HTMLElement>('[data-testid="nav-invite"]')?.click();
+    await settle(fixture);
+    document.querySelector<HTMLElement>('[data-testid="invite-make"]')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('invite/create')).toEqual([{ role: 'member' }]);
+    expect(root.querySelector('[data-testid="nav-invite"]')).toBeNull();
+    expect(root.querySelector('[data-testid="nav-admin"]')?.getAttribute('href')).toBe('/admin');
+  });
+
   it('offers no invite where the server takes none, as on a laptop', async () => {
     TestBed.configureTestingModule({
       providers: [

@@ -16,6 +16,9 @@ const MADE: InviteInfo = {
   email: 'alex@example.com',
 };
 
+/** What the server says of an organization it shows its Owner, the caller. */
+const SHOWN = { exists: { organization: true, workers: false }, role: 'owner' } as const;
+
 async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
   for (let turn = 0; turn < 5; turn += 1) {
     await new Promise((resolve) => setTimeout(resolve));
@@ -27,9 +30,11 @@ function byTestId<T extends HTMLElement>(testId: string): T | null {
   return document.querySelector<T>(`[data-testid="${testId}"]`);
 }
 
-function fakeServer(): FakeSession {
+/** A server that sends email, showing the caller their organization unless they are `alone`. */
+function fakeServer(alone = false): FakeSession {
+  const here = { ...SERVER, origin: 'https://glave.example', email: true, invites: true };
   return new FakeSession()
-    .answer('server/discover', { ...SERVER, origin: 'https://glave.example', email: true })
+    .answer('server/discover', alone ? here : { ...here, ...SHOWN })
     .answer('people/list', { people: [] })
     .answer('invite/list', { invites: [] });
 }
@@ -66,6 +71,17 @@ describe('InviteDialogComponent', () => {
     );
     expect(byTestId('invite-told')?.textContent).toContain('We emailed it to alex@example.com');
     expect(byTestId('invite-told')?.textContent).toContain('for 7 days');
+    expect(fake.paramsOf('server/discover')).toHaveLength(2);
+    await expectAccessible(document.body);
+  });
+
+  it('asks nothing of a role while no organization is shown yet, and invites a Member', async () => {
+    const fake = fakeServer(true).answer('invite/create', { invite: MADE, code: 'c0de' });
+    const fixture = await opened(fake);
+    expect(byTestId('invite-role')).toBeNull();
+    byTestId('invite-make')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('invite/create')).toEqual([{ role: 'member' }]);
     await expectAccessible(document.body);
   });
 
@@ -84,7 +100,7 @@ describe('InviteDialogComponent', () => {
 
   it('asks for no address where glave sends no email', async () => {
     const fake = new FakeSession()
-      .answer('server/discover', { ...SERVER, origin: 'https://glave.example' })
+      .answer('server/discover', { ...SERVER, ...SHOWN, origin: 'https://glave.example' })
       .answer('people/list', { people: [] })
       .answer('invite/list', { invites: [] });
     await opened(fake);
