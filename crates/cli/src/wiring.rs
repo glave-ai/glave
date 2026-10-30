@@ -143,8 +143,15 @@ pub(crate) async fn wire(
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
-    let (on_workers, workers, homes) =
-        crate::cloud::workers(choices, constraints, &folder, scope.project(), &processes).await?;
+    let (on_workers, workers, homes) = crate::cloud::workers(
+        choices,
+        constraints,
+        &folder,
+        scope.project(),
+        &processes,
+        store.leases(),
+    )
+    .await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     say(&told, &projects, &folder).await;

@@ -2,17 +2,21 @@
 //! real glave and glave's computer image): planned, and a chat's and a project's folder planned
 //! on it, nothing runs; the first commands that need it share one wake and one Pod, the next
 //! finds it awake, and nothing is left once it is gone; held by a turn it stays awake, unasked
-//! it sleeps on its own, and a turn's command wakes it again on the same disk.
+//! it sleeps on its own, and a turn's command wakes it again on the same disk; a second server
+//! on the same store is refused it while the first drives it, its Pod left as it is.
 
+use std::sync::Arc;
 use std::time::Instant;
 
+use glave_event::PrincipalId;
 use glave_ports::block_on;
 use glave_ports::computer::{Command, Ending, Home, Limits, Sources, WorkspaceId};
+use glave_ports::{Holder, InMemoryLeases, Leases, OrgId, OsEntropy, SystemClock};
 
 use super::super::home::PersonComputer;
 use super::super::home::tests::ran;
 use super::super::tests::{cluster, left_behind};
-use super::People;
+use super::{Leasing, People};
 use crate::CancelSwitch;
 use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
@@ -30,22 +34,16 @@ fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
         return;
     };
     block_on!(async {
-        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
-        let Some(cluster) = cluster(runtime_class.as_deref(), "people").await else {
+        let Some((cluster, limits)) = on_cluster("people").await else {
             return;
         };
-        let limits = Limits {
-            isolation: cluster.isolation(),
-            ..Limits::default()
-        };
-        let people = People::new(cluster.clone(), &image, &limits, 1).unwrap();
-        let org = crate::local::new_id().unwrap();
-        let key = People::key(org, crate::local::new_id().unwrap());
+        let people = People::new(cluster.clone(), &image, &limits, 1, alone()).unwrap();
+        let (org, person, key) = someone();
 
         let pod = format!("glave-computer-{key}");
 
         // Planned, a chat's folder and a project's on it too: nothing asked of the cluster.
-        let home = people.home(&key).unwrap();
+        let home = people.home(org, person).unwrap();
         let scratch = Sources::Scratch {
             name: "chat".into(),
             owner: None,
@@ -197,25 +195,17 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
         return;
     };
     block_on!(async {
-        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
-        let Some(cluster) = cluster(runtime_class.as_deref(), "sleep").await else {
+        let Some((cluster, limits)) = on_cluster("sleep").await else {
             return;
         };
-        let limits = Limits {
-            isolation: cluster.isolation(),
-            ..Limits::default()
-        };
         // Asleep after a minute unasked, so a turn holding it asks every 15 seconds.
-        let people = People::new(cluster.clone(), &image, &limits, 1)
+        let people = People::new(cluster.clone(), &image, &limits, 1, alone())
             .unwrap()
             .idle_after(1);
-        let key = People::key(
-            crate::local::new_id().unwrap(),
-            crate::local::new_id().unwrap(),
-        );
+        let (org, person, key) = someone();
         let pod = format!("glave-computer-{key}");
 
-        let home = people.home(&key).unwrap();
+        let home = people.home(org, person).unwrap();
         let wrote = ran(
             home.computers.as_ref(),
             home.home.computer,
@@ -224,7 +214,7 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
         .await;
         let first = uid(&cluster, &pod).await;
         // A turn holds it: two idle limits and more pass and it stays awake.
-        let held = people.hold(&key);
+        let held = people.hold(org, person);
         tokio::time::sleep(std::time::Duration::from_secs(150)).await;
         let kept_awake = phase(&cluster, &pod).await;
         drop(held);
@@ -293,21 +283,13 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
         return;
     };
     block_on!(async {
-        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
-        let Some(cluster) = cluster(runtime_class.as_deref(), "grows").await else {
+        let Some((cluster, limits)) = on_cluster("grows").await else {
             return;
         };
-        let limits = Limits {
-            isolation: cluster.isolation(),
-            ..Limits::default()
-        };
-        let people = People::new(cluster.clone(), &image, &limits, 1).unwrap();
-        let key = People::key(
-            crate::local::new_id().unwrap(),
-            crate::local::new_id().unwrap(),
-        );
+        let people = People::new(cluster.clone(), &image, &limits, 1, alone()).unwrap();
+        let (org, person, key) = someone();
         let pod = format!("glave-computer-{key}");
-        let home = people.home(&key).unwrap();
+        let home = people.home(org, person).unwrap();
         let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
         // Three loops at once use up each period's quarter of a CPU early, so the computer is
         // held at its limit for most of the run, well past half.
@@ -360,4 +342,76 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
+}
+
+/// A new person in a new organization, and the key their computer is named by.
+fn someone() -> (OrgId, PrincipalId, String) {
+    let org = OrgId::from_uuid(crate::local::new_id().unwrap());
+    let person = PrincipalId::try_from(crate::local::new_id().unwrap()).unwrap();
+    let key = People::key(org.as_uuid(), person.as_uuid());
+    (org, person, key)
+}
+
+/// A server of its own holding leases in `leases`.
+fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
+    Leasing {
+        leases: Arc::clone(leases),
+        holder: Holder::new(&SystemClock, &OsEntropy).unwrap(),
+    }
+}
+
+/// A server alone on its store.
+fn alone() -> Leasing {
+    leasing(&(Arc::new(InMemoryLeases::new(Arc::new(SystemClock))) as Arc<dyn Leases>))
+}
+
+#[test]
+fn a_second_server_never_replaces_a_computer_the_first_drives() {
+    let Some(image) = computer_image() else {
+        return;
+    };
+    block_on!(async {
+        let Some((cluster, limits)) = on_cluster("leased").await else {
+            return;
+        };
+        // Two servers on one store.
+        let leases: Arc<dyn Leases> = Arc::new(InMemoryLeases::new(Arc::new(SystemClock)));
+        let first = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
+        let second = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
+        let (org, person, key) = someone();
+        let pod = format!("glave-computer-{key}");
+
+        let home = first.home(org, person).unwrap();
+        let wrote = command(&home, home.home.id, "echo here > here.txt").await;
+        let before = uid(&cluster, &pod).await;
+        // Longer than a lease lasts unrenewed: the first's renewals keep it.
+        tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+        // The second is refused in plain words, and the first's Pod stays as it was.
+        let other = second.home(org, person).unwrap();
+        let refused = command(&other, other.home.id, "true").await;
+        let after = uid(&cluster, &pod).await;
+        let read = command(&home, home.home.id, "cat here.txt").await;
+        drop(second);
+        let (destroyed, left) = gone(first, &cluster, &key).await;
+        wrote.unwrap();
+        let refused = refused.unwrap_err();
+        assert!(refused.contains("another of glave's servers"), "{refused}");
+        assert!(before.is_some());
+        assert_eq!(before, after, "the Pod the first drives is never replaced");
+        assert_eq!(read.unwrap().trim(), "here");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
+}
+
+/// The cluster the test `name` runs on, and the limits a person's computer has there; `None`
+/// where there is none to test on.
+async fn on_cluster(name: &str) -> Option<(super::super::Kubernetes, Limits)> {
+    let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+    let cluster = cluster(runtime_class.as_deref(), name).await?;
+    let limits = Limits {
+        isolation: cluster.isolation(),
+        ..Limits::default()
+    };
+    Some((cluster, limits))
 }

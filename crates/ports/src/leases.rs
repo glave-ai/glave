@@ -1,7 +1,8 @@
 //! The leases port (`specs/invariants.md`, "Where state lives"): work in flight runs under a
 //! lease recorded in the store, a row with a holder and an expiry on the store's own clock, the
 //! same on SQLite and Postgres. A lease keeps one piece of work to one holder at a time: a
-//! thread's turn to one server, an organization's schedules to one firer. Its holder renews it
+//! thread's turn to one server, an organization's schedules to one firer, a person's computer to
+//! the one server that wakes and drives it. Its holder renews it
 //! while it works and lets go when it is done; one that stops without letting go loses it when
 //! it lapses, and another may take it then. The log's `(thread, seq)` check stays the last guard,
 //! so a lease lost late never corrupts a thread.
@@ -9,7 +10,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use glave_event::ThreadId;
+use glave_event::{PrincipalId, ThreadId};
 use jiff::Timestamp;
 use thiserror::Error;
 use uuid::{Builder, Uuid};
@@ -25,14 +26,17 @@ pub enum Leased {
     Thread(ThreadId),
     /// The organization's schedules: the one server that fires them.
     Scheduler,
+    /// A person's own computer: the one server that wakes it, drives it and puts it to sleep.
+    Computer(PrincipalId),
 }
 
 impl Leased {
-    /// The name stores keep it under: `thread:<id>`, or `scheduler`.
+    /// The name stores keep it under: `thread:<id>`, `scheduler`, or `computer:<person>`.
     pub fn key(&self) -> String {
         match self {
             Self::Thread(thread) => format!("thread:{thread}"),
             Self::Scheduler => "scheduler".to_owned(),
+            Self::Computer(person) => format!("computer:{person}"),
         }
     }
 }
@@ -130,6 +134,8 @@ mod tests {
         let thread = ThreadId::new(Timestamp::UNIX_EPOCH, [7; 10]).unwrap();
         assert_eq!(Leased::Thread(thread).key(), format!("thread:{thread}"));
         assert_eq!(Leased::Scheduler.key(), "scheduler");
+        let person = PrincipalId::new(Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
+        assert_eq!(Leased::Computer(person).key(), format!("computer:{person}"));
     }
 
     #[test]
