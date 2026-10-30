@@ -214,6 +214,10 @@ methods! {
     /// person's account and an organization of their own. Answered the same whether or not an
     /// account has that email. Over HTTP it needs no sign-in.
     "signup/start" => SignupStart { email: String } -> [Done],
+    /// Asks for a link to get back into the glave account `email` has, where the server sends
+    /// one: opened, it makes a new passkey for that account. Answered the same whether or not
+    /// an account has that email. Over HTTP it needs no sign-in.
+    "recovery/start" => RecoveryStart { email: String } -> [Done],
     /// What an invite's link opens, before anyone signs in: the organization it is to, the role
     /// it gives, who made it, and how someone joins with it. Over HTTP it needs no sign-in.
     "invite/show" => InviteShow {

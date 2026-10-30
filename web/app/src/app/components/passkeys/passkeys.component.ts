@@ -10,7 +10,10 @@ import { GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent } from 
 
 import { PasskeysService } from '../../services/passkeys.service';
 
-/** A passkey as the card shows it: its name, and when it was added and last used. */
+/**
+ * A passkey as the card shows it: its name, when it was added and last used, and whether it
+ * signed this browser in or was made from an emailed link.
+ */
 interface Shown {
   readonly id: string;
   readonly name: string;
@@ -41,7 +44,14 @@ export class PasskeysComponent {
     remove: $localize`:@@passkeys.remove:Remove`,
     removeHeading: $localize`:@@passkeys.removeHeading:Remove this passkey?`,
     removeText: $localize`:@@passkeys.removeText:It signs you in no more, and the browsers it signed in are signed out.`,
+    email: $localize`:@@passkeys.email:Email, for getting back in`,
+    current: $localize`:@@passkeys.current:This device`,
+    emailed: $localize`:@@passkeys.emailed:From an emailed link`,
   } as const;
+  /** The address the person's glave account gets back in with, if it has one. */
+  protected readonly email = this.keys.email;
+  /** What the server tells of a passkey made by email lately, on another device. */
+  protected readonly notice = this.keys.notice;
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
   protected readonly confirming = signal(false);
@@ -56,7 +66,16 @@ export class PasskeysComponent {
         used === null
           ? $localize`:@@passkeys.added:Added ${added}:ADDED:`
           : $localize`:@@passkeys.addedUsed:Added ${added}:ADDED:, last used ${used}:USED:`;
-      return { id: passkey.id, name: passkey.name, detail };
+      const marks = [
+        ...(passkey.current === true ? [this.copy.current] : []),
+        ...(passkey.emailed === true ? [this.copy.emailed] : []),
+      ];
+      // What else is said of it, after the dates: "This device", "From an emailed link".
+      const marked = marks.reduce(
+        (line, mark) => $localize`:@@passkeys.marked:${line}:LINE: · ${mark}:MARK:`,
+        detail,
+      );
+      return { id: passkey.id, name: passkey.name, detail: marked };
     }),
   );
   protected readonly addLabel = computed(() => (this.busy() ? this.copy.adding : this.copy.add));

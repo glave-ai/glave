@@ -44,6 +44,7 @@ mod plan;
 mod projects;
 pub mod protocol;
 mod providers;
+mod recovery;
 mod removing;
 mod reread;
 pub mod rpc;

@@ -40,6 +40,10 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
+        Ok(Reply::Passkeys {
+            notice: Some(notice),
+            ..
+        }) => notice.translatable(),
         Ok(Reply::Organizations { organizations }) => {
             organizations.iter().any(|org| org.name.translatable())
         }
@@ -96,6 +100,10 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
+        Ok(Reply::Passkeys {
+            notice: Some(notice),
+            ..
+        }) => notice.translate(language),
         Ok(Reply::Organizations { organizations }) => {
             for org in organizations {
                 org.name.translate(language);

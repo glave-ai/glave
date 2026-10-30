@@ -954,6 +954,11 @@
           "const": "signup",
           "description": "A sign-up's, emailed: the first passkey of a new account and its own organization.",
           "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "One to get back in, emailed: a new passkey for the account the address has.",
+          "type": "string"
         }
       ]
     },
@@ -1368,6 +1373,14 @@
       "properties": {
         "added": {
           "$ref": "#/$defs/At"
+        },
+        "current": {
+          "description": "Whether it signed in the browser asking.",
+          "type": "boolean"
+        },
+        "emailed": {
+          "description": "Whether it was made from a link sent to the account's email, to get back in.",
+          "type": "boolean"
         },
         "id": {
           "type": "string"
@@ -2328,6 +2341,11 @@
         {
           "const": "signup",
           "description": "Signing up with an email: a link sent there makes the person's first passkey, their\naccount and an organization of their own.",
+          "type": "string"
+        },
+        {
+          "const": "recovery",
+          "description": "Getting back in by email: a link sent to a glave account's address makes a new passkey\nfor it.",
           "type": "string"
         }
       ]
@@ -4934,7 +4952,20 @@
         "type": "object"
       },
       "result": {
+        "description": "The person's passkeys; for a glave account, the address it gets back in with, and what\nit is told of a passkey made by email lately on another device.",
         "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "passkeys": {
             "items": {
               "$ref": "#/$defs/PasskeySummary"
@@ -5459,6 +5490,23 @@
           "thread",
           "question",
           "answers"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "recovery/start": {
+      "params": {
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
         ],
         "type": "object"
       },

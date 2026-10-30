@@ -30,6 +30,10 @@ pub struct PasskeyAdded {
     /// the only place passkeys were made then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub party: Option<String>,
+    /// Whether it was made from a link sent to the account's email, to get back in, rather
+    /// than by someone signed in or with a link from the server's computer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub emailed: bool,
 }
 
 /// A passkey signed a browser in at the event's time.

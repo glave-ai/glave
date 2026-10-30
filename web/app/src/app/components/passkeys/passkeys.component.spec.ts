@@ -76,6 +76,30 @@ describe('PasskeysComponent', () => {
     expect(rows().length).toBe(2);
   });
 
+  it('shows the address the account gets back in with, each passkey’s marks and the server’s notice', async () => {
+    const notice =
+      'A new passkey was made from a link sent to your email. If that wasn’t you, remove it, then secure your email account.';
+    const fake = new FakeSession().answer('passkey/list', {
+      passkeys: [
+        { ...PHONE, current: true },
+        { ...LAPTOP, emailed: true },
+      ],
+      email: 'ada@example.com',
+      notice,
+    });
+    const { root } = await render(fake, answering(MADE));
+    expect(root.querySelector('[data-testid="passkeys-notice"]')?.textContent).toContain(notice);
+    expect(root.querySelector('[data-testid="passkeys-email"]')?.textContent).toContain(
+      'ada@example.com',
+    );
+    const rows = Array.from(root.querySelectorAll('[data-testid="passkeys-passkey"]'), (row) =>
+      row.textContent.replace(/\s+/gu, ' ').trim(),
+    );
+    expect(rows[0]).toContain('last used Oct 21, 2026 · This device');
+    expect(rows[1]).toContain('Added Oct 22, 2026 · From an emailed link');
+    await expectAccessible(root);
+  });
+
   it('removes a passkey once the person says so', async () => {
     let kept: readonly PasskeySummary[] = [PHONE, LAPTOP];
     const fake = new FakeSession()

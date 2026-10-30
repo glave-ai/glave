@@ -107,6 +107,7 @@ export class SessionService {
   private readonly setupLink = signal<string | null>(null);
   private readonly inviteLink = signal<string | null>(null);
   private readonly signupLink = signal<string | null>(null);
+  private readonly recoverLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
   /**
@@ -135,6 +136,12 @@ export class SessionService {
   readonly signupCode = this.signupLink.asReadonly();
   /** Whether anyone may sign up here with their email, as the server said. */
   readonly signsUp = computed(() => this.reachedElsewhere() && this.ways().includes('signup'));
+  /** The code of the link to get back in the tab was opened with, until the tab signs in. */
+  readonly recoverCode = this.recoverLink.asReadonly();
+  /** Whether someone who lost their passkeys may get back in by email here, as the server said. */
+  readonly recovers = computed(
+    () => this.reachedElsewhere() && this.atName && this.ways().includes('recovery'),
+  );
   /** Whether the session is with a glave on this computer: a browser session. */
   readonly local = computed(() => {
     const session = this.session();
@@ -177,6 +184,7 @@ export class SessionService {
     this.setupLink.set(takeCode(place, 'setup'));
     this.inviteLink.set(takeCode(place, 'invite'));
     this.signupLink.set(takeCode(place, 'signup'));
+    this.recoverLink.set(takeCode(place, 'recover'));
     try {
       this.take(await this.client.call('server/discover', {}));
     } catch {
@@ -296,6 +304,11 @@ export class SessionService {
     this.signupLink.set(null);
   }
 
+  /** Forgets the tab's link to get back in, once it opens nothing. */
+  clearRecover(): void {
+    this.recoverLink.set(null);
+  }
+
   /** Puts the tab's invite aside: the person joined, or chose not to now. */
   clearInvite(): void {
     this.inviteLink.set(null);
@@ -323,6 +336,7 @@ export class SessionService {
     this.chosenOrganization.set(null);
     this.setupLink.set(null);
     this.signupLink.set(null);
+    this.recoverLink.set(null);
     const accepted = began.accepted ?? null;
     if (accepted !== null) {
       void signalAccepted(this.passkeySignals, accepted);

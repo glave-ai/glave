@@ -24,12 +24,12 @@ use crate::support::*;
 
 /// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
 /// taking sign-ups if `signup`.
-async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Served {
+pub(crate) async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Served {
     serve_timed(dir, signup, outbox).await.0
 }
 
 /// [`serve`], with the clock its server reads, to move on.
-async fn serve_timed(
+pub(crate) async fn serve_timed(
     dir: &Path,
     signup: bool,
     outbox: &Arc<Outbox>,
@@ -37,7 +37,9 @@ async fn serve_timed(
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
-    let clock = fixed_clock();
+    let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+    // Passkeys and sessions on the server's own clock, so a test moves them all at once.
+    let clock = setup.clock.clone();
     let browsers = Browsers::open(
         store.log(),
         scope(),
@@ -46,7 +48,6 @@ async fn serve_timed(
         Some(&origin),
         Box::new(clock.clone()),
     );
-    let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
     setup.mail = Some(Arc::clone(outbox) as Arc<dyn glave_ports::Mailer>);
     let directory = Arc::new(store.directory());
@@ -62,13 +63,19 @@ async fn serve_timed(
 
 /// The code in the sign-up link `outbox` sent last.
 fn emailed_code(outbox: &Outbox) -> Secret {
+    linked(outbox, "signup").unwrap()
+}
+
+/// The code of the link of the kind `fragment` (`signup`, `recover`) in what `outbox` sent
+/// last, if it holds one.
+pub(crate) fn linked(outbox: &Outbox, fragment: &str) -> Option<Secret> {
     let sent = outbox.sent();
-    let text = &sent.last().unwrap().text;
+    let text = &sent.last()?.text;
+    let marker = format!("#{fragment}=");
     let link = text
         .split_whitespace()
-        .find(|word| word.contains("#signup="))
-        .unwrap();
-    Secret::new(link.split_once("#signup=").unwrap().1)
+        .find(|word| word.contains(&marker))?;
+    Some(Secret::new(link.split_once(&marker)?.1))
 }
 
 /// What making a passkey on `device` with the sign-up `code` is answered with.
@@ -152,7 +159,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
 }
 
 /// A browser elsewhere signed in with the account `email` signs up for, by its emailed link.
-async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> Web {
+pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> Web {
     let mut anyone = elsewhere(served, None);
     let start = Request::SignupStart {
         email: email.into(),

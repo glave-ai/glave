@@ -49,6 +49,8 @@ pub(super) struct KeptPasskey {
     pub(super) credential: Passkey,
     /// The relying party it was made for, by its id; none for a public origin's of before.
     pub(super) party: Option<String>,
+    /// Whether it was made from a link sent to the account's email.
+    pub(super) emailed: bool,
 }
 
 impl KeptPasskey {
@@ -108,6 +110,7 @@ impl State {
                         used: None,
                         credential,
                         party: added.party,
+                        emailed: added.emailed,
                     });
                 }
             }
@@ -148,7 +151,7 @@ pub(super) enum Change {
     SignedOut(Vec<Uuid>),
     /// A passkey was made: its id, its name, its credential as JSON, and the relying party it
     /// was made for.
-    PasskeyAdded(Uuid, String, String, String),
+    PasskeyAdded(Uuid, String, String, String, bool),
     /// A passkey signed a browser in, and its credential as JSON when that changed.
     PasskeyUsed(Uuid, Option<String>),
     PasskeyRemoved(Uuid),
@@ -175,13 +178,14 @@ impl Change {
             ),
             Self::Used(session) => encode(header, &BrowserUsed { session }),
             Self::SignedOut(sessions) => encode(header, &BrowserSignedOut { sessions }),
-            Self::PasskeyAdded(passkey, name, credential, party) => encode(
+            Self::PasskeyAdded(passkey, name, credential, party, emailed) => encode(
                 header,
                 &PasskeyAdded {
                     passkey,
                     name,
                     credential,
                     party: Some(party),
+                    emailed,
                 },
             ),
             Self::PasskeyUsed(passkey, credential) => encode(

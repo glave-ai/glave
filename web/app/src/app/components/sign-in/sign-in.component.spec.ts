@@ -192,4 +192,18 @@ describe('SignInComponent', () => {
     const { root } = await render(reached(), answering(ANSWER));
     expect(root.querySelector('[data-testid="sign-in-sign-up"]')).toBeNull();
   });
+
+  it('offers a way back in by email only where the server sends one', async () => {
+    const offered = await render(
+      signingIn({ origin: 'https://glave.test', signin: ['link', 'passkey', 'recovery'] }),
+      answering(ANSWER),
+    );
+    const link = offered.root.querySelector('[data-testid="sign-in-recover"]');
+    expect(link?.getAttribute('href')).toBe('/recover');
+    expect(offered.root.textContent).toContain('Lost your passkey?');
+    await expectAccessible(offered.root);
+    TestBed.resetTestingModule();
+    const { root } = await render(reached(), answering(ANSWER));
+    expect(root.querySelector('[data-testid="sign-in-recover"]')).toBeNull();
+  });
 });

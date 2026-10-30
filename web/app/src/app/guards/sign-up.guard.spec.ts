@@ -13,6 +13,11 @@ describe('signUpGuard', () => {
     expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/sign-up');
   });
 
+  it('sends a tab opened with a link to get back in to the page that makes its passkey', async () => {
+    const result = await run('/#recover=c0de');
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/recover');
+  });
+
   it('lets any other tab through', async () => {
     expect(await run('/')).toBe(true);
   });

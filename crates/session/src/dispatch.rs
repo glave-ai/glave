@@ -13,6 +13,7 @@ use crate::protocol::{ApiError, LinkKind, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
+use crate::signups::Emailed;
 use crate::steer::{Message, Sent};
 use crate::tasks::Work;
 use crate::turn::TurnStream;
@@ -180,9 +181,11 @@ where
             Request::PasskeyCreateOptions { code, link } => match link {
                 LinkKind::Setup => self.create_options(&code),
                 LinkKind::Invite => self.join_options(&code).await,
-                LinkKind::Signup => self.signup_options(&code).await,
+                LinkKind::Signup => self.link_options(&code, Emailed::Signup).await,
+                LinkKind::Recovery => self.link_options(&code, Emailed::Recovery).await,
             },
-            Request::SignupStart { email } => self.start_signup(&email).await,
+            Request::SignupStart { email } => self.start_link(&email, Emailed::Signup).await,
+            Request::RecoveryStart { email } => self.start_link(&email, Emailed::Recovery).await,
             Request::PasskeyCreate {
                 ceremony,
                 credential,

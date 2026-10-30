@@ -333,7 +333,7 @@ async fn first_setup(server: &Glave) -> anyhow::Result<Option<String>> {
     else {
         return Ok(None);
     };
-    let Reply::Passkeys { passkeys } = server.request(Request::PasskeyList {}).await? else {
+    let Reply::Passkeys { passkeys, .. } = server.request(Request::PasskeyList {}).await? else {
         return Ok(None);
     };
     if !passkeys.is_empty() {

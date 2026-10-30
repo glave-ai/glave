@@ -76,12 +76,13 @@ impl Signups {
             .retain(|_, (_, started)| now < started.expires.timestamp());
     }
 
-    /// The sign-up whose code's hash is `hash`, while it works at `now`.
-    fn opens(&self, hash: &str, now: Timestamp) -> Option<&SignupStarted> {
+    /// The link of the kind `emailed` whose code's hash is `hash`, while it works at `now`.
+    fn opens(&self, hash: &str, emailed: Emailed, now: Timestamp) -> Option<&SignupStarted> {
         self.waiting
             .get(hash)
             .map(|(_, started)| started)
             .filter(|started| now < started.expires.timestamp())
+            .filter(|started| started.recovery == (emailed == Emailed::Recovery))
     }
 
     /// Whether a message may go to the address whose hash is `to` at `now`, and room is left.
@@ -94,15 +95,25 @@ impl Signups {
     }
 }
 
-/// An account being made by a sign-up's link.
-pub(crate) struct Signing {
-    ceremony: String,
-    person: PrincipalId,
-    hash: String,
-    email: String,
+/// What an emailed link is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Emailed {
+    /// Signing up: a new account, and an organization of its own.
+    Signup,
+    /// Getting back in: a new passkey for the account the address has.
+    Recovery,
 }
 
-/// The accounts being made by sign-up on this server.
+/// A passkey being made by an emailed link: a new account's, or an account's to get back in.
+pub(crate) struct Signing {
+    ceremony: String,
+    pub(crate) person: PrincipalId,
+    pub(crate) hash: String,
+    pub(crate) email: String,
+    pub(crate) emailed: Emailed,
+}
+
+/// The passkeys being made by emailed links on this server.
 #[derive(Default)]
 pub(crate) struct Signings(Vec<Signing>);
 
@@ -121,12 +132,23 @@ where
             && self.inner.origin.is_some()
     }
 
-    /// Answers `signup/start`: a sign-up's link emailed to `email`, or, where an account has
-    /// it, a note to sign in; nothing when a message went there a moment ago. The answer is
-    /// the same either way, and both take the same steps.
-    pub(crate) async fn start_signup(&self, email: &str) -> Result<Reply, ApiError> {
-        if !self.takes_signups() {
-            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoSignups));
+    /// Answers `signup/start` and `recovery/start`: a link of the kind `emailed` sent to
+    /// `email`, or, where the address has an account (for a sign-up) or none (to get back in,
+    /// where the server takes sign-ups), a note saying so; nothing when a message went there a
+    /// moment ago. The answer is the same either way, and so is what is recorded.
+    pub(crate) async fn start_link(
+        &self,
+        email: &str,
+        emailed: Emailed,
+    ) -> Result<Reply, ApiError> {
+        match emailed {
+            Emailed::Signup if !self.takes_signups() => {
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoSignups));
+            }
+            Emailed::Recovery if !self.recovers() => {
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoRecovery));
+            }
+            Emailed::Signup | Emailed::Recovery => {}
         }
         let accounts = self.accounts()?;
         let (mailer, origin, to) = self.sender(email)?;
@@ -141,6 +163,7 @@ where
             hash: kept(&code),
             to: kept(&to),
             expires: At::from(expires),
+            recovery: emailed == Emailed::Recovery,
         };
         let sending = AtomicBool::new(false);
         self.record_signups(|signups| {
@@ -149,24 +172,14 @@ where
             Ok(may.then(|| started.clone()))
         })
         .await?;
-        if !sending.load(Ordering::Relaxed) {
+        // A note that no account has the address goes only where anyone may make this server
+        // write to any address already, by signing up: elsewhere it would be a way to have it
+        // mail strangers.
+        let noted = emailed == Emailed::Recovery && !has_account && !self.takes_signups();
+        if !sending.load(Ordering::Relaxed) || noted {
             return Ok(Reply::Done {});
         }
-        let (subject, text) = if has_account {
-            let note = say(Language::English, &Sentence::SignupHaveAccount);
-            (
-                Sentence::SignupHaveAccountSubject,
-                format!("{note}\n\n{origin}\n"),
-            )
-        } else {
-            let link = format!("{origin}/#signup={code}");
-            let text = format!(
-                "{}\n\n{link}\n\n{}\n",
-                say(Language::English, &Sentence::SignupMail),
-                say(Language::English, &Sentence::SignupMailIgnore),
-            );
-            (Sentence::SignupMailSubject, text)
-        };
+        let (subject, text) = link_mail(emailed, has_account, origin.as_str(), &code);
         let mail = Mail {
             to,
             subject: say(Language::English, &subject),
@@ -176,11 +189,21 @@ where
         Ok(Reply::Done {})
     }
 
-    /// Answers `passkey/create_options` with a sign-up's `code`: begins making the first passkey
-    /// of a new account, while the code opens a sign-up.
-    pub(crate) async fn signup_options(&self, code: &Secret) -> Result<Reply, ApiError> {
-        if !self.takes_signups() {
-            return Err(signup_gone());
+    /// Answers `passkey/create_options` with an emailed link's `code` of the kind `emailed`:
+    /// begins making the first passkey of a new account, or a new one for the account the
+    /// address has, while the code opens such a link.
+    pub(crate) async fn link_options(
+        &self,
+        code: &Secret,
+        emailed: Emailed,
+    ) -> Result<Reply, ApiError> {
+        let gone = || gone(emailed);
+        let open = match emailed {
+            Emailed::Signup => self.takes_signups(),
+            Emailed::Recovery => self.recovers(),
+        };
+        if !open {
+            return Err(gone());
         }
         let accounts = self.accounts()?;
         let hash = kept(code.expose());
@@ -191,9 +214,15 @@ where
             .expose()
             .split_once(TO)
             .and_then(|(_, to)| unhex(to))
-            .filter(|_| self.signups(|signups| signups.opens(&hash, now).is_some()))
-            .ok_or_else(signup_gone)?;
-        let (person, browsers) = accounts.made().await?;
+            .filter(|_| self.signups(|signups| signups.opens(&hash, emailed, now).is_some()))
+            .ok_or_else(gone)?;
+        let (person, browsers) = match emailed {
+            Emailed::Signup => accounts.made().await?,
+            Emailed::Recovery => {
+                let person = accounts.with_email(&email).await?.ok_or_else(gone)?;
+                (person, accounts.browsers(person).await?)
+            }
+        };
         let ceremony = browsers.create_options(Proof::SignedIn)?;
         let mut signing = self.signings();
         if signing.0.len() >= MOST {
@@ -204,20 +233,22 @@ where
             person,
             hash,
             email,
+            emailed,
         });
         Ok(crate::browsers::options(ceremony))
     }
 
-    /// The account being made by sign-up with the passkey request `ceremony`, taken, if one is.
+    /// The passkey being made by an emailed link with the request `ceremony`, taken, if one is.
     pub(crate) fn signing(&self, ceremony: &str) -> Option<Signing> {
         let mut signing = self.signings();
         let at = signing.0.iter().position(|it| it.ceremony == ceremony)?;
         Some(signing.0.remove(at))
     }
 
-    /// Answers `passkey/create` for an account being made by sign-up: its first passkey, the
-    /// sign-up spent, a new organization with the person its Owner, and the browser signed in.
-    pub(crate) async fn finish_signup(
+    /// Answers `passkey/create` for a passkey being made by an emailed link: the link spent,
+    /// then, for a sign-up, the new account's first passkey, a new organization with the person
+    /// its Owner, and the browser signed in; to get back in, the account's new passkey.
+    pub(crate) async fn finish_link(
         &self,
         signing: Signing,
         credential: &serde_json::Value,
@@ -225,22 +256,19 @@ where
     ) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(signing.person).await?;
-        // Checked, then the sign-up spent, and only then is anything of the account kept: a
-        // link spent meanwhile leaves nothing behind.
+        // Checked, then the link spent, and only then is anything of the account kept: a link
+        // spent meanwhile leaves nothing behind.
         let checked = browsers.checked(&signing.ceremony, credential, name)?;
-        let now = self.inner.harness.clock().now();
-        self.record_signups(|signups| {
-            signups.opens(&signing.hash, now).ok_or_else(signup_gone)?;
-            Ok(Some(SignupFinished {
-                hash: signing.hash.clone(),
-            }))
-        })
-        .await?;
+        self.spend(&signing).await?;
+        if signing.emailed == Emailed::Recovery {
+            return self.recovered(&signing, &browsers, checked).await;
+        }
         // The address is this account's from now on, unless another took it meanwhile.
         if accounts.claim_email(&signing.email, signing.person).await? != signing.person {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignupTaken));
         }
         let session = browsers.keep(checked).await?;
+        let now = self.inner.harness.clock().now();
         let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();
         let random = self.inner.harness.entropy().bytes()?;
         let org =
@@ -248,6 +276,21 @@ where
         self.found(org, signing.person, &signing.email).await?;
         accounts.join(signing.person, org).await?;
         Ok(self.signed_in(session, &browsers))
+    }
+
+    /// Spends the link that `signing` was begun with, once across servers: refused when it
+    /// opens nothing any more.
+    async fn spend(&self, signing: &Signing) -> Result<(), ApiError> {
+        let now = self.inner.harness.clock().now();
+        self.record_signups(|signups| {
+            signups
+                .opens(&signing.hash, signing.emailed, now)
+                .ok_or_else(|| gone(signing.emailed))?;
+            Ok(Some(SignupFinished {
+                hash: signing.hash.clone(),
+            }))
+        })
+        .await
     }
 
     /// Records `person`, with `email`, as the first of the new organization `org`, its Owner,
@@ -350,9 +393,47 @@ where
     }
 }
 
-/// Every sign-up code that opens nothing, used, expired or guessed, is refused alike.
-fn signup_gone() -> ApiError {
-    ApiError::new(code::NO_INVITE, Sentence::SignupGone)
+/// Every emailed link's code of the kind `emailed` that opens nothing, used, expired or
+/// guessed, is refused alike.
+fn gone(emailed: Emailed) -> ApiError {
+    let sentence = match emailed {
+        Emailed::Signup => Sentence::SignupGone,
+        Emailed::Recovery => Sentence::RecoveryGone,
+    };
+    ApiError::new(code::NO_INVITE, sentence)
+}
+
+/// The subject and text of the email a link of the kind `emailed` with `code` sends, from the
+/// server at `origin`: the link, or, where the address has an account (`has_account`) for a
+/// sign-up, or none to get back in, a note with none.
+fn link_mail(emailed: Emailed, has_account: bool, origin: &str, code: &str) -> (Sentence, String) {
+    let english = |sentence: &Sentence| say(Language::English, sentence);
+    let linked = |fragment: &str, mail: &Sentence, ignore: &Sentence| {
+        let link = format!("{origin}/#{fragment}={code}");
+        format!("{}\n\n{link}\n\n{}\n", english(mail), english(ignore))
+    };
+    match (emailed, has_account) {
+        (Emailed::Signup, false) => (
+            Sentence::SignupMailSubject,
+            linked("signup", &Sentence::SignupMail, &Sentence::SignupMailIgnore),
+        ),
+        (Emailed::Signup, true) => (
+            Sentence::SignupHaveAccountSubject,
+            format!("{}\n\n{origin}\n", english(&Sentence::SignupHaveAccount)),
+        ),
+        (Emailed::Recovery, true) => (
+            Sentence::RecoveryMailSubject,
+            linked(
+                "recover",
+                &Sentence::RecoveryMail,
+                &Sentence::RecoveryMailIgnore,
+            ),
+        ),
+        (Emailed::Recovery, false) => (
+            Sentence::RecoveryNoAccountSubject,
+            format!("{}\n\n{origin}\n", english(&Sentence::RecoveryNoAccount)),
+        ),
+    }
 }
 
 /// `bytes` in lowercase hex.

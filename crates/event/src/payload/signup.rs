@@ -1,7 +1,8 @@
 //! The sign-ups ledger's records (`specs/model.md`, "Identity"): on a server that takes
 //! sign-ups, someone asked for a link to their email, kept as the SHA-256 of its code and of
 //! the address, never either, with when it stops working (`signup.started`), and that link
-//! spent when it made the person's account and organization (`signup.finished`). The link
+//! spent when it made the person's account and organization (`signup.finished`). A link to get
+//! back into an account (`recovery`) is kept the same way, and spent when it made a passkey. The link
 //! carries the address; its code's hash, which covers it, proves it was sent there. One
 //! stream of the server's own organization, so every server of a cell opens the same links,
 //! and each once.
@@ -25,9 +26,13 @@ pub struct SignupStarted {
     /// there, never the address.
     pub to: String,
     pub expires: At,
+    /// Whether its link gets someone back into the account the address has, making a new
+    /// passkey for it, rather than making an account.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recovery: bool,
 }
 
-/// A sign-up's link spent: its account and organization made.
+/// A sign-up's link spent: its account and organization made, or its new passkey.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SignupFinished {

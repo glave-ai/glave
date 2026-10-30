@@ -26,6 +26,12 @@
         {{ action() }}
       </button>
     }
+    @if (recovers()) {
+      <p class="hint">
+        {{ copy.lost }}
+        <a data-testid="sign-in-recover" [routerLink]="recoverLink">{{ copy.recover }}</a>
+      </p>
+    }
     @if (signsUp()) {
       <p class="hint">
         {{ copy.newHere }}

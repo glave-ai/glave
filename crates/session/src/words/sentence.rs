@@ -111,6 +111,23 @@ sentences! {
         "Open this link on the device you signed up on to make your passkey. It works once, for 15 minutes.",
     SignupMailIgnore = "signup-mail-ignore"
         "If you didn't sign up for glave, ignore this email: nothing happens without the link.",
+    NoRecovery = "no-recovery"
+        "this glave sends no email, so it can't send a link to get back in: ask whoever runs it",
+    RecoveryGone = "recovery-gone"
+        "that link was used already or has expired: ask for a new one",
+    RecoveryMailSubject = "recovery-mail-subject" "Get back into glave",
+    RecoveryMail = "recovery-mail"
+        "Open this link on the device you want to use to make a new passkey for your glave account. It works once, for 15 minutes, and your other devices will be told.",
+    RecoveryMailIgnore = "recovery-mail-ignore"
+        "If you didn't ask for it, ignore this email: nothing changes without the link.",
+    RecoveryNoAccountSubject = "recovery-no-account-subject" "Getting back into glave",
+    RecoveryNoAccount = "recovery-no-account"
+        "Someone asked for a link to get back into glave with this address, but no glave account here uses it. If it wasn't you, ignore this email.",
+    PasskeyEmailedSubject = "passkey-emailed-subject" "A new passkey for your glave account",
+    PasskeyEmailed = "passkey-emailed"
+        "A new passkey was just made for your glave account, from a link sent to this address. If it wasn't you, sign in, remove it in Settings, then secure your email account.",
+    PasskeyEmailedNotice = "passkey-emailed-notice"
+        "A new passkey was made from a link sent to your email. If that wasn't you, remove it, then secure your email account.",
     InviteMailSubject = "invite-mail-subject" "You're invited to glave",
     InviteMail = "invite-mail"
         "You've been invited to glave. Open this link within 7 days to join:",

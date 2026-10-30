@@ -112,6 +112,15 @@ export const routes: Routes = [
       import('./components/sign-up/sign-up.component').then((m) => m.SignUpComponent),
   },
   {
+    // Getting back in, for someone who lost their passkeys: their email, then a new passkey
+    // from the link sent there. The sign-up page, for the other kind of link.
+    path: 'recover',
+    title: () => $localize`:@@routes.recover:Get back in · glave`,
+    data: { emailed: 'recovery' },
+    loadComponent: () =>
+      import('./components/sign-up/sign-up.component').then((m) => m.SignUpComponent),
+  },
+  {
     path: 'sign-in',
     title: () => $localize`:@@routes.signIn:Sign in · glave`,
     loadComponent: () =>
