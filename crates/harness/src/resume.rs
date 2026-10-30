@@ -51,7 +51,7 @@ where
         let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
         let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
+            .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
             .await;
         let project = bound
             .as_ref()

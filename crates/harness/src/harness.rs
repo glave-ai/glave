@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{
-    At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions, Principal,
-    PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound, encode,
+    At, ComputerKind, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions,
+    Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound,
+    encode,
 };
 use glave_ports::computer::WorkspaceId;
 use glave_ports::memories::Memory;
@@ -532,10 +533,13 @@ where
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
         let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
+            .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
             .await;
+        // A folder on a person's own computer is not on the server's disk, so the host reads
+        // nothing of it.
         let project = bound
             .as_ref()
+            .filter(|bound| bound.computer.kind != ComputerKind::Person)
             .and_then(|bound| crate::project_folders::project_of(&bound.opened));
         let mut thread = Thread {
             scope,

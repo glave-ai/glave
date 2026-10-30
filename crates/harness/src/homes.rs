@@ -95,8 +95,32 @@ where
         };
         let events = self.load(&thread.scope, thread.id).await?;
         thread.commands = Arc::new(Commands::rebuilt(&events, workspace.computers()));
+        // Read again there, now it is open: what a compaction opens the conversation with.
+        thread.instructions = self
+            .instructions_at_home(thread.scope, &workspace, &bound.opened, thread.for_)
+            .await;
         thread.workspace = Some(Arc::new(workspace));
         Ok(())
+    }
+
+    /// What a thread in `scope` for `person` working at `workspace` on their own computer,
+    /// opened as `opened`, opens with: for a project's folder or a worktree of it, which wake
+    /// the computer to open, what is read there through the computer port, their own
+    /// instructions and the folder's AGENTS.md (`agents_md_on`), never the server's; for a
+    /// scratch folder nothing, since a chat never wakes the computer (decision 6).
+    pub(crate) async fn instructions_at_home(
+        &self,
+        scope: Scope,
+        workspace: &Workspace,
+        opened: &Opened,
+        person: Option<PrincipalId>,
+    ) -> Option<String> {
+        if !matches!(opened, Opened::Folder { .. } | Opened::Worktree { .. }) {
+            return None;
+        }
+        let (home, _) = self.home_of(scope, person).ok()?;
+        let read = crate::instructions::agents_md_on(&home, workspace.root()).await?;
+        Some(read.text)
     }
 }
 

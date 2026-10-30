@@ -239,15 +239,23 @@ where
         Ok((workspace.map(Arc::new), latest.cloned(), false))
     }
 
-    /// What a thread for `person` working where `bound` says opens with: what the host reads
-    /// for its folder (its project's, or none for a scratch folder), when the harness has a
-    /// reader and the thread a folder of its own here; else the settings' own instructions.
+    /// What a thread in `scope` for `person` working where `bound` says opens with: on their own
+    /// computer, what is read there for its folder ([`Harness::instructions_at_home`]); else
+    /// what the host reads for its folder (its project's, or none for a scratch folder), when
+    /// the harness has a reader and the thread a folder of its own here; else the settings' own
+    /// instructions.
     pub(crate) async fn instructions_for(
         &self,
+        scope: Scope,
         workspace: Option<&Workspace>,
         bound: Option<&WorkspaceBound>,
         person: Option<PrincipalId>,
     ) -> Option<String> {
+        if let Some(bound) = bound.filter(|bound| bound.computer.kind == ComputerKind::Person) {
+            return self
+                .instructions_at_home(scope, workspace?, &bound.opened, person)
+                .await;
+        }
         let (Some(reader), Some(workspace), Some(bound)) =
             (&self.project_folders, workspace, bound)
         else {

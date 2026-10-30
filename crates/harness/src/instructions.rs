@@ -3,11 +3,16 @@
 //! send theirs. They ride in a user message, not the system prompt: they come from the
 //! repository, so they steer the model without outranking glave's own instructions, and
 //! approvals still gate every action. A subfolder's follow the first tool result that reaches
-//! it (`nested`).
+//! it (`nested`). On a person's own computer they are read there, through the computer port
+//! ([`agents_md_on`]), never from the server's disk.
 
 mod nested;
 
 use std::path::{Path, PathBuf};
+
+use glave_ports::computer::ComputerError;
+
+use crate::tools::workspace::Workspace;
 
 /// The file agents look for.
 pub const AGENTS_MD: &str = "AGENTS.md";
@@ -21,6 +26,10 @@ const CUT_SHORT: &str = "\n[cut short: instructions are limited to 32 KiB]";
 
 /// What starts a block of instructions, before the folder they are for.
 const HEADING: &str = "# AGENTS.md instructions for ";
+
+/// The person's own instructions on their own computer, in their home there: glave's folder
+/// in it, as on a laptop.
+const PERSONAL: &str = ".glave/AGENTS.md";
 
 /// The instructions for a workspace, ready to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,11 +49,9 @@ pub async fn agents_md(
 ) -> std::io::Result<Option<Instructions>> {
     let mut candidates: Vec<PathBuf> = user_file.map(Path::to_path_buf).into_iter().collect();
     candidates.extend(project_dirs(root).iter().map(|dir| dir.join(AGENTS_MD)));
-    let mut files = Vec::new();
-    let mut sections = Vec::new();
-    let mut remaining = MAX_BYTES;
+    let mut read = Sections::default();
     for path in candidates {
-        if remaining == 0 {
+        if read.full() {
             break;
         }
         let text = match tokio::fs::read_to_string(&path).await {
@@ -58,26 +65,118 @@ pub async fn agents_md(
             }
         };
         let canonical = tokio::fs::canonicalize(&path).await?;
-        if text.trim().is_empty() || files.contains(&canonical) {
+        read.add(&path, canonical, &text);
+    }
+    Ok(read.done(root))
+}
+
+/// What [`agents_md`] reads for a thread working at `root` on a computer reached through the
+/// port, read there through `home`, the person's home on it, which `root` is inside: their own
+/// instructions (`.glave/AGENTS.md` in the home), then every AGENTS.md from the repository's
+/// root down to `root`, never above the home. A file that cannot be read is left out.
+pub(crate) async fn agents_md_on(home: &Workspace, root: &Path) -> Option<Instructions> {
+    let base = home.root();
+    let mut files = vec![base.join(PERSONAL)];
+    files.extend(
+        dirs_on(home, root)
+            .await
+            .iter()
+            .map(|dir| dir.join(AGENTS_MD)),
+    );
+    let mut read = Sections::default();
+    for file in files {
+        let Some(path) = inside(base, &file).filter(|_| !read.full()) else {
             continue;
+        };
+        match home.read(&path).await {
+            Ok(bytes) => read.add(
+                &file,
+                file.clone(),
+                &String::from_utf8_lossy(bytes.as_slice()),
+            ),
+            Err(ComputerError::NotFound(_)) => {}
+            Err(error) => tracing::warn!(error = error.message(), "an AGENTS.md could not be read"),
         }
-        let (text, cut) = within(text.trim(), remaining);
-        remaining = remaining.saturating_sub(text.len());
+    }
+    read.done(root)
+}
+
+/// The folders [`project_dirs`] looks in, found through `home`: from the repository's root
+/// down to `root`, or `root` alone, never above the home.
+async fn dirs_on(home: &Workspace, root: &Path) -> Vec<PathBuf> {
+    let base = home.root();
+    let mut dirs = Vec::new();
+    for dir in root.ancestors().take_while(|dir| dir.starts_with(base)) {
+        dirs.push(dir.to_path_buf());
+        let Some(git) = inside(base, &dir.join(".git")) else {
+            continue;
+        };
+        if home.stat(&git).await.is_ok_and(|stat| stat.kind.is_some()) {
+            dirs.reverse();
+            return dirs;
+        }
+    }
+    vec![root.to_path_buf()]
+}
+
+/// `path` as the home at `base` names it: relative to it.
+fn inside(base: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(base).ok()?;
+    Some(relative.to_string_lossy().into_owned())
+}
+
+/// Instructions as they are read, file by file, within [`MAX_BYTES`] together.
+struct Sections {
+    /// The files read, as each is known, so none is sent twice.
+    files: Vec<PathBuf>,
+    blocks: Vec<String>,
+    remaining: usize,
+}
+
+impl Default for Sections {
+    fn default() -> Self {
+        Self {
+            files: Vec::new(),
+            blocks: Vec::new(),
+            remaining: MAX_BYTES,
+        }
+    }
+}
+
+impl Sections {
+    /// Whether no more fits.
+    fn full(&self) -> bool {
+        self.remaining == 0
+    }
+
+    /// Adds `text`, read from `path`, known as `file`, unless it is blank or `file` was added
+    /// already.
+    fn add(&mut self, path: &Path, file: PathBuf, text: &str) {
+        if text.trim().is_empty() || self.files.contains(&file) {
+            return;
+        }
+        let (text, cut) = within(text.trim(), self.remaining);
+        self.remaining = self.remaining.saturating_sub(text.len());
         let note = if cut { CUT_SHORT } else { "" };
-        sections.push(format!("From {}:\n{text}{note}", path.display()));
-        files.push(canonical);
+        self.blocks
+            .push(format!("From {}:\n{text}{note}", path.display()));
+        self.files.push(file);
     }
-    if sections.is_empty() {
-        return Ok(None);
+
+    /// The instructions for a workspace at `root`, or `None` when nothing was read.
+    fn done(self, root: &Path) -> Option<Instructions> {
+        if self.blocks.is_empty() {
+            return None;
+        }
+        Some(Instructions {
+            text: format!(
+                "{HEADING}{}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
+                root.display(),
+                self.blocks.join("\n\n")
+            ),
+            files: self.files,
+        })
     }
-    Ok(Some(Instructions {
-        text: format!(
-            "{HEADING}{}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
-            root.display(),
-            sections.join("\n\n")
-        ),
-        files,
-    }))
 }
 
 /// The folders to look in: from the repository's root down to `root`, or `root` alone.
