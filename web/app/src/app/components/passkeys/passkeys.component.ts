@@ -18,8 +18,6 @@ interface Shown {
   readonly id: string;
   readonly name: string;
   readonly detail: string;
-  /** What else is said of it: "This device", "From an emailed link". */
-  readonly marks: readonly string[];
 }
 
 /**
@@ -68,15 +66,16 @@ export class PasskeysComponent {
         used === null
           ? $localize`:@@passkeys.added:Added ${added}:ADDED:`
           : $localize`:@@passkeys.addedUsed:Added ${added}:ADDED:, last used ${used}:USED:`;
-      return {
-        id: passkey.id,
-        name: passkey.name,
+      const marks = [
+        ...(passkey.current === true ? [this.copy.current] : []),
+        ...(passkey.emailed === true ? [this.copy.emailed] : []),
+      ];
+      // What else is said of it, after the dates: "This device", "From an emailed link".
+      const marked = marks.reduce(
+        (line, mark) => $localize`:@@passkeys.marked:${line}:LINE: · ${mark}:MARK:`,
         detail,
-        marks: [
-          ...(passkey.current === true ? [this.copy.current] : []),
-          ...(passkey.emailed === true ? [this.copy.emailed] : []),
-        ],
-      };
+      );
+      return { id: passkey.id, name: passkey.name, detail: marked };
     }),
   );
   protected readonly addLabel = computed(() => (this.busy() ? this.copy.adding : this.copy.add));

@@ -305,12 +305,11 @@ impl Browsers {
     pub async fn keep_emailed(&self, checked: Checked) -> Result<Session, BrowserError> {
         let Checked { mut info, change } = checked;
         info.emailed = true;
-        let change = match change {
-            Change::PasskeyAdded(id, name, kept, party, _) => {
-                Change::PasskeyAdded(id, name, kept, party, true)
-            }
-            other => other,
+        // A passkey checked is always one to add.
+        let Change::PasskeyAdded(id, name, kept, party, _) = change else {
+            return Err(BrowserError::Ceremony);
         };
+        let change = Change::PasskeyAdded(id, name, kept, party, true);
         self.keep(Checked { info, change }).await
     }
 

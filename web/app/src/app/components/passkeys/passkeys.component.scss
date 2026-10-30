@@ -14,8 +14,3 @@
   border-radius: var(--glz-radius-control);
   background: var(--glz-surface-sunken);
 }
-
-// Each thing said of a passkey after its dates, set off as the dates are from each other.
-.mark::before {
-  content: ' · ';
-}

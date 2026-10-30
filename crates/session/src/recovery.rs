@@ -37,11 +37,12 @@ where
         checked: Checked,
     ) -> Result<Reply, ApiError> {
         let session = browsers.keep_emailed(checked).await?;
-        let (mailer, _, to) = self.sender(&signing.email)?;
+        let (mailer, origin, to) = self.sender(&signing.email)?;
+        let said = say(Language::English, &Sentence::PasskeyEmailed);
         let mail = Mail {
             to,
             subject: say(Language::English, &Sentence::PasskeyEmailedSubject),
-            text: format!("{}\n", say(Language::English, &Sentence::PasskeyEmailed)),
+            text: format!("{said}\n\n{origin}\n"),
         };
         // The passkey is made: a message that cannot go now is no reason to undo it, and the
         // person's other devices are told all the same.
@@ -58,9 +59,10 @@ where
         Ok(self.recovers() && self.account_email(caller).await?.is_some())
     }
 
-    /// The address `caller`'s glave account gets back in with, as the people ledger of one of
-    /// its organizations has it: the one it signed up or was invited with. None for anyone
-    /// else.
+    /// The address `caller`'s glave account gets back in with: the one it signed up or was
+    /// invited with, as the people ledger of one of its organizations has it, and only while
+    /// the directory says it is this account's, the one a link to get back in opens. None for
+    /// anyone else.
     pub(crate) async fn account_email(&self, caller: &Caller) -> Result<Option<String>, ApiError> {
         let (Some(person), Some(accounts)) = (caller.person, self.inner.accounts.as_deref()) else {
             return Ok(None);
@@ -73,8 +75,10 @@ where
             let email = self.people(org, |people| {
                 people.info(person).and_then(|info| info.email)
             });
-            if email.is_some() {
-                return Ok(email);
+            if let Some(email) = email
+                && accounts.with_email(&email).await? == Some(person)
+            {
+                return Ok(Some(email));
             }
         }
         Ok(None)

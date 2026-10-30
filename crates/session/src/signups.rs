@@ -113,7 +113,7 @@ pub(crate) struct Signing {
     pub(crate) emailed: Emailed,
 }
 
-/// The accounts being made by sign-up on this server.
+/// The passkeys being made by emailed links on this server.
 #[derive(Default)]
 pub(crate) struct Signings(Vec<Signing>);
 
@@ -133,9 +133,9 @@ where
     }
 
     /// Answers `signup/start` and `recovery/start`: a link of the kind `emailed` sent to
-    /// `email`, or, where the address has an account (for a sign-up) or none (to get back in),
-    /// a note saying so; nothing when a message went there a moment ago. The answer is the
-    /// same either way, and both take the same steps.
+    /// `email`, or, where the address has an account (for a sign-up) or none (to get back in,
+    /// where the server takes sign-ups), a note saying so; nothing when a message went there a
+    /// moment ago. The answer is the same either way, and so is what is recorded.
     pub(crate) async fn start_link(
         &self,
         email: &str,
@@ -172,7 +172,11 @@ where
             Ok(may.then(|| started.clone()))
         })
         .await?;
-        if !sending.load(Ordering::Relaxed) {
+        // A note that no account has the address goes only where anyone may make this server
+        // write to any address already, by signing up: elsewhere it would be a way to have it
+        // mail strangers.
+        let noted = emailed == Emailed::Recovery && !has_account && !self.takes_signups();
+        if !sending.load(Ordering::Relaxed) || noted {
             return Ok(Reply::Done {});
         }
         let (subject, text) = link_mail(emailed, has_account, origin.as_str(), &code);
@@ -234,7 +238,7 @@ where
         Ok(crate::browsers::options(ceremony))
     }
 
-    /// The account being made by sign-up with the passkey request `ceremony`, taken, if one is.
+    /// The passkey being made by an emailed link with the request `ceremony`, taken, if one is.
     pub(crate) fn signing(&self, ceremony: &str) -> Option<Signing> {
         let mut signing = self.signings();
         let at = signing.0.iter().position(|it| it.ceremony == ceremony)?;
@@ -427,7 +431,7 @@ fn link_mail(emailed: Emailed, has_account: bool, origin: &str, code: &str) -> (
         ),
         (Emailed::Recovery, false) => (
             Sentence::RecoveryNoAccountSubject,
-            format!("{}\n", english(&Sentence::RecoveryNoAccount)),
+            format!("{}\n\n{origin}\n", english(&Sentence::RecoveryNoAccount)),
         ),
     }
 }

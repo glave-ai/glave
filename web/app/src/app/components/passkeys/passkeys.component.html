@@ -14,12 +14,7 @@
     <div class="passkey" data-testid="passkeys-passkey">
       <div class="glz-stack glz-gap-1">
         <p class="title">{{ passkey.name }}</p>
-        <p class="details">
-          {{ passkey.detail }}
-          @for (mark of passkey.marks; track mark) {
-            <span class="mark" data-testid="passkeys-mark">{{ mark }}</span>
-          }
-        </p>
+        <p class="details">{{ passkey.detail }}</p>
       </div>
       <button glzButton data-testid="passkeys-remove" (click)="ask(passkey.id)">
         {{ copy.remove }}

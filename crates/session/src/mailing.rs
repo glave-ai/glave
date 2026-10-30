@@ -1,9 +1,9 @@
-//! What glave emails (`specs/model.md`, "Identity"): invites, sign-ups' links, and later the
-//! links that get someone back in, each to one address as glave reads it, never a name around
+//! What glave emails (`specs/model.md`, "Identity"): invites, sign-ups' links, links that
+//! get someone back in and the notice of a passkey made by one, each to one address as glave reads it, never a name around
 //! it, and at most one a minute to an address, counted in the ledger that records what was
 //! sent, so every server on the store counts the same.
 
-use glave_ports::{BlobStore, EventLog, Mail, MailError, Mailer, ModelProvider};
+use glave_ports::{BlobStore, EventLog, Mail, Mailer, ModelProvider};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::protocol::{ApiError, code};
@@ -50,13 +50,11 @@ where
         Ok((mailer, origin.trim_end_matches('/').to_owned(), address))
     }
 
-    /// Sends `mail` through `mailer`, saying what the mail server said in the log, never the
-    /// address, and to the person only that it was not sent.
+    /// Sends `mail` through `mailer`, saying in the log only that it was not sent, since what a
+    /// mail server says of a refusal often names the address, and to the person the same.
     pub(crate) async fn send(&self, mailer: &dyn Mailer, mail: &Mail) -> Result<(), ApiError> {
-        mailer.send(mail).await.map_err(|error| {
-            if let MailError::Send(reason) = &error {
-                tracing::warn!(%reason, "an email was not sent");
-            }
+        mailer.send(mail).await.map_err(|_| {
+            tracing::warn!("an email was not sent");
             ApiError::new(code::NOT_AVAILABLE, Sentence::MailNotSent)
         })
     }

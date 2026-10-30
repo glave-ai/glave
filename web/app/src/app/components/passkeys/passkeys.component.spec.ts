@@ -92,12 +92,11 @@ describe('PasskeysComponent', () => {
     expect(root.querySelector('[data-testid="passkeys-email"]')?.textContent).toContain(
       'ada@example.com',
     );
-    const marks = Array.from(root.querySelectorAll('[data-testid="passkeys-passkey"]'), (row) =>
-      Array.from(row.querySelectorAll('[data-testid="passkeys-mark"]'), (mark) =>
-        mark.textContent.trim(),
-      ),
+    const rows = Array.from(root.querySelectorAll('[data-testid="passkeys-passkey"]'), (row) =>
+      row.textContent.replace(/\s+/gu, ' ').trim(),
     );
-    expect(marks).toEqual([['This device'], ['From an emailed link']]);
+    expect(rows[0]).toContain('last used Oct 21, 2026 · This device');
+    expect(rows[1]).toContain('Added Oct 22, 2026 · From an emailed link');
     await expectAccessible(root);
   });
 

@@ -307,6 +307,7 @@
     "passkeys.emailed": "[Ƒŕöɱ åñ éɱåîļéð ļîñķ one two]",
     "passkeys.heading": "[Þåššķéýš one]",
     "passkeys.lead": "[Ţĥéšé šîĝñ ýöû îñ ţö ĝļåṽé ƒŕöɱ ýöûŕ ðéṽîçéš: ýöûŕ ƒåçé, ýöûŕ ƒîñĝéŕþŕîñţ öŕ å šçŕééñ ļöçķ, ñéṽéŕ å þåššŵöŕð. one two three four five six]",
+    "passkeys.marked": "[{$LINE} · {$MARK} one]",
     "passkeys.none": "[Ñö þåššķéýš ýéţ. one two]",
     "passkeys.refused": "[Ýöûŕ ðéṽîçé ɱåðé öŕ ûšéð ñö þåššķéý. Ţŕý åĝåîñ, åñð åļļöŵ îţ ŵĥéñ ýöûŕ ðéṽîçé åšķš. one two three four five]",
     "passkeys.remove": "[Ŕéɱöṽé one]",

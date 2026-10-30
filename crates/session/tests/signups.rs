@@ -37,7 +37,9 @@ pub(crate) async fn serve_timed(
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
-    let clock = fixed_clock();
+    let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+    // Passkeys and sessions on the server's own clock, so a test moves them all at once.
+    let clock = setup.clock.clone();
     let browsers = Browsers::open(
         store.log(),
         scope(),
@@ -46,7 +48,6 @@ pub(crate) async fn serve_timed(
         Some(&origin),
         Box::new(clock.clone()),
     );
-    let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
     setup.mail = Some(Arc::clone(outbox) as Arc<dyn glave_ports::Mailer>);
     let directory = Arc::new(store.directory());

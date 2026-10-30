@@ -30,7 +30,7 @@ async function takingSignUps(page: Page): Promise<{ readonly asked: readonly unk
       await route.fallback();
       return;
     }
-    asked.push(message.params);
+    asked.push({ method: message.method, params: message.params });
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: message.id, result: answered }),
@@ -54,7 +54,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'sign-up-send').click();
     await expect(byTestId(page, 'sign-up-sent')).toContainText('We sent a link to ada@example.com');
     await expectAccessible(page);
-    expect(glave.asked).toContainEqual({ email: 'ada@example.com' });
+    expect(glave.asked).toContainEqual({
+      method: 'signup/start',
+      params: { email: 'ada@example.com' },
+    });
   });
 
   test(`The emailed link opens the step that makes the passkey (${colorScheme})`, async ({
@@ -84,7 +87,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
       'If ada@example.com has a glave account, we sent it a link.',
     );
     await expectAccessible(page);
-    expect(glave.asked).toContainEqual({ email: 'ada@example.com' });
+    expect(glave.asked).toContainEqual({
+      method: 'recovery/start',
+      params: { email: 'ada@example.com' },
+    });
   });
 
   test(`A link to get back in opens the step that makes a new passkey (${colorScheme})`, async ({

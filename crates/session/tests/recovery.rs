@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use glave_event::{OrgRole, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::testing::Outbox;
 use glave_session::protocol::{LinkKind, Request, code};
@@ -95,9 +96,10 @@ fn a_link_to_get_back_in_makes_a_new_passkey_once_and_the_address_and_other_brow
         let here = listed(&mut back).await;
         assert!(here.get("notice").is_none(), "{here}");
         assert_eq!(here["passkeys"][1]["current"], json!(true));
-        // A week on, no one is told any more: a week past the passkey's making, which this
-        // server's accounts time by a clock of their own, a few days ahead of the server's.
-        clock.advance_seconds(15 * 24 * 3600);
+        // For a week, and then no one is told any more.
+        clock.advance_seconds(7 * 24 * 3600 - 60);
+        assert!(listed(&mut first).await["notice"].is_string());
+        clock.advance_seconds(120);
         assert!(listed(&mut first).await.get("notice").is_none());
         served.close().await;
     });
@@ -106,19 +108,26 @@ fn a_link_to_get_back_in_makes_a_new_passkey_once_and_the_address_and_other_brow
 #[test]
 fn an_address_with_no_account_is_answered_alike_and_sent_no_link() {
     block_on!(async {
-        let dir = folder("recovery-none");
-        let outbox = Arc::new(Outbox::default());
-        let (served, _) = serve_timed(&dir, false, &outbox).await;
-        let mut anyone = elsewhere(&served, None);
-        let start = Request::RecoveryStart {
-            email: "nobody@example.com".into(),
-        };
-        assert_eq!(asked(&mut anyone, &start).await, json!({}));
-        let sent = outbox.sent();
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0].subject, "Getting back into glave");
-        assert!(linked(&outbox, "recover").is_none(), "{}", sent[0].text);
-        served.close().await;
+        // Where anyone may sign up, a note; where no one may, nothing, so the server mails no
+        // stranger.
+        for (signup, notes) in [(true, 1), (false, 0)] {
+            let dir = folder("recovery-none");
+            let outbox = Arc::new(Outbox::default());
+            let (served, _) = serve_timed(&dir, signup, &outbox).await;
+            let mut anyone = elsewhere(&served, None);
+            let start = Request::RecoveryStart {
+                email: "nobody@example.com".into(),
+            };
+            assert_eq!(asked(&mut anyone, &start).await, json!({}));
+            let sent = outbox.sent();
+            assert_eq!(sent.len(), notes, "taking sign-ups: {signup}");
+            assert!(
+                sent.iter()
+                    .all(|mail| mail.subject == "Getting back into glave")
+            );
+            assert!(linked(&outbox, "recover").is_none());
+            served.close().await;
+        }
     });
 }
 
@@ -133,6 +142,20 @@ fn the_last_passkey_may_go_once_the_account_can_get_back_in_by_email() {
         let id = passkeys["passkeys"][0]["id"].as_str().unwrap().to_owned();
         let removed = asked(&mut ada, &Request::PasskeyRemove { passkey: id }).await;
         assert_eq!(removed, json!({}), "her address gets her back in");
+        // Someone she invites by a link alone has no address to get back in with: theirs stays.
+        let mut bob = signed_up(&served, &outbox, "bob@example.com").await;
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        let code = Secret::new(asked(&mut bob, &invite).await["code"].as_str().unwrap());
+        let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
+        let mut grace = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        let passkeys = listed(&mut grace).await;
+        assert!(passkeys.get("email").is_none(), "{passkeys}");
+        let id = passkeys["passkeys"][0]["id"].as_str().unwrap().to_owned();
+        let kept = asked(&mut grace, &Request::PasskeyRemove { passkey: id }).await;
+        assert_eq!(kept, json!(code::NOT_ALLOWED));
         served.close().await;
     });
 }
