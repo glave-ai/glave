@@ -57,7 +57,8 @@ pub enum Reserved {
     /// the organization's own scope ([`Scope::of_organization`]), no project's.
     People,
     /// `…000a`: the sign-ups a server that takes them is waiting on (`signup.started`,
-    /// `signup.finished`), in its own organization's scope.
+    /// `signup.finished`), and the emails each network asked for (`mail.asked`), in its own
+    /// organization's scope.
     Signups,
     /// `…000b`: what was last read on its person's own computer for a project's folder
     /// (`instructions.read`), which a thread there opens with without reaching that computer.

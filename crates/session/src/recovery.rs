@@ -46,7 +46,7 @@ where
         };
         // The passkey is made: a message that cannot go now is no reason to undo it, and the
         // person's other devices are told all the same.
-        if self.send(mailer, &mail).await.is_err() {
+        if self.send(&*mailer, &mail).await.is_err() {
             tracing::warn!("could not tell an account's address of a passkey made by email");
         }
         Ok(self.signed_in(session, browsers))

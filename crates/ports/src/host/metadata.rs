@@ -28,7 +28,7 @@ impl Network {
 
     /// Whether `ip` is in this block, as written: an IPv4 address written as IPv6
     /// (`::ffff:a.b.c.d`) is not in an IPv4 block.
-    fn contains(self, ip: IpAddr) -> bool {
+    pub(super) fn contains(self, ip: IpAddr) -> bool {
         match (self.address, ip) {
             (IpAddr::V4(block), IpAddr::V4(ip)) => {
                 let mask = u32::MAX

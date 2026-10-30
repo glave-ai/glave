@@ -1,6 +1,8 @@
 //! Who asked: the verified caller of a thread, a turn or a decision, as the session API
 //! establishes it (`specs/session.md`, "Who is calling").
 
+use std::net::IpAddr;
+
 use glave_event::{Auth, PrincipalId, Profile, TraceId};
 
 use crate::OrgId;
@@ -24,4 +26,9 @@ pub struct Caller {
     /// request unchecked (`specs/session.md`, "Who is calling"). `None` is the server's own
     /// organization, the local person's.
     pub org: Option<OrgId>,
+    /// The network address the request came from, as the transport saw it: the client's, or
+    /// behind a proxy glave stands behind, the address that proxy says it came from
+    /// (`specs/session.md`, "Who is calling"). `None` in process and over stdio, from this
+    /// computer.
+    pub from: Option<IpAddr>,
 }

@@ -119,6 +119,9 @@ pub(crate) struct Web {
     reading: Option<String>,
     /// The organization its requests name (`Glave-Organization`), if any.
     working_in: Option<String>,
+    /// The network address the tunnel names its requests as coming from (`X-Forwarded-For`),
+    /// if any.
+    from: Option<String>,
     next_id: u64,
 }
 
@@ -140,6 +143,7 @@ impl Web {
             reaching: None,
             reading: None,
             working_in: None,
+            from: None,
             next_id: 0,
         }
     }
@@ -170,6 +174,13 @@ impl Web {
         self
     }
 
+    /// This client's requests come from the network address `from`, which the tunnel on this
+    /// computer names as it forwards them (`X-Forwarded-For`).
+    pub(crate) fn from(mut self, from: &str) -> Self {
+        self.from = Some(from.to_owned());
+        self
+    }
+
     /// `request` as a JSON-RPC message with the next id, and that id.
     pub(crate) fn message(&mut self, request: &Request) -> (Value, u64) {
         self.next_id += 1;
@@ -190,6 +201,9 @@ impl Web {
         }
         if let Some(organization) = &self.working_in {
             post = post.header("Glave-Organization", organization);
+        }
+        if let Some(from) = &self.from {
+            post = post.header("x-forwarded-for", from);
         }
         if let Some(origin) = &self.reaching {
             let host = origin

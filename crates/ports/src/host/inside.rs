@@ -3,7 +3,7 @@
 //! addresses, wherever glave fences a computer off from everything but the internet: a
 //! person's computer on Kubernetes (`specs/computers.md`, decision 12).
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use super::metadata::Network;
 
@@ -20,3 +20,14 @@ pub const INSIDE: [Network; 8] = [
     Network::v4(Ipv4Addr::new(240, 0, 0, 0), 4),
     Network::v6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),
 ];
+
+/// Whether `ip` is on a private or shared network ([`INSIDE`]), or link-local: never an
+/// address on the internet. An IPv4 address written as IPv6 counts as the address it carries.
+pub fn is_inside(ip: IpAddr) -> bool {
+    let ip = ip.to_canonical();
+    let link_local = match ip {
+        IpAddr::V4(v4) => v4.is_link_local(),
+        IpAddr::V6(v6) => v6.is_unicast_link_local(),
+    };
+    link_local || INSIDE.iter().any(|network| network.contains(ip))
+}

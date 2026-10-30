@@ -324,6 +324,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             trace: None,
             profile: None,
             org: None,
+            from: None,
         };
         let chat = server
             .request_as(

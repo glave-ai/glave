@@ -34,6 +34,17 @@ pub(crate) async fn serve_timed(
     signup: bool,
     outbox: &Arc<Outbox>,
 ) -> (Served, glave_ports::testing::ManualClock) {
+    serve_sharing(dir, signup, outbox, Shared::default()).await
+}
+
+/// [`serve_timed`], its server's log `log`, which another server on it shares, as two
+/// processes share a database; its glave accounts in `dir` too.
+pub(crate) async fn serve_sharing(
+    dir: &Path,
+    signup: bool,
+    outbox: &Arc<Outbox>,
+    log: Shared,
+) -> (Served, glave_ports::testing::ManualClock) {
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
@@ -56,21 +67,21 @@ pub(crate) async fn serve_timed(
     setup.origin = Some(origin);
     setup.signup = signup;
     let ticks = setup.clock.clone();
-    let (server, _) = setup.build(dir).await;
+    let (server, _) = setup.build_on(dir, log).await;
     let signin = SignIn::local(LocalToken::new([21; 32]), Box::new(fixed_clock()));
     (serve_with(server, signin, None).await, ticks)
 }
 
-/// The code in the sign-up link `outbox` sent last.
-fn emailed_code(outbox: &Outbox) -> Secret {
-    linked(outbox, "signup").unwrap()
+/// The code in the sign-up link of the `count`th message `outbox` was sent.
+async fn emailed_code(outbox: &Outbox, count: usize) -> Secret {
+    linked(outbox, count, "signup").await.unwrap()
 }
 
-/// The code of the link of the kind `fragment` (`signup`, `recover`) in what `outbox` sent
-/// last, if it holds one.
-pub(crate) fn linked(outbox: &Outbox, fragment: &str) -> Option<Secret> {
-    let sent = outbox.sent();
-    let text = &sent.last()?.text;
+/// The code of the link of the kind `fragment` (`signup`, `recover`) in the `count`th message
+/// `outbox` was sent, once it was, if it holds one: a link goes after the answer.
+pub(crate) async fn linked(outbox: &Outbox, count: usize, fragment: &str) -> Option<Secret> {
+    let sent = outbox.sent_by(count).await;
+    let text = &sent.get(count.checked_sub(1)?)?.text;
     let marker = format!("#{fragment}=");
     let link = text
         .split_whitespace()
@@ -103,7 +114,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
             email: " Ada@Example.com ".into(),
         };
         assert_eq!(asked(&mut anyone, &start).await, json!({}));
-        let sent = outbox.sent();
+        let sent = outbox.sent_by(1).await;
         assert_eq!(sent.len(), 1);
         assert_eq!(
             sent[0].to, "ada@example.com",
@@ -118,7 +129,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         assert_eq!(asked(&mut anyone, &start).await, json!({}));
         assert_eq!(outbox.sent().len(), 1, "one email a minute to an address");
 
-        let code = emailed_code(&outbox);
+        let code = emailed_code(&outbox, 1).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let made = make(&served, code.clone(), &mut phone).await;
         let token = made["session"].as_str().map(str::to_owned);
@@ -164,9 +175,11 @@ pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> 
     let start = Request::SignupStart {
         email: email.into(),
     };
+    let before = outbox.sent().len();
     assert_eq!(asked(&mut anyone, &start).await, json!({}));
     let mut device = Authenticator::new(ORIGIN).unwrap();
-    let made = make(served, emailed_code(outbox), &mut device).await;
+    let code = emailed_code(outbox, before + 1).await;
+    let made = make(served, code, &mut device).await;
     elsewhere(served, made["session"].as_str().map(str::to_owned))
 }
 
@@ -228,7 +241,7 @@ fn an_address_with_an_account_is_answered_alike_and_told_to_sign_in() {
         };
         asked(&mut anyone, &start("grace@example.com")).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let made = make(&served, emailed_code(&outbox), &mut phone).await;
+        let made = make(&served, emailed_code(&outbox, 1).await, &mut phone).await;
         assert!(made["session"].is_string(), "{made}");
         // A name around it is no address.
         for written in ["Grace <grace@example.com>", "<grace@example.com>"] {
@@ -241,7 +254,7 @@ fn an_address_with_an_account_is_answered_alike_and_told_to_sign_in() {
             asked(&mut anyone, &start("GRACE@example.com")).await,
             json!({})
         );
-        let sent = outbox.sent();
+        let sent = outbox.sent_by(2).await;
         assert_eq!(sent.len(), 2);
         assert!(!sent[1].text.contains("#signup="), "{}", sent[1].text);
         assert!(sent[1].subject.contains("already"), "{}", sent[1].subject);
@@ -260,7 +273,7 @@ fn a_link_carries_its_address_and_no_one_can_change_it() {
             email: "ada@example.com".into(),
         };
         asked(&mut anyone, &start).await;
-        let code = emailed_code(&outbox);
+        let code = emailed_code(&outbox, 1).await;
         let (secret, _) = code.expose().split_once('.').unwrap();
         let forged = Secret::new(format!("{secret}.{}", hex_of("bea@example.com")));
         let mut phone = Authenticator::new(ORIGIN).unwrap();

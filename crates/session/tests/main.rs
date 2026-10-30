@@ -31,6 +31,7 @@ mod leases;
 mod list_watching;
 mod listing;
 mod local;
+mod mailing;
 mod many_projects;
 mod memory;
 mod models;

@@ -45,10 +45,10 @@ fn a_link_to_get_back_in_makes_a_new_passkey_once_and_the_address_and_other_brow
         };
         assert_eq!(asked(&mut anyone, &start).await, json!({}));
         assert_eq!(asked(&mut anyone, &start).await, json!({}));
-        let sent = outbox.sent();
+        let sent = outbox.sent_by(2).await;
         assert_eq!(sent.len(), 2, "her sign-up's, then one link a minute");
         assert_eq!(sent[1].subject, "Get back into glave");
-        let code = linked(&outbox, "recover").unwrap();
+        let code = linked(&outbox, 2, "recover").await.unwrap();
         // A sign-up's kind of passkey request opens nothing with it.
         let wrong = make_passkey(&served, code.clone(), LinkKind::Signup, &mut device()).await;
         assert_eq!(wrong, json!(code::NO_INVITE));
@@ -119,13 +119,13 @@ fn an_address_with_no_account_is_answered_alike_and_sent_no_link() {
                 email: "nobody@example.com".into(),
             };
             assert_eq!(asked(&mut anyone, &start).await, json!({}));
-            let sent = outbox.sent();
+            let sent = outbox.sent_by(notes).await;
             assert_eq!(sent.len(), notes, "taking sign-ups: {signup}");
             assert!(
                 sent.iter()
                     .all(|mail| mail.subject == "Getting back into glave")
             );
-            assert!(linked(&outbox, "recover").is_none());
+            assert!(linked(&outbox, notes, "recover").await.is_none());
             served.close().await;
         }
     });
