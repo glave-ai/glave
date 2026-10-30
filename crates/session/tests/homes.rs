@@ -12,12 +12,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use glave_computer::{LocalComputers, Wake, Waking};
 use glave_event::{ComputerKind, PrincipalId, ThreadId};
 use glave_harness::Homes;
-use glave_ports::OrgId;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, Home, Sources, WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{OrgId, ProjectId};
 use glave_session::Answering;
-use glave_session::protocol::{NewFolder, Reply, Request, Show};
+use glave_session::protocol::{NewFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
 
 use crate::support::*;
@@ -156,6 +156,26 @@ impl Homes for Here {
     }
 }
 
+/// A thread `server` started for its person, in `project` or a chat of their own.
+async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
+    let started = server
+        .request(Request::ThreadStart {
+            project,
+            worktree: None,
+            background: false,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        })
+        .await
+        .unwrap();
+    let Reply::Thread { thread } = started else {
+        panic!("a thread, not {started:?}")
+    };
+    thread
+}
+
 #[test]
 fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_needs_it() {
     let dir = folder("session-homes");
@@ -185,21 +205,7 @@ fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_
         assert_eq!(homes.woken(), 0, "opening the app wakes nothing");
 
         // A chat of their own: its scratch folder on their computer, not the server's.
-        let started = server
-            .request(Request::ThreadStart {
-                project: None,
-                worktree: None,
-                background: false,
-                computer: None,
-                model: None,
-                permissions: None,
-                effort: None,
-            })
-            .await
-            .unwrap();
-        let Reply::Thread { thread } = started else {
-            panic!("a thread, not {started:?}")
-        };
+        let thread = started(&server, None).await;
         let workspace = thread.workspace.clone().unwrap();
         assert_eq!(workspace.computer.kind, ComputerKind::Person);
         assert_eq!(workspace.computer.id, person.as_uuid());
@@ -318,21 +324,7 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
         );
 
         // A thread in it works in its folder there.
-        let started = server
-            .request(Request::ThreadStart {
-                project: Some(project.id),
-                worktree: None,
-                background: false,
-                computer: None,
-                model: None,
-                permissions: None,
-                effort: None,
-            })
-            .await
-            .unwrap();
-        let Reply::Thread { thread } = started else {
-            panic!("a thread, not {started:?}")
-        };
+        let thread = started(&server, Some(project.id)).await;
         let workspace = thread.workspace.clone().unwrap();
         assert_eq!(workspace.computer.kind, ComputerKind::Person);
         assert_eq!(PathBuf::from(&workspace.root), root);
