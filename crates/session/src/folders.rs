@@ -9,14 +9,15 @@
 use std::path::Path;
 
 use glave_event::{
-    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, ProjectFolderSet, Seq,
-    ThreadId, decode, encode,
+    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, PrincipalKind,
+    ProjectFolderSet, Seq, ThreadId, decode, encode,
 };
-use glave_harness::Looked;
+use glave_harness::{Looked, Workspace};
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, Located, ModelProvider, Project, ProjectId, ProjectKind,
+    BlobStore, Caller, EventLog, FolderKey, Located, ModelProvider, OrgId, Project, ProjectId,
+    ProjectKind,
 };
 
 use crate::ledger::own_scope;
@@ -194,13 +195,24 @@ where
         path: String,
         by: Option<Principal>,
     ) -> Result<ProjectFolder, ApiError> {
-        let kept = ProjectFolder {
-            source,
-            checkout: Checkout {
-                computer: self.computer(),
-                path,
-            },
+        let checkout = Checkout {
+            computer: self.computer(),
+            path,
         };
+        self.keep_checkout(at, source, checkout, by).await
+    }
+
+    /// Records the project's folder as coming from `source` and checked out at `checkout`, set
+    /// by `by` (absent: the project's person), unless it already is and the project was not
+    /// removed since.
+    async fn keep_checkout(
+        &self,
+        at: Located,
+        source: FolderSource,
+        checkout: Checkout,
+        by: Option<Principal>,
+    ) -> Result<ProjectFolder, ApiError> {
+        let kept = ProjectFolder { source, checkout };
         self.write_project_ledger(at, |current| {
             if !current.removed
                 && current
@@ -237,6 +249,11 @@ where
         new: Project,
         folder: NewFolder,
     ) -> Result<Reply, ApiError> {
+        let org = self.org_of(caller);
+        if let Some(home) = self.inner.harness.own_home(org, self.person_of(caller)?) {
+            let home = home.map_err(|error| ApiError::from(&error))?;
+            return self.create_at_home(org, &home, new, folder).await;
+        }
         if !local(caller) {
             return Err(only_here(Sentence::NewFolderOnlyHere));
         }
@@ -266,6 +283,73 @@ where
             project,
             folder: Some(folder),
         })
+    }
+
+    /// Answers `project/create` with a folder for a person with a computer of their own, whose
+    /// `home` there it is: the project `new`, its folder made on that computer (a repository
+    /// cloned there, or an empty one), which wakes it. A folder there is no other project's, so
+    /// the project is always new.
+    async fn create_at_home(
+        &self,
+        org: OrgId,
+        home: &Workspace,
+        new: Project,
+        folder: NewFolder,
+    ) -> Result<Reply, ApiError> {
+        let (root, source) = made_on(home, &new.name, folder).await?;
+        let project = self.inner.projects.create(org, &new).await?;
+        let at = Located {
+            org,
+            project: project.id,
+        };
+        let checkout = Checkout {
+            computer: home.info().computer.as_uuid(),
+            path: root,
+        };
+        let by = Some(project.owner.clone());
+        let folder = self.keep_checkout(at, source, checkout, by).await?;
+        Ok(Reply::Project {
+            project,
+            folder: Some(folder),
+        })
+    }
+
+    /// Where a new thread of the project `at` works, and whether that is on its person's own
+    /// computer: its folder here, once glave has looked that it is there
+    /// ([`Server::folder_found`]); or its folder on its person's computer, not looked for, so
+    /// nothing wakes it but the harness opening it there.
+    pub(crate) async fn folder_to_start_in(
+        &self,
+        at: Located,
+    ) -> Result<Option<(String, bool)>, ApiError> {
+        if let Some(folder) = self.folder_of(at).await?
+            && self.at_its_person_s(at, &folder.checkout).await?
+        {
+            return Ok(Some((folder.checkout.path, true)));
+        }
+        Ok(self.folder_found(at).await?.map(|path| (path, false)))
+    }
+
+    /// Whether `checkout` is on the own computer of the person whose project `at` is.
+    async fn at_its_person_s(&self, at: Located, checkout: &Checkout) -> Result<bool, ApiError> {
+        if checkout.computer == self.computer() {
+            return Ok(false);
+        }
+        let project = self.project(at.org, at.project).await?;
+        let Some(person) = project
+            .owner
+            .id
+            .filter(|_| project.owner.kind == PrincipalKind::Person)
+        else {
+            return Ok(false);
+        };
+        match self.inner.harness.own_home(at.org, person) {
+            Some(home) => {
+                let home = home.map_err(|error| ApiError::from(&error))?;
+                Ok(home.info().computer.as_uuid() == checkout.computer)
+            }
+            None => Ok(false),
+        }
     }
 
     /// Answers `project/find`: the project the folder at `path` leads to, when the caller owns
@@ -329,29 +413,7 @@ where
                 let source = source_of(&looked);
                 Ok((looked.root, source))
             }
-            NewFolder::Repository { url } => {
-                let url = repository(&url)?;
-                let root = workspace
-                    .new_project(&folder_name(name), Some(&url))
-                    .await
-                    .map_err(|error| not_cloned(&url, &error))?;
-                Ok((root, FolderSource::Repository { url }))
-            }
-            NewFolder::Empty => {
-                let root = workspace
-                    .new_project(&folder_name(name), None)
-                    .await
-                    .map_err(|error| match error {
-                        ComputerError::Refused(reason) => ApiError::new(code::INTERNAL, &reason),
-                        error => ApiError::new(
-                            code::INTERNAL,
-                            Sentence::FolderNotMade {
-                                reason: error.to_string(),
-                            },
-                        ),
-                    })?;
-                Ok((root, FolderSource::Local))
-            }
+            new => made_on(workspace, name, new).await,
         }
     }
 
@@ -423,6 +485,45 @@ where
             NeverAProject::AboveHome => Sentence::AboveHome,
             NeverAProject::Temporary => Sentence::TemporaryFolder,
         })
+    }
+}
+
+/// The new folder `folder` asks for on `workspace`'s computer, for the project `name`: a
+/// repository cloned there, or an empty one made there; where it is, and where its files come
+/// from. A folder picked by its path is only ever one on the server's own computer.
+async fn made_on(
+    workspace: &Workspace,
+    name: &str,
+    folder: NewFolder,
+) -> Result<(String, FolderSource), ApiError> {
+    match folder {
+        NewFolder::Repository { url } => {
+            let url = repository(&url)?;
+            let root = workspace
+                .new_project(&folder_name(name), Some(&url))
+                .await
+                .map_err(|error| not_cloned(&url, &error))?;
+            Ok((root, FolderSource::Repository { url }))
+        }
+        NewFolder::Empty => {
+            let root = workspace
+                .new_project(&folder_name(name), None)
+                .await
+                .map_err(|error| match error {
+                    ComputerError::Refused(reason) => ApiError::new(code::INTERNAL, &reason),
+                    error => ApiError::new(
+                        code::INTERNAL,
+                        Sentence::FolderNotMade {
+                            reason: error.to_string(),
+                        },
+                    ),
+                })?;
+            Ok((root, FolderSource::Local))
+        }
+        NewFolder::Path { .. } => Err(ApiError::new(
+            code::NOT_ALLOWED,
+            Sentence::FolderOnlyMadeThere,
+        )),
     }
 }
 

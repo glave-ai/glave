@@ -194,7 +194,7 @@ impl People {
             self.limits.clone(),
             WorkerCredentials::None,
         );
-        let home = planned_home()?;
+        let home = planned_home(key)?;
         let ceiling = self.ceiling;
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
             let grows = std::sync::Weak::clone(me);
@@ -264,12 +264,17 @@ impl People {
     }
 }
 
-/// The home of a person's computer as planned before it wakes: the same id each time it is
-/// asked for, so whatever works there finds it the same computer however often it slept.
-fn planned_home() -> Result<WorkspaceInfo, ComputerError> {
+/// The home of a person's computer as planned before it wakes, on the computer `key` names:
+/// the computer's id made from the key, the same on every server and after every restart, so
+/// whatever works there, or a project's folder made there, finds it the same computer however
+/// often it slept and whichever server asks.
+pub(crate) fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
+    let digits: String = key.chars().filter(char::is_ascii_hexdigit).collect();
+    let id = u128::from_str_radix(&digits, 16)
+        .map_err(|_| ComputerError::Failed(format!("{key} names no person's computer")))?;
     Ok(WorkspaceInfo {
         id: WorkspaceId::from_uuid(crate::local::new_id()?),
-        computer: ComputerId::from_uuid(crate::local::new_id()?),
+        computer: ComputerId::from_uuid(uuid::Uuid::from_u128(id)),
         root: PERSON_HOME.into(),
         sources: Sources::Folder {
             path: PERSON_HOME.into(),

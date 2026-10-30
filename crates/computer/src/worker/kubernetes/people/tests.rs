@@ -115,6 +115,21 @@ fn a_person_s_key_is_plain_and_their_own() {
     assert!(super::super::home::plain(&key), "{key}");
 }
 
+#[test]
+fn a_person_s_computer_has_the_same_id_on_every_server() {
+    let org = uuid::Uuid::from_u128(0x0192_0000_0000_7000_8000_aaaa_bbbb_cccc);
+    let alice = People::key(org, uuid::Uuid::from_u128(1));
+    let bob = People::key(org, uuid::Uuid::from_u128(2));
+    let planned = |key: &str| super::planned_home(key).unwrap().computer;
+    assert_eq!(
+        planned(&alice),
+        planned(&alice),
+        "asked again, or by another server"
+    );
+    assert_ne!(planned(&alice), planned(&bob));
+    assert!(super::planned_home("").is_err(), "no key names no computer");
+}
+
 /// Lets go of `people`, removes the computer `key` names with its disk, and what the test
 /// left on `cluster`.
 async fn gone(

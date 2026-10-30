@@ -94,7 +94,11 @@ where
     }
 
     /// The project `project` of `org`.
-    async fn project(&self, org: OrgId, project: ProjectId) -> Result<Project, ApiError> {
+    pub(crate) async fn project(
+        &self,
+        org: OrgId,
+        project: ProjectId,
+    ) -> Result<Project, ApiError> {
         self.inner
             .projects
             .get(org, project)
