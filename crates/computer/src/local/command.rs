@@ -140,6 +140,9 @@ pub(crate) async fn spawn(
 pub(crate) struct Keep<'a> {
     pub(crate) background: &'a Backgrounds,
     pub(crate) workspace: WorkspaceId,
+    /// The cgroup counting the time the command is held at its CPU limit, where Linux counts
+    /// it.
+    pub(crate) cgroup: Option<&'a Path>,
 }
 
 /// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has
@@ -175,6 +178,7 @@ pub(crate) async fn run(
         .then(|| new_id().map(CommandId::from_uuid))
         .transpose()?;
     let sandbox = command.sandbox.as_ref();
+    let before = super::pressure::throttled(keep.cgroup).await;
     let mut spawned = spawn(opened, &command.script, sandbox, helper, offered.as_ref()).await?;
     let waited = {
         let pump = spawned.stream.pump(output);
@@ -212,7 +216,12 @@ pub(crate) async fn run(
             }
         }
     };
-    Ok(Finished { ending, millis })
+    let after = super::pressure::throttled(keep.cgroup).await;
+    Ok(Finished {
+        ending,
+        millis,
+        cpu_held: super::pressure::held(before, after, millis),
+    })
 }
 
 /// `work`, with the command's credential helper answered meanwhile, when it has one.

@@ -1,5 +1,5 @@
 //! People's computers on a real cluster, as CI's `kind` job runs them (`GLAVE_TEST_KUBE=1`, a
-//! real glave and image): planned, and a chat's folder planned on it, nothing runs; the first
+//! real glave and glave's computer image): planned, and a chat's folder planned on it, nothing runs; the first
 //! commands that need it share one wake and one Pod, the next finds it awake, and nothing is
 //! left once it is gone; held by a turn it stays awake, unasked it sleeps on its own, and a
 //! turn's command wakes it again on the same disk.
@@ -21,11 +21,11 @@ use crate::worker::route::Tail;
 fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
-        std::env::var("GLAVE_TEST_WORKER_IMAGE"),
+        std::env::var("GLAVE_TEST_COMPUTER_IMAGE"),
     ) else {
         eprintln!(
-            "skipped: set GLAVE_TEST_WORKER_GLAVE (a Linux glave) and GLAVE_TEST_WORKER_IMAGE \
-             (an image with bash and git, pinned by digest) to test people's computers"
+            "skipped: set GLAVE_TEST_WORKER_GLAVE (a Linux glave) and GLAVE_TEST_COMPUTER_IMAGE \
+             (glave's computer image, pinned by digest) to test people's computers"
         );
         return;
     };
@@ -98,20 +98,9 @@ fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
 /// Runs `script` in `workspace` on `home`, and what it printed, or why it could not: never a
 /// panic, so the test removes what it made before it asserts.
 async fn command(home: &Home, workspace: WorkspaceId, script: &str) -> Result<String, String> {
-    let output = Tail::default();
-    let finished = home
-        .computers
-        .run(
-            workspace,
-            &Command::new(script),
-            &output,
-            &CancelSwitch::default(),
-        )
-        .await
-        .map_err(|error| format!("{script}: {error:?}"))?;
-    match finished.ending {
-        Ending::Exited { code: 0 } => Ok(output.text(1_000)),
-        ending => Err(format!("{script}: {ending:?} {}", output.text(1_000))),
+    match outcome(home, workspace, script).await? {
+        (Ending::Exited { code: 0 }, said) => Ok(said),
+        (ending, said) => Err(format!("{script}: {ending:?} {said}")),
     }
 }
 
@@ -176,13 +165,21 @@ async fn phase(cluster: &super::super::Kubernetes, name: &str) -> Option<String>
     pod.status?.phase
 }
 
-#[test]
-fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
+/// glave's computer image, when a real glave and it are given; `None`, and a note, otherwise.
+fn computer_image() -> Option<String> {
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
-        std::env::var("GLAVE_TEST_WORKER_IMAGE"),
+        std::env::var("GLAVE_TEST_COMPUTER_IMAGE"),
     ) else {
-        eprintln!("skipped: set GLAVE_TEST_WORKER_GLAVE and GLAVE_TEST_WORKER_IMAGE");
+        eprintln!("skipped: set GLAVE_TEST_WORKER_GLAVE and GLAVE_TEST_COMPUTER_IMAGE");
+        return None;
+    };
+    Some(image)
+}
+
+#[test]
+fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
+    let Some(image) = computer_image() else {
         return;
     };
     block_on!(async {
@@ -239,6 +236,113 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
         assert!(first.is_some());
         assert_ne!(first, again, "woken again, as a Pod of its own");
         assert_eq!(read.unwrap().trim(), "kept");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
+}
+
+/// Runs `script` in `workspace` on `home`: how it ended and what it printed, or why it could
+/// not run.
+async fn outcome(
+    home: &Home,
+    workspace: WorkspaceId,
+    script: &str,
+) -> Result<(Ending, String), String> {
+    let output = Tail::default();
+    let finished = home
+        .computers
+        .run(
+            workspace,
+            &Command::new(script),
+            &output,
+            &CancelSwitch::default(),
+        )
+        .await
+        .map_err(|error| format!("{script}: {error:?}"))?;
+    Ok((finished.ending, output.text(2_000)))
+}
+
+/// The CPU and memory the Pod `name`'s container runs at now, as its status says, if it is
+/// there.
+async fn running_at(cluster: &super::super::Kubernetes, name: &str) -> Option<serde_json::Value> {
+    let pod = cluster.pods().get_opt(name).await.ok().flatten()?;
+    let pod = serde_json::to_value(pod).ok()?;
+    let limits = pod.pointer("/status/containerStatuses/0/resources/limits")?;
+    Some(serde_json::json!({"cpu": limits.get("cpu")?, "memory": limits.get("memory")?}))
+}
+
+/// A person's computer that runs out of memory restarts with twice as much, and one held at its
+/// CPU limit grows in place, each saying so to whoever ran the command.
+#[test]
+fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
+    let Some(image) = computer_image() else {
+        return;
+    };
+    block_on!(async {
+        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+        let Some(cluster) = cluster(runtime_class.as_deref(), "grows").await else {
+            return;
+        };
+        let limits = Limits {
+            isolation: cluster.isolation(),
+            ..Limits::default()
+        };
+        let people = People::new(cluster.clone(), &image, &limits, 1).unwrap();
+        let key = People::key(
+            crate::local::new_id().unwrap(),
+            crate::local::new_id().unwrap(),
+        );
+        let pod = format!("glave-computer-{key}");
+        let home = people.home(&key).unwrap();
+        let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
+        // Three loops at once use up each period's quarter of a CPU early, so the computer is
+        // held at its limit for most of the run, well past half.
+        let busy = "for _ in 1 2 3; do timeout 12 sh -c 'while :; do :; done' & done; wait; \
+            grep throttled_usec /sys/fs/cgroup/cpu.stat; echo busy";
+        let mut seen = Vec::new();
+        let mut at = Vec::new();
+        if let Ok(chat) = home
+            .computers
+            .open(
+                home.home.computer,
+                &Sources::Scratch {
+                    name: "big".into(),
+                    owner: None,
+                },
+            )
+            .await
+        {
+            for script in ["true", big, big, busy] {
+                seen.push(outcome(&home, chat.id, script).await);
+                at.push(running_at(&cluster, &pod).await);
+            }
+        }
+        let (destroyed, left) = gone(people, &cluster, &key).await;
+        eprintln!("ran: {seen:#?}\nat: {at:#?}");
+        let woke = serde_json::json!({"cpu": "250m", "memory": "512Mi"});
+        assert_eq!(at.first().cloned().flatten(), Some(woke), "it wakes small");
+        let lost = seen.get(1).cloned().unwrap().unwrap_err();
+        assert!(
+            lost.contains(
+                "glave: this computer ran out of memory at 512 MiB and restarts with 1 GiB"
+            ),
+            "{lost}"
+        );
+        let (ending, said) = seen.get(2).cloned().unwrap().unwrap();
+        assert_eq!(
+            (ending, said.trim()),
+            (Ending::Exited { code: 0 }, "allocated")
+        );
+        let bigger = serde_json::json!({"cpu": "250m", "memory": "1Gi"});
+        assert_eq!(at.get(2).cloned().flatten(), Some(bigger), "woken bigger");
+        let (ending, said) = seen.get(3).cloned().unwrap().unwrap();
+        assert_eq!(ending, Ending::Exited { code: 0 });
+        assert!(
+            said.contains("glave: this computer now has 0.5 CPUs."),
+            "{said}"
+        );
+        let faster = serde_json::json!({"cpu": "500m", "memory": "1Gi"});
+        assert_eq!(at.get(3).cloned().flatten(), Some(faster), "grown in place");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });

@@ -21,8 +21,9 @@ use tokio::time::Instant;
 use super::Kubernetes;
 use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
+use super::sizing::{CEILING, Size};
 use crate::worker::limits::pinned;
-use crate::{Wake, Waking, WorkerComputers, WorkerCredentials};
+use crate::{Grow, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
 
 /// How long a wake may take before whoever waits on it gives up: a Pod waits up to five
 /// minutes for a node and has two more to take glave in, so minutes, never more.
@@ -61,6 +62,10 @@ struct Person {
     planned: Home,
     /// Its Pod and disk, asked directly whether it runs when its connection fails.
     pod: PersonComputer,
+    /// The largest it grows.
+    ceiling: Size,
+    /// Held by the one growth at a time, so two never undo each other.
+    growing: tokio::sync::Mutex<()>,
     computers: Arc<WorkerComputers>,
     state: watch::Sender<State>,
     waking: Mutex<Option<JoinHandle<()>>>,
@@ -87,6 +92,9 @@ pub struct People {
     disk_gb: u32,
     /// The minutes a computer goes unasked before it sleeps on its own.
     idle_minutes: u32,
+    /// The largest a computer grows: the organization's limits, else Glave Cloud's personal
+    /// plan's.
+    ceiling: Size,
     held: Mutex<BTreeMap<String, Arc<Person>>>,
 }
 
@@ -130,9 +138,18 @@ impl People {
             network: Some(Network::On),
             ..Environment::host()
         };
+        let ceiling = Size {
+            cpu_millis: limits
+                .cpus
+                .map_or(CEILING.cpu_millis, |cpus| cpus.saturating_mul(1_000)),
+            memory_mib: limits
+                .memory_gb
+                .map_or(CEILING.memory_mib, |gb| gb.saturating_mul(1_024)),
+        };
         Ok(Self {
             cluster,
             environment,
+            ceiling,
             limits: Limits {
                 max_minutes: None,
                 per_person: None,
@@ -178,7 +195,13 @@ impl People {
             WorkerCredentials::None,
         );
         let home = planned_home()?;
+        let ceiling = self.ceiling;
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
+            let grows = std::sync::Weak::clone(me);
+            let grow: Grow = Arc::new(move |short| {
+                let me = std::sync::Weak::clone(&grows);
+                Box::pin(async move { grow(&me.upgrade()?, short, ceiling).await })
+            });
             let (me, environment) = (std::sync::Weak::clone(me), self.environment.clone());
             let wake: Wake = Arc::new(move || {
                 let (me, environment) = (std::sync::Weak::clone(&me), environment.clone());
@@ -192,8 +215,10 @@ impl People {
                 })
             });
             Person {
-                planned: Waking::home(wake, home, PERSON_SCRATCH),
+                planned: Waking::home(wake, Some(grow), home, PERSON_SCRATCH),
                 pod: computer,
+                ceiling,
+                growing: tokio::sync::Mutex::new(()),
                 computers: Arc::new(computers),
                 state: watch::Sender::new(State::Asleep),
                 waking: Mutex::new(None),
@@ -252,6 +277,72 @@ fn planned_home() -> Result<WorkspaceInfo, ComputerError> {
         home: Some(PERSON_HOME.into()),
         temp: None,
     })
+}
+
+/// Grows `person`'s computer for what a command ran `short` of, within `ceiling`, one growth
+/// at a time: a computer held at its CPU limit in place where the cluster can, else at its next
+/// wake; one killed for memory, its glave with it, at its next wake, which the next call makes.
+/// What to tell whoever ran the command; nothing when it did not run short.
+async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> Option<String> {
+    let _growing = person.growing.lock().await;
+    let now = person.pod.sizing.now();
+    match short {
+        Short::Cpu => {
+            let bigger = now.grown(short, ceiling)?;
+            if person.pod.resize(bigger).await.is_ok() {
+                return Some(format!(
+                    "glave: this computer now has {}.",
+                    bigger.said(short)
+                ));
+            }
+            person.pod.sizing.wake_at(bigger);
+            Some(format!(
+                "glave: this computer gets {} when it next wakes.",
+                bigger.said(short)
+            ))
+        }
+        Short::Memory => {
+            if !person.pod.killed_for_memory().await {
+                return None;
+            }
+            let said = match now.grown(short, ceiling) {
+                Some(bigger) => {
+                    person.pod.sizing.wake_at(bigger);
+                    format!(
+                        "glave: this computer ran out of memory at {} and restarts with {}; \
+                         anything it ran in the background stopped. Run the command again.",
+                        now.said(short),
+                        bigger.said(short)
+                    )
+                }
+                None => format!(
+                    "glave: this computer ran out of memory at {}, as much as it gets.",
+                    now.said(short)
+                ),
+            };
+            let awake = match &*person.state.borrow() {
+                State::Awake(home) => Some(home.clone()),
+                _ => None,
+            };
+            if let Some(home) = awake {
+                slept(person, &home).await;
+            }
+            Some(said)
+        }
+    }
+}
+
+/// Lets go of `person`'s computer, awake with `home` until it went away on its own: what is
+/// left of it removed, and counted asleep, so the next call wakes it again.
+async fn slept(person: &Person, home: &WorkspaceInfo) {
+    let _ = person.computers.destroy(home.computer).await;
+    person.state.send_if_modified(|state| match state {
+        State::Awake(awake) if awake.computer == home.computer => {
+            *state = State::Asleep;
+            true
+        }
+        _ => false,
+    });
 }
 
 /// Starts waking `person`'s computer from `environment`, unless it is awake or waking.
@@ -329,14 +420,13 @@ async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
         Ok(info) if info.state == ComputerState::Running => false,
         _ if !matches!(person.pod.running().await, Ok(false)) => false,
         _ => {
-            let _ = person.computers.destroy(home.computer).await;
-            person.state.send_if_modified(|state| match state {
-                State::Awake(awake) if awake.computer == home.computer => {
-                    *state = State::Asleep;
-                    true
-                }
-                _ => false,
-            });
+            // Killed whole for memory with no command running: its next wake is bigger.
+            if person.pod.ran_out_of_memory().await
+                && let Some(bigger) = person.pod.sizing.now().grown(Short::Memory, person.ceiling)
+            {
+                person.pod.sizing.wake_at(bigger);
+            }
+            slept(person, home).await;
             true
         }
     }

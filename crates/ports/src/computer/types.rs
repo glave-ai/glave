@@ -237,6 +237,22 @@ pub enum Ending {
 pub struct Finished {
     pub ending: Ending,
     pub millis: u64,
+    /// It spent at least half of a run of 10 seconds or more held at its computer's CPU limit,
+    /// as a computer with a limit of its own (a Pod's) counts it (`specs/computers.md`,
+    /// decision 8).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cpu_held: bool,
+}
+
+impl Finished {
+    /// A command that ended so after `millis`, never held at a CPU limit.
+    pub fn new(ending: Ending, millis: u64) -> Self {
+        Self {
+            ending,
+            millis,
+            cpu_held: false,
+        }
+    }
 }
 
 /// One file to write.

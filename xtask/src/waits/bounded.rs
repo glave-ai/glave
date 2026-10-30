@@ -128,6 +128,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          is connected, and one that does not is let go at its handshake's limit",
     ),
     (
+        "crates/computer/src/worker/kubernetes/people.rs",
+        "let _growing = person.growing.lock().await;",
+        1,
+        "a person's computer growing, one growth at a time: each within its resize's minute \
+         (RESIZED_WITHIN), or the seconds its Pod has to say how it ended (ENDED_WITHIN)",
+    ),
+    (
         "crates/computer/src/waking.rs",
         "planned.opening.lock().await",
         1,

@@ -31,8 +31,10 @@ pub(crate) struct Spec {
     pub(crate) image: String,
     /// Variables every command sees; never secrets.
     pub(crate) env: BTreeMap<String, String>,
-    pub(crate) cpus: Option<u32>,
-    pub(crate) memory_gb: Option<u32>,
+    /// CPU, in thousandths of one.
+    pub(crate) cpu_millis: Option<u32>,
+    /// Memory, in MiB.
+    pub(crate) memory_mib: Option<u32>,
     /// Whether commands may reach the network at all.
     pub(crate) network: bool,
     /// The worker's TLS identity, made for it by the harness side.

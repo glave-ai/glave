@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use glave_ports::block_on;
 use glave_ports::computer::{Computers as _, Environment, Image, Limits, Network};
 
+use super::super::sizing::Size;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
 use super::tests::ran;
@@ -71,7 +72,12 @@ fn a_persons_computer_measured_under_its_runtime() {
         let id = crate::local::new_id().unwrap().simple().to_string();
         let key = format!("measured-{}", id.get(id.len() - 12..).unwrap());
         let person = PersonComputer::new(cluster.clone(), &key, 2).unwrap();
-        // Two CPUs and 2 GiB, the same under both runtimes, so the work compares.
+        // Two CPUs and 2 GiB, the same under both runtimes, so the work compares: its one wake
+        // starts there, not at the smallest size.
+        person.sizing.wake_at(Size {
+            cpu_millis: 2_000,
+            memory_mib: 2_048,
+        });
         let limits = Limits {
             isolation: cluster.isolation(),
             cpus: Some(2),

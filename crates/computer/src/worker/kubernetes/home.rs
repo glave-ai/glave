@@ -5,7 +5,10 @@
 //! copied in. Nothing here is owned by the Pod glave runs in: a person's computer outlives any
 //! one glave, and is labelled `glave.computer`, never as a worker, so no glave reaps it.
 
+use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::time::Instant;
 
 use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
@@ -15,6 +18,7 @@ use kube::api::{DeleteParams, PostParams};
 use serde_json::json;
 
 use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
+use super::sizing::{Size, Sizing};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
 use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, saying};
@@ -22,10 +26,13 @@ use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, sayin
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
 const GONE_WAIT: Duration = Duration::from_mins(1);
+/// How long a computer that went away as a command ran has to show how its container ended:
+/// its Pod says so within seconds.
+const ENDED_WITHIN: Duration = Duration::from_secs(20);
 /// The longest key a person's computer is named by, so its objects' names stay labels.
 const KEY_LENGTH: usize = 40;
 
-/// One person's computer on a cluster: its key, and the size of its disk.
+/// One person's computer on a cluster: its key, the size of its disk, and how big it is.
 #[derive(Debug, Clone)]
 pub(crate) struct PersonComputer {
     cluster: Kubernetes,
@@ -33,6 +40,8 @@ pub(crate) struct PersonComputer {
     disk_gb: u32,
     /// The minutes it goes unasked before it sleeps on its own.
     idle_minutes: u32,
+    /// Its CPU and memory now, and at its next wake, shared by every copy of it.
+    pub(crate) sizing: Arc<Sizing>,
 }
 
 impl PersonComputer {
@@ -61,7 +70,15 @@ impl PersonComputer {
             key: key.to_owned(),
             disk_gb,
             idle_minutes: IDLE_MINUTES,
+            sizing: Arc::default(),
         })
+    }
+
+    /// Grows the computer awake in place to `size`, within a minute, or says why it could not.
+    pub(crate) async fn resize(&self, size: Size) -> Result<(), ComputerError> {
+        self.cluster.resize(&self.name(), size).await?;
+        self.sizing.set(size);
+        Ok(())
     }
 
     /// Sleeps on its own after `minutes` unasked rather than the spec's 10, as a test's does.
@@ -128,6 +145,12 @@ impl PersonComputer {
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
     /// removed (its glave takes a token no longer held), and a new one started on the disk.
     async fn wake(&self, spec: &Spec) -> Result<Link, ComputerError> {
+        let size = self.sizing.waking();
+        let spec = &Spec {
+            cpu_millis: Some(size.cpu_millis),
+            memory_mib: Some(size.memory_mib),
+            ..spec.clone()
+        };
         self.claim().await?;
         self.sleep().await?;
         let glave = self.cluster.glave().await?;
@@ -163,6 +186,33 @@ impl PersonComputer {
     /// and its container running.
     pub(crate) async fn running(&self) -> Result<bool, ComputerError> {
         super::running(&self.cluster.pods(), &self.name()).await
+    }
+
+    /// How its Pod's container ended, as the API server says, if it has.
+    async fn ended_as(&self) -> Option<String> {
+        let pod = self.cluster.pods().get_opt(&self.name()).await.ok()??;
+        let pod = serde_json::to_value(pod).ok()?;
+        pod.pointer("/status/containerStatuses/0/state/terminated/reason")?
+            .as_str()
+            .map(str::to_owned)
+    }
+
+    /// Whether its Pod's container ended killed for memory.
+    pub(crate) async fn ran_out_of_memory(&self) -> bool {
+        self.ended_as().await.as_deref() == Some("OOMKilled")
+    }
+
+    /// Whether its Pod's container ended killed for memory, waiting up to [`ENDED_WITHIN`] for
+    /// it to show it ended at all: for a computer that went away as a command ran.
+    pub(crate) async fn killed_for_memory(&self) -> bool {
+        let until = Instant::now() + ENDED_WITHIN;
+        loop {
+            match self.ended_as().await {
+                Some(reason) => return reason == "OOMKilled",
+                None if Instant::now() < until => tokio::time::sleep(POLL).await,
+                None => return false,
+            }
+        }
     }
 
     /// Removes the computer and its disk, with everything on it.
