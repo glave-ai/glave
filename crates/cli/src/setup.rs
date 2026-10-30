@@ -40,7 +40,7 @@ impl Setup {
     /// within the policy.
     pub(crate) async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
         let loaded = read(args, folder, None).await?;
-        let choices = loaded.settle()?;
+        let choices = served(loaded.settle()?, args);
         let mine = &loaded.person_hooks;
         if let Some(rule) = loaded.constraints.own_hooks_forbidden()
             && !mine.is_empty()
@@ -72,6 +72,7 @@ impl Setup {
     ) -> anyhow::Result<(Self, Vec<String>)> {
         let loaded = read_at(args, locations, None).await?;
         let (choices, mut aside) = loaded.settle_giving_way()?;
+        let choices = served(choices, args);
         let mine = &loaded.person_hooks;
         let hooks = match loaded.constraints.own_hooks_forbidden() {
             Some(rule) if !mine.is_empty() => {
@@ -90,6 +91,15 @@ impl Setup {
         };
         Ok((setup, aside))
     }
+}
+
+/// `choices`, their origin as glave serves it over HTTP where `args` say it does: this
+/// computer's `http://localhost`, named without a port, at the one it listens on.
+fn served(mut choices: Choices, args: &Args) -> Choices {
+    if let (Some(origin), Some(address)) = (choices.origin.as_mut(), args.http) {
+        origin.value = origin.value.serving_at(address.port());
+    }
+    choices
 }
 
 /// Asks the person about the project around `folder` once, if `asking` allows and there is a
