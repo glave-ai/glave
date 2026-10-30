@@ -1,12 +1,17 @@
 # glave-computer: the machine a person's computer in the cloud runs (specs/computers.md,
 # decision 12). Wolfi, for glibc and packages rebuilt as soon as a fix ships; the tools a
 # person's work needs first, and version managers that keep what a person adds in their home,
-# which is their disk. glave itself is copied in at each wake, never baked in.
-FROM cgr.dev/chainguard/wolfi-base:latest
+# which is their disk. glave itself is copied in at each wake, never baked in. Published with
+# each release (.github/workflows/publish-computer-image.yml).
+#
+# The base pinned by digest, moved by hand: the keys and repository it holds check every package
+# installed below. Every package, the base's own too, is the latest at each build (`apk
+# upgrade`), so fixes land at once.
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:88a20e2d017bd20cdc0cb3910de603e7bea9512a6c351a8dd3c9df212ab03d73
 
 # bubblewrap: glave's sandbox, measured under gVisor (specs/computers.md); commands on a
 # person's computer do not run in it yet.
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
       bash bubblewrap build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \
       less nodejs-24 npm openssh-client procps python-3.13 ripgrep rustup sed unzip uv zip
 

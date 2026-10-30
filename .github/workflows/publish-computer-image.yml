@@ -1,0 +1,70 @@
+name: publish the computer image
+
+# glave's computer image (images/computer, specs/computers.md, decision 12), published by the
+# Release run that calls this workflow (dist-workspace.toml, `publish-jobs`) once the release is
+# out, never on its own: built for x86-64 and arm64, pushed to GitHub's container registry
+# under the release's version, and attested there with GitHub's build provenance. A deployment
+# names it by the digest the run's summary prints (`[computers] image`). CI's `kind` job builds
+# and tests the same Dockerfile on every push.
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: dist's plan of the calling run, as JSON
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # What the calling job grants (release.yml, written by `cargo xtask release-workflow`), and
+    # no job but this one and the release's own may write.
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/glave-ai/glave-computer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # arm64 built under QEMU, both by a BuildKit release: each pinned by digest, as the
+      # image's base is, since this job can write packages.
+      - name: A builder for both processors
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
+          docker buildx create --use --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Sign in to GitHub's container registry
+        env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # GitHub's attestation below is the image's provenance, so BuildKit adds none of its own.
+      # The annotations link the package to this repository and say its licence.
+      - name: Build and push
+        id: push
+        env:
+          VERSION: ${{ fromJson(inputs.plan).releases[0].app_version }}
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+            --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            --tag "$IMAGE:$VERSION" --metadata-file "$RUNNER_TEMP/image.json" --push images/computer
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
+          case "$digest" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "no digest for the pushed image: $digest" >&2; exit 1 ;;
+          esac
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "glave's computer image $VERSION: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false

@@ -41,7 +41,10 @@ install-path = "~/.local/bin"
 # No separate updater program: dist's is a prebuilt binary that glave's builds don't make.
 install-updater = false
 tap = "glave-ai/homebrew-tap"
-publish-jobs = ["homebrew"]
+# Once the release is out: the Homebrew formula, and glave's computer image on GitHub's container
+# registry (.github/workflows/publish-computer-image.yml), the one job of the run besides the
+# release's own that may write, and only packages and attestations.
+publish-jobs = ["homebrew", "./publish-computer-image"]
 # Provenance for what is released, made when it is: pull requests' builds are not attested.
 github-attestations = true
 github-attestations-phase = "host"
