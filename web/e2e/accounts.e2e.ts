@@ -59,37 +59,44 @@ test('a git host is connected with its address and a token, which never shows', 
   await page.goto(`${glave}/#code=${code}`);
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
   await page.goto(`${glave}/settings`);
-  await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible();
-  await expect(byTestId(page, 'accounts-none')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connected accounts' })).toHaveCount(0);
+  await page.goto(`${glave}/settings/connections`);
+  await expect(byTestId(page, 'github-connect')).toBeVisible();
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
   }
 
-  await byTestId(page, 'accounts-host-address').fill(address);
-  await byTestId(page, 'accounts-host-token').fill(WRONG);
-  await byTestId(page, 'accounts-host-submit').click();
-  await expect(byTestId(page, 'accounts-host-problem')).toContainText('did not accept that token');
+  await byTestId(page, 'another-address').fill(address);
+  await byTestId(page, 'another-add').click();
+  await expect(byTestId(page, 'another-asks')).toContainText(
+    `127.0.0.1:${String(port)} needs an access token`,
+  );
+  await byTestId(page, 'another-token').fill(WRONG);
+  await byTestId(page, 'another-connect').click();
+  await expect(byTestId(page, 'another-problem')).toContainText('did not accept that token');
   await expectAccessible(page);
 
-  await byTestId(page, 'accounts-host-token').fill(TOKEN);
-  await byTestId(page, 'accounts-host-submit').click();
-  const account = byTestId(page, 'accounts-account');
+  await byTestId(page, 'another-token').fill(TOKEN);
+  await byTestId(page, 'another-connect').click();
+  const account = byTestId(page, 'git-host');
   await expect(account).toContainText(`127.0.0.1:${String(port)} (Gitea)`);
-  await expect(account).toContainText('Signed in as ana, token ending wxyz');
-  // Gitea does not say what a token may do, so nothing is claimed.
-  await expect(byTestId(page, 'accounts-abilities-note')).toContainText(
-    'depends on the access you gave its token',
-  );
-  await expect(byTestId(page, 'accounts-host-token')).toHaveValue('');
+  await expect(account).toContainText('Signed in as ana');
+  await expect(byTestId(page, 'another-token')).toHaveCount(0);
 
   await page.reload();
-  await expect(byTestId(page, 'accounts-account')).toContainText('Signed in as ana');
+  await expect(byTestId(page, 'git-host')).toContainText('Signed in as ana');
   expect(await page.content()).not.toContain(TOKEN);
+  expect(await page.locator('body').innerText()).not.toMatch(/token ending/u);
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+  await page.goto(`${glave}/settings`);
+  await expect(byTestId(page, 'settings-connected')).toContainText(
+    `127.0.0.1:${String(port)} (Gitea) is connected.`,
+  );
 
-  await byTestId(page, 'accounts-remove').click();
-  await byTestId(page, 'accounts-remove-confirm-ok').click();
-  await expect(byTestId(page, 'accounts-none')).toBeVisible();
+  await page.goto(`${glave}/settings/connections`);
+  await byTestId(page, 'git-host-disconnect').click();
+  await byTestId(page, 'github-disconnect-confirm-ok').click();
+  await expect(byTestId(page, 'git-host')).toHaveCount(0);
   expect(problems()).toEqual([]);
 });

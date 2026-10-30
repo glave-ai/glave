@@ -1,0 +1,65 @@
+<section class="card glz-stack glz-gap-3" data-testid="another" aria-labelledby="another-heading">
+  <h2 class="head" id="another-heading">{{ copy.heading }}</h2>
+  @if (adding()) {
+    <form class="glz-stack glz-gap-3" data-testid="another-token-step" (submit)="connect($event)">
+      <p class="title" data-testid="another-asks">{{ asks() }}</p>
+      <p class="details">{{ how() }}</p>
+      <glz-form-field [label]="copy.token">
+        <input
+          glzInput
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          data-testid="another-token"
+          [value]="token()"
+          (input)="typedToken($event)"
+        />
+      </glz-form-field>
+      @if (problem(); as problem) {
+        <p class="error" role="alert" data-testid="another-problem">{{ problem }}</p>
+      }
+      <div class="glz-row glz-gap-2">
+        <button
+          glzButton
+          variant="primary"
+          type="submit"
+          data-testid="another-connect"
+          [disabled]="busy()"
+        >
+          {{ connectLabel() }}
+        </button>
+        <button
+          glzButton
+          type="button"
+          data-testid="another-cancel"
+          [disabled]="busy()"
+          (click)="cancel()"
+        >
+          {{ copy.cancel }}
+        </button>
+      </div>
+    </form>
+  } @else {
+    <form class="glz-stack glz-gap-3" (submit)="add($event)">
+      <p class="details">{{ copy.lead }}</p>
+      <div class="glz-row glz-gap-2 add">
+        <glz-form-field class="field" [label]="copy.address">
+          <input
+            glzInput
+            type="url"
+            autocomplete="off"
+            spellcheck="false"
+            data-testid="another-address"
+            [placeholder]="placeholder"
+            [value]="address()"
+            (input)="typedAddress($event)"
+          />
+        </glz-form-field>
+        <button glzButton type="submit" data-testid="another-add">{{ copy.add }}</button>
+      </div>
+      @if (problem(); as problem) {
+        <p class="error" role="alert" data-testid="another-problem">{{ problem }}</p>
+      }
+    </form>
+  }
+</section>

@@ -30,12 +30,13 @@ pub trait GitHosts: Send + Sync {
     /// Removes `credential`, destroying its token.
     fn remove(&self, credential: CredentialId) -> BoxFuture<'_, Result<(), ApiError>>;
 
-    /// Whether signing in to GitHub in the browser is set up.
-    fn device(&self) -> bool;
-
     /// The page where the person chooses which repositories GitHub's app may use, if it has
     /// one.
     fn install(&self) -> Option<String>;
+
+    /// Where signing in to GitHub in the browser goes: github.com, or the GitHub Enterprise
+    /// Server the organization's own app is on.
+    fn github(&self) -> String;
 
     /// Starts signing in to GitHub in the browser.
     fn start_device(&self) -> BoxFuture<'_, Result<DeviceCode, ApiError>>;
@@ -72,8 +73,8 @@ where
         let hosts = self.git_hosts_for(caller)?;
         Ok(Reply::Credentials {
             credentials: hosts.list().await?,
-            device: hosts.device(),
             install: hosts.install(),
+            github: hosts.github(),
         })
     }
 

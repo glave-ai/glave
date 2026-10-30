@@ -326,13 +326,28 @@ describe('ConnectionsComponent', () => {
     await expectAccessible(root);
   });
 
-  it('says when there is nothing to connect, and why the list could not be read', async () => {
-    const fake = new FakeSession().answer('connection/list', { connections: [] });
+  it('offers GitHub and another service with nothing else to connect, and says why a list failed', async () => {
+    const fake = new FakeSession()
+      .answer('connection/list', { connections: [] })
+      .answer('credential/list', { credentials: [] });
     const { root } = await page(fake);
-    expect(root.querySelector('[data-testid="connections-empty"]')?.textContent).toContain(
+    expect(root.querySelector('[data-testid="github-connect"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="another-address"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="connections-ready"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connections-empty"]')).toBeNull();
+    await expectAccessible(root);
+
+    // Where the server keeps no git hosts for the person, and lists no service: nothing.
+    TestBed.resetTestingModule();
+    const none = await page(
+      new FakeSession()
+        .answer('connection/list', { connections: [] })
+        .answer('credential/list', new ApiError({ code: ErrorCode.NOT_AVAILABLE, message: 'no' })),
+    );
+    expect(none.root.querySelector('[data-testid="connections-empty"]')?.textContent).toContain(
       'Nothing to connect yet',
     );
-    await expectAccessible(root);
+    expect(none.root.querySelector('[data-testid="github-row"]')).toBeNull();
 
     TestBed.resetTestingModule();
     const refusing = new FakeSession().answer(
@@ -347,6 +362,5 @@ describe('ConnectionsComponent', () => {
       'Connections are signed in to on the computer glave runs on, by its person.',
     );
     expect(refused.root.querySelector('[data-testid="connections-loading"]')).toBeNull();
-    expect(refused.root.querySelector('[data-testid="connections-empty"]')).toBeNull();
   });
 });

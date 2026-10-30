@@ -96,16 +96,18 @@ test('a person adds a model, chats, approves a command and connects GitHub, in p
   await expectPlain(page);
   await page.keyboard.press('Escape');
 
-  // Connect GitHub, at an address of its own as GitHub Enterprise has.
-  await page.goto(`${glave}/settings`);
+  // Connect GitHub, at an address of its own as GitHub Enterprise has: another service.
+  await page.goto(`${glave}/settings/connections`);
   await expectPlain(page);
   const { port } = github.address() as AddressInfo;
-  await byTestId(page, 'accounts-host-address').fill(`http://127.0.0.1:${String(port)}`);
-  await byTestId(page, 'accounts-host-token').fill(TOKEN);
-  await byTestId(page, 'accounts-host-submit').click();
-  const account = byTestId(page, 'accounts-account');
+  await byTestId(page, 'another-address').fill(`http://127.0.0.1:${String(port)}`);
+  await byTestId(page, 'another-add').click();
+  await byTestId(page, 'another-token').fill(TOKEN);
+  await byTestId(page, 'another-connect').click();
+  const account = byTestId(page, 'git-host');
   await expect(account).toContainText(`127.0.0.1:${String(port)} (GitHub)`);
-  await expect(account).toContainText('Signed in as ana, token ending wxyz');
+  await expect(account).toContainText('Signed in as ana');
+  await expect(account).not.toContainText('token ending');
   await expectPlain(page);
 
   // The rest of what a person reaches from the side nav and settings.

@@ -20,7 +20,7 @@ use glave_event::{At, Catalog, Principal, ProviderConnected, ProviderId, Provide
 use glave_ports::auth::safe_to_send;
 use glave_ports::{BoxFuture, Clock as _, Failure, ProviderError, SystemClock};
 use glave_provider_openai::Config;
-use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code, hint};
+use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code};
 use glave_session::{Models, NewProvider, Providers, Refreshed};
 
 use crate::accounts::{Ledger, random};
@@ -242,7 +242,6 @@ fn info(account: &ProviderConnected, catalogs: &[Catalog]) -> ProviderInfo {
         id: account.provider,
         kind: account.kind,
         url: account.url.clone(),
-        hint: hint(account.key.expose()),
         models: offered_by(account, catalogs)
             .into_iter()
             .map(str::to_owned)

@@ -90,7 +90,10 @@ fn a_pasted_token_is_checked_kept_sealed_and_signs_the_next_command_in() {
     assert_eq!(credential["forge"], "gitea", "{connected}");
     assert_eq!(credential["login"], "ana");
     assert_eq!(credential["url"], host.url.as_str(), "kept as the host");
-    assert_eq!(credential["hint"], "wxyz");
+    assert!(
+        credential.get("hint").is_none(),
+        "no token's ending: {connected}"
+    );
 
     let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();
     let turn = served.call(
@@ -109,10 +112,6 @@ fn a_pasted_token_is_checked_kept_sealed_and_signs_the_next_command_in() {
     assert!(results.contains(FAKE_COMMIT), "git signed in: {results}");
 
     let listed = served.call("credential/list", &json!({}));
-    assert_eq!(
-        listed["result"]["device"], true,
-        "glave's own app: {listed}"
-    );
     assert_eq!(
         listed["result"]["install"],
         "https://github.com/apps/glave-ai/installations/new"
@@ -169,7 +168,6 @@ fn github(tokens: &Tokens, then: Vec<(u16, String)>) -> FakeHttp {
 /// Signs in through `github`'s app in the browser, as a client does: the id connected.
 fn signs_in(served: &mut Served, github: &FakeHttp) -> serde_json::Value {
     let listed = served.call("credential/list", &json!({}));
-    assert_eq!(listed["result"]["device"], true, "{listed}");
     assert_eq!(
         listed["result"]["install"],
         format!("{}/github-apps/glave-e2e/installations/new", github.url)

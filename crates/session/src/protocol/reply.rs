@@ -307,13 +307,13 @@ pub enum Reply {
     #[schemars(title = "Credentials")]
     Credentials {
         credentials: Vec<CredentialInfo>,
-        /// Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;
-        /// without it, a GitHub token is pasted.
-        device: bool,
         /// Where the person chooses which repositories GitHub's app may use, when it has
         /// such a page.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         install: Option<String>,
+        /// Where signing in to GitHub in the browser goes, as an origin: the host whose
+        /// credential is the one GitHub's sign-in made.
+        github: String,
     },
     /// A connection, as it was signed in to.
     #[schemars(title = "Connection")]

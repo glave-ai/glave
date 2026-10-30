@@ -105,7 +105,7 @@ export class FakeTurn {
  * `thread/rename` the same thread with its new title, updated since;
  * `thread/sources`, no reply drew on the web; `thread/plan`, no plan; `thread/changes`, none;
  * `thread/steps`, no runs and no replies;
- * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
+ * `command/list`, nothing running; `credential/list`, nothing connected; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose; `memory/get`, memory on;
  * `grouping/get`, by project, and `grouping/set`, the grouping asked for; `organization/list`,
  * the person's own alone; a watch, of a thread
@@ -257,6 +257,9 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'command/list') {
     return { commands: [] };
+  }
+  if (method === 'credential/list') {
+    return { credentials: [], github: 'https://github.com' };
   }
   if (method === 'awake/get') {
     return { awake: { kind: 'never' } };

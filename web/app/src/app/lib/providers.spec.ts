@@ -15,7 +15,6 @@ import {
 const OPENAI: ProviderInfo = {
   id: '01900000-0000-7000-8000-000000000301',
   kind: 'openai',
-  hint: 'a1b2',
   models: ['gpt-6'],
 };
 
@@ -36,10 +35,10 @@ describe('providers', () => {
 
   it('names an account by its service, or another server by its address', () => {
     expect(accountName(OPENAI)).toBe('OpenAI');
-    expect(keyHint(OPENAI, 'en-US')).toBe('Key ending a1b2 · 1 model');
+    expect(keyHint(OPENAI, 'en-US')).toBe('1 model');
     const local = { ...OPENAI, kind: 'compatible', url: 'http://localhost:11434/v1' } as const;
     expect(accountName(local)).toBe('http://localhost:11434/v1');
-    expect(keyHint({ ...OPENAI, hint: undefined, models: ['a', 'b'] }, 'en-US')).toBe('2 models');
+    expect(keyHint({ ...OPENAI, models: ['a', 'b'] }, 'en-US')).toBe('2 models');
     expect(changeQuery(OPENAI)).toEqual({ kind: 'openai' });
     expect(changeQuery(local)).toEqual({ kind: 'compatible', url: 'http://localhost:11434/v1' });
   });

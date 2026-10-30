@@ -23,7 +23,6 @@ import {
 } from '@glave/glaze';
 import { Folder } from 'lucide';
 
-import { ACCOUNTS_SECTION } from '../../lib/credentials';
 import {
   NAME_LIMIT,
   type ProjectDraft,
@@ -115,8 +114,7 @@ export class NewProjectComponent {
   ];
   protected readonly limit = NAME_LIMIT;
   protected readonly icons = { folder: Folder };
-  protected readonly settingsLink = '/settings';
-  protected readonly accountsSection = ACCOUNTS_SECTION;
+  protected readonly connectionsLink = '/settings/connections';
   protected readonly formId = injectId('new-project-form');
   protected readonly folderLabelId = injectId('new-project-folder');
   protected readonly cloningId = injectId('new-project-cloning');

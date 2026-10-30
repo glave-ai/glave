@@ -174,11 +174,6 @@ export type CredentialInfo = {
    */
   readonly can?: readonly (Ability)[] | null;
   readonly forge: Forge;
-  /**
-   * The token's last four characters, to tell tokens apart; absent for a token too short
-   * to show any of.
-   */
-  readonly hint?: string | null;
   readonly id: CredentialId;
   /** Whom the host said the token is for, when it said. */
   readonly login?: string | null;
@@ -694,11 +689,6 @@ export type ProviderId = string;
 
 /** A model account the person connected. */
 export type ProviderInfo = {
-  /**
-   * The key's last four characters, to tell keys apart; absent for a key too short to show
-   * any of.
-   */
-  readonly hint?: string | null;
   readonly id: ProviderId;
   readonly kind: ProviderKind;
   /** The models it offers, the one glave uses by default first. */
@@ -1406,10 +1396,10 @@ export type CredentialListParams = Readonly<Record<string, never>>;
 export type CredentialListResult = {
   readonly credentials: readonly (CredentialInfo)[];
   /**
-   * Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;
-   * without it, a GitHub token is pasted.
+   * Where signing in to GitHub in the browser goes, as an origin: the host whose
+   * credential is the one GitHub's sign-in made.
    */
-  readonly device: boolean;
+  readonly github: string;
   /**
    * Where the person chooses which repositories GitHub's app may use, when it has
    * such a page.

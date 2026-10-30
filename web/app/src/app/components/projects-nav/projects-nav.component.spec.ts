@@ -46,7 +46,7 @@ async function render(
   fake
     .answer('project/list', { projects })
     .answer('folder/list', { path: '/Users/ana', parent: '/Users', folders: [] })
-    .answer('credential/list', { credentials: [], device: false })
+    .answer('credential/list', { credentials: [], github: 'https://github.com' })
     .answer('thread/list', (params) => ({
       threads: THREADS[(params as { project: string }).project] ?? [],
     }));

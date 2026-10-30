@@ -1,0 +1,33 @@
+// A card of its own across the column, as the page's others are: GitHub's row, then a row
+// for each other git host.
+.card {
+  overflow: hidden;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-card);
+}
+
+.rows > app-service-row:first-child {
+  border-block-start: none;
+}
+
+.detail {
+  overflow-wrap: anywhere;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+}
+
+// GitHub's code, read off the screen and typed there.
+.code {
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-2xl);
+  font-weight: var(--glz-weight-bold);
+  letter-spacing: 0.1em;
+}
+
+.problem {
+  padding: var(--glz-inset-card-row);
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}

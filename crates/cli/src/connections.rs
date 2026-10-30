@@ -93,21 +93,9 @@ pub(crate) fn connections_main(words: &[String]) -> ExitCode {
     })
 }
 
-/// Signs in to GitHub in the browser, or connects it with a token where that is not set up.
+/// Signs in to GitHub in the browser. One whose organization blocks apps connects github.com
+/// with a token instead, by its address (`glave connect https://github.com`).
 async fn sign_in(server: &mut Reached) -> anyhow::Result<()> {
-    let Reply::Credentials { device, .. } = server.request(Request::CredentialList {}).await?
-    else {
-        bail!("glave answered credential/list with something else");
-    };
-    if !device {
-        eprintln!(
-            "Signing in to GitHub in the browser is not set up here, so connect it with a token: \
-             make one at {GITHUB}/settings/personal-access-tokens/new for the repositories glave \
-             works on."
-        );
-        let (url, token) = asked_token(GITHUB).await?;
-        return connect(server, &url, token, None).await;
-    }
     let Reply::Device { device } = server.request(Request::CredentialDeviceStart {}).await? else {
         bail!("glave answered credential/device/start with something else");
     };
@@ -224,7 +212,7 @@ async fn remove(server: &mut Reached, credential: CredentialId, id: &str) -> any
     Ok(())
 }
 
-/// A git host as a line: the host, its forge, whom it signs in as and the end of its token.
+/// A git host as a line: the host, its forge, and whom it signs in as.
 fn shown(credential: &CredentialInfo) -> String {
     let host = credential.url.trim_start_matches("https://");
     let mut line = match credential.forge {
@@ -234,9 +222,6 @@ fn shown(credential: &CredentialInfo) -> String {
     };
     if let Some(login) = &credential.login {
         let _ = write!(line, ", signed in as {login}");
-    }
-    if let Some(hint) = &credential.hint {
-        let _ = write!(line, ", token ending {hint}");
     }
     line
 }
@@ -287,7 +272,6 @@ mod tests {
             forge,
             url: url.to_owned(),
             login: Some("ana".to_owned()),
-            hint: Some("wxyz".to_owned()),
             can,
         }
     }
@@ -295,10 +279,7 @@ mod tests {
     #[test]
     fn a_connection_says_whom_it_signs_in_as_and_only_what_the_host_said_it_can_do() {
         let github = connection(GITHUB, Forge::Github, Some(vec![Ability::Read]));
-        assert_eq!(
-            shown(&github),
-            "GitHub, signed in as ana, token ending wxyz"
-        );
+        assert_eq!(shown(&github), "GitHub, signed in as ana");
         assert_eq!(can(&github), "Can read and clone your repositories.");
         let gitlab = connection(
             "https://gitlab.example.com",
@@ -307,7 +288,7 @@ mod tests {
         );
         assert_eq!(
             shown(&gitlab),
-            "gitlab.example.com (GitLab), signed in as ana, token ending wxyz"
+            "gitlab.example.com (GitLab), signed in as ana"
         );
         assert_eq!(
             can(&gitlab),

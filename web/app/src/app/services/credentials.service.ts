@@ -1,4 +1,4 @@
-import { Service, inject, signal } from '@angular/core';
+import { Service, computed, inject, signal } from '@angular/core';
 import type { CredentialInfo, DeviceCode } from '@glave/client';
 
 import { onChange } from './changes.service';
@@ -6,21 +6,24 @@ import { SessionService } from './session.service';
 
 /**
  * The accounts with git hosts the person connected (`credential/list`): connecting one with a
- * token or by signing in to GitHub in the browser, and removing one. What the list says of
- * GitHub's sign-in (whether it is set up, and where its repositories are chosen) comes too.
+ * token or by signing in on GitHub, and removing one. Where GitHub's sign-in goes, and where
+ * its repositories are chosen, come with the list. Someone the server keeps no git hosts for
+ * (a company login's people) is never listed any.
  */
 @Service()
 export class CredentialsService {
   private readonly session = inject(SessionService);
-  private readonly list = signal<readonly CredentialInfo[]>([]);
-  private readonly signIn = signal(false);
+  private readonly list = signal<readonly CredentialInfo[] | null>(null);
   private readonly choose = signal<string | null>(null);
+  private readonly signsIn = signal<string | null>(null);
 
-  readonly accounts = this.list.asReadonly();
-  /** Whether GitHub can be signed in to in the browser here. */
-  readonly device = this.signIn.asReadonly();
+  readonly accounts = computed<readonly CredentialInfo[]>(() => this.list() ?? []);
+  /** Whether the server listed them: it keeps git hosts for this person. */
+  readonly listed = computed(() => this.list() !== null);
   /** GitHub's page where the person chooses which repositories glave may use, if any. */
   readonly install = this.choose.asReadonly();
+  /** Where signing in to GitHub goes, as the server says: the host of GitHub's account. */
+  readonly github = this.signsIn.asReadonly();
 
   constructor() {
     onChange('credentials', () => void this.load());
@@ -31,8 +34,8 @@ export class CredentialsService {
     try {
       const listed = await this.session.call('credential/list', {});
       this.list.set(listed.credentials);
-      this.signIn.set(listed.device);
       this.choose.set(listed.install ?? null);
+      this.signsIn.set(listed.github);
     } catch {
       // The settings page shows what it has; there is nothing to fix here.
     }

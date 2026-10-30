@@ -47,7 +47,10 @@ async function render(options: Options = {}): Promise<Rendered> {
       };
       return { path, parent: '/Users', folders: folders[path] ?? [] };
     })
-    .answer('credential/list', { credentials: options.accounts ?? [], device: false })
+    .answer('credential/list', {
+      credentials: options.accounts ?? [],
+      github: 'https://github.com',
+    })
     .answer('project/list', () => ({ projects: made }))
     .answer('thread/list', { threads: [] })
     .answer(
@@ -230,7 +233,7 @@ describe('NewProjectComponent', () => {
     expect(find(root, 'new-project-private').textContent).toContain(
       'Private repositories need a connected git host',
     );
-    expect(find(root, 'new-project-connect').getAttribute('href')).toBe('/settings#accounts');
+    expect(find(root, 'new-project-connect').getAttribute('href')).toBe('/settings/connections');
     type(root, 'new-project-url', 'https://github.com/acme/secret.git');
     await settle(fixture);
     expect(find<HTMLInputElement>(root, 'new-project-name').value).toBe('secret');

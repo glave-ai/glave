@@ -65,7 +65,6 @@
         }
       </div>
     </glz-card>
-    <app-accounts class="accounts" [id]="accountsSection" />
     <glz-confirm-dialog
       testId="settings-remove"
       danger
@@ -77,7 +76,7 @@
     />
     <glz-card>
       <h2 glzCardHeader>{{ copy.connections }}</h2>
-      <p class="details">{{ copy.connectionsText }}</p>
+      <p class="details" data-testid="settings-connected">{{ connected() }}</p>
       <div glzCardFooter class="glz-row glz-gap-2">
         <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
           copy.connectionsOpen

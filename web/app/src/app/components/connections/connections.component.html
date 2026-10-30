@@ -7,6 +7,9 @@
   @if (problem(); as problem) {
     <p class="error" role="alert" data-testid="connections-problem">{{ problem }}</p>
   }
+  @if (gitHosts()) {
+    <app-github-row />
+  }
   @if (loading()) {
     <p class="details" role="status" data-testid="connections-loading">{{ copy.loading }}</p>
   }
@@ -67,6 +70,9 @@
         }
       </div>
     </section>
+  }
+  @if (gitHosts()) {
+    <app-another-service />
   }
   @if (empty()) {
     <glz-empty-state
