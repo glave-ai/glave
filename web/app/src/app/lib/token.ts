@@ -13,6 +13,12 @@ export const TOKEN_KEY = 'glave-session';
 export interface BrowserSession {
   readonly token: string;
   readonly server: string;
+  /**
+   * The organization the person chose to work in with this session, by its id, for someone in
+   * several; none for the first they joined. It goes with the session: a new sign-in starts
+   * in their first.
+   */
+  readonly organization?: string;
 }
 
 /**
@@ -77,32 +83,10 @@ function isSession(value: unknown): value is BrowserSession {
     return false;
   }
   const fields = value as Readonly<Record<string, unknown>>;
-  return typeof fields['token'] === 'string' && typeof fields['server'] === 'string';
-}
-
-/**
- * Where this browser keeps the organization the person last chose to work in, with the id of
- * the server it is one of: for every tab of this origin, presented to that server alone.
- */
-export const ORGANIZATION_KEY = 'glave-organization';
-
-/** The organization chosen in this browser, and the server it is one of. */
-export interface ChosenOrganization {
-  readonly id: string;
-  readonly server: string;
-}
-
-/** The organization this browser chose for the server whose id is `server`, if any. */
-export function chosenFor(storage: Store, server: string | undefined): string | null {
-  const kept = readStored(storage, ORGANIZATION_KEY);
-  const chosen =
-    typeof kept === 'object' &&
-    kept !== null &&
-    'id' in kept &&
-    'server' in kept &&
-    typeof kept.id === 'string' &&
-    kept.server === server
-      ? kept.id
-      : null;
-  return server === undefined ? null : chosen;
+  const organization = fields['organization'];
+  return (
+    typeof fields['token'] === 'string' &&
+    typeof fields['server'] === 'string' &&
+    (organization === undefined || typeof organization === 'string')
+  );
 }

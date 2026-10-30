@@ -40,6 +40,15 @@ export const SIGN_IN: Answers<null> = {
     server: FAKE_SERVER,
   }),
   'organization/list': () => ({
-    organizations: [{ id: OWN_ORGANIZATION, people: 1, own: true, role: 'owner', current: true }],
+    organizations: [
+      {
+        id: OWN_ORGANIZATION,
+        name: 'Personal',
+        people: 1,
+        own: true,
+        role: 'owner',
+        current: true,
+      },
+    ],
   }),
 };

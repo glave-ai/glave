@@ -62,7 +62,6 @@ export class PersonComponent {
     admin: $localize`:@@person.admin:Admin`,
     invite: $localize`:@@person.invite:Invite someone`,
     switchTo: $localize`:@@person.switchTo:Switch to`,
-    current: $localize`:@@person.current:Current`,
     signOut: $localize`:@@person.signOut:Sign out`,
   } as const;
   protected readonly icons = {

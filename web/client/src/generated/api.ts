@@ -215,8 +215,6 @@ export type ErrorData = {
   readonly failure: Failure;
 } | {
   readonly unknown_passkey: UnknownPasskey;
-} | {
-  readonly not_in: OrgNamed;
 };
 
 /** Identifies one event, unique everywhere. */
@@ -439,9 +437,6 @@ export type Opened = {
   readonly path: string;
 };
 
-/** That a request named an organization, in `ErrorData::NotIn`. */
-export type OrgNamed = "organization";
-
 /** What a person may do in their organization. A person given no role is a Member. */
 export type OrgRole = "member" | "admin" | "owner";
 
@@ -452,15 +447,15 @@ export type OrganizationInfo = {
   /** Its id, which a request names in `Glave-Organization` to work in it. */
   readonly id: string;
   /**
+   * What it is called: "Personal" for the caller's own; another, while organizations have
+   * no names of their own, by an Owner of it ("Dana Lee's team"), else "A team".
+   */
+  readonly name: string;
+  /**
    * Whether it is the caller's own: the one they signed up into, or for the person on the
    * server's computer, the server's own.
    */
   readonly own?: boolean;
-  /**
-   * An Owner of it but the caller, by the name it knows them by, else their email; none
-   * when no one else owns it or has either.
-   */
-  readonly owner?: string | null;
   /** How many people are in it, the person on the server's computer counted in its own. */
   readonly people: number;
   /** The caller's role in it. */
@@ -2401,6 +2396,8 @@ export const ErrorCode = {
   NOT_ALLOWED: -32012,
   /** Not available yet, such as a thread on a computer of the person's own */
   NOT_AVAILABLE: -32022,
+  /** The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists */
+  NOT_IN: -32036,
   /** No such approval is pending */
   NO_APPROVAL: -32004,
   /** No such command is running in the background in this thread */

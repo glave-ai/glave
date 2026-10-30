@@ -548,19 +548,6 @@
           ],
           "title": "UnknownPasskeyFailure",
           "type": "object"
-        },
-        {
-          "description": "The organization the request named, which the caller is not in (any more): a client\nstops naming it.",
-          "properties": {
-            "not_in": {
-              "$ref": "#/$defs/OrgNamed"
-            }
-          },
-          "required": [
-            "not_in"
-          ],
-          "title": "NotInOrganization",
-          "type": "object"
         }
       ],
       "description": "What a failure says beyond its sentence, for a client to act on."
@@ -1272,16 +1259,6 @@
         }
       ]
     },
-    "OrgNamed": {
-      "description": "That a request named an organization, in `ErrorData::NotIn`.",
-      "oneOf": [
-        {
-          "const": "organization",
-          "description": "The one `Glave-Organization` named.",
-          "type": "string"
-        }
-      ]
-    },
     "OrgRole": {
       "description": "What a person may do in their organization. A person given no role is a Member.",
       "oneOf": [
@@ -1313,16 +1290,13 @@
           "description": "Its id, which a request names in `Glave-Organization` to work in it.",
           "type": "string"
         },
+        "name": {
+          "description": "What it is called: \"Personal\" for the caller's own; another, while organizations have\nno names of their own, by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
+          "type": "string"
+        },
         "own": {
           "description": "Whether it is the caller's own: the one they signed up into, or for the person on the\nserver's computer, the server's own.",
           "type": "boolean"
-        },
-        "owner": {
-          "description": "An Owner of it but the caller, by the name it knows them by, else their email; none\nwhen no one else owns it or has either.",
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "people": {
           "description": "How many people are in it, the person on the server's computer counted in its own.",
@@ -1337,6 +1311,7 @@
       },
       "required": [
         "id",
+        "name",
         "people",
         "role"
       ],
@@ -3472,6 +3447,10 @@
     "NOT_AVAILABLE": {
       "code": -32022,
       "message": "Not available yet, such as a thread on a computer of the person's own"
+    },
+    "NOT_IN": {
+      "code": -32036,
+      "message": "The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists"
     },
     "NO_APPROVAL": {
       "code": -32004,

@@ -11,12 +11,10 @@ import {
 } from '@glave/client';
 
 import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
-import { forget, storageOf, writeStored } from '../lib/storage';
+import { forget, storageOf } from '../lib/storage';
 import {
   type BrowserSession,
-  ORGANIZATION_KEY,
   TOKEN_KEY,
-  chosenFor,
   isLocalToken,
   keepSession,
   readSession,
@@ -65,6 +63,17 @@ export const SESSION_CLIENT_FACTORY = new InjectionToken<
     const document = inject(DOCUMENT);
     const url = new URL('/', document.location.href).toString();
     return (token, organization) => new GlaveClient({ url, token, organization });
+  },
+});
+
+/** Opens the app again at its start, so every part of it reads the organization chosen. */
+export const START_AGAIN = new InjectionToken<() => void>('START_AGAIN', {
+  providedIn: 'root',
+  factory: () => {
+    const document = inject(DOCUMENT);
+    return () => {
+      document.defaultView?.location.assign('/');
+    };
   },
 });
 
@@ -130,15 +139,18 @@ export class SessionService {
   readonly offersPasskey = computed(
     () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
   );
-  /** The organization requests work in, as this browser chose for this server; none for the first. */
+  /**
+   * The organization this tab works in, as its session was when the tab started, so all it
+   * shows is of one organization; `null` for the person's first.
+   */
   private readonly chosenOrganization = signal<string | null>(null);
-  /** The organization this tab works in, as this browser chose; `null` for the person's first. */
   readonly organization = this.chosenOrganization.asReadonly();
   private readonly client = inject(SESSION_CLIENT_FACTORY)(
     () => this.session()?.token ?? '',
     () => this.chosenOrganization(),
   );
   private readonly passkeySignals = inject(PASSKEY_SIGNALS);
+  private readonly startAgain = inject(START_AGAIN);
 
   /**
    * Signs the tab in, before the app starts: with the link's code when it carries one, else
@@ -231,25 +243,38 @@ export class SessionService {
   }
 
   /**
-   * Works in the organization `id` from now on, in every tab of this browser, the page opened
-   * again at the start so every part reads it there; `null` goes back to the person's first.
+   * Works in the organization `id` from now on, with this browser's session, the page opened
+   * again at the start so every part reads it there; a tab open already keeps its own until it
+   * starts again.
    */
-  chooseOrganization(id: string | null): void {
-    if (this.server === undefined) {
+  chooseOrganization(id: string): void {
+    const kept = sessionFor(readSession(this.storage), this.server) ?? this.session();
+    if (kept === null) {
       return;
     }
-    if (id === null) {
-      forget(this.storage, ORGANIZATION_KEY);
-    } else {
-      writeStored(this.storage, ORGANIZATION_KEY, { id, server: this.server });
+    keepSession(this.storage, { token: kept.token, server: kept.server, organization: id });
+    this.startAgain();
+  }
+
+  /**
+   * Leaves the organization `named`, which the person is no longer in, for their first: this
+   * browser's session forgets it, unless another tab chose another since, and the page starts
+   * again.
+   */
+  private leaveOrganization(named: string): void {
+    const kept = sessionFor(readSession(this.storage), this.server);
+    if (kept?.organization === named) {
+      keepSession(this.storage, { token: kept.token, server: kept.server });
     }
-    this.document.defaultView?.location.assign('/');
+    this.startAgain();
   }
 
   /** Takes in what the server says it is and how it signs browsers in. */
   private take(discovered: Methods['server/discover']['result']): void {
     this.server = discovered.id ?? undefined;
-    this.chosenOrganization.set(chosenFor(this.storage, this.server));
+    this.chosenOrganization.set(
+      sessionFor(readSession(this.storage), this.server)?.organization ?? null,
+    );
     if (this.loaded() === null) {
       this.loaded.set(discovered.version);
     }
@@ -283,9 +308,11 @@ export class SessionService {
     if (this.server === undefined || began.server !== this.server) {
       return false;
     }
+    // A new session starts in the person's first organization.
     const session = { token: began.session, server: began.server };
     keepSession(this.storage, session);
     this.session.set(session);
+    this.chosenOrganization.set(null);
     this.setupLink.set(null);
     this.signupLink.set(null);
     const accepted = began.accepted ?? null;
@@ -313,7 +340,9 @@ export class SessionService {
     if (readSession(this.storage)?.token === ended) {
       forget(this.storage, TOKEN_KEY);
     }
-    this.session.set(sessionFor(readSession(this.storage), this.server));
+    const taken = sessionFor(readSession(this.storage), this.server);
+    this.session.set(taken);
+    this.chosenOrganization.set(taken?.organization ?? null);
   }
 
   /** Forgets the session `presented` when `error` says it signs no one in. */
@@ -322,12 +351,9 @@ export class SessionService {
       this.forget(presented);
     }
     // An organization the person is no longer in: back to their first.
-    if (
-      error instanceof ApiError &&
-      error.notInOrganization &&
-      this.chosenOrganization() !== null
-    ) {
-      this.chooseOrganization(null);
+    const named = this.chosenOrganization();
+    if (error instanceof ApiError && error.notInOrganization && named !== null) {
+      this.leaveOrganization(named);
     }
   }
 }

@@ -128,8 +128,8 @@ describe('PersonComponent', () => {
 
   it('switches between the person’s organizations, their own first, the current one checked', async () => {
     const organizations = [
-      { id: 'own', people: 1, own: true, role: 'owner', current: true },
-      { id: 'acme', people: 12, role: 'member', owner: 'Dana Lee' },
+      { id: 'own', name: 'Personal', people: 1, own: true, role: 'owner', current: true },
+      { id: 'acme', name: "Dana Lee's team", people: 12, role: 'member' },
     ];
     TestBed.configureTestingModule({
       providers: [

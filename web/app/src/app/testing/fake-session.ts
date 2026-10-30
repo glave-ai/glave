@@ -226,6 +226,7 @@ const RENAMED_AT = '2026-10-11T10:06:00.000Z';
 /** The one organization the person is in, unless a test says otherwise: their own, alone. */
 const OWN_ORGANIZATION = {
   id: '01900000-0000-7000-8000-0000000000a1',
+  name: 'Personal',
   people: 1,
   own: true,
   role: 'owner',

@@ -31,8 +31,7 @@ export class ApiError extends Error {
 
   /** Whether it named an organization the caller is not in (any more). */
   get notInOrganization(): boolean {
-    const data = this.data;
-    return typeof data === 'object' && data !== null && 'not_in' in data;
+    return this.code === ErrorCode.NOT_IN;
   }
 }
 

@@ -1,22 +1,23 @@
-import { place, teamName } from './organizations';
+import { place } from './organizations';
 
 describe('organizations', () => {
-  it('names their own Personal, and a team by an Owner of it', () => {
-    expect(place({ id: 'o', people: 1, own: true, role: 'owner', current: true }, 'en')).toEqual({
+  it('lists each by the name the server gives it, with who is in it and its letter', () => {
+    const own = { id: 'o', name: 'Personal', people: 1, own: true, role: 'owner', current: true };
+    expect(place({ ...own, role: 'owner' as const }, 'en')).toEqual({
       id: 'o',
       name: 'Personal',
       note: 'Just you',
       current: true,
       letter: 'P',
     });
-    const acme = { id: 'a', people: 12, role: 'member' as const, owner: 'Dana Lee' };
+    const acme = { id: 'a', name: "dana@example.com's team", people: 12, role: 'member' as const };
     expect(place(acme, 'en')).toEqual({
       id: 'a',
-      name: "Dana Lee's team",
+      name: "dana@example.com's team",
       note: '12 people',
       current: false,
       letter: 'D',
     });
-    expect(teamName({ id: 't', people: 2, role: 'member' })).toBe('A team');
+    expect(place({ ...acme, people: 1 }, 'en').note).toBe('1 person');
   });
 });

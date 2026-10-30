@@ -82,6 +82,9 @@ sentences! {
         "the person who runs this glave always owns it, so their role stays as it is",
     NotInOrganization = "not-in-organization"
         "you aren't in that organization: switch to another, or ask its admins for an invite",
+    OwnOrganization = "own-organization" "Personal",
+    OwnersTeam { owner: String } = "owners-team" "{ $owner }'s team",
+    SomeTeam = "some-team" "A team",
     LastOwner = "last-owner"
         "this is the organization's only owner: make someone else an owner first",
     LastPasskey = "last-passkey"

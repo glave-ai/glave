@@ -5,8 +5,15 @@ import { SessionService } from './session.service';
 import { OrganizationsService } from './organizations.service';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 
-const OWN: OrganizationInfo = { id: 'own', people: 1, own: true, role: 'owner', current: true };
-const ACME: OrganizationInfo = { id: 'acme', people: 12, role: 'member', owner: 'Dana Lee' };
+const OWN: OrganizationInfo = {
+  id: 'own',
+  name: 'Personal',
+  people: 1,
+  own: true,
+  role: 'owner',
+  current: true,
+};
+const ACME: OrganizationInfo = { id: 'acme', name: "Dana Lee's team", people: 12, role: 'member' };
 
 function service(organizations: readonly OrganizationInfo[]): OrganizationsService {
   const fake = new FakeSession().answer('organization/list', { organizations });
@@ -33,13 +40,27 @@ describe('OrganizationsService', () => {
     expect(working.heading()).toBe("Dana Lee's team");
   });
 
-  it('chooses a team by its id, and their own as none, their first', async () => {
+  it('chooses each by its id, their own too', async () => {
     const both = service([OWN, ACME]);
     await both.load();
     const session = TestBed.inject(SessionService);
     const chosen = vi.spyOn(session, 'chooseOrganization').mockReturnValue();
     both.choose(ACME);
     both.choose(OWN);
-    expect(chosen.mock.calls).toEqual([['acme'], [null]]);
+    expect(chosen.mock.calls).toEqual([['acme'], ['own']]);
+  });
+
+  it('reads nothing signed out, and forgets what it read once signed out', async () => {
+    const fake = new FakeSession().answer('organization/list', { organizations: [OWN, ACME] });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const organizations = TestBed.inject(OrganizationsService);
+    await organizations.load();
+    expect(organizations.several()).toBe(true);
+    const session = TestBed.inject(SessionService);
+    await session.signOut();
+    TestBed.tick();
+    expect(organizations.organizations()).toEqual([]);
+    await organizations.load();
+    expect(fake.calls.filter((call) => call.method === 'organization/list')).toHaveLength(1);
   });
 });

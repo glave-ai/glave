@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::Secret;
+use glave_event::{OrgRole, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::testing::Outbox;
@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{ORIGIN, Served, asked, elsewhere, make_passkey, serve_with};
+use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
 
 /// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
@@ -147,6 +147,64 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         let mut laptop = Authenticator::new(ORIGIN).unwrap();
         let again = make(&served, code, &mut laptop).await;
         assert_eq!(again, json!(code::NO_INVITE));
+        served.close().await;
+    });
+}
+
+/// A browser elsewhere signed in with the account `email` signs up for, by its emailed link.
+async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> Web {
+    let mut anyone = elsewhere(served, None);
+    let start = Request::SignupStart {
+        email: email.into(),
+    };
+    assert_eq!(asked(&mut anyone, &start).await, json!({}));
+    let mut device = Authenticator::new(ORIGIN).unwrap();
+    let made = make(served, emailed_code(outbox), &mut device).await;
+    elsewhere(served, made["session"].as_str().map(str::to_owned))
+}
+
+#[test]
+fn someone_who_signed_up_and_joined_a_team_lists_their_own_then_the_team_by_its_owner() {
+    block_on!(async {
+        let dir = folder("signups-team");
+        let outbox = Arc::new(Outbox::default());
+        let served = serve(&dir, true, &outbox).await;
+        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        let mut bob = signed_up(&served, &outbox, "bob@example.com").await;
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        let made = asked(&mut ada, &invite).await;
+        let code = Secret::new(made["code"].as_str().unwrap());
+        let accepted = asked(&mut bob, &Request::InviteAccept { code }).await;
+        assert_eq!(accepted["person"]["role"], json!("member"), "{accepted}");
+        // His own first, then Ada's, named by her address while it has no name of its own.
+        let listed = asked(&mut bob, &Request::OrganizationList {}).await;
+        let seen: Vec<_> = listed["organizations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|org| {
+                let own = org.get("own").is_some();
+                (
+                    org["name"].clone(),
+                    own,
+                    org["role"].clone(),
+                    org["people"].clone(),
+                )
+            })
+            .collect();
+        let team = (
+            json!("ada@example.com's team"),
+            false,
+            json!("member"),
+            json!(2),
+        );
+        assert_eq!(
+            seen,
+            [(json!("Personal"), true, json!("owner"), json!(1)), team]
+        );
         served.close().await;
     });
 }

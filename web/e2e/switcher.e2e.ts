@@ -29,8 +29,15 @@ async function inTwo(page: Page): Promise<{ readonly named: readonly (string | n
     }
     const current = header ?? OWN_ORGANIZATION;
     const organizations: OrganizationInfo[] = [
-      { id: OWN_ORGANIZATION, people: 1, own: true, role: 'owner', current: current !== TEAM },
-      { id: TEAM, people: 3, role: 'member', owner: 'Dana Lee', current: current === TEAM },
+      {
+        id: OWN_ORGANIZATION,
+        name: 'Personal',
+        people: 1,
+        own: true,
+        role: 'owner',
+        current: current !== TEAM,
+      },
+      { id: TEAM, name: "Dana Lee's team", people: 3, role: 'member', current: current === TEAM },
     ];
     await route.fulfill({
       contentType: 'application/json',
@@ -73,7 +80,11 @@ test('A person in two organizations switches from their own to a team and back f
 
 test('A person in one organization has nothing to switch between', async ({ page }) => {
   await fakeApi(page);
+  const listed = page.waitForResponse((response) =>
+    (response.request().postData() ?? '').includes('"organization/list"'),
+  );
   await page.goto(`/${SIGNED_IN}`);
+  await listed;
   await byTestId(page, 'person').click();
   await expect(byTestId(page, 'nav-settings')).toBeVisible();
   await expect(byTestId(page, 'person-switch')).toHaveCount(0);

@@ -37,7 +37,7 @@ pub use changes::{
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
-pub use error::{ApiError, ErrorData, OrgNamed};
+pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
 pub use glave_event::{Forge, ProviderKind};
 pub use glave_event::{Grouping, Permissions, TurnResult};

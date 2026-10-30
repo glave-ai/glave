@@ -487,22 +487,14 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
             let mut refused = elsewhere(&served, token_of(&joined)).working_in(named);
             answers.push(refused.call(&list).await["error"].clone());
         }
-        assert_eq!(answers[0]["code"], json!(code::NOT_ALLOWED), "{answers:?}");
-        assert_eq!(
-            answers[0]["data"],
-            json!({"not_in": "organization"}),
-            "a client stops naming it"
-        );
+        assert_eq!(answers[0]["code"], json!(code::NOT_IN), "{answers:?}");
         assert!(
             answers.iter().all(|answer| *answer == answers[0]),
             "{answers:?}"
         );
         let mut owner = Web::new(&served, Some(token.reveal().to_owned()));
         let mut other_named = owner_named(&served, &token, &other.to_string());
-        assert_eq!(
-            asked(&mut other_named, &list).await,
-            json!(code::NOT_ALLOWED)
-        );
+        assert_eq!(asked(&mut other_named, &list).await, json!(code::NOT_IN));
         let mut own_named = owner_named(&served, &token, &own);
         assert!(asked(&mut own_named, &list).await["threads"].is_array());
         assert!(asked(&mut owner, &list).await["threads"].is_array());
@@ -520,7 +512,7 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
 /// and `other`, which `there` names.
 async fn lists_both(here: &mut Web, first: &mut Web, there: &mut Web, own: &str, other: &str) {
     let servers = asked(here, &Request::OrganizationList {}).await;
-    let expected = json!([{"id": own, "people": 2, "own": true, "role": "owner", "current": true}]);
+    let expected = json!([{"id": own, "name": "Personal", "people": 2, "own": true, "role": "owner", "current": true}]);
     assert_eq!(servers["organizations"], expected);
     for (web, current) in [(first, [true, false]), (there, [false, true])] {
         let listed = asked(web, &Request::OrganizationList {}).await;
