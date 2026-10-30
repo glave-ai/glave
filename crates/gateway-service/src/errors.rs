@@ -104,7 +104,9 @@ impl Refusal {
                 | Failure::Malformed
                 | Failure::Rejected => Self::invalid(message),
             },
-            ProviderError::OverBudget { .. } => Self::new(Kind::Budget, message),
+            ProviderError::OverBudget { .. } | ProviderError::Unpaid(_) => {
+                Self::new(Kind::Budget, message)
+            }
             ProviderError::Transport(_)
             | ProviderError::Protocol(_)
             | ProviderError::NoOutput(_)

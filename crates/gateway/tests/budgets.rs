@@ -6,36 +6,18 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use glave_event::{Currency, Money, PrincipalId};
-use glave_gateway::{BudgetKey, Budgets, Gateway, Price, Routes, Target};
+use glave_event::PrincipalId;
+use glave_gateway::{BudgetKey, Budgets, Gateway, Routes, Target};
 use glave_ports::{Failure, ModelProvider, ModelRequest, ProviderError, Purpose};
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::support::{Fake, answer, block_on, request};
+use crate::support::{Fake, block_on, dollars, price, request};
 
 /// The most the test request could cost at a millionth of a dollar a token: 14 bytes of
 /// input at 3 bytes a token, rounded up, and its 100 tokens of answer.
 const WORST: u64 = 5 + 100;
-
-/// A dollar a million tokens, in and out: a millionth of a dollar a token.
-fn price(per_mtok: u64) -> Price {
-    Price {
-        list: "test".into(),
-        currency: Currency::USD,
-        input_per_mtok: per_mtok,
-        cache_read_per_mtok: 0,
-        output_per_mtok: per_mtok,
-    }
-}
-
-fn dollars(micros: i64) -> Money {
-    Money {
-        micros,
-        currency: Currency::USD,
-    }
-}
 
 fn caller(n: u8) -> BudgetKey {
     BudgetKey {
@@ -122,13 +104,7 @@ fn a_budget_skips_a_target_it_cannot_afford() {
 #[test]
 fn calls_side_by_side_never_overshoot() {
     let gate = Arc::new(Semaphore::new(0));
-    let fake = Fake::gated("p", Arc::clone(&gate));
-    for _ in 0..3 {
-        fake.script
-            .lock()
-            .unwrap()
-            .push_back(Ok(answer("p", "m", 5, 50)));
-    }
+    let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
     let limit = 3 * WORST + WORST / 2;
     let target = fake.target("m").with_price(price(1_000_000));
     let gateway = Arc::new(gateway(vec![target], i64::try_from(limit).unwrap()));

@@ -4,7 +4,8 @@
 use std::future::Future;
 
 use glave_event::{
-    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, PrincipalId, Sha256, StopReason, Usage,
+    Arguments, CallId, Cost, ModelRef, ModelResponded, Money, Part, PrincipalId, Sha256,
+    StopReason, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -316,6 +317,50 @@ pub enum ProviderError {
     /// A gateway sent nothing: the call could exceed this budget.
     #[error("the {budget} budget would be exceeded: {detail}")]
     OverBudget { budget: String, detail: String },
+    /// A gateway sent nothing: the organization's credits could not pay for the call.
+    #[error(transparent)]
+    Unpaid(Unpaid),
+}
+
+/// Why an organization's credits could not pay for a call (`specs/gateway.md`, "Credits"),
+/// in the words its people are told: what a call needs rounded up to the cent, what is left
+/// rounded down.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum Unpaid {
+    /// Nothing is left of the balance: everything added is charged.
+    #[error("you're out of credits: add credits to keep going")]
+    Spent,
+    /// Something is free now, after what calls running hold, but less than the call could cost.
+    #[error(
+        "this could cost up to {:.2}, more than the {:.2} of credits free now: add credits, or \
+         choose a cheaper model",
+        needs.cents_up(),
+        free.cents_down()
+    )]
+    Short { free: Money, needs: Money },
+    /// Nothing is left of the most it may spend this month: it was spent.
+    #[error(
+        "this month's spending limit of {:.2} is reached: the account's owner can raise it",
+        limit.cents_up()
+    )]
+    MonthLimit { limit: Money },
+    /// Something of this month's limit is free now, after what calls running hold, but less
+    /// than the call could cost.
+    #[error(
+        "this could cost up to {:.2}, more than the {:.2} free now of this month's {:.2} \
+         limit: the account's owner can raise it, or choose a cheaper model",
+        needs.cents_up(),
+        free.cents_down(),
+        limit.cents_up()
+    )]
+    MonthShort {
+        limit: Money,
+        free: Money,
+        needs: Money,
+    },
+    /// No catalog says what the model costs, so no one can say what the call could.
+    #[error("{model} has no price here, so credits can't pay for it: choose another model")]
+    Unpriced { model: String },
 }
 
 /// An event stream that cannot be read is a response that does not follow its protocol.

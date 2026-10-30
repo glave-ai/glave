@@ -570,6 +570,39 @@ fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
 }
 
 #[test]
+fn credits_are_the_server_s_own_choice_with_its_monthly_limit() {
+    let dir = scratch("credits");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[credits]\nmonthly_limit_usd = 10\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.credits, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.credits.as_ref().unwrap();
+    let limit = chosen.value.monthly_limit_usd.map(|usd| usd.micros);
+    assert_eq!(limit, Some(10_000_000));
+    let on = files::config("[credits]\n", &locations.person).unwrap();
+    assert_eq!(
+        on.credits.unwrap().monthly_limit_usd,
+        None,
+        "on, with no limit"
+    );
+    for refused in [
+        "[credits]\nmonthly_limit_usd = -1\n",
+        "[credits]\nmarkup = 2\n",
+    ] {
+        assert!(
+            files::config(refused, &locations.person).is_err(),
+            "{refused}"
+        );
+    }
+}
+
+#[test]
 fn the_mail_server_is_the_person_s_or_server_s_choice() {
     let dir = scratch("email");
     let home = dir.join("home");

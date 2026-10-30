@@ -9,11 +9,12 @@ use anyhow::Context as _;
 use glave_computer::WorkerComputers;
 use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
+use glave_gateway::Credits;
 use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
 use glave_ports::computer::{GitCredentials, Sandbox};
 use glave_ports::settings::Hooks;
-use glave_ports::{ProjectId, SystemClock};
+use glave_ports::{OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::{
     Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring,
@@ -135,7 +136,17 @@ pub(crate) async fn wire(
     let identity = identity::load_or_make(&store).await?;
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
-    let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
+    let credits = credits(choices, &store);
+    let through_gateway = remote.is_some();
+    let lined = line_up(
+        args,
+        lineup,
+        &store,
+        identity.person,
+        credits.as_ref(),
+        through_gateway,
+    );
+    let lined = lined.await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, &setup, workspace).await?;
     let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
@@ -414,14 +425,29 @@ struct Lined {
     accounts: Option<Arc<ModelAccounts>>,
 }
 
+/// The organizations' credits in `store`, where the server's own settings keep them
+/// (`[credits]`), each organization limited to the monthly limit they name until its Owner
+/// sets another.
+fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<crate::data::DataLog>>> {
+    let chosen = choices.credits.as_ref()?;
+    Some(Arc::new(Credits::new(
+        store.log(),
+        Box::new(SystemClock),
+        Box::new(OsEntropy),
+        chosen.value.monthly_limit_usd,
+    )))
+}
+
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
 /// may connect here unless an organization sets up the models: through its gateway
-/// (`through_gateway`), or on a server people sign in to with OIDC.
+/// (`through_gateway`), or on a server people sign in to with OIDC. Their calls are charged
+/// to `credits`, where the server keeps them.
 async fn line_up(
     args: &Args,
     lineup: Lineup,
     store: &Data,
     person: glave_event::PrincipalId,
+    credits: Option<&Arc<Credits<crate::data::DataLog>>>,
     through_gateway: bool,
 ) -> anyhow::Result<Lined> {
     let ledgers = if through_gateway || !args.issuers.is_empty() {
@@ -446,7 +472,7 @@ async fn line_up(
         }
         Err(error) => return Err(error),
     };
-    let switch = GatewaySwitch::new(built.gateway.take());
+    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned());
     let model_accounts = ledgers.map(|(accounts, catalogs)| {
         Arc::new(ModelAccounts::new(
             accounts,

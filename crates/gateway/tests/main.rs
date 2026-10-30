@@ -6,5 +6,6 @@
 mod support;
 
 mod budgets;
+mod credits;
 mod fallback;
 mod routes;

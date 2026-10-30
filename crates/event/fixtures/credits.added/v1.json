@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-0000000000b1","thread":"00000000-0000-7000-8000-00000000000c","seq":1,"at":"2026-10-30T09:00:00.000Z","type":"credits.added","v":1,"data":{"amount":{"micros":10000000,"currency":"USD"},"reference":"order-0001","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11"}}}

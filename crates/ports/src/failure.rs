@@ -55,7 +55,7 @@ impl ProviderError {
             Self::AfterOutput(error) => error.failure(),
             Self::Protocol(_) => Failure::Malformed,
             Self::Unserved { failure, .. } => *failure,
-            Self::OverBudget { .. } => Failure::OverBudget,
+            Self::OverBudget { .. } | Self::Unpaid(_) => Failure::OverBudget,
         }
     }
 

@@ -76,6 +76,9 @@ pub struct Money {
 /// Millionths in one unit.
 const MICROS: u64 = 1_000_000;
 
+/// Millionths in one hundredth of a unit: a cent of a dollar.
+const CENT: i64 = 10_000;
+
 impl Money {
     /// US dollars written as a plain decimal, such as `2`, `0.50` or `-0.0042`: digits, then
     /// a point and more digits if any. Past the sixth decimal place it rounds half away from
@@ -103,6 +106,28 @@ impl Money {
             micros: self.micros.checked_add(other.micros)?,
             currency: self.currency,
         })
+    }
+
+    /// The amount rounded up to the next cent, as what something could cost is said.
+    #[must_use]
+    pub fn cents_up(self) -> Self {
+        Self {
+            micros: self
+                .micros
+                .div_euclid(CENT)
+                .saturating_add(i64::from(self.micros.rem_euclid(CENT) != 0))
+                .saturating_mul(CENT),
+            ..self
+        }
+    }
+
+    /// The amount rounded down to the cent, as what is left is said.
+    #[must_use]
+    pub fn cents_down(self) -> Self {
+        Self {
+            micros: self.micros.div_euclid(CENT).saturating_mul(CENT),
+            ..self
+        }
     }
 
     /// The amount alone, without its currency, as a plain decimal such as `0.0042`.

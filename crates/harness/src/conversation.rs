@@ -103,6 +103,9 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::InviteRevoked(_)
         | Body::SignupStarted(_)
         | Body::SignupFinished(_)
+        | Body::CreditsAdded(_)
+        | Body::CreditsLimitSet(_)
+        | Body::CreditsCharged(_)
         | Body::Unknown(_) => {}
     }
 }

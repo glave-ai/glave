@@ -77,6 +77,21 @@ pub struct ConfigFile {
     /// The mail server glave sends its few messages through. Only the person's or the server's
     /// own file sets it: what it sends carries sign-in links.
     pub email: Option<EmailFile>,
+    /// Whether each organization pays for its models from credits it adds to, and the monthly
+    /// limit each starts with. Only the server's own file sets it: it decides who pays.
+    pub credits: Option<CreditsFile>,
+}
+
+/// `[credits]`: each organization the server serves pays ahead for what it uses, its model
+/// calls charged at the provider's own cost (`specs/gateway.md`, "Credits"). Off unless the
+/// table is there.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreditsFile {
+    /// The most each organization may spend in a month, in US dollars, until its Owner sets
+    /// another; no limit but the balance when absent.
+    #[serde(default, deserialize_with = "dollars")]
+    pub monthly_limit_usd: Option<Money>,
 }
 
 /// `[email]`: the SMTP server glave sends invites through (`specs/model.md`, "Identity"), over

@@ -12,11 +12,10 @@ use glave_event::{
     At, AuthMethod, Body, EventId, Header, OrgRole, Payload, PersonJoined, Principal, PrincipalId,
     RawEvent, RoleSet, Seq, encode,
 };
-use glave_ports::stream::{Reserved, append_retrying, catch_up};
+use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId, Scope};
 
 use crate::invites::Invites;
-use crate::ledger::in_order;
 use crate::protocol::{ApiError, PersonInfo, Reply, Request, code};
 use crate::server::Server;
 use crate::words::Sentence;

@@ -10,7 +10,7 @@ use glave_identity::signin::{BrowserError, SignInError};
 use glave_ports::computer::ComputerError;
 use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
-use glave_ports::{EntropyError, LogError, ProjectError, ProviderError};
+use glave_ports::{EntropyError, LogError, ProjectError, ProviderError, Unpaid};
 
 use crate::accounts::AccountsError;
 use crate::protocol::{ApiError, ErrorData, Told, code};
@@ -172,8 +172,32 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
             budget: budget.clone(),
             detail: detail.clone(),
         },
+        ProviderError::Unpaid(unpaid) => unpaid_said(unpaid),
     };
     vec![said]
+}
+
+/// Why an organization's credits could not pay for a call, as glave says it: what a call
+/// needs and a limit rounded up to the cent, what is free rounded down.
+fn unpaid_said(unpaid: &Unpaid) -> Sentence {
+    let up = |money: &glave_event::Money| format!("{:.2}", money.cents_up());
+    let down = |money: &glave_event::Money| format!("{:.2}", money.cents_down());
+    match unpaid {
+        Unpaid::Spent => Sentence::OutOfCredits,
+        Unpaid::Short { free, needs } => Sentence::CreditsShort {
+            free: down(free),
+            needs: up(needs),
+        },
+        Unpaid::MonthLimit { limit } => Sentence::MonthLimitReached { limit: up(limit) },
+        Unpaid::MonthShort { limit, free, needs } => Sentence::MonthLimitShort {
+            limit: up(limit),
+            free: down(free),
+            needs: up(needs),
+        },
+        Unpaid::Unpriced { model } => Sentence::NoPriceNoCredits {
+            model: model.clone(),
+        },
+    }
 }
 
 /// A harness failure as the API reports it.
@@ -374,6 +398,13 @@ mod tests {
         }
     }
 
+    fn dollars(micros: i64) -> glave_event::Money {
+        glave_event::Money {
+            micros,
+            currency: glave_event::Currency::USD,
+        }
+    }
+
     #[test]
     fn a_providers_failure_reads_as_it_did_its_words_kept_as_they_came() {
         use glave_ports::Failure;
@@ -398,6 +429,22 @@ mod tests {
                 budget: "person p".into(),
                 detail: "5 of 4 committed".into(),
             },
+            ProviderError::Unpaid(Unpaid::Spent),
+            ProviderError::Unpaid(Unpaid::Short {
+                free: dollars(1_509_999),
+                needs: dollars(2_400_001),
+            }),
+            ProviderError::Unpaid(Unpaid::MonthLimit {
+                limit: dollars(10_000_000),
+            }),
+            ProviderError::Unpaid(Unpaid::MonthShort {
+                limit: dollars(10_000_000),
+                free: dollars(1_500_000),
+                needs: dollars(4_200),
+            }),
+            ProviderError::Unpaid(Unpaid::Unpriced {
+                model: "acme/big".into(),
+            }),
         ];
         let told = failures
             .map(|failed| {
