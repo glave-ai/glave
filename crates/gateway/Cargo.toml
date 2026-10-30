@@ -17,6 +17,9 @@ path = "tests/main.rs"
 [dependencies]
 glave-event.workspace = true
 glave-ports.workspace = true
+# The calendar month, in UTC, an organization's credits' monthly limit counts (already in the
+# tree, under glave-ports).
+jiff.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 # A content-free span and metrics for each model call.
@@ -24,7 +27,6 @@ tracing.workspace = true
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
-jiff.workspace = true
 tokio = { workspace = true, features = ["rt", "sync"] }
 
 [[bench]]

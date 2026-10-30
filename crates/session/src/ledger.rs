@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
-    TaskStarted, ThreadId, decode, encode,
+    TaskStarted, ThreadId, encode,
 };
-use glave_ports::stream::{Reserved, append_retrying, catch_up};
+use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
 
 use crate::protocol::ApiError;
@@ -97,18 +97,6 @@ impl Ledger {
             _ => {}
         }
     }
-}
-
-/// `raw` when it is the event a stream read so far takes next, after `next` (0 before the
-/// first), and when it was written: `next` then moves past it. Any other is already in, or not
-/// yet; one this reader cannot read is passed over.
-pub(crate) fn in_order(next: &mut u64, raw: RawEvent) -> Option<(At, Body)> {
-    if raw.seq.get() != (*next).max(1) {
-        return None;
-    }
-    *next = (*next).max(1).saturating_add(1);
-    let at = raw.at;
-    decode(raw).ok().map(|event| (at, event.body))
 }
 
 /// What each project's ledger says, as far as this server has read it, by where the project

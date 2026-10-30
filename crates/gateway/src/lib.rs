@@ -9,11 +9,14 @@
 //!   holds, and moves on only after failures that may pass.
 //! - **Budgets**: a signed-in caller's reserves a call's worst case before it is sent and
 //!   settles to what it cost, so calls running side by side never overshoot it.
+//! - **Credits**: where a server keeps them, each organization's money paid ahead, held and
+//!   settled the same way for every call that says whose work it is.
 //! - **Metering**: every answer says the route and target that served it, for `model.responded`.
 //!
 //! The contract is `specs/gateway.md`.
 
 mod budget;
+mod credits;
 mod estimate;
 mod gateway;
 mod plan;
@@ -23,6 +26,7 @@ mod target;
 mod telemetry;
 
 pub use budget::{BudgetKey, Budgets, OverBudget};
+pub use credits::{Account, Credits, CreditsError};
 pub use gateway::Gateway;
 pub use price::Price;
 pub use routes::{RouteError, Routes};

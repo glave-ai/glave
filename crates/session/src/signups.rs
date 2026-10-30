@@ -23,11 +23,11 @@ use glave_ports::{BlobStore, EventLog, Mail, ModelProvider, OrgId, Scope};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Builder;
 
-use crate::ledger::in_order;
 use crate::mailing::just_now;
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
+use glave_ports::stream::in_order;
 
 /// How long a sign-up's link works: long enough to open it from a mailbox, short enough that
 /// one left there is no key for long.

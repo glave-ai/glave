@@ -9,7 +9,7 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
-use crate::policy::files::{ConfigFile, EmailFile, GithubFile, ModelEntry};
+use crate::policy::files::{ConfigFile, CreditsFile, EmailFile, GithubFile, ModelEntry};
 use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -104,6 +104,9 @@ pub struct Choices {
     pub email: Option<Chosen<EmailFile>>,
     /// Whether anyone may sign up at the public origin with their email (`[serve] signup`).
     pub signup: Option<Chosen<bool>>,
+    /// Whether organizations pay for their models from credits (`[credits]`), and with what
+    /// monthly limit.
+    pub credits: Option<Chosen<CreditsFile>>,
 }
 
 /// One level choices come from.
@@ -178,6 +181,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         github: nearest(layers, "github", |file| file.github.clone()),
         email: nearest(layers, "email", |file| file.email.clone()),
         signup: nearest(layers, "serve", |file| file.serve.as_ref()?.signup),
+        credits: nearest(layers, "credits", |file| file.credits.clone()),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())

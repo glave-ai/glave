@@ -6,36 +6,18 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use glave_event::{Currency, Money, PrincipalId};
-use glave_gateway::{BudgetKey, Budgets, Gateway, Price, Routes, Target};
+use glave_event::PrincipalId;
+use glave_gateway::{BudgetKey, Budgets, Gateway, Routes, Target};
 use glave_ports::{Failure, ModelProvider, ModelRequest, ProviderError, Purpose};
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::support::{Fake, answer, block_on, request};
+use crate::support::{Fake, answer, block_on, dollars, price, request};
 
 /// The most the test request could cost at a millionth of a dollar a token: 14 bytes of
 /// input at 3 bytes a token, rounded up, and its 100 tokens of answer.
 const WORST: u64 = 5 + 100;
-
-/// A dollar a million tokens, in and out: a millionth of a dollar a token.
-fn price(per_mtok: u64) -> Price {
-    Price {
-        list: "test".into(),
-        currency: Currency::USD,
-        input_per_mtok: per_mtok,
-        cache_read_per_mtok: 0,
-        output_per_mtok: per_mtok,
-    }
-}
-
-fn dollars(micros: i64) -> Money {
-    Money {
-        micros,
-        currency: Currency::USD,
-    }
-}
 
 fn caller(n: u8) -> BudgetKey {
     BudgetKey {

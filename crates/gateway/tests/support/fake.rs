@@ -5,8 +5,8 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use glave_event::{ModelRef, Opaque, Part, StopReason, TokenCounts, Usage};
-use glave_gateway::{Model, Target};
+use glave_event::{Currency, ModelRef, Money, Opaque, Part, StopReason, TokenCounts, Usage};
+use glave_gateway::{Model, Price, Target};
 pub(crate) use glave_ports::block_on;
 use glave_ports::{
     BoxFuture, Completion, Delta, Message, ModelRequest, ProviderError, Purpose, ToolChoice,
@@ -15,9 +15,10 @@ use glave_ports::{
 use tokio::sync::Semaphore;
 
 /// A provider that answers each call with the next scripted result, or a plain answer when the
-/// script is empty.
+/// script is empty, saying `says` as it begins when set.
 pub(crate) struct Fake {
     pub provider: String,
+    pub says: Option<String>,
     pub script: Mutex<VecDeque<Result<Completion, ProviderError>>>,
     pub seen: Mutex<Vec<ModelRequest>>,
     /// When set, every call waits for a permit before answering.
@@ -30,6 +31,7 @@ impl Fake {
     pub(crate) fn new(provider: &str) -> Arc<Self> {
         Arc::new(Self {
             provider: provider.into(),
+            says: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: None,
@@ -46,6 +48,7 @@ impl Fake {
     pub(crate) fn gated(provider: &str, gate: Arc<Semaphore>) -> Arc<Self> {
         Arc::new(Self {
             provider: provider.into(),
+            says: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: Some(gate),
@@ -70,17 +73,40 @@ impl Model for Fake {
     fn send<'a>(
         &'a self,
         request: &'a ModelRequest,
-        _on_delta: &'a mut (dyn FnMut(Delta) + Send),
+        on_delta: &'a mut (dyn FnMut(Delta) + Send),
     ) -> BoxFuture<'a, Result<Completion, ProviderError>> {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.seen.lock().unwrap().push(request.clone());
+            if let Some(says) = &self.says {
+                on_delta(Delta::Text(says.clone()));
+            }
             if let Some(gate) = &self.gate {
                 gate.acquire().await.unwrap().forget();
             }
             let next = self.script.lock().unwrap().pop_front();
             next.unwrap_or_else(|| Ok(answer(&self.provider, &request.model, 100, 10)))
         })
+    }
+}
+
+/// A dollar a million tokens per `per_mtok` millionths, in and out: at 1,000,000, a
+/// millionth of a dollar a token.
+pub(crate) fn price(per_mtok: u64) -> Price {
+    Price {
+        list: "test".into(),
+        currency: Currency::USD,
+        input_per_mtok: per_mtok,
+        cache_read_per_mtok: 0,
+        output_per_mtok: per_mtok,
+    }
+}
+
+/// `micros` millionths of a dollar.
+pub(crate) fn dollars(micros: i64) -> Money {
+    Money {
+        micros,
+        currency: Currency::USD,
     }
 }
 

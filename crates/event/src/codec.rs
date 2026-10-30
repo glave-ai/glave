@@ -11,18 +11,19 @@ use crate::payload::{
     AcmeRegistered, ApprovalDecided, ApprovalRequested, AwakeSet, BrowserSignedIn,
     BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
     CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
-    EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
-    InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MemoryEdited,
-    MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
-    ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
-    PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
-    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished,
-    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake,
-    browser, catalog, certificate, chosen, command, connection, credential, gateway, goal,
-    grouping, hook, instructions, language, memory, message, model, passkey, people, plan, project,
-    provider, remembering, signup, standing, task, thread, tool, trust, turn, workspace,
+    CreditsAdded, CreditsCharged, CreditsLimitSet, EffortChosen, GatewayToolCalled, GoalEnded,
+    GoalResumed, GoalSet, GroupingSet, HookRan, InstructionsRead, InviteAccepted, InviteCreated,
+    InviteRevoked, LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
+    MemorySet, MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded,
+    PasskeyRemoved, PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved,
+    PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet,
+    ScheduleCreated, ScheduleDeleted, SignupFinished, SignupStarted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    credential, credits, gateway, goal, grouping, hook, instructions, language, memory, message,
+    model, passkey, people, plan, project, provider, remembering, signup, standing, task, thread,
+    tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -104,6 +105,9 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (people::INVITE_REVOKED, 1),
     (signup::STARTED, 1),
     (signup::FINISHED, 1),
+    (credits::ADDED, 1),
+    (credits::LIMIT_SET, 1),
+    (credits::CHARGED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -184,6 +188,9 @@ pub enum Body {
     InviteRevoked(InviteRevoked),
     SignupStarted(SignupStarted),
     SignupFinished(SignupFinished),
+    CreditsAdded(CreditsAdded),
+    CreditsLimitSet(CreditsLimitSet),
+    CreditsCharged(CreditsCharged),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -379,6 +386,9 @@ impl Event {
             Body::InviteRevoked(payload) => encode(header, payload),
             Body::SignupStarted(payload) => encode(header, payload),
             Body::SignupFinished(payload) => encode(header, payload),
+            Body::CreditsAdded(payload) => encode(header, payload),
+            Body::CreditsLimitSet(payload) => encode(header, payload),
+            Body::CreditsCharged(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(unknown.raw(header)),
         }
     }
@@ -478,7 +488,9 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         language::SET => language::decode_set(version, data).map(|r| r.map(Body::LanguageSet)),
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => people::decode(kind, version, data).or_else(|| signup::decode(kind, version, data)),
+        _ => people::decode(kind, version, data)
+            .or_else(|| signup::decode(kind, version, data))
+            .or_else(|| credits::decode(kind, version, data)),
     }
 }
 

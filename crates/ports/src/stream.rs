@@ -6,7 +6,8 @@
 use std::future::Future;
 
 use glave_event::{
-    AwakeSet, GroupingSet, LanguageSet, MemorySet, Payload, RawEvent, Seq, ThreadId,
+    At, AwakeSet, Body, GroupingSet, LanguageSet, MemorySet, Payload, RawEvent, Seq, ThreadId,
+    decode,
 };
 use thiserror::Error;
 
@@ -61,11 +62,15 @@ pub enum Reserved {
     /// `…000b`: what was last read on its person's own computer for a project's folder
     /// (`instructions.read`), which a thread there opens with without reaching that computer.
     Instructions,
+    /// `…000c`: the organization's credits (`credits.added`, `credits.limit.set`,
+    /// `credits.charged`), in its own scope ([`Scope::of_organization`]), on a server that
+    /// keeps them.
+    Credits,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -78,6 +83,7 @@ impl Reserved {
         Self::People,
         Self::Signups,
         Self::Instructions,
+        Self::Credits,
     ];
 
     /// The ledger's id, the same in every project.
@@ -95,6 +101,7 @@ impl Reserved {
             Self::People => 9,
             Self::Signups => 10,
             Self::Instructions => 11,
+            Self::Credits => 12,
         };
         ThreadId::reserved(number)
     }
@@ -123,6 +130,18 @@ pub enum StreamError {
     /// Other writers appended first every time.
     #[error("glave's records kept changing while it wrote to them; try again")]
     Busy { thread: ThreadId },
+}
+
+/// `raw` when it is the event a stream read so far takes next, after `next` (0 before the
+/// first), and when it was written: `next` then moves past it. Any other is already in, or not
+/// yet; one this reader cannot read is passed over.
+pub fn in_order(next: &mut u64, raw: RawEvent) -> Option<(At, Body)> {
+    if raw.seq.get() != (*next).max(1) {
+        return None;
+    }
+    *next = (*next).max(1).saturating_add(1);
+    let at = raw.at;
+    decode(raw).ok().map(|event| (at, event.body))
 }
 
 /// Reads `thread`'s events after `after` (from its start when `None`), a page at a time, and

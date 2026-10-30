@@ -47,6 +47,7 @@ pub use payload::{
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
 pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};
+pub use payload::{CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet};
 pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,

@@ -10,7 +10,7 @@ use glave_identity::signin::{BrowserError, SignInError};
 use glave_ports::computer::ComputerError;
 use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
-use glave_ports::{EntropyError, LogError, ProjectError, ProviderError};
+use glave_ports::{EntropyError, LogError, ProjectError, ProviderError, Unpaid};
 
 use crate::accounts::AccountsError;
 use crate::protocol::{ApiError, ErrorData, Told, code};
@@ -172,8 +172,32 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
             budget: budget.clone(),
             detail: detail.clone(),
         },
+        ProviderError::Unpaid(unpaid) => unpaid_said(unpaid),
     };
     vec![said]
+}
+
+/// Why an organization's credits could not pay for a call, as glave says it.
+fn unpaid_said(unpaid: &Unpaid) -> Sentence {
+    let cents = |money: &glave_event::Money| format!("{money:.2}");
+    match unpaid {
+        Unpaid::Spent => Sentence::OutOfCredits,
+        Unpaid::Short { left, needs } => Sentence::CreditsShort {
+            left: cents(left),
+            needs: cents(needs),
+        },
+        Unpaid::MonthLimit { limit } => Sentence::MonthLimitReached {
+            limit: cents(limit),
+        },
+        Unpaid::MonthShort { limit, left, needs } => Sentence::MonthLimitShort {
+            limit: cents(limit),
+            left: cents(left),
+            needs: cents(needs),
+        },
+        Unpaid::Unpriced { model } => Sentence::NoPriceNoCredits {
+            model: model.clone(),
+        },
+    }
 }
 
 /// A harness failure as the API reports it.
@@ -374,6 +398,13 @@ mod tests {
         }
     }
 
+    fn dollars(micros: i64) -> glave_event::Money {
+        glave_event::Money {
+            micros,
+            currency: glave_event::Currency::USD,
+        }
+    }
+
     #[test]
     fn a_providers_failure_reads_as_it_did_its_words_kept_as_they_came() {
         use glave_ports::Failure;
@@ -398,6 +429,22 @@ mod tests {
                 budget: "person p".into(),
                 detail: "5 of 4 committed".into(),
             },
+            ProviderError::Unpaid(Unpaid::Spent),
+            ProviderError::Unpaid(Unpaid::Short {
+                left: dollars(1_500_000),
+                needs: dollars(2_400_000),
+            }),
+            ProviderError::Unpaid(Unpaid::MonthLimit {
+                limit: dollars(10_000_000),
+            }),
+            ProviderError::Unpaid(Unpaid::MonthShort {
+                limit: dollars(10_000_000),
+                left: dollars(1_500_000),
+                needs: dollars(2_400_000),
+            }),
+            ProviderError::Unpaid(Unpaid::Unpriced {
+                model: "acme/big".into(),
+            }),
         ];
         let told = failures
             .map(|failed| {

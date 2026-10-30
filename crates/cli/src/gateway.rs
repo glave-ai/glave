@@ -15,12 +15,13 @@ pub(crate) mod serve;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::Currency;
-use glave_gateway::{Gateway, Price, Routes, Target};
+use glave_gateway::{Credits, Gateway, Price, Routes, Target};
 use glave_ports::{
     Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
 };
 
 use crate::config::Endpoint;
+use crate::data::DataLog;
 use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
@@ -133,22 +134,35 @@ pub(crate) fn gateway(
 
 /// The gateway in use, or none while no model is set up: replaced whole when the person
 /// connects or removes a model account, so each call goes to the models set up when it
-/// starts. Clones share it.
+/// starts. Every gateway it is given charges the organizations' credits, where the server
+/// keeps them. Clones share it.
 #[derive(Clone, Default)]
-pub(crate) struct GatewaySwitch(Arc<RwLock<Option<Arc<Gateway>>>>);
+pub(crate) struct GatewaySwitch {
+    current: Arc<RwLock<Option<Arc<Gateway>>>>,
+    credits: Option<Arc<Credits<DataLog>>>,
+}
 
 impl GatewaySwitch {
-    pub(crate) fn new(gateway: Option<Gateway>) -> Self {
-        Self(Arc::new(RwLock::new(gateway.map(Arc::new))))
+    pub(crate) fn new(gateway: Option<Gateway>, credits: Option<Arc<Credits<DataLog>>>) -> Self {
+        let switch = Self {
+            current: Arc::default(),
+            credits,
+        };
+        switch.set(gateway);
+        switch
     }
 
     /// Sends calls to `gateway` from now on; calls already sent finish where they are.
     pub(crate) fn set(&self, gateway: Option<Gateway>) {
-        *self.0.write().unwrap_or_else(PoisonError::into_inner) = gateway.map(Arc::new);
+        let gateway = gateway.map(|gateway| match &self.credits {
+            Some(credits) => gateway.with_credits(Arc::clone(credits)),
+            None => gateway,
+        });
+        *self.current.write().unwrap_or_else(PoisonError::into_inner) = gateway.map(Arc::new);
     }
 
     fn current(&self) -> Option<Arc<Gateway>> {
-        self.0
+        self.current
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
