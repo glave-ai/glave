@@ -647,3 +647,26 @@ fn sign_up_is_off_unless_the_servers_own_file_turns_it_on() {
     let loaded = load_all(&locations, None).unwrap();
     assert_eq!(loaded.choices.signup.map(|chosen| chosen.value), Some(true));
 }
+
+#[test]
+fn the_proxies_in_front_are_the_servers_own_file_s_to_name_and_never_none() {
+    let dir = scratch("forwarded");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    assert_eq!(load_all(&locations, None).unwrap().choices.forwarded, None);
+    let text = "[serve]\norigin = \"https://glave.example.com\"\nforwarded = 2\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.forwarded, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let forwarded = loaded.choices.forwarded.map(|chosen| chosen.value.get());
+    assert_eq!(forwarded, Some(2));
+    std::fs::write(home.join("config.toml"), "[serve]\nforwarded = 0\n").unwrap();
+    assert!(
+        load_all(&locations, None).is_err(),
+        "no proxies is no setting"
+    );
+}

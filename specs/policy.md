@@ -115,6 +115,11 @@ origin = "https://glave.example.com"          # its public origin, served over H
                                               # port 443 unless glave serve --https says where
 # acme = "https://acme-staging-v02.api.letsencrypt.org/directory"  # where its certificate comes
                                               # from, with domain; Let's Encrypt when absent
+# forwarded = 2                               # how many addresses the proxies in front add to
+                                              # X-Forwarded-For, the client's first: 2 behind
+                                              # Google Cloud's load balancer, glave reached only
+                                              # through them; unset, only the last a proxy here or
+                                              # on a private network names
 
 [store]                                       # the person's or server's file only; also GLAVE_STORE_URL, GLAVE_STORE_BUCKET
 url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.

@@ -201,7 +201,8 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         || start.workers != now.workers
         || start.github != now.github
         || start.origin != now.origin
-        || start.acme != now.acme;
+        || start.acme != now.acme
+        || start.forwarded != now.forwarded;
     if waits {
         tracing::warn!(
             "glave's settings changed where only a restart applies them (the store, the \
@@ -219,6 +220,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         origin: start.origin.clone(),
         acme: start.acme.clone(),
         signup: start.signup.clone(),
+        forwarded: start.forwarded.clone(),
         unsandboxed: start.unsandboxed.clone(),
         ..now
     }

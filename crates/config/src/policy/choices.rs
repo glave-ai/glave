@@ -104,6 +104,9 @@ pub struct Choices {
     pub email: Option<Chosen<EmailFile>>,
     /// Whether anyone may sign up at the public origin with their email (`[serve] signup`).
     pub signup: Option<Chosen<bool>>,
+    /// How many addresses the proxies in front of glave add to `X-Forwarded-For`
+    /// (`[serve] forwarded`).
+    pub forwarded: Option<Chosen<std::num::NonZeroU8>>,
     /// Whether organizations pay for their models from credits (`[credits]`), and with what
     /// monthly limit.
     pub credits: Option<Chosen<CreditsFile>>,
@@ -181,6 +184,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         github: nearest(layers, "github", |file| file.github.clone()),
         email: nearest(layers, "email", |file| file.email.clone()),
         signup: nearest(layers, "serve", |file| file.serve.as_ref()?.signup),
+        forwarded: nearest(layers, "serve", |file| file.serve.as_ref()?.forwarded),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;

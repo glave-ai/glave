@@ -9,7 +9,7 @@ use glave_ports::testing::Outbox;
 use glave_session::protocol::{Request, code};
 use serde_json::{Value, json};
 
-use crate::signups::{serve_sharing, signed_up};
+use crate::signups::{serve_behind, serve_sharing, signed_up};
 use crate::support::web::{Web, asked, elsewhere};
 use crate::support::*;
 
@@ -82,6 +82,37 @@ fn a_link_goes_after_the_answer_whether_or_not_the_address_has_an_account() {
         let mut told: Vec<_> = sent[1..].iter().map(|mail| mail.to.as_str()).collect();
         told.sort_unstable();
         assert_eq!(told, ["ada@example.com", "bea@example.com"]);
+        served.close().await;
+    });
+}
+
+#[test]
+fn behind_google_s_load_balancer_a_forged_address_counts_as_the_visitor_s_own() {
+    block_on!(async {
+        let dir = folder("mailing-behind");
+        let outbox = Arc::new(Outbox::default());
+        let behind = (true, std::num::NonZeroU8::new(2));
+        let (served, _) = serve_behind(&dir, behind, &outbox, Shared::default()).await;
+        // Each time a neighbour's address first, before the load balancer's `<client>,<itself>`.
+        for asking in 0..20 {
+            let forged = "198.51.100.9, 203.0.113.7, 34.120.1.1";
+            let mut visitor = elsewhere(&served, None).from(forged);
+            let email = format!("person{asking}@example.com");
+            assert_eq!(sign_up(&mut visitor, &email).await, json!({}), "{asking}");
+        }
+        let forged = "192.0.2.1, 203.0.113.7, 34.120.1.1";
+        let mut visitor = elsewhere(&served, None).from(forged);
+        assert_eq!(
+            sign_up(&mut visitor, "one-more@example.com").await,
+            json!(code::LIMIT),
+            "what the visitor put first changes nothing"
+        );
+        let mut neighbour = elsewhere(&served, None).from("198.51.100.9, 34.120.1.1");
+        assert_eq!(
+            sign_up(&mut neighbour, "bea@example.com").await,
+            json!({}),
+            "the neighbour named twenty times was charged none of them"
+        );
         served.close().await;
     });
 }

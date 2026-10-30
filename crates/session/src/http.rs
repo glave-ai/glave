@@ -206,7 +206,7 @@ where
             .insert(header::ALLOW, HeaderValue::from_static("POST"));
         return refused;
     }
-    let from = client(request.headers(), peer, secure);
+    let from = client(request.headers(), peer, secure, server.inner.forwarded);
     let token = bearer(request.headers()).map(str::to_owned);
     // A value that is no text names no organization the caller is in, and is refused as one.
     let named = request
