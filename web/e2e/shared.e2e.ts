@@ -14,7 +14,7 @@ import {
 
 /**
  * People who share one computer, against a real glave whose origin is set to its
- * `http://localhost:<port>` (`specs/session.md`, "Doors"), and the real app: the person on the
+ * `http://localhost`, at the port it serves at (`specs/session.md`, "Doors"), and the real app: the person on the
  * computer, signed in at its address, alone, invites someone; a second browser opens the
  * link at `localhost`, makes a passkey and joins; the owner, now shown Admin, gives them a
  * role, cancels a second invite and takes them out, and the browser of the person taken out

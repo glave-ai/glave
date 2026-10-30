@@ -60,7 +60,8 @@ pub fn origin(url: &str) -> Option<(&str, &str)> {
 /// tunnel or proxy in front of it. Never an address. Or, set so on purpose, this computer's
 /// `http://localhost:<port>`, for people who share one computer, each in a browser of their
 /// own: a name, since WebAuthn takes no address for its relying party, with its port, which
-/// must be the one the server serves at.
+/// must be the one the server serves at; or `http://localhost` alone, at whichever port that
+/// is ([`PublicOrigin::serving_at`]).
 #[derive(Clone, PartialEq, Eq)]
 pub struct PublicOrigin {
     origin: String,
@@ -80,7 +81,7 @@ impl PublicOrigin {
         let public = scheme == "https" && !address && !is_this_computer(name);
         let here = scheme == "http"
             && name == "localhost"
-            && port.is_some_and(|port| port.parse::<u16>().is_ok_and(|port| port != 0));
+            && port.is_none_or(|port| port.parse::<u16>().is_ok_and(|port| port != 0));
         (public || here).then_some(Self { origin })
     }
 
@@ -101,6 +102,25 @@ impl PublicOrigin {
     pub fn here(&self) -> Option<u16> {
         let port = self.origin.strip_prefix("http://localhost:")?;
         port.parse().ok()
+    }
+
+    /// Whether it is this computer's `localhost`, with a port or without: one people share this
+    /// computer by, served on loopback alone.
+    pub fn on_this_computer(&self) -> bool {
+        self.origin == "http://localhost" || self.here().is_some()
+    }
+
+    /// The origin of a server serving at `port`: this computer's `http://localhost`, named
+    /// without a port, at that one; any other as it is.
+    #[must_use]
+    pub fn serving_at(&self, port: u16) -> Self {
+        if self.origin == "http://localhost" {
+            Self {
+                origin: format!("http://localhost:{port}"),
+            }
+        } else {
+            self.clone()
+        }
     }
 }
 
@@ -144,7 +164,6 @@ mod tests {
             "https://[::1]",
             "https://203.0.113.5",
             "ftp://glave.example.com",
-            "http://localhost",
             "http://127.0.0.1:4180",
             "http://[::1]:4180",
             "http://localhost:4180/app",
@@ -162,6 +181,16 @@ mod tests {
         assert_eq!(here.as_str(), "http://localhost:4180");
         assert_eq!(here.authority(), "localhost:4180");
         assert_eq!(here.here(), Some(4180));
+        assert_eq!(here.serving_at(9), here, "named with its port, it keeps it");
+        // Named without one, it is at whichever port the server serves.
+        let following = PublicOrigin::parse("http://localhost").unwrap();
+        assert_eq!(following.here(), None);
+        assert!(following.on_this_computer() && here.on_this_computer());
+        assert_eq!(following.serving_at(4181).as_str(), "http://localhost:4181");
+        assert_eq!(following.serving_at(4181).here(), Some(4181));
+        let elsewhere = PublicOrigin::parse("https://glave.example.com").unwrap();
+        assert_eq!(elsewhere.serving_at(4181), elsewhere);
+        assert!(!elsewhere.on_this_computer());
     }
 
     #[test]

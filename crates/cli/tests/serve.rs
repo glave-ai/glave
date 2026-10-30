@@ -234,10 +234,25 @@ mod reached {
     use glave_ports::block_on;
     use glave_provider_openai::fake::FakeServer;
 
-    use crate::http::serve_http;
+    use crate::http::{serve_http, serve_http_with};
     use crate::support::*;
 
     const DISCOVER: &str = r#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#;
+
+    /// What `server/discover` at `url` answers a program on this computer.
+    async fn discover(url: &str) -> serde_json::Value {
+        let answer = reqwest::Client::new()
+            .post(format!("{url}/"))
+            .header("content-type", "application/json")
+            .body(DISCOVER)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        serde_json::from_str(&answer).unwrap()
+    }
 
     /// The status of `server/discover` at `url`, sent to the name `host` from a page at
     /// `page`, as a tunnel on this computer forwards a browser's request.
@@ -280,23 +295,34 @@ mod reached {
     }
 
     #[test]
+    fn a_localhost_origin_named_without_a_port_follows_the_one_glave_serves_at() {
+        let place = place("serve-follows");
+        let model = FakeServer::start(vec![]).unwrap();
+        choose(&place, "serve", "{ origin = \"http://localhost\" }");
+        // At a port the system gives it, as no origin naming a port could be.
+        let (_served, url, said) = serve_http_with(&place, &model, &[], &[]);
+        let (_, port) = url.rsplit_once(':').unwrap();
+        let shared = format!("http://localhost:{port}");
+        let reach = format!("people who share this computer reach it at {shared},");
+        assert!(
+            said.start.iter().any(|line| line.contains(&reach)),
+            "{:?}",
+            said.start
+        );
+        block_on!(async {
+            let answer = discover(&url).await;
+            assert_eq!(answer["result"]["origin"], shared.as_str(), "{answer}");
+        });
+    }
+
+    #[test]
     fn a_server_people_sign_in_to_through_an_identity_provider_is_an_organization() {
         let place = place("serve-organization");
         let model = FakeServer::start(vec![]).unwrap();
         let oidc = ["--issuer", "https://id.example.com", "--audience", "glave"];
         let (_served, url) = serve_http(&place, &model, &oidc);
         block_on!(async {
-            let answer = reqwest::Client::new()
-                .post(format!("{url}/"))
-                .header("content-type", "application/json")
-                .body(DISCOVER)
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            let answer = discover(&url).await;
             let exists = &answer["result"]["exists"];
             assert_eq!(exists["organization"], true, "{answer}");
             assert_eq!(exists["workers"], false, "{answer}");

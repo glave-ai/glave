@@ -12,12 +12,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use glave_computer::{LocalComputers, Wake, Waking};
 use glave_event::{ComputerKind, PrincipalId, ThreadId};
 use glave_harness::Homes;
-use glave_ports::OrgId;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, Home, Sources, WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{OrgId, ProjectId};
 use glave_session::Answering;
-use glave_session::protocol::{Reply, Request, Show};
+use glave_session::protocol::{NewFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
 
 use crate::support::*;
@@ -79,12 +79,17 @@ impl Here {
         self.base.join(person.to_string()).join("scratch")
     }
 
+    /// Where `person`'s computer makes new projects' folders.
+    fn projects(&self, person: PrincipalId) -> PathBuf {
+        self.base.join(person.to_string()).join("projects")
+    }
+
     /// `person`'s computer, planned: woken, the first time a call needs it, as a computer of
     /// this machine with its home in a folder of its own.
     fn plan(&self, person: PrincipalId) -> Home {
         let folder = self.base.join(person.to_string()).join("home");
         std::fs::create_dir_all(&folder).unwrap();
-        let scratch = self.scratch(person);
+        let (scratch, projects) = (self.scratch(person), self.projects(person));
         let (asked, woken, holds, held) = (
             Arc::clone(&self.asked),
             Arc::clone(&self.woken),
@@ -101,7 +106,7 @@ impl Here {
                 Arc::clone(&held),
                 Arc::clone(&awake),
             );
-            let (scratch, at) = (scratch.clone(), at.clone());
+            let (scratch, projects, at) = (scratch.clone(), projects.clone(), at.clone());
             Box::pin(async move {
                 let mut awake = awake.lock().await;
                 if let Some(home) = awake.as_ref() {
@@ -113,6 +118,7 @@ impl Here {
                     .push(holds.load(Ordering::SeqCst));
                 let computers = LocalComputers::for_here(std::env::vars_os())
                     .with_scratch(scratch)
+                    .with_projects(projects)
                     .known_as(ComputerId::from_uuid(person.as_uuid()));
                 let (computers, info) = computers.open_here(&at).await?;
                 let home = Home {
@@ -150,6 +156,26 @@ impl Homes for Here {
     }
 }
 
+/// A thread `server` started for its person, in `project` or a chat of their own.
+async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
+    let started = server
+        .request(Request::ThreadStart {
+            project,
+            worktree: None,
+            background: false,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        })
+        .await
+        .unwrap();
+    let Reply::Thread { thread } = started else {
+        panic!("a thread, not {started:?}")
+    };
+    thread
+}
+
 #[test]
 fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_needs_it() {
     let dir = folder("session-homes");
@@ -179,21 +205,7 @@ fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_
         assert_eq!(homes.woken(), 0, "opening the app wakes nothing");
 
         // A chat of their own: its scratch folder on their computer, not the server's.
-        let started = server
-            .request(Request::ThreadStart {
-                project: None,
-                worktree: None,
-                background: false,
-                computer: None,
-                model: None,
-                permissions: None,
-                effort: None,
-            })
-            .await
-            .unwrap();
-        let Reply::Thread { thread } = started else {
-            panic!("a thread, not {started:?}")
-        };
+        let thread = started(&server, None).await;
         let workspace = thread.workspace.clone().unwrap();
         assert_eq!(workspace.computer.kind, ComputerKind::Person);
         assert_eq!(workspace.computer.id, person.as_uuid());
@@ -258,4 +270,76 @@ async fn resumed_later(
     turn(&again, thread, "read my notes again").await.unwrap();
     assert_eq!(later.woken(), 1);
     assert!(Path::new(root).is_dir(), "opened again on their computer");
+}
+
+#[test]
+fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_there() {
+    let dir = folder("session-homes-project");
+    block_on!(async {
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let mut setup = Setup::asking(vec![answer(Some("Hello."), None)], Answering::NoOne);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let person = server.person().unwrap();
+        let create = |folder| Request::ProjectCreate {
+            name: "Garden".into(),
+            folder: Some(folder),
+        };
+
+        let made = server.request(create(NewFolder::Empty)).await.unwrap();
+        let Reply::Project {
+            project,
+            folder: Some(folder),
+        } = made
+        else {
+            panic!("a project with its folder, not {made:?}")
+        };
+        assert_eq!(
+            folder.checkout.computer,
+            person.as_uuid(),
+            "checked out on their own computer"
+        );
+        let root = PathBuf::from(&folder.checkout.path);
+        assert!(
+            root.starts_with(homes.projects(person)) && root.join(".git").is_dir(),
+            "a new repository on their computer: {}",
+            root.display()
+        );
+
+        // Listed, it is there, and nothing asks their computer to say so.
+        let asked = homes.asked();
+        let listed = server
+            .request(Request::ProjectList { limit: None })
+            .await
+            .unwrap();
+        let Reply::Projects { projects, gone } = listed else {
+            panic!("projects, not {listed:?}")
+        };
+        assert!(projects.iter().any(|listed| listed.id == project.id));
+        assert!(gone.is_empty(), "{gone:?}");
+        assert_eq!(
+            homes.asked(),
+            asked,
+            "listing asks nothing of their computer"
+        );
+
+        // A thread in it works in its folder there.
+        let thread = started(&server, Some(project.id)).await;
+        let workspace = thread.workspace.clone().unwrap();
+        assert_eq!(workspace.computer.kind, ComputerKind::Person);
+        assert_eq!(PathBuf::from(&workspace.root), root);
+        turn(&server, thread.id, "hi").await.unwrap();
+
+        // A folder picked by its path is only ever on the server's own computer.
+        let picked = server
+            .request(create(NewFolder::Path {
+                path: dir.to_string_lossy().into_owned(),
+            }))
+            .await;
+        let refused = picked.unwrap_err().to_string();
+        assert!(
+            refused.contains("a new one or a repository cloned there"),
+            "{refused}"
+        );
+    });
 }
