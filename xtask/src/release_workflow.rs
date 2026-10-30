@@ -1,13 +1,10 @@
 //! `cargo xtask release-workflow`: writes `.github/workflows/release.yml`, the workflow dist
-//! generates from `dist-workspace.toml` and `.github/build-setup.yml`, with the changes dist
+//! generates from `dist-workspace.toml` and `.github/build-setup.yml`, with the two changes dist
 //! has no setting for:
 //!
 //! - dist gives the whole workflow `contents: write`, so every job's token, the builds' too,
 //!   could change the repository's releases and tags. Here the workflow's token only reads, and
-//!   only the jobs that publish write, each only what it needs: the release, and glave's
-//!   computer image (`.github/workflows/publish-computer-image.yml`), which also reads the
-//!   repository and attests the image, where dist gives a publish job of the repository's own
-//!   neither.
+//!   the job that publishes keeps the write access it asks for itself.
 //! - dist's install script installs an archive unchecked where `sha256sum` is missing, as on
 //!   macOS before 15. Here the job that writes it runs `.github/install-script-checksums.sh` on
 //!   it before uploading it, so it checks every archive, with `shasum` where it must.
@@ -29,30 +26,8 @@ const WORKFLOW: &str = ".github/workflows/release.yml";
 const DIST_PERMISSIONS: &str = "\npermissions:\n  \"contents\": \"write\"\n";
 /// The workflow's own permissions, as they ship.
 const READ_ONLY: &str = "\npermissions:\n  \"contents\": \"read\"\n";
-/// The jobs that publish, the only ones that may write, and what each may write: the release
-/// and its provenance, and glave's computer image and its provenance.
-const PUBLISHERS: &[(&str, &[&str])] = &[
-    ("host", &["attestations", "contents", "id-token"]),
-    (
-        "custom-publish-computer-image",
-        &["attestations", "id-token", "packages"],
-    ),
-];
-/// The permissions dist gives a publish job of the repository's own (`publish-jobs`).
-const DIST_PUBLISH: &str = "    # publish jobs get escalated permissions
-    permissions:
-      \"id-token\": \"write\"
-      \"packages\": \"write\"
-";
-/// The permissions the computer image's publish job asks for, and is given instead.
-const IMAGE_PUBLISH: &str =
-    "    # What publish-computer-image.yml asks for: the image pushed and attested.
-    permissions:
-      \"attestations\": \"write\"
-      \"contents\": \"read\"
-      \"id-token\": \"write\"
-      \"packages\": \"write\"
-";
+/// The job that publishes the release and attests to it: the only one that may write.
+const PUBLISHER: &str = "host";
 /// The upload of the job that writes the install script, which the step below goes before.
 const GLOBAL_UPLOAD: &str = "      - name: \"Upload artifacts\"\n";
 /// What names that job's upload, after [`GLOBAL_UPLOAD`].
@@ -95,31 +70,25 @@ pub(crate) fn check() -> Result<(), String> {
     as_shipped(&workflow)
         .map_err(|err| format!("{WORKFLOW}: {err}: run `cargo xtask release-workflow`"))?;
     println!(
-        "xtask: in {WORKFLOW}, only the jobs that publish can write, each only what it needs, \
-         and the install script checks every archive"
+        "xtask: in {WORKFLOW}, only the `{PUBLISHER}` job can write, and the install script \
+         checks every archive"
     );
     Ok(())
 }
 
-/// dist's workflow with the changes: its own permissions read-only, the image's publish job
-/// given what it asks for, and the step that makes the install script check every archive.
+/// dist's workflow with both changes: its own permissions read-only, and the step that makes
+/// the install script check every archive.
 fn ship(workflow: &str) -> Result<String, String> {
-    let narrowed =
-        workflow
-            .replacen(DIST_PERMISSIONS, READ_ONLY, 1)
-            .replacen(DIST_PUBLISH, IMAGE_PUBLISH, 1);
+    let narrowed = workflow.replacen(DIST_PERMISSIONS, READ_ONLY, 1);
     let shipped = with_checksums(&narrowed)
         .and_then(|shipped| as_shipped(&shipped).map(|()| shipped))
         .map_err(|err| format!("dist's workflow has changed: {err}"))?;
     Ok(shipped)
 }
 
-/// Fails unless the workflow has the changes.
+/// Fails unless the workflow has both changes.
 fn as_shipped(workflow: &str) -> Result<(), String> {
-    only_publishers_write(workflow)?;
-    if workflow.matches(IMAGE_PUBLISH).count() != 1 {
-        return Err("the computer image's publish job is not given what it asks for".to_owned());
-    }
+    only_publisher_writes(workflow)?;
     let upload = global_upload(workflow)?;
     let checked = workflow
         .get(..upload)
@@ -168,9 +137,9 @@ fn global_upload(workflow: &str) -> Result<usize, String> {
     Ok(upload)
 }
 
-/// Fails unless the workflow's own permissions are read-only and only the jobs that publish
-/// are given write access, each only to what [`PUBLISHERS`] says.
-fn only_publishers_write(workflow: &str) -> Result<(), String> {
+/// Fails unless the workflow's own permissions are read-only and only the publishing job is
+/// given write access.
+fn only_publisher_writes(workflow: &str) -> Result<(), String> {
     if !workflow.contains(READ_ONLY) {
         return Err("the workflow's own permissions are not `contents: read`".to_owned());
     }
@@ -183,29 +152,14 @@ fn only_publishers_write(workflow: &str) -> Result<(), String> {
             job = None;
         } else if in_jobs && let Some(name) = job_name(line) {
             job = Some(name);
-        } else if let Some(permission) = written(line) {
-            let may = PUBLISHERS
-                .iter()
-                .any(|(name, may)| job == Some(*name) && may.contains(&permission));
-            if !may {
-                return Err(match job {
-                    Some(name) => format!(
-                        "the `{name}` job can write `{permission}`; only the jobs that publish \
-                         may write, each only what it needs"
-                    ),
-                    None => "the workflow's own permissions write; only the jobs that publish may"
-                        .to_owned(),
-                });
-            }
+        } else if line.trim_end().ends_with(": \"write\"") && job != Some(PUBLISHER) {
+            return Err(match job {
+                Some(name) => format!("the `{name}` job can write; only `{PUBLISHER}` may"),
+                None => format!("the workflow's own permissions write; only `{PUBLISHER}` may"),
+            });
         }
     }
     Ok(())
-}
-
-/// The permission a line gives write access to: `      "packages": "write"` gives `packages`.
-fn written(line: &str) -> Option<&str> {
-    let name = line.trim().strip_suffix(": \"write\"")?;
-    Some(name.trim_matches('"'))
 }
 
 /// The job a line under `jobs:` starts: `  host:` starts `host`.
@@ -231,8 +185,8 @@ mod tests {
     use super::*;
 
     /// The shape of dist's workflow: its own permissions, triggers indented as jobs are, both
-    /// build jobs uploading what they built, and the publishing jobs asking for write access
-    /// themselves.
+    /// build jobs uploading what they built, and the publishing job asking for write access
+    /// itself.
     const DIST_WORKFLOW: &str = r#"name: Release
 permissions:
   "contents": "write"
@@ -268,13 +222,6 @@ jobs:
       "attestations": "write"
       "contents": "write"
       "id-token": "write"
-  custom-publish-computer-image:
-    uses: ./.github/workflows/publish-computer-image.yml
-    # publish jobs get escalated permissions
-    permissions:
-      "id-token": "write"
-      "packages": "write"
-
   announce:
     runs-on: "ubuntu-22.04"
 "#;
@@ -289,30 +236,6 @@ jobs:
             Ok(shipped.clone()),
             "shipping twice changes nothing"
         );
-    }
-
-    #[test]
-    fn the_image_publisher_is_given_what_it_asks_for_and_no_more() {
-        let shipped = ship(DIST_WORKFLOW).unwrap();
-        assert!(shipped.contains(IMAGE_PUBLISH), "{shipped}");
-        assert!(!shipped.contains(DIST_PUBLISH));
-        let err = as_shipped(&shipped.replace(IMAGE_PUBLISH, DIST_PUBLISH)).unwrap_err();
-        assert!(err.contains("not given what it asks for"), "{err}");
-        let contents = shipped.replace(
-            "      \"contents\": \"read\"\n      \"id-token\"",
-            "      \"contents\": \"write\"\n      \"id-token\"",
-        );
-        let err = as_shipped(&contents).unwrap_err();
-        assert!(
-            err.contains("`custom-publish-computer-image` job can write `contents`"),
-            "{err}"
-        );
-        let host_packages = shipped.replace(
-            "      \"contents\": \"write\"\n",
-            "      \"contents\": \"write\"\n      \"packages\": \"write\"\n",
-        );
-        let err = as_shipped(&host_packages).unwrap_err();
-        assert!(err.contains("`host` job can write `packages`"), "{err}");
     }
 
     #[test]
