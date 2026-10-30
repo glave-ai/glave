@@ -52,6 +52,22 @@ describe('PeopleService', () => {
     ]);
   });
 
+  it('asks the server about itself again after an invite is made, cancelled or refused', async () => {
+    const fake = new FakeSession()
+      .answer('people/list', { people: [] })
+      .answer('invite/list', { invites: [INVITE] })
+      .answer(
+        'invite/create',
+        new ApiError({ code: ErrorCode.NOT_AVAILABLE, message: 'not sent' }),
+      );
+    const kept = service(fake);
+    expect(await kept.revoke('i')).toBeNull();
+    expect(await kept.invite('member', 'alex@example.com', 'https://glave.example')).toBe(
+      'not sent',
+    );
+    expect(fake.paramsOf('server/discover')).toHaveLength(2);
+  });
+
   it('says the server’s sentence when it refuses, and the app’s own when it can’t be reached', async () => {
     const fake = new FakeSession()
       .answer('people/list', { people: [] })

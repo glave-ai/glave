@@ -316,7 +316,8 @@ where
 
     /// Whether `caller`'s organization is shown (`specs/model.md`, "Identity"): where people
     /// sign in through a company login, or, to someone signed in, where it holds more than one
-    /// person, the local person counting in the server's own.
+    /// person, the local person counting in the server's own, or an invite to it waits, so the
+    /// one who made it can see and cancel it.
     pub(crate) async fn organization_shown(&self, caller: &Caller) -> Result<bool, ApiError> {
         if self.inner.identity_provider {
             return Ok(true);
@@ -327,10 +328,10 @@ where
         let org = self.org_of(caller);
         self.catch_up_people(org).await?;
         let local = usize::from(org == self.inner.own);
-        Ok(self
-            .people(org, |people| people.count())
-            .saturating_add(local)
-            > 1)
+        let now = self.inner.harness.clock().now();
+        Ok(self.people(org, |people| {
+            people.count().saturating_add(local) > 1 || people.invites.wait(now)
+        }))
     }
 
     /// Refuses `caller` what their role does not permit, before anything of it is read, and

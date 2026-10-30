@@ -159,6 +159,18 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         let told = asked(&mut ada, &Request::Discover {}).await;
         assert_eq!(told["invites"], json!(true), "{told}");
         assert!(told.get("exists").is_none(), "{told}");
+        // While her invite waits it is shown, so she can see and cancel it; cancelled, not.
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        let made = asked(&mut ada, &invite).await;
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert_eq!(told["exists"]["organization"], json!(true), "{told}");
+        let id = serde_json::from_value(made["invite"]["id"].clone()).unwrap();
+        asked(&mut ada, &Request::InviteRevoke { invite: id }).await;
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert!(told.get("exists").is_none(), "{told}");
         let listed = Request::PeopleList {
             after: None,
             limit: None,
@@ -193,6 +205,32 @@ pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> 
     let code = emailed_code(outbox, before + 1).await;
     let made = make(served, code, &mut device).await;
     elsewhere(served, made["session"].as_str().map(str::to_owned))
+}
+
+#[test]
+fn an_invite_shows_its_maker_the_organization_until_it_expires() {
+    block_on!(async {
+        let dir = folder("signups-invite-waits");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        assert!(asked(&mut ada, &invite).await["code"].is_string());
+        // A minute before its week is out it still works, and its organization shows.
+        clock.advance_seconds(7 * 24 * 60 * 60 - 60);
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert_eq!(told["exists"]["organization"], json!(true), "{told}");
+        clock.advance_seconds(120);
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert!(
+            told.get("exists").is_none(),
+            "an expired invite shows nothing: {told}"
+        );
+        served.close().await;
+    });
 }
 
 #[test]
