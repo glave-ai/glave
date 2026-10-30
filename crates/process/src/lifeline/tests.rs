@@ -38,6 +38,23 @@ fn gated_helper(folder: &Path) {
     std::fs::write(folder.join("helper"), text).unwrap();
 }
 
+/// A stand-in helper whose first start stops itself once it says it is ready, before it reads
+/// anything, so its pipe fills whatever the scheduler does; every later start reads, as
+/// [`fake_helper`]'s does. Which start is first is settled before it says it is ready, so a
+/// first start killed before it stopped never makes the next one stop. A stop sent while the
+/// helper is still starting can be lost on macOS, leaving it reading (#1044).
+fn stopping_helper(folder: &Path) -> PathBuf {
+    let script = folder.join("helper");
+    let ready = String::from_utf8(READY.to_vec()).unwrap();
+    let text = format!(
+        "#!/bin/sh\nmkdir \"${{0%/*}}/stopped\" 2>/dev/null && first=1\nprintf '{ready}'\n\
+         [ -n \"$first\" ] && kill -STOP $$\nexec cat > \"${{0%/*}}/told-$$\"\n"
+    );
+    std::fs::write(&script, text).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
 /// The helper running now.
 fn helper_pid(lifeline: &Lifeline) -> u32 {
     let mut state = lifeline.lock();
@@ -273,14 +290,14 @@ fn a_program_that_cannot_be_the_helper_is_refused_before_anything_starts() {
 fn a_helper_that_reads_nothing_never_stalls_glave_and_is_replaced() {
     let folder = TempDir::new("lifeline-stopped").unwrap();
     glave_ports::block_on!(async {
-        let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
+        let lifeline = Arc::new(Lifeline::start(stopping_helper(&folder)).await.unwrap());
         let first = helper_pid(&lifeline);
         let held = lifeline.tie(101).await.unwrap();
 
-        // The helper is stopped, not gone: it reads nothing, and glave's lines fill its pipe.
+        // The helper stopped itself and is not gone: it never reads, and glave's lines fill
+        // its pipe.
         // Programs keep starting and ending without waiting for it, until one finds it full.
         let stopped = Pid::from_raw(i32::try_from(first).unwrap()).unwrap();
-        kill_process(stopped, Signal::STOP).unwrap();
         let deadline = Instant::now() + HUNG;
         let mut leader = 1000;
         while lifeline
