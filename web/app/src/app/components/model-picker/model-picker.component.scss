@@ -7,3 +7,26 @@
 :host(:empty) {
   display: none;
 }
+
+// The button that opens the model dialog, as quiet in the status line as the picker's own.
+.trigger {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+
+  &:hover,
+  &[aria-expanded='true'] {
+    color: var(--glz-color-text);
+  }
+}
+
+.text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  flex: none;
+}

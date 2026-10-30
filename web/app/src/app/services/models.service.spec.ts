@@ -58,4 +58,24 @@ describe('ModelsService', () => {
     await models.load();
     expect(models.default()).toBe('only');
   });
+
+  it('shows the latest of two reads, however they answer', async () => {
+    const waiting: ((answer: object) => void)[] = [];
+    const fake = new FakeSession().answer(
+      'model/list',
+      () =>
+        new Promise((resolve) => {
+          waiting.push(resolve);
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const models = TestBed.inject(ModelsService);
+    const first = models.load();
+    const second = models.reload();
+    waiting[1]?.({ models: MODELS });
+    await second;
+    waiting[0]?.({ models: [] });
+    await first;
+    expect(models.models()).toEqual(MODELS);
+  });
 });
