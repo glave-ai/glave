@@ -39,6 +39,32 @@ impl Trash {
         }
     }
 
+    /// What it holds, at most `most`, by name, each with its note where the Trash keeps one
+    /// (`info/<name>.trashinfo`); nothing when it can't be read.
+    pub(crate) async fn held(&self, most: usize) -> Vec<(PathBuf, Option<PathBuf>)> {
+        let (files, info) = match self {
+            Self::Folder(folder) => (folder.clone(), None),
+            Self::Freedesktop { root, .. } => (root.join("files"), Some(root.join("info"))),
+        };
+        let mut held = Vec::new();
+        let Ok(mut read) = tokio::fs::read_dir(&files).await else {
+            return held;
+        };
+        while held.len() < most {
+            let Ok(Some(entry)) = read.next_entry().await else {
+                break;
+            };
+            let note = info.as_ref().map(|info| {
+                let mut name = entry.file_name();
+                name.push(".trashinfo");
+                info.join(name)
+            });
+            held.push((entry.path(), note));
+        }
+        held.sort();
+        held
+    }
+
     /// Moves the folder at `path` into the Trash under a free name, and answers where it is.
     /// A move that cannot be made in one step (another disk) fails and leaves it in place.
     pub async fn put(&self, path: &Path) -> Result<PathBuf, ComputerError> {

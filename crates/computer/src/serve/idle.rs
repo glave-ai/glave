@@ -51,6 +51,11 @@ impl Activity {
         *self.last.lock().unwrap_or_else(PoisonError::into_inner) = Instant::now();
     }
 
+    /// Whether no request runs now.
+    pub(crate) fn quiet(&self) -> bool {
+        self.running.load(Ordering::SeqCst) == 0
+    }
+
     /// Whether no request runs and none has ended for `after`.
     fn quiet_for(&self, after: Duration) -> bool {
         let last = *self.last.lock().unwrap_or_else(PoisonError::into_inner);

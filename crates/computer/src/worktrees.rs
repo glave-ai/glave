@@ -278,7 +278,7 @@ async fn common_from_link(path: &Path) -> Option<PathBuf> {
 }
 
 /// The folders in `parent`, sorted; none when it does not exist.
-async fn folders(parent: &Path) -> Result<Vec<PathBuf>, ComputerError> {
+pub(crate) async fn folders(parent: &Path) -> Result<Vec<PathBuf>, ComputerError> {
     let mut entries = match tokio::fs::read_dir(parent).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

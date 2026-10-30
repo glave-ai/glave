@@ -174,9 +174,9 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
     );
     let command = container["command"].as_array().unwrap();
     assert_eq!(
-        command.get(command.len() - 2..).unwrap(),
-        [json!("--idle"), json!("10")],
-        "it sleeps on its own once idle"
+        command.get(command.len() - 3..).unwrap(),
+        [json!("--idle"), json!("10"), json!("--keep-disk")],
+        "it sleeps on its own once idle, and keeps its disk from filling"
     );
     let policy = computer.network_policy();
     assert_eq!(

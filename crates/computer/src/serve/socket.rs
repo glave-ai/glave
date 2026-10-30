@@ -7,6 +7,7 @@
 use std::convert::Infallible;
 use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
 use std::path::Path;
+use std::pin::pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -19,6 +20,7 @@ use tokio::time::Instant;
 
 use super::idle::Activity;
 use super::{Idle, MAX_CONNECTIONS, serving};
+use crate::disk::Keeper;
 use crate::token::Tokens;
 
 /// How long a bridge waits for the computer's socket to be there and take it: the glave just
@@ -58,29 +60,42 @@ pub fn listen_socket(path: &Path) -> std::io::Result<UnixListener> {
 /// Serves `computers` on a Unix socket, to clients that first present the token `tokens` holds,
 /// before it expires: how a computer in a Pod is reached, each connection a bridge. Runs until
 /// accepting fails, or, with `idle`, until no request has run for that long and nothing is
-/// busy.
+/// busy. With `keeper`, it keeps its disk from filling while no request runs.
 pub async fn serve_socket<C: Computers + 'static>(
     computers: Arc<C>,
     listener: UnixListener,
     tokens: impl Into<Tokens>,
     idle: Option<Idle>,
+    keeper: Option<Keeper>,
 ) -> std::io::Result<()> {
     let tokens = tokens.into();
-    let activity = idle.as_ref().map(|_| Activity::new());
+    let activity = Activity::new();
+    // Kept from one connection to the next, so the minutes it counts are never reset.
+    let mut keeping = pin!(async {
+        match &keeper {
+            Some(keeper) => match keeper.keep_quietly(|| activity.quiet()).await {},
+            None => std::future::pending::<Infallible>().await,
+        }
+    });
     let mut connections = JoinSet::new();
     loop {
         while connections.len() >= MAX_CONNECTIONS {
             connections.join_next().await;
         }
-        let stream = match (&idle, &activity) {
-            (Some(idle), Some(activity)) => tokio::select! {
+        let stream = if let Some(idle) = &idle {
+            tokio::select! {
                 accepted = listener.accept() => accepted?.0,
-                () = idle.reached(activity) => return Ok(()),
-            },
-            _ => listener.accept().await?.0,
+                () = idle.reached(&activity) => return Ok(()),
+                never = &mut keeping => match never {},
+            }
+        } else {
+            tokio::select! {
+                accepted = listener.accept() => accepted?.0,
+                never = &mut keeping => match never {},
+            }
         };
         let (computers, tokens) = (Arc::clone(&computers), tokens.clone());
-        let activity = activity.clone();
+        let activity = Some(Arc::clone(&activity));
         connections.spawn(async move {
             // The token as it is now: the side that minted it may have renewed it.
             let token = tokens.current(SystemTime::from(SystemClock.now())).await?;
