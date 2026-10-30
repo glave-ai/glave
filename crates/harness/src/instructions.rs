@@ -10,6 +10,8 @@ mod nested;
 
 use std::path::{Path, PathBuf};
 
+use glave_event::Part;
+use glave_ports::Message;
 use glave_ports::computer::ComputerError;
 
 use crate::tools::workspace::Workspace;
@@ -70,6 +72,18 @@ pub async fn agents_md(
     Ok(read.done(root))
 }
 
+/// The instructions `messages` opened with, as they were sent: the first part of the first
+/// message, when it is a block of them.
+pub(crate) fn opened_with(messages: &[Message]) -> Option<String> {
+    let Some(Message::User { parts }) = messages.first() else {
+        return None;
+    };
+    match parts.first() {
+        Some(Part::Text { text }) if text.starts_with(HEADING) => Some(text.clone()),
+        _ => None,
+    }
+}
+
 /// What [`agents_md`] reads for a thread working at `root` on a computer reached through the
 /// port, read there through `home`, the person's home on it, which `root` is inside: their own
 /// instructions (`.glave/AGENTS.md` in the home), then every AGENTS.md from the repository's
@@ -85,7 +99,10 @@ pub(crate) async fn agents_md_on(home: &Workspace, root: &Path) -> Option<Instru
     );
     let mut read = Sections::default();
     for file in files {
-        let Some(path) = inside(base, &file).filter(|_| !read.full()) else {
+        if read.full() {
+            break;
+        }
+        let Some(path) = inside(base, &file) else {
             continue;
         };
         match home.read(&path).await {
@@ -95,7 +112,14 @@ pub(crate) async fn agents_md_on(home: &Workspace, root: &Path) -> Option<Instru
                 &String::from_utf8_lossy(bytes.as_slice()),
             ),
             Err(ComputerError::NotFound(_)) => {}
-            Err(error) => tracing::warn!(error = error.message(), "an AGENTS.md could not be read"),
+            Err(error) => {
+                let file = file.display().to_string();
+                tracing::warn!(
+                    error = error.message(),
+                    file,
+                    "an AGENTS.md could not be read"
+                );
+            }
         }
     }
     read.done(root)

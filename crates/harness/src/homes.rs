@@ -2,7 +2,8 @@
 //! deployment gives each person a computer of their own, a thread for them works there, in
 //! their home, rather than on the harness's computer. Their folders, worktrees and scratch
 //! folders are opened on it as they would be here; a scratch folder is planned without waking
-//! it, and the first tool call that needs the computer wakes it (decision 6).
+//! it, and the first tool call that needs the computer wakes it (decision 6). What a thread in
+//! a project's folder there opens with is read there too, through the computer port.
 
 use std::sync::Arc;
 

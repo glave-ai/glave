@@ -167,7 +167,8 @@ pub struct Thread {
     /// How much its model is asked to reason (`chosen.rs`); the model's own way when `None`.
     pub(crate) effort: Option<String>,
     /// The instructions the thread opens with, and the judge reads as the project's rules:
-    /// its folder's, or the settings' own (`bind.rs`). A subagent's thread has its parent's.
+    /// its folder's, read on its person's own computer when it works there (`homes.rs`), or
+    /// the settings' own (`bind.rs`). A subagent's thread has its parent's.
     pub(crate) instructions: Option<String>,
     /// The folder of the project the thread works in, when it works in one here: its own
     /// folder, or the one its worktree was made from. A subagent's thread has its parent's.
