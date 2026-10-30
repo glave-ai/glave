@@ -1279,6 +1279,44 @@
         }
       ]
     },
+    "OrganizationInfo": {
+      "description": "An organization the caller belongs to, as it is to them.",
+      "properties": {
+        "current": {
+          "description": "Whether this request works in it.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Its id, which a request names in `Glave-Organization` to work in it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What it is called: \"Personal\" for the caller's own; another, while organizations have\nno names of their own, by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
+          "type": "string"
+        },
+        "own": {
+          "description": "Whether it is the caller's own: the one they signed up into, or for the person on the\nserver's computer, the server's own.",
+          "type": "boolean"
+        },
+        "people": {
+          "description": "How many people are in it, the person on the server's computer counted in its own.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "role": {
+          "$ref": "#/$defs/OrgRole",
+          "description": "The caller's role in it."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "people",
+        "role"
+      ],
+      "type": "object"
+    },
     "Origin": {
       "additionalProperties": false,
       "description": "What started a thread, and who.",
@@ -3410,6 +3448,10 @@
       "code": -32022,
       "message": "Not available yet, such as a thread on a computer of the person's own"
     },
+    "NOT_IN": {
+      "code": -32036,
+      "message": "The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists"
+    },
     "NO_APPROVAL": {
       "code": -32004,
       "message": "No such approval is pending"
@@ -4656,6 +4698,27 @@
         },
         "required": [
           "models"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "organization/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The organizations the caller belongs to, their own first.",
+        "properties": {
+          "organizations": {
+            "items": {
+              "$ref": "#/$defs/OrganizationInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "organizations"
         ],
         "type": "object"
       },

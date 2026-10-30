@@ -13,6 +13,12 @@ export const TOKEN_KEY = 'glave-session';
 export interface BrowserSession {
   readonly token: string;
   readonly server: string;
+  /**
+   * The organization the person chose to work in with this session, by its id, for someone in
+   * several; none for the first they joined. It goes with the session: a new sign-in starts
+   * in their first.
+   */
+  readonly organization?: string;
 }
 
 /**
@@ -77,5 +83,10 @@ function isSession(value: unknown): value is BrowserSession {
     return false;
   }
   const fields = value as Readonly<Record<string, unknown>>;
-  return typeof fields['token'] === 'string' && typeof fields['server'] === 'string';
+  const organization = fields['organization'];
+  return (
+    typeof fields['token'] === 'string' &&
+    typeof fields['server'] === 'string' &&
+    (organization === undefined || typeof organization === 'string')
+  );
 }

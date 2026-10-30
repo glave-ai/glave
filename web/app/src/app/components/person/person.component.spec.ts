@@ -125,4 +125,31 @@ describe('PersonComponent', () => {
     expect(root.querySelector('[role="alert"]')?.textContent).toContain('could not load');
     await expectAccessible(root);
   });
+
+  it('switches between the person’s organizations, their own first, the current one checked', async () => {
+    const organizations = [
+      { id: 'own', name: 'Personal', people: 1, own: true, role: 'owner', current: true },
+      { id: 'acme', name: "Dana Lee's team", people: 12, role: 'member' },
+    ];
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(new FakeSession().answer('organization/list', { organizations })),
+      ],
+    });
+    const chosen = vi.spyOn(TestBed.inject(SessionService), 'chooseOrganization').mockReturnValue();
+    const fixture = TestBed.createComponent(PersonComponent);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const places = root.querySelectorAll<HTMLElement>('[data-testid="person-switch"]');
+    // Read as one line each, past the mark, which only shows.
+    const read = (each: HTMLElement): string =>
+      each.querySelector('.place')?.textContent.trim() ?? '';
+    expect(Array.from(places, read)).toEqual(['Personal Just you', "Dana Lee's team 12 people"]);
+    expect(places[0]?.getAttribute('aria-current')).toBe('page');
+    await expectAccessible(root);
+    places[1]?.click();
+    places[0]?.click();
+    expect(chosen.mock.calls).toEqual([['acme']]);
+  });
 });

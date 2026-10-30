@@ -5,7 +5,7 @@ use glave_event::{At, InviteId, OrgRole, Principal, PrincipalId};
 use glave_ports::OrgId;
 use serde::{Deserialize, Serialize};
 
-use super::Request;
+use super::{Request, Told};
 use crate::people::Permit;
 
 /// A person who signed in through the organization's identity provider.
@@ -102,4 +102,26 @@ impl Request {
             _ => None,
         }
     }
+}
+
+/// An organization the caller belongs to, as it is to them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OrganizationInfo {
+    /// Its id, which a request names in `Glave-Organization` to work in it.
+    #[schemars(with = "String")]
+    pub id: OrgId,
+    /// What it is called: "Personal" for the caller's own; another, while organizations have
+    /// no names of their own, by an Owner of it ("Dana Lee's team"), else "A team".
+    pub name: Told,
+    /// How many people are in it, the person on the server's computer counted in its own.
+    pub people: usize,
+    /// Whether it is the caller's own: the one they signed up into, or for the person on the
+    /// server's computer, the server's own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
+    /// The caller's role in it.
+    pub role: OrgRole,
+    /// Whether this request works in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current: bool,
 }

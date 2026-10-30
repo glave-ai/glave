@@ -440,6 +440,28 @@ export type Opened = {
 /** What a person may do in their organization. A person given no role is a Member. */
 export type OrgRole = "member" | "admin" | "owner";
 
+/** An organization the caller belongs to, as it is to them. */
+export type OrganizationInfo = {
+  /** Whether this request works in it. */
+  readonly current?: boolean;
+  /** Its id, which a request names in `Glave-Organization` to work in it. */
+  readonly id: string;
+  /**
+   * What it is called: "Personal" for the caller's own; another, while organizations have
+   * no names of their own, by an Owner of it ("Dana Lee's team"), else "A team".
+   */
+  readonly name: string;
+  /**
+   * Whether it is the caller's own: the one they signed up into, or for the person on the
+   * server's computer, the server's own.
+   */
+  readonly own?: boolean;
+  /** How many people are in it, the person on the server's computer counted in its own. */
+  readonly people: number;
+  /** The caller's role in it. */
+  readonly role: OrgRole;
+};
+
 /** What started a thread, and who. */
 export type Origin = {
   /** Who started it, when that differs from the thread's `for`. */
@@ -1567,6 +1589,13 @@ export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
 };
 
+export type OrganizationListParams = Readonly<Record<string, never>>;
+
+/** The organizations the caller belongs to, their own first. */
+export type OrganizationListResult = {
+  readonly organizations: readonly (OrganizationInfo)[];
+};
+
 export type PasskeyAddParams = {
   readonly ceremony: string;
   readonly credential: unknown;
@@ -2244,6 +2273,7 @@ export interface Methods {
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "memory/set": { readonly params: MemorySetParams; readonly result: MemorySetResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "organization/list": { readonly params: OrganizationListParams; readonly result: OrganizationListResult };
   readonly "passkey/add": { readonly params: PasskeyAddParams; readonly result: PasskeyAddResult };
   readonly "passkey/add_options": { readonly params: PasskeyAddOptionsParams; readonly result: PasskeyAddOptionsResult };
   readonly "passkey/create": { readonly params: PasskeyCreateParams; readonly result: PasskeyCreateResult };
@@ -2366,6 +2396,8 @@ export const ErrorCode = {
   NOT_ALLOWED: -32012,
   /** Not available yet, such as a thread on a computer of the person's own */
   NOT_AVAILABLE: -32022,
+  /** The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists */
+  NOT_IN: -32036,
   /** No such approval is pending */
   NO_APPROVAL: -32004,
   /** No such command is running in the background in this thread */

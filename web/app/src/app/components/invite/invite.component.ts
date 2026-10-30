@@ -53,7 +53,7 @@ export class InviteComponent {
     companyText: $localize`:@@invite.companyText:Your team signs you in with its own login. Use your work account.`,
     companyAction: $localize`:@@invite.companyAction:Continue with your team's sign-in`,
     joinHeading: $localize`:@@invite.joinHeading:Join this team?`,
-    joinText: $localize`:@@invite.joinText:It gets its own chats and projects, apart from yours.`,
+    joinText: $localize`:@@invite.joinText:It gets its own chats and projects, apart from yours. Switch between them from your menu.`,
     memberHeading: $localize`:@@invite.memberHeading:You're in this team already`,
     memberText: $localize`:@@invite.memberText:This invite is for someone who isn't. Nothing to do here.`,
     have: $localize`:@@invite.have:Already have an account?`,

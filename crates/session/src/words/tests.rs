@@ -548,3 +548,31 @@ fn what_a_project_brings_is_written_again_in_its_threads() {
     );
     assert_eq!(written.detail.as_deref(), Some("npx @acme/mcp"));
 }
+
+#[test]
+fn an_organization_s_name_is_written_again_in_a_listing_of_them() {
+    let named = |name: Sentence| crate::protocol::OrganizationInfo {
+        id: glave_ports::OrgId::from_uuid(uuid::Uuid::nil()),
+        name: name.into(),
+        people: 2,
+        own: false,
+        role: glave_event::OrgRole::Member,
+        current: false,
+    };
+    let team = Sentence::OwnersTeam {
+        owner: "Dana Lee".into(),
+    };
+    let mut listed: Result<Reply, ApiError> = Ok(Reply::Organizations {
+        organizations: vec![named(Sentence::OwnOrganization), named(team)],
+    });
+    assert!(says(&listed));
+    translate(&mut listed, Language::Accented);
+    let Ok(Reply::Organizations { organizations }) = listed else {
+        panic!("a listing")
+    };
+    assert!(organizations.iter().all(|org| org.name.starts_with('[')));
+    assert!(
+        organizations[1].name.contains("Dana Lee"),
+        "the name as it is"
+    );
+}
