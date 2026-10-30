@@ -51,6 +51,16 @@ pub(crate) async fn serve_with<L: EventLog + 'static>(
     serve_on(server, signin, site, listener.into())
 }
 
+/// Serves `server` as `serve_with` does, on `listener`, bound before the server was made, as
+/// one whose origin is this computer's `localhost` at its port must be.
+pub(crate) async fn serve_bound<L: EventLog + 'static>(
+    server: Tested<L>,
+    signin: SignIn,
+    listener: TcpListener,
+) -> Served {
+    serve_on(server, signin, None, listener.into())
+}
+
 /// Serves `server` as `serve_with` does, on both of this computer's loopback addresses at one
 /// port, as the person's server listens, so browsers here reach it as `localhost`.
 pub(crate) async fn serve_here<L: EventLog + 'static>(server: Tested<L>, signin: SignIn) -> Served {

@@ -23,6 +23,25 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "Ctrl-C itself, from the person at the terminal",
     ),
     (
+        "xtask/src/try_org.rs",
+        "ended = child.wait() => {",
+        1,
+        "the throwaway glave the person at the terminal tries by hand, until they stop it with \
+         Ctrl-C, a hang-up or the end of what started xtask: the arms beside it",
+    ),
+    (
+        "xtask/src/try_org.rs",
+        "_ = hangup.recv() => {}",
+        1,
+        "a hang-up itself, from the terminal the person closes",
+    ),
+    (
+        "xtask/src/try_org.rs",
+        "_ = terminate.recv() => {}",
+        1,
+        "a request to stop itself, from the person or the system",
+    ),
+    (
         "crates/session/src/turn.rs",
         "if done.changed().await.is_err() {",
         1,
