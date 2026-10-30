@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use glave_ports::BoxFuture;
 use glave_ports::computer::{
     Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing, Output, Search,
-    Sources, WorkspaceId,
+    Sources, WorkspaceId, refuse_protected,
 };
 use glave_ports::conformance::{
     Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
@@ -127,9 +127,9 @@ fn links_planted_by_commands_and_hard_links_cannot_reach_outside() {
     );
 }
 
-/// Runs `round` again and again while a command running beside it swaps the folder
-/// `inside/in_dir` for a link to each of `targets` in turn and back, for at least three seconds
-/// and a hundred swaps, however busy the machine. The real folder is back when it returns.
+/// Runs `round` again and again while a thread swaps the folder `inside/in_dir` for a link to
+/// each of `targets` in turn and back, the way a command running beside the file tools could,
+/// for at least three seconds and a hundred swaps. The real folder is back when it returns.
 ///
 /// How the two interleave is the scheduler's: a check that needs some round to land in one
 /// state of the folder fails when the machine is busy though confinement held (#1028). What a
@@ -144,16 +144,15 @@ fn race(inside: &std::path::Path, targets: &'static [&'static str], mut round: i
         std::thread::spawn(move || flip(&inside, targets, &swaps, &stop))
     };
     let started = std::time::Instant::now();
-    while started.elapsed().as_millis() < 3_000 || swaps.load(Ordering::Relaxed) < 100 {
-        let swapped = swaps.load(Ordering::Relaxed);
-        assert!(
-            started.elapsed() < glave_ports::testing::HUNG,
-            "the race never really ran: {swapped} swaps"
-        );
+    while (started.elapsed().as_millis() < 3_000 || swaps.load(Ordering::Relaxed) < 100)
+        && started.elapsed() < glave_ports::testing::HUNG
+    {
         round();
     }
     stop.store(true, Ordering::Relaxed);
     flipper.join().unwrap();
+    let swapped = swaps.load(Ordering::Relaxed);
+    assert!(swapped >= 100, "the race never really ran: {swapped} swaps");
 }
 
 /// Swaps the folder `in_dir` for a link to each of `targets` in turn and back until told to
@@ -272,7 +271,8 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
 
 /// Protected writes, raced by a command swapping a folder for a link into `.git/hooks` or
 /// `.glave` and back: the computer checks the path it actually opens, so nothing protected is
-/// ever written, while writes into the real folder still land and through a link are refused.
+/// ever written. Afterwards, a protected write into the real folder lands, and through a link
+/// is refused as the path it would land on.
 #[test]
 fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
     let rt = runtime();
@@ -317,17 +317,20 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
         std::fs::read_to_string(work.join(".glave/settings.json")).unwrap(),
         "{}\n"
     );
-    let write = |path: &str| rt.block_on(computers.write(here.id, &[protected(path)]));
-    write("in_dir/pre-commit").unwrap();
-    std::fs::remove_dir_all(work.join("in_dir")).unwrap();
-    std::os::unix::fs::symlink(".git/hooks", work.join("in_dir")).unwrap();
-    let refused = write("in_dir/pre-commit");
-    assert!(
-        refused
-            .as_ref()
-            .is_err_and(glave_ports::computer::is_protected_refusal),
-        "a protected write through the link is refused: {refused:?}"
+    let write = || rt.block_on(computers.write(here.id, &[protected("in_dir/pre-commit")]));
+    write().unwrap();
+    let landed = std::fs::read_to_string(work.join("in_dir/pre-commit")).unwrap();
+    assert_eq!(
+        landed, "PWNED",
+        "a protected write into the real folder lands"
     );
+    std::fs::remove_dir_all(work.join("in_dir")).unwrap();
+    for target in [".git/hooks", ".glave"] {
+        std::os::unix::fs::symlink(target, work.join("in_dir")).unwrap();
+        let lands = format!("{target}/pre-commit");
+        assert_eq!(write(), Err(refuse_protected(&lands)), "through {target}");
+        std::fs::remove_file(work.join("in_dir")).unwrap();
+    }
 }
 
 /// The fixture's inside folder opened as a workspace of its own.
