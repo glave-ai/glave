@@ -24,8 +24,8 @@ use glave_ports::{
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
-    Answering, Connections, GitHosts, KeepAwake, OnWorkers, ProjectTrust, Providers, Server,
-    TaskLimits, Wiring, Worktrees,
+    Answering, Connections, GitHosts, KeepAwake, OnWorkers, PersonFilters, ProjectTrust, Providers,
+    Server, TaskLimits, Wiring, Worktrees,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -125,6 +125,8 @@ pub(crate) struct Setup {
     pub identity_provider: bool,
     /// Each person's own computer; with none, every thread works here.
     pub homes: Option<Arc<dyn Homes>>,
+    /// What a gateway asks for each person's filters; with none, nothing does.
+    pub filters: Option<Arc<PersonFilters>>,
 }
 
 impl Setup {
@@ -165,6 +167,7 @@ impl Setup {
             workers: None,
             identity_provider: false,
             homes: None,
+            filters: None,
         }
     }
 
@@ -289,6 +292,9 @@ impl Setup {
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);
+        if let Some(filters) = &self.filters {
+            server.answer_filters(filters);
+        }
         keep_own_project(&server, home).await;
         (server, seen)
     }

@@ -57,7 +57,8 @@ pub use log::{EventLog, LogError, check_append};
 pub use mail::{Mail, MailError, Mailer};
 pub use model::{
     Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, PDF, Payer, ProviderError,
-    Purpose, RequestedCall, Served, ToolCall, ToolChoice, ToolSpec, Unpaid, is_image, is_inline,
+    Purpose, RequestedCall, Route, Served, ToolCall, ToolChoice, ToolSpec, Unpaid, is_image,
+    is_inline,
 };
 pub use objects::{Listed, ObjectWriter, Objects, object_name_ok};
 pub use projects::{

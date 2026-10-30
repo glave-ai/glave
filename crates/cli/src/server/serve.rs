@@ -75,7 +75,7 @@ impl Daily<'_> {
             tidied = Instant::now();
             if let Some(memory) = self.memory {
                 memory.housekeep().await;
-                memory.memory.tidy_soon(&memory.scopes);
+                memory.memory.tidy_soon(Some(memory.person), &memory.scopes);
             }
         }
     }

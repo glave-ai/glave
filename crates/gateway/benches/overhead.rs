@@ -180,6 +180,7 @@ fn request() -> Result<ModelRequest> {
         files: Vec::new(),
         effort: None,
         payer: None,
+        route: None,
     })
 }
 

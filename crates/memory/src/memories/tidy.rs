@@ -12,7 +12,7 @@ mod plan;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use glave_event::{At, MemoryEdited, MemoryId, MemoryTidied, Principal};
+use glave_event::{At, MemoryEdited, MemoryId, MemoryTidied, Principal, PrincipalId};
 use glave_ports::memories::MemoryError;
 use glave_ports::{EventLog, ModelProvider, Payer, Scope};
 use jiff::SignedDuration;
@@ -83,11 +83,13 @@ impl<L: EventLog + 'static> Memories<L> {
         .await
     }
 
-    /// Tidies `ledger` now, asking `model`. Records that it ran, with any contradiction it
-    /// leaves for the person, even when nothing changed.
+    /// Tidies `ledger` now, asking `model`, as the work of `person`, who reads it, when anyone
+    /// does. Records that it ran, with any contradiction it leaves for the person, even when
+    /// nothing changed.
     pub async fn tidy<P: ModelProvider>(
         &self,
         ledger: Scope,
+        person: Option<PrincipalId>,
         model: &Tidier<P>,
     ) -> Result<Tidied, MemoryError> {
         let (entries, open) = self
@@ -117,11 +119,11 @@ impl<L: EventLog + 'static> Memories<L> {
         let mut tidied = Tidied::default();
         let mut questions = Vec::new();
         if candidates.len() >= 2 {
-            // An answer that cannot be read changes nothing; the run is still recorded.
-            // Glave's own work in the organization, no one person's.
+            // An answer that cannot be read changes nothing; the run is still recorded. The
+            // work of the person whose memory it is: their filters choose who serves it.
             let payer = Payer {
                 org: ledger.org(),
-                person: None,
+                person,
             };
             let proposals = match ask(model, &candidates, near, payer).await? {
                 Ok(proposals) => proposals,

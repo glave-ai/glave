@@ -7,6 +7,7 @@ use std::sync::Arc;
 use glave_event::Reasoning;
 use glave_ports::{BoxFuture, Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 
+use crate::filtering::Router;
 use crate::price::Price;
 
 /// A model provider behind a target. Every [`ModelProvider`] is one; this form can be shared
@@ -80,6 +81,10 @@ pub struct Target {
     /// How it reasons, as its own service says: the levels it offers, in its provider's names,
     /// and the one of them its model uses when asked for none.
     reasoning: Option<Reasoning>,
+    /// What its catalog says of who serves its model, when it is a router that keeps to a
+    /// person's filters among the providers it passes calls on to (OpenRouter): the only kind
+    /// a call its filters narrow may go to where one serves it.
+    pub(crate) router: Option<Arc<Router>>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -101,6 +106,7 @@ impl Target {
             service: None,
             same_model: None,
             reasoning: None,
+            router: None,
             handle,
         }
     }
@@ -112,10 +118,19 @@ impl Target {
     }
 
     /// Another model at the same provider, through the same handle: assumed able to do
-    /// everything, with no price, and named `provider/model`.
+    /// everything, with no price, named `provider/model`, and a router where this one is.
     #[must_use]
     pub fn sibling(&self, model: impl Into<String>) -> Self {
-        Self::new(Arc::clone(&self.handle), self.provider.clone(), model)
+        Self {
+            // The same router's providers; who serves the other model, its catalog says.
+            router: self.router.as_ref().map(|router| {
+                Arc::new(Router {
+                    providers: Arc::clone(&router.providers),
+                    endpoints: Vec::new(),
+                })
+            }),
+            ..Self::new(Arc::clone(&self.handle), self.provider.clone(), model)
+        }
     }
 
     #[must_use]
@@ -159,6 +174,14 @@ impl Target {
         asked
             .filter(|asked| reasoning.efforts.iter().any(|offered| offered == asked))
             .or(reasoning.default.as_deref())
+    }
+
+    /// The target, a router that keeps to a person's filters among the providers its catalog
+    /// says serve its model, `router`.
+    #[must_use]
+    pub fn routing(mut self, router: Router) -> Self {
+        self.router = Some(Arc::new(router));
+        self
     }
 
     /// The target at the service people know as `service`.

@@ -293,7 +293,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/memory/src/client.rs",
-        "while let Some(ledger) = asked.recv().await {",
+        "while let Some((ledger, person)) = asked.recv().await {",
         1,
         "the tidy-up queue, until memory is dropped; each tidy-up is a model call within the \
          provider's limits",

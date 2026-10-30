@@ -831,6 +831,71 @@
       ],
       "type": "object"
     },
+    "Filters": {
+      "additionalProperties": false,
+      "description": "A person's filters among the providers a router passes their calls on to. What is not\nchosen does not filter.",
+      "properties": {
+        "avoid": {
+          "description": "Providers never to use, by slug.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "based_in": {
+          "description": "Only providers based in these countries (ISO 3166-1 alpha-2 codes), each of their\ndatacenters too where the router names them; anywhere when none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "keeps_nothing": {
+          "description": "Only providers that keep nothing of what they are sent (zero data retention).",
+          "type": "boolean"
+        },
+        "max_price": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaxPrice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The most a provider's tokens may cost."
+        },
+        "precision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Precision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The least precision a provider may serve a model's weights at; a provider that does\nnot say its precision serves no filter but none."
+        },
+        "serves": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Serve"
+          },
+          "description": "Who serves a model, by the model's id, where the person chose for it apart from\n`sort`.",
+          "type": "object"
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which provider to prefer when several may serve: the router's own balance unless\nchosen."
+        }
+      },
+      "type": "object"
+    },
     "FolderSource": {
       "description": "Where a folder's files come from.",
       "oneOf": [
@@ -1107,6 +1172,29 @@
           "type": "string"
         }
       ]
+    },
+    "MaxPrice": {
+      "additionalProperties": false,
+      "description": "The most a provider's tokens may cost, in millionths of a US dollar per million tokens.",
+      "properties": {
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "MemoryId": {
       "description": "Identifies one memory: a short statement kept for later threads (`specs/memory.md`).",
@@ -2316,6 +2404,37 @@
       "minimum": 0,
       "type": "integer"
     },
+    "Serve": {
+      "description": "Who serves one model, as a person chose.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Whichever provider within the filters is cheapest, or fastest, when it is called.",
+          "properties": {
+            "sort": {
+              "$ref": "#/$defs/Sort"
+            }
+          },
+          "required": [
+            "sort"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "This provider alone, by slug.",
+          "properties": {
+            "provider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
@@ -2440,6 +2559,11 @@
           "type": "string"
         },
         {
+          "const": "filters",
+          "description": "Their filters among a router's providers (`filters/get`).",
+          "type": "string"
+        },
+        {
           "const": "awake",
           "description": "Whether the computer is kept awake while glave works (`awake/get`).",
           "type": "string"
@@ -2550,6 +2674,21 @@
         {
           "const": "recovery",
           "description": "Getting back in by email: a link sent to a glave account's address makes a new passkey\nfor it.",
+          "type": "string"
+        }
+      ]
+    },
+    "Sort": {
+      "description": "Which of a model's providers a router prefers.",
+      "oneOf": [
+        {
+          "const": "price",
+          "description": "The lowest price.",
+          "type": "string"
+        },
+        {
+          "const": "speed",
+          "description": "The most tokens a second.",
           "type": "string"
         }
       ]
@@ -4290,6 +4429,64 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "filters/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The caller's filters among a router's providers, and the countries, by ISO 3166-1\nalpha-2 code, that \"Europe\" means among them: the European Economic Area, Switzerland\nand the United Kingdom.",
+        "properties": {
+          "europe": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "filters": {
+            "$ref": "#/$defs/Filters"
+          }
+        },
+        "required": [
+          "filters",
+          "europe"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "filters/set": {
+      "params": {
+        "properties": {
+          "filters": {
+            "$ref": "#/$defs/Filters"
+          }
+        },
+        "required": [
+          "filters"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The caller's filters among a router's providers, and the countries, by ISO 3166-1\nalpha-2 code, that \"Europe\" means among them: the European Economic Area, Switzerland\nand the United Kingdom.",
+        "properties": {
+          "europe": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "filters": {
+            "$ref": "#/$defs/Filters"
+          }
+        },
+        "required": [
+          "filters",
+          "europe"
         ],
         "type": "object"
       },

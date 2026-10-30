@@ -10,7 +10,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use glave_event::{Arguments, MemoryId, Principal};
+use glave_event::{Arguments, MemoryId, Principal, PrincipalId};
 use glave_mcp::{Limits, McpServer, tool_output};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::memories::{
@@ -34,6 +34,9 @@ const BUFFER: usize = 64 * 1024;
 /// Ledgers waiting to be looked at by tidy-up; more are dropped, as a run is due anyway.
 const TIDY_QUEUE: usize = 16;
 
+/// Where tidy-up is asked for a ledger and whose work it is, and the task that tidies.
+type Tidying = (mpsc::Sender<(Scope, Option<PrincipalId>)>, JoinHandle<()>);
+
 /// Memory as glave runs it: its own server, in-process, over the data store.
 pub struct GlaveMemory<L: EventLog + 'static> {
     memories: Memories<L>,
@@ -41,7 +44,7 @@ pub struct GlaveMemory<L: EventLog + 'static> {
     /// The server, serving until it is closed or this is dropped.
     server: Mutex<Option<JoinHandle<()>>>,
     /// Tidy-up, when a tidier was given: where to ask for a ledger, and the task that tidies.
-    tidying: Mutex<Option<(mpsc::Sender<Scope>, JoinHandle<()>)>>,
+    tidying: Mutex<Option<Tidying>>,
     /// Whether the person turned memory off for their threads ([`Memory::switch`]).
     off: AtomicBool,
 }
@@ -82,13 +85,13 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
     /// Tidies in the background with `tidier` from now on: each ledger asked for with
     /// [`GlaveMemory::tidy_soon`], and those a save or an edit changes, when they are due.
     pub fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
-        let (sender, mut asked) = mpsc::channel::<Scope>(TIDY_QUEUE);
+        let (sender, mut asked) = mpsc::channel::<(Scope, Option<PrincipalId>)>(TIDY_QUEUE);
         let memories = self.memories.clone();
         let task = tokio::spawn(async move {
-            while let Some(ledger) = asked.recv().await {
+            while let Some((ledger, person)) = asked.recv().await {
                 // A failed tidy-up changes nothing it did not record; the next one tries again.
                 if memories.tidy_due(ledger).await.unwrap_or(false) {
-                    let _ = memories.tidy(ledger, &tidier).await;
+                    let _ = memories.tidy(ledger, person, &tidier).await;
                 }
             }
         });
@@ -97,11 +100,12 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
         }
     }
 
-    /// Asks for `ledgers` to be tidied, when they are due and a tidier was given.
-    pub fn tidy_soon(&self, ledgers: &[Scope]) {
+    /// Asks for `ledgers`, which `person` reads, to be tidied as their work, when they are due
+    /// and a tidier was given.
+    pub fn tidy_soon(&self, person: Option<PrincipalId>, ledgers: &[Scope]) {
         if let Some((sender, _)) = lock(&self.tidying).as_ref() {
             for ledger in ledgers {
-                let _ = sender.try_send(*ledger);
+                let _ = sender.try_send((*ledger, person));
             }
         }
     }
@@ -205,7 +209,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
                 .into_iter()
                 .map(|(_, ledger)| ledger)
                 .collect();
-            self.tidy_soon(&ledgers);
+            self.tidy_soon(on.person, &ledgers);
         }
         MemoryOutput { output, change }
     }

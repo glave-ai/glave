@@ -25,8 +25,9 @@ pub use id::{
 };
 pub use money::{Currency, Decimal, Money};
 pub use payload::{
-    AcmeRegistered, AwakeSet, CertificateIssued, Grouping, GroupingSet, InstructionsFile,
-    InstructionsRead, LanguageSet, MailAsked, MemorySet, SignupFinished, SignupStarted,
+    AcmeRegistered, AwakeSet, CertificateIssued, Filters, FiltersSet, Grouping, GroupingSet, Hides,
+    InstructionsFile, InstructionsRead, LanguageSet, MailAsked, MaxPrice, MemorySet, Serve,
+    SignupFinished, SignupStarted, Sort,
 };
 pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkPoint,

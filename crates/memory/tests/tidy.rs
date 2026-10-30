@@ -118,7 +118,8 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
                     "conflict": [{"memories": [2, 4], "clear": true}]}"#,
         );
         let memories = kit.memories(rules(), 1);
-        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        let whose = person();
+        let tidied = memories.tidy(shared(), Some(whose), &script).await.unwrap();
         assert_eq!(
             (tidied.merged, tidied.forgotten, tidied.questions),
             (1, 2, 0)
@@ -128,6 +129,12 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
         let request = script.provider.seen().lock().unwrap()[0].clone();
         assert_eq!(request.purpose, Purpose::Summary);
         assert_eq!(request.tool_choice, ToolChoice::None);
+        let payer = request.payer.unwrap();
+        assert_eq!(
+            (payer.org, payer.person),
+            (shared().org(), Some(whose)),
+            "the work of the person whose memory it is"
+        );
         assert_eq!(request.tools.len(), 0);
         let sent = sent(&script);
         assert!(!sent.contains("make setup"), "never shown: {sent}");
@@ -181,7 +188,7 @@ async fn merged(kit: &Kit) -> [(MemoryId, &'static str); 2] {
     let script = scripted(
         r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
     );
-    let tidied = kit.memories(rules(), 1).tidy(shared(), &script).await;
+    let tidied = kit.memories(rules(), 1).tidy(shared(), None, &script).await;
     assert_eq!(tidied.unwrap().merged, 1);
     let kept = live(kit).await.first().map(|(memory, ..)| *memory);
     if kept == Some(deploys) {
@@ -228,7 +235,7 @@ fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
         let memories = kit.memories(rules(), 1);
         assert!(memories.tidy_due(shared()).await.unwrap(), "never tidied");
         let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
-        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        let tidied = memories.tidy(shared(), None, &script).await.unwrap();
         assert_eq!(tidied.questions, 1);
         assert_eq!(live(&kit).await.len(), 2, "both kept");
         assert_eq!(memories.questions(&on()).await.unwrap(), [[tabs, spaces]]);
@@ -236,7 +243,7 @@ fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
 
         // The next run never offers the pair again while it waits.
         let again = scripted(r#"{"merge": [], "conflict": []}"#);
-        memories.tidy(shared(), &again).await.unwrap();
+        memories.tidy(shared(), None, &again).await.unwrap();
         assert!(
             again.provider.seen().lock().unwrap().is_empty(),
             "nothing else to tidy"
@@ -271,7 +278,10 @@ fn proposals_that_invent_lose_or_misname_change_nothing() {
             r#"{"merge": [{"memories": [1], "text": "Use tabs"}]}"#,
             r#"{"conflict": [{"memories": [1, 2, 2], "clear": true}], "merge": [{"memories": [1, 2], "text": "x"}]}"#,
         ] {
-            let tidied: Tidied = memories.tidy(shared(), &scripted(answer)).await.unwrap();
+            let tidied: Tidied = memories
+                .tidy(shared(), None, &scripted(answer))
+                .await
+                .unwrap();
             assert_eq!(
                 (tidied.merged, tidied.forgotten),
                 (0, 0),
@@ -281,7 +291,7 @@ fn proposals_that_invent_lose_or_misname_change_nothing() {
         }
         // An answer that cannot be read is asked for once more, then changes nothing.
         let unreadable = scripted("no idea");
-        let tidied = memories.tidy(shared(), &unreadable).await.unwrap();
+        let tidied = memories.tidy(shared(), None, &unreadable).await.unwrap();
         assert_eq!(
             unreadable.provider.seen().lock().unwrap().len(),
             2,
@@ -311,7 +321,7 @@ fn prose_first_then_json_after_the_reminder_is_carried_out() {
             "```json\n{\"merge\": [], \"conflict\": [{\"memories\": [1, 2], \"clear\": true}]}\n```",
         ]);
         let memories = kit.memories(rules(), 1);
-        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        let tidied = memories.tidy(shared(), None, &script).await.unwrap();
         assert_eq!(tidied.forgotten, 1, "{tidied:?}");
         let now: Vec<_> = live(&kit).await.into_iter().map(|(id, _, _)| id).collect();
         assert_eq!(now, [render], "the more recent stays");
@@ -342,7 +352,7 @@ fn an_answer_cut_off_at_its_limit_is_asked_for_again_never_read_as_nothing_to_do
             model: "small".to_owned(),
         };
         let memories = kit.memories(rules(), 1);
-        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        let tidied = memories.tidy(shared(), None, &script).await.unwrap();
         assert_eq!(
             script.provider.seen().lock().unwrap().len(),
             2,
@@ -363,7 +373,7 @@ fn a_contradiction_between_memories_that_share_no_word_forgets_neither() {
         let before = live(&kit).await;
         let memories = kit.memories(rules(), 1);
         let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
-        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        let tidied = memories.tidy(shared(), None, &script).await.unwrap();
         assert_eq!(tidied.forgotten, 0, "{tidied:?}");
         assert!(
             tidied
@@ -389,7 +399,7 @@ fn near_the_budget_tidy_up_compacts_and_runs_again_sooner() {
         }
         let memories = kit.memories(rules(), 1);
         let script = scripted(r#"{"merge": [], "conflict": []}"#);
-        memories.tidy(shared(), &script).await.unwrap();
+        memories.tidy(shared(), None, &script).await.unwrap();
         assert!(
             sent(&script).contains("near their size limit"),
             "{}",
@@ -412,7 +422,7 @@ fn a_question_opens_the_next_thread_and_reads_the_same_after_a_resume() {
         let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
         let memories = kit.memories(rules(), 1);
         let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
-        memories.tidy(shared(), &script).await.unwrap();
+        memories.tidy(shared(), None, &script).await.unwrap();
 
         let memory = kit.memory(rules(), 2).await;
         let dir = folder("tidy-question");
@@ -492,6 +502,22 @@ fn a_tidier_in_the_background_tidies_after_a_save_when_due() {
     });
 }
 
+/// Tidy-up merges the two memories about Fly at `which` in its list, then, a day on, clears the
+/// contradiction between the first two left.
+async fn merged_then_cleared(kit: &Kit, which: [u32; 2]) {
+    let memories = kit.memories(rules(), 1);
+    let [one, other] = which;
+    let merge = scripted(&format!(
+        r#"{{"merge": [{{"memories": [{one}, {other}], "text": "We deploy the app with Fly"}}]}}"#
+    ));
+    let tidied = memories.tidy(shared(), None, &merge).await.unwrap();
+    assert_eq!(tidied.merged, 1);
+    kit.clock.advance_millis(86_400_000);
+    let conflict = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
+    let tidied = memories.tidy(shared(), None, &conflict).await.unwrap();
+    assert_eq!(tidied.forgotten, 1);
+}
+
 /// #583: a merge is glave's edit, not a newer statement. A memory saved long ago and merged
 /// since is, for a contradiction, as old as its save: the person's statement made between the
 /// two is the one kept.
@@ -502,16 +528,9 @@ fn a_merge_never_makes_a_memory_newer_than_what_the_person_said_since() {
         seed(&kit, FLY, false).await;
         seed(&kit, "We deploy the app with Fly", false).await;
         let render = seed(&kit, RENDER, false).await;
-        let memories = kit.memories(rules(), 1);
-        // The list: 1 Fly, 2 Fly again, 3 Render. Tidy-up merges the two about Fly.
-        let merge =
-            scripted(r#"{"merge": [{"memories": [1, 2], "text": "We deploy the app with Fly"}]}"#);
-        assert_eq!(memories.tidy(shared(), &merge).await.unwrap().merged, 1);
-        kit.clock.advance_millis(86_400_000);
-        // A day on, the list: 1 Fly, merged, 2 Render.
-        let conflict = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
-        let tidied = memories.tidy(shared(), &conflict).await.unwrap();
-        assert_eq!(tidied.forgotten, 1);
+        // The list: 1 Fly, 2 Fly again, 3 Render. Tidy-up merges the two about Fly. A day on, the
+        // list: 1 Fly, merged, 2 Render.
+        merged_then_cleared(&kit, [1, 2]).await;
         let now: Vec<MemoryId> = (live(&kit).await.into_iter())
             .map(|(memory, ..)| memory)
             .collect();
@@ -528,16 +547,9 @@ fn a_merge_dates_from_the_newest_statement_that_went_into_it() {
         seed(&kit, FLY, false).await;
         seed(&kit, RENDER, false).await;
         seed(&kit, "We deploy the app with Fly", false).await;
-        let memories = kit.memories(rules(), 1);
-        // The list: 1 Fly, 2 Render, 3 Fly again. Tidy-up merges the two about Fly.
-        let merge =
-            scripted(r#"{"merge": [{"memories": [1, 3], "text": "We deploy the app with Fly"}]}"#);
-        assert_eq!(memories.tidy(shared(), &merge).await.unwrap().merged, 1);
-        kit.clock.advance_millis(86_400_000);
-        // A day on, the list: 1 Render, 2 Fly, merged.
-        let conflict = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
-        let tidied = memories.tidy(shared(), &conflict).await.unwrap();
-        assert_eq!(tidied.forgotten, 1);
+        // The list: 1 Fly, 2 Render, 3 Fly again. Tidy-up merges the two about Fly. A day on, the
+        // list: 1 Render, 2 Fly, merged.
+        merged_then_cleared(&kit, [1, 3]).await;
         let now: Vec<String> = (live(&kit).await.into_iter())
             .map(|(_, _, text)| text)
             .collect();

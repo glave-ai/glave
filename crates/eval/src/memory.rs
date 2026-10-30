@@ -188,7 +188,7 @@ impl Remembering {
         for (name, scope) in &self.scopes {
             let tidied = memory
                 .memories()
-                .tidy(*scope, model)
+                .tidy(*scope, Some(self.person), model)
                 .await
                 .map_err(|e| EvalError::Setup(format!("tidy-up failed: {e}")))?;
             done.push(format!(
@@ -211,7 +211,7 @@ impl Remembering {
     /// session does when it starts.
     pub(crate) fn tidy_soon(&self, scope: Scope) {
         if let Some(memory) = &self.memory {
-            memory.tidy_soon(&self.ledgers(scope));
+            memory.tidy_soon(Some(self.person), &self.ledgers(scope));
         }
     }
 

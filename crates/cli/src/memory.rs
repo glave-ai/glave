@@ -33,10 +33,11 @@ Usage:
 
 Memory is on until you turn it off in Settings. In a session, /memory lists them.";
 
-/// Memory as running here: the server, and the projects it keeps.
+/// Memory as running here: the server, and the projects it keeps for the person it runs for.
 pub(crate) struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
+    pub person: PrincipalId,
 }
 
 impl Running {
@@ -50,7 +51,7 @@ impl Running {
     /// budget.
     pub(crate) fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
         self.memory.tidy_with(tidier);
-        self.memory.tidy_soon(&self.scopes);
+        self.memory.tidy_soon(Some(self.person), &self.scopes);
     }
 
     /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
@@ -109,6 +110,7 @@ pub(crate) async fn start(
     let running = Running {
         memory: Arc::new(memory),
         scopes: vec![personal, scope],
+        person,
     };
     running.housekeep().await;
     Ok(Some(running))

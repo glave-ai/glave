@@ -8,4 +8,5 @@ mod support;
 mod budgets;
 mod credits;
 mod fallback;
+mod filters;
 mod routes;

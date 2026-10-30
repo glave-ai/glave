@@ -4,8 +4,8 @@
 use std::future::Future;
 
 use glave_event::{
-    Arguments, CallId, Cost, ModelRef, ModelResponded, Money, Part, PrincipalId, Sha256,
-    StopReason, Usage,
+    Arguments, CallId, Cost, MaxPrice, ModelRef, ModelResponded, Money, Part, PrincipalId, Sha256,
+    Sort, StopReason, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -59,6 +59,28 @@ pub struct ModelRequest {
     /// there: none charges no organization's. Providers ignore it, and it is never sent.
     #[serde(skip)]
     pub payer: Option<Payer>,
+    /// What a router (OpenRouter) is asked of the providers it passes the call on to: the
+    /// person's filters, for the call's model, which the gateway sets for a router alone. None
+    /// asks for nothing beyond what every call asks.
+    #[serde(skip)]
+    pub route: Option<Route>,
+}
+
+/// A person's filters among a router's providers, as a router takes them for one model.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Route {
+    /// Only these providers, by slug, when the filters name some.
+    pub only: Option<Vec<String>>,
+    /// Never these providers, by slug.
+    pub ignore: Vec<String>,
+    /// Only weights stored in these ways, as the router names them.
+    pub quantizations: Vec<String>,
+    /// Which provider the router prefers.
+    pub sort: Option<Sort>,
+    /// Only providers that keep nothing of what they are sent.
+    pub zdr: bool,
+    /// The most a provider's tokens may cost.
+    pub max_price: Option<MaxPrice>,
 }
 
 /// Whose work a model call is: the organization whose credits pay for it, and the person it

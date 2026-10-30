@@ -40,6 +40,7 @@ mod over_http {
             files: Vec::new(),
             effort: None,
             payer: None,
+            route: None,
         }
     }
 

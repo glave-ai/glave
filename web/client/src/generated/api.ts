@@ -328,6 +328,39 @@ export type FileInfo = {
   readonly sha256: string;
 };
 
+/**
+ * A person's filters among the providers a router passes their calls on to. What is not
+ * chosen does not filter.
+ */
+export type Filters = {
+  /** Providers never to use, by slug. */
+  readonly avoid?: readonly (string)[];
+  /**
+   * Only providers based in these countries (ISO 3166-1 alpha-2 codes), each of their
+   * datacenters too where the router names them; anywhere when none.
+   */
+  readonly based_in?: readonly (string)[];
+  /** Only providers that keep nothing of what they are sent (zero data retention). */
+  readonly keeps_nothing?: boolean;
+  /** The most a provider's tokens may cost. */
+  readonly max_price?: MaxPrice | null;
+  /**
+   * The least precision a provider may serve a model's weights at; a provider that does
+   * not say its precision serves no filter but none.
+   */
+  readonly precision?: Precision | null;
+  /**
+   * Who serves a model, by the model's id, where the person chose for it apart from
+   * `sort`.
+   */
+  readonly serves?: { readonly [key: string]: Serve };
+  /**
+   * Which provider to prefer when several may serve: the router's own balance unless
+   * chosen.
+   */
+  readonly sort?: Sort | null;
+};
+
 /** Where a folder's files come from. */
 export type FolderSource = {
   readonly kind: "repository";
@@ -402,6 +435,12 @@ export type LineKind = "same" | "removed" | "added";
 
 /** Which link's code a passkey is made with (`passkey/create_options`). */
 export type LinkKind = "setup" | "invite" | "signup" | "recovery";
+
+/** The most a provider's tokens may cost, in millionths of a US dollar per million tokens. */
+export type MaxPrice = {
+  readonly input?: number | null;
+  readonly output?: number | null;
+};
 
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
 export type MemoryId = string;
@@ -837,6 +876,13 @@ export type Secret = string;
  */
 export type Seq = number;
 
+/** Who serves one model, as a person chose. */
+export type Serve = {
+  readonly sort: Sort;
+} | {
+  readonly provider: string;
+};
+
 /** What the server is. */
 export type ServerInfo = {
   /**
@@ -901,7 +947,7 @@ export type ServerInfo = {
 };
 
 /** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "memory" | "passkeys" | "language";
+export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "filters" | "awake" | "memory" | "passkeys" | "language";
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
@@ -933,6 +979,9 @@ export type SignInLink = {
 
 /** A way a browser signs in to the server, as `server/discover` says. */
 export type SignInWay = "link" | "passkey" | "signup" | "recovery";
+
+/** Which of a model's providers a router prefers. */
+export type Sort = "price" | "speed";
 
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
@@ -1456,6 +1505,32 @@ export type FileUploadParams = {
 /** A file kept for a message. */
 export type FileUploadResult = {
   readonly file: FileInfo;
+};
+
+export type FiltersGetParams = Readonly<Record<string, never>>;
+
+/**
+ * The caller's filters among a router's providers, and the countries, by ISO 3166-1
+ * alpha-2 code, that "Europe" means among them: the European Economic Area, Switzerland
+ * and the United Kingdom.
+ */
+export type FiltersGetResult = {
+  readonly europe: readonly (string)[];
+  readonly filters: Filters;
+};
+
+export type FiltersSetParams = {
+  readonly filters: Filters;
+};
+
+/**
+ * The caller's filters among a router's providers, and the countries, by ISO 3166-1
+ * alpha-2 code, that "Europe" means among them: the European Economic Area, Switzerland
+ * and the United Kingdom.
+ */
+export type FiltersSetResult = {
+  readonly europe: readonly (string)[];
+  readonly filters: Filters;
 };
 
 export type FolderListParams = {
@@ -2378,6 +2453,8 @@ export interface Methods {
   readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
   readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
+  readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };
+  readonly "filters/set": { readonly params: FiltersSetParams; readonly result: FiltersSetResult };
   readonly "folder/list": { readonly params: FolderListParams; readonly result: FolderListResult };
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };

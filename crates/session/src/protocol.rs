@@ -42,8 +42,8 @@ pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
+pub use glave_event::{Filters, Grouping, Permissions, TurnResult};
 pub use glave_event::{Forge, ProviderKind};
-pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};
 pub use models::{EndpointInfo, ModelInfo};
@@ -125,6 +125,12 @@ methods! {
     /// Chooses how the caller's clients group their threads: by project or by status. The
     /// server keeps the choice; a client groups by what each thread is doing, as it says.
     "grouping/set" => GroupingSet { grouping: Grouping } -> [Grouping],
+    /// The caller's filters among the providers a router (OpenRouter) passes their calls on
+    /// to, which every call of their work keeps to, and what "Europe" means among them.
+    "filters/get" => FiltersGet {} -> [Filters],
+    /// Chooses the caller's filters among a router's providers, for every call of their work
+    /// from now on. Refused for a place that is not a country's two-letter code.
+    "filters/set" => FiltersSet { filters: Filters } -> [Filters],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

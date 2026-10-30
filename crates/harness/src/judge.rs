@@ -91,6 +91,7 @@ pub async fn judge<P: ModelProvider>(
         files: Vec::new(),
         effort: None,
         payer,
+        route: None,
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {

@@ -11,6 +11,9 @@
 //!   settles to what it cost, so calls running side by side never overshoot it.
 //! - **Credits**: where a server keeps them, each organization's money paid ahead, held and
 //!   settled the same way for every call that says whose work it is.
+//! - **Filters**: where a host keeps people's choices of who serves their models, each call
+//!   that says whose work it is goes only where they allow, at a router to the providers that
+//!   fit.
 //! - **Metering**: every answer says the route and target that served it, for `model.responded`.
 //!
 //! The contract is `specs/gateway.md`.
@@ -18,6 +21,7 @@
 mod budget;
 mod credits;
 mod estimate;
+mod filtering;
 mod gateway;
 mod plan;
 mod price;
@@ -27,6 +31,7 @@ mod telemetry;
 
 pub use budget::{BudgetKey, Budgets, OverBudget};
 pub use credits::{Account, Credits, CreditsError};
+pub use filtering::{Filtering, Router};
 pub use gateway::Gateway;
 pub use price::Price;
 pub use routes::{RouteError, Routes};

@@ -253,6 +253,7 @@ fn request() -> ModelRequest {
         files: Vec::new(),
         effort: None,
         payer: None,
+        route: None,
     }
 }
 
