@@ -37,7 +37,7 @@ use super::backend::{
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Resized, Shape};
-pub use people::{Holding, People};
+pub use people::{Holding, Leasing, People};
 use sizing::Size;
 
 /// How long a Pod has to start running: long enough to pull a large image.

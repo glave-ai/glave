@@ -10,13 +10,13 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use glave_computer::{
-    Docker, DockerSettings, Kubernetes, KubernetesSettings, People, WorkerComputers,
+    Docker, DockerSettings, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers,
     WorkerCredentials, https_url, read_environment,
 };
 use glave_event::PrincipalId;
 use glave_harness::{Homes, Workers};
 use glave_ports::computer::{ComputerError, Home, Sources};
-use glave_ports::{OrgId, ProjectId};
+use glave_ports::{Holder, Leases, OrgId, OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::OnWorkers;
 
@@ -36,12 +36,13 @@ pub(crate) async fn workers(
     folder: &Path,
     project: ProjectId,
     processes: &Processes,
+    leases: Arc<dyn Leases>,
 ) -> anyhow::Result<(
     Option<OnWorkers>,
     Option<Arc<WorkerComputers>>,
     Option<Arc<dyn Homes>>,
 )> {
-    let homes = homes(choices, constraints).await?;
+    let homes = homes(choices, constraints, leases).await?;
     if choices.on.value != On::Cloud {
         return Ok((None, None, homes));
     }
@@ -128,10 +129,12 @@ async fn computers(
 
 /// Each person's own computer, where the server's settings give people one (`[computers]`,
 /// on the Kubernetes cluster `[workers]` reaches), within the organization's `[workers]`
-/// limits; none otherwise, and threads work on the server's own computer, as on a laptop.
+/// limits, each driven only by the server holding its lease in `leases`; none otherwise, and
+/// threads work on the server's own computer, as on a laptop.
 async fn homes(
     choices: &Choices,
     constraints: &Constraints,
+    leases: Arc<dyn Leases>,
 ) -> anyhow::Result<Option<Arc<dyn Homes>>> {
     let Some(computers) = &choices.computers else {
         return Ok(None);
@@ -157,7 +160,17 @@ async fn homes(
     .await?;
     let disk_gb = computers.value.disk_gb.unwrap_or(ComputersFile::DISK_GB);
     let limits = constraints.worker_limits();
-    let people = People::new(kubernetes, &computers.value.image, &limits, disk_gb)?;
+    let leasing = Leasing {
+        leases,
+        holder: Holder::new(&SystemClock, &OsEntropy)?,
+    };
+    let people = People::new(
+        kubernetes,
+        &computers.value.image,
+        &limits,
+        disk_gb,
+        leasing,
+    )?;
     Ok(Some(Arc::new(OnCluster(people))))
 }
 
@@ -167,11 +180,11 @@ struct OnCluster(People);
 
 impl Homes for OnCluster {
     fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
-        self.0.home(&People::key(org.as_uuid(), person.as_uuid()))
+        self.0.home(org, person)
     }
 
     fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
-        let held = self.0.hold(&People::key(org.as_uuid(), person.as_uuid()))?;
+        let held = self.0.hold(org, person)?;
         Ok(Box::new(held))
     }
 }
@@ -295,8 +308,15 @@ mod tests {
         project: ProjectId,
         processes: &Processes,
     ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
-        let (on, workers, _) = workers(choices, constraints, folder, project, processes).await?;
+        let leases = leases();
+        let (on, workers, _) =
+            workers(choices, constraints, folder, project, processes, leases).await?;
         Ok((on, workers))
+    }
+
+    /// Leases kept in memory, as a server alone on its store keeps them.
+    fn leases() -> Arc<dyn Leases> {
+        Arc::new(glave_ports::InMemoryLeases::new(Arc::new(SystemClock)))
     }
 
     #[test]
@@ -324,6 +344,7 @@ mod tests {
                 &dir,
                 project,
                 &processes,
+                leases(),
             ))
             .unwrap();
         assert!(
@@ -395,7 +416,7 @@ mod tests {
             .build()
             .unwrap();
         let refused = runtime
-            .block_on(homes(&choices, &Constraints::default()))
+            .block_on(homes(&choices, &Constraints::default(), leases()))
             .err()
             .unwrap();
         assert!(

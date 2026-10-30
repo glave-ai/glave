@@ -19,6 +19,8 @@ path = "tests/main.rs"
 bytes.workspace = true
 # The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
+# Whose a person's computer is, as its lease names them.
+glave-event = { workspace = true, optional = true }
 glave-ports.workspace = true
 # Every process it starts: commands owned by their workspace and recorded while they run.
 glave-process.workspace = true
@@ -64,7 +66,7 @@ seccompiler.workspace = true
 
 [features]
 # The worker backend on Kubernetes.
-kubernetes = ["dep:kube", "dep:k8s-openapi"]
+kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:glave-event"]
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
