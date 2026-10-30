@@ -5,7 +5,8 @@
 //! that port, with a key file there and nothing of the person's own glave: not their
 //! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. Its model is a
 //! stand-in on this computer (`model.rs`) that answers every chat and says what each answer
-//! cost. glave prints the link to sign in with. On
+//! cost; with `--credits`, every organization pays for it from credits whoever runs the glave
+//! adds (`specs/gateway.md`, "Credits"). glave prints the link to sign in with. On
 //! Ctrl-C, a hang-up, the end of the program that started xtask or the server's own end, it
 //! stops the server and removes the folder. glave's lifeline stops the server if xtask is
 //! killed outright; a folder such a run left is removed by the next, which finds its lock free.
@@ -28,13 +29,19 @@ mod model;
 /// port it serves.
 const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\n";
 
+/// With `--credits`, organizations pay for their models from credits, each limited to a dollar
+/// a month, so both refusals are a few chats away.
+const CREDITS: &str = "[credits]\nmonthly_limit_usd = 1\n";
+
 /// How often xtask looks whether the program that started it has ended.
 const PARENT_EVERY: Duration = Duration::from_secs(1);
 
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
-    if !args.is_empty() {
-        return Err("try-org takes no arguments".into());
-    }
+    let credits = match args {
+        [] => false,
+        [flag] if flag == "--credits" => true,
+        _ => return Err("try-org takes --credits, or nothing".into()),
+    };
     if !std::io::stderr().is_terminal() {
         return Err(
             "try-org is for a person at a terminal, where glave prints the link to sign in with"
@@ -56,7 +63,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
                 .map_err(std::io::Error::other)
         })
         .map_err(|err| format!("could not hold {}: {err}", folder.display()));
-    let served = lock.and_then(|_held| serve(&root, &folder));
+    let served = lock.and_then(|_held| serve(&root, &folder, credits));
     let removed = std::fs::remove_dir_all(&folder)
         .map_err(|err| format!("could not remove {}: {err}", folder.display()));
     // The folder of runs too, once no other run's is in it.
@@ -65,11 +72,17 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
 }
 
 /// Serves glave from a folder in `folder` until Ctrl-C, a hang-up, xtask's parent's end or its
-/// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`).
-fn serve(root: &Path, folder: &Path) -> Result<(), String> {
+/// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`), its
+/// organizations paying from credits when `credits` says.
+fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
     let home = folder.join("home");
+    let settings = if credits {
+        format!("{SETTINGS}{CREDITS}")
+    } else {
+        SETTINGS.to_owned()
+    };
     std::fs::create_dir_all(&home)
-        .and_then(|()| std::fs::write(home.join("config.toml"), SETTINGS))
+        .and_then(|()| std::fs::write(home.join("config.toml"), settings))
         .map_err(|err| format!("could not write glave's settings: {err}"))?;
     let web = root.join("web/dist/app/browser");
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
@@ -114,6 +127,17 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
              xtask: Ctrl-C stops it and removes it all",
             folder.display()
         );
+        if credits {
+            eprintln!(
+                "xtask: credits are on, a dollar a month at most until an owner raises it; once \
+                 glave prints its sign-in link, add some and see what is left, as whoever runs \
+                 it:\n\
+                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits add 1\n\
+                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits",
+                home.display(),
+                home.display()
+            );
+        }
         let mut hangup = signal(SignalKind::hangup()).map_err(|err| failed(&err))?;
         let mut terminate = signal(SignalKind::terminate()).map_err(|err| failed(&err))?;
         // The person at the terminal is the limit: until they stop it, or it ends.

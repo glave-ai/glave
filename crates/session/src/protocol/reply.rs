@@ -11,10 +11,11 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    InviteInfo, ModelInfo, OrganizationInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo,
-    ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, ShownInvite, SignInLink,
-    SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    AcceptedPasskeys, ConnectionInfo, CredentialInfo, CreditsInfo, DeviceCode, FileInfo,
+    GoneFolder, Grouping, InviteInfo, ModelInfo, OrganizationInfo, PasskeySummary, Permissions,
+    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
+    ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk,
+    WatchEnd,
 };
 
 /// What the server is.
@@ -79,6 +80,11 @@ pub struct Exists {
     pub organization: bool,
     /// Workers: a fresh machine for each thread of the project whose settings chose them.
     pub workers: bool,
+    /// Credits: each organization pays ahead for what it uses, and its model calls are
+    /// charged to them (`credits/get`). Absent where they are not, so what a server that
+    /// keeps none says is as it was.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub credits: bool,
 }
 
 impl Exists {
@@ -419,6 +425,9 @@ pub enum Reply {
     Organizations {
         organizations: Vec<OrganizationInfo>,
     },
+    /// The organization's credits, as much as the caller may see.
+    #[schemars(title = "Credits")]
+    Credits { credits: CreditsInfo },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

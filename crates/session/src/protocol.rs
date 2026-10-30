@@ -7,9 +7,11 @@ mod changes;
 pub mod code;
 mod connections;
 mod credentials;
+mod credits;
 mod error;
 mod files;
 mod live;
+mod meta;
 mod models;
 mod passkeys;
 mod people;
@@ -25,11 +27,11 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, OrgRole, PrincipalId, ProviderId,
-    RawEvent, ScheduleId, Secret, Seq, ThreadId, When,
+    At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, Money, OrgRole, PrincipalId,
+    ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, When,
 };
-use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
+use glave_ports::{OrgId, ProjectId};
 use serde::{Deserialize, Serialize};
 
 pub use changes::{
@@ -37,11 +39,13 @@ pub use changes::{
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
+pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
 pub use glave_event::{Forge, ProviderKind};
 pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
+pub use meta::{IdempotencyKey, Meta};
 pub use models::{EndpointInfo, ModelInfo};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
@@ -234,6 +238,23 @@ methods! {
     /// The organizations the caller belongs to, their own first, each as it is to them: what
     /// a client switches between, naming one in `Glave-Organization`.
     "organization/list" => OrganizationList {} -> [Organizations],
+    /// The organization's credits, where the server keeps them: its balance, the month's limit
+    /// and spending, and each person's, to its Owners and Admins; to anyone else, their own
+    /// spending this month.
+    "credits/get" => CreditsGet {} -> [Credits],
+    /// Adds `amount`, in US dollars, to an organization's credits, paid by the payment
+    /// `reference` names, which adds once however often it is sent: the caller's
+    /// organization unless `organization` names another. Only whoever runs the server.
+    "credits/add" => CreditsAdd {
+        amount: Money,
+        reference: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(with = "Option<String>")]
+        organization: Option<OrgId>,
+    } -> [Credits],
+    /// Sets the most the caller's organization may spend in a month, in US dollars. Only its
+    /// Owners.
+    "credits/limit" => CreditsLimit { limit: Money } -> [Credits],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
@@ -667,61 +688,6 @@ where
     T: Deserialize<'de>,
 {
     T::deserialize(field).map(Some)
-}
-
-/// What a request may carry besides its params, in `params._meta`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct Meta {
-    /// For `turn/start`: the same key for the same thread returns the turn already started
-    /// instead of starting another, so a client may retry safely.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idempotency_key: Option<IdempotencyKey>,
-    /// For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),
-    /// recorded with the turn and joined by glave's spans. One that is not one is ignored.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub traceparent: Option<String>,
-}
-
-impl Meta {
-    fn is_empty(&self) -> bool {
-        self.idempotency_key.is_none() && self.traceparent.is_none()
-    }
-}
-
-/// A client's name for one attempt at a turn: 1 to 255 bytes of text.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(try_from = "String", into = "String")]
-pub struct IdempotencyKey(String);
-
-impl IdempotencyKey {
-    /// The longest key, in bytes.
-    pub const MAX: usize = 255;
-
-    pub fn new(key: impl Into<String>) -> Result<Self, String> {
-        let key = key.into();
-        if key.is_empty() || key.len() > Self::MAX {
-            return Err(format!(
-                "an idempotency key is 1 to {} bytes, got {}",
-                Self::MAX,
-                key.len()
-            ));
-        }
-        Ok(Self(key))
-    }
-}
-
-impl TryFrom<String> for IdempotencyKey {
-    type Error = String;
-
-    fn try_from(key: String) -> Result<Self, Self::Error> {
-        Self::new(key)
-    }
-}
-
-impl From<IdempotencyKey> for String {
-    fn from(key: IdempotencyKey) -> Self {
-        key.0
-    }
 }
 
 /// Which threads `thread/list` shows.

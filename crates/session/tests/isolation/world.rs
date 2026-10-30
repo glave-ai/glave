@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
+use glave_event::{Auth, AuthMethod, Currency, Money, PrincipalId, ThreadId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir, any_secret};
 use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
@@ -179,7 +179,14 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         setup.hosts = Some(Arc::new(Hosts::default()));
         setup.connections = Some(Arc::new(InMemory::default()));
     }
-    let (server, _) = setup.build_on(dir, parts.log.clone()).await;
+    // Credits kept, so what their methods answer each caller is swept too.
+    let limit = Some(Money {
+        micros: 10_000_000,
+        currency: Currency::USD,
+    });
+    let (server, _) = setup
+        .build_with_credits(dir, parts.log.clone(), limit)
+        .await;
     Org { server, browsers }
 }
 

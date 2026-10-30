@@ -55,6 +55,7 @@ fn a_server_with_an_identity_provider_and_workers_says_both_exist() {
         let both = Exists {
             organization: true,
             workers: true,
+            ..Exists::default()
         };
         assert_eq!(info.exists, both);
         let sent = serde_json::to_value(&info).unwrap();
@@ -76,6 +77,7 @@ fn an_identity_provider_alone_makes_an_organization_without_workers() {
         let organization = Exists {
             organization: true,
             workers: false,
+            ..Exists::default()
         };
         assert_eq!(info.exists, organization);
     });

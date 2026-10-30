@@ -8,9 +8,10 @@ use std::sync::Arc;
 
 use glave_computer::LocalComputers;
 use glave_event::{
-    At, Checkout, EventId, FolderSource, Header, Principal, ProjectFolderSet, RawEvent, Seq,
+    At, Checkout, EventId, FolderSource, Header, Money, Principal, ProjectFolderSet, RawEvent, Seq,
     ThreadId, encode,
 };
+use glave_gateway::Credits;
 use glave_harness::{Homes, Permissions, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
@@ -203,6 +204,32 @@ impl Setup {
         dir: &Path,
         log: L,
     ) -> (Tested<L>, Seen) {
+        self.build_charging(dir, log, None).await
+    }
+
+    /// The server of `build_on` on `log`, keeping organizations' credits there, each limited
+    /// to `limit` a month until its Owner sets another.
+    pub(crate) async fn build_with_credits<L: EventLog + Clone + 'static>(
+        self,
+        dir: &Path,
+        log: L,
+        limit: Option<Money>,
+    ) -> (Tested<L>, Seen) {
+        let credits = Credits::new(
+            log.clone(),
+            Box::new(self.clock.clone()),
+            Box::new(CountingEntropy::starting_at((self.seed << 32) | (1 << 31))),
+            limit,
+        );
+        self.build_charging(dir, log, Some(Arc::new(credits))).await
+    }
+
+    async fn build_charging<L: EventLog + 'static>(
+        self,
+        dir: &Path,
+        log: L,
+        credits: Option<Arc<Credits<L>>>,
+    ) -> (Tested<L>, Seen) {
         let provider = self
             .model
             .unwrap_or_else(|| ScriptedModel::new(self.answers));
@@ -258,6 +285,7 @@ impl Setup {
             workers: self.workers,
             identity_provider: self.identity_provider,
             homes: self.homes,
+            credits,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);

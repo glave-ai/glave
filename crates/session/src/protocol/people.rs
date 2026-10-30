@@ -99,6 +99,7 @@ impl Request {
             Self::InviteCreate { .. } | Self::InviteList {} | Self::InviteRevoke { .. } => {
                 Some(Permit::Invites)
             }
+            Self::CreditsLimit { .. } => Some(Permit::Billing),
             _ => None,
         }
     }

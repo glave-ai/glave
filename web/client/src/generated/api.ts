@@ -186,6 +186,34 @@ export type CredentialInfo = {
   readonly url: string;
 };
 
+/** An organization's account. */
+export type CreditsAccount = {
+  /**
+   * What is left: everything added, less everything charged. Below nothing only where a
+   * call to a model with no price spent past it.
+   */
+  readonly balance: Money;
+  /** The most it may spend in a month, when anything limits it. */
+  readonly limit?: Money | null;
+  /** What it spent this month, glave's own work in it included. */
+  readonly spent: Money;
+};
+
+/** An organization's credits, as much of them as the caller may see. */
+export type CreditsInfo = {
+  /** The organization's own account, for its Owners and Admins; none for anyone else. */
+  readonly account?: CreditsAccount | null;
+  /** Whether the caller may set the month's limit (`credits/limit`): its Owners. */
+  readonly can_set_limit: boolean;
+  /**
+   * What each person spent this month, most first: everyone who spent anything, for its
+   * Owners and Admins; for anyone else, the caller alone.
+   */
+  readonly people: readonly (PersonSpent)[];
+  /** When this month began, in UTC: what the month's spending counts from. */
+  readonly since: At;
+};
+
 /** An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`. */
 export type Currency = string;
 
@@ -265,6 +293,12 @@ export type EventId = string;
  * draws only what is here, and nothing of what is not.
  */
 export type Exists = {
+  /**
+   * Credits: each organization pays ahead for what it uses, and its model calls are
+   * charged to them (`credits/get`). Absent where they are not, so what a server that
+   * keeps none says is as it was.
+   */
+  readonly credits?: boolean;
   /** An organization of people, who sign in through its identity provider (OIDC). */
   readonly organization: boolean;
   /** Workers: a fresh machine for each thread of the project whose settings chose them. */
@@ -576,6 +610,16 @@ export type PersonInfo = {
   readonly subject?: string | null;
   /** Whether they are the caller. */
   readonly you?: boolean;
+};
+
+/** What one person spent this month. */
+export type PersonSpent = {
+  /** The name the organization knows them by, else their email, when it knows either. */
+  readonly name?: string | null;
+  readonly person: PrincipalId;
+  readonly spent: Money;
+  /** Whether they are the caller. */
+  readonly you: boolean;
 };
 
 /** A thread's plan: its latest `plan.updated`, by the model or the person. */
@@ -1378,6 +1422,33 @@ export type CredentialRemoveParams = {
 };
 
 export type CredentialRemoveResult = Readonly<Record<string, never>>;
+
+export type CreditsAddParams = {
+  readonly amount: Money;
+  readonly organization?: string | null;
+  readonly reference: string;
+};
+
+/** The organization's credits, as much as the caller may see. */
+export type CreditsAddResult = {
+  readonly credits: CreditsInfo;
+};
+
+export type CreditsGetParams = Readonly<Record<string, never>>;
+
+/** The organization's credits, as much as the caller may see. */
+export type CreditsGetResult = {
+  readonly credits: CreditsInfo;
+};
+
+export type CreditsLimitParams = {
+  readonly limit: Money;
+};
+
+/** The organization's credits, as much as the caller may see. */
+export type CreditsLimitResult = {
+  readonly credits: CreditsInfo;
+};
 
 export type FileUploadParams = {
   /** Its content, in base64. */
@@ -2313,6 +2384,9 @@ export interface Methods {
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
   readonly "credential/list": { readonly params: CredentialListParams; readonly result: CredentialListResult };
   readonly "credential/remove": { readonly params: CredentialRemoveParams; readonly result: CredentialRemoveResult };
+  readonly "credits/add": { readonly params: CreditsAddParams; readonly result: CreditsAddResult };
+  readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
+  readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "folder/list": { readonly params: FolderListParams; readonly result: FolderListResult };
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
@@ -2484,6 +2558,8 @@ export const ErrorCode = {
   NO_METHOD: -32601,
   /** No such model here, or not one this server may run */
   NO_MODEL: -32021,
+  /** No organization by that id is on this server */
+  NO_ORGANIZATION: -32037,
   /** No one by that id has signed in to this organization */
   NO_PERSON: -32034,
   /** The thread has no plan waiting for the person's approval */

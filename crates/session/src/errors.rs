@@ -5,6 +5,7 @@
 use std::fmt::Display;
 
 use glave_event::{DecodeError, EncodeError, InvalidValue};
+use glave_gateway::CreditsError;
 use glave_harness::{HarnessError, Invalid, MAX_QUEUED, NotQueued};
 use glave_identity::signin::{BrowserError, SignInError};
 use glave_ports::computer::ComputerError;
@@ -69,6 +70,23 @@ impl From<DecodeError> for ApiError {
 impl From<EntropyError> for ApiError {
     fn from(error: EntropyError) -> Self {
         Self::new(code::INTERNAL, error.to_string())
+    }
+}
+
+impl From<CreditsError> for ApiError {
+    fn from(error: CreditsError) -> Self {
+        match error {
+            CreditsError::Stream(error) => error.into(),
+            CreditsError::Event(_) => Self::internal(&error),
+            CreditsError::Added { reference, amount } => Self::new(
+                code::INVALID_PARAMS,
+                Sentence::PaymentAddedAlready {
+                    reference,
+                    amount: format!("{amount:.2}"),
+                },
+            ),
+            CreditsError::Amount { .. } => Self::new(code::INVALID_PARAMS, Sentence::NotDollars),
+        }
     }
 }
 

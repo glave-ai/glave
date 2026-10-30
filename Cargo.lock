@@ -2298,6 +2298,7 @@ dependencies = [
  "glave-bucket",
  "glave-computer",
  "glave-event",
+ "glave-gateway",
  "glave-harness",
  "glave-identity",
  "glave-keys",

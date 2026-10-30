@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
+use glave_gateway::Credits;
 use glave_harness::{
     Harness, HarnessError, Homes, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
     Workspace,
@@ -137,6 +138,9 @@ pub struct Wiring<P, L, B> {
     /// threads work there, and it is woken by the first tool call that needs it. None: every
     /// thread works on the computer `workspace` is on.
     pub homes: Option<Arc<dyn Homes>>,
+    /// The organizations' credits, where the server's configuration keeps them: the same its
+    /// gateway charges each call to (`specs/gateway.md`, "Credits").
+    pub credits: Option<Arc<Credits<L>>>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -190,6 +194,7 @@ impl<P, L, B> Wiring<P, L, B> {
             awake: None,
             worktrees: None,
             homes: None,
+            credits: None,
         }
     }
 }
@@ -306,6 +311,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) awake: Option<Awake>,
     /// What lets go of a thread's worktrees once it is put away, where the host keeps them.
     pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
+    /// The organizations' credits, where it keeps them.
+    pub(crate) credits: Option<Arc<Credits<L>>>,
     /// Each person's own computer, where people have one.
     pub(crate) homes: Option<Arc<dyn Homes>>,
 }
@@ -400,6 +407,7 @@ where
                 awake: wiring.awake.map(Awake::new),
                 worktrees: wiring.worktrees,
                 homes: wiring.homes,
+                credits: wiring.credits,
             }),
         }
     }

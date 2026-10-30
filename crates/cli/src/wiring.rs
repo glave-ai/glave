@@ -196,6 +196,7 @@ pub(crate) async fn wire(
         awake: crate::awake::for_server(args, choices, &processes),
         worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
         homes,
+        credits,
         ..Wiring::new(
             lined.switch,
             store.log(),
