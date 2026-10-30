@@ -5,6 +5,7 @@
 mod changes;
 mod client;
 mod http;
+mod probe;
 mod resources;
 mod server;
 mod signin;

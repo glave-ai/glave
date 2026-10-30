@@ -27,6 +27,7 @@ use crate::call::{Unanswered, Waits, call, send};
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
+use crate::probe::Probed;
 use crate::reason::{failed, reason};
 
 /// What the model is told when the person cancels the turn mid-call.
@@ -64,7 +65,8 @@ pub(crate) struct Connection {
 
 impl Connection {
     /// Connects over `transport` within `limit`, speaking MCP 2026-07-28 without a handshake,
-    /// or the 2025-11-25 handshake with servers that predate it, as `opening` says.
+    /// or the 2025-11-25 handshake with servers that predate it or are slow to say
+    /// (`probe.rs`), as `opening` says.
     pub(crate) async fn open<T, E, A>(
         name: &str,
         transport: T,
@@ -81,6 +83,7 @@ impl Connection {
         };
         let stale = Arc::new(AtomicBool::new(false));
         let client = Arc::new(Client::new(Arc::clone(&stale), opening.root.as_deref()));
+        let transport = Probed::new(transport.into_transport());
         let serving = Arc::clone(&client).serve_with_lifecycle(transport, lifecycle);
         let started = tokio::time::timeout(limit, serving);
         let service = match started.await {
