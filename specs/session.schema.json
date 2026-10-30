@@ -471,6 +471,72 @@
       ],
       "type": "object"
     },
+    "CreditsAccount": {
+      "description": "An organization's account.",
+      "properties": {
+        "balance": {
+          "$ref": "#/$defs/Money",
+          "description": "What is left: everything added, less everything charged. Below nothing only where a\ncall to a model with no price spent past it."
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The most it may spend in a month, when anything limits it."
+        },
+        "spent": {
+          "$ref": "#/$defs/Money",
+          "description": "What it spent this month, glave's own work in it included."
+        }
+      },
+      "required": [
+        "balance",
+        "spent"
+      ],
+      "type": "object"
+    },
+    "CreditsInfo": {
+      "description": "An organization's credits, as much of them as the caller may see.",
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreditsAccount"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The organization's own account, for its Owners and Admins; none for anyone else."
+        },
+        "can_set_limit": {
+          "description": "Whether the caller may set the month's limit (`credits/limit`): its Owners.",
+          "type": "boolean"
+        },
+        "people": {
+          "description": "What each person spent this month, most first: everyone who spent anything, for its\nOwners and Admins; for anyone else, the caller alone.",
+          "items": {
+            "$ref": "#/$defs/PersonSpent"
+          },
+          "type": "array"
+        },
+        "since": {
+          "$ref": "#/$defs/At",
+          "description": "When this month began, in UTC: what the month's spending counts from."
+        }
+      },
+      "required": [
+        "people",
+        "since",
+        "can_set_limit"
+      ],
+      "type": "object"
+    },
     "Currency": {
       "description": "An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.",
       "type": "string"
@@ -643,6 +709,10 @@
     "Exists": {
       "description": "What a server has beyond a person's own: each because its configuration provides it, never\na setting naming a kind of deployment (`specs/deployments.md`, \"One code path\"). A client\ndraws only what is here, and nothing of what is not.",
       "properties": {
+        "credits": {
+          "description": "Credits: each organization pays ahead for what it uses, and its model calls are\ncharged to them (`credits/get`). Absent where they are not, so what a server that\nkeeps none says is as it was.",
+          "type": "boolean"
+        },
         "organization": {
           "description": "An organization of people, who sign in through its identity provider (OIDC).",
           "type": "boolean"
@@ -1600,6 +1670,34 @@
       "required": [
         "id",
         "role"
+      ],
+      "type": "object"
+    },
+    "PersonSpent": {
+      "description": "What one person spent this month.",
+      "properties": {
+        "name": {
+          "description": "The name the organization knows them by, else their email, when it knows either.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person": {
+          "$ref": "#/$defs/PrincipalId"
+        },
+        "spent": {
+          "$ref": "#/$defs/Money"
+        },
+        "you": {
+          "description": "Whether they are the caller.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person",
+        "spent",
+        "you"
       ],
       "type": "object"
     },
@@ -3634,6 +3732,10 @@
       "code": -32021,
       "message": "No such model here, or not one this server may run"
     },
+    "NO_ORGANIZATION": {
+      "code": -32037,
+      "message": "No organization by that id is on this server"
+    },
     "NO_PERSON": {
       "code": -32034,
       "message": "No one by that id has signed in to this organization"
@@ -4076,6 +4178,86 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credits/add": {
+      "params": {
+        "properties": {
+          "amount": {
+            "$ref": "#/$defs/Money"
+          },
+          "organization": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "reference"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's credits, as much as the caller may see.",
+        "properties": {
+          "credits": {
+            "$ref": "#/$defs/CreditsInfo"
+          }
+        },
+        "required": [
+          "credits"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credits/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's credits, as much as the caller may see.",
+        "properties": {
+          "credits": {
+            "$ref": "#/$defs/CreditsInfo"
+          }
+        },
+        "required": [
+          "credits"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credits/limit": {
+      "params": {
+        "properties": {
+          "limit": {
+            "$ref": "#/$defs/Money"
+          }
+        },
+        "required": [
+          "limit"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's credits, as much as the caller may see.",
+        "properties": {
+          "credits": {
+            "$ref": "#/$defs/CreditsInfo"
+          }
+        },
+        "required": [
+          "credits"
+        ],
         "type": "object"
       },
       "streams": false

@@ -253,8 +253,7 @@ where
             .by
             .id
             .filter(|maker| Some(*maker) != local)
-            .and_then(|maker| people.info(maker))
-            .and_then(|maker| maker.name.or(maker.email));
+            .and_then(|maker| people.known_as(maker));
         let joining = match (caller.auth.is_some(), caller.person) {
             (false, _) => way,
             // The person on the server's computer is in its own organization alone.

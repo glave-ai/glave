@@ -24,6 +24,7 @@ mod config;
 mod connected;
 mod connections;
 mod credentials;
+mod credits;
 
 mod data;
 mod doc;

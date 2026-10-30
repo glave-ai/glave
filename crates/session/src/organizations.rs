@@ -43,8 +43,7 @@ where
                 };
                 let owner = people
                     .first_owner_but(caller.person)
-                    .and_then(|owner| people.info(owner))
-                    .and_then(|owner| owner.name.or(owner.email));
+                    .and_then(|owner| people.known_as(owner));
                 (counted, own, role, owner)
             });
             let name = match (own, owner) {

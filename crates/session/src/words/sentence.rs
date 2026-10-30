@@ -76,6 +76,7 @@ sentences! {
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
         "you're no longer in this organization: ask its admins for an invite",
+    OwnersSetLimit = "owners-set-limit" "only an owner can change the monthly spending limit",
     NotYourself = "not-yourself"
         "you can't change your own role or take yourself out: ask another admin",
     LocalOwner = "local-owner"
@@ -234,6 +235,17 @@ sentences! {
         "this could cost up to { $needs }, more than the { $free } free now of this month's { $limit } limit: the account's owner can raise it, or choose a cheaper model",
     NoPriceNoCredits { model: String } = "no-price-no-credits"
         "{ $model } has no price here, so credits can't pay for it: choose another model",
+    NoCredits = "no-credits" "this glave keeps no credits: its models are paid for another way",
+    NotDollars = "not-dollars"
+        "an amount is in US dollars and more than nothing; a monthly limit may be nothing",
+    OperatorAddsCredits = "operator-adds-credits"
+        "only whoever runs this glave can add credits, from its own computer",
+    PaymentAddedAlready { reference: String, amount: String } = "payment-added-already"
+        "the payment { $reference } was added already, for { $amount }: a payment adds once",
+    PaymentReference { most: usize } = "payment-reference"
+        "a payment's reference is 1 to { $most } bytes, not only spaces",
+    NoSuchOrganization { org: String } = "no-such-organization"
+        "this glave serves no organization with the id { $org }",
 
     // Models and permissions.
     NoModelYet = "no-model-yet" "no model is set up here yet: connect a model account first",
