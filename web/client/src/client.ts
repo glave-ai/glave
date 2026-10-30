@@ -28,6 +28,12 @@ export class ApiError extends Error {
   get signedOut(): boolean {
     return this.code === ErrorCode.NO_SIGN_IN;
   }
+
+  /** Whether it named an organization the caller is not in (any more). */
+  get notInOrganization(): boolean {
+    const data = this.data;
+    return typeof data === 'object' && data !== null && 'not_in' in data;
+  }
 }
 
 /** How to reach one server. */
@@ -39,6 +45,11 @@ export interface ClientOptions {
    * OIDC access token; empty for none, as `server/discover` and `signin/redeem` need none.
    */
   readonly token: () => string | Promise<string>;
+  /**
+   * The organization each request works in, by its id, for someone who belongs to several
+   * (`Glave-Organization`); none for the first they joined.
+   */
+  readonly organization?: () => string | null;
   /** The fetch to use; the global one by default. */
   readonly fetch?: typeof fetch;
 }
@@ -160,6 +171,7 @@ export class GlaveClient {
           ? 'text/event-stream, application/json'
           : 'application/json',
         ...(token === '' ? {} : { Authorization: `Bearer ${token}` }),
+        ...organizationHeader(this.options.organization?.() ?? null),
         'Glave-Method': method,
       },
       signal,
@@ -182,6 +194,11 @@ export function codeFromFragment(
   const fields = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
   const code = fields.get(link);
   return code === null || code === '' ? undefined : code;
+}
+
+/** The header that names `organization`, when there is one. */
+function organizationHeader(organization: string | null): Record<string, string> {
+  return organization === null ? {} : { 'Glave-Organization': organization };
 }
 
 function isEventStream(response: Response): boolean {

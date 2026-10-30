@@ -409,6 +409,18 @@ fn an_invites_link_says_what_it_opens_and_someone_signed_in_joins_a_second_organ
         assert!(asked(&mut there, &list).await["threads"].is_array());
         let orgs = directory.organizations(grace).await.unwrap();
         assert_eq!(orgs, [theirs, scope().org()]);
+        // She lists both, the one this request works in marked; naming the other moves it.
+        let listed = asked(&mut there, &Request::OrganizationList {}).await;
+        let listed = listed["organizations"].as_array().unwrap().clone();
+        let ids: Vec<_> = listed.iter().map(|org| org["id"].clone()).collect();
+        assert_eq!(ids, [json!(theirs.to_string()), json!(own)]);
+        assert_eq!(listed[1]["current"], json!(true));
+        assert_eq!(listed[1]["role"], json!("admin"));
+        assert_eq!(listed[1]["people"], json!(2), "she and the person here");
+        assert!(
+            listed.iter().all(|org| org.get("own").is_none()),
+            "neither is hers"
+        );
 
         // Spent, or to an organization that is none, it opens nothing, and says so alike.
         assert_eq!(asked(&mut anyone, &show).await, json!(code::NO_INVITE));
@@ -476,6 +488,11 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
             answers.push(refused.call(&list).await["error"].clone());
         }
         assert_eq!(answers[0]["code"], json!(code::NOT_ALLOWED), "{answers:?}");
+        assert_eq!(
+            answers[0]["data"],
+            json!({"not_in": "organization"}),
+            "a client stops naming it"
+        );
         assert!(
             answers.iter().all(|answer| *answer == answers[0]),
             "{answers:?}"
@@ -489,11 +506,37 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
         let mut own_named = owner_named(&served, &token, &own);
         assert!(asked(&mut own_named, &list).await["threads"].is_array());
         assert!(asked(&mut owner, &list).await["threads"].is_array());
+        lists_both(&mut owner, &mut first, &mut there, &own, &other.to_string()).await;
         // Without a sign-in, naming one changes nothing of what is open to anyone.
         let mut anyone = elsewhere(&served, None).working_in(&unknown);
         assert!(asked(&mut anyone, &Request::Discover {}).await.is_object());
         served.close().await;
     });
+}
+
+/// What `organization/list` says: to the person on the server's computer (`here`), that the
+/// server's own, `own`, is theirs, Grace in it with them; and to Grace, both, in the order she
+/// joined, marking the one each request works in: `own`, which `first` names by naming none,
+/// and `other`, which `there` names.
+async fn lists_both(here: &mut Web, first: &mut Web, there: &mut Web, own: &str, other: &str) {
+    let servers = asked(here, &Request::OrganizationList {}).await;
+    let expected = json!([{"id": own, "people": 2, "own": true, "role": "owner", "current": true}]);
+    assert_eq!(servers["organizations"], expected);
+    for (web, current) in [(first, [true, false]), (there, [false, true])] {
+        let listed = asked(web, &Request::OrganizationList {}).await;
+        let marked: Vec<_> = listed["organizations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|org| (org["id"].clone(), org.get("current").is_some()))
+            .collect();
+        let [mine, theirs] = current;
+        assert_eq!(
+            marked,
+            [(json!(own), mine), (json!(other), theirs)],
+            "{listed}"
+        );
+    }
 }
 
 /// The person on the server's computer, signed in with `token`, naming `organization`.

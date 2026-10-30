@@ -11,10 +11,12 @@ import {
 } from '@glave/client';
 
 import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
-import { forget, storageOf } from '../lib/storage';
+import { forget, storageOf, writeStored } from '../lib/storage';
 import {
   type BrowserSession,
+  ORGANIZATION_KEY,
   TOKEN_KEY,
+  chosenFor,
   isLocalToken,
   keepSession,
   readSession,
@@ -55,17 +57,16 @@ export const PASSKEY_SIGNALS = new InjectionToken<PasskeySignals | null>('PASSKE
 export type Began = Methods['signin/redeem']['result'];
 
 /** Makes the client for the server that served the app, signing each call in with `token`. */
-export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) => SessionClient>(
-  'SESSION_CLIENT_FACTORY',
-  {
-    providedIn: 'root',
-    factory: () => {
-      const document = inject(DOCUMENT);
-      const url = new URL('/', document.location.href).toString();
-      return (token) => new GlaveClient({ url, token });
-    },
+export const SESSION_CLIENT_FACTORY = new InjectionToken<
+  (token: () => string, organization: () => string | null) => SessionClient
+>('SESSION_CLIENT_FACTORY', {
+  providedIn: 'root',
+  factory: () => {
+    const document = inject(DOCUMENT);
+    const url = new URL('/', document.location.href).toString();
+    return (token, organization) => new GlaveClient({ url, token, organization });
   },
-);
+});
 
 /**
  * The person's session with the glave that served the app: a browser session (traded for the
@@ -129,7 +130,14 @@ export class SessionService {
   readonly offersPasskey = computed(
     () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
   );
-  private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.session()?.token ?? '');
+  /** The organization requests work in, as this browser chose for this server; none for the first. */
+  private readonly chosenOrganization = signal<string | null>(null);
+  /** The organization this tab works in, as this browser chose; `null` for the person's first. */
+  readonly organization = this.chosenOrganization.asReadonly();
+  private readonly client = inject(SESSION_CLIENT_FACTORY)(
+    () => this.session()?.token ?? '',
+    () => this.chosenOrganization(),
+  );
   private readonly passkeySignals = inject(PASSKEY_SIGNALS);
 
   /**
@@ -222,9 +230,26 @@ export class SessionService {
     }
   }
 
+  /**
+   * Works in the organization `id` from now on, in every tab of this browser, the page opened
+   * again at the start so every part reads it there; `null` goes back to the person's first.
+   */
+  chooseOrganization(id: string | null): void {
+    if (this.server === undefined) {
+      return;
+    }
+    if (id === null) {
+      forget(this.storage, ORGANIZATION_KEY);
+    } else {
+      writeStored(this.storage, ORGANIZATION_KEY, { id, server: this.server });
+    }
+    this.document.defaultView?.location.assign('/');
+  }
+
   /** Takes in what the server says it is and how it signs browsers in. */
   private take(discovered: Methods['server/discover']['result']): void {
     this.server = discovered.id ?? undefined;
+    this.chosenOrganization.set(chosenFor(this.storage, this.server));
     if (this.loaded() === null) {
       this.loaded.set(discovered.version);
     }
@@ -295,6 +320,14 @@ export class SessionService {
   private noticeSignOut(error: unknown, presented: string | undefined): void {
     if (error instanceof ApiError && error.signedOut) {
       this.forget(presented);
+    }
+    // An organization the person is no longer in: back to their first.
+    if (
+      error instanceof ApiError &&
+      error.notInOrganization &&
+      this.chosenOrganization() !== null
+    ) {
+      this.chooseOrganization(null);
     }
   }
 }

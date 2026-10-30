@@ -5,3 +5,36 @@
 .avatar {
   display: inline-flex;
 }
+
+// Where the person may switch to: a small heading, then each organization with its mark.
+.heading {
+  padding: var(--glz-inset-row);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}
+
+.places {
+  display: flex;
+  flex-direction: column;
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--glz-space-5);
+  block-size: var(--glz-space-5);
+  border-radius: var(--glz-radius-mark);
+  background: var(--glz-surface-sunken);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+}
+
+.place {
+  display: flex;
+  flex-direction: column;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}

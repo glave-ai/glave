@@ -26,6 +26,18 @@ pub enum ErrorData {
     /// The passkey a browser signed in with that the server does not know.
     #[schemars(title = "UnknownPasskeyFailure")]
     UnknownPasskey { unknown_passkey: UnknownPasskey },
+    /// The organization the request named, which the caller is not in (any more): a client
+    /// stops naming it.
+    #[schemars(title = "NotInOrganization")]
+    NotIn { not_in: OrgNamed },
+}
+
+/// That a request named an organization, in `ErrorData::NotIn`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgNamed {
+    /// The one `Glave-Organization` named.
+    Organization,
 }
 
 impl ApiError {

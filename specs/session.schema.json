@@ -548,6 +548,19 @@
           ],
           "title": "UnknownPasskeyFailure",
           "type": "object"
+        },
+        {
+          "description": "The organization the request named, which the caller is not in (any more): a client\nstops naming it.",
+          "properties": {
+            "not_in": {
+              "$ref": "#/$defs/OrgNamed"
+            }
+          },
+          "required": [
+            "not_in"
+          ],
+          "title": "NotInOrganization",
+          "type": "object"
         }
       ],
       "description": "What a failure says beyond its sentence, for a client to act on."
@@ -1259,6 +1272,16 @@
         }
       ]
     },
+    "OrgNamed": {
+      "description": "That a request named an organization, in `ErrorData::NotIn`.",
+      "oneOf": [
+        {
+          "const": "organization",
+          "description": "The one `Glave-Organization` named.",
+          "type": "string"
+        }
+      ]
+    },
     "OrgRole": {
       "description": "What a person may do in their organization. A person given no role is a Member.",
       "oneOf": [
@@ -1278,6 +1301,46 @@
           "type": "string"
         }
       ]
+    },
+    "OrganizationInfo": {
+      "description": "An organization the caller belongs to, as it is to them.",
+      "properties": {
+        "current": {
+          "description": "Whether this request works in it.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Its id, which a request names in `Glave-Organization` to work in it.",
+          "type": "string"
+        },
+        "own": {
+          "description": "Whether it is the caller's own: the one they signed up into, or for the person on the\nserver's computer, the server's own.",
+          "type": "boolean"
+        },
+        "owner": {
+          "description": "An Owner of it but the caller, by the name it knows them by, else their email; none\nwhen no one else owns it or has either.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "people": {
+          "description": "How many people are in it, the person on the server's computer counted in its own.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "role": {
+          "$ref": "#/$defs/OrgRole",
+          "description": "The caller's role in it."
+        }
+      },
+      "required": [
+        "id",
+        "people",
+        "role"
+      ],
+      "type": "object"
     },
     "Origin": {
       "additionalProperties": false,
@@ -4656,6 +4719,27 @@
         },
         "required": [
           "models"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "organization/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The organizations the caller belongs to, their own first.",
+        "properties": {
+          "organizations": {
+            "items": {
+              "$ref": "#/$defs/OrganizationInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "organizations"
         ],
         "type": "object"
       },

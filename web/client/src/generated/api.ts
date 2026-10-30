@@ -215,6 +215,8 @@ export type ErrorData = {
   readonly failure: Failure;
 } | {
   readonly unknown_passkey: UnknownPasskey;
+} | {
+  readonly not_in: OrgNamed;
 };
 
 /** Identifies one event, unique everywhere. */
@@ -437,8 +439,33 @@ export type Opened = {
   readonly path: string;
 };
 
+/** That a request named an organization, in `ErrorData::NotIn`. */
+export type OrgNamed = "organization";
+
 /** What a person may do in their organization. A person given no role is a Member. */
 export type OrgRole = "member" | "admin" | "owner";
+
+/** An organization the caller belongs to, as it is to them. */
+export type OrganizationInfo = {
+  /** Whether this request works in it. */
+  readonly current?: boolean;
+  /** Its id, which a request names in `Glave-Organization` to work in it. */
+  readonly id: string;
+  /**
+   * Whether it is the caller's own: the one they signed up into, or for the person on the
+   * server's computer, the server's own.
+   */
+  readonly own?: boolean;
+  /**
+   * An Owner of it but the caller, by the name it knows them by, else their email; none
+   * when no one else owns it or has either.
+   */
+  readonly owner?: string | null;
+  /** How many people are in it, the person on the server's computer counted in its own. */
+  readonly people: number;
+  /** The caller's role in it. */
+  readonly role: OrgRole;
+};
 
 /** What started a thread, and who. */
 export type Origin = {
@@ -1567,6 +1594,13 @@ export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
 };
 
+export type OrganizationListParams = Readonly<Record<string, never>>;
+
+/** The organizations the caller belongs to, their own first. */
+export type OrganizationListResult = {
+  readonly organizations: readonly (OrganizationInfo)[];
+};
+
 export type PasskeyAddParams = {
   readonly ceremony: string;
   readonly credential: unknown;
@@ -2244,6 +2278,7 @@ export interface Methods {
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "memory/set": { readonly params: MemorySetParams; readonly result: MemorySetResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "organization/list": { readonly params: OrganizationListParams; readonly result: OrganizationListResult };
   readonly "passkey/add": { readonly params: PasskeyAddParams; readonly result: PasskeyAddResult };
   readonly "passkey/add_options": { readonly params: PasskeyAddOptionsParams; readonly result: PasskeyAddOptionsResult };
   readonly "passkey/create": { readonly params: PasskeyCreateParams; readonly result: PasskeyCreateResult };

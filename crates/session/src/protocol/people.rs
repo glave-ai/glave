@@ -103,3 +103,26 @@ impl Request {
         }
     }
 }
+
+/// An organization the caller belongs to, as it is to them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OrganizationInfo {
+    /// Its id, which a request names in `Glave-Organization` to work in it.
+    #[schemars(with = "String")]
+    pub id: OrgId,
+    /// How many people are in it, the person on the server's computer counted in its own.
+    pub people: usize,
+    /// Whether it is the caller's own: the one they signed up into, or for the person on the
+    /// server's computer, the server's own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
+    /// The caller's role in it.
+    pub role: OrgRole,
+    /// An Owner of it but the caller, by the name it knows them by, else their email; none
+    /// when no one else owns it or has either.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// Whether this request works in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current: bool,
+}

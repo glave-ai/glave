@@ -107,7 +107,8 @@ export class FakeTurn {
  * `thread/steps`, no runs and no replies;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose; `memory/get`, memory on;
- * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
+ * `grouping/get`, by project, and `grouping/set`, the grouping asked for; `organization/list`,
+ * the person's own alone; a watch, of a thread
  * or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
 export class FakeSession implements SessionClient {
@@ -222,6 +223,15 @@ export class FakeSession implements SessionClient {
 /** When a thread the fake renames was updated: after the fixtures' threads were. */
 const RENAMED_AT = '2026-10-11T10:06:00.000Z';
 
+/** The one organization the person is in, unless a test says otherwise: their own, alone. */
+const OWN_ORGANIZATION = {
+  id: '01900000-0000-7000-8000-0000000000a1',
+  people: 1,
+  own: true,
+  role: 'owner',
+  current: true,
+} as const;
+
 /** What the fake answers a method no test answered. */
 function unanswered(method: Method, params: unknown): Answer {
   if (method === 'thread/get') {
@@ -263,6 +273,9 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'grouping/get') {
     return { grouping: 'project' };
+  }
+  if (method === 'organization/list') {
+    return { organizations: [OWN_ORGANIZATION] };
   }
   if (method === 'grouping/set') {
     const { grouping } = params as { readonly grouping: string };

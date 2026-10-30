@@ -79,3 +79,30 @@ function isSession(value: unknown): value is BrowserSession {
   const fields = value as Readonly<Record<string, unknown>>;
   return typeof fields['token'] === 'string' && typeof fields['server'] === 'string';
 }
+
+/**
+ * Where this browser keeps the organization the person last chose to work in, with the id of
+ * the server it is one of: for every tab of this origin, presented to that server alone.
+ */
+export const ORGANIZATION_KEY = 'glave-organization';
+
+/** The organization chosen in this browser, and the server it is one of. */
+export interface ChosenOrganization {
+  readonly id: string;
+  readonly server: string;
+}
+
+/** The organization this browser chose for the server whose id is `server`, if any. */
+export function chosenFor(storage: Store, server: string | undefined): string | null {
+  const kept = readStored(storage, ORGANIZATION_KEY);
+  const chosen =
+    typeof kept === 'object' &&
+    kept !== null &&
+    'id' in kept &&
+    'server' in kept &&
+    typeof kept.id === 'string' &&
+    kept.server === server
+      ? kept.id
+      : null;
+  return server === undefined ? null : chosen;
+}

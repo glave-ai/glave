@@ -17,6 +17,7 @@ import Search from 'lucide/dist/esm/icons/search.mjs';
 
 import { hasProjects } from '../../lib/nav';
 import { GroupingService } from '../../services/grouping.service';
+import { OrganizationsService } from '../../services/organizations.service';
 import { ProjectsService } from '../../services/projects.service';
 import { TasksService } from '../../services/tasks.service';
 import { GroupByComponent } from '../group-by/group-by.component';
@@ -73,6 +74,9 @@ export class SideNavComponent {
   private readonly locale = inject(LOCALE_ID);
   private readonly projects = inject(ProjectsService);
   private readonly grouped = inject(GroupingService);
+  private readonly organizations = inject(OrganizationsService);
+  /** What heads the side nav: the team the person works in, else glave. */
+  protected readonly heading = computed(() => this.organizations.heading() ?? this.copy.name);
   private readonly grouping = this.grouped.grouping;
   /** Whether the lists have been read, so the threads come in all at once, in their place. */
   protected readonly read = this.projects.loaded;
@@ -92,6 +96,7 @@ export class SideNavComponent {
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
 
   constructor() {
+    void this.organizations.load();
     const unwatch = this.tasks.watch();
     inject(DestroyRef).onDestroy(unwatch);
     // Read as the side nav opens, beside the lists' first read, so it groups them as it shows.
