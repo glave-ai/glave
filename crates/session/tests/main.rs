@@ -49,6 +49,7 @@ mod remote;
 mod removing;
 mod schedules;
 mod server;
+mod sharing;
 mod signups;
 mod site;
 mod sources;

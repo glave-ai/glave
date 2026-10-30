@@ -57,7 +57,10 @@ pub fn origin(url: &str) -> Option<(&str, &str)> {
 
 /// Where people reach a server from elsewhere: `https://` and its name, with any port, and
 /// nothing more, kept in lower case. Something serves HTTPS for it: the server itself, or a
-/// tunnel or proxy in front of it. Never this computer's own name, nor an address.
+/// tunnel or proxy in front of it. Never an address. Or, set so on purpose, this computer's
+/// `http://localhost:<port>`, for people who share one computer, each in a browser of their
+/// own: a name, since WebAuthn takes no address for its relying party, with its port, which
+/// must be the one the server serves at.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PublicOrigin {
     origin: String,
@@ -65,15 +68,20 @@ pub struct PublicOrigin {
 
 impl PublicOrigin {
     /// The origin `text` names, in any case and with or without a final `/`; none when it is
-    /// not an https origin of a name.
+    /// neither an https origin of a name nor `http://localhost` with a port.
     pub fn parse(text: &str) -> Option<Self> {
         let origin = text.trim().trim_end_matches('/').to_ascii_lowercase();
         let (scheme, host) = self::origin(&origin)?;
-        let name = host.rsplit_once(':').map_or(host, |(name, _)| name);
+        let (name, port) = host
+            .rsplit_once(':')
+            .map_or((host, None), |(name, port)| (name, Some(port)));
         // An IPv6 address is bracketed; an IPv4 one parses.
         let address = name.starts_with('[') || name.parse::<IpAddr>().is_ok();
         let public = scheme == "https" && !address && !is_this_computer(name);
-        public.then_some(Self { origin })
+        let here = scheme == "http"
+            && name == "localhost"
+            && port.is_some_and(|port| port.parse::<u16>().is_ok_and(|port| port != 0));
+        (public || here).then_some(Self { origin })
     }
 
     /// The origin itself, as a browser's `Origin` header names it: `https://glave.example.com`.
@@ -83,7 +91,16 @@ impl PublicOrigin {
 
     /// Its host and any port, as a request's `Host` header names it: `glave.example.com`.
     pub fn authority(&self) -> &str {
-        self.origin.strip_prefix("https://").unwrap_or(&self.origin)
+        self.origin
+            .split_once("://")
+            .map_or(self.origin.as_str(), |(_, authority)| authority)
+    }
+
+    /// The port of `http://localhost:<port>`, when it is this computer's: where the server must
+    /// serve, on loopback alone, for it to be its origin.
+    pub fn here(&self) -> Option<u16> {
+        let port = self.origin.strip_prefix("http://localhost:")?;
+        port.parse().ok()
     }
 }
 
@@ -127,9 +144,24 @@ mod tests {
             "https://[::1]",
             "https://203.0.113.5",
             "ftp://glave.example.com",
+            "http://localhost",
+            "http://127.0.0.1:4180",
+            "http://[::1]:4180",
+            "http://localhost:4180/app",
+            "http://localhost:99999",
+            "http://localhost:0",
         ] {
             assert!(PublicOrigin::parse(refused).is_none(), "{refused}");
         }
+        assert_eq!(origin.here(), None);
+    }
+
+    #[test]
+    fn this_computer_is_an_origin_only_as_localhost_and_its_port() {
+        let here = PublicOrigin::parse("http://LOCALHOST:4180/").unwrap();
+        assert_eq!(here.as_str(), "http://localhost:4180");
+        assert_eq!(here.authority(), "localhost:4180");
+        assert_eq!(here.here(), Some(4180));
     }
 
     #[test]

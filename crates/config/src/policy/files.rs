@@ -226,7 +226,8 @@ impl ServeFile {
         {
             return Some(format!(
                 "origin = {origin:?} is not an address people reach glave at: https:// and its \
-                 name, such as https://glave.example.com, and nothing after it"
+                 name, such as https://glave.example.com, and nothing after it; or, for people \
+                 who share this computer, http://localhost and the port glave serves at"
             ));
         }
         if let Some(domain) = &self.domain

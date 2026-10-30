@@ -11,7 +11,6 @@ use jiff::Timestamp;
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
-use super::passkeys::HERE;
 use super::{BrowserError, SESSION_LIFETIME, new_id};
 
 /// What is known: the codes waiting, and the sessions and passkeys as the ledger has them so
@@ -57,11 +56,6 @@ impl KeptPasskey {
     /// origin's when `public`: only with the one it was made for.
     pub(super) fn made_for(&self, party: &str, public: bool) -> bool {
         self.party.as_deref().map_or(public, |made| made == party)
-    }
-
-    /// Whether it was made at a public origin, so its sessions sign in through it too.
-    pub(super) fn public(&self) -> bool {
-        self.party.as_deref() != Some(HERE)
     }
 }
 

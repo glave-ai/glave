@@ -11,6 +11,7 @@ import {
 } from '@glave/client';
 
 import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
+import { passkeysAt } from '../lib/passkeys';
 import { forget, storageOf } from '../lib/storage';
 import {
   type BrowserSession,
@@ -93,6 +94,11 @@ export class SessionService {
   private readonly ways = signal<readonly SignInWay[]>([]);
   /** Whether people reach the server from elsewhere, at its public origin. */
   private readonly reachedElsewhere = signal(false);
+  /**
+   * Whether this page is at a name, where passkeys work: not where the person on the server's
+   * computer signs in at its address, when people share it at `localhost`.
+   */
+  private readonly atName = passkeysAt(this.document.location.hostname);
   /** Where browsers on this computer make passkeys for it, when it makes them here. */
   private readonly here = signal<string | null>(null);
   /** The version of glave whose app this page is, as the server said when the page loaded. */
@@ -115,7 +121,9 @@ export class SessionService {
    * on this computer where glave makes them here.
    */
   readonly passkeys = computed(
-    () => (this.reachedElsewhere() && this.ways().includes('passkey')) || this.passkeysHere(),
+    () =>
+      (this.reachedElsewhere() && this.atName && this.ways().includes('passkey')) ||
+      this.passkeysHere(),
   );
   /** Whether a passkey signs this page in now: one exists, or a setup link makes the first. */
   readonly passkeySignIn = computed(() => this.passkeys() && this.ways().includes('passkey'));

@@ -80,6 +80,22 @@ export const CONNECTIONS_WEBKIT: Site = {
   address: 'GLAVE_E2E_CONNECTIONS_WEBKIT_URL',
   home: 'GLAVE_E2E_CONNECTIONS_WEBKIT_HOME',
 };
+/**
+ * Glaves shared by the people of one computer, whose origin is set to its
+ * `http://localhost:<port>`, one for each engine, since each fills it with people
+ * (shared.e2e.ts): the person on it signs in at its address, the others at `localhost`.
+ */
+export const SHARED: Site = { address: 'GLAVE_E2E_SHARED_URL', home: 'GLAVE_E2E_SHARED_HOME' };
+export const SHARED_WEBKIT: Site = {
+  address: 'GLAVE_E2E_SHARED_WEBKIT_URL',
+  home: 'GLAVE_E2E_SHARED_WEBKIT_HOME',
+};
+
+/** The origin people who share the computer reach the glave of `site` at. */
+export function sharedOrigin(site: Site): string {
+  return served(site).replace('http://127.0.0.1:', 'http://localhost:');
+}
+
 /** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
 export const GLAVE_BIN =
   process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
