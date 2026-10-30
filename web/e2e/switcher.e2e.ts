@@ -65,17 +65,18 @@ test('A person in two organizations switches from their own to a team and back f
   await expect(byTestId(page, 'person-menu')).not.toContainText(ADMIN_WORDS);
   await expectAccessible(page);
 
-  // The team: the page starts again there, and every request names it.
+  // The team: the page starts again there, and every request names it, where none did.
+  expect(asked.named.every((named) => named === null)).toBe(true);
   await places.last().click();
   await expect(byTestId(page, 'nav-heading')).toHaveText("Dana Lee's team");
   expect(asked.named.at(-1)).toBe(TEAM);
   await byTestId(page, 'person').click();
   await expect(places.last()).toHaveAttribute('aria-current', 'page');
 
-  // Back to their own: no request names one.
+  // Back to their own, which every request then names.
   await places.first().click();
   await expect(byTestId(page, 'nav-heading')).toHaveText('glave');
-  expect(asked.named.at(-1)).toBeNull();
+  expect(asked.named.at(-1)).toBe(OWN_ORGANIZATION);
 });
 
 test('A person in one organization has nothing to switch between', async ({ page }) => {
