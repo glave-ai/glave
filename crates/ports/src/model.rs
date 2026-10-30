@@ -55,15 +55,14 @@ pub struct ModelRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<InlineFile>,
     /// Whose work the call is, so a gateway that keeps organizations' credits can charge it
-    /// there. None is glave's own, charged to no one. Providers ignore it, and it is never
-    /// sent.
+    /// there: none charges no organization's. Providers ignore it, and it is never sent.
     #[serde(skip)]
     pub payer: Option<Payer>,
 }
 
 /// Whose work a model call is: the organization whose credits pay for it, and the person it
 /// works for, when it works for anyone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Payer {
     pub org: OrgId,
     pub person: Option<PrincipalId>,
