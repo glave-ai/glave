@@ -18,6 +18,9 @@ pub enum SignInWay {
     /// Signing up with an email: a link sent there makes the person's first passkey, their
     /// account and an organization of their own.
     Signup,
+    /// Getting back in by email: a link sent to a glave account's address makes a new passkey
+    /// for it.
+    Recovery,
 }
 
 /// Which link's code a passkey is made with (`passkey/create_options`).
@@ -33,6 +36,8 @@ pub enum LinkKind {
     Invite,
     /// A sign-up's, emailed: the first passkey of a new account and its own organization.
     Signup,
+    /// One to get back in, emailed: a new passkey for the account the address has.
+    Recovery,
 }
 
 impl LinkKind {
@@ -56,4 +61,10 @@ pub struct PasskeySummary {
     /// When it last signed a browser in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub used: Option<At>,
+    /// Whether it was made from a link sent to the account's email, to get back in.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub emailed: bool,
+    /// Whether it signed in the browser asking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current: bool,
 }

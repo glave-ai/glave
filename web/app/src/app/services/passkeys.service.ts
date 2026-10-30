@@ -63,9 +63,15 @@ export class PasskeysService {
   private readonly authenticator = inject(AUTHENTICATOR);
   private readonly passkeySignals = inject(PASSKEY_SIGNALS);
   private readonly listed = signal<readonly PasskeySummary[]>([]);
+  private readonly address = signal<string | null>(null);
+  private readonly told = signal<string | null>(null);
 
   /** The person's passkeys, oldest first, as the server last listed them. */
   readonly passkeys = this.listed.asReadonly();
+  /** The address a glave account gets back in with, as the server last said. */
+  readonly email = this.address.asReadonly();
+  /** What the server tells of a passkey made by email lately, on another device. */
+  readonly notice = this.told.asReadonly();
   /** This computer's own authenticator, as its system names it, where glave knows it. */
   readonly platform: PlatformAuthenticator = platformAuthenticator(inject(PLATFORM));
 
@@ -99,17 +105,19 @@ export class PasskeysService {
   }
 
   /**
-   * Makes the first passkey of a new account on this device with the sign-up link `code`,
-   * which makes the account and signs the browser in: why not, if it did not, and whether the
-   * link opens nothing any more.
+   * Makes a passkey on this device with the emailed link `code` of the kind `link`: a sign-up's,
+   * the first of a new account, which it makes; or one to get back in, a new one for the
+   * account the address has. Either signs the browser in. Says why not, if it did not, and
+   * whether the link opens nothing any more.
    */
-  async signUp(
+  async withEmailedLink(
     code: string,
+    link: 'signup' | 'recovery',
   ): Promise<{ readonly problem: string | null; readonly spent: boolean }> {
     let spent = false;
     const problem = await this.asking(async () => {
       try {
-        return await this.makeWithLink(code, 'signup');
+        return await this.makeWithLink(code, link);
       } catch (error: unknown) {
         spent = error instanceof ApiError && error.code === ErrorCode.NO_INVITE;
         throw error;
@@ -134,8 +142,10 @@ export class PasskeysService {
   /** Lists the person's passkeys again. */
   async load(): Promise<string | null> {
     return this.asking(async () => {
-      const { passkeys } = await this.session.call('passkey/list', {});
+      const { passkeys, email, notice } = await this.session.call('passkey/list', {});
       this.listed.set(passkeys);
+      this.address.set(email ?? null);
+      this.told.set(notice ?? null);
       return null;
     });
   }

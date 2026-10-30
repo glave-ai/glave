@@ -88,6 +88,8 @@ pub struct PasskeyInfo {
     pub name: String,
     pub added: Timestamp,
     pub used: Option<Timestamp>,
+    /// Whether it was made from a link sent to the account's email, to get back in.
+    pub emailed: bool,
 }
 
 /// The relying party's id on the person's own computer.
@@ -298,6 +300,20 @@ impl Browsers {
         Ok(Checked { info, change })
     }
 
+    /// Keeps the passkey `checked`, made from a link sent to the account's email, and signs
+    /// this browser in with it: one the person's other devices are told of.
+    pub async fn keep_emailed(&self, checked: Checked) -> Result<Session, BrowserError> {
+        let Checked { mut info, change } = checked;
+        info.emailed = true;
+        let change = match change {
+            Change::PasskeyAdded(id, name, kept, party, _) => {
+                Change::PasskeyAdded(id, name, kept, party, true)
+            }
+            other => other,
+        };
+        self.keep(Checked { info, change }).await
+    }
+
     /// Keeps the passkey `checked`, and signs this browser in with it.
     pub async fn keep(&self, checked: Checked) -> Result<Session, BrowserError> {
         let id = parse(&checked.info.id).ok_or(BrowserError::Ceremony)?;
@@ -361,9 +377,10 @@ impl Browsers {
             name: name.clone(),
             added: now,
             used: None,
+            emailed: false,
         };
         let party = relying.id.clone();
-        Ok((info, Change::PasskeyAdded(id, name, kept, party)))
+        Ok((info, Change::PasskeyAdded(id, name, kept, party, false)))
     }
 
     /// Begins signing a browser in with a passkey: any of the person's made for this relying
@@ -472,6 +489,7 @@ impl Browsers {
                 name: kept.name.clone(),
                 added: kept.added,
                 used: kept.used,
+                emailed: kept.emailed,
             })
             .collect()
     }

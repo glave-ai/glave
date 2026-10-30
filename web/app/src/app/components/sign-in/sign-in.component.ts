@@ -48,13 +48,18 @@ export class SignInComponent {
     setupAction: $localize`:@@signIn.setupAction:Make a passkey`,
     waiting: $localize`:@@signIn.waiting:Waiting for your device…`,
     newHere: $localize`:@@signIn.newHere:New to glave?`,
+    lost: $localize`:@@signIn.lost:Lost your passkey?`,
+    recover: $localize`:@@signIn.recover:Email me a link to make a new one`,
     signUp: $localize`:@@signIn.signUp:Sign up`,
   } as const;
   protected readonly signUpLink = '/sign-up';
+  protected readonly recoverLink = '/recover';
   protected readonly icon = KeyRound;
   protected readonly busy = signal(false);
   /** Whether anyone may sign up here, so the page offers it beside signing in. */
   protected readonly signsUp = this.session.signsUp;
+  /** Whether "Lost your passkey?" is offered: passkeys sign in here, and the server sends links to get back in. */
+  protected readonly recovers = computed(() => this.withPasskey() && this.session.recovers());
   protected readonly problem = signal<string | null>(null);
 
   protected readonly offer = computed<Offer>(() => {

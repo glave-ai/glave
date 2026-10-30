@@ -333,7 +333,7 @@ export type JoinWay = "passkey" | "company" | "accept" | "member";
 export type LineKind = "same" | "removed" | "added";
 
 /** Which link's code a passkey is made with (`passkey/create_options`). */
-export type LinkKind = "setup" | "invite" | "signup";
+export type LinkKind = "setup" | "invite" | "signup" | "recovery";
 
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
 export type MemoryId = string;
@@ -458,6 +458,10 @@ export type Outcome = "completed" | "cancelled" | "failed" | "interrupted" | "li
 /** A passkey that signs the person in. */
 export type PasskeySummary = {
   readonly added: At;
+  /** Whether it signed in the browser asking. */
+  readonly current?: boolean;
+  /** Whether it was made from a link sent to the account's email, to get back in. */
+  readonly emailed?: boolean;
   readonly id: string;
   /** What it is called: the name the browser gave it, else when it was added. */
   readonly name: string;
@@ -825,7 +829,7 @@ export type SignInLink = {
 };
 
 /** A way a browser signs in to the server, as `server/discover` says. */
-export type SignInWay = "link" | "passkey" | "signup";
+export type SignInWay = "link" | "passkey" | "signup" | "recovery";
 
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
@@ -1667,7 +1671,13 @@ export type PasskeyGetOptionsResult = {
 
 export type PasskeyListParams = Readonly<Record<string, never>>;
 
+/**
+ * The person's passkeys; for a glave account, the address it gets back in with, and what
+ * it is told of a passkey made by email lately on another device.
+ */
 export type PasskeyListResult = {
+  readonly email?: string | null;
+  readonly notice?: string | null;
   readonly passkeys: readonly (PasskeySummary)[];
 };
 
@@ -1825,6 +1835,12 @@ export type QuestionAnswerParams = {
 };
 
 export type QuestionAnswerResult = Readonly<Record<string, never>>;
+
+export type RecoveryStartParams = {
+  readonly email: string;
+};
+
+export type RecoveryStartResult = Readonly<Record<string, never>>;
 
 export type RoleSetParams = {
   readonly person: PrincipalId;
@@ -2268,6 +2284,7 @@ export interface Methods {
   readonly "provider/refresh": { readonly params: ProviderRefreshParams; readonly result: ProviderRefreshResult };
   readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
+  readonly "recovery/start": { readonly params: RecoveryStartParams; readonly result: RecoveryStartResult };
   readonly "role/set": { readonly params: RoleSetParams; readonly result: RoleSetResult };
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };

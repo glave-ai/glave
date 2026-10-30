@@ -311,6 +311,7 @@ fn open(request: &Request, door: Door) -> Result<(), SignInError> {
         Request::PasskeyCreateOptions { .. }
         | Request::PasskeyCreate { .. }
         | Request::SignupStart { .. }
+        | Request::RecoveryStart { .. }
         | Request::PasskeyGetOptions {}
         | Request::PasskeyGet { .. }
             if door != Door::Elsewhere =>

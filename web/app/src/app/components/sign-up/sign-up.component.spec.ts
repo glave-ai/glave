@@ -1,6 +1,6 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import type { MockInstance } from 'vitest';
-import { Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
@@ -15,10 +15,14 @@ const OPTIONS = PASSKEY_OPTIONS;
 
 const device = MAKING_DEVICE;
 
-/** The page opened at `link`, signed out, on a glave that takes sign-ups. */
+/**
+ * The page opened at `link`, signed out, on a glave that takes sign-ups and sends links to get
+ * back in; the page for getting back in when `recovering`.
+ */
 async function render(
   fake: FakeSession,
   link = '/sign-up',
+  recovering = false,
 ): Promise<{
   readonly fixture: ComponentFixture<SignUpComponent>;
   readonly navigate: MockInstance<Router['navigateByUrl']>;
@@ -28,11 +32,13 @@ async function render(
   const discovered = {
     id: FAKE_SERVER,
     origin: 'https://glave.test',
-    signin: ['link', 'passkey', 'signup'],
+    signin: ['link', 'passkey', 'signup', 'recovery'],
   };
+  const route = { snapshot: { data: recovering ? { emailed: 'recovery' } : {} } };
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
+      { provide: ActivatedRoute, useValue: route },
       ...provideFakeSession(fake.answer('server/discover', discovered), null),
       { provide: AUTHENTICATOR, useValue: device },
     ],
@@ -90,6 +96,33 @@ describe('SignUpComponent', () => {
     expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'signup' }]);
     expect(TestBed.inject(SessionService).signedIn()).toBe(true);
     expect(navigate).toHaveBeenCalledWith('/');
+  });
+
+  it('gets back in: a link to the email given, then a new passkey from it', async () => {
+    const fake = new FakeSession()
+      .answer('recovery/start', {})
+      .answer('passkey/create_options', OPTIONS)
+      .answer('passkey/create', { session: 'glave_account_back', server: FAKE_SERVER });
+    const asking = await render(fake, '/recover', true);
+    expect(asking.root.textContent).toContain('Get back into glave');
+    type(asking.root, 'sign-up-address', 'ada@example.com');
+    asking.root.querySelector<HTMLElement>('[data-testid="sign-up-send"]')?.click();
+    await settle(asking.fixture);
+    expect(fake.paramsOf('recovery/start')).toEqual([{ email: 'ada@example.com' }]);
+    expect(fake.paramsOf('signup/start')).toEqual([]);
+    const sent = asking.root.querySelector('[data-testid="sign-up-sent"]')?.textContent;
+    expect(sent).toContain('If ada@example.com has a glave account, we sent it a link.');
+    await expectAccessible(asking.root);
+
+    TestBed.resetTestingModule();
+    const opened = await render(fake, '/#recover=c0de', true);
+    expect(opened.root.textContent).toContain('Make a new passkey');
+    await expectAccessible(opened.root);
+    opened.root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
+    await settle(opened.fixture);
+    expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'recovery' }]);
+    expect(TestBed.inject(SessionService).signedIn()).toBe(true);
+    expect(opened.navigate).toHaveBeenCalledWith('/');
   });
 
   it('says the server’s sentence when it refuses an address', async () => {

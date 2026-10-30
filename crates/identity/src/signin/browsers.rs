@@ -294,6 +294,14 @@ impl Browsers {
         self.state().live(now).any(|session| session.id == id)
     }
 
+    /// The passkey that signed the session `id` in, by its id, if one did.
+    pub fn passkey_of(&self, id: &str) -> Option<String> {
+        let id = Uuid::parse_str(id).ok()?;
+        let state = self.state();
+        let session = state.sessions.iter().find(|session| session.id == id)?;
+        session.passkey.map(|passkey| passkey.to_string())
+    }
+
     /// Ends the session `id`.
     pub async fn end(&self, id: &str) -> Result<(), BrowserError> {
         let Ok(id) = Uuid::parse_str(id) else {

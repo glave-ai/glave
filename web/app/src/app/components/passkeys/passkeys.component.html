@@ -1,11 +1,25 @@
 <glz-card data-testid="passkeys">
   <h2 glzCardHeader>{{ copy.heading }}</h2>
+  @if (notice(); as notice) {
+    <p class="notice" role="status" data-testid="passkeys-notice">{{ notice }}</p>
+  }
   <p class="details">{{ copy.lead }}</p>
+  @if (email(); as email) {
+    <div class="glz-stack glz-gap-1" data-testid="passkeys-email">
+      <p class="details">{{ copy.email }}</p>
+      <p class="title">{{ email }}</p>
+    </div>
+  }
   @for (passkey of shown(); track passkey.id) {
     <div class="passkey" data-testid="passkeys-passkey">
       <div class="glz-stack glz-gap-1">
         <p class="title">{{ passkey.name }}</p>
-        <p class="details">{{ passkey.detail }}</p>
+        <p class="details">
+          {{ passkey.detail }}
+          @for (mark of passkey.marks; track mark) {
+            <span class="mark" data-testid="passkeys-mark">{{ mark }}</span>
+          }
+        </p>
       </div>
       <button glzButton data-testid="passkeys-remove" (click)="ask(passkey.id)">
         {{ copy.remove }}

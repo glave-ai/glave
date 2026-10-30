@@ -12,12 +12,17 @@ use std::sync::Arc;
 use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use jiff::SignedDuration;
 
 use crate::organizations::with_account;
 use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
+
+/// How long a passkey made by email is told of on the person's other browsers: long enough to
+/// be seen on any device used within the week.
+const NOTICE_FOR: SignedDuration = SignedDuration::from_hours(24 * 7);
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -53,6 +58,9 @@ where
         }
         if self.takes_signups() {
             ways.push(SignInWay::Signup);
+        }
+        if self.recovers() {
+            ways.push(SignInWay::Recovery);
         }
         ways
     }
@@ -93,7 +101,7 @@ where
             return self.join(joining, credential, name).await;
         }
         if let Some(signing) = self.signing(ceremony) {
-            return self.finish_signup(signing, credential, name).await;
+            return self.finish_link(signing, credential, name).await;
         }
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;
@@ -117,7 +125,7 @@ where
         let browsers = self.person_s(caller).await?;
         let passkey = browsers.add(ceremony, credential, name).await?;
         Ok(Reply::Passkey {
-            passkey: summary(passkey),
+            passkey: summary(passkey, None),
         })
     }
 
@@ -161,15 +169,33 @@ where
         Ok(self.signed_in(session, browsers))
     }
 
-    /// Answers `passkey/list`: the person's passkeys.
+    /// Answers `passkey/list`: the person's passkeys, the one that signed this browser in
+    /// marked; for a glave account, the address it gets back in with, and a notice of a
+    /// passkey made by email lately, from another browser.
     pub(crate) async fn passkeys(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let browsers = self.person_s(caller).await?;
-        let passkeys = browsers.passkeys().into_iter().map(summary).collect();
-        Ok(Reply::Passkeys { passkeys })
+        let current = session_of(caller).and_then(|session| browsers.passkey_of(session));
+        let passkeys: Vec<PasskeySummary> = browsers
+            .passkeys()
+            .into_iter()
+            .map(|passkey| summary(passkey, current.as_deref()))
+            .collect();
+        let now = self.inner.harness.clock().now();
+        let lately = |added: &At| now.duration_since(added.timestamp()) < NOTICE_FOR;
+        let notice = passkeys
+            .iter()
+            .any(|passkey| passkey.emailed && !passkey.current && lately(&passkey.added))
+            .then(|| Sentence::PasskeyEmailedNotice.into());
+        let email = self.account_email(caller).await?;
+        Ok(Reply::Passkeys {
+            passkeys,
+            email,
+            notice,
+        })
     }
 
-    /// Answers `passkey/remove`. A glave account keeps its last passkey, since nothing else
-    /// signs its person in yet.
+    /// Answers `passkey/remove`. A glave account keeps its last passkey unless it can get back
+    /// in by email, since nothing else signs its person in.
     pub(crate) async fn remove_passkey(
         &self,
         caller: &Caller,
@@ -177,7 +203,7 @@ where
     ) -> Result<Reply, ApiError> {
         let browsers = self.person_s(caller).await?;
         let last = browsers.passkeys().iter().all(|kept| kept.id == passkey);
-        if last && with_account(caller) {
+        if last && with_account(caller) && !self.gets_back_in(caller).await? {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastPasskey));
         }
         let removed = browsers.remove(passkey).await;
@@ -274,12 +300,16 @@ pub(crate) fn options(ceremony: Ceremony) -> Reply {
 }
 
 /// `passkey` as a client lists it.
-fn summary(passkey: PasskeyInfo) -> PasskeySummary {
+/// `passkey` as the person sees it: `current` when it is the one, by its id, that signed the
+/// browser asking in.
+fn summary(passkey: PasskeyInfo, current: Option<&str>) -> PasskeySummary {
     PasskeySummary {
+        current: current == Some(passkey.id.as_str()),
         id: passkey.id,
         name: passkey.name,
         added: At::from(passkey.added),
         used: passkey.used.map(At::from),
+        emailed: passkey.emailed,
     }
 }
 

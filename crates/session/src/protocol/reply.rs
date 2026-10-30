@@ -339,8 +339,16 @@ pub enum Reply {
     },
     #[schemars(title = "Passkey")]
     Passkey { passkey: PasskeySummary },
+    /// The person's passkeys; for a glave account, the address it gets back in with, and what
+    /// it is told of a passkey made by email lately on another device.
     #[schemars(title = "Passkeys")]
-    Passkeys { passkeys: Vec<PasskeySummary> },
+    Passkeys {
+        passkeys: Vec<PasskeySummary>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notice: Option<Told>,
+    },
     /// A browser session, sent once.
     #[schemars(title = "Browser")]
     Browser {
