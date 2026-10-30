@@ -71,6 +71,8 @@ where
                 .count();
             if subagents > 0 {
                 let (started, after) = rest.split_at_checked(subagents).unwrap_or((rest, &[]));
+                // Subagents work where it does, and may change what it opens with there.
+                crate::homes::changed(thread);
                 self.run_agents(thread, started, step, cancel, live).await?;
                 rest = after;
                 continue;
@@ -317,6 +319,14 @@ where
         });
         // A command it starts in the background is recorded under this call.
         thread.commands.calling(call.call_id.clone());
+        // A command, a write or an edit may change what the thread opens with, on its person's
+        // own computer read again as the turn ends.
+        if matches!(
+            Tool::named(hooked.tool),
+            Some(Tool::Bash | Tool::Write | Tool::Edit)
+        ) {
+            crate::homes::changed(thread);
+        }
         let output = source.call(hooked.tool, &call.arguments, cancel);
         let output = crate::telemetry::tool_call(hooked.tool, output).await;
         live(Live::ToolFinished {

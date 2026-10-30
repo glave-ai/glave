@@ -1,7 +1,8 @@
 //! A computer that wakes only for the calls that need it, on this machine: planning a scratch
-//! folder, listing its commands and closing it never wake it; the first command does, once,
-//! with the folder where it was planned; a computer woken again since opens it again; one let
-//! go of with a command running is kept for it until the computer sleeps.
+//! folder or a project's folder, listing its commands and closing it never wake it; the first
+//! call does, once, with the folder where it was planned, or says plainly that it is gone; a
+//! computer woken again since opens it again; one let go of with a command running is kept for
+//! it until the computer sleeps.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -173,6 +174,44 @@ fn a_computer_woken_again_opens_its_workspaces_again() {
         let read = home.computers.read(chat.id, "kept.txt").await.unwrap();
         assert_eq!(read, Bytes::new(b"kept\n"));
         assert_eq!(wakes.load(Ordering::SeqCst), 2);
+    });
+}
+
+#[test]
+fn a_project_s_folder_is_planned_asleep_and_opened_there_by_its_first_call() {
+    let (_dir, base) = folder("waking-folder");
+    let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
+    let project = base.canonicalize().unwrap().join("home/app");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("notes.txt"), "kept").unwrap();
+    block_on!(async {
+        let home = waking(&base, &wakes, &again);
+        let path = project.to_string_lossy().into_owned();
+        let sources = Sources::Folder { path: path.clone() };
+        let opened = home
+            .computers
+            .open(home.home.computer, &sources)
+            .await
+            .unwrap();
+        assert_eq!(opened.root, path);
+        assert_eq!(wakes.load(Ordering::SeqCst), 0, "planning wakes nothing");
+        let read = home.computers.read(opened.id, "notes.txt").await.unwrap();
+        assert_eq!(read, Bytes::new(b"kept"));
+        assert_eq!(wakes.load(Ordering::SeqCst), 1, "its first call wakes it");
+
+        // Gone from the computer, it says so in plain words at the first call that needs it.
+        std::fs::remove_dir_all(&project).unwrap();
+        let gone = home
+            .computers
+            .open(home.home.computer, &sources)
+            .await
+            .unwrap();
+        let refused = home.computers.read(gone.id, "notes.txt").await;
+        assert!(
+            matches!(&refused, Err(ComputerError::NotFound(m))
+                if m.starts_with(&format!("this project's folder, {path}, isn't on your computer"))),
+            "{refused:?}"
+        );
     });
 }
 

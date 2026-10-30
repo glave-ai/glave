@@ -289,8 +289,9 @@ where
 
     /// Answers `project/create` with a folder for a person with a computer of their own, whose
     /// `home` there it is: the project `new`, its folder made on that computer (a repository
-    /// cloned there, or an empty one), which wakes it. A folder there is no other project's, so
-    /// the project is always new.
+    /// cloned there, or an empty one), which wakes it, and what its threads open with read
+    /// there and kept, so they never wake it to read it. A folder there is no other project's,
+    /// so the project is always new.
     async fn create_at_home(
         &self,
         org: OrgId,
@@ -304,6 +305,11 @@ where
             org,
             project: project.id,
         };
+        let scope = own_scope(at);
+        self.inner
+            .harness
+            .keep_instructions(scope, home, &root)
+            .await;
         let checkout = Checkout {
             computer: home.info().computer.as_uuid(),
             path: root,

@@ -1,8 +1,8 @@
 //! People's computers on a real cluster, as CI's `kind` job runs them (`GLAVE_TEST_KUBE=1`, a
-//! real glave and glave's computer image): planned, and a chat's folder planned on it, nothing runs; the first
-//! commands that need it share one wake and one Pod, the next finds it awake, and nothing is
-//! left once it is gone; held by a turn it stays awake, unasked it sleeps on its own, and a
-//! turn's command wakes it again on the same disk.
+//! real glave and glave's computer image): planned, and a chat's and a project's folder planned
+//! on it, nothing runs; the first commands that need it share one wake and one Pod, the next
+//! finds it awake, and nothing is left once it is gone; held by a turn it stays awake, unasked
+//! it sleeps on its own, and a turn's command wakes it again on the same disk.
 
 use std::time::Instant;
 
@@ -44,18 +44,16 @@ fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
 
         let pod = format!("glave-computer-{key}");
 
-        // Planned, a chat's folder on it too: nothing asked of the cluster.
+        // Planned, a chat's folder and a project's on it too: nothing asked of the cluster.
         let home = people.home(&key).unwrap();
-        let chat = home
-            .computers
-            .open(
-                home.home.computer,
-                &Sources::Scratch {
-                    name: "chat".into(),
-                    owner: None,
-                },
-            )
-            .await;
+        let scratch = Sources::Scratch {
+            name: "chat".into(),
+            owner: None,
+        };
+        let chat = home.computers.open(home.home.computer, &scratch).await;
+        let path = "/home/glave/glave/app".to_owned();
+        let folder = Sources::Folder { path: path.clone() };
+        let project = home.computers.open(home.home.computer, &folder).await;
         let asleep = phase(&cluster, &pod).await;
         // Two calls that need it at once: one wake, one Pod.
         let waking = Instant::now();
@@ -83,6 +81,7 @@ fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
             at_once.as_millis()
         );
         assert_eq!(asleep, None, "planning wakes nothing");
+        assert_eq!(project.unwrap().root, path);
         assert_eq!(chat.unwrap().root, "/home/glave/.glave/scratch/chat");
         assert_eq!(
             first.unwrap().trim(),

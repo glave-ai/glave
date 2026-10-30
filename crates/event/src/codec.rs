@@ -12,17 +12,17 @@ use crate::payload::{
     BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
     CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
     EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
-    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MemoryEdited, MemoryForgotten,
-    MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded, ModelChosen,
-    ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen, PersonJoined,
-    PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected,
-    ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished, SignupStarted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided,
-    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog,
-    certificate, chosen, command, connection, credential, gateway, goal, grouping, hook, language,
-    memory, message, model, passkey, people, plan, project, provider, remembering, signup,
-    standing, task, thread, tool, trust, turn, workspace,
+    InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MemoryEdited,
+    MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
+    ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
+    PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
+    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished,
+    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
+    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake,
+    browser, catalog, certificate, chosen, command, connection, credential, gateway, goal,
+    grouping, hook, instructions, language, memory, message, model, passkey, people, plan, project,
+    provider, remembering, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -81,6 +81,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (connection::REMOVED, 1),
     (project::FOLDER_SET, 1),
     (project::REMOVED, 1),
+    (instructions::READ, 1),
     (trust::DECIDED, 1),
     (browser::SIGNED_IN, 1),
     (browser::USED, 1),
@@ -160,6 +161,7 @@ pub enum Body {
     ConnectionRemoved(ConnectionRemoved),
     ProjectFolderSet(ProjectFolderSet),
     ProjectRemoved(ProjectRemoved),
+    InstructionsRead(InstructionsRead),
     TrustDecided(TrustDecided),
     BrowserSignedIn(BrowserSignedIn),
     BrowserUsed(BrowserUsed),
@@ -354,6 +356,7 @@ impl Event {
             Body::ConnectionRemoved(payload) => encode(header, payload),
             Body::ProjectFolderSet(payload) => encode(header, payload),
             Body::ProjectRemoved(payload) => encode(header, payload),
+            Body::InstructionsRead(payload) => encode(header, payload),
             Body::TrustDecided(payload) => encode(header, payload),
             Body::BrowserSignedIn(payload) => encode(header, payload),
             Body::BrowserUsed(payload) => encode(header, payload),
@@ -376,16 +379,23 @@ impl Event {
             Body::InviteRevoked(payload) => encode(header, payload),
             Body::SignupStarted(payload) => encode(header, payload),
             Body::SignupFinished(payload) => encode(header, payload),
-            Body::Unknown(unknown) => Ok(RawEvent {
-                glave: ENVELOPE_VERSION,
-                id: header.id,
-                thread: header.thread,
-                seq: header.seq,
-                at: header.at,
-                kind: unknown.kind.clone(),
-                v: unknown.v,
-                data: unknown.data.clone(),
-            }),
+            Body::Unknown(unknown) => Ok(unknown.raw(header)),
+        }
+    }
+}
+
+impl Unknown {
+    /// The event as it was read, under `header`.
+    fn raw(&self, header: Header) -> RawEvent {
+        RawEvent {
+            glave: ENVELOPE_VERSION,
+            id: header.id,
+            thread: header.thread,
+            seq: header.seq,
+            at: header.at,
+            kind: self.kind.clone(),
+            v: self.v,
+            data: self.data.clone(),
         }
     }
 }
@@ -438,6 +448,9 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         project::REMOVED => {
             project::decode_removed(version, data).map(|r| r.map(Body::ProjectRemoved))
+        }
+        instructions::READ => {
+            instructions::decode_read(version, data).map(|r| r.map(Body::InstructionsRead))
         }
         trust::DECIDED => trust::decode_decided(version, data).map(|r| r.map(Body::TrustDecided)),
         browser::SIGNED_IN => {

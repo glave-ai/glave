@@ -1,10 +1,10 @@
 //! A person's computer as the harness holds it while it may be asleep (`specs/computers.md`,
-//! decision 6): a chat that needs no computer never wakes it. Its home and the scratch folders
-//! opened from it are planned without asking the computer anything, at the roots that computer
-//! puts them at; the first call that needs the computer (a command, a file read, written or
-//! searched) wakes it, opens the workspace there and goes on. A computer that slept and woke
-//! since opens it again. Anything else opened on it (a folder, a worktree, a clone) needs the
-//! computer at once, and wakes it.
+//! decision 6): a chat or a thread that needs no computer never wakes it. Its home, the scratch
+//! folders and the folders (a project's) opened from it are planned without asking the computer
+//! anything, at the roots that computer puts them at; the first call that needs the computer (a
+//! command, a file read, written or searched) wakes it, opens the workspace there and goes on. A
+//! computer that slept and woke since opens it again. Anything else opened on it (a worktree, a
+//! clone, a new project's folder) needs the computer at once, and wakes it.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -223,10 +223,22 @@ impl Waking {
         let info = if workspace == self.home.id {
             awake.home.clone()
         } else if reopens(&planned.info.sources) {
-            awake
+            match awake
                 .computers
                 .open(awake.home.computer, &planned.info.sources)
-                .await?
+                .await
+            {
+                Err(ComputerError::NotFound(_))
+                    if matches!(planned.info.sources, Sources::Folder { .. }) =>
+                {
+                    return Err(ComputerError::NotFound(format!(
+                        "this project's folder, {}, isn't on your computer anymore; make a new \
+                         project there to go on",
+                        planned.info.root
+                    )));
+                }
+                opened => opened?,
+            }
         } else {
             return Err(ComputerError::Unsupported(
                 "this workspace was on your computer before it slept and cannot be made again \
@@ -342,8 +354,9 @@ impl Computers for Waking {
         ))))
     }
 
-    /// A scratch folder is planned at once, at the root the computer makes it at; anything
-    /// else is opened on the computer, woken for it.
+    /// A scratch folder or a folder is planned at once, at the root the computer opens it at:
+    /// a scratch folder where it makes them, a folder at its own path, which glave keeps as
+    /// that computer named it. Anything else is opened on the computer, woken for it.
     fn open<'a>(
         &'a self,
         computer: ComputerId,
@@ -353,10 +366,15 @@ impl Computers for Waking {
             if computer != self.home.computer {
                 return Err(ComputerError::NotFound(format!("no computer {computer}")));
             }
-            if let Sources::Scratch { name, .. } = sources {
+            let root = match sources {
+                Sources::Scratch { name, .. } => Some(format!("{}/{name}", self.scratch)),
+                Sources::Folder { path } => Some(path.clone()),
+                _ => None,
+            };
+            if let Some(root) = root {
                 let info = WorkspaceInfo {
                     id: WorkspaceId::from_uuid(crate::local::new_id()?),
-                    root: format!("{}/{name}", self.scratch),
+                    root,
                     sources: sources.clone(),
                     ..self.home.clone()
                 };
