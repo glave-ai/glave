@@ -107,7 +107,7 @@ fn on_a_shared_computer_an_account_is_never_the_local_person_and_links_are_their
                 None => web,
             };
             let told = asked(&mut theirs, &Request::Discover {}).await;
-            assert_ne!(told["role"], json!("owner"), "at {door}: {told}");
+            assert_eq!(told["role"], json!("member"), "at {door}: {told}");
             let refused = asked(&mut theirs, &Request::SigninLink {}).await;
             assert!(
                 refused.is_number(),

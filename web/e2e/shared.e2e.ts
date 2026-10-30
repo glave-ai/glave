@@ -35,8 +35,10 @@ test('on a shared computer, the owner invites someone, who joins, and is given a
   await expect(byTestId(page, 'nav-admin')).toHaveCount(0);
   await byTestId(page, 'nav-invite').click();
   await byTestId(page, 'invite-make').click();
-  const link = await byTestId(page, 'invite-link').inputValue();
-  expect(link.startsWith(`${sharedOrigin(site)}/#invite=`)).toBe(true);
+  const made = byTestId(page, 'invite-link');
+  await expect(made).toHaveValue(/#invite=/u);
+  const link = await made.inputValue();
+  expect(new URL(link).origin).toBe(sharedOrigin(site));
   await byTestId(page, 'invite-done').click();
 
   // In a browser of their own, the person invited makes a passkey and joins.

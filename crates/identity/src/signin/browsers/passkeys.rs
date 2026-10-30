@@ -188,6 +188,15 @@ impl Browsers {
         }
     }
 
+    /// Whether `kept` was made at the server's public origin, so the sessions it began sign
+    /// in through that origin too. Told by the relying party in use, never by its name: people
+    /// who share a computer reach it at `http://localhost:<port>`, the name its own browsers use.
+    pub(super) fn made_public(&self, kept: &KeptPasskey) -> bool {
+        self.relying
+            .get()
+            .is_some_and(|relying| matches!(relying.party, Party::Public) && relying.made(kept))
+    }
+
     /// Where a browser on this computer makes and uses passkeys, when the server makes them
     /// here rather than at a public origin: `http://localhost:<port>`.
     pub fn passkeys_here(&self) -> Option<String> {

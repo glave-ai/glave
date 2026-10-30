@@ -338,7 +338,7 @@ impl Browsers {
             state
                 .passkeys
                 .iter()
-                .any(|kept| kept.id == passkey && kept.public())
+                .any(|kept| kept.id == passkey && self.made_public(kept))
         });
         Some((session.id, session.used, public))
     }
