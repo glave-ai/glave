@@ -12,7 +12,7 @@
 //! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
 //! binary.
 
-use std::io::IsTerminal as _;
+use std::io::{ErrorKind, IsTerminal as _};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -75,35 +75,20 @@ pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> any
         SignIn::new(trust, Box::new(SystemClock))?.with_local(token.clone())
     };
     let site = site(args)?;
-    let listener = match TcpListener::bind(address).await {
-        Ok(listener) => listener,
-        // The usual port, free when it was looked at and taken since, as by a second server
-        // starting beside this one (which then finds the lock held): any free one, as when it
-        // was taken before.
-        Err(error)
-            if error.kind() == std::io::ErrorKind::AddrInUse
-                && address.ip().is_loopback()
-                && address.port() == crate::server::PORT =>
-        {
-            let any = SocketAddr::new(address.ip(), 0);
-            TcpListener::bind(any)
-                .await
-                .with_context(|| format!("could not listen on {any}"))?
-        }
-        Err(error) => return Err(error).with_context(|| format!("could not listen on {address}")),
-    };
+    // Whether `localhost` is the origin people share this computer by.
+    let shared = reach
+        .origin
+        .as_ref()
+        .is_some_and(|origin| origin.here().is_some());
+    let listener = listen(address, shared).await?;
     let bound = listener.local_addr()?;
     served_at(bound, reach.origin.as_ref())?;
-    let beside = beside(bound).await;
+    let beside = localhost_beside(bound, shared).await?;
     let folder = crate::home::private().await?;
     keep(&folder.join(TOKEN_FILE), token.reveal())?;
     // `localhost`, where passkeys work and this server alone answers; else its address. Where
     // `localhost` is the origin people share this computer by, the person on it signs in at
     // its address, the door that is theirs alone.
-    let shared = reach
-        .origin
-        .as_ref()
-        .is_some_and(|origin| origin.here().is_some());
     let reached = match beside {
         Some(_) if !shared => format!("http://localhost:{}", bound.port()),
         _ => format!("http://{}", here(bound)),
@@ -202,11 +187,13 @@ impl Http {
 /// it, `origin`: sign-ins would cross a network in the clear. glave answers on loopback alone
 /// until HTTPS is in place.
 fn within_reach(address: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::Result<()> {
-    if origin.is_some_and(|origin| origin.here().is_some()) && !is_loopback(address.ip()) {
+    if origin.is_some_and(|origin| origin.here().is_some())
+        && address.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST)
+    {
         bail!(
-            "glave would listen on {address}, beyond this computer, though its origin is \
-             this computer's localhost, which only people at this computer reach: listen on \
-             127.0.0.1, or set an https origin people reach from elsewhere"
+            "glave would listen on {address}, though its origin is this computer's localhost, \
+             which a browser reaches at 127.0.0.1 and ::1 alone: listen on 127.0.0.1, which \
+             glave holds at ::1 too, or set an https origin people reach from elsewhere"
         );
     }
     if is_loopback(address.ip()) || origin.is_some() {
@@ -330,14 +317,17 @@ async fn link(server: &Glave) -> anyhow::Result<Secret> {
 }
 
 /// A setup link for a device elsewhere, from `server`, when it is reached from there and no
-/// passkey signs anyone in yet.
+/// passkey signs anyone in yet; none where people share this computer at `localhost`, where the
+/// person on it signs in at its address.
 async fn first_setup(server: &Glave) -> anyhow::Result<Option<String>> {
     let Reply::Server(info) = server.request(Request::Discover {}).await? else {
         return Ok(None);
     };
+    let elsewhere =
+        |origin: &String| PublicOrigin::parse(origin).is_some_and(|origin| origin.here().is_none());
     let Some(origin) = info
         .origin
-        .filter(|_| info.signin.contains(&SignInWay::Passkey))
+        .filter(|origin| elsewhere(origin) && info.signin.contains(&SignInWay::Passkey))
     else {
         return Ok(None);
     };
@@ -368,18 +358,54 @@ pub(crate) fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
         .with_context(|| format!("could not write {}", path.display()))
 }
 
-/// A listener at ::1 beside one `bound` at 127.0.0.1, at the same port, so `localhost`, which
-/// stands for both, reaches this server alone; none for any other, or when that is taken.
-async fn beside(bound: SocketAddr) -> Option<TcpListener> {
-    if bound.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {
-        return None;
+/// A listener on `address`. Where it is the usual port, free when it was looked at and taken
+/// since, as by a second server starting beside this one (which then finds the lock held): any
+/// free one, as when it was taken before; but never where `shared`, whose origin names its port.
+async fn listen(address: SocketAddr, shared: bool) -> anyhow::Result<TcpListener> {
+    match TcpListener::bind(address).await {
+        Ok(listener) => Ok(listener),
+        Err(error)
+            if error.kind() == ErrorKind::AddrInUse
+                && !shared
+                && address.ip().is_loopback()
+                && address.port() == crate::server::PORT =>
+        {
+            let any = SocketAddr::new(address.ip(), 0);
+            TcpListener::bind(any)
+                .await
+                .with_context(|| format!("could not listen on {any}"))
+        }
+        Err(error) => Err(error).with_context(|| format!("could not listen on {address}")),
     }
-    TcpListener::bind(SocketAddr::new(
-        IpAddr::V6(Ipv6Addr::LOCALHOST),
-        bound.port(),
-    ))
-    .await
-    .ok()
+}
+
+/// The listener at ::1 beside one `bound` at 127.0.0.1, so `localhost`, which stands for
+/// both, reaches this server alone; none for any other address, or when it can't be had. Where
+/// `localhost` is the origin people share this computer by (`shared`), glave must hold it, so
+/// no other program answers a browser there, unless this computer has no ::1 at all.
+async fn localhost_beside(bound: SocketAddr, shared: bool) -> anyhow::Result<Option<TcpListener>> {
+    match beside(bound).await {
+        Ok(beside) => Ok(beside),
+        Err(error) if shared && error.kind() != ErrorKind::AddrNotAvailable => Err(error)
+            .with_context(|| {
+                format!(
+                    "could not listen on [::1]:{port}, where a browser may reach \
+                     localhost:{port} too, so another program would answer people there: stop \
+                     what listens there, or serve at another port and set the origin to it",
+                    port = bound.port()
+                )
+            }),
+        Err(_) => Ok(None),
+    }
+}
+
+/// A listener at ::1 beside one `bound` at 127.0.0.1, at the same port; none for any other.
+async fn beside(bound: SocketAddr) -> std::io::Result<Option<TcpListener>> {
+    if bound.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {
+        return Ok(None);
+    }
+    let v6 = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), bound.port());
+    TcpListener::bind(v6).await.map(Some)
 }
 
 /// The address a browser on this computer reaches `bound` at: itself, or loopback for a
@@ -402,11 +428,18 @@ mod tests {
         glave_ports::block_on!(async {
             let v4 = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let bound = v4.local_addr().unwrap();
-            let v6 = beside(bound).await.unwrap();
+            let v6 = localhost_beside(bound, false).await.unwrap().unwrap();
             let expected = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), bound.port());
             assert_eq!(v6.local_addr().unwrap(), expected);
-            assert!(beside(bound).await.is_none(), "taken there: no localhost");
-            assert!(beside("0.0.0.0:4180".parse().unwrap()).await.is_none());
+            let taken = localhost_beside(bound, false).await.unwrap();
+            assert!(taken.is_none(), "taken there: no localhost");
+            let refused = localhost_beside(bound, true).await.unwrap_err();
+            assert!(
+                format!("{refused:#}").contains("another program"),
+                "shared, it must be glave's: {refused:#}"
+            );
+            let any = "0.0.0.0:4180".parse().unwrap();
+            assert!(localhost_beside(any, true).await.unwrap().is_none());
         });
     }
 
@@ -472,7 +505,8 @@ mod tests {
         let at = |text: &str| text.parse::<SocketAddr>().unwrap();
         let shared = PublicOrigin::parse("http://localhost:4180").unwrap();
         assert!(within_reach(at("127.0.0.1:4180"), Some(&shared)).is_ok());
-        for beyond in ["0.0.0.0:4180", "[::]:4180", "192.168.1.2:4180"] {
+        let others = ["[::1]:4180", "127.0.0.2:4180", "0.0.0.0:4180", "[::]:4180"];
+        for beyond in others.into_iter().chain(["192.168.1.2:4180"]) {
             let refused = within_reach(at(beyond), Some(&shared))
                 .unwrap_err()
                 .to_string();

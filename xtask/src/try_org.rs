@@ -56,18 +56,25 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let served = lock.and_then(|_held| serve(&root, &folder));
     let removed = std::fs::remove_dir_all(&folder)
         .map_err(|err| format!("could not remove {}: {err}", folder.display()));
+    // The folder of runs too, once no other run's is in it.
+    let _ = std::fs::remove_dir(&runs);
     served.and(removed)
 }
 
-/// Serves glave from `folder` until Ctrl-C, a hang-up, xtask's parent's end or its own.
+/// Serves glave from a folder in `folder` until Ctrl-C, a hang-up, xtask's parent's end or its
+/// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`).
 fn serve(root: &Path, folder: &Path) -> Result<(), String> {
     let port = free_port()?;
     let origin = format!("http://localhost:{port}");
-    std::fs::write(
-        folder.join("config.toml"),
-        format!("[serve]\norigin = \"{origin}\"\n"),
-    )
-    .map_err(|err| format!("could not write glave's settings: {err}"))?;
+    let home = folder.join("home");
+    std::fs::create_dir_all(&home)
+        .and_then(|()| {
+            std::fs::write(
+                home.join("config.toml"),
+                format!("[serve]\norigin = \"{origin}\"\n"),
+            )
+        })
+        .map_err(|err| format!("could not write glave's settings: {err}"))?;
     let address = format!("127.0.0.1:{port}");
     let web = root.join("web/dist/app/browser");
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
@@ -92,7 +99,7 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
                 std::env::vars_os()
                     .filter(|(name, _)| !name.to_string_lossy().starts_with("GLAVE_")),
             )
-            .env("GLAVE_HOME", folder)
+            .env("GLAVE_HOME", &home)
             .env("GLAVE_MODEL", NO_MODEL)
             .current_dir(root)
             .stdin(Stdio::null());

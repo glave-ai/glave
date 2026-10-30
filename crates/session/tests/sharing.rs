@@ -81,13 +81,17 @@ fn on_a_shared_computer_an_account_is_never_the_local_person_and_links_are_their
         assert_eq!(refused, json!(code::NO_SIGN_IN), "{refused}");
         let mut at_address = Web::new(&served, None);
         let redeemed = asked(&mut at_address, &Request::SigninRedeem { code }).await;
-        assert!(redeemed["session"].is_string(), "{redeemed}");
-        // Nor does the local token sign anyone in at the shared origin.
-        let mut token_there = Web::new(&served, Some(token.reveal().to_owned())).reaching(&origin);
-        let refused = asked(&mut token_there, &Request::Discover {}).await;
-        assert!(refused.get("role").is_none(), "{refused}");
-        let refused = asked(&mut token_there, &Request::SigninLink {}).await;
-        assert_eq!(refused, json!(code::NO_SIGN_IN));
+        let link_session = redeemed["session"].as_str().map(str::to_owned);
+        assert!(link_session.is_some(), "{redeemed}");
+        // Nor does the session it began, or the local token, sign anyone in at the shared origin.
+        for (key, kept) in [
+            ("a link's session", link_session),
+            ("the local token", Some(token.reveal().to_owned())),
+        ] {
+            let mut there = Web::new(&served, kept).reaching(&origin);
+            let refused = asked(&mut there, &Request::SigninLink {}).await;
+            assert_eq!(refused, json!(code::NO_SIGN_IN), "{key}");
+        }
 
         // Someone invited makes a passkey at the shared origin: an account, never the owner.
         let invited = Request::InviteCreate {

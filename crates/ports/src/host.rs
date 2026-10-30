@@ -78,7 +78,9 @@ impl PublicOrigin {
         // An IPv6 address is bracketed; an IPv4 one parses.
         let address = name.starts_with('[') || name.parse::<IpAddr>().is_ok();
         let public = scheme == "https" && !address && !is_this_computer(name);
-        let here = scheme == "http" && name == "localhost" && port.is_some();
+        let here = scheme == "http"
+            && name == "localhost"
+            && port.is_some_and(|port| port.parse::<u16>().is_ok_and(|port| port != 0));
         (public || here).then_some(Self { origin })
     }
 
@@ -146,6 +148,8 @@ mod tests {
             "http://127.0.0.1:4180",
             "http://[::1]:4180",
             "http://localhost:4180/app",
+            "http://localhost:99999",
+            "http://localhost:0",
         ] {
             assert!(PublicOrigin::parse(refused).is_none(), "{refused}");
         }
