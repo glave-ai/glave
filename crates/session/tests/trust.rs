@@ -342,6 +342,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             trace: None,
             profile: None,
             org: None,
+            from: None,
         };
         let started = server
             .request_as(&elsewhere, thread_start(scope().project()))

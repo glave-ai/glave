@@ -403,6 +403,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::InviteRevoked(_) => "invite.revoked",
             Body::SignupStarted(_) => "signup.started",
             Body::SignupFinished(_) => "signup.finished",
+            Body::MailAsked(_) => "mail.asked",
             Body::CreditsAdded(_) => "credits.added",
             Body::CreditsLimitSet(_) => "credits.limit.set",
             Body::CreditsCharged(_) => "credits.charged",

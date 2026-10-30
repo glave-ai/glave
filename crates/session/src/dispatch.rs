@@ -184,8 +184,12 @@ where
                 LinkKind::Signup => self.link_options(&code, Emailed::Signup).await,
                 LinkKind::Recovery => self.link_options(&code, Emailed::Recovery).await,
             },
-            Request::SignupStart { email } => self.start_link(&email, Emailed::Signup).await,
-            Request::RecoveryStart { email } => self.start_link(&email, Emailed::Recovery).await,
+            Request::SignupStart { email } => {
+                self.start_link(caller, &email, Emailed::Signup).await
+            }
+            Request::RecoveryStart { email } => {
+                self.start_link(caller, &email, Emailed::Recovery).await
+            }
             Request::PasskeyCreate {
                 ceremony,
                 credential,

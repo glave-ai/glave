@@ -26,6 +26,7 @@ pub use self::site::{Files, NoSite, Site, Stored};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
+use std::net::IpAddr;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,7 +41,7 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::task::JoinSet;
 
 use self::body::Answer;
-use self::hosts::door;
+use self::hosts::{client, door};
 use self::listen::{Listening, accept, connected};
 use crate::connections::CALLBACK;
 use crate::dispatch::Answered;
@@ -136,7 +137,7 @@ where
         let (Ok((stream, peer)), listening) = accepted else {
             continue;
         };
-        let peer = peer.ip();
+        let (peer, secure) = (peer.ip(), listening.handshakes().is_some());
         let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
         let (hosts, tls) = (Arc::clone(&listening.names), listening.handshakes());
         connections.spawn(async move {
@@ -160,7 +161,7 @@ where
                             let accepted = request.headers().get(header::ACCEPT_ENCODING);
                             site.answer(request.uri().path(), accepted).await
                         }
-                        _ => answer(&server, &signin, door, request).await,
+                        _ => answer(&server, &signin, (door, peer, secure), request).await,
                     };
                     Ok::<_, Infallible>(answered)
                 }
@@ -182,11 +183,12 @@ where
     Ok(())
 }
 
-/// Answers one HTTP request, which came in at `door`.
+/// Answers one HTTP request, which came in at `door` from `peer`, to a listener serving HTTPS
+/// of its own when `secure`.
 async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     signin: &SignIn,
-    door: Door,
+    (door, peer, secure): (Door, IpAddr, bool),
     request: HttpRequest<Incoming>,
 ) -> Response<Answer>
 where
@@ -204,6 +206,7 @@ where
             .insert(header::ALLOW, HeaderValue::from_static("POST"));
         return refused;
     }
+    let from = client(request.headers(), peer, secure);
     let token = bearer(request.headers()).map(str::to_owned);
     // A value that is no text names no organization the caller is in, and is refused as one.
     let named = request
@@ -256,6 +259,10 @@ where
             Ok(()) => glave_ports::Caller::default(),
             Err(refused) => return unauthorized(&refused, asked.as_deref()),
         },
+    };
+    let caller = glave_ports::Caller {
+        from: Some(from),
+        ..caller
     };
     dispatch(server, &caller, id, request, asked.as_deref()).await
 }

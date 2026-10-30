@@ -98,6 +98,8 @@ sentences! {
     MailedJustNow = "mailed-just-now"
         "glave emailed that address a moment ago: wait a minute, then try again",
     MailNotSent = "mail-not-sent" "the email could not be sent: try again in a moment",
+    AskedTooOften = "asked-too-often"
+        "too many emails were asked for from your network in the last hour: try again later",
     NoSignups = "no-signups" "this glave doesn't take sign-ups: ask its owner for an invite",
     SignupGone = "signup-gone"
         "that sign-up link was used already or has expired: sign up again for a new one",

@@ -5,12 +5,13 @@
 //! files; so is one from a page other than the server's own: at the name the request came to,
 //! or the public origin. A listener on other addresses sits behind a proxy whose names it
 //! cannot know, so it checks no `Host`; with a public origin it refuses every other page, and
-//! without one it checks nothing.
+//! without one it checks nothing. And where a request came from, which a proxy in front of
+//! glave names (`client`).
 
 use std::net::{IpAddr, SocketAddr};
 
 use glave_identity::Door;
-use glave_ports::host::{PublicOrigin, is_loopback, is_this_computer};
+use glave_ports::host::{PublicOrigin, is_inside, is_loopback, is_this_computer};
 use hyper::header::{self, HeaderMap};
 
 /// What a listener answers to.
@@ -98,6 +99,39 @@ pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpA
     }
 }
 
+/// The network address a request with `headers` from `peer` came from, to a listener serving
+/// HTTPS of its own when `secure`. Over plain HTTP, a peer on this computer or on a private
+/// network is a proxy: a tunnel here, or what serves the origin's HTTPS, which glave listens
+/// beyond loopback only behind. The request came from the last address that proxy names in
+/// `X-Forwarded-For`, the one it took the connection from. Any other peer is the client, and
+/// what it says of where it came from is not believed.
+pub(crate) fn client(headers: &HeaderMap, peer: IpAddr, secure: bool) -> IpAddr {
+    let peer = peer.to_canonical();
+    if secure || !(is_loopback(peer) || is_inside(peer)) {
+        return peer;
+    }
+    let named = headers
+        .get_all(FORWARDED_FOR)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .next_back()
+        .and_then(|last| address(last.trim()));
+    named.map_or(peer, |named| named.to_canonical())
+}
+
+/// The address `named` is, written bare or with a port: `203.0.113.7`, `203.0.113.7:4321`,
+/// `2001:db8::1` or `[2001:db8::1]:4321`.
+fn address(named: &str) -> Option<IpAddr> {
+    named
+        .parse()
+        .ok()
+        .or_else(|| named.parse::<SocketAddr>().ok().map(|at| at.ip()))
+}
+
+/// The header a proxy names the address it took a connection from in, after any it was told.
+const FORWARDED_FOR: &str = "x-forwarded-for";
+
 /// Whether `host`, a `Host` header's name and any port, names this computer.
 fn here(host: &str) -> bool {
     let name = match host.rsplit_once(':') {
@@ -121,6 +155,38 @@ mod tests {
             }
         }
         headers
+    }
+
+    #[test]
+    fn a_request_comes_from_where_a_proxy_here_or_inside_says_and_else_from_its_peer() {
+        let from = |peer: &str, forwarded: &[&str], secure: bool| {
+            let mut headers = HeaderMap::new();
+            for value in forwarded {
+                headers.append(FORWARDED_FOR, HeaderValue::from_str(value).unwrap());
+            }
+            client(&headers, peer.parse().unwrap(), secure).to_string()
+        };
+        // A tunnel here, or a proxy on a private network: the address it took it from, last.
+        assert_eq!(from("127.0.0.1", &["203.0.113.7"], false), "203.0.113.7");
+        assert_eq!(
+            from("172.18.0.3", &["198.51.100.1, 203.0.113.7"], false),
+            "203.0.113.7",
+            "what the client said first is not believed"
+        );
+        assert_eq!(
+            from("::1", &["10.0.0.1", "[2001:db8::7]:4321"], false),
+            "2001:db8::7"
+        );
+        assert_eq!(
+            from("::ffff:127.0.0.1", &["203.0.113.7:80"], false),
+            "203.0.113.7"
+        );
+        // Named nowhere, or nothing it can read: the proxy itself.
+        assert_eq!(from("127.0.0.1", &[], false), "127.0.0.1");
+        assert_eq!(from("10.1.2.3", &["unknown"], false), "10.1.2.3");
+        // Glave's own HTTPS, or a peer on the internet: the peer, whatever it says.
+        assert_eq!(from("127.0.0.1", &["203.0.113.7"], true), "127.0.0.1");
+        assert_eq!(from("203.0.113.9", &["10.0.0.1"], false), "203.0.113.9");
     }
 
     #[test]

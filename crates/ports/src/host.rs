@@ -9,7 +9,7 @@ mod metadata;
 use std::fmt;
 use std::net::IpAddr;
 
-pub use inside::INSIDE;
+pub use inside::{INSIDE, is_inside};
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any

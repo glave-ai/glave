@@ -136,6 +136,9 @@ where
             Some(to) => Some(self.sender(to)?),
             None => None,
         };
+        if sending.is_some() {
+            self.count_asked(caller).await?;
+        }
         let org = self.org_of(caller);
         let code = Secret::new(format!(
             "{}{TO}{}",
@@ -192,7 +195,7 @@ where
                     say(Language::English, &Sentence::InviteMailIgnore),
                 ),
             };
-            if self.send(mailer, &mail).await.is_err() {
+            if self.send(&*mailer, &mail).await.is_err() {
                 // An invite whose link reached no one is not left waiting.
                 self.revoke_invite(caller, created.invite).await?;
                 return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent));

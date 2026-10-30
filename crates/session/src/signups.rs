@@ -9,21 +9,21 @@
 //! of a cell opens each link once, counts each address's messages, and keeps no address of
 //! anyone who never finished.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, EventId, Header, OrgRole, PersonJoined, Principal, PrincipalId, Profile, RawEvent,
-    RoleSet, Secret, Seq, SignupFinished, SignupStarted, encode,
+    At, Body, EventId, Header, MailAsked, OrgRole, PersonJoined, Principal, PrincipalId, Profile,
+    RawEvent, RoleSet, Secret, Seq, SignupFinished, SignupStarted, encode,
 };
 use glave_identity::signin::{Proof, kept, one_time_code};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{BlobStore, EventLog, Mail, ModelProvider, OrgId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId, Scope};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Builder;
 
-use crate::mailing::just_now;
+use crate::mailing::{ASKED_WITHIN, just_now};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
@@ -44,14 +44,22 @@ const MOST_WAITING: usize = 10_000;
 /// What parts a sign-up's code: its secret, then the address it was sent to, in hex.
 const TO: char = '.';
 
-/// The sign-ups waiting, as far as this server has read its own organization's ledger.
+/// The sign-ups waiting, and the emails asked for within the last hour, as far as this server
+/// has read its own organization's ledger.
 #[derive(Debug, Default)]
 pub(crate) struct Signups {
     next: u64,
     /// By their codes' hashes: when each began, and where its link went and when it stops
     /// working, as hashes.
     waiting: BTreeMap<String, (Timestamp, SignupStarted)>,
+    /// When each email was asked for and from which networks, as their hashes, oldest first:
+    /// those within [`ASKED_WITHIN`] of the latest, [`MOST_ASKED`] at most.
+    asked: VecDeque<(Timestamp, MailAsked)>,
 }
+
+/// The most emails asked for that are counted at once: past it, the oldest are forgotten, so
+/// what is counted stays bounded and no flood of networks stops anyone else asking.
+const MOST_ASKED: usize = 100_000;
 
 impl Signups {
     fn apply(&mut self, raw: RawEvent) {
@@ -66,8 +74,34 @@ impl Signups {
             Body::SignupFinished(finished) => {
                 self.waiting.remove(&finished.hash);
             }
+            Body::MailAsked(asked) => {
+                let at = at.timestamp();
+                while self.asked.front().is_some_and(|(then, _)| {
+                    at.duration_since(*then) >= ASKED_WITHIN || self.asked.len() >= MOST_ASKED
+                }) {
+                    self.asked.pop_front();
+                }
+                self.asked.push_back((at, asked));
+            }
             _ => {}
         }
+    }
+
+    /// How many emails the network `asking` names asked for within [`ASKED_WITHIN`] of `now`,
+    /// and how many the networks of its wider block did, when it has one.
+    pub(crate) fn asked(&self, asking: &MailAsked, now: Timestamp) -> (usize, usize) {
+        let recent = self
+            .asked
+            .iter()
+            .filter(|(at, _)| now.duration_since(*at) < ASKED_WITHIN)
+            .map(|(_, asked)| asked);
+        recent.fold((0, 0), |(theirs, block), asked| {
+            let in_block = asking.within.is_some() && asked.within == asking.within;
+            (
+                theirs + usize::from(asked.from == asking.from),
+                block + usize::from(in_block),
+            )
+        })
     }
 
     /// Forgets those expired at `now`: nothing can open them.
@@ -132,12 +166,15 @@ where
             && self.inner.origin.is_some()
     }
 
-    /// Answers `signup/start` and `recovery/start`: a link of the kind `emailed` sent to
-    /// `email`, or, where the address has an account (for a sign-up) or none (to get back in,
-    /// where the server takes sign-ups), a note saying so; nothing when a message went there a
-    /// moment ago. The answer is the same either way, and so is what is recorded.
+    /// Answers `signup/start` and `recovery/start` for `caller`: a link of the kind `emailed`
+    /// sent to `email`, or, where the address has an account (for a sign-up) or none (to get
+    /// back in, where the server takes sign-ups), a note saying so; nothing when a message
+    /// went there a moment ago. The answer is the same either way, and so is what is recorded
+    /// and how long it takes: the message goes after it. Refused once the caller's network
+    /// asked for too many.
     pub(crate) async fn start_link(
         &self,
+        caller: &Caller,
         email: &str,
         emailed: Emailed,
     ) -> Result<Reply, ApiError> {
@@ -152,6 +189,7 @@ where
         }
         let accounts = self.accounts()?;
         let (mailer, origin, to) = self.sender(email)?;
+        self.count_asked(caller).await?;
         let has_account = accounts.with_email(&to).await?.is_some();
         let secret = one_time_code()?;
         let code = format!("{}{TO}{}", secret.expose(), hex(to.as_bytes()));
@@ -177,6 +215,7 @@ where
         // mail strangers.
         let noted = emailed == Emailed::Recovery && !has_account && !self.takes_signups();
         if !sending.load(Ordering::Relaxed) || noted {
+            self.send_later(mailer, None);
             return Ok(Reply::Done {});
         }
         let (subject, text) = link_mail(emailed, has_account, origin.as_str(), &code);
@@ -185,7 +224,7 @@ where
             subject: say(Language::English, &subject),
             text,
         };
-        self.send(mailer, &mail).await?;
+        self.send_later(mailer, Some(mail));
         Ok(Reply::Done {})
     }
 
@@ -342,7 +381,7 @@ where
 
     /// Appends what `make` makes of the sign-ups as they are then, after anything others wrote
     /// meanwhile: nothing when it makes nothing.
-    async fn record_signups<T: glave_event::Payload>(
+    pub(crate) async fn record_signups<T: glave_event::Payload>(
         &self,
         make: impl Fn(&Signups) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
@@ -452,4 +491,41 @@ fn unhex(text: &str) -> Option<String> {
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
         .collect();
     String::from_utf8(bytes?).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asked(from: &str, within: Option<&str>) -> MailAsked {
+        MailAsked {
+            from: from.to_owned(),
+            within: within.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_network_counts_its_own_and_a_block_every_network_in_it_within_the_hour() {
+        let now = Timestamp::from_second(1_800_000_000).unwrap();
+        let earlier = |seconds: i64| now.checked_sub(SignedDuration::from_secs(seconds)).unwrap();
+        let mut signups = Signups::default();
+        for (at, one) in [
+            (earlier(3_600), asked("a", Some("block"))),
+            (earlier(60), asked("a", Some("block"))),
+            (earlier(30), asked("b", Some("block"))),
+            (earlier(10), asked("c", None)),
+        ] {
+            signups.asked.push_back((at, one));
+        }
+        assert_eq!(
+            signups.asked(&asked("a", Some("block")), now),
+            (1, 2),
+            "an hour ago no more"
+        );
+        assert_eq!(
+            signups.asked(&asked("c", None), now),
+            (1, 0),
+            "no block, none counted"
+        );
+    }
 }
