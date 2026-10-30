@@ -9,7 +9,6 @@ const HOST: CredentialInfo = {
   forge: 'gitea',
   url: 'https://code.example.com',
   login: 'ana',
-  hint: 'wxyz',
 };
 
 describe('CredentialsService', () => {
@@ -22,7 +21,6 @@ describe('CredentialsService', () => {
       })
       .answer('credential/list', () => ({
         credentials: connected ? [HOST] : [],
-        device: true,
         install: 'https://github.com/apps/glave/installations/new',
       }));
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
@@ -32,7 +30,6 @@ describe('CredentialsService', () => {
       { url: 'https://code.example.com', token: 'gta_token' },
     ]);
     expect(credentials.accounts()).toEqual([HOST]);
-    expect(credentials.device()).toBe(true);
     expect(credentials.install()).toBe('https://github.com/apps/glave/installations/new');
   });
 
@@ -40,7 +37,7 @@ describe('CredentialsService', () => {
     const refused = new ApiError({ code: ErrorCode.HOST, message: 'no' });
     const fake = new FakeSession()
       .answer('credential/connect', refused)
-      .answer('credential/list', { credentials: [], device: false });
+      .answer('credential/list', { credentials: [] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const credentials = TestBed.inject(CredentialsService);
     await expect(credentials.connect('https://code.example.com', 'bad')).rejects.toBe(refused);
@@ -63,7 +60,7 @@ describe('CredentialsService', () => {
         polls += 1;
         return polls < 3 ? { flow: 'f1' } : { credential: github };
       })
-      .answer('credential/list', { credentials: [github], device: true });
+      .answer('credential/list', { credentials: [github] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const credentials = TestBed.inject(CredentialsService);
     const device = await credentials.start();
@@ -76,7 +73,7 @@ describe('CredentialsService', () => {
   });
 
   it('removes an account by its id', async () => {
-    const fake = new FakeSession().answer('credential/list', { credentials: [], device: false });
+    const fake = new FakeSession().answer('credential/list', { credentials: [] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     await TestBed.inject(CredentialsService).remove(HOST.id);
     expect(fake.paramsOf('credential/remove')).toEqual([{ credential: HOST.id }]);

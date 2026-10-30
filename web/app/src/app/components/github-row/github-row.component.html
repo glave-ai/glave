@@ -1,0 +1,100 @@
+<section class="card" data-testid="github" [attr.aria-label]="copy.github">
+  <div class="rows" role="list">
+    <app-service-row data-testid="github-row" [name]="copy.github">
+      @switch (state()) {
+        @case ('signing') {
+          <div class="signing glz-stack glz-gap-3" data-testid="github-signing">
+            <span class="detail">{{ copy.enter }}</span>
+            @if (code(); as code) {
+              <span class="code" data-testid="github-code">{{ code.code }}</span>
+              <div class="glz-row glz-gap-2">
+                <a
+                  glzButton
+                  variant="primary"
+                  size="sm"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="github-open"
+                  [href]="code.url"
+                  [glzCopy]="code.code"
+                >
+                  {{ copy.open }}
+                </a>
+                <button glzButton size="sm" data-testid="github-cancel" (click)="cancel()">
+                  {{ copy.cancel }}
+                </button>
+              </div>
+            }
+            <span class="detail" role="status">{{ copy.waiting }}</span>
+          </div>
+        }
+        @case ('connected') {
+          <span class="detail" data-testid="github-connected">{{ connected() }}</span>
+        }
+        @default {
+          <span class="detail">{{ copy.offer }}</span>
+        }
+      }
+      @switch (state()) {
+        @case ('connected') {
+          <div appServiceAction class="glz-row glz-gap-2">
+            @if (install(); as install) {
+              <a
+                glzButton
+                size="sm"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="github-repositories"
+                [href]="install"
+              >
+                {{ copy.repositories }}
+              </a>
+            }
+            <button glzButton size="sm" data-testid="github-disconnect" (click)="askGithub()">
+              {{ copy.disconnect }}
+            </button>
+          </div>
+        }
+        @case ('offer') {
+          <button
+            glzButton
+            appServiceAction
+            variant="primary"
+            size="sm"
+            data-testid="github-connect"
+            [disabled]="starting()"
+            (click)="signIn()"
+          >
+            {{ connectLabel() }}
+          </button>
+        }
+      }
+    </app-service-row>
+    @for (host of hosts(); track host.id) {
+      <app-service-row data-testid="git-host" [name]="host.name">
+        <span class="detail">{{ host.detail }}</span>
+        <button
+          glzButton
+          appServiceAction
+          size="sm"
+          data-testid="git-host-disconnect"
+          (click)="ask(host.id, host.name)"
+        >
+          {{ copy.disconnect }}
+        </button>
+      </app-service-row>
+    }
+  </div>
+  @if (problem(); as problem) {
+    <p class="problem" role="alert" data-testid="github-problem">{{ problem }}</p>
+  }
+</section>
+<glz-confirm-dialog
+  testId="github-disconnect-confirm"
+  danger
+  [heading]="disconnectHeading()"
+  [message]="copy.disconnectText"
+  [confirmLabel]="copy.disconnect"
+  [(open)]="confirming"
+  (decided)="decided($event)"
+/>

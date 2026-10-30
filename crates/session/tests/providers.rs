@@ -12,7 +12,7 @@ use glave_event::{ProviderId, ProviderKind, Secret};
 use glave_harness::Settings;
 use glave_ports::testing::any_secret;
 use glave_ports::{BoxFuture, Clock as _, Failure, SystemClock};
-use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code, hint};
+use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, Models, NewProvider, Providers, Refreshed};
 use serde_json::Value;
@@ -68,7 +68,6 @@ impl Providers for Accounts {
                 id: ProviderId::new(SystemClock.now(), [n + 1; 10]).unwrap(),
                 kind: new.kind,
                 url: new.url,
-                hint: hint(new.key.expose()),
                 models: vec!["fake-big".into(), "fake-small".into()],
             };
             self.kept.lock().unwrap().push(info.clone());
@@ -216,7 +215,7 @@ async fn first_run(client: &mut impl Client) {
         "never answered back: {connected}"
     );
     assert_eq!(connected["provider"]["kind"], "openai");
-    assert_eq!(connected["provider"]["hint"], hint(&good).unwrap());
+    assert!(connected["provider"].get("hint").is_none(), "no ending");
     let models = client.call(Request::ModelList {}).await.unwrap();
     assert_eq!(ids(&models), ["fake-big", "fake-small"]);
     assert_eq!(models["models"][0]["default"], true);

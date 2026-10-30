@@ -26,7 +26,7 @@ describe('SettingsComponent', () => {
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
       .answer('provider/list', { providers: [] })
-      .answer('credential/list', { credentials: [], device: false });
+      .answer('credential/list', { credentials: [] });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsComponent);
@@ -73,18 +73,17 @@ describe('SettingsComponent', () => {
     expect(navigate).toHaveBeenCalledWith('/sign-in');
   });
 
-  it('lists the model accounts by service and key ending, and removes one once confirmed', async () => {
+  it("lists the model accounts by service, never a key's ending, and removes one once confirmed", async () => {
     const account = {
       id: '01900000-0000-7000-8000-000000000301',
       kind: 'openai',
-      hint: 'a1b2',
       models: ['gpt-6-luna'],
     } as const;
     let kept = true;
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
       .answer('provider/list', () => ({ providers: kept ? [account] : [] }))
-      .answer('credential/list', { credentials: [], device: false })
+      .answer('credential/list', { credentials: [] })
       .answer('provider/remove', () => {
         kept = false;
         return {};
@@ -98,7 +97,7 @@ describe('SettingsComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     const row = root.querySelector('[data-testid="settings-account"]');
     expect(row?.textContent).toContain('OpenAI');
-    expect(row?.textContent).toContain('Key ending a1b2');
+    expect(row?.textContent).not.toContain('Key ending');
     expect(
       root.querySelector('[data-testid="settings-account-change"]')?.getAttribute('href'),
     ).toBe('/connect?kind=openai');
@@ -120,14 +119,13 @@ describe('SettingsComponent', () => {
     const account = {
       id: '01900000-0000-7000-8000-000000000302',
       kind: 'openrouter',
-      hint: 'c3d4',
       models: ['anthropic/claude-haiku-5.5', 'openai/gpt-6-luna'],
     } as const;
     let refreshes = 0;
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
       .answer('provider/list', { providers: [account] })
-      .answer('credential/list', { credentials: [], device: false })
+      .answer('credential/list', { credentials: [] })
       .answer('model/list', { models: MODELS })
       .answer('provider/refresh', () => {
         refreshes += 1;
@@ -146,7 +144,7 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-account"]')?.textContent).toContain(
-      'Key ending c3d4 · 2 models',
+      '2 models',
     );
     const refresh = (): void => {
       root.querySelector<HTMLButtonElement>('[data-testid="settings-refresh-models"]')?.click();
@@ -168,30 +166,5 @@ describe('SettingsComponent', () => {
     expect(root.querySelector('[data-testid="settings-account-problem"]')?.textContent).toBe(
       'OpenRouter is busy right now: try again in a minute.',
     );
-  });
-
-  it('scrolls to the connected accounts once the model accounts above them are in', async () => {
-    let answer: (value: unknown) => void = () => undefined;
-    const fake = new FakeSession()
-      .answer('server/discover', SERVER)
-      .answer('provider/list', () => new Promise((resolve) => (answer = resolve)))
-      .answer('credential/list', { credentials: [], device: false });
-    TestBed.configureTestingModule({
-      providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
-    });
-    await TestBed.inject(Router).navigateByUrl('/settings#accounts');
-    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');
-    const fixture = TestBed.createComponent(SettingsComponent);
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
-    const root: HTMLElement = fixture.nativeElement;
-    const accounts = root.querySelector('#accounts');
-    expect(accounts?.querySelector('[data-testid="accounts"]')).not.toBeNull();
-    expect(scrolled).not.toHaveBeenCalled();
-    answer({ providers: [] });
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
-    expect(scrolled.mock.contexts).toEqual([accounts]);
-    await expectAccessible(root);
   });
 });

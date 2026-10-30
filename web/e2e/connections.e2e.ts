@@ -155,7 +155,8 @@ test('web search is a switch in Settings, and the composer shows a globe while i
   // It is no connection of the person's.
   await byTestId(page, 'settings-connections').click();
   await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
-  await expect(byTestId(page, 'connections-empty')).toBeVisible();
+  await expect(byTestId(page, 'github-row')).toBeVisible();
+  await expect(byTestId(page, 'connections-ready')).toHaveCount(0);
   await byTestId(page, 'nav-new-chat').click();
   const globe = byTestId(page, 'home-searching');
   await expect(globe).toHaveAttribute('aria-label', 'Web search is on');

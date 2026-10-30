@@ -107,7 +107,7 @@ test('a first run adds a model in the browser, then chats with it', async ({ pag
 
   await page.goto(`${glave}/settings`);
   await expect(byTestId(page, 'settings-account')).toContainText(`127.0.0.1:${String(port)}`);
-  await expect(byTestId(page, 'settings-account')).toContainText('Key ending wxyz · 1 model');
+  await expect(byTestId(page, 'settings-account')).toContainText('1 model');
   await byTestId(page, 'settings-refresh-models').click();
   await expect(byTestId(page, 'settings-refreshed')).toContainText('up to date');
   await expectAccessible(page);

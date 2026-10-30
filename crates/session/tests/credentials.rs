@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use glave_event::{CredentialId, Forge, Secret};
 use glave_ports::testing::any_secret;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
-use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code, hint};
+use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, GitHosts, NewCredential};
 use serde_json::Value;
@@ -32,7 +32,7 @@ pub(crate) struct Hosts {
 }
 
 impl Hosts {
-    fn keep(&self, url: String, token: &str, login: Option<String>) -> CredentialInfo {
+    fn keep(&self, url: String, login: Option<String>) -> CredentialInfo {
         let mut kept = self.kept.lock().unwrap();
         let n = u8::try_from(kept.len()).unwrap();
         let info = CredentialInfo {
@@ -40,7 +40,6 @@ impl Hosts {
             forge: Forge::Github,
             url,
             login,
-            hint: hint(token),
             can: None,
         };
         kept.push(info.clone());
@@ -57,7 +56,7 @@ impl GitHosts for Hosts {
                     "GitHub did not accept that token",
                 ));
             }
-            Ok(self.keep(new.url, new.token.expose(), new.username))
+            Ok(self.keep(new.url, new.username))
         })
     }
 
@@ -77,12 +76,12 @@ impl GitHosts for Hosts {
         })
     }
 
-    fn device(&self) -> bool {
-        true
-    }
-
     fn install(&self) -> Option<String> {
         Some("https://github.com/apps/glave/installations/new".into())
+    }
+
+    fn github(&self) -> String {
+        "https://github.com".into()
     }
 
     fn start_device(&self) -> BoxFuture<'_, Result<DeviceCode, ApiError>> {
@@ -103,13 +102,8 @@ impl GitHosts for Hosts {
             }
             let mut polls = self.polls.lock().unwrap();
             *polls += 1;
-            Ok((*polls >= 2).then(|| {
-                self.keep(
-                    "https://github.com".into(),
-                    &any_secret(),
-                    Some("octocat".into()),
-                )
-            }))
+            Ok((*polls >= 2)
+                .then(|| self.keep("https://github.com".into(), Some("octocat".into()))))
         })
     }
 }
@@ -141,7 +135,6 @@ async fn connect_and_remove(client: &mut impl Client) {
     let good = any_secret();
     let listed = client.call(Request::CredentialList {}).await.unwrap();
     assert_eq!(listed["credentials"], Value::Array(Vec::new()));
-    assert_eq!(listed["device"], true);
     assert_eq!(
         listed["install"],
         "https://github.com/apps/glave/installations/new"
@@ -157,7 +150,10 @@ async fn connect_and_remove(client: &mut impl Client) {
         .await
         .unwrap();
     assert!(!connected.to_string().contains(&good), "{connected}");
-    assert_eq!(connected["credential"]["hint"], hint(&good).unwrap());
+    assert!(
+        connected["credential"].get("hint").is_none(),
+        "no token's ending"
+    );
     assert_eq!(connected["credential"]["forge"], "github");
 
     let device = client

@@ -106,7 +106,10 @@ test('a repository clones while it shows, and a refusal is told in the server’
   await expect(byTestId(page, 'new-project-private')).toContainText(
     'Private repositories need a connected git host',
   );
-  await expect(byTestId(page, 'new-project-connect')).toHaveAttribute('href', '/settings#accounts');
+  await expect(byTestId(page, 'new-project-connect')).toHaveAttribute(
+    'href',
+    '/settings/connections',
+  );
   // The server, not the browser, says what address it wants.
   await byTestId(page, 'new-project-url').fill('git@github.com:acme/site.git');
   await byTestId(page, 'new-project-create').click();
@@ -140,29 +143,15 @@ test('a repository clones while it shows, and a refusal is told in the server’
   ]);
 });
 
-test('connecting a git host opens Settings at the connected accounts', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 480 });
+test('connecting a git host opens Connections, GitHub first', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   await byTestId(page, 'nav-new-project').click();
   await page.getByRole('radio', { name: 'A repository' }).check();
   await byTestId(page, 'new-project-connect').click();
   await expect(byTestId(page, 'new-project')).toBeHidden();
-  await expect(page).toHaveURL(/\/settings#accounts$/u);
-  const accounts = byTestId(page, 'accounts');
-  // Settings scrolls inside the main pane, which moved to the accounts, their heading clear of
-  // the floating top bar.
-  await expect
-    .poll(() => accounts.evaluate((card) => card.closest('main')?.scrollTop ?? 0))
-    .toBeGreaterThan(0);
-  const heading = accounts.getByRole('heading', { name: 'Connected accounts' });
-  await expect(heading).toBeInViewport();
-  const uncovered = await heading.evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    const top = document.elementFromPoint(box.left + 4, box.top + box.height / 2);
-    return top !== null && element.contains(top);
-  });
-  expect(uncovered).toBe(true);
+  await expect(page).toHaveURL(/\/settings\/connections$/u);
+  await expect(byTestId(page, 'github-connect')).toBeInViewport();
 });
 
 test('an empty project needs a name, then glave makes its folder', async ({ page }) => {

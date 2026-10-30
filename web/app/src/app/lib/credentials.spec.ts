@@ -1,6 +1,6 @@
 import { ApiError, type CredentialInfo, ErrorCode } from '@glave/client';
 
-import { accountAbilities, accountDetail, accountName, connectProblem } from './credentials';
+import { accountDetail, accountName, connectProblem, hostOf } from './credentials';
 import { somethingWrong } from './text';
 
 const GITHUB: CredentialInfo = {
@@ -8,12 +8,7 @@ const GITHUB: CredentialInfo = {
   forge: 'github',
   url: 'https://github.com',
   login: 'octocat',
-  hint: 'c3d4',
 };
-
-/** What the list says when the host did not say what its token may do, or said nothing. */
-const UNSAID = 'What glave can do with it depends on the access you gave its token.';
-const NONE = 'Nothing with your repositories yet.';
 
 describe('accountName', () => {
   it('names GitHub plainly, and other hosts by their name and forge', () => {
@@ -28,38 +23,17 @@ describe('accountName', () => {
 });
 
 describe('accountDetail', () => {
-  it('says whom the account is for and how its token ends, when known', () => {
-    expect(accountDetail(GITHUB)).toBe('Signed in as octocat, token ending c3d4');
-    expect(accountDetail({ ...GITHUB, login: null })).toBe('Token ending c3d4');
-    expect(accountDetail({ ...GITHUB, login: null, hint: null })).toBe('Connected');
+  it('says whom the account is for when the host said, and never how its token ends', () => {
+    expect(accountDetail(GITHUB)).toBe('Signed in as octocat');
+    const { id, forge, url } = GITHUB;
+    expect(accountDetail({ id, forge, url })).toBe('Connected');
   });
 });
 
-describe('accountAbilities', () => {
-  it('lists what the host said glave can do, and claims nothing it did not say', () => {
-    expect(accountAbilities({ ...GITHUB, can: ['read', 'push', 'pull_requests'] })).toEqual({
-      abilities: [
-        'Read and clone your repositories',
-        'Push branches',
-        'Open and comment on pull requests',
-      ],
-      note: null,
-    });
-    expect(
-      accountAbilities({ ...GITHUB, forge: 'gitlab', can: ['pull_requests', 'issues'] }),
-    ).toEqual({
-      abilities: ['Open and comment on merge requests', 'Open and comment on issues'],
-      note: null,
-    });
-    expect(accountAbilities(GITHUB)).toEqual({ abilities: [], note: UNSAID });
-    expect(accountAbilities({ ...GITHUB, can: null })).toEqual({
-      abilities: [],
-      note: UNSAID,
-    });
-    expect(accountAbilities({ ...GITHUB, can: [] })).toEqual({
-      abilities: [],
-      note: NONE,
-    });
+describe('hostOf', () => {
+  it('reads the host an address names', () => {
+    expect(hostOf(' https://gitlab.com/ ')).toBe('gitlab.com');
+    expect(hostOf('git.example.com:8443/path')).toBe('git.example.com:8443');
   });
 });
 

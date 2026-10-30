@@ -88,12 +88,9 @@ export function accountName(account: ProviderInfo): string {
  * `locale`.
  */
 export function keyHint(account: ProviderInfo, locale: string): string {
-  const hint = account.hint ?? '';
   const count = account.models.length;
   return plural(
-    hint === ''
-      ? $localize`:@@providers.models:{${count}:COUNT:, plural, one {# model} other {# models}}`
-      : $localize`:@@providers.keyModels:Key ending ${hint}:HINT: · {${count}:COUNT:, plural, one {# model} other {# models}}`,
+    $localize`:@@providers.models:{${count}:COUNT:, plural, one {# model} other {# models}}`,
     locale,
   );
 }

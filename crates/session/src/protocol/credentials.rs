@@ -15,10 +15,6 @@ pub struct CredentialInfo {
     /// Whom the host said the token is for, when it said.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<String>,
-    /// The token's last four characters, to tell tokens apart; absent for a token too short
-    /// to show any of.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
     /// What glave can do with it, from what the host said the token may do; absent when the
     /// host did not say, so a client claims nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]

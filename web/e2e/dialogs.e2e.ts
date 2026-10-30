@@ -40,12 +40,12 @@ const DIALOGS: readonly Dialog[] = [
     shows: ['settings-remove-cancel', 'settings-remove-ok'],
   },
   {
-    name: 'Removing a connected account',
-    from: '/settings',
+    name: 'Disconnecting GitHub',
+    from: '/settings/connections',
     account: true,
-    opener: 'accounts-remove',
-    dialog: 'accounts-remove-confirm',
-    shows: ['accounts-remove-confirm-cancel', 'accounts-remove-confirm-ok'],
+    opener: 'github-disconnect',
+    dialog: 'github-disconnect-confirm',
+    shows: ['github-disconnect-confirm-cancel', 'github-disconnect-confirm-ok'],
   },
   {
     name: 'Editing a memory',

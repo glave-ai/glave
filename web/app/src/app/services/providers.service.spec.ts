@@ -9,7 +9,6 @@ import { ProvidersService } from './providers.service';
 const ACCOUNT: ProviderInfo = {
   id: '01900000-0000-7000-8000-000000000301',
   kind: 'openai',
-  hint: 'a1b2',
   models: ['gpt-6-luna'],
 };
 

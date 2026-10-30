@@ -371,7 +371,6 @@ const GITHUB: CredentialInfo = {
   forge: 'github',
   url: 'https://github.com',
   login: 'ana',
-  hint: 'wxyz',
   can: ['read', 'push'],
 };
 
@@ -647,12 +646,11 @@ const ANSWERS: Answers<Known> = {
       {
         id: '01900000-0000-7000-8000-000000000301',
         kind: 'openrouter',
-        hint: 'a1b2',
         models: [],
       },
     ],
   }),
-  'credential/list': (_, { credentials }) => ({ credentials, device: true }),
+  'credential/list': (_, { credentials }) => ({ credentials, github: 'https://github.com' }),
   'server/discover': () => discovered(),
 };
 

@@ -43,7 +43,7 @@ fn a_first_run_connects_an_account_and_its_models_answer_at_once() {
     let connected = served.call("provider/connect", &connect(fake.url(), &key));
     let account = &connected["result"]["provider"];
     assert_eq!(account["kind"], "compatible", "{connected}");
-    assert_eq!(account["hint"], "wxyz");
+    assert!(account.get("hint").is_none(), "no key's ending");
     assert_eq!(account["models"], json!(["fake-new", "fake-old"]));
     assert_eq!(served.models(), ["fake-new", "fake-old"]);
 
@@ -61,7 +61,7 @@ fn a_first_run_connects_an_account_and_its_models_answer_at_once() {
     );
 
     let listed = served.call("provider/list", &json!({}));
-    assert_eq!(listed["result"]["providers"][0]["hint"], "wxyz");
+    assert!(listed["result"]["providers"][0].get("hint").is_none());
     let said = served.end();
     assert!(
         !said.contains(&key),

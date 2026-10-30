@@ -442,13 +442,6 @@
         "forge": {
           "$ref": "#/$defs/Forge"
         },
-        "hint": {
-          "description": "The token's last four characters, to tell tokens apart; absent for a token too short\nto show any of.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "id": {
           "$ref": "#/$defs/CredentialId"
         },
@@ -1893,13 +1886,6 @@
     "ProviderInfo": {
       "description": "A model account the person connected.",
       "properties": {
-        "hint": {
-          "description": "The key's last four characters, to tell keys apart; absent for a key too short to show\nany of.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "id": {
           "$ref": "#/$defs/ProviderId"
         },
@@ -4145,9 +4131,9 @@
             },
             "type": "array"
           },
-          "device": {
-            "description": "Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;\nwithout it, a GitHub token is pasted.",
-            "type": "boolean"
+          "github": {
+            "description": "Where signing in to GitHub in the browser goes, as an origin: the host whose\ncredential is the one GitHub's sign-in made.",
+            "type": "string"
           },
           "install": {
             "description": "Where the person chooses which repositories GitHub's app may use, when it has\nsuch a page.",
@@ -4159,7 +4145,7 @@
         },
         "required": [
           "credentials",
-          "device"
+          "github"
         ],
         "type": "object"
       },

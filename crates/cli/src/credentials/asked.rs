@@ -63,9 +63,7 @@ impl Hosts {
         current: &CredentialConnected,
         fresh: Option<CredentialConnected>,
     ) -> Option<Renewing<HostRenewal>> {
-        let github = self
-            .github
-            .as_ref()
+        let github = Some(&self.github)
             .filter(|github| github.url == current.url && current.renewal.is_some());
         let Some(github) = github else {
             tracing::warn!(

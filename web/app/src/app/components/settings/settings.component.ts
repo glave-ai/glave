@@ -1,18 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
-  Injector,
   LOCALE_ID,
-  afterNextRender,
   computed,
-  effect,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   GlzButtonComponent,
   GlzCardComponent,
@@ -22,32 +16,33 @@ import {
   GlzRadioGroupComponent,
 } from '@glave/glaze';
 
-import { ACCOUNTS_SECTION } from '../../lib/credentials';
+import { serviceName } from '../../lib/connections';
+import { accountName as hostName } from '../../lib/credentials';
 import { accountName, changeQuery, keyHint, refreshProblem } from '../../lib/providers';
 import { removeFailed } from '../../lib/text';
+import { ConnectionsService } from '../../services/connections.service';
+import { CredentialsService } from '../../services/credentials.service';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
 
 import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
-import { AccountsComponent } from '../accounts/accounts.component';
 import { AwakeComponent } from '../awake/awake.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
 
 /**
- * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, connections and memory (each its own page), whether glave may search the web,
- * the passkeys that sign the person in where glave is reached from elsewhere, whether their own
- * computer stays awake while glave works, the server, signing this browser or every other out.
- * A link to `#accounts` scrolls to the connected accounts.
+ * Settings: the theme, the model accounts (add, change, remove), connections (what is
+ * connected, and the page where they are) and memory (its own page), whether glave may search
+ * the web, the passkeys that sign the person in where glave is reached from elsewhere, whether
+ * their own computer stays awake while glave works, the server, signing this browser or every
+ * other out.
  */
 @Component({
   selector: 'app-settings',
   imports: [
-    AccountsComponent,
     AwakeComponent,
     PasskeysComponent,
     PageHeaderComponent,
@@ -110,11 +105,24 @@ export class SettingsComponent {
   protected readonly connectLink = '/connect';
   protected readonly memoryLink = '/memory';
   protected readonly connectionsLink = '/settings/connections';
-  protected readonly accountsSection = ACCOUNTS_SECTION;
-  private readonly accountsCard = viewChild.required<AccountsComponent, ElementRef<HTMLElement>>(
-    AccountsComponent,
-    { read: ElementRef },
-  );
+  private readonly hosts = inject(CredentialsService);
+  private readonly connections = inject(ConnectionsService);
+  /** What the Connections card says: what is connected, by name, else what connections are. */
+  protected readonly connected = computed(() => {
+    const names = [
+      ...this.hosts.accounts().map((account) => hostName(account)),
+      ...(this.connections.connections() ?? [])
+        .filter((connection) => connection.status === 'signed_in')
+        .map((connection) => serviceName(connection)),
+    ];
+    if (names.length === 0) {
+      return this.copy.connectionsText;
+    }
+    const list = new Intl.ListFormat(this.locale, { type: 'conjunction' }).format(names);
+    return names.length === 1
+      ? $localize`:@@settings.connectedOne:${list}:NAMES: is connected. Services glave can use for you, each signed in to as you.`
+      : $localize`:@@settings.connectedMany:${list}:NAMES: are connected. Services glave can use for you, each signed in to as you.`;
+  });
   /** The accounts as the list shows them, each with the link that changes its key. */
   protected readonly accounts = computed(() =>
     this.providers.accounts().map((account) => ({
@@ -152,19 +160,9 @@ export class SettingsComponent {
 
   constructor() {
     void inject(ServerService).load();
-    const loaded = this.providers.load();
-    // Settings scrolls inside the workspace's main pane, not the window, which is all the
-    // router's anchor scrolling moves; scrollIntoView scrolls whatever holds it. It waits for
-    // the model accounts above, which push the connected accounts down as they come.
-    const fragment = toSignal(inject(ActivatedRoute).fragment);
-    const injector = inject(Injector);
-    effect(() => {
-      if (fragment() === ACCOUNTS_SECTION) {
-        void loaded.then(() => {
-          afterNextRender(() => this.accountsCard().nativeElement.scrollIntoView(), { injector });
-        });
-      }
-    });
+    void this.providers.load();
+    void this.hosts.load();
+    void this.connections.load();
   }
 
   protected ask(id: string): void {

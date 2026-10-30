@@ -16,7 +16,7 @@ use glave_config::policy::GithubFile;
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
 use glave_ports::computer::CredentialHost;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
-use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code, hint};
+use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code};
 use glave_session::{GitHosts, NewCredential};
 
 use crate::accounts::{Ledger, random};
@@ -33,7 +33,7 @@ const LONGEST: usize = 4096;
 pub(crate) struct Hosts {
     ledger: Ledger,
     http: Http,
-    github: Option<Github>,
+    github: Github,
     flows: Flows,
     /// The hosts commands may ask about, as the ledger last held them.
     offered: RwLock<Vec<CredentialHost>>,
@@ -60,10 +60,16 @@ impl Hosts {
     /// The git hosts `ledger` keeps, signing in to GitHub through `github`'s app when set, else
     /// through glave's own.
     async fn open(ledger: Ledger, github: Option<&GithubFile>) -> anyhow::Result<Arc<Self>> {
+        let github = match github {
+            Some(file) => Github::new(file).ok_or_else(|| {
+                anyhow::anyhow!("[github] url names no host glave can sign in to GitHub at")
+            })?,
+            None => Github::own(),
+        };
         let hosts = Self {
             ledger,
             http: Http::new()?,
-            github: github.map_or_else(|| Some(Github::own()), Github::new),
+            github,
             flows: Flows::default(),
             offered: RwLock::new(Vec::new()),
             renewals: Renewals::default(),
@@ -123,7 +129,6 @@ impl Hosts {
             forge: credential.forge,
             url: credential.url.clone(),
             login: credential.login.clone(),
-            hint: hint(credential.token.expose()),
             can,
         }
     }
@@ -159,7 +164,7 @@ impl Hosts {
     }
 
     async fn poll(&self, flow: String) -> Result<Option<CredentialInfo>, ApiError> {
-        let github = self.github.as_ref().ok_or_else(no_device)?;
+        let github = &self.github;
         let Polled::Granted(grant) = github.poll(&self.http, &self.flows, &flow).await? else {
             return Ok(None);
         };
@@ -207,19 +212,18 @@ impl GitHosts for Hosts {
         })
     }
 
-    fn device(&self) -> bool {
-        self.github.is_some()
+    fn install(&self) -> Option<String> {
+        self.github.install()
     }
 
-    fn install(&self) -> Option<String> {
-        self.github.as_ref().and_then(Github::install)
+    fn github(&self) -> String {
+        self.github.url.clone()
     }
 
     fn start_device(&self) -> BoxFuture<'_, Result<DeviceCode, ApiError>> {
         Box::pin(async move {
-            let github = self.github.as_ref().ok_or_else(no_device)?;
             let flow = new_flow().map_err(|e| ApiError::internal(&e))?;
-            github.start(&self.http, &self.flows, flow).await
+            self.github.start(&self.http, &self.flows, flow).await
         })
     }
 
@@ -275,14 +279,6 @@ fn default_username(forge: Forge) -> &'static str {
 /// `-32602`, saying what to change.
 fn invalid(message: &str) -> ApiError {
     ApiError::new(code::INVALID_PARAMS, message)
-}
-
-/// Signing in to GitHub in the browser is not set up here.
-fn no_device() -> ApiError {
-    ApiError::new(
-        code::NOT_AVAILABLE,
-        "signing in to GitHub in the browser is not set up here: connect it with a token instead",
-    )
 }
 
 #[cfg(test)]

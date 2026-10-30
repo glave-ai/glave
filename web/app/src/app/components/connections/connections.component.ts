@@ -23,6 +23,9 @@ import { ExternalLink, LoaderCircle, Plug } from 'lucide';
 
 import { connectionProblem, serviceHost, serviceName } from '../../lib/connections';
 import { ConnectionsService } from '../../services/connections.service';
+import { CredentialsService } from '../../services/credentials.service';
+import { AnotherServiceComponent } from '../another-service/another-service.component';
+import { GithubRowComponent } from '../github-row/github-row.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { ServiceRowComponent } from '../service-row/service-row.component';
 
@@ -91,15 +94,18 @@ function sent(tab: Window | null, url: string): boolean {
 }
 
 /**
- * Connections: the services glave can use for the person, as the server lists them. Those
- * signed in to are ready to use, each with Disconnect, which asks first; the person's services
- * that ask them to sign in are available, each with Connect, which opens the service's own
- * sign-in in a new tab and waits until the server says it is done. Every refusal is told in the
- * server's words. More sections (glave's starter list, a company's) join the same cards.
+ * Connections: the services glave can use for the person, as the server lists them. GitHub
+ * first, one row signed in on GitHub, beside the person's other git hosts; then those signed in
+ * to, ready to use, each with Disconnect, which asks first; the person's services that ask them
+ * to sign in, available, each with Connect, which opens the service's own sign-in in a new tab
+ * and waits until the server says it is done; then another service, a git server added by its
+ * address. Every refusal is told in the server's words.
  */
 @Component({
   selector: 'app-connections',
   imports: [
+    AnotherServiceComponent,
+    GithubRowComponent,
     PageHeaderComponent,
     ServiceRowComponent,
     GlzButtonComponent,
@@ -134,6 +140,7 @@ export class ConnectionsComponent {
   } as const;
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink, empty: Plug } as const;
   private readonly service = inject(ConnectionsService);
+  private readonly credentials = inject(CredentialsService);
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -177,15 +184,21 @@ export class ConnectionsComponent {
     ];
     return sections.filter((section) => section.rows.length > 0);
   });
-  /** Whether the server listed no service at all. */
-  protected readonly empty = computed(() => this.service.connections()?.length === 0);
   protected readonly disconnectHeading = computed(() => {
     const name = this.disconnecting()?.name ?? '';
     return $localize`:@@connections.disconnectHeading:Disconnect ${name}:NAME:?`;
   });
 
+  /** Whether the server keeps git hosts for this person: it listed them. */
+  protected readonly gitHosts = this.credentials.listed;
+  /** Whether there is nothing at all here: no git hosts kept, and no service listed. */
+  protected readonly empty = computed(
+    () => !this.gitHosts() && this.service.connections()?.length === 0,
+  );
+
   constructor() {
     void this.service.load();
+    void this.credentials.load();
     inject(DestroyRef).onDestroy(() => {
       for (const stop of this.stops.values()) {
         stop.abort();

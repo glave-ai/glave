@@ -45,7 +45,7 @@ fn a_host_is_connected_with_a_token_from_standard_input_listed_and_removed() {
     assert!(
         said.contains(&format!(
             "Connected http://{name} (Gitea), signed in as ana"
-        )) && said.contains("token ending wxyz"),
+        )) && !said.contains("token ending"),
         "{said}"
     );
     assert!(
