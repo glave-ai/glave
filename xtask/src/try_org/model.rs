@@ -14,7 +14,7 @@ pub(crate) const MODEL: &str = "try-org";
 const SAID: &str = "Hello from try-org's stand-in model: it answers every message with this.";
 
 /// What every answer says it cost, in dollars.
-const COST: &str = "0.10";
+pub(crate) const COST: &str = "0.10";
 
 /// Starts the stand-in, answering until it is dropped.
 pub(crate) fn start() -> Result<FakeHttp, String> {

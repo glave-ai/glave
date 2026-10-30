@@ -10,6 +10,8 @@
 //! stops the server and removes the folder. glave's lifeline stops the server if xtask is
 //! killed outright; a folder such a run left is removed by the next, which finds its lock free.
 
+mod model;
+
 use std::fs::{File, TryLockError};
 use std::io::IsTerminal as _;
 use std::os::unix::process::parent_id;
@@ -22,8 +24,6 @@ use tokio::signal::unix::{SignalKind, signal};
 
 /// The folder in the temporary folder that holds each run's own.
 const RUNS: &str = "glave-try-org";
-
-mod model;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
 /// port it serves.
@@ -111,9 +111,10 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
              xtask: someone you invite: a private window, opening the invite's link, at the \
              localhost address glave prints\n\
              xtask: its model is a stand-in that answers every message the same, and says each \
-             answer cost $0.10\n\
+             answer cost ${}\n\
              xtask: Ctrl-C stops it and removes it all",
-            folder.display()
+            folder.display(),
+            model::COST
         );
         let mut hangup = signal(SignalKind::hangup()).map_err(|err| failed(&err))?;
         let mut terminate = signal(SignalKind::terminate()).map_err(|err| failed(&err))?;

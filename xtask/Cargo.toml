@@ -10,8 +10,8 @@ autotests = false
 
 [dependencies]
 # The one list of the prefixes providers put on keys and tokens, which the secret scan reads,
-# the one clock (`cargo xtask package-age`), and the fake HTTP server `try-org`'s stand-in model
-# answers from (`conformance`).
+# the one clock (`cargo xtask package-age`), and (`conformance`) the fake HTTP server `try-org`'s
+# stand-in model answers from, and the temp folders and the guard against a hang the tests share.
 glave-ports = { workspace = true, features = ["conformance"] }
 # What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
 # however xtask ends: glave's lifeline.
@@ -30,10 +30,6 @@ syn.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "signal", "time"] }
 # Reading Cargo.lock (`cargo xtask package-age`; already in the tree, under glave-config).
 toml.workspace = true
-
-[dev-dependencies]
-# Temp folders and the guard against a hang the tests share.
-glave-ports = { workspace = true, features = ["conformance"] }
 
 [[test]]
 name = "xtask"
