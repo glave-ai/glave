@@ -155,8 +155,8 @@ where
             Place::Folder(path) if kind == ComputerKind::Person => {
                 home.folder(&path).await.map_err(|error| match error {
                     ComputerError::NotFound(_) => ComputerError::Unsupported(format!(
-                        "this project's folder, {path}, isn't on your cloud computer anymore; \
-                         make a new project to go on"
+                        "this project's folder, {path}, isn't on your cloud computer; make a \
+                         new project there to go on"
                     )),
                     error => error,
                 })?

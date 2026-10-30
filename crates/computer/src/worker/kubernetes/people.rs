@@ -225,9 +225,11 @@ impl People {
             }
         });
         if held.len() >= MAX_PEOPLE {
-            // Kept: any awake or waking, and any something still holds, such as a turn.
+            // Kept: any awake or waking, and any something still holds, such as a turn or a
+            // thread's workspace on it, which names it by its id, the same for a new one.
             held.retain(|_, person| {
                 Arc::strong_count(person) > 1
+                    || Arc::strong_count(&person.planned.computers) > 1
                     || !matches!(*person.state.borrow(), State::Asleep | State::Failed(..))
             });
         }
@@ -265,10 +267,11 @@ impl People {
 }
 
 /// The home of a person's computer as planned before it wakes, on the computer `key` names:
-/// the computer's id made from the key, the same on every server and after every restart, so
+/// the computer's id made from the key's digits (derived, not time-ordered as other ids are),
+/// the same on every server and after every restart, so
 /// whatever works there, or a project's folder made there, finds it the same computer however
 /// often it slept and whichever server asks.
-pub(crate) fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
+fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
     let digits: String = key.chars().filter(char::is_ascii_hexdigit).collect();
     let id = u128::from_str_radix(&digits, 16)
         .map_err(|_| ComputerError::Failed(format!("{key} names no person's computer")))?;

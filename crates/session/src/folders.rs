@@ -3,8 +3,10 @@
 //! and where they are checked out (a computer, and the path there), kept in the project ledger
 //! as `project.folder.set`, the latest one counting. A project gets its folder from
 //! `project/create` (a folder already here, a repository cloned here, or a new one) or from
-//! glave run in a folder, and its threads work there. `folder/list` shows the person on this
-//! computer the folders to pick one from.
+//! glave run in a folder, and its threads work there. Where people have computers of their own,
+//! `project/create` makes it on the person's instead (a repository cloned there, or a new one),
+//! never looked for again but by the thread that opens it there. `folder/list` shows the person
+//! on this computer the folders to pick one from.
 
 use std::path::Path;
 

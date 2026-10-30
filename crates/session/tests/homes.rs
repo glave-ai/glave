@@ -344,6 +344,10 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
                 path: dir.to_string_lossy().into_owned(),
             }))
             .await;
-        assert!(picked.is_err(), "{picked:?}");
+        let refused = picked.unwrap_err().to_string();
+        assert!(
+            refused.contains("a new one or a repository cloned there"),
+            "{refused}"
+        );
     });
 }
