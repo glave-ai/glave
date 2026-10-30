@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    InviteInfo, ModelInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder,
-    ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, ShownInvite, SignInLink, SignInWay,
-    TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    InviteInfo, ModelInfo, OrganizationInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo,
+    ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, ShownInvite, SignInLink,
+    SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -414,6 +414,11 @@ pub enum Reply {
     /// What an invite's link opens.
     #[schemars(title = "InviteShown")]
     InviteShown { shown: ShownInvite },
+    /// The organizations the caller belongs to, their own first.
+    #[schemars(title = "Organizations")]
+    Organizations {
+        organizations: Vec<OrganizationInfo>,
+    },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

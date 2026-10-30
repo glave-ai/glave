@@ -285,6 +285,22 @@ pub(crate) async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) 
     raw.into_iter().map(|e| decode(e).unwrap()).collect()
 }
 
+/// The text parts of `message`, in order.
+pub(crate) fn texts(message: &Message) -> Vec<String> {
+    let parts = match message {
+        Message::User { parts }
+        | Message::Tool { output: parts, .. }
+        | Message::Assistant { parts, .. } => parts,
+    };
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The first text of each tool result in `messages`, in order.
 pub(crate) fn results(messages: &[Message]) -> Vec<String> {
     messages

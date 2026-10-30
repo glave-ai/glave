@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 
-import { TOKEN_KEY } from '../lib/token';
+import { TOKEN_KEY, keepSession, readSession } from '../lib/token';
 import {
   ELSEWHERE,
   FAKE_SERVER,
@@ -9,7 +9,12 @@ import {
   SIGNED_IN,
   provideFakeSession,
 } from '../testing/fake-session';
-import { INITIAL_SESSION, SESSION_CLIENT_FACTORY, SessionService } from './session.service';
+import {
+  INITIAL_SESSION,
+  SESSION_CLIENT_FACTORY,
+  START_AGAIN,
+  SessionService,
+} from './session.service';
 
 /** A tab that starts signed out, its calls going to `fake`, whose token each call is sent with. */
 function startingOut(fake: FakeSession): { readonly token: () => string } {
@@ -45,6 +50,60 @@ describe('SessionService', () => {
     expect(session.signedIn()).toBe(true);
     expect(session.local()).toBe(true);
     expect(await session.call('server/discover', {})).toEqual({ name: 'glave' });
+  });
+
+  it('keeps the organization chosen with the session, which a new sign-in starts without', async () => {
+    keepSession(localStorage, SIGNED_IN);
+    const fake = new FakeSession().answer('server/discover', DISCOVERED);
+    const started = vi.fn<() => void>();
+    const tab = (): SessionService => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [...provideFakeSession(fake), { provide: START_AGAIN, useValue: started }],
+      });
+      return TestBed.inject(SessionService);
+    };
+    const first = tab();
+    await first.start();
+    expect(first.organization()).toBeNull();
+    first.chooseOrganization('acme');
+    expect(started).toHaveBeenCalledOnce();
+    expect(first.organization()).toBeNull();
+    // The app, started again, works in it.
+    const again = tab();
+    await again.start();
+    expect(again.organization()).toBe('acme');
+    expect(again.begin({ session: 'glave_session_new', server: FAKE_SERVER })).toBe(true);
+    expect(again.organization()).toBeNull();
+    expect(readSession(localStorage)?.organization).toBeUndefined();
+  });
+
+  it('leaves an organization the person is no longer in, unless another tab chose another', async () => {
+    const refused = new ApiError({ code: ErrorCode.NOT_IN, message: 'not in it' });
+    const fake = new FakeSession()
+      .answer('server/discover', DISCOVERED)
+      .answer('project/list', refused);
+    const started = vi.fn<() => void>();
+    for (const [chosenSince, kept] of [
+      [null, undefined],
+      ['other', 'other'],
+    ] as const) {
+      keepSession(localStorage, { ...SIGNED_IN, organization: 'gone' });
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [...provideFakeSession(fake), { provide: START_AGAIN, useValue: started }],
+      });
+      const session = TestBed.inject(SessionService);
+      await session.start();
+      expect(session.organization()).toBe('gone');
+      if (chosenSince !== null) {
+        keepSession(localStorage, { ...SIGNED_IN, organization: chosenSince });
+      }
+      await expect(session.call('project/list', {})).rejects.toBe(refused);
+      expect(readSession(localStorage)?.organization).toBe(kept);
+      expect(session.signedIn()).toBe(true);
+    }
+    expect(started).toHaveBeenCalledTimes(2);
   });
 
   it('signs out when the server refuses the sign-in', async () => {

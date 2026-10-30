@@ -40,7 +40,11 @@ describe('InviteService', () => {
     expect(await invite.accept()).toBe('opens nothing');
     expect(TestBed.inject(SessionService).inviteCode()).not.toBeNull();
     fake.answer('invite/accept', { person: { id: 'p', role: 'admin', you: true } });
+    fake.answer('invite/show', { shown: SHOWN });
+    await invite.load();
+    const chosen = vi.spyOn(TestBed.inject(SessionService), 'chooseOrganization').mockReturnValue();
     expect(await invite.accept()).toBeNull();
+    expect(chosen).toHaveBeenCalledWith(SHOWN.organization);
     expect(TestBed.inject(SessionService).inviteCode()).toBeNull();
   });
 

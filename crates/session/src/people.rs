@@ -66,6 +66,8 @@ pub(crate) struct People {
     known: BTreeMap<PrincipalId, Kept>,
     /// Those removed and not back by an invite since.
     removed: BTreeSet<PrincipalId>,
+    /// Whom glave made its Owner as it made it, by sign-up: whose own it is.
+    founder: Option<PrincipalId>,
     /// The invites made and not yet spent or revoked, expired ones included until dropped.
     pub(crate) invites: Invites,
 }
@@ -130,6 +132,9 @@ impl People {
                 self.removed.insert(gone.person);
             }
             Body::RoleSet(set) => {
+                if set.by.kind == glave_event::PrincipalKind::Glave && self.founder.is_none() {
+                    self.founder = Some(set.person);
+                }
                 if let Some(kept) = self.known.get_mut(&set.person) {
                     kept.role = Some(set.role);
                 }
@@ -177,6 +182,19 @@ impl People {
             .filter(|kept| kept.role == Some(OrgRole::Owner))
             .count();
         alone && self.role(person) == OrgRole::Owner && owners <= 1
+    }
+
+    /// Whether glave made `person` its Owner as it made it: whether it is their own.
+    pub(crate) fn founded_by(&self, person: PrincipalId) -> bool {
+        self.founder == Some(person)
+    }
+
+    /// Its first Owner in id order who is not `but`, if any.
+    pub(crate) fn first_owner_but(&self, but: Option<PrincipalId>) -> Option<PrincipalId> {
+        self.known
+            .iter()
+            .find(|(person, kept)| Some(**person) != but && kept.role == Some(OrgRole::Owner))
+            .map(|(person, _)| *person)
     }
 
     /// Whether anyone in it joined with a glave account.

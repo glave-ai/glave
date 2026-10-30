@@ -72,6 +72,11 @@ export class InviteService {
     try {
       await this.session.call('invite/accept', { code });
       this.session.clearInvite();
+      // Joined, the person works in the team they joined.
+      const opened = this.read();
+      if (opened.kind === 'shown') {
+        this.session.chooseOrganization(opened.shown.organization);
+      }
       return null;
     } catch (error: unknown) {
       return error instanceof ApiError ? error.message : unreached();

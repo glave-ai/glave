@@ -104,6 +104,7 @@ describe('InviteComponent', () => {
       .answer('invite/show', { shown: { ...SHOWN, joining: 'accept' } })
       .answer('invite/accept', { person: { id: 'p', role: 'member', you: true } });
     const { fixture, navigate, root } = await render(fake, SIGNED_IN);
+    const chosen = vi.spyOn(TestBed.inject(SessionService), 'chooseOrganization').mockReturnValue();
     const page = root.querySelector('[data-testid="invite-joining"]');
     expect(page?.textContent).toContain('Join this team?');
     expect(page?.textContent).toContain('Dana Lee invited you.');
@@ -111,6 +112,7 @@ describe('InviteComponent', () => {
     click(root, 'invite-join');
     await settle(fixture);
     expect(fake.paramsOf('invite/accept')).toEqual([{ code: 'c0de' }]);
+    expect(chosen).toHaveBeenCalledWith(SHOWN.organization);
     expect(navigate).toHaveBeenCalledWith('/');
 
     TestBed.resetTestingModule();

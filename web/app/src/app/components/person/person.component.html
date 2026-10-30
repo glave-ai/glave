@@ -3,6 +3,28 @@
   {{ copy.you }}
 </button>
 <glz-popover #mine testId="person-menu">
+  @if (several()) {
+    <p class="heading" id="person-switch">{{ copy.switchTo }}</p>
+    <div class="places" role="group" aria-labelledby="person-switch">
+      @for (to of places(); track to.id) {
+        <button
+          glzNavItem
+          data-testid="person-switch"
+          [current]="to.current"
+          (click)="switchTo(to)"
+        >
+          <span glzNavItemStart class="mark" aria-hidden="true">{{ to.letter }}</span>
+          <span class="place">
+            <span>{{ to.name }}</span
+            >&ngsp;<span class="note">{{ to.note }}</span>
+          </span>
+          @if (to.current) {
+            <glz-icon glzNavItemEnd [icon]="icons.current" />
+          }
+        </button>
+      }
+    </div>
+  }
   <a
     glzNavItem
     data-testid="nav-settings"

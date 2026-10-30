@@ -50,9 +50,18 @@ where
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
         let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
-        let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
-            .await;
+        let messages = conversation(&events);
+        // On a person's own computer, reached again only at the next turn: what the thread
+        // opened with, kept in its log, until that turn reads them there again.
+        let instructions = match self
+            .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
+            .await
+        {
+            None if crate::homes::at_home(bound.as_ref()).is_some() => {
+                crate::instructions::opened_with(&messages)
+            }
+            read => read,
+        };
         let project = bound
             .as_ref()
             .filter(|_| workspace.is_some())
@@ -63,7 +72,7 @@ where
             scope,
             id,
             next_seq,
-            messages: conversation(&events),
+            messages,
             allowed: allowed_for_thread(&events),
             measured: None,
             request: latest_request(&events),

@@ -44,7 +44,7 @@ pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
-pub use people::{InviteInfo, JoinWay, PersonInfo, ShownInvite};
+pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
@@ -231,6 +231,9 @@ methods! {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,
     } -> [Person],
+    /// The organizations the caller belongs to, their own first, each as it is to them: what
+    /// a client switches between, naming one in `Glave-Organization`.
+    "organization/list" => OrganizationList {} -> [Organizations],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
