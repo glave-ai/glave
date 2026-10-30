@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
@@ -127,16 +127,45 @@ fn links_planted_by_commands_and_hard_links_cannot_reach_outside() {
     );
 }
 
-/// Swaps the folder `in_dir` for a link to each of `targets` in turn and back, the way a
-/// command running beside the file tools could, until told to stop. How many swaps it made.
-fn flip(inside: &std::path::Path, targets: &[&str], stop: &AtomicBool) -> usize {
+/// Runs `round` again and again while a command running beside it swaps the folder
+/// `inside/in_dir` for a link to each of `targets` in turn and back, for at least three seconds
+/// and a hundred swaps, however busy the machine. The real folder is back when it returns.
+///
+/// How the two interleave is the scheduler's: a check that needs some round to land in one
+/// state of the folder fails when the machine is busy though confinement held (#1028). What a
+/// race test asserts holds whatever the interleaving; what still works is checked after.
+fn race(inside: &std::path::Path, targets: &'static [&'static str], mut round: impl FnMut()) {
+    let (swaps, stop) = (
+        Arc::new(AtomicUsize::new(0)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let flipper = {
+        let (inside, swaps, stop) = (inside.to_owned(), Arc::clone(&swaps), Arc::clone(&stop));
+        std::thread::spawn(move || flip(&inside, targets, &swaps, &stop))
+    };
+    let started = std::time::Instant::now();
+    while started.elapsed().as_millis() < 3_000 || swaps.load(Ordering::Relaxed) < 100 {
+        let swapped = swaps.load(Ordering::Relaxed);
+        assert!(
+            started.elapsed() < glave_ports::testing::HUNG,
+            "the race never really ran: {swapped} swaps"
+        );
+        round();
+    }
+    stop.store(true, Ordering::Relaxed);
+    flipper.join().unwrap();
+}
+
+/// Swaps the folder `in_dir` for a link to each of `targets` in turn and back until told to
+/// stop, counting the swaps.
+fn flip(inside: &std::path::Path, targets: &[&str], swaps: &AtomicUsize, stop: &AtomicBool) {
     let (folder, parked) = (inside.join("in_dir"), inside.join("in_dir.parked"));
-    let mut swaps = 0;
     while !stop.load(Ordering::Relaxed) {
         if std::fs::rename(&folder, &parked).is_ok() {
-            let target = targets.get(swaps % targets.len().max(1)).unwrap();
+            let made = swaps.load(Ordering::Relaxed);
+            let target = targets.get(made % targets.len().max(1)).unwrap();
             if std::os::unix::fs::symlink(target, &folder).is_ok() {
-                swaps += 1;
+                swaps.fetch_add(1, Ordering::Relaxed);
             }
             let _ = std::fs::remove_file(&folder);
             // A write may have made the folder anew while it was gone; the old one goes back.
@@ -145,7 +174,6 @@ fn flip(inside: &std::path::Path, targets: &[&str], stop: &AtomicBool) -> usize 
             }
         }
     }
-    swaps
 }
 
 /// Every file operation once on the raced folder: what it showed from outside, if anything.
@@ -197,7 +225,7 @@ fn leaks(computers: &LocalComputers, at: WorkspaceId, rt: &tokio::runtime::Runti
 }
 
 /// Every file operation, raced by a command swapping a folder for a link to outside: nothing
-/// outside is read, named, written or created.
+/// outside is read, named, written or created, and writes inside still work.
 #[test]
 fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
     let rt = runtime();
@@ -206,21 +234,12 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
     std::fs::create_dir_all(inside.join("in_dir")).unwrap();
     std::fs::write(inside.join("in_dir/sentinel.txt"), "inside").unwrap();
     let outside = work.join("confine/outside");
-    let stop = Arc::new(AtomicBool::new(false));
-    let flipper = {
-        let (inside, stop) = (inside.clone(), Arc::clone(&stop));
-        std::thread::spawn(move || flip(&inside, &["../outside"], &stop))
-    };
     let workspace = confinement_workspace(&computers, &work, &rt);
-    let started = std::time::Instant::now();
     let mut leaked = Vec::new();
-    while started.elapsed().as_millis() < 3_000 {
+    race(&inside, &["../outside"], || {
         leaked.extend(leaks(&computers, workspace, &rt));
-    }
-    stop.store(true, Ordering::Relaxed);
-    let swaps = flipper.join().unwrap();
+    });
     drop(confinement);
-    assert!(swaps > 100, "the race must really run: {swaps} swaps");
     assert!(leaked.is_empty(), "seen from outside: {leaked:?}");
     let mut names: Vec<String> = std::fs::read_dir(&outside)
         .unwrap()
@@ -236,16 +255,24 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
         std::fs::read_to_string(outside.join("sentinel.txt")).unwrap(),
         "SENTINEL"
     );
+    let write = FileWrite::new("in_dir/sentinel.txt", Bytes::new(b"after"));
+    rt.block_on(computers.write(workspace, &[write])).unwrap();
+    let read = rt.block_on(computers.read(workspace, "in_dir/sentinel.txt"));
+    assert_eq!(
+        read.unwrap().as_slice(),
+        b"after",
+        "writes inside still work"
+    );
     assert_eq!(
         std::fs::read_to_string(inside.join("in_dir/sentinel.txt")).unwrap(),
-        "PWNED",
-        "writes inside still work while raced"
+        "after",
+        "and land in the real folder"
     );
 }
 
 /// Protected writes, raced by a command swapping a folder for a link into `.git/hooks` or
 /// `.glave` and back: the computer checks the path it actually opens, so nothing protected is
-/// ever written, while writes into the real folder still land.
+/// ever written, while writes into the real folder still land and through a link are refused.
 #[test]
 fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
     let rt = runtime();
@@ -263,33 +290,19 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
             .await
             .unwrap()
     });
-    let stop = Arc::new(AtomicBool::new(false));
-    let flipper = {
-        let (work, stop) = (work.clone(), Arc::clone(&stop));
-        std::thread::spawn(move || flip(&work, &[".git/hooks", ".glave"], &stop))
+    let protected = |path: &str| FileWrite {
+        protect: true,
+        ..FileWrite::new(path, Bytes::new(b"PWNED"))
     };
-    let started = std::time::Instant::now();
-    let (mut landed, mut refused) = (0usize, 0usize);
-    while started.elapsed().as_millis() < 3_000 {
+    race(&work, &[".git/hooks", ".glave"], || {
         for path in [
             "in_dir/pre-commit",
             "in_dir/settings.json",
             "in_dir/fresh/hook",
         ] {
-            let write = FileWrite {
-                protect: true,
-                ..FileWrite::new(path, Bytes::new(b"PWNED"))
-            };
-            match rt.block_on(computers.write(here.id, &[write])) {
-                Ok(()) => landed += 1,
-                Err(error) if glave_ports::computer::is_protected_refusal(&error) => refused += 1,
-                Err(_) => {}
-            }
+            let _ = rt.block_on(computers.write(here.id, &[protected(path)]));
         }
-    }
-    stop.store(true, Ordering::Relaxed);
-    let swaps = flipper.join().unwrap();
-    assert!(swaps > 100, "the race must really run: {swaps} swaps");
+    });
     let hooks: Vec<_> = std::fs::read_dir(work.join(".git/hooks"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
@@ -304,9 +317,16 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
         std::fs::read_to_string(work.join(".glave/settings.json")).unwrap(),
         "{}\n"
     );
+    let write = |path: &str| rt.block_on(computers.write(here.id, &[protected(path)]));
+    write("in_dir/pre-commit").unwrap();
+    std::fs::remove_dir_all(work.join("in_dir")).unwrap();
+    std::os::unix::fs::symlink(".git/hooks", work.join("in_dir")).unwrap();
+    let refused = write("in_dir/pre-commit");
     assert!(
-        landed > 0 && refused > 0,
-        "both sides of the race were seen: {landed} landed, {refused} refused"
+        refused
+            .as_ref()
+            .is_err_and(glave_ports::computer::is_protected_refusal),
+        "a protected write through the link is refused: {refused:?}"
     );
 }
 
