@@ -93,17 +93,29 @@ pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> any
         Err(error) => return Err(error).with_context(|| format!("could not listen on {address}")),
     };
     let bound = listener.local_addr()?;
+    served_at(bound, reach.origin.as_ref())?;
     let beside = beside(bound).await;
     let folder = crate::home::private().await?;
     keep(&folder.join(TOKEN_FILE), token.reveal())?;
-    // `localhost`, where passkeys work and this server alone answers; else its address.
+    // `localhost`, where passkeys work and this server alone answers; else its address. Where
+    // `localhost` is the origin people share this computer by, the person on it signs in at
+    // its address, the door that is theirs alone.
+    let shared = reach
+        .origin
+        .as_ref()
+        .is_some_and(|origin| origin.here().is_some());
     let reached = match beside {
-        Some(_) => format!("http://localhost:{}", bound.port()),
-        None => format!("http://{}", here(bound)),
+        Some(_) if !shared => format!("http://localhost:{}", bound.port()),
+        _ => format!("http://{}", here(bound)),
     };
     keep(&folder.join(crate::app::URL_FILE), &reached)?;
     eprintln!("glave: serving the session API on http://{bound}");
-    if let Some(origin) = reach.behind() {
+    if let Some(origin) = reach.origin.as_ref().filter(|_| shared) {
+        eprintln!(
+            "glave: people who share this computer reach it at {origin}, each in a browser of \
+             their own"
+        );
+    } else if let Some(origin) = reach.behind() {
         eprintln!(
             "glave: reached from elsewhere at {origin}, through the tunnel or proxy that serves \
              HTTPS for it"
@@ -190,6 +202,13 @@ impl Http {
 /// it, `origin`: sign-ins would cross a network in the clear. glave answers on loopback alone
 /// until HTTPS is in place.
 fn within_reach(address: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::Result<()> {
+    if origin.is_some_and(|origin| origin.here().is_some()) && !is_loopback(address.ip()) {
+        bail!(
+            "glave would listen on {address}, beyond this computer, though its origin is \
+             this computer's localhost, which only people at this computer reach: listen on \
+             127.0.0.1, or set an https origin people reach from elsewhere"
+        );
+    }
     if is_loopback(address.ip()) || origin.is_some() {
         return Ok(());
     }
@@ -200,6 +219,21 @@ fn within_reach(address: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::R
          under [serve] in config.toml (such as origin = \"https://glave.example.com\"); or \
          listen on 127.0.0.1"
     )
+}
+
+/// Refuses to serve at `bound` when the origin people reach it at is this computer's
+/// `localhost` at another port: a browser there would reach another program, or nothing.
+fn served_at(bound: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::Result<()> {
+    match origin.and_then(PublicOrigin::here) {
+        Some(port) if port != bound.port() => bail!(
+            "glave serves at port {}, but its origin under [serve] in config.toml is \
+             http://localhost:{port}: serve at that port (--http 127.0.0.1:{port}), or set the \
+             origin to http://localhost:{}",
+            bound.port(),
+            bound.port()
+        ),
+        _ => Ok(()),
+    }
 }
 
 /// The web app to serve: `--web`, which must hold a build, else the one built into glave, else
@@ -431,6 +465,26 @@ mod tests {
             assert!(refused.contains("origin under [serve]"), "{refused}");
             assert!(within_reach(at(beyond), Some(&origin)).is_ok(), "{beyond}");
         }
+    }
+
+    #[test]
+    fn a_localhost_origin_is_served_on_loopback_alone_and_at_its_own_port() {
+        let at = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let shared = PublicOrigin::parse("http://localhost:4180").unwrap();
+        assert!(within_reach(at("127.0.0.1:4180"), Some(&shared)).is_ok());
+        for beyond in ["0.0.0.0:4180", "[::]:4180", "192.168.1.2:4180"] {
+            let refused = within_reach(at(beyond), Some(&shared))
+                .unwrap_err()
+                .to_string();
+            assert!(refused.contains("listen on 127.0.0.1"), "{refused}");
+        }
+        assert!(served_at(at("127.0.0.1:4180"), Some(&shared)).is_ok());
+        let refused = served_at(at("127.0.0.1:4181"), Some(&shared))
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("port 4181"), "{refused}");
+        let elsewhere = PublicOrigin::parse("https://glave.example.com").unwrap();
+        assert!(served_at(at("127.0.0.1:4181"), Some(&elsewhere)).is_ok());
     }
 
     #[test]

@@ -99,7 +99,7 @@ Decided with the owner 2026-10-29 (#423, #424). Who the people of an organizatio
 - **One person may belong to several organizations,** with one sign-in, as in Slack: each request carries the organization it works in, and everything else stays apart, each organization's data, roles and grants its own. A person's account (their passkeys, email and browser sessions) is theirs, kept outside every organization, so leaving or being removed from one never signs them out of another.
 - **Email is a plug, at most one message a minute to an address,** counted in the ledger that records what was sent (an invite's in the people ledger, a sign-up's in the sign-ups ledger), so every server on the store counts alike; limits per day and per network address are still to come. SMTP, its settings in the deployment's configuration and its password from the environment, with an in-memory double for tests. A deployment without it sends no email: recovery and sign-up are not offered there, and invites are shared as links.
 - **The five deployments** (`deployments.md`):
-  1. *Laptop:* an organization of one, never shown. No one else can reach the server, so nothing to invite anyone to.
+  1. *Laptop:* an organization of one, never shown. No one else can reach the server, so nothing to invite anyone to. Unless its owner sets its origin to `http://localhost:<port>` (`session.md`, "Doors"), for people who share the computer, each in a browser of their own: then it behaves as 2.
   2. *Own server:* the same, until its owner invites someone, who makes a passkey of their own at its public origin; with two people, organization UI appears for them.
   3. *Glave Cloud, personal:* sign-up makes an organization of one with glave accounts; inviting someone makes it more.
   4. *Glave Cloud, enterprise:* sign-up, then the organization's company login; its people join on first sign-in.
@@ -136,7 +136,7 @@ Decided 2026-10-29 (#424).
 - **An invite gives no more than its maker may give when it is opened.** An Admin who is made a Member, or an Owner made an Admin, leaves their invites unable to give what they no longer could.
 - **Invites are listed and revoked** by anyone whose role permits inviting: the ones waiting, with their role, who made them and when they expire, never their code. At most 1,000 wait at once.
 - **The five deployments** (`deployments.md`):
-  1. *Laptop:* no one else can reach the server, so an invite is refused, saying so; nothing appears.
+  1. *Laptop:* no one else can reach the server, so an invite is refused, saying so; nothing appears. With its origin set to `http://localhost:<port>`, as 2: an invite's link opens in another browser on the computer, which makes a passkey there.
   2. *Own server:* where it is reached from elsewhere (its public origin), the owner invites someone, who makes a passkey there.
   3. *Glave Cloud, personal:* invites with glave accounts, as 2; someone already signed in gains one more organization.
   4. *Glave Cloud, enterprise:* invites through the company login, as 5.
