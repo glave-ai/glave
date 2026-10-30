@@ -96,16 +96,7 @@ fn tied(
     limit: Option<Duration>,
 ) -> Result<(ExitStatus, Vec<u8>), String> {
     let failed = |err: &dyn std::fmt::Display| format!("could not run `{program}`: {err}");
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|err| failed(&err))?;
-    runtime.block_on(async {
-        let helper = glave_process::this_program().map_err(|err| failed(&err))?;
-        let processes = Processes::unrecorded()
-            .with_lifeline(helper)
-            .await
-            .map_err(|err| failed(&err))?;
+    with_lifeline(|processes| async move {
         let mut command = Program::new(program);
         command
             .args(args)
@@ -144,5 +135,26 @@ fn tied(
         // What it left running in its group goes with it.
         child.stop_left().await;
         Ok((status, output))
+    })
+}
+
+/// Runs what `run` does with programs it starts tied to xtask by glave's lifeline, to its end,
+/// on a runtime of its own.
+pub(crate) fn with_lifeline<T, F>(run: impl FnOnce(Processes) -> F) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| format!("could not start a runtime: {err}"))?;
+    runtime.block_on(async {
+        let helper = glave_process::this_program()
+            .map_err(|err| format!("could not find xtask's own program: {err}"))?;
+        let processes = Processes::unrecorded()
+            .with_lifeline(helper)
+            .await
+            .map_err(|err| format!("could not tie what xtask runs to it: {err}"))?;
+        run(processes).await
     })
 }

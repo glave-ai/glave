@@ -28,6 +28,7 @@ mod schema;
 mod secrets;
 mod sources;
 mod spawns;
+mod try_org;
 mod typescript;
 mod unused_pub;
 mod waits;

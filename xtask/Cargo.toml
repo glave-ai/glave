@@ -24,8 +24,9 @@ serde_json.workspace = true
 # Reading the items each library crate exports (`cargo xtask unused-pub`; already in the
 # tree, under the derive macros).
 syn.workspace = true
-# The runtime glave-process starts and waits for programs on, and the limit a query has.
-tokio = { workspace = true, features = ["io-util", "rt", "time"] }
+# The runtime glave-process starts and waits for programs on, the limit a query has, and the
+# signals that stop `try-org`.
+tokio = { workspace = true, features = ["io-util", "rt", "signal", "time"] }
 # Reading Cargo.lock (`cargo xtask package-age`; already in the tree, under glave-config).
 toml.workspace = true
 
