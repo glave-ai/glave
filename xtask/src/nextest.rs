@@ -1,16 +1,19 @@
 //! `cargo nextest run`, as `cargo xtask ci` runs the tests. On macOS every new program waits
 //! before its first run while the system checks it, one at a time for the whole machine, so
 //! beside other builds the wait for one program can pass a test's time limit (225 s, seen).
-//! A program that carries only the signature the linker gives it counts as unsigned there,
-//! which takes the check's slow path: a debug glave's first run took 7 s on an idle M3,
-//! against 1.2 s signed ad hoc (`codesign --sign -`). Cargo copies glave anew on every build
-//! there, so every run of the tests pays it.
+//! The check is per file, and cargo copies glave anew on every build there, so every run of
+//! the tests pays it.
 //!
 //! So on macOS the tests are built first; the workspace's own programs they start (glave) are
-//! signed ad hoc and run once, so the check happens here, where nothing times it; and the
-//! tests run from that build, which nothing copies over again. The test binaries are left as
-//! the linker signed them: nextest runs each before the tests, untimed, to list them, and
-//! signing them all cost about what it saved. Elsewhere the tests build and run in one go.
+//! run once, so the check happens here, where nothing times it; and the tests run from that
+//! build, which nothing copies over again. Elsewhere the tests build and run in one go.
+//!
+//! The programs are left as the linker signed them. Signed ad hoc (`codesign --sign -`), the
+//! check takes a shorter path, but signing writes the whole program anew, which on a disk
+//! other builds share costs more than it saves: on an M3 building on a USB SSD beside other
+//! agents' builds, a fresh debug glave (200 MB) first ran in 0.3 to 20 s as the linker signed
+//! it and in 0.5 to 4.4 s signed, while signing it took 17 to 40 s, and 98 s while worktrees
+//! were deleted (#1066). On an idle internal disk signing took a second and saved six (#529).
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -24,9 +27,6 @@ use crate::cmd;
 /// How long a program's first run may wait on macOS's check of it: seconds as a rule, minutes
 /// beside other builds, as the check goes one program at a time for the whole machine.
 const CHECKED_WITHIN: Duration = Duration::from_mins(5);
-
-/// How long `codesign` has to read or sign one program, which takes it a moment.
-const SIGNED_WITHIN: Duration = Duration::from_mins(1);
 
 /// Runs the tests `build` selects (packages, features and targets, as cargo takes them), with
 /// `options` (filters, `--no-tests`) and the variables `env`.
@@ -46,7 +46,6 @@ pub(crate) fn run(build: &[&str], options: &[&str], env: &[(&str, String)]) -> R
     let binaries: Value = serde_json::from_str(&listed)
         .map_err(|err| format!("could not read the tests' programs nextest listed: {err}"))?;
     for program in programs(&binaries)? {
-        sign(&program)?;
         first_run(&program)?;
     }
     // Named for this run: two runs of `cargo xtask ci` may share the target directory.
@@ -91,24 +90,6 @@ fn programs(binaries: &Value) -> Result<Vec<PathBuf>, String> {
     Ok(programs)
 }
 
-/// Signs `program` ad hoc if it carries only the linker's signature.
-fn sign(program: &Path) -> Result<(), String> {
-    let shown = codesign(&["--display", "--verbose=1"], program)?;
-    if !shown.status.success() || !linker_signed(&String::from_utf8_lossy(&shown.stderr)) {
-        return Ok(());
-    }
-    let signed = codesign(&["--sign", "-", "--force"], program)?;
-    if signed.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "could not sign {} ad hoc: {}",
-            program.display(),
-            String::from_utf8_lossy(&signed.stderr).trim()
-        ))
-    }
-}
-
 /// Runs `program` once, asking only for its help, and waits for it to end, so macOS checks it
 /// now rather than while a test that starts it is timing it; says so when that took a while.
 fn first_run(program: &Path) -> Result<(), String> {
@@ -130,24 +111,6 @@ fn first_run(program: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `codesign` with `args` on `program`, its output kept.
-fn codesign(args: &[&str], program: &Path) -> Result<std::process::Output, String> {
-    Program::new("codesign")
-        .args(args)
-        .arg(program)
-        .output_blocking(SIGNED_WITHIN)
-        .map_err(|err| format!("could not run `codesign`: {err}"))
-}
-
-/// Whether `codesign --display`'s description of a signature says only the linker signed it:
-/// `flags=0x20002(adhoc,linker-signed)`.
-fn linker_signed(description: &str) -> bool {
-    description
-        .lines()
-        .filter(|line| line.starts_with("CodeDirectory "))
-        .any(|line| line.contains("linker-signed"))
-}
-
 fn path_str(path: &Path) -> Result<&str, String> {
     path.to_str()
         .ok_or_else(|| format!("{} is not UTF-8", path.display()))
@@ -158,7 +121,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_programs_signed_are_the_workspaces_own_where_cargo_put_them() {
+    fn the_programs_run_first_are_the_workspaces_own_where_cargo_put_them() {
         let binaries = serde_json::json!({
             "rust-build-meta": {
                 "target-directory": "/cache/target",
@@ -176,17 +139,5 @@ mod tests {
             [PathBuf::from("/cache/target/debug/glave")]
         );
         assert!(programs(&serde_json::json!({})).is_err());
-    }
-
-    #[test]
-    fn only_the_linkers_own_signature_is_replaced() {
-        let linker = "Format=Mach-O thin (arm64)\n\
-                      CodeDirectory v=20400 size=1437295 flags=0x20002(adhoc,linker-signed) \
-                      hashes=44912+0 location=embedded\nSignature=adhoc\n";
-        assert!(linker_signed(linker));
-        let ad_hoc = "CodeDirectory v=20400 size=342186 flags=0x2(adhoc) hashes=10687+2 \
-                      location=embedded\n";
-        assert!(!linker_signed(ad_hoc));
-        assert!(!linker_signed("Executable=/cache/linker-signed/glave\n"));
     }
 }
