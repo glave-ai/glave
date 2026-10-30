@@ -13,6 +13,7 @@ import UserPlus from 'lucide/dist/esm/icons/user-plus.mjs';
 
 import { ServerService } from '../../services/server.service';
 import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
+import { UnloadedComponent } from '../unloaded/unloaded.component';
 import { SessionService } from '../../services/session.service';
 
 /**
@@ -25,6 +26,7 @@ import { SessionService } from '../../services/session.service';
   selector: 'app-person',
   imports: [
     InviteDialogComponent,
+    UnloadedComponent,
     RouterLink,
     GlzAvatarComponent,
     GlzNavItemComponent,
@@ -55,12 +57,18 @@ export class PersonComponent {
   protected readonly settingsLink = '/settings';
   protected readonly adminLink = '/admin';
   /** Whether Admin is in the menu: the server says the person is an admin of one it shows. */
-  protected readonly admin = inject(ServerService).admin;
+  private readonly server = inject(ServerService);
+  protected readonly admin = this.server.admin;
   /** Whether "Invite someone" is in the menu: alone, the person may still make the first. */
-  protected readonly invitesAlone = inject(ServerService).invitesAlone;
+  protected readonly invitesAlone = this.server.invitesAlone;
   /** Whether the dialog that makes an invite is open; its code loads the first time it is. */
   protected readonly inviting = signal(false);
   private readonly session = inject(SessionService);
+
+  constructor() {
+    // What the menu offers is the server's to say, whichever page opened first.
+    void this.server.load();
+  }
 
   protected followed(): void {
     this.navigated.emit();

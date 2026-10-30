@@ -34,4 +34,6 @@
 </glz-popover>
 @defer (when inviting()) {
   <app-invite-dialog [(open)]="inviting" />
+} @error {
+  <app-unloaded class="error" />
 }

@@ -303,3 +303,25 @@ pub(crate) async fn asked(web: &mut Web, request: &Request) -> Value {
         None => answered["error"]["code"].clone(),
     }
 }
+
+/// What making a passkey on `device`, from a browser elsewhere, with a link's `code` of the
+/// kind `link` is answered with: the new session, or the refusal's code.
+pub(crate) async fn make_passkey(
+    served: &Served,
+    code: glave_event::Secret,
+    link: glave_session::protocol::LinkKind,
+    device: &mut glave_identity::testing::Authenticator,
+) -> Value {
+    let mut anyone = elsewhere(served, None);
+    let create = Request::PasskeyCreateOptions { code, link };
+    let options = asked(&mut anyone, &create).await;
+    if !options.is_object() {
+        return options;
+    }
+    let made = Request::PasskeyCreate {
+        ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+        credential: device.create(&options["options"]).unwrap(),
+        name: Some("Phone".into()),
+    };
+    asked(&mut anyone, &made).await
+}

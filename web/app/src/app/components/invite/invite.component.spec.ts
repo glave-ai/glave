@@ -4,7 +4,6 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode, type ShownInvite } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { Authenticator } from '../../lib/passkeys';
 import { type BrowserSession, TOKEN_KEY } from '../../lib/token';
 import { AUTHENTICATOR } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
@@ -14,7 +13,8 @@ import {
   SIGNED_IN,
   provideFakeSession,
 } from '../../testing/fake-session';
-import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
+import { PASSKEY_OPTIONS } from '../../testing/fixtures';
+import { MAKING_DEVICE, settle } from '../../testing/links';
 import { InviteComponent } from './invite.component';
 
 const SHOWN: ShownInvite = {
@@ -26,19 +26,7 @@ const SHOWN: ShownInvite = {
 
 const OPTIONS = PASSKEY_OPTIONS;
 
-const MADE = MADE_PASSKEY;
-
-const device: Authenticator = {
-  create: () => Promise.resolve(MADE as unknown as Credential),
-  get: () => Promise.resolve(null),
-};
-
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
+const device = MAKING_DEVICE;
 
 /** The page opened with an invite's link, on `fake`, signed in as `session`. */
 async function render(

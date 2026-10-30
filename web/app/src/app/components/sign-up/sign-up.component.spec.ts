@@ -4,28 +4,16 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { Authenticator } from '../../lib/passkeys';
 import { AUTHENTICATOR } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 import { FAKE_SERVER, FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
+import { PASSKEY_OPTIONS } from '../../testing/fixtures';
+import { MAKING_DEVICE, settle } from '../../testing/links';
 import { SignUpComponent } from './sign-up.component';
 
 const OPTIONS = PASSKEY_OPTIONS;
 
-const MADE = MADE_PASSKEY;
-
-const device: Authenticator = {
-  create: () => Promise.resolve(MADE as unknown as Credential),
-  get: () => Promise.resolve(null),
-};
-
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
+const device = MAKING_DEVICE;
 
 /** The page opened at `link`, signed out, on a glave that takes sign-ups. */
 async function render(
