@@ -17,8 +17,8 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet, EventId, Header, Money, Payload,
-    Principal, RawEvent, Seq, encode,
+    At, CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet, Currency, EventId, Header, Money,
+    Payload, Principal, RawEvent, Seq, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{
@@ -29,6 +29,10 @@ use thiserror::Error;
 pub use book::Account;
 use book::{Book, Unwritten, dollars, month_of};
 pub(crate) use paying::Paying;
+
+/// Charges a server keeps counted for one organization while the store does not take them.
+/// Past this, its calls are refused until it does.
+const MOST_UNWRITTEN: usize = 10_000;
 
 /// Organizations whose books a server keeps at once. Past this, the least recently used with
 /// no call holding anything of it and nothing to write is forgotten, and read again when next
@@ -46,6 +50,9 @@ pub enum CreditsError {
     /// The payment was added already, for another amount.
     #[error("the payment {reference} was added already, for {amount:.2}")]
     Added { reference: String, amount: Money },
+    /// Credits are US dollars: an amount added is more than nothing, a limit nothing or more.
+    #[error("{amount} is not an amount of dollars credits take")]
+    Amount { amount: Money },
 }
 
 /// Every organization's book this server keeps, and the count each use takes.
@@ -78,6 +85,18 @@ impl<L> fmt::Debug for Credits<L> {
 /// its thread is in.
 fn scope(org: OrgId) -> Scope {
     Scope::of_organization(org)
+}
+
+/// `payload` as the credits ledger's event `id` at `seq`, written `at`.
+fn event<T: Payload>(seq: u64, id: EventId, at: At, payload: &T) -> Result<RawEvent, CreditsError> {
+    let failed = |error: &dyn fmt::Display| CreditsError::Event(error.to_string());
+    let header = Header {
+        id,
+        thread: Reserved::Credits.id(),
+        seq: Seq::new(seq).map_err(|e| failed(&e))?,
+        at,
+    };
+    encode(header, payload).map_err(|e| failed(&e))
 }
 
 impl<L> Credits<L> {
@@ -143,6 +162,9 @@ impl<L: EventLog> Credits<L> {
         reference: &str,
         by: Principal,
     ) -> Result<Account, CreditsError> {
+        if amount.currency != Currency::USD || amount.micros <= 0 {
+            return Err(CreditsError::Amount { amount });
+        }
         self.record(org, |book| match book.added(reference) {
             Some(added) if added == amount => Ok(None),
             Some(added) => Err(CreditsError::Added {
@@ -166,6 +188,9 @@ impl<L: EventLog> Credits<L> {
         limit: Money,
         by: Principal,
     ) -> Result<Account, CreditsError> {
+        if limit.currency != Currency::USD || limit.micros < 0 {
+            return Err(CreditsError::Amount { amount: limit });
+        }
         self.record(org, |_| {
             Ok(Some(CreditsLimitSet {
                 limit,
@@ -204,7 +229,8 @@ impl<L: EventLog> Credits<L> {
                 return Ok(None);
             };
             let now = At::from(self.clock.now());
-            Ok::<_, CreditsError>(Some((vec![self.event(next, now, &payload)?], ())))
+            let event = event(next, self.fresh_id(now)?, now, &payload)?;
+            Ok::<_, CreditsError>(Some((vec![event], ())))
         })
         .await?;
         self.with_book(org, |book| {
@@ -215,70 +241,73 @@ impl<L: EventLog> Credits<L> {
         Ok(())
     }
 
-    /// Writes the charges this server counted for `org` that the store does not have yet, as
-    /// one append each time, until none is left or another write here is under way. One that
-    /// fails is kept, counted, for the next.
+    /// Writes the charges this server counted for `org` that the store does not have yet, in
+    /// one append, after anything others wrote meanwhile. Each charge keeps the id it is first
+    /// written with, so one whose append landed unseen, its writer cancelled or told it failed,
+    /// is read back in its count's place rather than written twice. One that fails stays
+    /// counted, for the next.
     async fn write(&self, org: OrgId) {
-        loop {
-            let taken = self.with_book(org, |book| {
-                if book.writing > 0 || book.unwritten.is_empty() {
-                    return None;
+        let scope = scope(org);
+        let ledger = Reserved::Credits.id();
+        let appended = append_retrying(&self.log, &scope, ledger, || async move {
+            self.catch_up(org).await?;
+            let (next, pending) = self.with_book(org, |book| {
+                for unwritten in &mut book.unwritten {
+                    if unwritten.id.is_none() {
+                        unwritten.id = self.fresh_id(unwritten.at).ok();
+                    }
                 }
-                book.writing = book.unwritten.len();
-                Some(book.unwritten.clone())
+                (book.next_seq(), book.unwritten.clone())
             });
-            let Some(charges) = taken else {
-                return;
-            };
-            let _writing = Writing { credits: self, org };
-            let ledger = Reserved::Credits.id();
-            let charges = &charges;
-            let scope = scope(org);
-            let appended = append_retrying(&self.log, &scope, ledger, || async move {
-                self.catch_up(org).await?;
-                let next = self.with_book(org, |book| book.next_seq());
-                let events = (next..)
-                    .zip(charges)
-                    .map(|(seq, unwritten)| self.event(seq, unwritten.at, &unwritten.charged))
-                    .collect::<Result<Vec<RawEvent>, CreditsError>>()?;
-                Ok::<_, CreditsError>(Some((events, ())))
-            });
-            match appended.await {
-                Ok(appended) => {
-                    let events = appended.map(|(events, ())| events).unwrap_or_default();
-                    self.with_book(org, |book| book.written(charges.len(), events));
+            if pending.is_empty() {
+                return Ok(None);
+            }
+            let events = (next..)
+                .zip(&pending)
+                .map(|(seq, unwritten)| {
+                    let id = unwritten
+                        .id
+                        .map_or_else(|| self.fresh_id(unwritten.at), Ok)?;
+                    event(seq, id, unwritten.at, &unwritten.charged)
+                })
+                .collect::<Result<Vec<RawEvent>, CreditsError>>()?;
+            Ok::<_, CreditsError>(Some((events, ())))
+        });
+        match appended.await {
+            Ok(appended) => self.with_book(org, |book| {
+                for raw in appended.into_iter().flat_map(|(events, ())| events) {
+                    book.apply(raw);
                 }
-                Err(error) => {
-                    tracing::warn!(%org, "could not write the organization's charges yet: {error}");
-                    return;
-                }
+            }),
+            Err(error) => {
+                tracing::warn!(%org, "could not write the organization's charges yet: {error}");
             }
         }
     }
 
-    /// `payload` as the credits ledger's event at `seq`, written `at`.
-    fn event<T: Payload>(&self, seq: u64, at: At, payload: &T) -> Result<RawEvent, CreditsError> {
+    /// A new event's id, written `at`.
+    fn fresh_id(&self, at: At) -> Result<EventId, CreditsError> {
         let failed = |error: &dyn fmt::Display| CreditsError::Event(error.to_string());
         let random = self.entropy.bytes().map_err(|e| failed(&e))?;
-        let header = Header {
-            id: EventId::new(at.timestamp(), random).map_err(|e| failed(&e))?,
-            thread: Reserved::Credits.id(),
-            seq: Seq::new(seq).map_err(|e| failed(&e))?,
-            at,
-        };
-        encode(header, payload).map_err(|e| failed(&e))
+        EventId::new(at.timestamp(), random).map_err(|e| failed(&e))
     }
 
     /// Holds `worst` of `org`'s credits once what this server owes the store is written and
     /// the others' charges are read, or refuses it.
     async fn hold(&self, org: OrgId, worst: i64) -> Result<(), ProviderError> {
         self.write(org).await;
-        if let Err(error) = self.catch_up(org).await {
-            // Credits that cannot be read pay for nothing; the store may answer next time.
-            tracing::warn!(%org, "could not read the organization's credits: {error}");
+        let unsaved = self.with_book(org, |book| book.unwritten.len());
+        let read = if unsaved >= MOST_UNWRITTEN {
+            Err("its charges could not be saved yet".to_owned())
+        } else {
+            self.catch_up(org).await.map_err(|error| error.to_string())
+        };
+        if let Err(error) = read {
+            // Credits that cannot be read or saved pay for nothing; the store may answer later.
+            tracing::warn!(%org, "the organization's credits are out of reach: {error}");
             return Err(ProviderError::Unserved {
-                failure: Failure::Unavailable,
-                reason: "glave could not read your credits just now: try again".to_owned(),
+                failure: Failure::Rejected,
+                reason: "glave could not reach your credits just now: try again".to_owned(),
             });
         }
         let month = month_of(self.clock.now());
@@ -295,20 +324,9 @@ impl<L: EventLog> Credits<L> {
                 person: payer.person,
             },
             at: At::from(self.clock.now()),
+            id: None,
         });
         self.with_book(payer.org, |book| book.settle(held, charged));
-    }
-}
-
-/// A write of an organization's charges under way; it ends however its writing does.
-struct Writing<'a, L> {
-    credits: &'a Credits<L>,
-    org: OrgId,
-}
-
-impl<L> Drop for Writing<'_, L> {
-    fn drop(&mut self) {
-        self.credits.with_book(self.org, |book| book.writing = 0);
     }
 }
 
@@ -334,5 +352,45 @@ impl<L: EventLog> Charging for Credits<L> {
 
     fn write(&self, org: OrgId) -> BoxFuture<'_, ()> {
         Box::pin(Self::write(self, org))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::PrincipalId;
+    use glave_ports::InMemoryLog;
+    use glave_ports::testing::{CountingEntropy, ManualClock};
+
+    use super::*;
+
+    fn org(n: usize) -> OrgId {
+        let second = i64::try_from(n).unwrap();
+        let at = jiff::Timestamp::from_second(second).unwrap();
+        OrgId::from_uuid(PrincipalId::new(at, [1; 10]).unwrap().as_uuid())
+    }
+
+    #[test]
+    fn past_its_cap_the_least_recently_used_idle_book_is_forgotten_never_one_in_use() {
+        let credits = Credits::new(
+            InMemoryLog::new(),
+            Box::new(ManualClock::at_second(1)),
+            Box::new(CountingEntropy::starting_at(1)),
+            None,
+        );
+        credits.with_book(org(0), |book| book.held = 5);
+        for n in 1..BOOKS {
+            credits.with_book(org(n), |_| ());
+        }
+        // The second is used again, so the third is now the least recently used idle one.
+        credits.with_book(org(1), |_| ());
+        credits.with_book(org(BOOKS), |_| ());
+        let kept = &credits.books().kept;
+        assert_eq!(kept.len(), BOOKS);
+        assert!(kept.contains_key(&org(0)), "it holds money for a call");
+        assert!(kept.contains_key(&org(1)), "used again since");
+        assert!(
+            !kept.contains_key(&org(2)),
+            "the least recently used idle one"
+        );
     }
 }

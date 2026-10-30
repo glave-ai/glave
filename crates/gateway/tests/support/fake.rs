@@ -56,6 +56,22 @@ impl Fake {
         })
     }
 
+    /// A gated fake whose first `answers` answers each used 5 tokens in and 50 out.
+    pub(crate) fn gated_answering(
+        provider: &str,
+        gate: Arc<Semaphore>,
+        answers: usize,
+    ) -> Arc<Self> {
+        let fake = Self::gated(provider, gate);
+        for _ in 0..answers {
+            fake.script
+                .lock()
+                .unwrap()
+                .push_back(Ok(answer(provider, "m", 5, 50)));
+        }
+        fake
+    }
+
     pub(crate) fn seen(&self) -> Vec<ModelRequest> {
         self.seen.lock().unwrap().clone()
     }

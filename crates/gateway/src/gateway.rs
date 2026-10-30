@@ -127,7 +127,7 @@ impl Gateway {
                     hold.settle(actual(&completion));
                     if let Some(paying) = paying {
                         let cost = completion.cost.as_ref().map(|cost| cost.amount);
-                        paying.settle(cost).await;
+                        paying.settle(cost, &completion.usage.counts()).await;
                     }
                     return Ok(completion);
                 }

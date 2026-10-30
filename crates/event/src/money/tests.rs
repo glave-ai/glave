@@ -113,3 +113,13 @@ proptest! {
         prop_assert_eq!(usd(a).checked_add(usd(b)).map(|sum| sum.micros), exact);
     }
 }
+
+#[test]
+fn cents_round_up_for_what_could_be_spent_and_down_for_what_is_left() {
+    assert_eq!(usd(2_400_001).cents_up(), usd(2_410_000));
+    assert_eq!(usd(2_400_000).cents_up(), usd(2_400_000));
+    assert_eq!(usd(4_200).cents_up(), usd(10_000), "under a cent is a cent");
+    assert_eq!(usd(1_509_999).cents_down(), usd(1_500_000));
+    assert_eq!(usd(4_200).cents_down(), usd(0));
+    assert_eq!(usd(-4_200).cents_down(), usd(-10_000));
+}

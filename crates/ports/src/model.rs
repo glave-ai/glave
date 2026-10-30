@@ -55,16 +55,15 @@ pub struct ModelRequest {
     /// alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<InlineFile>,
-    /// Whose work the call is, so a gateway that keeps organizations' credits charges it
-    /// there. None is glave's own, charged to no one. Providers ignore it, and it is never
-    /// sent.
+    /// Whose work the call is, so a gateway that keeps organizations' credits can charge it
+    /// there: none charges no organization's. Providers ignore it, and it is never sent.
     #[serde(skip)]
     pub payer: Option<Payer>,
 }
 
 /// Whose work a model call is: the organization whose credits pay for it, and the person it
 /// works for, when it works for anyone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Payer {
     pub org: OrgId,
     pub person: Option<PrincipalId>,
@@ -324,31 +323,39 @@ pub enum ProviderError {
 }
 
 /// Why an organization's credits could not pay for a call (`specs/gateway.md`, "Credits"),
-/// in the words its people are told.
+/// in the words its people are told: what a call needs rounded up to the cent, what is left
+/// rounded down.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unpaid {
-    /// Nothing is left: what was added, less what was charged and what calls running hold.
+    /// Nothing is left of the balance: everything added is charged.
     #[error("you're out of credits: add credits to keep going")]
     Spent,
-    /// Something is left, but less than the call could cost.
+    /// Something is free now, after what calls running hold, but less than the call could cost.
     #[error(
-        "this could cost up to {needs:.2}, more than the {left:.2} of credits left: add \
-         credits, or choose a cheaper model"
+        "this could cost up to {:.2}, more than the {:.2} of credits free now: add credits, or \
+         choose a cheaper model",
+        needs.cents_up(),
+        free.cents_down()
     )]
-    Short { left: Money, needs: Money },
-    /// Nothing is left of the most it may spend this month.
+    Short { free: Money, needs: Money },
+    /// Nothing is left of the most it may spend this month: it was spent.
     #[error(
-        "this month's spending limit of {limit:.2} is reached: the account's owner can raise it"
+        "this month's spending limit of {:.2} is reached: the account's owner can raise it",
+        limit.cents_up()
     )]
     MonthLimit { limit: Money },
-    /// Something is left of this month's limit, but less than the call could cost.
+    /// Something of this month's limit is free now, after what calls running hold, but less
+    /// than the call could cost.
     #[error(
-        "this could cost up to {needs:.2}, more than the {left:.2} left of this month's \
-         {limit:.2} limit: the account's owner can raise it, or choose a cheaper model"
+        "this could cost up to {:.2}, more than the {:.2} free now of this month's {:.2} \
+         limit: the account's owner can raise it, or choose a cheaper model",
+        needs.cents_up(),
+        free.cents_down(),
+        limit.cents_up()
     )]
     MonthShort {
         limit: Money,
-        left: Money,
+        free: Money,
         needs: Money,
     },
     /// No catalog says what the model costs, so no one can say what the call could.

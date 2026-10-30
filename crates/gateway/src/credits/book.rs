@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_event::{At, Body, CreditsCharged, Currency, Money, PrincipalId, RawEvent};
+use glave_event::{At, Body, CreditsCharged, Currency, EventId, Money, PrincipalId, RawEvent};
 use glave_ports::Unpaid;
 use glave_ports::stream::in_order;
 use jiff::Timestamp;
@@ -87,11 +87,13 @@ impl Spending {
     }
 }
 
-/// A charge this server made, counted, and not yet in the store.
+/// A charge this server made, counted, and not yet in the store: its event's id once a write
+/// was first tried, so the event read back takes its place, however that write ended.
 #[derive(Debug, Clone)]
 pub(super) struct Unwritten {
     pub(super) charged: CreditsCharged,
     pub(super) at: At,
+    pub(super) id: Option<EventId>,
 }
 
 /// One organization's book.
@@ -109,8 +111,6 @@ pub(super) struct Book {
     spending: Spending,
     /// This server's charges the store does not have yet, oldest first.
     pub(super) unwritten: Vec<Unwritten>,
-    /// How many of the first of `unwritten` are being written now.
-    pub(super) writing: usize,
     /// Held for calls running.
     pub(super) held: i64,
     /// When it was last used, by the books' own count: the least recent goes first.
@@ -122,11 +122,14 @@ impl Book {
         self.next.max(1)
     }
 
-    /// Takes in the event at the next `seq`; any other is already in, or not yet.
+    /// Takes in the event at the next `seq`; any other is already in, or not yet. A charge of
+    /// this server's own read back takes the place of its count.
     pub(super) fn apply(&mut self, raw: RawEvent) {
+        let id = raw.id;
         let Some((at, body)) = in_order(&mut self.next, raw) else {
             return;
         };
+        self.unwritten.retain(|unwritten| unwritten.id != Some(id));
         match body {
             Body::CreditsAdded(added) => {
                 if let Some(amount) = micros(added.amount) {
@@ -169,8 +172,8 @@ impl Book {
     }
 
     /// Holds `worst` for a call in `month`, or refuses it: when nothing is left of the balance
-    /// or the month's limit once what calls running hold is taken off, or `worst` is more than
-    /// what is left.
+    /// or of the month's limit, or when `worst` is more than what calls running leave free of
+    /// either.
     pub(super) fn hold(
         &mut self,
         worst: i64,
@@ -178,13 +181,13 @@ impl Book {
         default: Option<Money>,
     ) -> Result<(), Unpaid> {
         let (balance, spending) = self.counted();
-        let left = balance.saturating_sub(self.held);
-        if left <= 0 {
+        if balance <= 0 {
             return Err(Unpaid::Spent);
         }
-        if worst > left {
-            let (left, needs) = (dollars(left), dollars(worst));
-            return Err(Unpaid::Short { left, needs });
+        let free = balance.saturating_sub(self.held);
+        if worst > free {
+            let (free, needs) = (dollars(free.max(0)), dollars(worst));
+            return Err(Unpaid::Short { free, needs });
         }
         if let Some(limit) = self.limit(default) {
             let spent = if spending.month == month {
@@ -192,16 +195,14 @@ impl Book {
             } else {
                 0
             };
-            let room = micros(limit)
-                .unwrap_or(0)
-                .saturating_sub(spent)
-                .saturating_sub(self.held);
+            let room = micros(limit).unwrap_or(0).saturating_sub(spent);
             if room <= 0 {
                 return Err(Unpaid::MonthLimit { limit });
             }
-            if worst > room {
-                let (left, needs) = (dollars(room), dollars(worst));
-                return Err(Unpaid::MonthShort { limit, left, needs });
+            let free = room.saturating_sub(self.held);
+            if worst > free {
+                let (free, needs) = (dollars(free.max(0)), dollars(worst));
+                return Err(Unpaid::MonthShort { limit, free, needs });
             }
         }
         self.held = self.held.saturating_add(worst);
@@ -212,16 +213,6 @@ impl Book {
     pub(super) fn settle(&mut self, held: i64, charged: Option<Unwritten>) {
         self.held = self.held.saturating_sub(held);
         self.unwritten.extend(charged);
-    }
-
-    /// Takes in `written`, the events the first `count` of `unwritten` became once they were
-    /// appended, in their place.
-    pub(super) fn written(&mut self, count: usize, written: Vec<RawEvent>) {
-        let count = count.min(self.unwritten.len());
-        self.unwritten.drain(..count);
-        for raw in written {
-            self.apply(raw);
-        }
     }
 
     /// The account as it stands at `now`, the server's own limit `default`.

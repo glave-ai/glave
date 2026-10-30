@@ -1,9 +1,9 @@
 //! An organization's credits, reserve then settle: a call that says whose work it is holds its
 //! worst case against its organization's credits and is charged what it cost; one that could
 //! overdraw the balance or pass the month's limit is refused before it is sent, saying which;
-//! a model with no price is refused; a call that breaks off, or is cancelled, after its answer
-//! began is charged for what it read and what came; a charge the store refuses is still
-//! counted and written with the next; calls side by side never overdraw; another server on the
+//! a model with no price is refused, and passed over for the next target that has one; a call
+//! that breaks off after its answer began, or is cancelled, is charged for what it read and
+//! what came; a charge the store refuses is still counted and written with the next; calls side by side never overdraw; another server on the
 //! store, or this one after a restart, reads the same balance; and a call no organization
 //! asked for is charged to no one.
 
@@ -20,7 +20,7 @@ use jiff::Timestamp;
 use tokio::sync::{Semaphore, oneshot};
 use tokio::task::JoinSet;
 
-use crate::support::{Fake, answer, block_on, dollars, price, request};
+use crate::support::{Fake, block_on, dollars, price, request};
 
 /// 2026-10-30T09:00:00Z.
 const NOW: i64 = 1_793_350_800_000;
@@ -121,7 +121,7 @@ fn a_call_is_charged_what_it_cost_and_one_that_could_overdraw_is_never_sent() {
     assert_eq!(
         ask(&gateway, &paid(acme, ada)).unwrap_err(),
         ProviderError::Unpaid(Unpaid::Short {
-            left: dollars(WORST - 1),
+            free: dollars(WORST - 1),
             needs: dollars(WORST)
         }),
         "something is left, but less than the call could cost"
@@ -150,6 +150,25 @@ fn a_model_with_no_price_is_refused_since_no_one_can_say_what_it_could_cost() {
         ProviderError::Unpaid(Unpaid::Unpriced { model: "m".into() })
     );
     assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_target_with_no_price_is_passed_over_for_the_next_that_has_one() {
+    let log = FaultyLog::default();
+    let credits = credits(&log, None);
+    let fake = Fake::new("p");
+    let targets = vec![
+        fake.target("free"),
+        fake.target("m").with_price(price(1_000_000)),
+    ];
+    let gateway = over(targets, &credits);
+    add(&credits, org(1), 1_000_000, "order-1");
+    let served = ask(&gateway, &paid(org(1), person(1)))
+        .unwrap()
+        .served
+        .unwrap();
+    assert_eq!(served.target, "p/m");
+    assert_eq!(balance(&credits, org(1)), 1_000_000 - COST);
 }
 
 #[test]
@@ -228,7 +247,7 @@ fn a_call_cancelled_after_its_answer_began_is_charged_for_what_came() {
     assert_eq!(
         balance(&credits_on(&log), acme),
         1_000,
-        "written with the next call"
+        "not yet in the store: it is written with the next call"
     );
 }
 
@@ -243,7 +262,7 @@ fn a_charge_the_store_refuses_is_counted_and_written_with_the_next() {
     ask(&gateway, &paid(acme, ada)).unwrap();
     assert_eq!(balance(&credits, acme), 1_000_000 - COST, "counted here");
     let later = credits_on(&log);
-    assert_eq!(balance(&later, acme), 1_000_000, "not yet in the store");
+    assert_eq!(balance(&later, acme), 1_000_000, "the store refused it");
     ask(&gateway, &paid(acme, ada)).unwrap();
     assert_eq!(
         balance(&later, acme),
@@ -262,13 +281,7 @@ fn calls_side_by_side_never_overdraw() {
     let log = FaultyLog::default();
     let credits = credits(&log, None);
     let gate = Arc::new(Semaphore::new(0));
-    let fake = Fake::gated("p", Arc::clone(&gate));
-    for _ in 0..3 {
-        fake.script
-            .lock()
-            .unwrap()
-            .push_back(Ok(answer("p", "m", 5, 50)));
-    }
+    let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
     let gateway = Arc::new(gateway(&fake, &credits));
     let (acme, ada) = (org(1), person(1));
     add(&credits, acme, 3 * WORST + WORST / 2, "order-1");

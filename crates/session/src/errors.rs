@@ -177,22 +177,22 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
     vec![said]
 }
 
-/// Why an organization's credits could not pay for a call, as glave says it.
+/// Why an organization's credits could not pay for a call, as glave says it: what a call
+/// needs and a limit rounded up to the cent, what is free rounded down.
 fn unpaid_said(unpaid: &Unpaid) -> Sentence {
-    let cents = |money: &glave_event::Money| format!("{money:.2}");
+    let up = |money: &glave_event::Money| format!("{:.2}", money.cents_up());
+    let down = |money: &glave_event::Money| format!("{:.2}", money.cents_down());
     match unpaid {
         Unpaid::Spent => Sentence::OutOfCredits,
-        Unpaid::Short { left, needs } => Sentence::CreditsShort {
-            left: cents(left),
-            needs: cents(needs),
+        Unpaid::Short { free, needs } => Sentence::CreditsShort {
+            free: down(free),
+            needs: up(needs),
         },
-        Unpaid::MonthLimit { limit } => Sentence::MonthLimitReached {
-            limit: cents(limit),
-        },
-        Unpaid::MonthShort { limit, left, needs } => Sentence::MonthLimitShort {
-            limit: cents(limit),
-            left: cents(left),
-            needs: cents(needs),
+        Unpaid::MonthLimit { limit } => Sentence::MonthLimitReached { limit: up(limit) },
+        Unpaid::MonthShort { limit, free, needs } => Sentence::MonthLimitShort {
+            limit: up(limit),
+            free: down(free),
+            needs: up(needs),
         },
         Unpaid::Unpriced { model } => Sentence::NoPriceNoCredits {
             model: model.clone(),
@@ -431,16 +431,16 @@ mod tests {
             },
             ProviderError::Unpaid(Unpaid::Spent),
             ProviderError::Unpaid(Unpaid::Short {
-                left: dollars(1_500_000),
-                needs: dollars(2_400_000),
+                free: dollars(1_509_999),
+                needs: dollars(2_400_001),
             }),
             ProviderError::Unpaid(Unpaid::MonthLimit {
                 limit: dollars(10_000_000),
             }),
             ProviderError::Unpaid(Unpaid::MonthShort {
                 limit: dollars(10_000_000),
-                left: dollars(1_500_000),
-                needs: dollars(2_400_000),
+                free: dollars(1_500_000),
+                needs: dollars(4_200),
             }),
             ProviderError::Unpaid(Unpaid::Unpriced {
                 model: "acme/big".into(),

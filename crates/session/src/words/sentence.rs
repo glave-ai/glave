@@ -224,12 +224,12 @@ sentences! {
     OverBudget { budget: String, detail: String } = "over-budget"
         "the { $budget } budget would be exceeded: { $detail }",
     OutOfCredits = "out-of-credits" "you're out of credits: add credits to keep going",
-    CreditsShort { left: String, needs: String } = "credits-short"
-        "this could cost up to { $needs }, more than the { $left } of credits left: add credits, or choose a cheaper model",
+    CreditsShort { free: String, needs: String } = "credits-short"
+        "this could cost up to { $needs }, more than the { $free } of credits free now: add credits, or choose a cheaper model",
     MonthLimitReached { limit: String } = "month-limit-reached"
         "this month's spending limit of { $limit } is reached: the account's owner can raise it",
-    MonthLimitShort { limit: String, left: String, needs: String } = "month-limit-short"
-        "this could cost up to { $needs }, more than the { $left } left of this month's { $limit } limit: the account's owner can raise it, or choose a cheaper model",
+    MonthLimitShort { limit: String, free: String, needs: String } = "month-limit-short"
+        "this could cost up to { $needs }, more than the { $free } free now of this month's { $limit } limit: the account's owner can raise it, or choose a cheaper model",
     NoPriceNoCredits { model: String } = "no-price-no-credits"
         "{ $model } has no price here, so credits can't pay for it: choose another model",
 

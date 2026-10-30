@@ -91,7 +91,7 @@ fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
     assert_eq!(
         book.hold(600, month, None),
         Err(Unpaid::Short {
-            left: dollars(400),
+            free: dollars(400),
             needs: dollars(600)
         }),
         "what is held counts"
@@ -102,7 +102,7 @@ fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
         book.hold(600, month, limit),
         Err(Unpaid::MonthShort {
             limit: dollars(500),
-            left: dollars(500),
+            free: dollars(500),
             needs: dollars(600)
         })
     );
@@ -132,15 +132,25 @@ fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
 }
 
 #[test]
-fn a_charge_counts_at_once_and_once_more_when_it_is_written() {
+fn a_charge_counts_at_once_and_its_event_read_back_takes_its_place() {
     let month = month_of(at(OCTOBER));
     let ada = person(1);
     let mut book = Book::default();
     take(&mut book, OCTOBER, &added(1_000, "order-1"));
     assert_eq!(book.hold(700, month, None), Ok(()));
+    assert_eq!(
+        book.hold(400, month, None),
+        Err(Unpaid::Short {
+            free: dollars(300),
+            needs: dollars(400)
+        }),
+        "something is left, but calls running hold most of it: not spent"
+    );
+    let id = EventId::new(at(OCTOBER), [8; 10]).unwrap();
     let unwritten = Unwritten {
         charged: charged(300, Some(ada)),
         at: At::from(at(OCTOBER)),
+        id: Some(id),
     };
     book.settle(700, Some(unwritten.clone()));
     assert!(!book.idle(), "it has a charge to write");
@@ -151,24 +161,16 @@ fn a_charge_counts_at_once_and_once_more_when_it_is_written() {
         "counted before it is written"
     );
     assert_eq!(counted.people.get(&ada), Some(&dollars(300)));
-    assert_eq!(
-        book.hold(800, month, None),
-        Err(Unpaid::Short {
-            left: dollars(700),
-            needs: dollars(800)
-        })
-    );
+    // Its append landed, whoever saw it: read back, it counts once.
     let header = Header {
-        id: EventId::new(at(OCTOBER), [8; 10]).unwrap(),
+        id,
         thread: ThreadId::reserved(12),
         seq: Seq::new(book.next_seq()).unwrap(),
         at: unwritten.at,
     };
-    let written = encode(header, &unwritten.charged).unwrap();
-    book.written(1, vec![written]);
+    book.apply(encode(header, &unwritten.charged).unwrap());
     assert!(book.idle());
-    let after = book.account(at(OCTOBER), None);
-    assert_eq!(after, counted, "written, it counts once");
+    assert_eq!(book.account(at(OCTOBER), None), counted);
 }
 
 #[test]
