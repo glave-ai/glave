@@ -16,3 +16,10 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 [[profile.default.overrides]]
 filter = 'test(builds_with_dependencies_work_offline_in_the_sandbox)'
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# A person's computer grows for a command held at its CPU limit, measured by how long the kernel
+# throttled it, which other work on a busy node lowers: run alone, nothing on the node competes
+# with what it measures (#1064).
+[[profile.default.overrides]]
+filter = 'test(a_person_s_computer_grows_for_what_a_command_runs_short_of)'
+threads-required = "num-test-threads"
