@@ -44,6 +44,7 @@ mod plans;
 mod projects;
 mod providers;
 mod questions;
+mod recovery;
 mod remembering;
 mod remote;
 mod removing;

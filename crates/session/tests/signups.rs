@@ -29,7 +29,7 @@ pub(crate) async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Ser
 }
 
 /// [`serve`], with the clock its server reads, to move on.
-async fn serve_timed(
+pub(crate) async fn serve_timed(
     dir: &Path,
     signup: bool,
     outbox: &Arc<Outbox>,
@@ -71,7 +71,9 @@ pub(crate) fn linked(outbox: &Outbox, fragment: &str) -> Option<Secret> {
     let sent = outbox.sent();
     let text = &sent.last()?.text;
     let marker = format!("#{fragment}=");
-    let link = text.split_whitespace().find(|word| word.contains(&marker))?;
+    let link = text
+        .split_whitespace()
+        .find(|word| word.contains(&marker))?;
     Some(Secret::new(link.split_once(&marker)?.1))
 }
 
@@ -156,7 +158,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
 }
 
 /// A browser elsewhere signed in with the account `email` signs up for, by its emailed link.
-async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> Web {
+pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> Web {
     let mut anyone = elsewhere(served, None);
     let start = Request::SignupStart {
         email: email.into(),
