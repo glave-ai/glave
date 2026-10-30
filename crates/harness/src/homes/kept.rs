@@ -1,7 +1,7 @@
-//! What was last read on a person's own computer for a project's folder, kept in the project's
-//! instructions ledger (`instructions.read`), so a thread there opens with it without reaching
-//! that computer (`specs/computers.md`, decision 6). The latest one holds; a read the same as it
-//! records nothing.
+//! What was last read on a person's own computer for a project's folder, or for their chats
+//! their own instructions, kept in the project's instructions ledger (`instructions.read`), so a
+//! thread there opens with it without reaching that computer (`specs/computers.md`, decision 6).
+//! The latest one holds; a read the same as it records nothing.
 
 use std::path::Path;
 
@@ -19,13 +19,15 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// What a thread at `root` in `scope`'s project opens with as it was last read, when that
-    /// read was for `root`: the project's folder then is the folder now.
-    pub(crate) async fn last_read(&self, scope: Scope, root: &Path) -> Option<String> {
+    /// The files of instructions last read for `root` in `scope`'s project, when that read was
+    /// for `root`: the project's folder then is the folder now.
+    pub(crate) async fn last_read(
+        &self,
+        scope: Scope,
+        root: &Path,
+    ) -> Option<Vec<InstructionsFile>> {
         match self.latest_read(scope).await {
-            Ok(Some((_, Some(read)))) if Path::new(&read.root) == root => {
-                crate::instructions::compose(root, &read.files)
-            }
+            Ok(Some((_, Some(read)))) if Path::new(&read.root) == root => Some(read.files),
             Ok(_) => None,
             Err(error) => {
                 tracing::warn!(%error, "could not read what a project's folder opens with");
@@ -34,8 +36,9 @@ where
         }
     }
 
-    /// Keeps `files`, just read for `root`, as what `scope`'s project's threads there open with,
-    /// unless they are what was kept already.
+    /// Keeps `files`, just read for `root`, as what `scope`'s project's threads there open with
+    /// (for a chat, the person's own, read for their home), unless they are what was kept
+    /// already.
     pub(crate) async fn keep_read(&self, scope: Scope, root: &Path, files: Vec<InstructionsFile>) {
         let read = InstructionsRead {
             root: root.display().to_string(),

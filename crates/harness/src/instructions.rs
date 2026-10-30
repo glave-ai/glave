@@ -87,22 +87,35 @@ pub(crate) fn opened_with(messages: &[Message]) -> Option<String> {
 /// What [`agents_md`] reads for a thread working at `root` on a computer reached through the
 /// port, read there through `home`, the person's home on it, which `root` is inside: their own
 /// instructions (`.glave/AGENTS.md` in the home), then every AGENTS.md from the repository's
-/// root down to `root`, never above the home, file by file as they are sent ([`compose`]). A
-/// file that is not there, or that the computer refuses to read, is left out; any other
-/// failure (the computer or its home gone) fails the read, so nothing half read is taken for
-/// it.
+/// root down to `root`, never above the home, file by file as they are sent ([`compose`]).
 pub(crate) async fn agents_md_on(
     home: &Workspace,
     root: &Path,
 ) -> Result<Vec<InstructionsFile>, ComputerError> {
-    let base = home.root();
-    let mut files = vec![base.join(PERSONAL)];
+    let mut files = vec![home.root().join(PERSONAL)];
     files.extend(
         dirs_on(home, root)
             .await?
             .iter()
             .map(|dir| dir.join(AGENTS_MD)),
     );
+    read_on(home, files).await
+}
+
+/// The person's own instructions on their own computer, read there through `home`, their home
+/// on it, as [`agents_md_on`] reads them: what a chat opens with, as on a laptop.
+pub(crate) async fn personal_on(home: &Workspace) -> Result<Vec<InstructionsFile>, ComputerError> {
+    read_on(home, vec![home.root().join(PERSONAL)]).await
+}
+
+/// `files`, read through `home`, in order, within [`MAX_BYTES`] together. A file that is not
+/// there, or that the computer refuses to read, is left out; any other failure (the computer or
+/// its home gone) fails the read, so nothing half read is taken for it.
+async fn read_on(
+    home: &Workspace,
+    files: Vec<PathBuf>,
+) -> Result<Vec<InstructionsFile>, ComputerError> {
+    let (base, computers, id) = (home.root(), home.computers(), home.info().id);
     let mut read = Sections::default();
     for file in files {
         if read.full() {
@@ -111,13 +124,19 @@ pub(crate) async fn agents_md_on(
         let Some(path) = inside(base, &file) else {
             continue;
         };
-        match home.read(&path).await {
+        // A path with nothing there is `Ok`, so not found here means the home is gone.
+        match computers.stat(id, &path).await {
+            Ok(stat) if stat.kind.is_some() => {}
+            Ok(_) | Err(ComputerError::Refused(_)) => continue,
+            Err(error) => return Err(error),
+        }
+        match computers.read(id, &path).await {
             Ok(bytes) => read.add(
                 &file,
                 file.clone(),
                 &String::from_utf8_lossy(bytes.as_slice()),
             ),
-            Err(ComputerError::NotFound(_) | ComputerError::Refused(_)) => {}
+            Err(ComputerError::Refused(_)) => {}
             Err(error) => return Err(error),
         }
     }
