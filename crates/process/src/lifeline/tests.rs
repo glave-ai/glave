@@ -40,14 +40,15 @@ fn gated_helper(folder: &Path) {
 
 /// A stand-in helper whose first start stops itself once it says it is ready, before it reads
 /// anything, so its pipe fills whatever the scheduler does; every later start reads, as
-/// [`fake_helper`]'s does. A stop sent from outside could come too late: on macOS one sent as
-/// the helper starts sometimes leaves it reading (#1044).
+/// [`fake_helper`]'s does. Which start is first is settled before it says it is ready, so a
+/// first start killed before it stopped never makes the next one stop. A stop sent while the
+/// helper is still starting can be lost on macOS, leaving it reading (#1044).
 fn stopping_helper(folder: &Path) -> PathBuf {
     let script = folder.join("helper");
     let ready = String::from_utf8(READY.to_vec()).unwrap();
     let text = format!(
-        "#!/bin/sh\nprintf '{ready}'\nmkdir \"${{0%/*}}/stopped\" 2>/dev/null && kill -STOP $$\n\
-         exec cat > \"${{0%/*}}/told-$$\"\n"
+        "#!/bin/sh\nmkdir \"${{0%/*}}/stopped\" 2>/dev/null && first=1\nprintf '{ready}'\n\
+         [ -n \"$first\" ] && kill -STOP $$\nexec cat > \"${{0%/*}}/told-$$\"\n"
     );
     std::fs::write(&script, text).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -293,7 +294,8 @@ fn a_helper_that_reads_nothing_never_stalls_glave_and_is_replaced() {
         let first = helper_pid(&lifeline);
         let held = lifeline.tie(101).await.unwrap();
 
-        // The helper stops itself, not gone: it never reads, and glave's lines fill its pipe.
+        // The helper stopped itself and is not gone: it never reads, and glave's lines fill
+        // its pipe.
         // Programs keep starting and ending without waiting for it, until one finds it full.
         let stopped = Pid::from_raw(i32::try_from(first).unwrap()).unwrap();
         let deadline = Instant::now() + HUNG;
