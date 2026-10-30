@@ -1,5 +1,10 @@
 // The look shared by buttons and icon buttons. Each variant sets four custom properties, so an
-// app re-skins every button by overriding them, or one button by setting them on it.
+// app re-skins every button by overriding them, or one button by setting them on it. A variant
+// or a size a template writes as it is (`size="sm"`) is selected by that attribute too, which
+// the element has from the moment it is made, beside the class bound from it: a button in a
+// view added outside change detection (a deferred block once its code arrives) is in the page
+// before it is bound, and would otherwise show at the default for a frame, moving what is beside
+// it (#1079).
 @mixin button {
   :host {
     --glz-button-bg: transparent;
@@ -41,7 +46,8 @@
     opacity: 0.55;
   }
 
-  :host(.glz-button--primary) {
+  :host(.glz-button--primary),
+  :host([variant='primary']) {
     --glz-button-bg: var(--glz-accent);
     --glz-button-fg: var(--glz-on-accent);
     --glz-button-border: var(--glz-accent);
@@ -50,11 +56,13 @@
     font-weight: var(--glz-weight-bold);
   }
 
-  :host(.glz-button--ghost) {
+  :host(.glz-button--ghost),
+  :host([variant='ghost']) {
     --glz-button-border: transparent;
   }
 
-  :host(.glz-button--danger) {
+  :host(.glz-button--danger),
+  :host([variant='danger']) {
     --glz-button-bg: var(--glz-color-danger);
     --glz-button-fg: var(--glz-color-on-danger);
     --glz-button-border: var(--glz-color-danger);
@@ -63,13 +71,15 @@
     font-weight: var(--glz-weight-bold);
   }
 
-  :host(.glz-button--sm) {
+  :host(.glz-button--sm),
+  :host([size='sm']) {
     min-height: var(--glz-control-height-sm);
     padding: var(--glz-inset-button-sm);
     font-size: var(--glz-text-sm);
   }
 
-  :host(.glz-button--lg) {
+  :host(.glz-button--lg),
+  :host([size='lg']) {
     min-height: var(--glz-control-height-lg);
   }
 

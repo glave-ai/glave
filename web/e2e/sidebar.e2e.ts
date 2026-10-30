@@ -486,3 +486,24 @@ test('a page left while the side nav still loads what it shows later reports not
   await expect(byTestId(page, 'settings-theme')).toBeVisible();
   expect(problems()).toEqual([]);
 });
+
+test('a project’s heading keeps its size as its ⋯ menu loads', async ({ page }) => {
+  // The menu comes in a deferred block, whose button is in the page before its size is bound,
+  // at a button's default size, until the next change detection (#1079). Measured as each
+  // change lands, before that, every ⋯ keeps the one box.
+  await page.addInitScript(() => {
+    const boxes = new Set<string>();
+    (window as unknown as { boxes: Set<string> }).boxes = boxes;
+    new MutationObserver(() => {
+      for (const more of document.querySelectorAll('[data-testid="nav-project"] .more')) {
+        const box = more.getBoundingClientRect();
+        boxes.add(`${String(box.width)}x${String(box.height)}`);
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'nav-project-more-trigger').first()).toBeAttached();
+  const boxes = await page.evaluate(() => [...(window as unknown as { boxes: Set<string> }).boxes]);
+  expect(boxes, 'one box for every ⋯, every time').toHaveLength(1);
+});

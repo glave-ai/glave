@@ -6,12 +6,14 @@
   padding: 0;
 }
 
-:host(.glz-button--sm) {
+:host(.glz-button--sm),
+:host([size='sm']) {
   width: var(--glz-control-height-sm);
   padding: 0;
 }
 
-:host(.glz-button--lg) {
+:host(.glz-button--lg),
+:host([size='lg']) {
   width: var(--glz-control-height-lg);
   padding: 0;
 }
