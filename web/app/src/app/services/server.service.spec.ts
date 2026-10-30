@@ -38,6 +38,20 @@ describe('ServerService', () => {
     expect(server.exists()).toEqual(exists);
   });
 
+  it('asks again after a change to what exists, and keeps what it said when it cannot', async () => {
+    const fake = new FakeSession().answer('server/discover', INFO);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const server = TestBed.inject(ServerService);
+    await server.load();
+    const exists = { organization: true, workers: false } as const;
+    fake.answer('server/discover', { ...INFO, exists });
+    await server.reread();
+    expect(server.exists()).toEqual(exists);
+    fake.answer('server/discover', new ApiError({ code: ErrorCode.INTERNAL, message: 'down' }));
+    await server.reread();
+    expect(server.exists()).toEqual(exists);
+  });
+
   it('asks again after a failure', async () => {
     const fake = new FakeSession().answer(
       'server/discover',

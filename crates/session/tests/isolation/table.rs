@@ -245,6 +245,17 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("recovery/start", vec![json!({"email": "ada@example.com"})]),
         // The caller's own organizations, naming no one's.
         ("organization/list", vec![json!({})]),
+        // The caller's own organization's credits, where the server keeps them; adding them
+        // is for whoever runs the server alone.
+        ("credits/get", vec![json!({})]),
+        (
+            "credits/limit",
+            vec![json!({"limit": {"micros": 1_000_000, "currency": "USD"}})],
+        ),
+        (
+            "credits/add",
+            vec![json!({"amount": {"micros": 1_000_000, "currency": "USD"}, "reference": "o-1"})],
+        ),
         ("invite/show", vec![json!({"code": "@invite_code"})]),
         ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),

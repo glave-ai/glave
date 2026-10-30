@@ -16,6 +16,7 @@ mod commands;
 mod conformance;
 mod connections;
 mod credentials;
+mod credits;
 mod discover;
 mod durable;
 mod files;

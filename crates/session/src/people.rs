@@ -36,12 +36,19 @@ pub(crate) enum Permit {
     Owners,
     /// Make invites to the organization, list them and revoke them.
     Invites,
+    /// Set what the organization may spend (`specs/gateway.md`, "Credits").
+    Billing,
 }
 
 /// What each of the three roles permits.
 pub(crate) fn permits(role: OrgRole) -> &'static [Permit] {
     match role {
-        OrgRole::Owner => &[Permit::People, Permit::Owners, Permit::Invites],
+        OrgRole::Owner => &[
+            Permit::People,
+            Permit::Owners,
+            Permit::Invites,
+            Permit::Billing,
+        ],
         OrgRole::Admin => &[Permit::People, Permit::Invites],
         OrgRole::Member => &[],
     }
@@ -209,6 +216,12 @@ impl People {
             .unwrap_or_default()
     }
 
+    /// The name the organization knows `person` by, else their email, when it knows either.
+    pub(crate) fn known_as(&self, person: PrincipalId) -> Option<String> {
+        let info = self.info(person)?;
+        info.name.or(info.email)
+    }
+
     pub(crate) fn info(&self, person: PrincipalId) -> Option<PersonInfo> {
         self.known.get(&person).map(|kept| PersonInfo {
             id: person,
@@ -316,7 +329,8 @@ where
 
     /// Whether `caller`'s organization is shown (`specs/model.md`, "Identity"): where people
     /// sign in through a company login, or, to someone signed in, where it holds more than one
-    /// person, the local person counting in the server's own.
+    /// person, the local person counting in the server's own, or an invite to it waits, so the
+    /// one who made it can see and cancel it.
     pub(crate) async fn organization_shown(&self, caller: &Caller) -> Result<bool, ApiError> {
         if self.inner.identity_provider {
             return Ok(true);
@@ -327,10 +341,10 @@ where
         let org = self.org_of(caller);
         self.catch_up_people(org).await?;
         let local = usize::from(org == self.inner.own);
-        Ok(self
-            .people(org, |people| people.count())
-            .saturating_add(local)
-            > 1)
+        let now = self.inner.harness.clock().now();
+        Ok(self.people(org, |people| {
+            people.count().saturating_add(local) > 1 || people.invites.wait(now)
+        }))
     }
 
     /// Refuses `caller` what their role does not permit, before anything of it is read, and
@@ -347,6 +361,7 @@ where
             Err(match needed {
                 Permit::People | Permit::Invites => admins_only(),
                 Permit::Owners => ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly),
+                Permit::Billing => ApiError::new(code::NOT_ALLOWED, Sentence::OwnersSetLimit),
             })
         }
     }
@@ -512,8 +527,8 @@ where
     }
 
     /// What `org`'s people ledger says, read apart from what this server keeps: for what a
-    /// code someone holds names, which may be any organization, so made-up ones crowd out
-    /// none this server keeps.
+    /// code someone holds names, or whoever runs the server names adding credits, which may be
+    /// any organization, so made-up ones crowd out none this server keeps.
     pub(crate) async fn people_apart(&self, org: OrgId) -> Result<People, ApiError> {
         // Glave's own: the organization's people ledger, answered only as the methods here say.
         let scope = Scope::of_organization(org);

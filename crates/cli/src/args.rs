@@ -90,6 +90,10 @@ Usage:
   glave connections [remove <id> | <name>]
                                 list your connections and git hosts, or remove one
   glave search [on | off]       whether glave may search the web for you, or turn it on or off
+  glave credits [limit <dollars> | add <dollars>]
+                                what is left to spend on models, where this glave keeps
+                                credits, the monthly limit, or credits added by whoever runs it
+                                (glave credits --help)
   glave doc <command>           read, make and edit spreadsheets, documents and decks,
                                 merge, split, turn and fill in PDFs, and query data with
                                 SQL, with nothing else installed (glave doc --help)

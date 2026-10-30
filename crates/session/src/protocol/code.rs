@@ -52,6 +52,7 @@ codes! {
     NO_PLAN = -32033, "The thread has no plan waiting for the person's approval";
     NO_PERSON = -32034, "No one by that id has signed in to this organization";
     NO_INVITE = -32035, "No such invite waits here: it was used, revoked or has expired, or it is another organization's";
+    NO_ORGANIZATION = -32037, "No organization by that id is on this server";
     NOT_IN = -32036, "The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists";
     NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }

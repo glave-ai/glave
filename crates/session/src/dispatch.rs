@@ -153,6 +153,7 @@ where
                     exists: crate::protocol::Exists {
                         organization,
                         workers: self.inner.worker.is_some(),
+                        credits: self.inner.credits.is_some(),
                     },
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
@@ -168,6 +169,16 @@ where
             Request::InviteList {} => self.list_invites(caller).await,
             Request::InviteRevoke { invite } => self.revoke_invite(caller, invite).await,
             Request::OrganizationList {} => self.list_organizations(caller).await,
+            Request::CreditsGet {} => self.get_credits(caller).await,
+            Request::CreditsAdd {
+                amount,
+                reference,
+                organization,
+            } => {
+                self.add_credits(caller, amount, &reference, organization)
+                    .await
+            }
+            Request::CreditsLimit { limit } => self.set_credits_limit(caller, limit).await,
             Request::InviteShow { code } => self.show_invite(caller, code.expose()).await,
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),

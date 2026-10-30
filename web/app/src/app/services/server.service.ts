@@ -22,6 +22,8 @@ export class ServerService {
   private readonly newer = signal(false);
   private pending: Promise<void> | null = null;
   private asking: Promise<void> | null = null;
+  /** How many times it was asked again, so only the latest answer is kept. */
+  private asked = 0;
 
   /** The server's answer, or `null` until it has given one. */
   readonly info = this.read.asReadonly();
@@ -59,6 +61,24 @@ export class ServerService {
    * the one the page's code is of, the last time it was asked (`recheck`).
    */
   readonly updated = this.newer.asReadonly();
+
+  /**
+   * Asks the server about itself again, after a change to what exists: an invite made or
+   * cancelled, someone given a role or taken out. Only the answer to the latest asking is
+   * kept, however the answers arrive; what it said before stays when it can't be asked.
+   */
+  async reread(): Promise<void> {
+    this.asked += 1;
+    const asked = this.asked;
+    try {
+      const info = await this.session.call('server/discover', {});
+      if (asked === this.asked) {
+        this.read.set(info);
+      }
+    } catch {
+      // What it said before stays, until it can be asked again.
+    }
+  }
 
   /** Asks the server about itself, once; a failed ask is tried again next time. */
   load(): Promise<void> {

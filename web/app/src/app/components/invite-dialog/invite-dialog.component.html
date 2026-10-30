@@ -13,17 +13,19 @@
         />
       </glz-form-field>
     }
-    <glz-form-field [label]="copy.role">
-      <glz-radio-group
-        data-testid="invite-role"
-        cards
-        [value]="role()"
-        (valueChange)="chose($event)"
-      >
-        <glz-radio value="member" [hint]="copy.memberHint">{{ copy.member }}</glz-radio>
-        <glz-radio value="admin" [hint]="copy.adminHint">{{ copy.admin }}</glz-radio>
-      </glz-radio-group>
-    </glz-form-field>
+    @if (chooses()) {
+      <glz-form-field [label]="copy.role">
+        <glz-radio-group
+          data-testid="invite-role"
+          cards
+          [value]="role()"
+          (valueChange)="chose($event)"
+        >
+          <glz-radio value="member" [hint]="copy.memberHint">{{ copy.member }}</glz-radio>
+          <glz-radio value="admin" [hint]="copy.adminHint">{{ copy.admin }}</glz-radio>
+        </glz-radio-group>
+      </glz-form-field>
+    }
     @if (problem(); as problem) {
       <p class="error" role="alert" data-testid="invite-problem">{{ problem }}</p>
     }

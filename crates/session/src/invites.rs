@@ -52,14 +52,23 @@ impl Invites {
         self.waiting.remove(&invite);
     }
 
+    /// Whether one still works at `now`, as `invite/list` would list it.
+    pub(crate) fn wait(&self, now: Timestamp) -> bool {
+        self.waiting.values().any(|waiting| waiting.works(now))
+    }
+
     /// Forgets those expired at `now`: nothing can spend them, so nothing read later needs them.
     fn drop_expired(&mut self, now: Timestamp) {
-        self.waiting
-            .retain(|_, waiting| now < waiting.created.expires.timestamp());
+        self.waiting.retain(|_, waiting| waiting.works(now));
     }
 }
 
 impl Waiting {
+    /// Whether it still works at `now`: it stops at its expiry, opened or not.
+    fn works(&self, now: Timestamp) -> bool {
+        now < self.created.expires.timestamp()
+    }
+
     fn info(&self) -> InviteInfo {
         InviteInfo {
             id: self.created.invite,
@@ -86,7 +95,7 @@ impl People {
             .values()
             .find(|it| {
                 same_kept(&it.created.hash, presented)
-                    && now < it.created.expires.timestamp()
+                    && it.works(now)
                     && self.may_give(&it.created.by, it.created.role, local)
             })
             .map(|it| &it.created)
@@ -159,12 +168,7 @@ where
         };
         self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
-            if waiting
-                .clone()
-                .filter(|it| now < it.created.expires.timestamp())
-                .count()
-                >= MOST_WAITING
-            {
+            if waiting.clone().filter(|it| it.works(now)).count() >= MOST_WAITING {
                 return Err(ApiError::new(code::NOT_ALLOWED, Sentence::TooManyInvites));
             }
             // One email a minute to an address, from any server on the store.
@@ -253,8 +257,7 @@ where
             .by
             .id
             .filter(|maker| Some(*maker) != local)
-            .and_then(|maker| people.info(maker))
-            .and_then(|maker| maker.name.or(maker.email));
+            .and_then(|maker| people.known_as(maker));
         let joining = match (caller.auth.is_some(), caller.person) {
             (false, _) => way,
             // The person on the server's computer is in its own organization alone.
@@ -299,7 +302,7 @@ where
                 .invites
                 .waiting
                 .get(&invite)
-                .is_some_and(|it| now < it.created.expires.timestamp());
+                .is_some_and(|it| it.works(now));
             if !waits {
                 return Err(ApiError::new(
                     code::NO_INVITE,

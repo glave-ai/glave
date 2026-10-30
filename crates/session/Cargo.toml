@@ -24,6 +24,8 @@ base64.workspace = true
 # The server's own sentences, in the caller's language (words.rs).
 fluent-bundle.workspace = true
 glave-event.workspace = true
+# Organizations' credits (credits.rs): the session answers what the gateway keeps.
+glave-gateway.workspace = true
 glave-harness.workspace = true
 # Sign-in on network transports, and who is calling.
 glave-identity.workspace = true
