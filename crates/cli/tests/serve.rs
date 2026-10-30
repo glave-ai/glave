@@ -239,6 +239,21 @@ mod reached {
 
     const DISCOVER: &str = r#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#;
 
+    /// What `server/discover` at `url` answers a program on this computer.
+    async fn discover(url: &str) -> serde_json::Value {
+        let answer = reqwest::Client::new()
+            .post(format!("{url}/"))
+            .header("content-type", "application/json")
+            .body(DISCOVER)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        serde_json::from_str(&answer).unwrap()
+    }
+
     /// The status of `server/discover` at `url`, sent to the name `host` from a page at
     /// `page`, as a tunnel on this computer forwards a browser's request.
     async fn discovered(url: &str, host: &str, page: &str) -> u16 {
@@ -295,17 +310,7 @@ mod reached {
             said.start
         );
         block_on!(async {
-            let answer = reqwest::Client::new()
-                .post(format!("{url}/"))
-                .header("content-type", "application/json")
-                .body(DISCOVER)
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            let answer = discover(&url).await;
             assert_eq!(answer["result"]["origin"], shared.as_str(), "{answer}");
         });
     }
@@ -317,17 +322,7 @@ mod reached {
         let oidc = ["--issuer", "https://id.example.com", "--audience", "glave"];
         let (_served, url) = serve_http(&place, &model, &oidc);
         block_on!(async {
-            let answer = reqwest::Client::new()
-                .post(format!("{url}/"))
-                .header("content-type", "application/json")
-                .body(DISCOVER)
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            let answer = discover(&url).await;
             let exists = &answer["result"]["exists"];
             assert_eq!(exists["organization"], true, "{answer}");
             assert_eq!(exists["workers"], false, "{answer}");
