@@ -60,10 +60,15 @@ pub(crate) struct Http {
     folder: PathBuf,
 }
 
-/// Listens on `address` for the server `args` choose, reached from elsewhere as `reach` says,
-/// and writes its address and a new local token where programs here find them.
-pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> anyhow::Result<Http> {
-    within_reach(address, reach.behind())?;
+/// Serves HTTP on `listener` for the server `args` choose, reached from elsewhere as `reach`
+/// says, and writes its address and a new local token where programs here find them.
+pub(crate) async fn open(
+    args: &Args,
+    listener: TcpListener,
+    reach: &Reach,
+) -> anyhow::Result<Http> {
+    let bound = listener.local_addr()?;
+    within_reach(bound, reach.behind())?;
     let token = LocalToken::new(random()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
@@ -80,8 +85,6 @@ pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> any
         .origin
         .as_ref()
         .is_some_and(|origin| origin.here().is_some());
-    let listener = listen(address, shared).await?;
-    let bound = listener.local_addr()?;
     served_at(bound, reach.origin.as_ref())?;
     let beside = localhost_beside(bound, shared).await?;
     let folder = crate::home::private().await?;
@@ -214,9 +217,9 @@ fn served_at(bound: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::Result
     match origin.and_then(PublicOrigin::here) {
         Some(port) if port != bound.port() => bail!(
             "glave serves at port {}, but its origin under [serve] in config.toml is \
-             http://localhost:{port}: serve at that port (--http 127.0.0.1:{port}), or set the \
-             origin to http://localhost:{}",
-            bound.port(),
+             http://localhost:{port}: serve at that port (--http 127.0.0.1:{port}) once nothing \
+             else listens there, or set the origin to http://localhost, which follows the port \
+             glave serves at",
             bound.port()
         ),
         _ => Ok(()),
@@ -360,13 +363,13 @@ pub(crate) fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
 
 /// A listener on `address`. Where it is the usual port, free when it was looked at and taken
 /// since, as by a second server starting beside this one (which then finds the lock held): any
-/// free one, as when it was taken before; but never where `shared`, whose origin names its port.
-async fn listen(address: SocketAddr, shared: bool) -> anyhow::Result<TcpListener> {
+/// free one, as when it was taken before. An origin naming that port then refuses to start
+/// ([`served_at`]); one of `localhost` without a port follows it.
+pub(crate) async fn listen(address: SocketAddr) -> anyhow::Result<TcpListener> {
     match TcpListener::bind(address).await {
         Ok(listener) => Ok(listener),
         Err(error)
             if error.kind() == ErrorKind::AddrInUse
-                && !shared
                 && address.ip().is_loopback()
                 && address.port() == crate::server::PORT =>
         {

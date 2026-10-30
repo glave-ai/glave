@@ -280,6 +280,33 @@ mod reached {
     }
 
     #[test]
+    fn a_localhost_origin_named_without_a_port_follows_the_one_glave_serves_at() {
+        let place = place("serve-follows");
+        let model = FakeServer::start(vec![]).unwrap();
+        choose(&place, "serve", "{ origin = \"http://localhost\" }");
+        // At a port the system gives it, as no origin naming a port could be.
+        let (_served, url) = serve_http(&place, &model, &[]);
+        let (_, port) = url.rsplit_once(':').unwrap();
+        let shared = format!("http://localhost:{port}");
+        block_on!(async {
+            let host = format!("localhost:{port}");
+            assert_eq!(discovered(&url, &host, &shared).await, 200);
+            let answer = reqwest::Client::new()
+                .post(format!("{url}/"))
+                .header("content-type", "application/json")
+                .body(DISCOVER)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            assert_eq!(answer["result"]["origin"], shared.as_str(), "{answer}");
+        });
+    }
+
+    #[test]
     fn a_server_people_sign_in_to_through_an_identity_provider_is_an_organization() {
         let place = place("serve-organization");
         let model = FakeServer::start(vec![]).unwrap();

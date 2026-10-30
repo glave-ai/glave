@@ -134,10 +134,13 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 /// Serves the session API: to the program that started glave until its input ends, or as the
 /// person's server until it is told to stop.
 pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
-    let lock = crate::server::claim(&mut args).await?; // Held to the very end.
+    let claimed = crate::server::claim(&mut args).await?;
+    let (lock, listener) = claimed
+        .map(|claimed| (claimed.lock, claimed.listener))
+        .unzip();
     // The session API owns standard input: a project is asked about through it, in an app.
     let wired = crate::wiring::wire(&args, Answering::Clients, Asking::Later).await?;
-    let served = if let Some(lock) = &lock {
+    let served = if let (Some(lock), Some(listener)) = (&lock, listener) {
         let daily = crate::server::Daily {
             log: wired.log.clone(),
             blobs: wired.blobs.clone(),
@@ -148,6 +151,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
         // Boxed: the server's future is large.
         Box::pin(crate::server::run(
             &args,
+            listener,
             &wired.reach,
             &wired.server,
             &daily,

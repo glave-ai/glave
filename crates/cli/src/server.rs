@@ -63,6 +63,15 @@ pub(crate) struct Lock {
     _file: File,
 }
 
+/// What the person's server holds from its start: its lock, and the listener it serves HTTP
+/// on, bound before anything is read, so its port is known to all that is (an origin of this
+/// computer's `localhost` that follows it).
+#[derive(Debug)]
+pub(crate) struct Claimed {
+    pub lock: Lock,
+    pub listener: tokio::net::TcpListener,
+}
+
 impl Lock {
     /// The lock, unless another server holds it.
     pub(crate) async fn take() -> anyhow::Result<Option<Self>> {
@@ -200,9 +209,9 @@ pub(crate) async fn start() -> anyhow::Result<Connection> {
 /// For `glave serve` as the person's server (`args`), before anything starts, so a second one
 /// starts nothing: a session of its own when started in the background, so closing the
 /// terminal that started it or Ctrl-C there never reaches it; then the lock, refused when
-/// another server holds it; and loopback HTTP when nothing else is chosen. No lock for a
-/// program's own server.
-pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option<Lock>> {
+/// another server holds it; and its HTTP listener, on loopback when nothing else is chosen,
+/// bound now, `args` naming the address it was bound at. Nothing for a program's own server.
+pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option<Claimed>> {
     if !args.person_s_server() {
         return Ok(None);
     }
@@ -215,8 +224,10 @@ pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option
             home::folder()?.display()
         );
     };
-    args.http.get_or_insert_with(loopback);
-    Ok(Some(lock))
+    let asked = *args.http.get_or_insert_with(loopback);
+    let listener = crate::serving::listen(asked).await?;
+    args.http = Some(listener.local_addr()?);
+    Ok(Some(Claimed { lock, listener }))
 }
 
 #[cfg(test)]

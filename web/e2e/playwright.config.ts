@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { type AddressInfo, type Socket, createServer } from 'node:net';
+import { type Socket, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -84,35 +84,6 @@ const tied = {
 };
 
 /**
- * A port free on 127.0.0.1 now, kept in `variable` for the run's workers: for a glave whose
- * origin names its port, so it must serve at one known before it starts.
- */
-async function freePort(variable: string): Promise<string> {
-  const kept = process.env[variable];
-  if (kept !== undefined) {
-    return kept;
-  }
-  const port = await new Promise<number>((resolve, reject) => {
-    const probe = createServer();
-    probe.on('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port: free } = probe.address() as AddressInfo;
-      probe.close(() => {
-        resolve(free);
-      });
-    });
-  });
-  process.env[variable] = String(port);
-  return String(port);
-}
-
-/** Where each shared glave serves, one for each engine. */
-const sharedPorts = {
-  chromium: await freePort('GLAVE_E2E_SHARED_PORT'),
-  webkit: await freePort('GLAVE_E2E_SHARED_WEBKIT_PORT'),
-};
-
-/**
  * The fake model service the live glave asks, started once, in the run that starts the servers,
  * on a port the system picks; its workers read its address again from the variable.
  */
@@ -175,16 +146,15 @@ const SITES: readonly {
       GLAVE_MODEL: 'e2e',
     },
   },
-  ...[
-    { site: SHARED, port: sharedPorts.chromium },
-    { site: SHARED_WEBKIT, port: sharedPorts.webkit },
-  ].map(({ site, port }) => ({
+  // At this computer's localhost, at whichever port the system gives it, as every other
+  // glave here: an origin that names no port follows the one glave serves at.
+  ...[SHARED, SHARED_WEBKIT].map((site) => ({
     site,
     web: 'dist/app/browser',
-    http: `127.0.0.1:${port}`,
+    http: '127.0.0.1:0',
     env: {
       ...tied,
-      GLAVE_HOME: home(site, `[serve]\norigin = "http://localhost:${port}"\n`),
+      GLAVE_HOME: home(site, '[serve]\norigin = "http://localhost"\n'),
       GLAVE_MODEL: 'e2e',
     },
   })),

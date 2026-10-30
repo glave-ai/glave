@@ -11,7 +11,6 @@
 use std::pin::pin;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use glave_harness::Cancel;
 use glave_process::Processes;
 use tokio::io::BufReader;
@@ -95,21 +94,20 @@ impl Daily<'_> {
     }
 }
 
-/// Serves `server` as the person's server, holding its lock, reached from elsewhere as `reach`
-/// says, keeping its own certificate current if it has one, until it is told to stop: first
+/// Serves `server` as the person's server over HTTP on `listener`, holding its lock, reached
+/// from elsewhere as `reach` says, keeping its own certificate current if it has one, until it is told to stop: first
 /// recording the tasks a server before it left running as interrupted, then firing every
 /// project's schedules and doing the `daily` work while it runs.
 pub(crate) async fn run(
     args: &Args,
+    listener: tokio::net::TcpListener,
     reach: &Reach,
     server: &Glave,
     daily: &Daily<'_>,
     _held: &Lock,
 ) -> anyhow::Result<()> {
-    let address = args.http.context("the person's server listens over HTTP")?;
-    // Bound, and its address written, before the socket answers, so a client of the socket
-    // finds it.
-    let http = crate::serving::open(args, address, reach).await?;
+    // Its address written before the socket answers, so a client of the socket finds it.
+    let http = crate::serving::open(args, listener, reach).await?;
     let path = socket_path()?;
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
