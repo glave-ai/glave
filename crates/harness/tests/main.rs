@@ -22,6 +22,7 @@ mod computers;
 mod faults;
 mod files;
 mod goals;
+mod homes;
 mod hooks;
 mod instructions;
 mod judge;

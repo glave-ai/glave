@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{Part, StopReason};
+use glave_event::StopReason;
 use glave_harness::{AllowAll, Cancel, Compaction, Place, ProjectFolders, Settings, agents_md};
 use glave_ports::{BoxFuture, InMemoryLog, Message, ModelRequest};
 
@@ -17,21 +17,6 @@ fn with_rules() -> Settings {
     let mut settings = settings();
     settings.instructions = Some(RULES.to_owned());
     settings
-}
-
-fn texts(message: &Message) -> Vec<String> {
-    let parts = match message {
-        Message::User { parts }
-        | Message::Tool { output: parts, .. }
-        | Message::Assistant { parts, .. } => parts,
-    };
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.clone()),
-            _ => None,
-        })
-        .collect()
 }
 
 fn requests(seen: &Seen) -> Vec<ModelRequest> {

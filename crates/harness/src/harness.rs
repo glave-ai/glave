@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{
-    At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions, Principal,
-    PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound, encode,
+    At, ComputerKind, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions,
+    Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound,
+    encode,
 };
 use glave_ports::computer::WorkspaceId;
 use glave_ports::memories::Memory;
@@ -166,7 +167,8 @@ pub struct Thread {
     /// How much its model is asked to reason (`chosen.rs`); the model's own way when `None`.
     pub(crate) effort: Option<String>,
     /// The instructions the thread opens with, and the judge reads as the project's rules:
-    /// its folder's, or the settings' own (`bind.rs`). A subagent's thread has its parent's.
+    /// its folder's, read on its person's own computer when it works there (`homes.rs`), or
+    /// the settings' own (`bind.rs`). A subagent's thread has its parent's.
     pub(crate) instructions: Option<String>,
     /// The folder of the project the thread works in, when it works in one here: its own
     /// folder, or the one its worktree was made from. A subagent's thread has its parent's.
@@ -532,10 +534,13 @@ where
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
         let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
+            .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
             .await;
+        // A folder on a person's own computer is not on the server's disk, so the host reads
+        // nothing of it.
         let project = bound
             .as_ref()
+            .filter(|bound| bound.computer.kind != ComputerKind::Person)
             .and_then(|bound| crate::project_folders::project_of(&bound.opened));
         let mut thread = Thread {
             scope,
