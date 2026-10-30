@@ -16,7 +16,6 @@
 //! were deleted (#1066). On an idle internal disk signing took a second and saved six (#529).
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use glave_process::Program;
@@ -96,7 +95,7 @@ fn first_run(program: &Path) -> Result<(), String> {
     let started = Instant::now();
     Program::new(program)
         .arg("--help")
-        .stdin(Stdio::null())
+        .no_input()
         .output_blocking(CHECKED_WITHIN)
         .map_err(|err| format!("could not run {}: {err}", program.display()))?;
     let waited = started.elapsed();

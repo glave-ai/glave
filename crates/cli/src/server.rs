@@ -14,7 +14,6 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::IsTerminal as _;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
@@ -185,7 +184,7 @@ pub(crate) async fn start() -> anyhow::Result<Connection> {
     // command on purpose and owns what it starts.
     glave_process::Program::new(glave)
         .args(["serve", "--own-session"])
-        .stdin(Stdio::null())
+        .no_input()
         .stdout(log.try_clone()?)
         .stderr(log)
         .starts_own_session()

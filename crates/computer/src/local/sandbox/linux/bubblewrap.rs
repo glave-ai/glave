@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 use glave_process::Program;
@@ -58,7 +57,7 @@ pub(super) fn starts(bwrap: &Path) -> Result<(), String> {
         .args(ISOLATION)
         .args(["--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev"])
         .args(["--proc", "/proc", "--", "true"])
-        .stdin(Stdio::null())
+        .no_input()
         .output_blocking(STARTS_WITHIN)
         .map_err(|error| error.to_string())?;
     if output.status.success() {

@@ -4,7 +4,6 @@
 
 use std::ffi::OsString;
 use std::path::Path;
-use std::process::Stdio;
 use std::time::Duration;
 
 use glave_ports::computer::{ComputerError, GitCredential, Refusal, Save, Saved};
@@ -107,7 +106,7 @@ impl<'a> Git<'a> {
                 ]
             }))
             .env("GIT_TERMINAL_PROMPT", "0")
-            .stdin(Stdio::null());
+            .no_input();
         let output = self
             .processes
             .output(&mut command, limit)

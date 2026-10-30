@@ -8,6 +8,7 @@
 //! held ([`helper`]). This is glave's end: the helper, started with the lifeline and started
 //! again (told what runs) if it is gone, each time only once it says it reads the pipe.
 
+pub(crate) mod gate;
 pub(crate) mod helper;
 #[cfg(test)]
 mod tests;
@@ -114,6 +115,11 @@ impl Lifeline {
             .ready()
             .await?;
         Ok(lifeline)
+    }
+
+    /// The program that starts each program once glave holds it: glave itself.
+    pub(crate) fn starter(&self) -> &std::path::Path {
+        &self.program
     }
 
     /// Held while a program starts: the helper's pipe is not made meanwhile.

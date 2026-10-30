@@ -186,7 +186,7 @@ pub(crate) async fn show(
     let (program, arguments) = opener(std::env::consts::OS, &page);
     let mut run = glave_process::Program::new(program);
     run.args(&arguments)
-        .stdin(std::process::Stdio::null())
+        .no_input()
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     let opened = glave_process::Processes::recorded(folder.join("run"))
