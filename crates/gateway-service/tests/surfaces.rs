@@ -28,6 +28,7 @@ fn ask(model: &str, text: &str) -> ModelRequest {
         purpose: glave_ports::Purpose::Main,
         files: Vec::new(),
         effort: None,
+        payer: None,
     }
 }
 

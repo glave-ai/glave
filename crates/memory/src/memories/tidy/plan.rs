@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use glave_event::{At, Part, StopReason};
 use glave_ports::memories::MemoryError;
-use glave_ports::{Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
+use glave_ports::{Message, ModelProvider, ModelRequest, Payer, Purpose, ToolChoice};
 use serde::Deserialize;
 
 use super::Tidier;
@@ -84,7 +84,7 @@ fn minute(at: At) -> String {
 /// The request: the candidates as a numbered list, oldest first, with their times: when each
 /// was saved and, when later, last said (`Entry::stated`), the time a contradiction is settled
 /// by, never tidy-up's own merges.
-fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
+fn request(model: &str, candidates: &[Entry], compact: bool, payer: Payer) -> ModelRequest {
     let mut text = String::from("The memories, oldest first:\n");
     for (number, entry) in (1_usize..).zip(candidates) {
         let Some((_, current)) = entry.current() else {
@@ -119,6 +119,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
         purpose: Purpose::Summary,
         files: Vec::new(),
         effort: None,
+        payer: Some(payer),
     }
 }
 
@@ -127,13 +128,14 @@ const REMINDER: &str = "Answer with the JSON object only, in the shape given: {\
      \"conflict\": [...]}. Use empty lists when there is nothing to do.";
 
 /// Asks the model what to tidy, once more with a terse reminder when the first answer cannot
-/// be read. The proposals, or why there are none.
+/// be read, as `payer`'s work. The proposals, or why there are none.
 pub(super) async fn ask<P: ModelProvider>(
     tidier: &Tidier<P>,
     candidates: &[Entry],
     compact: bool,
+    payer: Payer,
 ) -> Result<Result<Vec<Proposal>, String>, MemoryError> {
-    let mut request = request(&tidier.model, candidates, compact);
+    let mut request = request(&tidier.model, candidates, compact, payer);
     let (first, cut) = answer(tidier, &request).await?;
     let why = match read(&first, cut, candidates.len()) {
         Ok(proposals) => return Ok(Ok(proposals)),

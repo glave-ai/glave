@@ -16,7 +16,7 @@ use glave_ports::computer::WorkspaceId;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
-use glave_ports::{Clock, Entropy, Standing};
+use glave_ports::{Clock, Entropy, Payer, Standing};
 
 use crate::approval::Approver;
 use crate::background::Commands;
@@ -233,6 +233,14 @@ impl Thread {
     /// turn while it waited reaches the model when the turn goes on.
     pub fn keep_inbox_of(&mut self, before: &Self) {
         self.inbox = before.inbox.clone();
+    }
+
+    /// Whose work its model calls are: its organization's, for the person it works for.
+    pub(crate) fn payer(&self) -> Payer {
+        Payer {
+            org: self.scope.org(),
+            person: self.for_,
+        }
     }
 
     /// The `seq` its next event takes: one past its last as it was read and written here.

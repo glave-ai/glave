@@ -179,6 +179,7 @@ fn request() -> Result<ModelRequest> {
         purpose: Purpose::Main,
         files: Vec::new(),
         effort: None,
+        payer: None,
     })
 }
 

@@ -36,6 +36,7 @@ mod over_http {
             purpose: glave_ports::Purpose::Main,
             files: Vec::new(),
             effort: None,
+            payer: None,
         };
         let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
         match completion.parts.as_slice() {

@@ -1,10 +1,11 @@
-//! Every model call says what it is for, so a gateway can route it; and `model.responded`
-//! records the route and target that served it. The judge's calls are recorded in the thread
+//! Every model call says what it is for, so a gateway can route it, and whose work it is, so
+//! a gateway can charge it; and `model.responded` records the route and target that served
+//! it. The judge's calls are recorded in the thread
 //! whose action they judged.
 
 use glave_event::{Body, ModelResponded, StopReason};
 use glave_harness::{Cancel, NoOneToAsk};
-use glave_ports::{InMemoryLog, Purpose, Served};
+use glave_ports::{InMemoryLog, Payer, Purpose, Served};
 use serde_json::json;
 
 use crate::support::*;
@@ -58,6 +59,16 @@ fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
             .await
             .unwrap();
         assert_eq!(asked(&seen), [Purpose::Main, Purpose::Summary]);
+        let payer = Payer {
+            org: scope().org(),
+            person: thread.for_person(),
+        };
+        let paid: Vec<_> = seen.lock().unwrap().iter().map(|r| r.payer).collect();
+        assert_eq!(
+            paid,
+            [Some(payer); 2],
+            "both are the thread's work, to charge"
+        );
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded
             .iter()

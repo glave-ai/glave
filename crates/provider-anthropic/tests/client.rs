@@ -39,6 +39,7 @@ mod over_http {
             purpose: glave_ports::Purpose::Main,
             files: Vec::new(),
             effort: None,
+            payer: None,
         }
     }
 
