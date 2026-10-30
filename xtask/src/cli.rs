@@ -44,8 +44,9 @@ commands:
   try-org           build the web app and glave, and serve a throwaway glave for people who
                     share this computer (origin http://localhost:<port>, a key file in a temp
                     folder, nothing of your own glave, its settings or the keychain): you sign
-                    in with the link it prints, someone you invite in a private window; Ctrl-C
-                    stops it and removes it all
+                    in with the link it prints, someone you invite in a private window; its
+                    model a stand-in that answers every message and says what each answer cost;
+                    Ctrl-C stops it and removes it all
   bench [args]      run benchmarks under the machine-wide benchmark lock
   eval [args]       run the harness on the eval tasks against real models and grade the
                     results (see `cargo xtask eval --help`); the model endpoint comes from the

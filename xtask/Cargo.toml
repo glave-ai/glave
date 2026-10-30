@@ -10,8 +10,9 @@ autotests = false
 
 [dependencies]
 # The one list of the prefixes providers put on keys and tokens, which the secret scan reads,
-# and the one clock (`cargo xtask package-age`).
-glave-ports.workspace = true
+# the one clock (`cargo xtask package-age`), and the fake HTTP server `try-org`'s stand-in model
+# answers from (`conformance`).
+glave-ports = { workspace = true, features = ["conformance"] }
 # What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
 # however xtask ends: glave's lifeline.
 glave-process.workspace = true
