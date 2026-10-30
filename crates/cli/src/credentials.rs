@@ -57,12 +57,13 @@ impl Hosts {
         Self::open(ledger, github).await.map(Some)
     }
 
-    /// The git hosts `ledger` keeps, signing in to GitHub through `github`'s app when set.
+    /// The git hosts `ledger` keeps, signing in to GitHub through `github`'s app when set, else
+    /// through glave's own.
     async fn open(ledger: Ledger, github: Option<&GithubFile>) -> anyhow::Result<Arc<Self>> {
         let hosts = Self {
             ledger,
             http: Http::new()?,
-            github: github.and_then(Github::new),
+            github: github.map_or_else(|| Some(Github::own()), Github::new),
             flows: Flows::default(),
             offered: RwLock::new(Vec::new()),
             renewals: Renewals::default(),
