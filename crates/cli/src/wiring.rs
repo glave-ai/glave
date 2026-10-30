@@ -191,6 +191,7 @@ pub(crate) async fn wire(
         mail: crate::serving::mail(choices)?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         signup: choices.signup.as_ref().is_some_and(|signup| signup.value),
+        forwarded: choices.forwarded.as_ref().map(|forwarded| forwarded.value),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
         worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),

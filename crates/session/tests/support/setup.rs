@@ -102,6 +102,8 @@ pub(crate) struct Setup {
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Whether it takes sign-ups.
     pub signup: bool,
+    /// How many addresses the proxies in front of it add to `X-Forwarded-For`, if it says.
+    pub forwarded: Option<std::num::NonZeroU8>,
     /// What keeps its computer awake while work runs; with none, nothing does.
     pub awake: Option<Arc<dyn KeepAwake>>,
     /// What lets go of a thread's worktrees once it is put away; with none, nothing does.
@@ -151,6 +153,7 @@ impl Setup {
             mail: None,
             origin: None,
             signup: false,
+            forwarded: None,
             awake: None,
             release: None,
             home: scope(),
@@ -247,6 +250,7 @@ impl Setup {
             mail: self.mail,
             origin: self.origin,
             signup: self.signup,
+            forwarded: self.forwarded,
             leases: self.leases,
             tools: self.tools,
             awake: self.awake,

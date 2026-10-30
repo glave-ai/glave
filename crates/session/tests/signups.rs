@@ -45,6 +45,17 @@ pub(crate) async fn serve_sharing(
     outbox: &Arc<Outbox>,
     log: Shared,
 ) -> (Served, glave_ports::testing::ManualClock) {
+    serve_behind(dir, (signup, None), outbox, log).await
+}
+
+/// [`serve_sharing`], behind proxies that add `forwarded` addresses to `X-Forwarded-For`
+/// where it says, as Google Cloud's load balancer adds two.
+pub(crate) async fn serve_behind(
+    dir: &Path,
+    (signup, forwarded): (bool, Option<std::num::NonZeroU8>),
+    outbox: &Arc<Outbox>,
+    log: Shared,
+) -> (Served, glave_ports::testing::ManualClock) {
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
@@ -66,6 +77,7 @@ pub(crate) async fn serve_sharing(
     setup.accounts = Some(Arc::new(accounts.unwrap()));
     setup.origin = Some(origin);
     setup.signup = signup;
+    setup.forwarded = forwarded;
     let ticks = setup.clock.clone();
     let (server, _) = setup.build_on(dir, log).await;
     let signin = SignIn::local(LocalToken::new([21; 32]), Box::new(fixed_clock()));

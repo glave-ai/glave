@@ -9,6 +9,7 @@
 //! glave names (`client`).
 
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU8;
 
 use glave_identity::Door;
 use glave_ports::host::{PublicOrigin, is_inside, is_loopback, is_this_computer};
@@ -100,24 +101,39 @@ pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpA
 }
 
 /// The network address a request with `headers` from `peer` came from, to a listener serving
-/// HTTPS of its own when `secure`. Over plain HTTP, a peer on this computer or on a private
-/// network is a proxy: a tunnel here, or what serves the origin's HTTPS, which glave listens
-/// beyond loopback only behind. The request came from the last address that proxy names in
-/// `X-Forwarded-For`, the one it took the connection from. Any other peer is the client, and
-/// what it says of where it came from is not believed.
-pub(crate) fn client(headers: &HeaderMap, peer: IpAddr, secure: bool) -> IpAddr {
+/// HTTPS of its own when `secure`: one reached directly, its certificate won at its own port,
+/// whose peer is the client whatever it says. Over plain HTTP, where the server's
+/// configuration says how many addresses the proxies in front of it add to `X-Forwarded-For`
+/// (`forwarded`), the client's first, the request came from that one, whatever any before it
+/// say, and from `peer` when there are fewer, as a request that never went through them. Else
+/// a peer on this computer or on a private network is a proxy: a tunnel here, or what serves
+/// the origin's HTTPS, which glave listens beyond loopback only behind; the request came from
+/// the last address it names, the one it took the connection from. Any other peer is the
+/// client, and what it says of where it came from is not believed.
+pub(crate) fn client(
+    headers: &HeaderMap,
+    peer: IpAddr,
+    secure: bool,
+    forwarded: Option<NonZeroU8>,
+) -> IpAddr {
     let peer = peer.to_canonical();
-    if secure || !(is_loopback(peer) || is_inside(peer)) {
-        return peer;
-    }
-    let named = headers
+    let skipped = match forwarded {
+        _ if secure => return peer,
+        Some(added) => usize::from(added.get()).saturating_sub(1),
+        None if is_loopback(peer) || is_inside(peer) => 0,
+        None => return peer,
+    };
+    // Read from the end, as bytes: what a client put before the proxies' addresses may be
+    // anything, as long as a header may be, and must cost glave nothing nor hide what they
+    // added after it.
+    headers
         .get_all(FORWARDED_FOR)
         .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.split(','))
-        .next_back()
-        .and_then(|last| address(last.trim()));
-    named.map_or(peer, |named| named.to_canonical())
+        .rev()
+        .flat_map(|value| value.as_bytes().rsplit(|byte| *byte == b','))
+        .nth(skipped)
+        .and_then(|named| address(String::from_utf8_lossy(named).trim()))
+        .map_or(peer, |named| named.to_canonical())
 }
 
 /// The address `named` is, written bare or with a port: `203.0.113.7`, `203.0.113.7:4321`,
@@ -164,7 +180,7 @@ mod tests {
             for value in forwarded {
                 headers.append(FORWARDED_FOR, HeaderValue::from_str(value).unwrap());
             }
-            client(&headers, peer.parse().unwrap(), secure).to_string()
+            client(&headers, peer.parse().unwrap(), secure, None).to_string()
         };
         // A tunnel here, or a proxy on a private network: the address it took it from, last.
         assert_eq!(from("127.0.0.1", &["203.0.113.7"], false), "203.0.113.7");
@@ -187,6 +203,69 @@ mod tests {
         // Glave's own HTTPS, or a peer on the internet: the peer, whatever it says.
         assert_eq!(from("127.0.0.1", &["203.0.113.7"], true), "127.0.0.1");
         assert_eq!(from("203.0.113.9", &["10.0.0.1"], false), "203.0.113.9");
+    }
+
+    #[test]
+    fn behind_google_s_load_balancer_the_client_is_the_one_it_names_whatever_came_before() {
+        // Google Cloud's external Application Load Balancer: `[<supplied>,]<client>,<itself>`,
+        // from a peer of its own on the internet.
+        let behind = |forwarded: &[&[u8]]| {
+            let mut headers = HeaderMap::new();
+            for value in forwarded {
+                headers.append(FORWARDED_FOR, HeaderValue::from_bytes(value).unwrap());
+            }
+            let peer = "35.191.0.9".parse().unwrap();
+            client(&headers, peer, false, NonZeroU8::new(2)).to_string()
+        };
+        assert_eq!(behind(&[b"203.0.113.7,34.120.1.1"]), "203.0.113.7");
+        assert_eq!(
+            behind(&[b"198.51.100.1, 10.0.0.1,203.0.113.7,34.120.1.1"]),
+            "203.0.113.7",
+            "what the visitor said first is passed over"
+        );
+        assert_eq!(
+            behind(&[b"not an address \xff\xfe, ,203.0.113.7,34.120.1.1"]),
+            "203.0.113.7",
+            "nor does anything it put there lose the client"
+        );
+        assert_eq!(
+            behind(&[b"198.51.100.1", b"203.0.113.7,34.120.1.1"]),
+            "203.0.113.7",
+            "a header sent twice reads as one list"
+        );
+        assert_eq!(
+            behind(&[b"203.0.113.7"]),
+            "35.191.0.9",
+            "not through it: its peer"
+        );
+        assert_eq!(behind(&[]), "35.191.0.9");
+        assert_eq!(
+            behind(&[b"203.0.113.7, 2001:db8::7,34.120.1.1"]),
+            "2001:db8::7"
+        );
+    }
+
+    #[test]
+    fn a_count_of_proxies_is_believed_from_any_peer_but_not_on_glave_s_own_https() {
+        let from = |peer: &str, added: u8, secure: bool| {
+            let mut headers = HeaderMap::new();
+            let named = HeaderValue::from_static("198.51.100.1, 203.0.113.7, 34.120.1.1");
+            headers.append(FORWARDED_FOR, named);
+            client(
+                &headers,
+                peer.parse().unwrap(),
+                secure,
+                NonZeroU8::new(added),
+            )
+            .to_string()
+        };
+        // One proxy with a peer on the internet, as Cloudflare's: the last address it names.
+        assert_eq!(from("104.16.0.9", 1, false), "34.120.1.1");
+        // The count, not where the peer is, says which: here too.
+        assert_eq!(from("127.0.0.1", 2, false), "203.0.113.7");
+        assert_eq!(from("10.0.0.2", 3, false), "198.51.100.1");
+        // Reached straight, its certificate won at its own port: no proxy to count.
+        assert_eq!(from("203.0.113.9", 2, true), "203.0.113.9");
     }
 
     #[test]

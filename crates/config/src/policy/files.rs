@@ -202,6 +202,12 @@ pub struct ServeFile {
     /// person's own server takes no strangers. A new organization's turns use this server's
     /// own models.
     pub signup: Option<bool>,
+    /// How many addresses the proxies in front of glave add to the end of each request's
+    /// `X-Forwarded-For`, the client's first: 2 behind Google Cloud's load balancer, which adds
+    /// the client's and its own. glave must then be reached only through them, since a
+    /// request that comes straight to it names what it likes. Unset, glave believes only the
+    /// last address a proxy on this computer or a private network names.
+    pub forwarded: Option<std::num::NonZeroU8>,
 }
 
 impl ServeFile {

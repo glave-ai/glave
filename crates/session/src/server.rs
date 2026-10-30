@@ -4,6 +4,7 @@
 //! to the callers who work in that project.
 
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroU8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
@@ -119,6 +120,9 @@ pub struct Wiring<P, L, B> {
     /// Whether anyone may sign up with their email (`[serve] signup`): it does only where it
     /// also keeps `accounts`, sends `mail` and has an `origin`.
     pub signup: bool,
+    /// How many addresses the proxies in front of it add to `X-Forwarded-For`, when its
+    /// configuration says (`[serve] forwarded`); `specs/session.md`, "Who is calling".
+    pub forwarded: Option<NonZeroU8>,
     /// The leases work on a thread runs under, kept in the store beside its log, so servers on
     /// one store never run one thread at once; none keeps them in this server's memory, for a
     /// server alone on its store.
@@ -181,6 +185,7 @@ impl<P, L, B> Wiring<P, L, B> {
             mail: None,
             origin: None,
             signup: false,
+            forwarded: None,
             leases: None,
             awake: None,
             worktrees: None,
@@ -276,6 +281,9 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) joinings: Mutex<crate::joining::Joinings>,
     /// Whether it takes sign-ups, as its configuration says.
     pub(crate) signup: bool,
+    /// How many addresses the proxies in front of it add to `X-Forwarded-For`, as its
+    /// configuration says.
+    pub(crate) forwarded: Option<NonZeroU8>,
     /// The sign-ups waiting, as far as this server has read.
     pub(crate) signups: Mutex<crate::signups::Signups>,
     /// The accounts being made by sign-up on this server.
@@ -380,6 +388,7 @@ where
                 mail: wiring.mail,
                 joinings: Mutex::new(crate::joining::Joinings::default()),
                 signup: wiring.signup,
+                forwarded: wiring.forwarded,
                 signups: Mutex::new(crate::signups::Signups::default()),
                 signings: Mutex::new(crate::signups::Signings::default()),
                 origin: wiring.origin,
