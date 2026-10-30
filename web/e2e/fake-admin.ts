@@ -92,8 +92,7 @@ function answer(method: string, params: Record<string, unknown>, kept: Kept): un
  * Answers the admin calls of an organization's Owner, over whatever `fakeApi` answers: the
  * server says there is an organization and the caller owns it, at a public origin, and keeps
  * its people and invites as the page changes them; `alone`, she is its one person, who may
- * still invite. Every other call falls back to the routes
- * before it.
+ * still invite. Every other call falls back to the routes before it.
  */
 export async function fakeAdmin(
   page: Page,
