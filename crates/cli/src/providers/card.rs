@@ -19,7 +19,7 @@ const PLACES: u32 = 12;
 
 /// `id`, as the listing's `model` entry describes it.
 pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
-    let number = |path: &[&str]| path_in(model, path).and_then(Value::as_u64);
+    let whole = |path: &[&str]| number(model, path);
     CatalogModel {
         id: id.to_owned(),
         name: model
@@ -28,14 +28,15 @@ pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
             .map(str::trim)
             .filter(|name| !name.is_empty() && name.len() <= LONGEST_NAME && name != &id)
             .map(str::to_owned),
-        context: number(&["context_length"])
-            .or_else(|| number(&["max_model_len"]))
+        context: whole(&["context_length"])
+            .or_else(|| whole(&["max_model_len"]))
             .filter(|tokens| *tokens > 0),
-        max_output: number(&["top_provider", "max_completion_tokens"]).filter(|t| *t > 0),
+        max_output: whole(&["top_provider", "max_completion_tokens"]).filter(|t| *t > 0),
         images: modalities(model, "input_modalities")
             .map(|input| input.iter().any(|modality| modality == "image")),
         price: price(model.get("pricing")),
         reasoning: reasoning(model.get("reasoning")).or_else(|| efforts(model)),
+        endpoints: Vec::new(),
     }
 }
 
@@ -49,6 +50,15 @@ pub(super) fn modalities<'a>(model: &'a Value, key: &str) -> Option<&'a [Value]>
         .map(Vec::as_slice)
 }
 
+/// The whole number at `path` in `value`, rounded when the listing writes it with decimals.
+pub(super) fn number(value: &Value, path: &[&str]) -> Option<u64> {
+    let found = path_in(value, path)?;
+    found.as_u64().or_else(|| {
+        let rounded = format!("{:.0}", found.as_f64()?);
+        rounded.parse().ok()
+    })
+}
+
 /// The value at `path` in `value`.
 fn path_in<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     path.iter().try_fold(value, |value, key| value.get(key))
@@ -56,7 +66,7 @@ fn path_in<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
 
 /// What the listing says the model's tokens cost: OpenRouter's `pricing`, in dollars per token
 /// as decimal text. None when it says no price, or one below zero, as a router's is.
-fn price(pricing: Option<&Value>) -> Option<TokenPrice> {
+pub(super) fn price(pricing: Option<&Value>) -> Option<TokenPrice> {
     let pricing = pricing?;
     let per = |key: &str| pricing.get(key).and_then(Value::as_str).and_then(micros);
     Some(TokenPrice {

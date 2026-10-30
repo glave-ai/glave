@@ -9,6 +9,7 @@
 mod card;
 mod check;
 mod describe;
+mod endpoints;
 mod lineup;
 mod refresh;
 
@@ -130,6 +131,7 @@ impl ModelAccounts {
             url: account.url.clone(),
             listed,
             models,
+            providers: Vec::new(),
         };
         // Every account glave keeps must line up with the rest, so a start never fails on one.
         let mut accounts = self.ledger.accounts().await?.providers;
@@ -147,6 +149,8 @@ impl ModelAccounts {
             .await
             .map_err(|e| ApiError::internal(&e))?;
         let connected = info(&account, &self.kept_catalogs().await?);
+        // A router's endpoints are read by the refresh this makes due, so adding it stays quick.
+        *self.due.lock().unwrap_or_else(PoisonError::into_inner) = None;
         Ok((connected, self.rebuilt().await?))
     }
 

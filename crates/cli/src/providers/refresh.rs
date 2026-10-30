@@ -7,14 +7,16 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use glave_event::{At, Catalog, ProviderConnected};
+use glave_event::{At, Catalog, CatalogModel, ProviderConnected, ProviderKind};
 use glave_ports::{Clock as _, Failure, SystemClock};
 use glave_session::Refreshed;
 use glave_session::protocol::ApiError;
 
 use super::{
-    ModelAccounts, catalog_of, check, endpoint_of, invalid, provider_failed, refused, service,
+    ModelAccounts, catalog_of, check, endpoint_of, endpoints, invalid, provider_failed, refused,
+    service,
 };
+use crate::model::Model;
 
 /// How old a catalog grows before it is listed again.
 const DAY: Duration = Duration::from_hours(24);
@@ -41,23 +43,36 @@ pub(super) fn with(mut catalogs: Vec<Catalog>, fresh: Catalog) -> Vec<Catalog> {
     catalogs
 }
 
-/// Whether `catalog` was listed under a day before `now`.
+/// Whether `catalog` was listed under a day before `now`, a router's with its providers: one
+/// listed when its account was added, without them, is due at once.
 fn fresh(catalog: &Catalog, now: At) -> bool {
     let age = now.timestamp().duration_since(catalog.listed.timestamp());
-    age.is_positive() && age.unsigned_abs() < DAY
+    let whole = catalog.kind != ProviderKind::Openrouter || !catalog.providers.is_empty();
+    whole && age.is_positive() && age.unsigned_abs() < DAY
 }
 
-/// Whether `before` and `after` hold the same models for the same services, whenever each was
-/// listed.
+/// Whether `before` and `after` hold the same models, and a router's the same providers, for
+/// the same services, whenever each was listed. A router's speeds, which change with each
+/// listing, count only when anything else changed.
 fn same(before: &[Catalog], after: &[Catalog]) -> bool {
     before.len() == after.len()
         && after.iter().all(|catalog| {
             before.iter().any(|kept| {
                 kept.kind == catalog.kind
                     && kept.url == catalog.url
-                    && kept.models == catalog.models
+                    && kept.providers == catalog.providers
+                    && unhurried(&kept.models) == unhurried(&catalog.models)
             })
         })
+}
+
+/// `models` with no speed said for any endpoint.
+fn unhurried(models: &[CatalogModel]) -> Vec<CatalogModel> {
+    let mut models = models.to_vec();
+    for endpoint in models.iter_mut().flat_map(|model| &mut model.endpoints) {
+        endpoint.speed = None;
+    }
+    models
 }
 
 impl ModelAccounts {
@@ -79,12 +94,26 @@ impl ModelAccounts {
                 catalogs.extend(old.cloned());
                 continue;
             }
-            match listed(account, now).await {
-                Ok(catalog) => catalogs.push(catalog),
+            match listed(account, old, now).await {
+                Ok((catalog, late)) => {
+                    catalogs.push(catalog);
+                    if let Some(late) = late {
+                        failed.get_or_insert(late);
+                    }
+                }
                 Err(error) => {
                     catalogs.extend(old.cloned());
                     failed.get_or_insert(error);
                 }
+            }
+        }
+        // An account connected while these were listed keeps the catalog its connecting kept.
+        let serves =
+            |one: &Catalog, other: &Catalog| one.kind == other.kind && one.url == other.url;
+        for written in self.kept_catalogs().await? {
+            let new = !kept.iter().any(|before| serves(before, &written));
+            if new && !catalogs.iter().any(|own| serves(own, &written)) {
+                catalogs.push(written);
             }
         }
         let changed = !same(&kept, &catalogs);
@@ -100,11 +129,16 @@ impl ModelAccounts {
     }
 }
 
-/// The catalog of `account`'s service, listed now with its key; refused when it lists no
-/// model glave can talk with.
-async fn listed(account: &ProviderConnected, now: At) -> Result<Catalog, ApiError> {
+/// The catalog of `account`'s service, listed now with its key, and why it was listed only in
+/// part, a router's models keeping the endpoints `old` held where theirs were not read in time;
+/// refused when it lists no model glave can talk with, or a router's providers cannot be read.
+async fn listed(
+    account: &ProviderConnected,
+    old: Option<&Catalog>,
+    now: At,
+) -> Result<(Catalog, Option<ApiError>), ApiError> {
     let endpoint = endpoint_of(account, "").ok_or_else(|| invalid(super::NOT_AN_ADDRESS))?;
-    let models = check::models(account.kind, &endpoint)
+    let mut models = check::models(account.kind, &endpoint)
         .await
         .map_err(|error| refused(account, &error))?;
     if models.is_empty() {
@@ -116,18 +150,41 @@ async fn listed(account: &ProviderConnected, now: At) -> Result<Catalog, ApiErro
             ),
         ));
     }
-    Ok(Catalog {
+    let mut late = None;
+    let providers = if account.kind == ProviderKind::Openrouter {
+        let model = Model::for_endpoint(&endpoint).map_err(|e| ApiError::internal(&e))?;
+        let before = old.map_or(&[][..], |old| old.models.as_slice());
+        let unread = |why: String| {
+            let service = service(account);
+            provider_failed(
+                Failure::Unavailable,
+                format!("{service} could not say who serves its models: {why}"),
+            )
+        };
+        let (providers, whole) = endpoints::read(model, &mut models, before)
+            .await
+            .map_err(unread)?;
+        if !whole {
+            late = Some(unread(
+                "some models' providers were not read in time".to_owned(),
+            ));
+        }
+        providers
+    } else {
+        Vec::new()
+    };
+    let catalog = Catalog {
         kind: account.kind,
         url: account.url.clone(),
         listed: now,
         models,
-    })
+        providers,
+    };
+    Ok((catalog, late))
 }
 
 #[cfg(test)]
 mod tests {
-    use glave_event::{CatalogModel, ProviderKind};
-
     use super::*;
 
     fn catalog(kind: ProviderKind, listed: At, models: &[&str]) -> Catalog {
@@ -136,6 +193,7 @@ mod tests {
             url: None,
             listed,
             models: models.iter().map(|id| CatalogModel::new(*id)).collect(),
+            providers: Vec::new(),
         }
     }
 
@@ -144,8 +202,18 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_is_fresh_for_a_day() {
-        let listed = catalog(ProviderKind::Openrouter, at(1_000_000), &["a/one"]);
+    fn a_catalog_is_fresh_for_a_day_and_a_router_s_only_once_its_providers_are_listed() {
+        let mut listed = catalog(ProviderKind::Openrouter, at(1_000_000), &["a/one"]);
+        assert!(
+            !fresh(&listed, at(1_000_000 + 60)),
+            "added, its endpoints not read yet"
+        );
+        listed.providers.push(glave_event::CatalogProvider {
+            slug: "acme".into(),
+            name: "Acme".into(),
+            headquarters: None,
+            datacenters: None,
+        });
         assert!(fresh(&listed, at(1_000_000 + 60)));
         assert!(!fresh(&listed, at(1_000_000 + 24 * 60 * 60)));
         assert!(!fresh(&listed, at(1_000_000 - 60)), "listed in the future");

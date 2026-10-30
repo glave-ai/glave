@@ -210,6 +210,45 @@ export type DiffLine = {
   readonly text: string;
 };
 
+/**
+ * One provider serving a model through a router, as the router says, for a client to filter
+ * and choose by. What the router does not say is absent, never guessed.
+ */
+export type EndpointInfo = {
+  /**
+   * The country it is based in, an ISO 3166-1 alpha-2 code such as `US`, when the router
+   * says.
+   */
+  readonly based_in?: string | null;
+  /** The context window this provider serves the model with, in tokens. */
+  readonly context?: number | null;
+  /**
+   * The countries its datacenters are in, when the router says; absent when it does not,
+   * which says nothing of where they are.
+   */
+  readonly datacenters?: readonly (string)[] | null;
+  /**
+   * Whether it keeps nothing of what it is sent (zero data retention). Every provider
+   * that serves glave through a router is one that never trains on it.
+   */
+  readonly keeps_nothing: boolean;
+  /** The longest answer this provider gives, in tokens. */
+  readonly max_output?: number | null;
+  /** How precisely it serves the model's weights. */
+  readonly precision: Precision;
+  /** What its tokens cost. */
+  readonly price?: TokenPrice | null;
+  /** The provider's name, such as `DeepInfra`. */
+  readonly provider: string;
+  /** What a person's filters name it by, such as `deepinfra`. */
+  readonly slug: string;
+  /**
+   * How many tokens a second it answered with: the router's median over the half hour
+   * before its catalog was read, when it says.
+   */
+  readonly speed?: number | null;
+};
+
 /** What a failure says beyond its sentence, for a client to act on. */
 export type ErrorData = {
   readonly failure: Failure;
@@ -367,6 +406,11 @@ export type ModelInfo = {
   readonly context?: number | null;
   /** Whether threads that choose no model use this one. Exactly one model is the default. */
   readonly default: boolean;
+  /**
+   * Each provider that serves it through a router (OpenRouter), as the router's catalog
+   * lists them; none where no router serves it.
+   */
+  readonly endpoints?: readonly (EndpointInfo)[];
   /** What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by. */
   readonly id: string;
   /** Whether it reads images. */
@@ -556,6 +600,9 @@ export type PlanStep = {
   /** What to do, in a line. */
   readonly step: string;
 };
+
+/** How precisely a provider serves a model's weights, from how it says they are stored. */
+export type Precision = "unstated" | "four_bit" | "six_bit" | "eight_bit" | "full";
 
 /**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an

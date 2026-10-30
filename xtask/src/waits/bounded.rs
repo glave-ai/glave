@@ -3,6 +3,12 @@
 /// Each wait whose limit is not on its line: the file, what its line says, how many lines of
 /// that file say it, and what bounds the wait.
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
+    (
+        "crates/cli/src/providers/endpoints.rs",
+        "let Some(done) = asked.join_next().await else {",
+        1,
+        "OpenRouter's endpoint lists, read within READING, the one limit around all its lists",
+    ),
     // A person is the limit: glave waits for them, and they can always stop it.
     (
         "crates/cli/src/connections.rs",

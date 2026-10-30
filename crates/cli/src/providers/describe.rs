@@ -5,9 +5,9 @@
 //! tried first, the levels too where that service has some, and the level it is sent unasked;
 //! and what the gateway checks a request against, prices it at and sends it with.
 
-use glave_event::{Catalog, CatalogModel, Currency, ProviderKind, Reasoning};
+use glave_event::{Catalog, CatalogModel, Currency, Precision, ProviderKind, Reasoning};
 use glave_gateway::{Capabilities, Price, Target};
-use glave_session::protocol::ModelInfo;
+use glave_session::protocol::{EndpointInfo, ModelInfo};
 
 /// The order a model's services are tried in: the maker's own API, then an aggregator, then
 /// any other server. Cloud contracts come first of all, as the settings' model.
@@ -117,16 +117,52 @@ pub(super) fn cards_for<'a>(
     exact.into_iter().chain(reference).collect()
 }
 
+/// Who serves a model through the router that serves it, `routed`: the router's catalog and
+/// its name for the model. Its endpoints as that catalog lists them, each with where its
+/// provider is based; none where no router serves it.
+fn endpoints(routed: Option<(&Catalog, &str)>) -> Vec<EndpointInfo> {
+    let found = routed.and_then(|(catalog, model)| {
+        let card = catalog.models.iter().find(|card| card.id == model)?;
+        Some((catalog, card))
+    });
+    let Some((catalog, card)) = found else {
+        return Vec::new();
+    };
+    card.endpoints
+        .iter()
+        .map(|endpoint| {
+            let provider = catalog
+                .providers
+                .iter()
+                .find(|provider| provider.slug == endpoint.provider);
+            EndpointInfo {
+                provider: provider.map_or_else(|| endpoint.provider.clone(), |p| p.name.clone()),
+                slug: endpoint.provider.clone(),
+                based_in: provider.and_then(|provider| provider.headquarters.clone()),
+                datacenters: provider.and_then(|provider| provider.datacenters.clone()),
+                precision: Precision::of(endpoint.quantization.as_deref()),
+                context: endpoint.context,
+                max_output: endpoint.max_output,
+                price: endpoint.price,
+                keeps_nothing: endpoint.zdr,
+                speed: endpoint.speed,
+            }
+        })
+        .collect()
+}
+
 /// The entry for `id`, served by `providers` in order, as `cards` describe it, the first
 /// first; named `name` when the settings name it. Its reasoning is `target`'s, the one tried
 /// first, where it has one (a cloud contract's Claude has one and no card), else the cards';
-/// its default is the level `target` is sent when a thread chooses none, if any.
+/// its default is the level `target` is sent when a thread chooses none, if any. Its
+/// endpoints are those of the router that serves it, `routed` ([`endpoints`]).
 pub(super) fn info(
     id: &str,
     cards: &[&CatalogModel],
     providers: Vec<String>,
     name: Option<&str>,
     target: Option<&Target>,
+    routed: Option<(&Catalog, &str)>,
 ) -> ModelInfo {
     let unasked = target.and_then(|target| target.effort_for(None));
     let first = |pick: fn(&CatalogModel) -> Option<u64>| cards.iter().find_map(|card| pick(card));
@@ -145,6 +181,7 @@ pub(super) fn info(
                 default: unasked.map(str::to_owned),
                 ..reasoning.clone()
             }),
+        endpoints: endpoints(routed),
         ..ModelInfo::new(id)
     };
     // The listing's name, then the settings' over it.
@@ -158,7 +195,7 @@ pub(super) fn info(
 mod tests {
     use std::sync::Arc;
 
-    use glave_event::{At, TokenPrice};
+    use glave_event::{At, CatalogEndpoint, CatalogProvider, TokenPrice};
     use glave_ports::testing::ScriptedModel;
 
     use super::*;
@@ -193,6 +230,72 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_model_s_endpoints_say_where_each_provider_is_based_as_far_as_the_router_says() {
+        let endpoint = |provider: &str, quantization: Option<&str>, zdr: bool| CatalogEndpoint {
+            provider: provider.into(),
+            quantization: quantization.map(str::to_owned),
+            context: Some(64_000),
+            max_output: None,
+            price: None,
+            zdr,
+            speed: Some(90),
+        };
+        let routed = CatalogModel {
+            endpoints: vec![
+                endpoint("deepseek", None, false),
+                endpoint("deepinfra", Some("fp8"), true),
+                endpoint("gone", Some("bf16"), false),
+            ],
+            ..CatalogModel::new("deepseek/deepseek-chat")
+        };
+        let provider = |slug: &str, name: &str, headquarters: &str| CatalogProvider {
+            slug: slug.into(),
+            name: name.into(),
+            headquarters: Some(headquarters.into()),
+            datacenters: (slug == "deepinfra").then(|| vec!["US".to_owned()]),
+        };
+        let openrouter = Catalog {
+            kind: ProviderKind::Openrouter,
+            url: None,
+            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
+            models: vec![routed],
+            providers: vec![
+                provider("deepseek", "DeepSeek", "CN"),
+                provider("deepinfra", "DeepInfra", "US"),
+            ],
+        };
+        let found = endpoints(Some((&openrouter, "deepseek/deepseek-chat")));
+        let facts: Vec<_> = found
+            .iter()
+            .map(|e| {
+                (
+                    e.provider.as_str(),
+                    e.based_in.as_deref(),
+                    e.precision,
+                    e.keeps_nothing,
+                )
+            })
+            .collect();
+        assert_eq!(
+            facts,
+            [
+                ("DeepSeek", Some("CN"), Precision::Unstated, false),
+                ("DeepInfra", Some("US"), Precision::EightBit, true),
+                ("gone", None, Precision::Full, false),
+            ],
+            "as the router that serves it lists them; a provider not listed is not placed"
+        );
+        assert_eq!(found[0].datacenters, None, "unknown, never guessed");
+        assert_eq!(found[1].datacenters, Some(vec!["US".to_owned()]));
+        assert_eq!(endpoints(None), Vec::new(), "no router serves it");
+        assert_eq!(
+            endpoints(Some((&openrouter, "other/model"))),
+            Vec::new(),
+            "a model the router does not list"
+        );
+    }
+
     /// A target described by `card`, its own service's, or by none.
     fn target(card: Option<&CatalogModel>) -> Target {
         let openrouter = Catalog {
@@ -200,6 +303,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models: Vec::new(),
+            providers: Vec::new(),
         };
         let model = Arc::new(ScriptedModel::new(Vec::new()));
         let target = Target::new(model, "openrouter", "anthropic/claude-haiku-5.5");
@@ -218,6 +322,7 @@ mod tests {
             providers,
             None,
             Some(&target(None)),
+            None,
         );
         assert_eq!(info.name, "Claude Haiku 5.5");
         assert_eq!(info.maker.as_deref(), Some("Anthropic"));
@@ -228,7 +333,14 @@ mod tests {
         assert_eq!(reasoning.default, None, "the first is sent none");
         assert_eq!(info.providers, ["Anthropic", "OpenRouter"]);
         let own = target(Some(&reference));
-        let named = super::info("m", &[&reference], Vec::new(), Some("Mine"), Some(&own));
+        let named = super::info(
+            "m",
+            &[&reference],
+            Vec::new(),
+            Some("Mine"),
+            Some(&own),
+            None,
+        );
         assert_eq!(named.name, "Mine", "the settings' name wins");
         assert_eq!(
             named.maker.as_deref(),
@@ -253,6 +365,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models: vec![own.clone()],
+            providers: Vec::new(),
         };
         let model = Arc::new(ScriptedModel::new(Vec::new()));
         let target = Target::new(model, "anthropic", "claude-haiku-5-5");
@@ -265,6 +378,7 @@ mod tests {
             providers,
             None,
             Some(&target),
+            None,
         );
         let reasoning = info.reasoning.unwrap();
         assert_eq!(reasoning.efforts, ["max", "xhigh", "high", "medium", "low"]);
@@ -289,6 +403,7 @@ mod tests {
             Vec::new(),
             None,
             Some(&cloud),
+            None,
         );
         assert_eq!(info.reasoning, Some(documented));
     }
@@ -310,6 +425,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models,
+            providers: Vec::new(),
         };
         let catalogs = [
             catalog(

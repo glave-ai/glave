@@ -39,7 +39,10 @@ pub use payload::{
     ToolCallRequested, ToolKind, TraceId, TurnResult, TurnStarted, Usage, Verdict, WebPage,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
-pub use payload::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
+pub use payload::{
+    Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,
+    Reasoning, TokenPrice,
+};
 pub use payload::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{

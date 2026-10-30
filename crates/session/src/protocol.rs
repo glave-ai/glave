@@ -42,7 +42,7 @@ pub use files::{AttachedFile, FileInfo};
 pub use glave_event::{Forge, ProviderKind};
 pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
-pub use models::ModelInfo;
+pub use models::{EndpointInfo, ModelInfo};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;

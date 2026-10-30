@@ -4,7 +4,7 @@
 
 mod names;
 
-use glave_event::{Reasoning, TokenPrice};
+use glave_event::{Precision, Reasoning, TokenPrice};
 use serde::{Deserialize, Serialize};
 
 /// One model a thread may be sent to.
@@ -44,6 +44,46 @@ pub struct ModelInfo {
     /// none, and the model reasons as its maker set it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Reasoning>,
+    /// Each provider that serves it through a router (OpenRouter), as the router's catalog
+    /// lists them; none where no router serves it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<EndpointInfo>,
+}
+
+/// One provider serving a model through a router, as the router says, for a client to filter
+/// and choose by. What the router does not say is absent, never guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EndpointInfo {
+    /// The provider's name, such as `DeepInfra`.
+    pub provider: String,
+    /// What a person's filters name it by, such as `deepinfra`.
+    pub slug: String,
+    /// The country it is based in, an ISO 3166-1 alpha-2 code such as `US`, when the router
+    /// says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub based_in: Option<String>,
+    /// The countries its datacenters are in, when the router says; absent when it does not,
+    /// which says nothing of where they are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datacenters: Option<Vec<String>>,
+    /// How precisely it serves the model's weights.
+    pub precision: Precision,
+    /// What its tokens cost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<TokenPrice>,
+    /// The context window this provider serves the model with, in tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<u64>,
+    /// The longest answer this provider gives, in tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output: Option<u64>,
+    /// Whether it keeps nothing of what it is sent (zero data retention). Every provider
+    /// that serves glave through a router is one that never trains on it.
+    pub keeps_nothing: bool,
+    /// How many tokens a second it answered with: the router's median over the half hour
+    /// before its catalog was read, when it says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<u64>,
 }
 
 impl ModelInfo {
@@ -61,6 +101,7 @@ impl ModelInfo {
             images: None,
             price: None,
             reasoning: None,
+            endpoints: Vec::new(),
         }
     }
 
