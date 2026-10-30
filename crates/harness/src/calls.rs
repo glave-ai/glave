@@ -71,8 +71,6 @@ where
                 .count();
             if subagents > 0 {
                 let (started, after) = rest.split_at_checked(subagents).unwrap_or((rest, &[]));
-                // Subagents work where it does, and may change what it opens with there.
-                crate::homes::changed(thread);
                 self.run_agents(thread, started, step, cancel, live).await?;
                 rest = after;
                 continue;

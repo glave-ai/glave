@@ -214,6 +214,17 @@ pub(crate) struct AtHome {
     pub(crate) changed: bool,
 }
 
+impl AtHome {
+    /// The same place, with nothing changed there yet: a subagent's, working where its parent
+    /// does.
+    pub(crate) fn fresh(&self) -> Self {
+        Self {
+            bound: self.bound.clone(),
+            changed: false,
+        }
+    }
+}
+
 /// Where a thread works on its person's own computer, from `bound`, its latest binding; `None`
 /// for any other.
 pub(crate) fn at_home(bound: Option<&WorkspaceBound>) -> Option<AtHome> {
