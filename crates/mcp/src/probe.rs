@@ -3,8 +3,9 @@
 //! `initialize` handshake on the same transport; the probe's answer arriving after that fails
 //! the start ("conflict initialized response id", or "uncorrelated error response" for an
 //! error). So a server slow to answer its first request, such as one whose token is renewed
-//! first or a program still starting, never started. Once `initialize` follows a probe still unanswered, that probe's answer is dropped,
-//! and the server starts within glave's own limit ([`crate::Limits`]).
+//! first or a program still starting, never started. Once `initialize` follows a probe still
+//! unanswered, that probe's answer is dropped, and the server starts within glave's own limit
+//! ([`crate::Limits`]).
 
 use std::borrow::Cow;
 
