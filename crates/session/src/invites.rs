@@ -225,6 +225,15 @@ where
         }
     }
 
+    /// Whether `caller` may make invites here: the server takes them, they signed in, and
+    /// their role permits inviting.
+    pub(crate) async fn may_invite(&self, caller: &Caller) -> Result<bool, ApiError> {
+        if self.joins_by().is_err() || caller.auth.is_none() {
+            return Ok(false);
+        }
+        Ok(permits(self.role_of(caller).await?).contains(&Permit::Invites))
+    }
+
     /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, and how
     /// they join with it: signed out, by a passkey or the company login; signed in, by
     /// accepting it, unless they are in its organization already. Refused alike as any code

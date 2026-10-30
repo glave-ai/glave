@@ -45,6 +45,11 @@ export class ServerService {
     const role = this.info()?.role;
     return this.exists().organization && (role === 'admin' || role === 'owner');
   });
+  /**
+   * Whether the person may invite someone here, though they are alone and no organization is
+   * shown yet: once one is, Admin is where they invite.
+   */
+  readonly invitesAlone = computed(() => (this.info()?.invites ?? false) && !this.admin());
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

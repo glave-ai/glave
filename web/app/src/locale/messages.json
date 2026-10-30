@@ -346,6 +346,7 @@
     "permissions.prefix": "Mode:",
     "permissions.recommended": "{$MODE} · Recommended",
     "person.admin": "Admin",
+    "person.invite": "Invite someone",
     "person.settings": "Settings",
     "person.signOut": "Sign out",
     "person.you": "You",

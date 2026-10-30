@@ -753,6 +753,12 @@ export type ServerInfo = {
    */
   readonly id?: string | null;
   /**
+   * Whether the caller may invite someone here: the server takes invites (glave accounts
+   * at a public origin, or a company login), and the caller's role permits it. So a person
+   * alone, whose organization is shown to no one, can still make the first.
+   */
+  readonly invites?: boolean;
+  /**
    * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
    * those the policy leaves, in the order a person is offered them, the recommended first.
    */

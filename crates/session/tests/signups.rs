@@ -117,6 +117,10 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         let token = made["session"].as_str().map(str::to_owned);
         assert!(token.is_some(), "{made}");
         let mut ada = elsewhere(&served, token);
+        // Alone in it, she is shown no organization, and may invite the first.
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert_eq!(told["invites"], json!(true), "{told}");
+        assert!(told.get("exists").is_none(), "{told}");
         let listed = Request::PeopleList {
             after: None,
             limit: None,

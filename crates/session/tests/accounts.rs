@@ -579,3 +579,61 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
         served.close().await;
     });
 }
+
+#[test]
+fn whoever_may_invite_is_told_so_a_person_alone_too() {
+    block_on!(async {
+        // Reached from nowhere else: no one to invite, and nothing said.
+        let alone = folder("accounts-invites-laptop");
+        let token = LocalToken::new([22; 32]);
+        let laptop = serve(&alone, false, &token).await;
+        let mut here = Web::new(&laptop, Some(token.reveal().to_owned()));
+        let told = asked(&mut here, &Request::Discover {}).await;
+        assert!(told.get("invites").is_none(), "{told}");
+        laptop.close().await;
+
+        // At a public origin, the person on its computer, alone, may make the first invite,
+        // though no organization is shown; a Member they invite may not, an Admin may.
+        let dir = folder("accounts-invites-server");
+        let token = LocalToken::new([23; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let told = asked(&mut here, &Request::Discover {}).await;
+        assert_eq!(told["invites"], json!(true), "{told}");
+        assert!(
+            told.get("exists").is_none(),
+            "alone, no organization is shown: {told}"
+        );
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let member = join(
+            &served,
+            invite(&served, &token, OrgRole::Member).await,
+            &mut phone,
+        )
+        .await;
+        let mut tablet = Authenticator::new(ORIGIN).unwrap();
+        let admin = join(
+            &served,
+            invite(&served, &token, OrgRole::Admin).await,
+            &mut tablet,
+        )
+        .await;
+        let mut as_member = elsewhere(&served, token_of(&member));
+        let told = asked(&mut as_member, &Request::Discover {}).await;
+        assert!(told.get("invites").is_none(), "{told}");
+        let mut as_admin = elsewhere(&served, token_of(&admin));
+        assert_eq!(
+            asked(&mut as_admin, &Request::Discover {}).await["invites"],
+            json!(true)
+        );
+        // Not signed in: nothing said.
+        let mut anyone = elsewhere(&served, None);
+        assert!(
+            asked(&mut anyone, &Request::Discover {})
+                .await
+                .get("invites")
+                .is_none()
+        );
+        served.close().await;
+    });
+}

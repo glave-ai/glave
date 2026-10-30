@@ -91,19 +91,28 @@ function answer(method: string, params: Record<string, unknown>, kept: Kept): un
 /**
  * Answers the admin calls of an organization's Owner, over whatever `fakeApi` answers: the
  * server says there is an organization and the caller owns it, at a public origin, and keeps
- * its people and invites as the page changes them. Every other call falls back to the routes
- * before it.
+ * its people and invites as the page changes them; `alone`, she is its one person, who may
+ * still invite. Every other call falls back to the routes before it.
  */
-export async function fakeAdmin(page: Page): Promise<{ readonly sent: readonly unknown[] }> {
-  const kept: Kept = { people: [DANA, SAM, PRIYA], invites: [samsInvite(Date.now())] };
+export async function fakeAdmin(
+  page: Page,
+  { alone = false }: { readonly alone?: boolean } = {},
+): Promise<{ readonly sent: readonly unknown[] }> {
+  const kept: Kept = alone
+    ? { people: [DANA], invites: [] }
+    : { people: [DANA, SAM, PRIYA], invites: [samsInvite(Date.now())] };
   const sent: unknown[] = [];
-  const server: ServerInfo = {
-    ...discovered(),
-    origin: 'https://glave.example',
-    email: true,
-    exists: { organization: true, workers: false },
-    role: 'owner',
-  };
+  // Alone, the server shows no organization, but says she may invite.
+  const server: ServerInfo = alone
+    ? { ...discovered(), origin: 'https://glave.example', invites: true }
+    : {
+        ...discovered(),
+        origin: 'https://glave.example',
+        email: true,
+        invites: true,
+        exists: { organization: true, workers: false },
+        role: 'owner',
+      };
   await page.route('**/*', async (route: Route) => {
     const message = await posted(route);
     if (message === null) {
