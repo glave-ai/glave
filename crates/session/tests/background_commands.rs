@@ -12,11 +12,15 @@ use serde_json::json;
 
 use crate::support::*;
 
+/// A command that never ends by itself, on macOS and Linux alike, so only a stop ends it,
+/// however long a busy machine takes to reach it.
+const SERVES: &str = "tail -f /dev/null";
+
 fn starts_a_server() -> Vec<glave_ports::Completion> {
     vec![
         answer(
             None,
-            Some(("bash", json!({"command": "sleep 30", "background": true}))),
+            Some(("bash", json!({"command": SERVES, "background": true}))),
         ),
         answer(Some("It is running."), None),
     ]
@@ -45,7 +49,7 @@ fn a_command_is_listed_while_it_runs_and_stopped_by_the_person() {
         turn(&server, thread, "start the server").await.unwrap();
         let running = listed(&server, thread).await;
         assert_eq!(running.len(), 1, "{running:?}");
-        assert_eq!(running[0].command, "sleep 30");
+        assert_eq!(running[0].command, SERVES);
         assert!(running[0].started_at.is_some());
         assert!(running[0].summary.starts_with("Still running"));
 
