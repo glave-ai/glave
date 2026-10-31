@@ -105,7 +105,7 @@ async fn recorded<T>(
             if let Some(found) = events.into_iter().find_map(&find) {
                 return found;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::task::yield_now().await;
         }
     });
     found.await.expect("it was recorded")

@@ -5,17 +5,18 @@
 //!
 //! Every server on the store does its own part. Whatever reads the organization's people ledger
 //! and finds someone removed tells the watches here; and a server that holds a watch of someone
-//! in an organization, or work of theirs, reads that ledger again every [`LOOK_AGAIN`], and ends
+//! in an organization, or work of theirs, reads that ledger again every five seconds, and ends
 //! what they run here, for as long as they are out. So a turn that was starting as they were
 //! removed ends too.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use glave_event::{OrgRole, PersonRemoved, Principal, PrincipalId, ScheduleDeleted, ThreadId};
 use glave_harness::{Cancel, Commands};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId};
+use tokio::task::JoinSet;
 
 use crate::held::Slot;
 use crate::people::{Acting, Permit, no_such_person, refuse_self};
@@ -27,6 +28,12 @@ use crate::words::Sentence;
 /// How long a removal made on another server on the store may take to reach what this one holds
 /// of the person. One read of the people ledger, per organization where a watch or work needs it.
 const LOOK_AGAIN: Duration = Duration::from_secs(5);
+
+/// Organizations whose people ledgers are read at once.
+const READS: usize = 16;
+
+/// How long one look waits for a removed person's commands to stop.
+const STOPPING: Duration = Duration::from_secs(10);
 
 /// What runs here for someone other than the person on this computer: a thread's work, which
 /// `cancel` stops, or its commands in the background.
@@ -83,7 +90,13 @@ where
         .await?;
         // What they run here ends now, before anything else can fail, as their watches here
         // just did.
-        self.end_removed_people_s(self.running_for_people()).await;
+        let theirs = self
+            .running_for_people()
+            .into_iter()
+            .filter(|theirs| theirs.org == org && theirs.person == person)
+            .collect();
+        let commands = self.interrupt_removed(theirs);
+        self.stop_commands(commands).await;
         if let Some(accounts) = self.inner.accounts.as_deref() {
             accounts.leave(person, org).await?;
         }
@@ -106,23 +119,43 @@ where
 
     /// Reads the people ledger of each organization where a watch or work here follows someone,
     /// which tells the watches of whoever was removed, and ends what those people run here.
+    /// [`READS`] at once, so a slow organization holds up few others; each read's work ends
+    /// right after it, so forgetting a ledger past the most kept loses nothing.
     pub async fn look_for_removals(&self) {
-        let running = self.running_for_people();
-        let mut orgs: BTreeSet<OrgId> = running.iter().map(|theirs| theirs.org).collect();
-        orgs.extend(
-            self.inner
-                .people
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .watched(),
-        );
-        for org in orgs {
-            // A ledger that cannot be read now is read again next time.
-            if let Err(error) = self.catch_up_people(org).await {
-                tracing::warn!(%error, %org, "could not read the organization's people");
-            }
+        let mut orgs: BTreeMap<OrgId, Vec<Theirs>> = BTreeMap::new();
+        for theirs in self.running_for_people() {
+            orgs.entry(theirs.org).or_default().push(theirs);
         }
-        self.end_removed_people_s(running).await;
+        let watched: Vec<OrgId> = self
+            .inner
+            .people
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .watched()
+            .collect();
+        for org in watched {
+            orgs.entry(org).or_default();
+        }
+        let mut orgs = orgs.into_iter().peekable();
+        let mut commands = Vec::new();
+        while orgs.peek().is_some() {
+            let mut reads = JoinSet::new();
+            for (org, running) in orgs.by_ref().take(READS) {
+                let server = self.clone();
+                reads.spawn(async move {
+                    // A ledger that cannot be read now is read again next time.
+                    match server.catch_up_people(org).await {
+                        Ok(()) => server.interrupt_removed(running),
+                        Err(error) => {
+                            tracing::warn!(%error, %org, "could not read the organization's people");
+                            Vec::new()
+                        }
+                    }
+                });
+            }
+            commands.extend(reads.join_all().await.into_iter().flatten());
+        }
+        self.stop_commands(commands).await;
     }
 
     /// What runs here for anyone but the person on this computer, who is never removed.
@@ -157,12 +190,19 @@ where
             .collect()
     }
 
-    /// Ends what of `running` belongs to someone removed from its organization: a turn or a
-    /// task ends interrupted (for a task, as stopped by whoever removed them), and their
-    /// commands in the background are stopped. A failure to stop one is tried again next time.
-    async fn end_removed_people_s(&self, running: Vec<Theirs>) {
+    /// Ends the turns and tasks of `running` that belong to someone removed from their
+    /// organization: a turn ends interrupted, and a task as stopped by whoever removed them.
+    /// Waits for nothing. Answers those of `running` of such a person with commands still
+    /// running, and who removed them.
+    fn interrupt_removed(&self, running: Vec<Theirs>) -> Vec<(Theirs, Principal)> {
+        let mut commands = Vec::new();
         for theirs in running {
-            let removed = self.people(theirs.org, |people| people.removed_by(theirs.person));
+            let removed = self
+                .inner
+                .people
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .removed_by(theirs.org, theirs.person);
             let Some(by) = removed else {
                 continue;
             };
@@ -170,19 +210,33 @@ where
                 self.task_stopped_by(theirs.thread, by.id);
                 cancel.interrupt();
             }
-            if !theirs.commands.any_running() {
-                continue;
+            if theirs.commands.any_running() {
+                commands.push((theirs, by));
             }
-            for command in theirs.commands.running_now().await {
-                if let Err(error) = theirs.commands.stop_for(command.id, by.clone()).await {
-                    tracing::warn!(
-                        error = error.message(),
-                        "could not stop a removed person's command"
-                    );
-                }
-            }
-            self.record_commands(theirs.thread).await;
         }
+        commands
+    }
+
+    /// Stops each thread's commands in the background, all at once and for at most
+    /// [`STOPPING`]: a computer that doesn't answer holds up nothing else, and what isn't
+    /// stopped by then is tried again next time.
+    async fn stop_commands(&self, running: Vec<(Theirs, Principal)>) {
+        let mut stops = JoinSet::new();
+        for (theirs, by) in running {
+            let server = self.clone();
+            stops.spawn(async move {
+                for command in theirs.commands.running_now().await {
+                    if let Err(error) = theirs.commands.stop_for(command.id, by.clone()).await {
+                        tracing::warn!(
+                            error = error.message(),
+                            "could not stop a removed person's command"
+                        );
+                    }
+                }
+                server.record_commands(theirs.thread).await;
+            });
+        }
+        let _ = tokio::time::timeout(STOPPING, stops.join_all()).await;
     }
 
     /// Deletes every schedule of the projects `person` owns in `org`, so none fires for someone
