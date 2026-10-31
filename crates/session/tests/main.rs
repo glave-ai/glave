@@ -10,6 +10,7 @@ mod accounts;
 mod appearance;
 mod awake;
 mod background_commands;
+mod brand;
 mod browsers;
 mod changes;
 mod choices;

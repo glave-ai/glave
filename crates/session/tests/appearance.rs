@@ -2,7 +2,7 @@
 //! in their settings ledger so every server on one store reads the same, said as the light and
 //! dark values to draw it in, and theirs alone.
 
-use glave_event::{Accent, Color};
+use glave_event::{Accent, Color, Grouping};
 use glave_ports::Caller;
 use glave_session::protocol::{Reply, Request, Shades};
 use glave_session::signin::person;
@@ -21,16 +21,21 @@ fn grace() -> Caller {
     }
 }
 
-async fn appearance(server: &Tested<Shared>, caller: &Caller) -> (Accent, Option<Shades>) {
+async fn appearance(server: &Tested<Shared>, caller: &Caller) -> (Option<Accent>, Option<Shades>) {
     match server.request_as(caller, Request::AppearanceGet {}).await {
-        Ok(Reply::Appearance { chosen, shades }) => (chosen, shades),
+        Ok(Reply::Appearance { chosen, shades, .. }) => (chosen, shades),
         other => panic!("the caller's appearance, not {other:?}"),
     }
 }
 
 async fn pick(server: &Tested<Shared>, caller: &Caller, accent: Accent) -> Option<Shades> {
     match server
-        .request_as(caller, Request::AppearanceSet { accent })
+        .request_as(
+            caller,
+            Request::AppearanceSet {
+                accent: Some(accent),
+            },
+        )
         .await
     {
         Ok(Reply::Appearance { shades, .. }) => shades,
@@ -46,7 +51,7 @@ fn plain_until_the_person_chooses_then_theirs_on_every_server_and_theirs_alone()
         let (first, _) = Setup::new(Vec::new()).build_on(&one, log.clone()).await;
         let (second, _) = Setup::new(Vec::new()).build_on(&other, log).await;
         let (ada, grace) = (Caller::default(), grace());
-        assert_eq!(appearance(&first, &ada).await, (Accent::Plain, None));
+        assert_eq!(appearance(&first, &ada).await, (None, None));
 
         let exact = Accent::Color {
             color: blue(),
@@ -63,8 +68,8 @@ fn plain_until_the_person_chooses_then_theirs_on_every_server_and_theirs_alone()
         );
         let (chosen, read) = appearance(&second, &ada).await;
         assert_eq!(read, shades, "another server on the store reads the same");
-        assert_eq!(chosen, exact);
-        assert_eq!(appearance(&first, &grace).await, (Accent::Plain, None));
+        assert_eq!(chosen, Some(exact));
+        assert_eq!(appearance(&first, &grace).await, (None, None));
 
         let tuned = pick(
             &first,
@@ -79,7 +84,7 @@ fn plain_until_the_person_chooses_then_theirs_on_every_server_and_theirs_alone()
         assert_ne!(tuned.dark, blue(), "too dark to read in dark, so tuned");
 
         assert_eq!(pick(&first, &ada, Accent::Plain).await, None);
-        assert_eq!(appearance(&second, &ada).await, (Accent::Plain, None));
+        assert_eq!(appearance(&second, &ada).await, (Some(Accent::Plain), None));
     });
 }
 
@@ -90,4 +95,26 @@ fn a_colour_is_read_only_as_one() {
         "params": {"accent": {"color": {"color": "url(evil)", "adjust": true}}},
     }));
     assert!(parsed.is_err(), "only #rrggbb ever reaches a style");
+}
+
+/// Replies carry no name: each is told from the others by the fields it must have.
+#[test]
+fn no_other_reply_reads_as_an_appearance_or_a_logo() {
+    let other = serde_json::to_value(Reply::Grouping {
+        grouping: Grouping::Status,
+    })
+    .unwrap();
+    let read: Reply = serde_json::from_value(other).unwrap();
+    assert!(matches!(read, Reply::Grouping { .. }), "{read:?}");
+    let plain = serde_json::to_value(Reply::Appearance {
+        chosen: None,
+        shades: None,
+        organization: None,
+    })
+    .unwrap();
+    let read: Reply = serde_json::from_value(plain).unwrap();
+    assert!(matches!(read, Reply::Appearance { .. }), "{read:?}");
+    let none = serde_json::to_value(Reply::BrandLogo { logo: None }).unwrap();
+    let read: Reply = serde_json::from_value(none).unwrap();
+    assert!(matches!(read, Reply::BrandLogo { .. }), "{read:?}");
 }

@@ -106,7 +106,8 @@ impl Scope {
 
     /// The scope of the organization's own streams, which are no project's: its people ledger
     /// (`specs/model.md`, "Roles"). glave's own, like [`Scope::glaves_own`]: the session reads
-    /// it for a caller only to check their role, and answers it only to an admin.
+    /// it for a caller only to check their role and to say the brand of organizations they
+    /// are in, and answers the rest only to an admin.
     pub fn of_organization(org: OrgId) -> Self {
         Self {
             org,

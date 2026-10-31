@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use glave_computer::LocalComputers;
 use glave_event::{
-    At, Checkout, EventId, FolderSource, Header, Money, Principal, ProjectFolderSet, RawEvent, Seq,
-    ThreadId, encode,
+    At, BlobRef, Checkout, EventId, FolderSource, Header, Money, Principal, ProjectFolderSet,
+    RawEvent, Seq, Sha256, ThreadId, encode,
 };
 use glave_gateway::Credits;
 use glave_harness::{Homes, Permissions, ProjectFolders, Settings, Workspace};
@@ -18,8 +18,9 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLeases, InMemoryLog, InMemoryProjects, Leases,
-    Located, LogError, OrgId, Project, ProjectId, ProjectKind, Projects, Scope, ToolSource,
+    Blob, BlobError, BlobStore, Chunks, Completion, EventLog, InMemoryBlobs, InMemoryLeases,
+    InMemoryLog, InMemoryProjects, Leases, Located, LogError, OrgId, Project, ProjectId,
+    ProjectKind, Projects, Scope, Swept, ToolSource,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -33,7 +34,54 @@ use tokio::sync::Notify;
 use super::script::{ScriptedModel, Seen};
 
 /// A test server on the log `L`.
-pub(crate) type Tested<L = InMemoryLog> = Server<ScriptedModel, L, InMemoryBlobs>;
+pub(crate) type Tested<L = InMemoryLog> = Server<ScriptedModel, L, SharedBlobs>;
+
+/// A test server's blobs, in memory, on its clock, which the test holds too, so it can sweep them.
+#[derive(Clone)]
+pub(crate) struct SharedBlobs(Arc<InMemoryBlobs>);
+
+#[deny(clippy::missing_trait_methods)]
+impl BlobStore for SharedBlobs {
+    fn put(
+        &self,
+        scope: &Scope,
+        thread: Option<ThreadId>,
+        media_type: &str,
+        limit: u64,
+        bytes: Box<dyn Chunks>,
+    ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send {
+        self.0.put(scope, thread, media_type, limit, bytes)
+    }
+
+    fn get(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+    ) -> impl Future<Output = Result<Option<Blob>, BlobError>> + Send {
+        self.0.get(scope, sha256)
+    }
+
+    fn refer(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<bool, BlobError>> + Send {
+        self.0.refer(scope, sha256, thread)
+    }
+
+    fn release(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<(), BlobError>> + Send {
+        self.0.release(scope, thread)
+    }
+
+    fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
+        self.0.sweep(org)
+    }
+}
 
 /// A fresh folder for the test called `name`, removed when it drops.
 pub(crate) fn folder(name: &str) -> TempDir {
@@ -60,6 +108,8 @@ pub(crate) fn scope() -> Scope {
 
 /// What a test server is built from.
 pub(crate) struct Setup {
+    /// The server's blobs, which a test may keep a clone of.
+    pub blobs: SharedBlobs,
     pub answers: Vec<Completion>,
     /// Each answer waits here until the test lets it through.
     pub gate: Option<Arc<Notify>>,
@@ -133,12 +183,14 @@ pub(crate) struct Setup {
 impl Setup {
     /// A server answering `answers` in the product's defaults, with clients to ask.
     pub(crate) fn new(answers: Vec<Completion>) -> Self {
+        let clock = ManualClock::ticking(1_791_001_000_000);
         Self {
+            blobs: SharedBlobs(Arc::new(InMemoryBlobs::with_clock(Arc::new(clock.clone())))),
             answers,
             gate: None,
             answering: Answering::Clients,
             settings: full_access(),
-            clock: ManualClock::ticking(1_791_001_000_000),
+            clock,
             seed: 1,
             limits: TaskLimits::default(),
             models: Vec::new(),
@@ -292,7 +344,7 @@ impl Setup {
             identity_provider: self.identity_provider,
             homes: self.homes,
             credits,
-            ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
+            ..Wiring::new(provider, log, self.blobs, workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);
         if let Some(filters) = &self.filters {

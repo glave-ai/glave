@@ -460,6 +460,14 @@ export type LineKind = "same" | "removed" | "added";
 /** Which link's code a passkey is made with (`passkey/create_options`). */
 export type LinkKind = "setup" | "invite" | "signup" | "recovery";
 
+/** A logo's content. */
+export type Logo = {
+  /** In base64. */
+  readonly data: string;
+  readonly media_type: string;
+  readonly sha256: string;
+};
+
 /** The most a provider's tokens may cost, in millionths of a US dollar per million tokens. */
 export type MaxPrice = {
   readonly input?: number | null;
@@ -596,6 +604,18 @@ export type OrganizationInfo = {
   readonly people: number;
   /** The caller's role in it. */
   readonly role: OrgRole;
+};
+
+/** What the caller's organization says of how glave looks to them. */
+export type OrganizationLook = {
+  /** Its accent. */
+  readonly accent: Accent;
+  /** Whether everyone uses that accent, so the caller chooses none. */
+  readonly locked: boolean;
+  /** Which logo it has (`brand/logo/get`), by its hash, so a client reads it once. */
+  readonly logo?: string | null;
+  /** What it is called; none until someone names it. */
+  readonly name?: string | null;
 };
 
 /** What started a thread, and who. */
@@ -1375,12 +1395,28 @@ export type AppearanceGetParams = Readonly<Record<string, never>>;
  * none for glave's plain look.
  */
 export type AppearanceGetResult = {
-  readonly chosen: Accent;
+  /**
+   * What they chose; none, their organization's. Always there, so no other reply reads
+   * as this one.
+   */
+  readonly chosen?: Accent | null;
+  /** What their organization says of it, where it is shown. */
+  readonly organization?: OrganizationLook | null;
   readonly shades?: Shades | null;
 };
 
+export type AppearancePreviewParams = {
+  readonly adjust: boolean;
+  readonly color: Color;
+};
+
+/** The light and dark values a color would be drawn as. */
+export type AppearancePreviewResult = {
+  readonly shades: Shades;
+};
+
 export type AppearanceSetParams = {
-  readonly accent: Accent;
+  readonly accent?: Accent | null;
 };
 
 /**
@@ -1388,7 +1424,13 @@ export type AppearanceSetParams = {
  * none for glave's plain look.
  */
 export type AppearanceSetResult = {
-  readonly chosen: Accent;
+  /**
+   * What they chose; none, their organization's. Always there, so no other reply reads
+   * as this one.
+   */
+  readonly chosen?: Accent | null;
+  /** What their organization says of it, where it is shown. */
+  readonly organization?: OrganizationLook | null;
   readonly shades?: Shades | null;
 };
 
@@ -1414,6 +1456,43 @@ export type AwakeSetParams = {
 /** Whether the computer is kept awake while glave works. */
 export type AwakeSetResult = {
   readonly awake: AwakeInfo;
+};
+
+export type BrandGetParams = Readonly<Record<string, never>>;
+
+/** The organization's name, logo and accent. */
+export type BrandGetResult = {
+  readonly brand: OrganizationLook;
+};
+
+export type BrandLogoGetParams = Readonly<Record<string, never>>;
+
+/** A logo; none when there is none. */
+export type BrandLogoGetResult = {
+  /** Always there, so no other reply reads as this one. */
+  readonly logo?: Logo | null;
+};
+
+export type BrandLogoUploadParams = {
+  /** Its content, in base64. */
+  readonly data: string;
+};
+
+/** A logo kept for `brand/set` to name. */
+export type BrandLogoUploadResult = {
+  readonly sha256: string;
+};
+
+export type BrandSetParams = {
+  readonly accent: Accent;
+  readonly locked: boolean;
+  readonly logo?: string | null;
+  readonly name?: string | null;
+};
+
+/** The organization's name, logo and accent. */
+export type BrandSetResult = {
+  readonly brand: OrganizationLook;
 };
 
 export type CommandListParams = {
@@ -2508,10 +2587,15 @@ export type TurnStartResult = {
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "appearance/get": { readonly params: AppearanceGetParams; readonly result: AppearanceGetResult };
+  readonly "appearance/preview": { readonly params: AppearancePreviewParams; readonly result: AppearancePreviewResult };
   readonly "appearance/set": { readonly params: AppearanceSetParams; readonly result: AppearanceSetResult };
   readonly "approval/decide": { readonly params: ApprovalDecideParams; readonly result: ApprovalDecideResult };
   readonly "awake/get": { readonly params: AwakeGetParams; readonly result: AwakeGetResult };
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
+  readonly "brand/get": { readonly params: BrandGetParams; readonly result: BrandGetResult };
+  readonly "brand/logo/get": { readonly params: BrandLogoGetParams; readonly result: BrandLogoGetResult };
+  readonly "brand/logo/upload": { readonly params: BrandLogoUploadParams; readonly result: BrandLogoUploadResult };
+  readonly "brand/set": { readonly params: BrandSetParams; readonly result: BrandSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
   readonly "connection/list": { readonly params: ConnectionListParams; readonly result: ConnectionListResult };

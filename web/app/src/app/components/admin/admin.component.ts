@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, inject, viewChild } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
   GlzIconComponent,
   GlzNavItemComponent,
@@ -7,6 +7,7 @@ import {
   GlzSidenavLayoutComponent,
 } from '@glave/glaze';
 import ArrowLeft from 'lucide/dist/esm/icons/arrow-left.mjs';
+import Palette from 'lucide/dist/esm/icons/palette.mjs';
 import Users from 'lucide/dist/esm/icons/users.mjs';
 
 import { NavService } from '../../services/nav.service';
@@ -22,6 +23,7 @@ import { SessionService } from '../../services/session.service';
   selector: 'app-admin',
   imports: [
     RouterLink,
+    RouterLinkActive,
     RouterOutlet,
     GlzIconComponent,
     GlzNavItemComponent,
@@ -41,11 +43,15 @@ export class AdminComponent {
     back: $localize`:@@admin.back:Back to chats`,
     heading: $localize`:@@admin.heading:Admin`,
     people: $localize`:@@admin.people:People`,
+    brand: $localize`:@@admin.brand:Brand`,
   } as const;
-  protected readonly icons = { back: ArrowLeft, people: Users } as const;
+  protected readonly icons = { back: ArrowLeft, people: Users, brand: Palette } as const;
   protected readonly contentLink = '#content';
   protected readonly chatsLink = '/';
   protected readonly peopleLink = '/admin';
+  protected readonly brandLink = '/admin/brand';
+  /** People is current on its own page alone: Brand's is under it. */
+  protected readonly exact = { exact: true } as const;
   private readonly nav = inject(NavService);
   protected readonly navOpen = this.nav.open;
   protected readonly navWidth = this.nav.width;
