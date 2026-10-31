@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{ComputerKind, InstructionsRead, Opened, PrincipalId, WorkspaceBound};
-use glave_ports::computer::{ComputerError, Home};
+use glave_ports::computer::{ComputerError, Home, Sandbox};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 
 use crate::approval::Approver;
@@ -37,6 +37,10 @@ pub trait Homes: Send + Sync {
     /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept:
     /// for a turn or a task, which may run long between its commands. It does not wake it.
     fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError>;
+
+    /// The sandbox commands there run in, at its widest; none where the computer's own wall is
+    /// their only one (`specs/sandbox.md`, "On a person's computer").
+    fn sandbox(&self) -> Option<Sandbox>;
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -71,7 +75,7 @@ where
     ) -> Option<Result<Workspace, HarnessError>> {
         let homes = self.homes.as_ref()?;
         Some(homes.home(org, person).map_err(Into::into).map(|planned| {
-            let home = Workspace::new(planned.computers, planned.home);
+            let home = Workspace::new(planned.computers, planned.home).asleep_at_times();
             // Their git sign-ins reach their computer as they reach this one: asked at each use.
             match self.workspace.credentials() {
                 Some(credentials) => home.with_credentials(Arc::clone(credentials)),

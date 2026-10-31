@@ -54,7 +54,9 @@ pub(crate) async fn workspace(
         }
         Err(error) => error.to_string(),
     };
-    if let Some(rule) = setup.loaded.constraints.sandbox_required() {
+    // Where people have computers of their own, their commands run there, in its sandbox.
+    let elsewhere = setup.choices.computers.is_some();
+    if !elsewhere && let Some(rule) = setup.loaded.constraints.sandbox_required() {
         anyhow::bail!(
             "the sandbox cannot run on this computer ({why}), and {rule} requires it, so glave \
              will not run commands without it"
@@ -80,7 +82,7 @@ pub(crate) async fn workspace(
         Permissions::Ask => setup.sandbox.is_none(),
         Permissions::Plan | Permissions::FullAccess => false,
     };
-    if asks_all && setup.choices.on.value != On::Cloud {
+    if asks_all && setup.choices.on.value != On::Cloud && !elsewhere {
         eprintln!("glave: {}", unsandboxed_notice(&why));
     }
     Ok(workspace)

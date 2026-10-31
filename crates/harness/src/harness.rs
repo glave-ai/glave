@@ -311,6 +311,7 @@ where
                 judge: settings.judge.clone(),
                 titles: settings.titles,
                 sandbox: workspace.sandbox().cloned(),
+                home_sandbox: None,
                 ask_network: workspace.asks_network(),
                 hooks: Hooks::default(),
                 web: None,
@@ -381,6 +382,8 @@ where
     /// Works each person's threads on their own computer from `homes`, when there is one.
     #[must_use]
     pub fn with_homes(mut self, homes: Option<Arc<dyn Homes>>) -> Self {
+        let sandbox = homes.as_ref().and_then(|homes| homes.sandbox());
+        self.change_defaults(|defaults| defaults.home_sandbox = sandbox);
         self.homes = homes;
         self
     }
