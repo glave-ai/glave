@@ -27,7 +27,7 @@ use crate::chosen::DefaultModel;
 use crate::compaction::Measured;
 use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
-use crate::homes::Homes;
+use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::memory::MemoryState;
 use crate::plan::Planning;
@@ -71,6 +71,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) clock: Box<dyn Clock>,
     /// The people's computers whose last look at their disks freed nothing, and when.
     pub(crate) lacking_room: Mutex<BTreeMap<ComputerId, Timestamp>>,
+    /// Each computer that last said it's short of room with nothing left to free, and when.
+    pub(crate) short_of_room: Mutex<BTreeMap<ComputerId, (Timestamp, ShortOfRoom)>>,
     pub(crate) entropy: Box<dyn Entropy>,
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
@@ -297,6 +299,7 @@ where
             approver: parts.approver,
             clock: parts.clock,
             lacking_room: Mutex::default(),
+            short_of_room: Mutex::default(),
             entropy: parts.entropy,
             skills: None,
             sources: vec![Arc::new(Builtins {

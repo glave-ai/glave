@@ -62,7 +62,7 @@ pub use files::{FileError, MAX_FILE, MAX_SIDE, kind_of};
 pub use glave_event::Permissions;
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Invalid, Parts, Settings, Thread};
-pub use homes::Homes;
+pub use homes::{Homes, ShortOfRoom};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};

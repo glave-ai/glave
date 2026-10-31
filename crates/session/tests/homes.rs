@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_computer::{LocalComputers, Wake, Waking};
+use glave_computer::{Largest, LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
 use glave_harness::Homes;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, SandboxLevel, Sources,
+    ComputerError, ComputerId, Computers, DiskSpace, DiskUse, Home, Sandbox, SandboxLevel, Sources,
     WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{Message, OrgId, ProjectId};
@@ -41,6 +41,8 @@ pub(crate) struct Here {
     held_when_woken: Arc<Mutex<Vec<usize>>>,
     /// While what this names is there, each computer's disk says it is full.
     full_while: Arc<Mutex<Option<PathBuf>>>,
+    /// What each computer says uses its disk.
+    largest: Largest,
     planned: Mutex<BTreeMap<PrincipalId, Home>>,
     /// The sandbox commands run in there; none, its wall the only one, unless a test sets it.
     sandbox: Option<Sandbox>,
@@ -72,6 +74,7 @@ impl Here {
             holds: Arc::default(),
             held_when_woken: Arc::default(),
             full_while: Arc::default(),
+            largest: Largest::default(),
             planned: Mutex::new(BTreeMap::new()),
             sandbox: None,
         }
@@ -115,8 +118,10 @@ impl Here {
         let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
         let at = folder.clone();
         let full_while = Arc::clone(&self.full_while);
+        let largest = self.largest.clone();
         let wake: Wake = Arc::new(move || {
             let full_while = Arc::clone(&full_while);
+            let largest = largest.clone();
             asked.fetch_add(1, Ordering::SeqCst);
             let (woken, holds, held, awake) = (
                 Arc::clone(&woken),
@@ -136,7 +141,11 @@ impl Here {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
                 let full_while = Arc::clone(&full_while);
-                let computers = LocalComputers::for_here(std::env::vars_os())
+                // Its home is its own: nothing here looks at this machine's person's.
+                let environment = std::env::vars_os()
+                    .filter(|(name, _)| name != "HOME")
+                    .chain([("HOME".into(), at.clone().into_os_string())]);
+                let computers = LocalComputers::for_here(environment)
                     .with_disk_measure(move || {
                         let full = full_while
                             .lock()
@@ -145,9 +154,10 @@ impl Here {
                             .is_some_and(|path: &PathBuf| path.exists());
                         DiskSpace {
                             size: 100,
-                            free: if full { 10 } else { 50 },
+                            free: if full { 9 } else { 50 },
                         }
                     })
+                    .with_largest(largest.clone())
                     .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
                     .with_projects(projects)
@@ -724,5 +734,66 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
         *homes.full_while.lock().unwrap() = None;
         turn(&server, older, "hello again").await.unwrap();
         assert!(older_root.exists(), "{}", older_root.display());
+    });
+}
+
+/// Past 90%, with nothing more it can free, the server tells the person what uses their disk, as a
+/// fact on their thread, largest first, and asks nothing more of the computer to say it.
+#[test]
+fn a_person_is_told_what_uses_their_disk_once_nothing_more_can_go() {
+    let dir = folder("session-homes-disk");
+    block_on!(async {
+        let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
+        let answers = vec![
+            answer(None, Some(wrote.clone())),
+            answer(Some("Done."), None),
+            answer(None, Some(wrote)),
+            answer(Some("Done."), None),
+        ];
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let mut setup = Setup::new(answers);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let (project, _) = new_garden(&server).await;
+        homes.largest.set(vec![DiskUse {
+            path: "films/long".to_owned(),
+            bytes: 3_000_000,
+        }]);
+        let marker = dir.join("full");
+        std::fs::write(&marker, "").unwrap();
+        *homes.full_while.lock().unwrap() = Some(marker.clone());
+
+        let thread = started(&server, Some(project.id)).await;
+        assert_eq!(thread.disk, None, "nothing looked at yet");
+        turn(&server, thread.id, "write it down").await.unwrap();
+
+        let asked = homes.asked();
+        let read = server
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        let Reply::Thread { thread: read } = read else {
+            panic!("a thread, not {read:?}");
+        };
+        assert_eq!(homes.asked(), asked, "saying so reaches nothing");
+        let disk = read.disk.expect("it says so");
+        assert_eq!(
+            disk.told.to_string(),
+            "Your computer's disk is 91% full, and glave has freed all it can."
+        );
+        assert_eq!((disk.size, disk.free), (100, 9));
+        assert_eq!(disk.largest[0].path, "films/long");
+
+        // Room made since: the next turn that used the computer hears it, and it says no more.
+        std::fs::remove_file(&marker).unwrap();
+        turn(&server, thread.id, "write it again").await.unwrap();
+        let read = server
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        let Reply::Thread { thread: read } = read else {
+            panic!("a thread, not {read:?}");
+        };
+        assert_eq!(read.disk, None);
     });
 }
