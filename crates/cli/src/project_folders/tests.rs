@@ -350,16 +350,25 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
     });
 }
 
+/// A person, and two projects of theirs on their own computer.
+fn two_projects_of_a_person() -> (PrincipalId, Scope, Scope) {
+    let ana = PrincipalId::new(SystemClock.now(), crate::accounts::random().unwrap()).unwrap();
+    let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
+    let another = ProjectId::from_uuid(uuid::Uuid::from_u128(3));
+    (
+        ana,
+        Scope::glaves_own(org, project_id()),
+        Scope::glaves_own(org, another),
+    )
+}
+
 #[test]
 fn a_hook_on_a_person_s_computer_runs_only_once_trusted_in_the_project_that_trusted_it() {
     let home = TempDir::new("hooks-at-home").unwrap();
     block_on!(async {
         let projects = projects(&home, Vec::new(), &["alpha"]).await;
         let root = Path::new("/home/glave/garden");
-        let ana = PrincipalId::new(SystemClock.now(), crate::accounts::random().unwrap()).unwrap();
-        let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
-        let there = Scope::glaves_own(org, project_id());
-        let another = Scope::glaves_own(org, ProjectId::from_uuid(uuid::Uuid::from_u128(3)));
+        let (ana, there, another) = two_projects_of_a_person();
         let hook = "[[hooks.Stop]]\ncommand = \"true\"\n";
         let at_stop = |hooks: &Hooks| hooks.at(HookPoint::Stop, None).len();
         assert_eq!(at_stop(&projects.hooks_at_home(there, root, hook).await), 0);
@@ -389,10 +398,7 @@ fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosen
     block_on!(async {
         let projects = projects(&home, Vec::new(), &["alpha"]).await;
         let root = Path::new("/home/glave/garden");
-        let ana = PrincipalId::new(SystemClock.now(), crate::accounts::random().unwrap()).unwrap();
-        let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
-        let there = Scope::glaves_own(org, project_id());
-        let another = Scope::glaves_own(org, ProjectId::from_uuid(uuid::Uuid::from_u128(3)));
+        let (ana, there, another) = two_projects_of_a_person();
         let settled = projects
             .settled_at_home(there, root, "model = \"alpha\"\n")
             .await;
