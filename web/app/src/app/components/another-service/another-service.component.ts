@@ -26,7 +26,7 @@ export class AnotherServiceComponent {
     connect: $localize`:@@anotherService.connect:Connect`,
     checking: $localize`:@@anotherService.checking:Checking the token…`,
     cancel: $localize`:@@anotherService.cancel:Cancel`,
-    missingAddress: $localize`:@@anotherService.missingAddress:Give the service’s address first.`,
+    missingAddress: $localize`:@@anotherService.missingAddress:Give the server’s address first.`,
     missingToken: $localize`:@@anotherService.missingToken:Paste the token first.`,
   } as const;
   protected readonly placeholder = 'https://gitlab.com';
