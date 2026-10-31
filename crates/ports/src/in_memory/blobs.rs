@@ -172,14 +172,6 @@ impl BlobStore for InMemoryBlobs {
         });
         ready(swept)
     }
-
-    fn organizations(&self) -> impl Future<Output = Result<Vec<OrgId>, BlobError>> + Send {
-        let organizations = self.lock().map(|blobs| {
-            let held: BTreeSet<OrgId> = blobs.keys().map(|(scope, _)| scope.org()).collect();
-            held.into_iter().collect()
-        });
-        ready(organizations)
-    }
 }
 
 #[cfg(test)]

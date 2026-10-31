@@ -65,10 +65,6 @@ pub trait BlobStore: Send + Sync {
     /// that old (a write a crash cut short). The server's daily work runs it, on a folder and
     /// a bucket alike. How many blobs and orphaned bytes went.
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send;
-
-    /// Every organization on the store that may hold blobs, ids only, for work that runs once
-    /// per organization, each then in its own scope, as the daily sweep does.
-    fn organizations(&self) -> impl Future<Output = Result<Vec<OrgId>, BlobError>> + Send;
 }
 
 /// What a sweep deleted.

@@ -184,11 +184,6 @@ async fn kept_blobs<B: BlobStore>(blobs: &B, ours: Scope, theirs: Scope, t: Thre
         super::blobs::read(blobs, &theirs, &reference.sha256).await?
             == Some((reference.clone(), bytes)),
         "one organization's release and sweep must leave another's blob in place",
-    )?;
-    let listed = blobs.organizations().await.map_err(|e| e.to_string())?;
-    ensure(
-        listed.contains(&ours.org()) && listed.contains(&theirs.org()),
-        "every organization with blobs must be listed, for work that runs once per organization",
     )
 }
 

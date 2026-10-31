@@ -140,6 +140,25 @@ impl Store {
     }
 
     /// The leases work in flight runs under, on this file's clock.
+    /// The organizations the store holds: every one with an organization key, so every one with
+    /// a blob. Ids only, for work that runs once per organization, each then in its own scope.
+    pub async fn organizations(&self) -> Result<Vec<OrgId>, StoreError> {
+        let ids: Vec<String> = run(&self.connection, |connection| {
+            connection
+                .prepare("SELECT org FROM org_keys ORDER BY org")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()
+        })
+        .await?;
+        ids.iter()
+            .map(|id| {
+                let uuid = Uuid::parse_str(id)
+                    .map_err(|e| StoreError::Storage(format!("organization {id}: {e}")))?;
+                Ok(OrgId::from_uuid(uuid))
+            })
+            .collect()
+    }
+
     pub fn leases(&self) -> SqliteLeases {
         SqliteLeases::new(Arc::clone(&self.connection))
     }

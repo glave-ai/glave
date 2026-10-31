@@ -9,7 +9,6 @@
 //! background, it keeps its log under its cap.
 
 use std::pin::pin;
-use std::sync::Arc;
 use std::time::Duration;
 
 use glave_harness::Cancel;
@@ -23,10 +22,10 @@ use tokio::time::Instant;
 use super::{Lock, log, log_path, socket_path};
 use crate::args::Args;
 use crate::client::Glave;
-use crate::data::{DataBlobs, DataLog};
+use crate::data::{Data, DataLog};
 use crate::memory::Running;
 use crate::serving::Reach;
-use glave_ports::Leases;
+use glave_ports::Holder;
 
 /// How often the server looks at its log's size, and whether the daily work is due.
 const TICK: Duration = Duration::from_secs(30);
@@ -41,9 +40,10 @@ const DAILY: Duration = Duration::from_hours(24);
 pub(crate) struct Daily<'a> {
     /// The store's log, which the worktrees' check records in.
     pub log: DataLog,
-    /// The store's blobs, swept in every organization on it, each under `leases`.
-    pub blobs: DataBlobs,
-    pub leases: Arc<dyn Leases>,
+    /// The store, whose blobs are swept in every organization on it, each under a lease.
+    pub store: Data,
+    /// Who this server holds those leases as.
+    pub holder: Holder,
     /// Memory, when it is on.
     pub memory: Option<&'a Running>,
     /// The processes the worktrees' check runs git as.
@@ -68,7 +68,7 @@ impl Daily<'_> {
             crate::worktrees::check_daily(&self.log, self.processes).await;
             if swept.is_none_or(|at| at.elapsed() >= DAILY) {
                 swept = Some(Instant::now());
-                super::sweep::every_organization(&self.blobs, self.leases.as_ref()).await;
+                self.sweep().await;
             }
             if tidied.elapsed() < DAILY {
                 continue;
@@ -77,6 +77,24 @@ impl Daily<'_> {
             if let Some(memory) = self.memory {
                 memory.housekeep().await;
                 memory.memory.tidy_soon(Some(memory.person), &memory.scopes);
+            }
+        }
+    }
+}
+
+impl Daily<'_> {
+    /// Sweeps the blobs of every organization on the store. When the store can't say which they
+    /// are, it is tried again the next day.
+    async fn sweep(&self) {
+        match self.store.organizations().await {
+            Ok(organizations) => {
+                let (blobs, leases) = (self.store.blobs(), self.store.leases());
+                let holder = self.holder;
+                super::sweep::every_organization(organizations, &blobs, leases.as_ref(), holder)
+                    .await;
+            }
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "the blobs could not be swept");
             }
         }
     }

@@ -3,15 +3,14 @@
 //! and no one is at the terminal (wired in `wiring.rs`); and serving the session API.
 
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
 use glave_event::ThreadId;
 use glave_harness::{DEFAULT_BUDGET, Goal, Permissions, ProjectFolders as _};
-use glave_ports::ProjectId;
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::Protections;
+use glave_ports::{Holder, OsEntropy, ProjectId, SystemClock};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request};
 
@@ -145,8 +144,8 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     let served = if let (Some(lock), Some(listening)) = (&lock, listening) {
         let daily = crate::server::Daily {
             log: wired.log.clone(),
-            blobs: wired.blobs.clone(),
-            leases: Arc::clone(&wired.leases),
+            store: wired.store.clone(),
+            holder: Holder::new(&SystemClock, &OsEntropy)?,
             memory: wired.memory.as_ref(),
             processes: wired.servers.processes(),
         };

@@ -111,6 +111,14 @@ impl Data {
         }
     }
 
+    /// The organizations on the store, for work that runs once per organization.
+    pub(crate) async fn organizations(&self) -> anyhow::Result<Vec<OrgId>> {
+        Ok(match self {
+            Self::Sqlite(store) => store.organizations().await?,
+            Self::Postgres(store) => store.organizations().await?,
+        })
+    }
+
     /// The leases work in flight runs under, on the store's own clock.
     pub(crate) fn leases(&self) -> Arc<dyn Leases> {
         match self {
@@ -342,13 +350,6 @@ impl BlobStore for DataBlobs {
         match self {
             Self::Sqlite(blobs) => blobs.sweep(org).await,
             Self::Postgres(blobs) => blobs.sweep(org).await,
-        }
-    }
-
-    async fn organizations(&self) -> Result<Vec<OrgId>, BlobError> {
-        match self {
-            Self::Sqlite(blobs) => blobs.organizations().await,
-            Self::Postgres(blobs) => blobs.organizations().await,
         }
     }
 }

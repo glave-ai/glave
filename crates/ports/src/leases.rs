@@ -2,7 +2,7 @@
 //! lease recorded in the store, a row with a holder and an expiry on the store's own clock, the
 //! same on SQLite and Postgres. A lease keeps one piece of work to one holder at a time: a
 //! thread's turn to one server, an organization's schedules to one firer, a person's computer to
-//! the one server that wakes and drives it. Its holder renews it
+//! the one server that wakes and drives it, an organization's blobs to one sweeper. Its holder renews it
 //! while it works and lets go when it is done; one that stops without letting go loses it when
 //! it lapses, and another may take it then. The log's `(thread, seq)` check stays the last guard,
 //! so a lease lost late never corrupts a thread.
@@ -138,6 +138,7 @@ mod tests {
         let thread = ThreadId::new(Timestamp::UNIX_EPOCH, [7; 10]).unwrap();
         assert_eq!(Leased::Thread(thread).key(), format!("thread:{thread}"));
         assert_eq!(Leased::Scheduler.key(), "scheduler");
+        assert_eq!(Leased::BlobSweep.key(), "blob-sweep");
         let person = PrincipalId::new(Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
         assert_eq!(Leased::Computer(person).key(), format!("computer:{person}"));
     }
