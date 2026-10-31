@@ -4,14 +4,6 @@
  * way. These turn one into what `navigator.credentials` takes, and its answer back.
  */
 
-/**
- * Whether a page at `hostname` can make and use passkeys: only at a name, since WebAuthn takes
- * no address (`127.0.0.1`, `[::1]`) as a relying party.
- */
-export function passkeysAt(hostname: string): boolean {
-  return !hostname.startsWith('[') && !/^\d+(?:\.\d+){3}$/u.test(hostname);
-}
-
 /** `bytes` in base64url, without padding. */
 export function toBase64url(bytes: ArrayBuffer | ArrayBufferView): string {
   const view =

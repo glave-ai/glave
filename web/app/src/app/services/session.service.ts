@@ -11,7 +11,7 @@ import {
 } from '@glave/client';
 
 import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
-import { passkeysAt } from '../lib/passkeys';
+import { passkeysAt } from '../lib/passkeys-at';
 import { forget, storageOf } from '../lib/storage';
 import {
   type BrowserSession,
