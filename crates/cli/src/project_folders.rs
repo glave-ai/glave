@@ -24,7 +24,7 @@ use glave_harness::{AGENTS_MD, Brought, Settled, agents_md};
 use glave_memory::{GlaveMemory, Personal};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Hooks;
-use glave_ports::{BoxFuture, Clock, ProjectId, ToolSource};
+use glave_ports::{BoxFuture, Clock, ProjectId, Scope, ToolSource};
 use glave_process::Processes;
 use glave_session::ProjectTrust;
 use glave_session::protocol::{ApiError, TrustAsk, TrustItem, code};
@@ -451,11 +451,11 @@ impl glave_harness::ProjectFolders for ProjectFolders {
 
     fn settled_at_home<'a>(
         &'a self,
+        scope: Scope,
         project: &'a Path,
         config: &'a str,
-        person: PrincipalId,
     ) -> BoxFuture<'a, Settled> {
-        Box::pin(self.settled_there(project, config, person))
+        Box::pin(self.settled_there(scope, project, config))
     }
 
     fn brought<'a>(&'a self, project: &'a Path, id: ProjectId) -> BoxFuture<'a, Brought> {
@@ -485,7 +485,7 @@ impl ProjectTrust for ProjectFolders {
 
     fn ask_there<'a>(
         &'a self,
-        person: PrincipalId,
+        scope: Scope,
         root: &'a Path,
         config: &'a str,
     ) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>> {
@@ -494,16 +494,15 @@ impl ProjectTrust for ProjectFolders {
                 return Ok(None);
             };
             let constraints = self.base().loaded.constraints.clone();
-            let record = self
-                .record_of(person)
-                .await
-                .map_err(|error| failed(&error))?;
+            let ledger = self.trust.in_project(scope, self.trust.person());
+            let record = ledger.record().await.map_err(|error| failed(&error))?;
             Ok(asking(&trust::assess_there(project, &record, &constraints)))
         })
     }
 
     fn trust_there<'a>(
         &'a self,
+        scope: Scope,
         person: PrincipalId,
         root: &'a Path,
         config: &'a str,
@@ -514,11 +513,7 @@ impl ProjectTrust for ProjectFolders {
                 return Ok(false);
             };
             let _keeping = self.keeping.lock().await;
-            let ledger = self
-                .trust
-                .of(person)
-                .await
-                .map_err(|error| failed(&error))?;
+            let ledger = self.trust.in_project(scope, person);
             let record = ledger.record().await.map_err(|error| failed(&error))?;
             let constraints = self.base().loaded.constraints.clone();
             let Some(entry) = trust::trust_asked_there(&record, project, &constraints, ask) else {

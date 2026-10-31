@@ -11,10 +11,9 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
 use glave_config::trust::{self, Outcome, Project};
-use glave_event::PrincipalId;
 use glave_harness::Settled;
-use glave_ports::ToolSource;
 use glave_ports::settings::Judge;
+use glave_ports::{Scope, ToolSource};
 use glave_web::{Web, WebSettings};
 
 use super::ProjectFolders;
@@ -88,19 +87,15 @@ impl ProjectFolders {
         })
     }
 
-    /// What the project at `root` on `person`'s own computer chooses, from `config`: what needs
-    /// trust only once they trusted it, in their own ledger; a ledger that can't be read trusts
-    /// nothing. What it says stays out of this server's log, which isn't theirs.
-    pub(super) async fn settled_there(
-        &self,
-        root: &Path,
-        config: &str,
-        person: PrincipalId,
-    ) -> Settled {
+    /// What the project of `scope` at `root` on its person's own computer chooses, from `config`:
+    /// what needs trust only once they trusted it, in its own ledger; a ledger that can't be read
+    /// trusts nothing. What it says stays out of this server's log, which isn't theirs.
+    pub(super) async fn settled_there(&self, scope: Scope, root: &Path, config: &str) -> Settled {
         let Some(project) = Self::there(root, config) else {
             return Settled::default();
         };
-        let record = match self.record_of(person).await {
+        let ledger = self.trust.in_project(scope, self.trust.person());
+        let record = match ledger.record().await {
             Ok(record) => record,
             Err(error) => {
                 tracing::warn!(%error, "what a person trusted could not be read");
@@ -119,11 +114,6 @@ impl ProjectFolders {
             );
         }
         read.settled
-    }
-
-    /// What `person` decided about projects on their own computer.
-    pub(super) async fn record_of(&self, person: PrincipalId) -> anyhow::Result<trust::Record> {
-        self.trust.of(person).await?.record().await
     }
 
     /// What the project at `root`, as `outcome` applies its files, chooses for its threads,

@@ -435,7 +435,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
         "crates/cli/src/project_folders.rs",
         "let _keeping = self.keeping.lock().await;",
-        1,
+        2,
         "held while a project's trust is read and recorded, from this computer's disk and the \
          store",
     ),

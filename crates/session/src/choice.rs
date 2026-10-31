@@ -155,15 +155,7 @@ where
             Ok(Some(folder)) if self.inner.homes.is_some() => {
                 let scope = Scope::glaves_own(at.org, at.project);
                 let root = Path::new(&folder.checkout.path);
-                match self
-                    .project(at.org, at.project)
-                    .await
-                    .ok()
-                    .and_then(|project| project.owner.id)
-                {
-                    Some(person) => harness.settled_at_home(scope, root, person).await,
-                    None => Settled::default(),
-                }
+                harness.settled_at_home(scope, root).await
             }
             _ => Settled::default(),
         }

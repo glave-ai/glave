@@ -16,7 +16,6 @@ use crate::data::{Data, DataLog};
 /// The person's trust ledger, in the store.
 #[derive(Clone)]
 pub(crate) struct Trust {
-    store: Data,
     log: DataLog,
     scope: Scope,
     person: PrincipalId,
@@ -27,17 +26,25 @@ impl Trust {
     pub(crate) async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Self> {
         let scope = crate::projects::personal(store, person).await?;
         Ok(Self {
-            store: store.clone(),
             log: store.log(),
             scope,
             person,
         })
     }
 
-    /// The trust ledger of `person`, in the same store: their own, for a project on their own
-    /// computer.
-    pub(crate) async fn of(&self, person: PrincipalId) -> anyhow::Result<Self> {
-        Self::open(&self.store, person).await
+    /// The trust ledger in `scope`'s project, kept by `person`: for a project on their own
+    /// computer, whose decisions go with it, and no path there means the same in another.
+    pub(crate) fn in_project(&self, scope: Scope, person: PrincipalId) -> Self {
+        Self {
+            log: self.log.clone(),
+            scope,
+            person,
+        }
+    }
+
+    /// Whose decisions it keeps.
+    pub(crate) fn person(&self) -> PrincipalId {
+        self.person
     }
 
     /// Every project's latest decisions.
