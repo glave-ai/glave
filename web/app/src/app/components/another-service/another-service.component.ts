@@ -19,14 +19,14 @@ import { CredentialsService } from '../../services/credentials.service';
 export class AnotherServiceComponent {
   protected readonly copy = {
     heading: $localize`:@@anotherService.heading:Another service`,
-    lead: $localize`:@@anotherService.lead:Any service with an address, including a GitLab or your own git server.`,
+    lead: $localize`:@@anotherService.lead:Any git server with an address, such as GitLab or your own.`,
     address: $localize`:@@anotherService.address:Address`,
     add: $localize`:@@anotherService.add:Add`,
     token: $localize`:@@anotherService.token:Access token`,
     connect: $localize`:@@anotherService.connect:Connect`,
     checking: $localize`:@@anotherService.checking:Checking the token…`,
     cancel: $localize`:@@anotherService.cancel:Cancel`,
-    missingAddress: $localize`:@@anotherService.missingAddress:Give the service’s address first.`,
+    missingAddress: $localize`:@@anotherService.missingAddress:Give the server’s address first.`,
     missingToken: $localize`:@@anotherService.missingToken:Paste the token first.`,
   } as const;
   protected readonly placeholder = 'https://gitlab.com';
