@@ -13,7 +13,7 @@ function blobOf({ data, media_type: type }: Logo): Blob {
 
 /**
  * The person's organization's logo, for the corner of the side nav, and an admin's
- * reading and keeping of them with its accent (`brand/get`, `brand/set`). The logo is read only
+ * reading and keeping of its name, logo and accent (`brand/get`, `brand/set`). The logo is read only
  * when the server says it is another one.
  */
 @Service()

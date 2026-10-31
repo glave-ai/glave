@@ -8,6 +8,7 @@ import { provideRouter } from '@angular/router';
 import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { AppearanceService } from '../../services/appearance.service';
 import { GroupingService } from '../../services/grouping.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -48,7 +49,10 @@ async function render(
     .answer('tasks/list', { tasks })
     .answer('schedule/list', { schedules: [] })
     .answer('grouping/get', { grouping })
-    .answer('appearance/get', look);
+    .answer('appearance/get', look)
+    .answer('brand/logo/get', {
+      logo: { sha256: 'one', media_type: 'image/png', data: btoa('\x89PNG') },
+    });
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
     deferBlockBehavior: blocks,
@@ -82,19 +86,39 @@ describe('SideNavComponent', () => {
     expect(fake.paramsOf('brand/logo/get')).toEqual([]);
   });
 
-  it('loads what reads a logo only for an organization that has one', async () => {
-    const organization = { name: 'Acme', accent: 'plain', locked: false, logo: 'one' };
+  it('loads what reads a logo once the organization has one, and follows it', async () => {
+    const organization = { name: 'Acme', accent: 'plain', locked: false };
     const { root, fake, fixture } = await render([], { look: { organization } });
-    fake.answer('brand/logo/get', {
-      logo: { sha256: 'one', media_type: 'image/png', data: btoa('\x89PNG') },
-    });
+    const heading = (): Element | null => root.querySelector('[data-testid="nav-heading"]');
+    const logo = (): HTMLImageElement | null =>
+      root.querySelector<HTMLImageElement>('[data-testid="nav-logo"]');
+    expect(heading()?.textContent).toBe('Acme');
+
+    fake.answer('appearance/get', { organization: { ...organization, logo: 'one' } });
+    await TestBed.inject(AppearanceService).read();
     await vi.waitFor(async () => {
       await settle(fixture);
-      const logo = root.querySelector<HTMLImageElement>('[data-testid="nav-logo"]');
-      expect(logo?.alt).toBe('Acme');
-      expect(logo?.src).toMatch(/^blob:/u);
+      expect(logo()?.alt).toBe('Acme');
+      expect(logo()?.src).toMatch(/^blob:/u);
     });
-    expect(root.querySelector('[data-testid="nav-heading"]')).toBeNull();
+    expect(heading()).toBeNull();
+    const first = logo()?.src;
+
+    fake.answer('appearance/get', { organization: { ...organization, logo: 'two' } });
+    await TestBed.inject(AppearanceService).read();
+    await vi.waitFor(async () => {
+      await settle(fixture);
+      expect(logo()?.src).toMatch(/^blob:/u);
+      expect(logo()?.src).not.toBe(first);
+    });
+
+    fake.answer('appearance/get', { organization });
+    await TestBed.inject(AppearanceService).read();
+    await vi.waitFor(async () => {
+      await settle(fixture);
+      expect(logo()).toBeNull();
+    });
+    expect(heading()?.textContent).toBe('Acme');
   });
 
   it('keeps the search out of reach until it is named, as it comes in a route’s page', async () => {

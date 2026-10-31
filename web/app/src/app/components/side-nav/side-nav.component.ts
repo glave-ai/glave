@@ -130,7 +130,7 @@ export class SideNavComponent {
       const { BrandService } = await import('../../services/brand.service');
       this.brand.set(this.injector.get(BrandService));
     } catch {
-      // It could not load: the name stands in the logo's place until the look next changes.
+      // It could not load: the name stands in the logo's place.
     }
   }
 

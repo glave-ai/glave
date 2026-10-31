@@ -1,11 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, inject, viewChild } from '@angular/core';
-import {
-  type IsActiveMatchOptions,
-  Router,
-  RouterLink,
-  RouterOutlet,
-  isActive,
-} from '@angular/router';
+import { Router, RouterLink, RouterOutlet, isActive } from '@angular/router';
 import {
   GlzIconComponent,
   GlzNavItemComponent,
@@ -18,11 +12,6 @@ import Users from 'lucide/dist/esm/icons/users.mjs';
 
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
-
-/** A page's address matched by its path, `exact` or `subset`, whatever else the URL says. */
-function page(paths: IsActiveMatchOptions['paths']): IsActiveMatchOptions {
-  return { paths, queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
-}
 
 /**
  * Admin, a room apart from the person's chats, for the organization's Admins and Owners: its
@@ -69,8 +58,8 @@ export class AdminComponent {
   private readonly router = inject(Router);
   private readonly session = inject(SessionService);
   /** People is current on its own page alone: Brand's is under it. */
-  protected readonly peopleCurrent = isActive(this.peopleLink, this.router, page('exact'));
-  protected readonly brandCurrent = isActive(this.brandLink, this.router, page('subset'));
+  protected readonly peopleCurrent = isActive(this.peopleLink, this.router, { paths: 'exact' });
+  protected readonly brandCurrent = isActive(this.brandLink, this.router);
 
   /** A refused sign-in (or signing out) ends the session: back to the sign-in page. */
   protected readonly leaving = effect(() => {
