@@ -170,6 +170,28 @@ pub async fn release(
     }
 }
 
+/// Whether `kept` holds a file git ignores that a build wouldn't make again: the person's, such
+/// as a `.env`, which a worktree freed for room would lose.
+pub(crate) async fn holds_own_ignored(
+    kept: &Kept,
+    environment: &[(OsString, OsString)],
+    processes: &Processes,
+) -> Result<bool, ComputerError> {
+    let git = Git {
+        processes,
+        environment,
+        at: &kept.path,
+        options: Vec::new(),
+        credential: None,
+    };
+    let said = git.must(&["status", "--ignored", "--porcelain"]).await?;
+    Ok(said
+        .lines()
+        .filter_map(|line| line.strip_prefix("!! "))
+        .filter_map(|path| path.split('/').next())
+        .any(|top| !crate::disk::BUILT.contains(&top)))
+}
+
 /// Removes the worktree, whatever it holds, and its record; its branch is kept. For a worktree
 /// that is not safe, only when the person said so by name.
 pub async fn remove(

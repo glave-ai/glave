@@ -18,7 +18,7 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, DiskSpace};
 use glave_ports::{Clock, SystemClock};
 use glave_process::Processes;
 use tokio::io::AsyncWriteExt as _;
@@ -27,7 +27,7 @@ use crate::local::git::Git;
 use crate::worktrees::{Trash, folders};
 
 /// Above this share of the disk used, in percent, what can be rebuilt is freed.
-const FULL_PERCENT: u64 = 80;
+const FULL_PERCENT: u64 = DiskSpace::FULL_PERCENT;
 
 /// How often the disk is looked at.
 const EVERY: Duration = Duration::from_mins(1);
@@ -47,7 +47,7 @@ const RECORD_MOST: u64 = 1024 * 1024;
 
 /// Build outputs a worktree may hold at its root, freed when git ignores them and tracks
 /// nothing in them.
-const BUILT: [&str; 5] = ["target", "node_modules", ".venv", "dist", "build"];
+pub(crate) const BUILT: [&str; 5] = ["target", "node_modules", ".venv", "dist", "build"];
 
 /// Caches in the person's home that commands fill and fetch again: npm's and cargo's
 /// downloads; then each one in the cache home (pip's and uv's among them).
@@ -58,9 +58,9 @@ const MOST_LOOKED_AT: usize = 1_000;
 
 /// How much a disk holds and how much of it is free, in bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Space {
-    size: u64,
-    available: u64,
+pub(crate) struct Space {
+    pub(crate) size: u64,
+    pub(crate) available: u64,
 }
 
 impl Space {
@@ -72,7 +72,7 @@ impl Space {
 }
 
 /// The space on the disk `path` is on, as the system says.
-fn space(path: &Path) -> std::io::Result<Space> {
+pub(crate) fn space(path: &Path) -> std::io::Result<Space> {
     let stats = rustix::fs::statvfs(path)?;
     Ok(Space {
         size: stats.f_blocks.saturating_mul(stats.f_frsize),

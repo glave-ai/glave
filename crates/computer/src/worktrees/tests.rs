@@ -3,7 +3,7 @@ use std::process::Command as Process;
 use std::sync::Arc;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Computers, Environment, FileWrite, Sources};
+use glave_ports::computer::{Computers, Environment, FileWrite, Freed, Sources};
 
 use super::*;
 use crate::LocalComputers;
@@ -467,5 +467,52 @@ fn a_record_of_a_newer_version_is_refused_plainly() {
             newer,
             "left as is"
         );
+    });
+}
+
+#[test]
+fn a_worktree_is_freed_only_when_all_it_holds_can_be_rebuilt_and_nothing_has_it_open() {
+    let (_dir, repo, base) = repository("free");
+    let computers = computers(&base);
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let opened = computers
+            .open(made.id, &worktree(&repo, "glave/free", Some("owner")))
+            .await
+            .unwrap();
+        let path = opened.root.clone();
+        let free = async |path: &str| computers.free_worktree(made.id, path).await.unwrap();
+        let kept = |freed: Freed, says: &str| match freed {
+            Freed::Kept { why } => assert!(why.contains(says), "{why}"),
+            Freed::Removed => panic!("kept, because {says}"),
+        };
+        kept(free(&path).await, "open");
+        computers.close(opened.id).await.unwrap();
+
+        let listed = computers.worktrees(made.id).await.unwrap();
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].path, path);
+        assert_eq!(listed[0].owner.as_deref(), Some("owner"));
+
+        // What a build remakes goes with it; what's uncommitted, or the person's, keeps it.
+        let root = Path::new(&path);
+        std::fs::write(root.join("new.txt"), "work").unwrap();
+        kept(free(&path).await, "uncommitted");
+        std::fs::remove_file(root.join("new.txt")).unwrap();
+        std::fs::write(root.join(".gitignore"), "target\n.env\n").unwrap();
+        sh(
+            root,
+            "git add .gitignore && git -c user.name=t -c user.email=t@example.com commit -qm i",
+        );
+        sh(root, "git push -q origin HEAD");
+        std::fs::write(root.join(".env"), "mine").unwrap();
+        kept(free(&path).await, "ignores");
+        std::fs::remove_file(root.join(".env")).unwrap();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(root.join("target/built"), "x").unwrap();
+        assert_eq!(free(&path).await, Freed::Removed);
+        assert!(!root.exists());
+        assert!(branches(&repo).contains("glave/free"), "its branch stays");
+        kept(free(&path).await, "not here");
     });
 }

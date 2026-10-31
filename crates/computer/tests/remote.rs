@@ -13,7 +13,7 @@ use glave_computer::{
     Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, bridge, connect_tls,
     listen_socket, serve, serve_socket, serve_tcp, serve_tls,
 };
-use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
+use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment, Freed};
 use glave_ports::testing::any_secret;
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
@@ -44,6 +44,23 @@ fn a_computer_across_a_pipe_passes_the_suite() {
         let verdict =
             conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
+        drop(remote);
+        serving.await.unwrap().unwrap();
+    });
+}
+
+#[test]
+fn across_a_pipe_a_computer_says_its_disk_and_the_worktrees_it_keeps() {
+    let (_dir, _work, copies) = scratch("pipe-disk");
+    block_on!(async {
+        let (remote, serving) = across_a_pipe(local(&copies));
+        let made = remote.create(&Environment::host()).await.unwrap();
+        let status = remote.status(made.id).await.unwrap();
+        let disk = status.disk.expect("it says what its disk holds");
+        assert!(disk.size >= disk.free && disk.size > 0, "{disk:?}");
+        assert_eq!(remote.worktrees(made.id).await.unwrap(), []);
+        let freed = remote.free_worktree(made.id, "/nowhere").await.unwrap();
+        assert!(matches!(freed, Freed::Kept { .. }), "{freed:?}");
         drop(remote);
         serving.await.unwrap().unwrap();
     });

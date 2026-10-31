@@ -51,6 +51,10 @@ pub(crate) enum Request {
     Status { computer: ComputerId },
     #[serde(rename = "computer/destroy")]
     Destroy { computer: ComputerId },
+    #[serde(rename = "computer/worktrees")]
+    Worktrees { computer: ComputerId },
+    #[serde(rename = "computer/free_worktree")]
+    FreeWorktree { computer: ComputerId, path: String },
     /// `credential`, when given, is kept in memory by the computer for fetching and saving.
     #[serde(rename = "workspace/open")]
     Open {
@@ -144,6 +148,8 @@ impl Request {
             Self::Create { .. } => "computer/create",
             Self::Status { .. } => "computer/status",
             Self::Destroy { .. } => "computer/destroy",
+            Self::Worktrees { .. } => "computer/worktrees",
+            Self::FreeWorktree { .. } => "computer/free_worktree",
             Self::Open { .. } => "workspace/open",
             Self::Close { .. } => "workspace/close",
             Self::Run { .. } => "command/run",
@@ -171,6 +177,8 @@ const METHODS: &[&str] = &[
     "computer/create",
     "computer/status",
     "computer/destroy",
+    "computer/worktrees",
+    "computer/free_worktree",
     "workspace/open",
     "workspace/close",
     "command/run",

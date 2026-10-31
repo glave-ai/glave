@@ -297,6 +297,10 @@ impl<C: Computers + 'static> Connection<C> {
             })),
             Request::Create { environment } => reply(computers.create(&environment).await),
             Request::Status { computer } => reply(computers.status(computer).await),
+            Request::Worktrees { computer } => reply(computers.worktrees(computer).await),
+            Request::FreeWorktree { computer, path } => {
+                reply(computers.free_worktree(computer, &path).await)
+            }
             Request::Destroy { computer } => reply(computers.destroy(computer).await),
             Request::Open {
                 computer,
