@@ -64,9 +64,38 @@ impl Lineup {
         }
     }
 
-    /// The models of the configured endpoint and of `accounts`, as their services' `catalogs`
-    /// describe them, those the policy allows: one entry per model, whichever accounts run
-    /// it, in the order of their services' [`rank`].
+    /// The account of the server's own that the endpoint its settings choose is, when that is
+    /// OpenRouter itself: read and offered as a person's is, with its catalog kept beside
+    /// theirs, so its models have prices for credits and providers for filters. No one
+    /// connected it, so it is never kept and never listed as anyone's.
+    pub(crate) fn own_account(&self) -> Option<ProviderConnected> {
+        let endpoint = self
+            .configured
+            .as_ref()
+            .filter(|endpoint| endpoint.gateway.is_none())?;
+        let provider = &endpoint.provider;
+        if provider.provider != "openrouter" || !super::at_openrouter(&provider.base_url) {
+            return None;
+        }
+        super::unconnected(
+            ProviderKind::Openrouter,
+            provider.auth.fixed_key()?,
+            &endpoint.model,
+        )
+    }
+
+    /// Whether the server's own account offers `model`: every model its catalog lists, unless
+    /// the settings name the models to offer, then those, the main model and the judge's.
+    fn offers(&self, model: &str, main: &str) -> bool {
+        self.entries.is_empty()
+            || model == main
+            || self.judge.model(main).as_deref() == Some(model)
+            || self.entries.iter().any(|entry| entry.id.trim() == model)
+    }
+
+    /// The models of the configured endpoint, of the server's own account when it is one, and
+    /// of `accounts`, as their services' `catalogs` describe them, those the policy allows: one
+    /// entry per model, whichever accounts run it, in the order of their services' [`rank`].
     pub(crate) fn build(
         &self,
         accounts: &[ProviderConnected],
@@ -75,9 +104,19 @@ impl Lineup {
         let mut targets: Vec<(u8, Target)> = Vec::new();
         let mut about = HashMap::new();
         let mut first = None;
-        for account in accounts {
+        let own = self.own_account();
+        let main = self
+            .configured
+            .as_ref()
+            .map(|endpoint| endpoint.model.as_str());
+        let accounts = own
+            .iter()
+            .map(|account| (account, main))
+            .chain(accounts.iter().map(|account| (account, None)));
+        for (account, own_main) in accounts {
             let allowed: Vec<&str> = super::offered_by(account, catalogs)
                 .into_iter()
+                .filter(|model| own_main.is_none_or(|main| self.offers(model, main)))
                 .filter(|model| {
                     super::endpoint_of(account, model).is_some_and(|endpoint| {
                         let name = format!("{}/{model}", endpoint.provider.provider);
