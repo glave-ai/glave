@@ -570,6 +570,29 @@ fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
 }
 
 #[test]
+fn a_router_floor_is_the_server_s_own_choice_and_names_real_countries() {
+    let dir = scratch("router-floor");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[router_floor]\nbased_in = [\"US\", \"DE\"]\nkeeps_nothing = true\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.router_floor, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = &loaded.choices.router_floor.as_ref().unwrap().value;
+    assert_eq!(chosen.based_in, ["US", "DE"]);
+    assert!(chosen.keeps_nothing);
+    let wrong = "[router_floor]\nbased_in = [\"Germany\"]\n";
+    let refused = files::config(wrong, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("two-letter code"), "{refused}");
+}
+
+#[test]
 fn credits_are_the_server_s_own_choice_with_its_monthly_limit() {
     let dir = scratch("credits");
     let home = dir.join("home");

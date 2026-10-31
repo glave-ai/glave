@@ -311,3 +311,65 @@ fn each_filter_that_hides_a_provider_is_named() {
         []
     );
 }
+
+/// The filters `person`'s call keeps to within a floor of `places`, then what they ask of a
+/// router serving [`FLASH`].
+fn within_floor(places: &[&str], person: Filters) -> (Keeping, Result<Option<Route>, Kept>) {
+    let keeping = Keeping::within(Some(&based_in(places)), Some(person));
+    let asked = route_at(
+        keeping.filters.as_ref().unwrap(),
+        [FLASH, FLASH],
+        Some(&flash()),
+        true,
+    );
+    (keeping, asked)
+}
+
+#[test]
+fn a_floor_alone_keeps_a_call_to_the_providers_it_allows() {
+    let (keeping, asked) = within_floor(&["US"], Filters::default());
+    assert!(keeping.floor && !keeping.own && !keeping.none_fit);
+    assert_eq!(only(asked), ["fireworks", "groq"]);
+}
+
+#[test]
+fn a_person_s_filter_can_t_reach_a_provider_outside_the_floor() {
+    // The countries they chose narrow it, and one the floor doesn't allow adds nothing.
+    let (_, asked) = within_floor(&["US"], based_in(&["US", "CN"]));
+    assert_eq!(only(asked), ["fireworks", "groq"]);
+    // None in common fits nothing, never anywhere.
+    let (keeping, _) = within_floor(&["US"], based_in(&["CN"]));
+    assert!(keeping.none_fit, "{keeping:?}");
+    // One provider chosen outside it is refused, not swapped for another.
+    let mut chosen = Filters::default();
+    chosen
+        .serves
+        .insert(FLASH.into(), Serve::Provider("deepseek".into()));
+    let (_, asked) = within_floor(&["US"], chosen);
+    assert_eq!(asked, Err(Kept::NoneFits));
+}
+
+#[test]
+fn a_floor_that_keeps_nothing_can_t_be_turned_off_by_a_person() {
+    let floor = Filters {
+        keeps_nothing: true,
+        ..Filters::default()
+    };
+    let keeping = Keeping::within(Some(&floor), Some(Filters::default()));
+    assert!(keeping.filters.unwrap().keeps_nothing);
+}
+
+#[test]
+fn a_floor_keeps_a_call_from_what_isn_t_a_router_and_with_none_changes_nothing() {
+    let (keeping, _) = within_floor(&["US"], Filters::default());
+    let filters = keeping.filters.as_ref().unwrap();
+    assert_eq!(
+        route_at(filters, [FLASH, FLASH], None, true),
+        Err(Kept::NotARouter)
+    );
+    let person = based_in(&["US"]);
+    let keeping = Keeping::within(None, Some(person.clone()));
+    assert_eq!(keeping.filters, Some(person));
+    assert!(!keeping.floor && !keeping.none_fit);
+    assert!(Keeping::within(None, None).filters.is_none());
+}

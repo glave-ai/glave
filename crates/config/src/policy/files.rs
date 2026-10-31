@@ -80,6 +80,39 @@ pub struct ConfigFile {
     /// Whether each organization pays for its models from credits it adds to, and the monthly
     /// limit each starts with. Only the server's own file sets it: it decides who pays.
     pub credits: Option<CreditsFile>,
+    /// What this server allows among a router's providers for everyone it serves. Only the
+    /// server's own file sets it: a person's or a project's could only be chosen around.
+    pub router_floor: Option<RouterFloorFile>,
+}
+
+/// `[router_floor]`: what a router's providers must be for any call this server makes, which a
+/// person's filters narrow further and never loosen (`specs/gateway.md`, "A server's floor").
+/// Off unless the table says something.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouterFloorFile {
+    /// The countries providers may be based in, ISO 3166-1 alpha-2 codes, each of their
+    /// datacenters too where the router names them. Anywhere when none.
+    #[serde(default, deserialize_with = "countries")]
+    pub based_in: Vec<String>,
+    /// Whether providers must keep nothing of what they are sent (zero data retention).
+    #[serde(default)]
+    pub keeps_nothing: bool,
+}
+
+/// A list of countries, each two capital letters, refused otherwise: a floor that a misspelling
+/// widened or emptied would keep nothing out.
+fn countries<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Vec<String>, D::Error> {
+    let places = Vec::<String>::deserialize(reader)?;
+    match places
+        .iter()
+        .find(|place| place.len() != 2 || !place.bytes().all(|b| b.is_ascii_uppercase()))
+    {
+        Some(place) => Err(serde::de::Error::custom(format!(
+            "{place:?} is not a country's two-letter code, such as \"US\""
+        ))),
+        None => Ok(places),
+    }
 }
 
 /// `[credits]`: each organization the server serves pays ahead for what it uses, its model

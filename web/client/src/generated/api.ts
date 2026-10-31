@@ -429,7 +429,7 @@ export type GoneFolder = {
 export type Grouping = "project" | "status";
 
 /** A filter of a person's that hides a provider of a model. */
-export type Hides = "based_in" | "precision" | "keeps_some" | "price" | "avoided";
+export type Hides = "based_in" | "precision" | "keeps_some" | "price" | "avoided" | "server";
 
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;

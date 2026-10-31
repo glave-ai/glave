@@ -128,6 +128,10 @@ describe('serving', () => {
     expect(hiddenText(hidden, 'en')).toBe(
       'DEEPSEEK (based in China) and SLOW (4-bit, may keep chats)',
     );
+    const ruledOut = [endpoint('deepseek', 'CN', { hidden_by: ['based_in', 'server'] })];
+    expect(hiddenText(ruledOut, 'en')).toBe(
+      'DEEPSEEK (based in China, not used on this server)',
+    );
   });
 
   it('keeps who serves a model with the filters, none of its own where it is their order', () => {

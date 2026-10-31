@@ -144,6 +144,10 @@ pub struct Wiring<P, L, B> {
     /// The organizations' credits, where the server's configuration keeps them: the same its
     /// gateway charges each call to (`specs/gateway.md`, "Credits").
     pub credits: Option<Arc<Credits<L>>>,
+    /// What the server allows among a router's providers for everyone it serves, for what
+    /// `model/list` says of them (`specs/gateway.md`, "A server's floor"); its gateway keeps to
+    /// it on every call.
+    pub router_floor: Option<glave_event::Filters>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -199,6 +203,7 @@ impl<P, L, B> Wiring<P, L, B> {
             worktrees: None,
             homes: None,
             credits: None,
+            router_floor: None,
         }
     }
 }
@@ -320,6 +325,7 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
     /// The organizations' credits, where it keeps them.
     pub(crate) credits: Option<Arc<Credits<L>>>,
+    pub(crate) router_floor: Option<glave_event::Filters>,
     /// Each person's own computer, where people have one.
     pub(crate) homes: Option<Arc<dyn Homes>>,
 }
@@ -417,6 +423,7 @@ where
                 worktrees: wiring.worktrees,
                 homes: wiring.homes,
                 credits: wiring.credits,
+                router_floor: wiring.router_floor,
             }),
         }
     }

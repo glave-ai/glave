@@ -28,8 +28,8 @@ use effective::give_way;
 pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{
-    ConfigFile, CreditsFile, EmailFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile,
-    ServerFile, StoreFile, TaskRules, TelemetryFile, config,
+    ConfigFile, CreditsFile, EmailFile, GithubFile, HooksFile, ModelEntry, PolicyFile,
+    RouterFloorFile, ServeFile, ServerFile, StoreFile, TaskRules, TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
@@ -178,6 +178,7 @@ fn project_layer(path: &Path, values: ConfigFile) -> Layer {
         github: None,
         email: None,
         credits: None,
+        router_floor: None,
         network: values.network.filter(|on| !on),
         ..values
     };

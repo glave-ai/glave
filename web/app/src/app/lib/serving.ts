@@ -201,6 +201,8 @@ function hiddenWhy(endpoint: EndpointInfo, by: Hides, locale: string): string {
       return $localize`:@@serving.hiddenPrice:costs more`;
     case 'avoided':
       return $localize`:@@serving.hiddenAvoided:avoided`;
+    case 'server':
+      return $localize`:@@serving.hiddenServer:not used on this server`;
   }
 }
 

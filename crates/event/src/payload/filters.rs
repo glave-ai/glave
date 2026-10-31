@@ -90,6 +90,8 @@ pub enum Hides {
     Price,
     /// The person chose to avoid it.
     Avoided,
+    /// The server allows it for no one: where it is based, or what it keeps.
+    Server,
 }
 
 /// The person's filters, as they set them.
