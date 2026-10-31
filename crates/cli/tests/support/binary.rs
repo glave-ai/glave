@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 
-use glave_ports::testing::{Running, TempDir, any_secret, read_through};
+use glave_ports::testing::{Running, TempDir, any_secret, read_program};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -24,7 +24,7 @@ pub(crate) struct Place {
 }
 
 pub(crate) fn place(name: &str) -> Place {
-    read_through(env!("CARGO_BIN_EXE_glave")).unwrap();
+    read_program(env!("CARGO_BIN_EXE_glave")).unwrap();
     // Named without a prefix: a longer path would be too long for its server's socket.
     let dir = TempDir::new(name).unwrap();
     let project = dir.join("project");
