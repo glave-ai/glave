@@ -19,7 +19,7 @@ import { CredentialsService } from '../../services/credentials.service';
 export class AnotherServiceComponent {
   protected readonly copy = {
     heading: $localize`:@@anotherService.heading:Another service`,
-    lead: $localize`:@@anotherService.lead:Any service with an address, including a GitLab or your own git server.`,
+    lead: $localize`:@@anotherService.lead:Any git server with an address, such as GitLab or your own.`,
     address: $localize`:@@anotherService.address:Address`,
     add: $localize`:@@anotherService.add:Add`,
     token: $localize`:@@anotherService.token:Access token`,

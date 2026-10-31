@@ -16,7 +16,7 @@
     "anotherService.connect": "Connect",
     "anotherService.heading": "Another service",
     "anotherService.how": "Make one in {$HOST}’s settings, then paste it here. It stays locked away, and is never shown again.",
-    "anotherService.lead": "Any service with an address, including a GitLab or your own git server.",
+    "anotherService.lead": "Any git server with an address, such as GitLab or your own.",
     "anotherService.missingAddress": "Give the service’s address first.",
     "anotherService.missingToken": "Paste the token first.",
     "anotherService.token": "Access token",
