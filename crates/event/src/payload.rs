@@ -1,6 +1,7 @@
 //! The payload of every event type at its latest version. Each module also holds its type's
 //! decoder, which upgrades older versions on read.
 
+pub(crate) mod appearance;
 pub(crate) mod approval;
 pub(crate) mod awake;
 pub(crate) mod browser;
@@ -39,6 +40,7 @@ pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
 
+pub use appearance::{Accent, AppearanceSet, Color};
 pub use approval::{ApprovalDecided, ApprovalRequested, Lifted, OutsideSandbox, Verdict};
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};

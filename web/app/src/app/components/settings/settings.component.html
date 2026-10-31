@@ -4,20 +4,7 @@
     <h1>{{ copy.heading }}</h1>
   </div>
   <div class="list">
-    <glz-card>
-      <h2 glzCardHeader>{{ copy.appearance }}</h2>
-      <glz-form-field [label]="copy.theme">
-        <glz-radio-group
-          data-testid="settings-theme"
-          [value]="choice()"
-          (valueChange)="pick($event)"
-        >
-          @for (theme of themes; track theme.value) {
-            <glz-radio [value]="theme.value">{{ theme.label }}</glz-radio>
-          }
-        </glz-radio-group>
-      </glz-form-field>
-    </glz-card>
+    <app-appearance />
     <glz-card>
       <h2 glzCardHeader>{{ copy.models }}</h2>
       @for (account of accounts(); track account.id) {

@@ -57,11 +57,12 @@ export class RenameComponent {
 
 ## Theming
 
-Override tokens, nothing else. The accent is one colour; the text on it, its hover and its tints follow from it:
+Override tokens, nothing else. The accent is one colour in each of light and dark; the text on it, its hover and its tints follow from it:
 
 ```css
 :root {
-  --glz-accent: #0b5cad;
+  --glz-accent-light: #0b5cad;
+  --glz-accent-dark: #8cc2ff;
   --glz-font-sans: 'Inter', system-ui, sans-serif;
 }
 ```

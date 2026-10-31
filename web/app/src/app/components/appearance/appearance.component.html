@@ -1,0 +1,36 @@
+<glz-card>
+  <h2 glzCardHeader>{{ copy.appearance }}</h2>
+  <div class="glz-stack glz-gap-3">
+    <glz-segmented
+      testId="settings-theme"
+      [label]="copy.theme"
+      [options]="themes"
+      [value]="theme()"
+      (valueChange)="pickTheme($event)"
+    />
+    <div class="glz-stack glz-gap-1">
+      <h3 class="title">{{ copy.accent }}</h3>
+      <p class="details" data-testid="appearance-line">{{ line() }}</p>
+    </div>
+    <glz-color-choice
+      testId="appearance-accent"
+      [label]="copy.accent"
+      [anyLabel]="copy.any"
+      [options]="accents"
+      [value]="value()"
+      (valueChange)="pickAccent($event)"
+    />
+    <div class="glz-stack glz-gap-1">
+      <glz-checkbox
+        testId="appearance-adjust"
+        [checked]="adjust()"
+        (checkedChange)="pickAdjust($event)"
+        >{{ copy.adjust }}</glz-checkbox
+      >
+      <p class="details" data-testid="appearance-adjust-line">{{ adjustLine() }}</p>
+    </div>
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="appearance-problem">{{ problem }}</p>
+    }
+  </div>
+</glz-card>

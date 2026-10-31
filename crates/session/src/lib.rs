@@ -2,9 +2,11 @@
 //! server keeps the methods and notifications of `specs/session.md`; each transport, from
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
+mod accent;
 mod access;
 mod accounts;
 mod answers;
+mod appearance;
 mod approvals;
 mod awake;
 mod background;
