@@ -4,12 +4,13 @@
 //! defaults. Its constraints only narrow, as everywhere. A model it chooses must be one glave
 //! offers, and settings the constraints refuse are set aside whole, each with a sentence.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
-use glave_config::trust::{self, Outcome};
+use glave_config::trust::{self, Answer, Outcome, Project, Record};
 use glave_harness::Settled;
 use glave_ports::ToolSource;
 use glave_ports::settings::Judge;
@@ -66,6 +67,28 @@ fn config_of(root: &Path) -> std::path::PathBuf {
 }
 
 impl ProjectFolders {
+    /// What the project at `root` on a person's own computer chooses, from `config`, its
+    /// `config.toml` as read there: trusted by no one here, so what loosens commands stays off.
+    /// One that doesn't parse chooses nothing.
+    pub(super) fn settled_there(&self, root: &Path, config: &str) -> Settled {
+        let parsed = match policy::config(config, &config_of(root)) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                tracing::warn!(%error, "a project's settings on a person's computer are set aside");
+                return Settled::default();
+            }
+        };
+        let project = Project {
+            root: root.to_path_buf(),
+            remote: None,
+            config: Some(parsed),
+            servers: BTreeMap::new(),
+        };
+        let constraints = &self.base().loaded.constraints;
+        let outcome = trust::assess(project, &Record::default(), constraints).apply(Answer::NoOne);
+        self.settle(root, &outcome).settled
+    }
+
     /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
     pub(super) fn settle(&self, root: &Path, outcome: &Outcome) -> Read {
         let base = self.base();

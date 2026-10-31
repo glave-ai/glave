@@ -346,3 +346,22 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
         projects.close().await;
     });
 }
+
+#[test]
+fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosens_nothing() {
+    let home = TempDir::new("settled-at-home").unwrap();
+    block_on!(async {
+        let projects = projects(&home, Vec::new(), &["alpha"]).await;
+        let root = Path::new("/home/glave/garden");
+        let config = "model = \"alpha\"\n";
+        let settled = projects.settled_at_home(root, config).await;
+        assert_eq!(settled.model.as_deref(), Some("alpha"));
+        let not_offered = projects.settled_at_home(root, "model = \"beta\"\n").await;
+        assert_eq!(not_offered.model, None, "one the server doesn't offer");
+        let judged = "[judge]\nmodel = \"alpha\"\n";
+        let loosening = projects.settled_at_home(root, judged).await;
+        assert_eq!(loosening.judge, None, "what needs trust stays off");
+        let broken = projects.settled_at_home(root, "model = ").await;
+        assert_eq!(broken, Settled::default(), "one that doesn't parse chooses nothing");
+    });
+}
