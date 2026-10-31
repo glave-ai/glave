@@ -78,11 +78,11 @@ const OWN_MODEL: &str = "vendor/own";
 /// provider in the US and one in China; and a chat that says it cost a quarter.
 fn own_openrouter() -> FakeHttp {
     let model = |id: &str| {
-        json!({"id": id, "name": id, "created": 1, "context_length": 100000,
+        json!({"id": id, "name": id, "created": 1, "context_length": 100_000,
             "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
             "supported_parameters": ["tools", "tool_choice", "max_tokens"],
             "pricing": {"prompt": "0.000001", "completion": "0.000002"},
-            "top_provider": {"context_length": 100000, "max_completion_tokens": 100}})
+            "top_provider": {"context_length": 100_000, "max_completion_tokens": 100}})
     };
     let models = json!({"data": [model(OWN_MODEL), model("vendor/other")]});
     let providers = json!({"data": [
@@ -90,7 +90,7 @@ fn own_openrouter() -> FakeHttp {
         {"slug": "overseas", "name": "Overseas", "headquarters": "CN", "datacenters": ["CN"]},
     ]});
     let endpoint = |name: &str, tag: &str| {
-        json!({"provider_name": name, "tag": tag, "quantization": "fp8", "context_length": 100000,
+        json!({"provider_name": name, "tag": tag, "quantization": "fp8", "context_length": 100_000,
             "max_completion_tokens": 100, "supported_parameters": ["tools"],
             "pricing": {"prompt": "0.000001", "completion": "0.000002"}})
     };
@@ -162,8 +162,8 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
         .filter_map(|endpoint| endpoint["based_in"].as_str())
         .collect();
     assert_eq!(based, ["US", "CN"], "{entry}");
-    let set = api.call("filters/set", json!({"filters": {"based_in": ["US"]}}));
-    assert!(set.get("result").is_some(), "{set}");
+    let kept = api.call("filters/set", json!({"filters": {"based_in": ["US"]}}));
+    assert!(kept.get("result").is_some(), "{kept}");
     let entry = own_entry(&api);
     let hidden: Vec<bool> = entry["endpoints"]
         .as_array()
