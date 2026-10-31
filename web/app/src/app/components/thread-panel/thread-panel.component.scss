@@ -56,6 +56,11 @@
   list-style: none;
 }
 
+// Unseen while the project's name is on its way: all of it comes at once, so nothing moves.
+.reading {
+  visibility: hidden;
+}
+
 .part {
   display: inline-flex;
   align-items: center;

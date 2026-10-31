@@ -108,6 +108,19 @@ export class ThreadPanelComponent {
   /** Whether the last command was there as the panel last drew, so its going can be seen. */
   private ran = false;
 
+  /**
+   * Whether the facts are kept from sight, their room kept too, while the thread's project isn't
+   * known: its name goes in the middle of the line saying where it works, and may make the line
+   * wrap, so nothing moves if they come in together.
+   */
+  protected readonly reading = computed(() => {
+    const summary = this.thread.summary();
+    return (
+      summary !== null &&
+      this.projects.project(summary.project) === undefined &&
+      !this.projects.loaded()
+    );
+  });
   /** Where it works, as its summary says, in one line: the folder apart, a press away. */
   protected readonly where = computed(() => {
     const workspace = this.facts.workspace();
