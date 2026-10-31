@@ -137,15 +137,14 @@ pub(crate) async fn wire(
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let credits = credits(choices, &store);
-    let chosen = choices.router_floor.as_ref();
-    let floor = crate::gateway::router_floor(chosen.map(|floor| &floor.value));
+    let floor = choices.router_floor.as_ref().map(|floor| &floor.value);
     let through_gateway = remote.is_some();
     let lined = line_up(
         args,
         lineup,
         &store,
         identity.person,
-        (credits.as_ref(), floor.as_ref()),
+        (credits.as_ref(), floor),
         through_gateway,
     );
     let lined = lined.await?;
@@ -201,7 +200,7 @@ pub(crate) async fn wire(
         worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
         homes,
         credits,
-        router_floor: floor,
+        router_floor: crate::gateway::router_floor(floor),
         ..Wiring::new(
             lined.switch,
             store.log(),
@@ -459,7 +458,7 @@ async fn line_up(
     person: glave_event::PrincipalId,
     (credits, floor): (
         Option<&Arc<Credits<crate::data::DataLog>>>,
-        Option<&glave_event::Filters>,
+        Option<&glave_config::policy::RouterFloorFile>,
     ),
     through_gateway: bool,
 ) -> anyhow::Result<Lined> {
@@ -487,7 +486,8 @@ async fn line_up(
         }
         Err(error) => return Err(error),
     };
-    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned(), floor.cloned());
+    let floor = crate::gateway::router_floor(floor);
+    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned(), floor);
     let model_accounts = ledgers.map(|(accounts, catalogs)| {
         Arc::new(ModelAccounts::new(
             accounts,
