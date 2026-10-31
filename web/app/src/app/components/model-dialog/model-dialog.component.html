@@ -1,0 +1,121 @@
+<glz-dialog testId="model-dialog" [heading]="copy.heading" [(open)]="open">
+  <div #host class="glz-stack glz-gap-3">
+    @if (listing()) {
+      <glz-form-field [label]="copy.search">
+        <input
+          glzInput
+          type="search"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          data-testid="model-picker-search"
+          [placeholder]="copy.searchHint"
+          [value]="query()"
+          (input)="search($event)"
+        />
+      </glz-form-field>
+      <app-model-filters />
+      <ul class="models" role="list" data-testid="model-picker-listbox">
+        @for (row of rows(); track row.id) {
+          <li>
+            <button
+              type="button"
+              class="model"
+              data-testid="model-picker-option"
+              [attr.data-model]="row.id"
+              [attr.aria-current]="row.current"
+              (click)="show(row.id)"
+            >
+              <span class="glz-stack">
+                <span class="name">
+                  {{ row.name }}
+                  @if (row.current) {
+                    <glz-icon class="current" [icon]="icons.current" [label]="copy.current" />
+                  }
+                </span>
+                <span class="hint">{{ row.line }}</span>
+              </span>
+              <span class="glz-stack end">
+                <span>{{ row.price }}</span>
+                <span class="hint">{{ row.speed }}</span>
+              </span>
+            </button>
+          </li>
+        }
+      </ul>
+      @if (empty(); as empty) {
+        <p class="hint" data-testid="model-picker-empty">{{ empty }}</p>
+      }
+      <p class="hint">{{ copy.prices }}</p>
+    } @else {
+      <button
+        glzButton
+        size="sm"
+        variant="ghost"
+        type="button"
+        class="back"
+        data-testid="model-dialog-back"
+        (click)="backToList()"
+      >
+        {{ copy.back }}
+      </button>
+      <div class="glz-stack">
+        <span class="title">{{ shownName() }}</span>
+        <span class="hint">{{ shownLine() }}</span>
+      </div>
+      @if (hidden(); as hidden) {
+        <div class="hidden glz-row glz-gap-2" data-testid="model-dialog-hidden">
+          <span class="said">{{ hidden }}</span>
+          <button
+            glzButton
+            size="sm"
+            type="button"
+            data-testid="model-dialog-show-all"
+            (click)="toggleAll()"
+          >
+            {{ showAllLabel() }}
+          </button>
+        </div>
+      }
+      <glz-form-field [label]="copy.who">
+        <glz-radio-group
+          cards
+          data-testid="model-dialog-who"
+          [value]="choice()"
+          (valueChange)="choose($event)"
+        >
+          @for (serving of servings(); track serving.value) {
+            <glz-radio
+              [value]="serving.value"
+              [hint]="serving.hint"
+              [disabled]="serving.disabled"
+              >{{ serving.label }}</glz-radio
+            >
+          }
+        </glz-radio-group>
+      </glz-form-field>
+      @if (problem(); as problem) {
+        <p class="problem" role="alert" data-testid="model-dialog-problem">{{ problem }}</p>
+      }
+      <p class="hint">{{ copy.pickedOne }}</p>
+    }
+  </div>
+  @if (shown()) {
+    <div glzDialogActions class="glz-row glz-gap-2">
+      <button glzButton type="button" data-testid="model-dialog-cancel" (click)="backToList()">
+        {{ copy.cancel }}
+      </button>
+      <button
+        glzButton
+        variant="primary"
+        type="button"
+        data-testid="model-dialog-use"
+        [disabled]="busy()"
+        (click)="useShown()"
+      >
+        {{ use() }}
+      </button>
+    </div>
+  }
+</glz-dialog>

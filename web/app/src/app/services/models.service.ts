@@ -6,14 +6,17 @@ import { SessionService } from './session.service';
 
 /**
  * The models this server runs (`model/list`), the default first: what the composer's picker
- * offers. Read once, when first asked, and again when the model accounts change, here or, as
- * the server says, anywhere else.
+ * offers, each with who serves it through a router and which of those the person's filters
+ * hide. Read once, when first asked, and again when the model accounts or the filters change,
+ * here or, as the server says, anywhere else.
  */
 @Service()
 export class ModelsService {
   private readonly session = inject(SessionService);
   private readonly list = signal<readonly ModelInfo[]>([]);
   private pending: Promise<void> | null = null;
+  /** How many reads were begun: only the latest one's answer is shown. */
+  private reads = 0;
 
   readonly models = this.list.asReadonly();
   /** The model a thread that chose none runs on, or `null` until the list is read. */
@@ -28,13 +31,22 @@ export class ModelsService {
 
   constructor() {
     onChange('providers', () => void this.reload());
+    // Which of a model's providers the person's filters hide is the server's word.
+    onChange('filters', () => void this.reload());
   }
 
   /** Reads the list, once; a failed read is tried again next time. */
   load(): Promise<void> {
+    if (this.pending === null) {
+      // Reads may overlap, as the filters change twice: the latest one's answer stands.
+      this.reads += 1;
+    }
+    const read = this.reads;
     this.pending ??= this.session.call('model/list', {}).then(
       ({ models }) => {
-        this.list.set(models);
+        if (read === this.reads) {
+          this.list.set(models);
+        }
       },
       () => {
         this.pending = null;
