@@ -682,6 +682,8 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
         *homes.full_while.lock().unwrap() = None;
         turn(&server, older, "hello again").await.unwrap();
         assert!(older_root.exists(), "{}", older_root.display());
+    });
+}
 
 /// What a host makes of a project's `config.toml` on a person's computer: its text, as the
 /// model its threads go to.
