@@ -14,7 +14,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-pub use assess::{Answer, Assessment, Outcome, assess};
+pub use assess::{Answer, Assessment, Outcome, assess, assess_there};
 pub use project::{Plain, Project, remote};
 pub use protect::protections;
 pub use record::{Decision, Entry, Record};
@@ -72,7 +72,21 @@ pub fn trust_asked(
     constraints: &Constraints,
     asked: &str,
 ) -> Option<Entry> {
-    let assessment = assess(project, record, constraints);
+    trust_shown(assess(project, record, constraints), asked)
+}
+
+/// The same for a project on a person's own computer ([`assess_there`]).
+pub fn trust_asked_there(
+    record: &Record,
+    project: Project,
+    constraints: &Constraints,
+    asked: &str,
+) -> Option<Entry> {
+    trust_shown(assess_there(project, record, constraints), asked)
+}
+
+/// The entry that keeps a yes to `asked`, when `assessment` still asks exactly that.
+fn trust_shown(assessment: Assessment, asked: &str) -> Option<Entry> {
     if assessment.undecided().is_empty() || assessment.ask_id() != asked {
         return None;
     }

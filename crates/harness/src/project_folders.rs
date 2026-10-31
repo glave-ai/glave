@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glave_event::Permissions;
+use glave_event::{Permissions, PrincipalId};
 use glave_ports::settings::{Hooks, Judge, Protections};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, ToolSource};
 
@@ -41,11 +41,16 @@ pub trait ProjectFolders: Send + Sync {
         Box::pin(async { Settled::default() })
     }
 
-    /// What a project on a person's own computer chooses for its threads, from `config`, its
-    /// `config.toml` as last read there at `project`: within the server's constraints, and
-    /// without what loosens commands, which nothing there has trusted. Nothing by default.
-    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
-        let _ = (project, config);
+    /// What a project on `person`'s own computer chooses for its threads, from `config`, its
+    /// `config.toml` as last read there at `project`: within the server's constraints, what
+    /// needs trust only once they trusted it. Nothing by default.
+    fn settled_at_home<'a>(
+        &'a self,
+        project: &'a Path,
+        config: &'a str,
+        person: PrincipalId,
+    ) -> BoxFuture<'a, Settled> {
+        let _ = (project, config, person);
         Box::pin(async { Settled::default() })
     }
 
@@ -146,7 +151,7 @@ where
 
     /// Whether a thread for `person` is the person's the harness works for, whose trust turns
     /// a project's own on and whose own hooks and tools are the harness's.
-    pub(crate) fn trusting(&self, person: Option<glave_event::PrincipalId>) -> bool {
+    pub(crate) fn trusting(&self, person: Option<PrincipalId>) -> bool {
         person == self.actors.person
     }
 

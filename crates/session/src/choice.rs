@@ -155,7 +155,15 @@ where
             Ok(Some(folder)) if self.inner.homes.is_some() => {
                 let scope = Scope::glaves_own(at.org, at.project);
                 let root = Path::new(&folder.checkout.path);
-                harness.settled_at_home(scope, root).await
+                match self
+                    .project(at.org, at.project)
+                    .await
+                    .ok()
+                    .and_then(|project| project.owner.id)
+                {
+                    Some(person) => harness.settled_at_home(scope, root, person).await,
+                    None => Settled::default(),
+                }
             }
             _ => Settled::default(),
         }
@@ -163,7 +171,7 @@ where
 
     /// Whether what a project chooses counts for a thread of `person`: the person on this
     /// computer, whose trust turns it on; or anyone where people have computers of their own,
-    /// whose projects' choices are theirs alone and what loosens stays off.
+    /// whose projects' choices are theirs alone and what loosens is on only once they trust it.
     pub(crate) fn goes_by_project(&self, person: Option<PrincipalId>) -> bool {
         self.inner.homes.is_some() || person.is_none_or(|person| Some(person) == self.person())
     }

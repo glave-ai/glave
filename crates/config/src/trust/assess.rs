@@ -74,13 +74,29 @@ pub struct Outcome {
 
 /// Where each item of `project` stands, under the `record` and the policy's `constraints`.
 pub fn assess(project: Project, record: &Record, constraints: &Constraints) -> Assessment {
+    let trusting = constraints
+        .trusts_project(&project.root.to_string_lossy())
+        .map(ToString::to_string);
+    standing(project, record, constraints, trusting.as_ref())
+}
+
+/// The same for a project on a person's own computer, which a rule of the policy's about a path
+/// can't trust: its paths are that computer's, and the same path on every person's.
+pub fn assess_there(project: Project, record: &Record, constraints: &Constraints) -> Assessment {
+    standing(project, record, constraints, None)
+}
+
+/// Where each item of `project` stands, `trusting` being the rule that trusts it, if one does.
+fn standing(
+    project: Project,
+    record: &Record,
+    constraints: &Constraints,
+    trusting: Option<&String>,
+) -> Assessment {
     let before = record
         .entry_for(&project)
         .map(|entry| entry.items.clone())
         .unwrap_or_default();
-    let trusting = constraints
-        .trusts_project(&project.root.to_string_lossy())
-        .map(ToString::to_string);
     let items = project
         .items()
         .into_iter()
@@ -93,7 +109,7 @@ pub fn assess(project: Project, record: &Record, constraints: &Constraints) -> A
                 None
             }
             .map(ToString::to_string);
-            let standing = match (forbidden, &trusting, before.get(&item.id)) {
+            let standing = match (forbidden, trusting, before.get(&item.id)) {
                 (Some(rule), ..) => Standing::Forbidden(rule),
                 (None, Some(rule), _) => Standing::PreApproved(rule.clone()),
                 (None, None, Some(past)) if past.definition == item.definition => {

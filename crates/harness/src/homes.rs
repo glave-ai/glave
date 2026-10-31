@@ -149,18 +149,22 @@ where
     /// What the project in `scope`, its folder at `root` on its person's own computer, chooses
     /// for its threads, from what was last read there: the server's account of a thread there,
     /// which reaches nothing.
-    pub async fn settled_at_home(&self, scope: Scope, root: &Path) -> Settled {
+    pub async fn settled_at_home(&self, scope: Scope, root: &Path, person: PrincipalId) -> Settled {
         let Some(host) = &self.project_folders else {
             return Settled::default();
         };
-        match self
-            .last_read(scope, root)
-            .await
-            .and_then(|read| read.config)
-        {
-            Some(config) => host.settled_at_home(root, &config).await,
+        match self.kept_config(scope, root).await {
+            Some(config) => host.settled_at_home(root, &config, person).await,
             None => Settled::default(),
         }
+    }
+
+    /// The `config.toml` last read for `root` on its person's own computer and kept, which
+    /// reaches nothing: what their project there asks them to trust is read from it.
+    pub async fn kept_config(&self, scope: Scope, root: &Path) -> Option<String> {
+        self.last_read(scope, root)
+            .await
+            .and_then(|read| read.config)
     }
 
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
@@ -249,9 +253,9 @@ where
             (None, Opened::Clone { .. }) => None,
         };
         let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
-        let settled = match (&self.project_folders, &config) {
-            (Some(host), Some(config)) => {
-                host.settled_at_home(Path::new(&at.bound.root), config)
+        let settled = match (&self.project_folders, &config, person) {
+            (Some(host), Some(config), Some(person)) => {
+                host.settled_at_home(Path::new(&at.bound.root), config, person)
                     .await
             }
             _ => Settled::default(),

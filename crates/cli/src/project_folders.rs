@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use glave_config::policy::{Choices, Loaded, Locations, memory_settings};
 use glave_config::trust::{self, Answer, Outcome, Project};
+use glave_event::PrincipalId;
 use glave_harness::{AGENTS_MD, Brought, Settled, agents_md};
 use glave_memory::{GlaveMemory, Personal};
 use glave_ports::memories::ProjectMemory;
@@ -380,6 +381,25 @@ fn project_root(home: &Path, folder: &Path) -> PathBuf {
     std::fs::canonicalize(&root).unwrap_or(root)
 }
 
+/// What `assessment` asks the person, if anything.
+fn asking(assessment: &trust::Assessment) -> Option<TrustAsk> {
+    if assessment.undecided().is_empty() {
+        return None;
+    }
+    let items = assessment
+        .plain()
+        .into_iter()
+        .map(|plain| TrustItem {
+            text: plain.says.clone().into(),
+            detail: plain.detail.clone(),
+        })
+        .collect();
+    Some(TrustAsk {
+        ask: assessment.ask_id(),
+        items,
+    })
+}
+
 /// A failure reading a project, as the session API reports it: in plain words, the files it
 /// names kept to the server's log.
 fn failed(error: &dyn std::fmt::Display) -> ApiError {
@@ -429,8 +449,13 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         })
     }
 
-    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
-        Box::pin(std::future::ready(self.settled_there(project, config)))
+    fn settled_at_home<'a>(
+        &'a self,
+        project: &'a Path,
+        config: &'a str,
+        person: PrincipalId,
+    ) -> BoxFuture<'a, Settled> {
+        Box::pin(self.settled_there(project, config, person))
     }
 
     fn brought<'a>(&'a self, project: &'a Path, id: ProjectId) -> BoxFuture<'a, Brought> {
@@ -454,22 +479,53 @@ impl ProjectTrust for ProjectFolders {
             };
             let constraints = &self.base().loaded.constraints;
             let record = self.trust.record().await.map_err(|error| failed(&error))?;
-            let assessment = trust::assess(project, &record, constraints);
-            if assessment.undecided().is_empty() {
+            Ok(asking(&trust::assess(project, &record, constraints)))
+        })
+    }
+
+    fn ask_there<'a>(
+        &'a self,
+        person: PrincipalId,
+        root: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>> {
+        Box::pin(async move {
+            let Some(project) = Self::there(root, config) else {
                 return Ok(None);
-            }
-            let items = assessment
-                .plain()
-                .into_iter()
-                .map(|plain| TrustItem {
-                    text: plain.says.clone().into(),
-                    detail: plain.detail.clone(),
-                })
-                .collect();
-            Ok(Some(TrustAsk {
-                ask: assessment.ask_id(),
-                items,
-            }))
+            };
+            let constraints = self.base().loaded.constraints.clone();
+            let record = self
+                .record_of(person)
+                .await
+                .map_err(|error| failed(&error))?;
+            Ok(asking(&trust::assess_there(project, &record, &constraints)))
+        })
+    }
+
+    fn trust_there<'a>(
+        &'a self,
+        person: PrincipalId,
+        root: &'a Path,
+        config: &'a str,
+        ask: &'a str,
+    ) -> BoxFuture<'a, Result<bool, ApiError>> {
+        Box::pin(async move {
+            let Some(project) = Self::there(root, config) else {
+                return Ok(false);
+            };
+            let _keeping = self.keeping.lock().await;
+            let ledger = self
+                .trust
+                .of(person)
+                .await
+                .map_err(|error| failed(&error))?;
+            let record = ledger.record().await.map_err(|error| failed(&error))?;
+            let constraints = self.base().loaded.constraints.clone();
+            let Some(entry) = trust::trust_asked_there(&record, project, &constraints, ask) else {
+                return Ok(false);
+            };
+            ledger.keep(entry).await.map_err(|error| failed(&error))?;
+            Ok(true)
         })
     }
 
