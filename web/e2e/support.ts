@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Locator,
   type Page,
+  type Request,
   test as base,
   expect,
 } from '@playwright/test';
@@ -456,6 +457,13 @@ export interface Problems {
    * session API, said while this leaves the page, is not counted; anything else said then is.
    */
   leave(url: string): Promise<void>;
+  /**
+   * Runs `signOut`, which ends once the page shows it is signed out, and lets pass what the
+   * browser logs of a call of the page's already sent as it ran, which the server answers 401:
+   * the session ended first, and a tab reads its tasks every few seconds whatever else it is
+   * doing, so waiting beforehand can't rule one out. A call sent after is still a problem.
+   */
+  signingOut(signOut: () => Promise<void>): Promise<void>;
 }
 
 /**
@@ -473,6 +481,9 @@ function whole(error: Error): string {
   return error.name === '' ? error.message : `${error.name}: ${error.message}`;
 }
 
+/** What a browser logs of a call the server answered 401, in either engine's words. */
+const NOT_SIGNED_IN = /^Failed to load resource: the server responded with a status of 401\b/u;
+
 /**
  * Collects what the page says went wrong: errors on the console, uncaught errors and CSP
  * violations.
@@ -482,6 +493,24 @@ export function watchForProblems(page: Page): Problems {
   const webkit = page.context().browser()?.browserType().name() === 'webkit';
   // What WebKit says of a fetch of the session API it refuses while this leaves the page.
   let refused: string | null = null;
+  // Where a sign-out has got to, what the page sent once it had, and the 401s of calls before.
+  let signOut: 'not begun' | 'running' | 'over' = 'not begun';
+  const sentSince = new WeakSet<Request>();
+  let excused = 0;
+  page.on('request', (request) => {
+    if (signOut === 'over') {
+      sentSince.add(request);
+    }
+  });
+  page.on('response', (response) => {
+    if (
+      signOut !== 'not begun' &&
+      response.status() === 401 &&
+      !sentSince.has(response.request())
+    ) {
+      excused += 1;
+    }
+  });
   page.on('console', (message) => {
     if (message.type() === 'error') {
       problems.push(message.text());
@@ -505,7 +534,16 @@ export function watchForProblems(page: Page): Problems {
     }
     await page.waitForLoadState();
   };
-  return Object.assign(() => problems, { leave });
+  const signingOut = async (run: () => Promise<void>): Promise<void> => {
+    signOut = 'running';
+    await run();
+    signOut = 'over';
+  };
+  const unexcused = (): readonly string[] => {
+    let left = excused;
+    return problems.filter((problem) => !(NOT_SIGNED_IN.test(problem) && left-- > 0));
+  };
+  return Object.assign(unexcused, { leave, signingOut });
 }
 
 /** The page's window once `withAxe` has put axe in it. */
@@ -533,20 +571,35 @@ export function described(violations: readonly Result[]): readonly string[] {
 }
 
 /**
+ * What on the page could still start to move: each element with a transition or an animation of
+ * any length, as `described` names what axe found. With motion off there should be none.
+ */
+function ableToMove(): readonly string[] {
+  const moves = (style: CSSStyleDeclaration): boolean =>
+    style.animationName !== 'none' ||
+    style.transitionDuration.split(',').some((duration) => Number.parseFloat(duration) > 0);
+  return [...document.querySelectorAll('*')]
+    .filter((element) =>
+      [undefined, '::before', '::after'].some((pseudo) => moves(getComputedStyle(element, pseudo))),
+    )
+    .map((element) => `${element.tagName.toLowerCase()}.${element.classList.value}`);
+}
+
+/**
  * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
- * measured once they stop changing: a button fades to its new background after a switch to
- * dark, and a reply fades in as it arrives, and halfway through either its text would fail.
- * What loops while work goes on (a shimmer, a turning ring) never stops, so it runs on.
+ * measured at rest, in less motion, where none of what the app draws moves: a button fades to its
+ * new background after a switch to dark, a reply fades in as it arrives, and a run's words fade in
+ * when the server tells them, at any moment of a live page, even as axe reads them (#1112), and
+ * halfway through any of them its text would fail. What was already moving as motion went off
+ * finishes first. What is on the page as it looks, and could still move with motion off, fails
+ * here by name; this cannot see what arrives later, whose stylesheets stylelint and review keep to
+ * the motion tokens.
  */
 export async function expectAccessible(page: Page): Promise<void> {
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-        .map((animation) => animation.finished.catch(() => undefined)),
-    ),
-  );
+  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await page.evaluate(ableToMove)).toEqual([]);
+  await atRest(page);
   await withAxe(page);
   const violations = await page.evaluate(async (tags) => {
     const results = await (window as unknown as WithAxe).axe.run(document, {
@@ -555,4 +608,9 @@ export async function expectAccessible(page: Page): Promise<void> {
     return results.violations;
   }, WCAG);
   expect(described(violations)).toEqual([]);
+  await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  // With motion back, what fades in as it appears has faded in again, and an open fold has
+  // unfolded again, which can move a scrolled pane: it comes to rest first, so what the test does
+  // next starts from a still page, though not always at the same scroll.
+  await atRest(page);
 }
