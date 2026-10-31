@@ -11,11 +11,11 @@ use std::sync::Arc;
 use anyhow::{Context as _, bail};
 use glave_computer::{
     Docker, DockerSettings, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers,
-    WorkerCredentials, https_url, read_environment,
+    WorkerCredentials, https_url, person_sandbox, read_environment,
 };
 use glave_event::PrincipalId;
 use glave_harness::{Homes, Workers};
-use glave_ports::computer::{ComputerError, Home, Sources};
+use glave_ports::computer::{ComputerError, Home, Sandbox, Sources};
 use glave_ports::{Holder, Leases, OrgId, OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::OnWorkers;
@@ -171,21 +171,33 @@ async fn homes(
         disk_gb,
         leasing,
     )?;
-    Ok(Some(Arc::new(OnCluster(people))))
+    let sandbox = computers
+        .value
+        .sandbox
+        .unwrap_or(true)
+        .then(|| person_sandbox(choices.network.value));
+    Ok(Some(Arc::new(OnCluster { people, sandbox })))
 }
 
 /// People's computers on a cluster, as the harness asks for them: each named by the person's
 /// organization and id.
-struct OnCluster(People);
+struct OnCluster {
+    people: People,
+    sandbox: Option<Sandbox>,
+}
 
 impl Homes for OnCluster {
     fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
-        self.0.home(org, person)
+        self.people.home(org, person)
     }
 
     fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
-        let held = self.0.hold(org, person)?;
+        let held = self.people.hold(org, person)?;
         Ok(Box::new(held))
+    }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        self.sandbox.clone()
     }
 }
 

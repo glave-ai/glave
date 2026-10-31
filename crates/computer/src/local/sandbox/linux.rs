@@ -50,9 +50,7 @@ enum How {
         filter: Vec<u8>,
     },
     /// The helper program, which confines itself with Landlock.
-    Landlock {
-        helper: PathBuf,
-    },
+    Landlock { helper: PathBuf },
 }
 
 #[derive(Debug)]

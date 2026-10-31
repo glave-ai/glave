@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, Computers as _, ComputerError, Ending, Environment, Image, Limits, Network, Sandbox,
+    Command, ComputerError, Computers as _, Ending, Environment, Image, Limits, Network, Sandbox,
     SandboxLevel, Sources, WorkspaceId,
 };
 
@@ -174,40 +174,41 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
         let checks: Vec<(&str, Option<Sandbox>, String, Comes)> = vec![
             // Reads and writes.
             ("write beside the project", offline.clone(), "echo x > ~/outside".into(), Comes::Fails),
-            ("write in the project", offline.clone(), "echo x > inside && cat inside".into(), Comes::Prints("x\n")),
-            ("write in /tmp", offline.clone(), "echo x > /tmp/t && cat /tmp/t".into(), Comes::Prints("x\n")),
-            ("write in its temp folder", offline.clone(), "echo x > \"$TMPDIR/t\" && cat \"$TMPDIR/t\"".into(), Comes::Prints("x\n")),
-            ("read a file in the project", offline.clone(), "cat readme".into(), Comes::Prints("hello\n")),
-            ("read the machine", offline.clone(), "cat /etc/os-release >/dev/null && echo read".into(), Comes::Prints("read\n")),
+            ("write in the project", offline.clone(), "echo x > inside && cat inside".into(), Comes::Prints("x")),
+            ("write in /tmp", offline.clone(), "echo x > /tmp/t && cat /tmp/t".into(), Comes::Prints("x")),
+            ("write in its temp folder", offline.clone(), "echo x > \"$TMPDIR/t\" && cat \"$TMPDIR/t\"".into(), Comes::Prints("x")),
+            ("read a file in the project", offline.clone(), "cat readme".into(), Comes::Prints("hello")),
+            ("read the machine", offline.clone(), "cat /etc/os-release >/dev/null && echo read".into(), Comes::Prints("read")),
             ("read a key in the home", offline.clone(), "cat ~/.ssh/id_rsa".into(), Comes::Fails),
             ("read a project's .env", offline.clone(), "cat .env".into(), Comes::Fails),
             ("write a git hook", offline.clone(), "echo x > .git/hooks/pre-commit".into(), Comes::Fails),
             ("write git's config", offline.clone(), "echo x >> .git/config".into(), Comes::Fails),
             ("write glave's project settings", offline.clone(), "mkdir -p .glave/x".into(), Comes::Fails),
-            ("commit", offline.clone(), "git add inside && git commit -qm two && echo committed".into(), Comes::Prints("committed\n")),
+            ("commit", offline.clone(), "git add inside && git commit -qm two && echo committed".into(), Comes::Prints("committed")),
             ("write glave's program", offline.clone(), "echo x > /opt/glave/x".into(), Comes::Fails),
-            ("read glave's token", offline.clone(), "cat /opt/glave/secret/token".into(), Comes::Fails),
-            ("see glave's folder", offline.clone(), "ls ~/.glave | grep -c disk.log || true".into(), Comes::Prints("0\n")),
+            // Whether it can be read, never what it holds, which would show in the test's output.
+            ("read glave's token", offline.clone(), "test -r /opt/glave/secret/token && echo readable || echo hidden".into(), Comes::Prints("hidden")),
+            ("see glave's folder", offline.clone(), "ls ~/.glave | grep -c disk.log || true".into(), Comes::Prints("0")),
             ("read-only level writes", reading.clone(), "echo x > other".into(), Comes::Fails),
-            ("read-only level reads", reading.clone(), "cat readme".into(), Comes::Prints("hello\n")),
+            ("read-only level reads", reading.clone(), "cat readme".into(), Comes::Prints("hello")),
             // The network off, by the filter.
-            ("offline: the internet", offline.clone(), internet.clone(), Comes::Prints("refused 1\n")),
-            ("offline: glave's socket", offline.clone(), unix.clone(), Comes::Prints("refused 1\n")),
-            ("offline: a netlink socket", offline.clone(), netlink.clone(), Comes::Prints("refused 1\n")),
+            ("offline: the internet", offline.clone(), internet.clone(), Comes::Prints("refused 1")),
+            ("offline: glave's socket", offline.clone(), unix.clone(), Comes::Prints("refused 1")),
+            ("offline: a netlink socket", offline.clone(), netlink.clone(), Comes::Prints("refused 1")),
             ("offline: curl", offline.clone(), "curl -s -m 5 -o /dev/null https://1.1.1.1".into(), Comes::Fails),
             ("offline: loopback", offline.clone(), py(LOOPBACK, ""), Comes::Fails),
             // The network on.
-            ("online: the internet", online.clone(), internet, Comes::Prints("connected\n")),
-            ("online: curl", online.clone(), "curl -s -m 20 -o /dev/null https://1.1.1.1 && echo fetched".into(), Comes::Prints("fetched\n")),
-            ("online: loopback", online.clone(), py(LOOPBACK, ""), Comes::Prints("reached\n")),
-            ("online: glave's socket", online.clone(), unix, Comes::Prints("refused 1\n")),
-            ("online: a netlink socket", online.clone(), netlink, Comes::Prints("refused 1\n")),
+            ("online: the internet", online.clone(), internet, Comes::Prints("connected")),
+            ("online: curl", online.clone(), "curl -s -m 20 -o /dev/null https://1.1.1.1 && echo fetched".into(), Comes::Prints("fetched")),
+            ("online: loopback", online.clone(), py(LOOPBACK, ""), Comes::Prints("reached")),
+            ("online: glave's socket", online.clone(), unix, Comes::Prints("refused 1")),
+            ("online: a netlink socket", online.clone(), netlink, Comes::Prints("refused 1")),
             // What the filter refuses always; each errno is EPERM (1).
-            ("ptrace", offline.clone(), py(SYSCALL, "101"), Comes::Prints("-1 1\n")),
-            ("io_uring", offline.clone(), py(SYSCALL, "425"), Comes::Prints("-1 1\n")),
+            ("ptrace", offline.clone(), py(SYSCALL, "101"), Comes::Prints("-1 1")),
+            ("io_uring", offline.clone(), py(SYSCALL, "425"), Comes::Prints("-1 1")),
             // Processes of its own.
-            ("see glave's process", offline.clone(), "tr '\\0' ' ' </proc/1/cmdline | grep -c 'computer serve' || true".into(), Comes::Prints("0\n")),
-            ("no capabilities", offline.clone(), "awk '/^CapEff/ { print $2 }' /proc/self/status".into(), Comes::Prints("0000000000000000\n")),
+            ("see glave's process", offline.clone(), "s=serv; for p in /proc/[0-9]*; do tr '\\0' ' ' <\"$p/cmdline\"; echo; done 2>/dev/null | grep -c \"computer ${s}e\" || true".into(), Comes::Prints("0")),
+            ("no capabilities", offline.clone(), "awk '/^CapEff/ { print $2 }' /proc/self/status".into(), Comes::Prints("0000000000000000")),
         ];
         let mut wrong = Vec::new();
         let mut said = Vec::new();
@@ -218,7 +219,10 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 (Ok(Err(_)), Comes::Fails) => true,
                 _ => false,
             };
-            said.push(format!("{}: {what}: {answer:?}", if holds { "holds" } else { "WRONG" }));
+            said.push(format!(
+                "{}: {what}: {answer:?}",
+                if holds { "holds" } else { "WRONG" }
+            ));
             if !holds {
                 wrong.push(what);
             }
@@ -230,7 +234,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("git status, 5 times", "git status --short".to_owned(), 5),
             (
                 "compile Python's library",
-                "rm -rf py && cp -r /usr/lib/python3.13 py && python3 -m compileall -q -f -j 2 py >/dev/null".to_owned(),
+                "rm -rf py && cp -r /usr/lib/python3.13 py && python3 -m compileall -q -f py >/dev/null".to_owned(),
                 1,
             ),
         ] {
@@ -243,13 +247,34 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
         let setup = ran(&computers, woke.id, "rustup set profile minimal >/dev/null && rustup default stable >/dev/null 2>&1 && echo toolchain").await;
         let mut work = vec![format!("toolchain outside it: {setup:?}")];
         for (what, script) in [
-            ("a virtual environment and a package", "python3 -m venv .venv && .venv/bin/pip -q install idna && .venv/bin/python -c 'import idna' && echo installed"),
-            ("uv", "uv venv -q .uvenv && uv pip install -q --python .uvenv/bin/python idna && echo installed"),
-            ("npm", "npm init -y >/dev/null && npm i --silent is-odd && echo installed"),
-            ("a small Rust program", "cargo new -q --vcs none hello && cd hello && cargo build -q 2>&1 && echo built"),
-            ("a Rust program with a dependency", "cargo new -q --vcs none dep && cd dep && cargo add -q itoa 2>&1 && cargo build -q 2>&1 && echo built"),
-            ("rustup default in the home", "rustup default nightly 2>&1 | tail -n 2"),
-            ("a compiler", "printf 'int main(){return 0;}' > a.c && cc a.c -o a.out && ./a.out && echo compiled"),
+            (
+                "a virtual environment and a package",
+                "python3 -m venv .venv && .venv/bin/pip -q install idna && .venv/bin/python -c 'import idna' && echo installed",
+            ),
+            (
+                "uv",
+                "uv venv -q .uvenv && uv pip install -q --python .uvenv/bin/python idna && echo installed",
+            ),
+            (
+                "npm",
+                "npm init -y >/dev/null && npm i --silent is-odd && echo installed",
+            ),
+            (
+                "a small Rust program",
+                "cargo new -q --vcs none hello && cd hello && cargo build -q 2>&1 && echo built",
+            ),
+            (
+                "a Rust program with a dependency",
+                "cargo new -q --vcs none dep && cd dep && cargo add -q itoa 2>&1 && cargo build -q 2>&1 && echo built",
+            ),
+            (
+                "rustup default in the home",
+                "rustup default nightly 2>&1 | tail -n 2",
+            ),
+            (
+                "a compiler",
+                "printf 'int main(){return 0;}' > a.c && cc a.c -o a.out && ./a.out && echo compiled",
+            ),
         ] {
             let answer = run(&computers, project.id, online.clone(), script).await;
             work.push(format!("{what}: {answer:?}"));
@@ -266,7 +291,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             cost.join("\n"),
             work.join("\n"),
         );
-        assert_eq!(prepared, Ok("prepared\n".to_owned()));
+        assert_eq!(prepared, Ok("prepared".to_owned()));
         assert_eq!(wrong, Vec::<&str>::new(), "every wall holds");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());

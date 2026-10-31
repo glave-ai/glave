@@ -285,6 +285,8 @@ sentences! {
         "{ $mode } isn't allowed here: choose { $left }",
     Unsandboxed = "unsandboxed"
         "This computer can't run the sandbox, so Auto and Ask first both ask before every change and command.",
+    OwnComputerWall = "own-computer-wall"
+        "This computer can't run the sandbox: in Auto, commands can change anything in your home, and Ask first asks before every change and command.",
     OnlyReadOnlySandbox = "only-read-only-sandbox"
         "This computer can only run the sandbox that keeps files as they are, so Auto asks before every change and command.",
 

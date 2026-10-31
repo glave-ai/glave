@@ -14,6 +14,7 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
+use glave_computer::person_sandbox;
 use glave_config::policy::{Choices, Locations};
 use glave_harness::Defaults;
 use glave_ports::computer::SandboxLevel;
@@ -238,6 +239,11 @@ fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow:
             judge: choices.judge.value.clone(),
             titles: choices.titles.value,
             sandbox,
+            home_sandbox: choices
+                .computers
+                .as_ref()
+                .filter(|computers| computers.value.sandbox != Some(false))
+                .map(|_| person_sandbox(choices.network.value)),
             ask_network: setup.loaded.constraints.network_ask_forbidden().is_none(),
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,

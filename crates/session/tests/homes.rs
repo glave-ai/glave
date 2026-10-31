@@ -14,7 +14,8 @@ use glave_computer::{LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
 use glave_harness::Homes;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, DiskSpace, Home, Sources, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, Sources, WorkspaceId,
+    WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Message, OrgId, ProjectId};
 use glave_session::Answering;
@@ -175,6 +176,10 @@ impl Here {
 impl Homes for Here {
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(Hold::new(&self.holds)))
+    }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        None
     }
 
     fn home(&self, _org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
