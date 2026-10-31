@@ -204,11 +204,12 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         || start.github != now.github
         || start.origin != now.origin
         || start.acme != now.acme
-        || start.forwarded != now.forwarded;
+        || start.forwarded != now.forwarded
+        || start.router_floor != now.router_floor;
     if waits {
         tracing::warn!(
             "glave's settings changed where only a restart applies them (the store, the \
-             gateway, the provider, telemetry, workers, people's computers, GitHub or where people reach glave); \
+             gateway, the provider, telemetry, workers, people's computers, which providers it allows, GitHub or where people reach glave); \
              restart glave for them"
         );
     }
@@ -222,6 +223,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         github: start.github.clone(),
         origin: start.origin.clone(),
         acme: start.acme.clone(),
+        router_floor: start.router_floor.clone(),
         signup: start.signup.clone(),
         forwarded: start.forwarded.clone(),
         unsandboxed: start.unsandboxed.clone(),

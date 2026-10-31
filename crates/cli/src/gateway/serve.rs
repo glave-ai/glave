@@ -162,6 +162,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .filter(|value: &String| !value.trim().is_empty())
     };
     let endpoint = config::endpoint(env("GLAVE_MODEL"), config::provider_here().await?.as_ref())?;
+    let floor = config::router_floor_here().await?;
     let judge = env("GLAVE_JUDGE_MODEL");
     let allowed = Allowed {
         constraints: &constraints,
@@ -179,7 +180,8 @@ async fn run(options: Options) -> anyhow::Result<()> {
         Vec::new(),
         &allowed,
     )?
-    .with_budgets(budgets);
+    .with_budgets(budgets)
+    .with_floor(super::router_floor(floor.as_ref()));
     let home = home::folder()?;
     let processes = home::reaped().await?;
     let (catalog, mut secrets) = catalog(&home, &constraints, &processes).await?;
