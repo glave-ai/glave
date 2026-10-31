@@ -553,7 +553,9 @@ function ableToMove(): readonly string[] {
  * new background after a switch to dark, a reply fades in as it arrives, and a run's words fade in
  * when the server tells them, at any moment of a live page, even as axe reads them (#1112), and
  * halfway through any of them its text would fail. What was already moving as motion went off
- * finishes first, and whatever could still start moving fails here by name, never by chance.
+ * finishes first. What is on the page as it looks, and could still move with motion off, fails
+ * here by name; this cannot see what arrives later, whose stylesheets stylelint and review keep to
+ * the motion tokens.
  */
 export async function expectAccessible(page: Page): Promise<void> {
   const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -569,7 +571,8 @@ export async function expectAccessible(page: Page): Promise<void> {
   }, WCAG);
   expect(described(violations)).toEqual([]);
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
-  // With motion back, what fades in as it appears has faded in again: it comes to rest first, so
-  // what the test does next starts from a still page, as it did before this check.
+  // With motion back, what fades in as it appears has faded in again, and an open fold has
+  // unfolded again, which can move a scrolled pane: it comes to rest first, so what the test does
+  // next starts from a still page, though not always at the same scroll.
   await atRest(page);
 }
