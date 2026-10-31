@@ -1,5 +1,11 @@
 import { ChangeDetectionStrategy, Component, effect, inject, viewChild } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import {
+  type IsActiveMatchOptions,
+  Router,
+  RouterLink,
+  RouterOutlet,
+  isActive,
+} from '@angular/router';
 import {
   GlzIconComponent,
   GlzNavItemComponent,
@@ -13,6 +19,11 @@ import Users from 'lucide/dist/esm/icons/users.mjs';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 
+/** A page's address matched by its path, `exact` or `subset`, whatever else the URL says. */
+function page(paths: IsActiveMatchOptions['paths']): IsActiveMatchOptions {
+  return { paths, queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
+}
+
 /**
  * Admin, a room apart from the person's chats, for the organization's Admins and Owners: its
  * side nav leads back to the chats and to its pages (People), and its page fills the rest.
@@ -23,7 +34,6 @@ import { SessionService } from '../../services/session.service';
   selector: 'app-admin',
   imports: [
     RouterLink,
-    RouterLinkActive,
     RouterOutlet,
     GlzIconComponent,
     GlzNavItemComponent,
@@ -50,8 +60,6 @@ export class AdminComponent {
   protected readonly chatsLink = '/';
   protected readonly peopleLink = '/admin';
   protected readonly brandLink = '/admin/brand';
-  /** People is current on its own page alone: Brand's is under it. */
-  protected readonly exact = { exact: true } as const;
   private readonly nav = inject(NavService);
   protected readonly navOpen = this.nav.open;
   protected readonly navWidth = this.nav.width;
@@ -60,6 +68,9 @@ export class AdminComponent {
   private readonly layout = viewChild.required(GlzSidenavLayoutComponent);
   private readonly router = inject(Router);
   private readonly session = inject(SessionService);
+  /** People is current on its own page alone: Brand's is under it. */
+  protected readonly peopleCurrent = isActive(this.peopleLink, this.router, page('exact'));
+  protected readonly brandCurrent = isActive(this.brandLink, this.router, page('subset'));
 
   /** A refused sign-in (or signing out) ends the session: back to the sign-in page. */
   protected readonly leaving = effect(() => {

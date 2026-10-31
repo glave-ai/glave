@@ -16,24 +16,19 @@
     <p class="heading">{{ copy.heading }}</p>
     <glz-nav-list testId="admin-pages">
       <a
-        #people="routerLinkActive"
         glzNavItem
-        routerLinkActive
         data-testid="admin-people"
-        [current]="people.isActive"
+        [current]="peopleCurrent()"
         [routerLink]="peopleLink"
-        [routerLinkActiveOptions]="exact"
         [icon]="icons.people"
         (click)="navigated()"
       >
         {{ copy.people }}
       </a>
       <a
-        #brand="routerLinkActive"
         glzNavItem
-        routerLinkActive
         data-testid="admin-brand"
-        [current]="brand.isActive"
+        [current]="brandCurrent()"
         [routerLink]="brandLink"
         [icon]="icons.brand"
         (click)="navigated()"
