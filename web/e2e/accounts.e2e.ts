@@ -100,3 +100,43 @@ test('a git host is connected with its address and a token, which never shows', 
   await expect(byTestId(page, 'git-host')).toHaveCount(0);
   expect(problems()).toEqual([]);
 });
+
+test('a person’s accent is the server’s, drawn in two values on the root, under the real page’s rules', async ({
+  page,
+}) => {
+  const glave = served(ACCOUNTS);
+  const code = await signInCode(ACCOUNTS);
+  await page.goto(`${glave}/#code=${code}`);
+  await expect(byTestId(page, 'home-composer-input')).toBeVisible();
+  await page.goto(`${glave}/settings`);
+  const accent = (name: string): Promise<string> =>
+    page.evaluate((token) => document.documentElement.style.getPropertyValue(token), name);
+  // In the order offered: no accent, then the swatches, yellow last.
+  const accents = byTestId(page, 'appearance-accent-option');
+  const [plain, yellow] = [accents.first(), accents.last()];
+  await expect(byTestId(page, 'appearance-line')).toContainText('plain look');
+  await expectAccessible(page);
+  await expect.poll(() => accent('--glz-accent-light')).toBe('');
+
+  // Yellow can't be read on white as it is: tuned, light moves and dark stays near it.
+  await yellow.click();
+  await expect(byTestId(page, 'appearance-line')).toContainText('your own color');
+  await expect.poll(() => accent('--glz-accent-light')).toMatch(/^#[0-9a-f]{6}$/u);
+  expect(await accent('--glz-accent-light')).not.toBe('#f2c200');
+  await expectAccessible(page);
+
+  // The exact color, with the line saying what it risks, kept across a reload.
+  await byTestId(page, 'appearance-adjust-input').uncheck();
+  await expect(byTestId(page, 'appearance-adjust-line')).toContainText('may be hard to read');
+  await expect.poll(() => accent('--glz-accent-light')).toBe('#f2c200');
+  await page.reload();
+  await expect(yellow.locator('input')).toBeChecked();
+  expect(await accent('--glz-accent-dark')).toBe('#f2c200');
+
+  // Any exact color, through the browser's own picker.
+  await byTestId(page, 'appearance-accent-any').fill('#123456');
+  await expect.poll(() => accent('--glz-accent-light')).toBe('#123456');
+
+  await plain.click();
+  await expect.poll(() => accent('--glz-accent-light')).toBe('');
+});

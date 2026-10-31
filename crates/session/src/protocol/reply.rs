@@ -2,8 +2,8 @@
 //! the server, threads and turns.
 
 use glave_event::{
-    At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret, Seq,
-    ThreadId, TokenCounts, TurnResult, WorkspaceBound,
+    Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
+    Seq, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
@@ -14,8 +14,8 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, CreditsInfo, DeviceCode, FileInfo,
     GoneFolder, Grouping, InviteInfo, ModelInfo, OrganizationInfo, PasskeySummary, Permissions,
     PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk,
-    WatchEnd,
+    Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told,
+    TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -396,6 +396,14 @@ pub enum Reply {
     Filters {
         filters: Filters,
         europe: Vec<String>,
+    },
+    /// The person's accent: what they chose, and the light and dark values it is drawn as,
+    /// none for glave's plain look.
+    #[schemars(title = "Appearance")]
+    Appearance {
+        chosen: Accent,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shades: Option<Shades>,
     },
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]

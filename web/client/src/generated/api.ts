@@ -10,6 +10,14 @@ export const PROTOCOL = "2026-10";
  */
 export type Ability = "read" | "push" | "pull_requests" | "issues";
 
+/** The accent a person chose. */
+export type Accent = "plain" | {
+  readonly color: {
+    readonly adjust: boolean;
+    readonly color: Color;
+  };
+};
+
 /**
  * Every passkey that signs the person in with a relying party, after a sign-in, for the
  * browser to tell its passkey manager (`PublicKeyCredential.signalAllAcceptedCredentials`),
@@ -108,6 +116,9 @@ export type Choice = {
   readonly description?: string | null;
   readonly label: string;
 };
+
+/** A colour in sRGB, written `#rrggbb`. */
+export type Color = string;
 
 /**
  * Identifies a command kept running in the background, unique everywhere (UUID v7, minted by
@@ -958,7 +969,13 @@ export type ServerInfo = {
 };
 
 /** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "filters" | "awake" | "memory" | "passkeys" | "language";
+export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
+
+/** The accent as it is drawn, in each of light and dark. */
+export type Shades = {
+  readonly dark: Color;
+  readonly light: Color;
+};
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
@@ -1345,6 +1362,30 @@ export type WorkspaceBound = {
 
 /** A JSON-RPC error object, as any failed request answers. */
 export type ErrorObject = ApiError;
+
+export type AppearanceGetParams = Readonly<Record<string, never>>;
+
+/**
+ * The person's accent: what they chose, and the light and dark values it is drawn as,
+ * none for glave's plain look.
+ */
+export type AppearanceGetResult = {
+  readonly chosen: Accent;
+  readonly shades?: Shades | null;
+};
+
+export type AppearanceSetParams = {
+  readonly accent: Accent;
+};
+
+/**
+ * The person's accent: what they chose, and the light and dark values it is drawn as,
+ * none for glave's plain look.
+ */
+export type AppearanceSetResult = {
+  readonly chosen: Accent;
+  readonly shades?: Shades | null;
+};
 
 export type ApprovalDecideParams = {
   readonly approval: CallId;
@@ -2461,6 +2502,8 @@ export type TurnStartResult = {
 
 /** Every method, with its params and result. */
 export interface Methods {
+  readonly "appearance/get": { readonly params: AppearanceGetParams; readonly result: AppearanceGetResult };
+  readonly "appearance/set": { readonly params: AppearanceSetParams; readonly result: AppearanceSetResult };
   readonly "approval/decide": { readonly params: ApprovalDecideParams; readonly result: ApprovalDecideResult };
   readonly "awake/get": { readonly params: AwakeGetParams; readonly result: AwakeGetResult };
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };

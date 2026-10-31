@@ -15,6 +15,7 @@ import {
 
 import { crossfadeThreads, routes, unloadedPage } from './app.routes';
 import { SessionService } from './services/session.service';
+import { AppearanceService } from './services/appearance.service';
 import { ThemeService } from './services/theme.service';
 
 /** The app's providers. Change detection is zoneless (Angular's default): signals drive it. */
@@ -37,9 +38,10 @@ export const appConfig: ApplicationConfig = {
     ),
     // Sign the tab in before the router reads the address, which the link's code leaves.
     provideAppInitializer(() => inject(SessionService).start()),
-    // The person's theme, before anything is drawn.
+    // The person's theme and accent, before anything is drawn.
     provideAppInitializer(() => {
       inject(ThemeService);
+      inject(AppearanceService);
     }),
   ],
 };

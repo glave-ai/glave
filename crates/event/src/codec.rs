@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    AcmeRegistered, ApprovalDecided, ApprovalRequested, AwakeSet, BrowserSignedIn,
+    AcmeRegistered, AppearanceSet, ApprovalDecided, ApprovalRequested, AwakeSet, BrowserSignedIn,
     BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
     CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
     CreditsAdded, CreditsCharged, CreditsLimitSet, EffortChosen, FiltersSet, GatewayToolCalled,
@@ -20,10 +20,11 @@ use crate::payload::{
     ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished, SignupStarted,
     TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
     ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided,
-    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog,
-    certificate, chosen, command, connection, credential, credits, filters, gateway, goal,
-    grouping, hook, instructions, language, memory, message, model, passkey, people, plan, project,
-    provider, remembering, signup, standing, task, thread, tool, trust, turn, workspace,
+    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval, awake,
+    browser, catalog, certificate, chosen, command, connection, credential, credits, filters,
+    gateway, goal, grouping, hook, instructions, language, memory, message, model, passkey, people,
+    plan, project, provider, remembering, signup, standing, task, thread, tool, trust, turn,
+    workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -97,6 +98,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (language::SET, 1),
     (grouping::SET, 1),
     (filters::SET, 1),
+    (appearance::SET, 1),
     (remembering::SET, 1),
     (people::JOINED, 1),
     (people::ROLE_SET, 1),
@@ -182,6 +184,7 @@ pub enum Body {
     LanguageSet(LanguageSet),
     GroupingSet(GroupingSet),
     FiltersSet(FiltersSet),
+    AppearanceSet(AppearanceSet),
     MemorySet(MemorySet),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
@@ -382,6 +385,7 @@ impl Event {
             Body::LanguageSet(payload) => encode(header, payload),
             Body::GroupingSet(payload) => encode(header, payload),
             Body::FiltersSet(payload) => encode(header, payload),
+            Body::AppearanceSet(payload) => encode(header, payload),
             Body::MemorySet(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
@@ -497,7 +501,8 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
         _ => people::decode(kind, version, data)
             .or_else(|| signup::decode(kind, version, data))
-            .or_else(|| credits::decode(kind, version, data)),
+            .or_else(|| credits::decode(kind, version, data))
+            .or_else(|| appearance::decode(kind, version, data)),
     }
 }
 

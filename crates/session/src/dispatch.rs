@@ -190,6 +190,8 @@ where
             Request::GroupingSet { grouping } => self.set_grouping(caller, grouping).await,
             Request::FiltersGet {} => self.filters(caller).await,
             Request::FiltersSet { filters } => self.set_filters(caller, filters).await,
+            Request::AppearanceGet {} => self.appearance(caller).await,
+            Request::AppearanceSet { accent } => self.set_appearance(caller, accent).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code, link } => match link {
