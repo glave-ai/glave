@@ -7,14 +7,14 @@ use glave_ports::testing::{ManualClock, TempDir};
 
 use super::*;
 
-/// A disk more than [`FULL_PERCENT`] used, and one with room.
-const FULL: Space = Space {
+/// A disk more than 80% used, and one with room.
+const FULL: DiskSpace = DiskSpace {
     size: 100,
-    available: 10,
+    free: 10,
 };
-const ROOMY: Space = Space {
+const ROOMY: DiskSpace = DiskSpace {
     size: 100,
-    available: 50,
+    free: 50,
 };
 
 /// What the tests' git and shell run with: the home `home`, and none of this machine's git
@@ -177,16 +177,10 @@ fn a_disk_with_room_frees_nothing_and_a_full_one_with_nothing_left_says_so() {
 
 #[test]
 fn a_disk_is_full_past_eighty_percent_used() {
-    let at = |available| Space {
-        size: 1_000,
-        available,
-    };
+    let at = |free| DiskSpace { size: 1_000, free };
     assert!(!at(200).full());
     assert!(at(199).full());
-    let empty = Space {
-        size: 0,
-        available: 0,
-    };
+    let empty = DiskSpace { size: 0, free: 0 };
     assert!(!empty.full());
     assert!(space(Path::new("/")).unwrap().size > 0, "the real disk's");
 }

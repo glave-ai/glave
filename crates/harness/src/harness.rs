@@ -3,7 +3,7 @@
 mod error;
 mod settings;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
@@ -12,11 +12,12 @@ use glave_event::{
     Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound,
     encode,
 };
-use glave_ports::computer::WorkspaceId;
+use glave_ports::computer::{ComputerId, WorkspaceId};
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
 use glave_ports::{Clock, Entropy, Payer, Standing};
+use jiff::Timestamp;
 
 use crate::approval::Approver;
 use crate::background::Commands;
@@ -68,6 +69,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) blobs: B,
     pub(crate) approver: A,
     pub(crate) clock: Box<dyn Clock>,
+    /// The people's computers whose last look at their disks freed nothing, and when.
+    pub(crate) lacking_room: Mutex<BTreeMap<ComputerId, Timestamp>>,
     pub(crate) entropy: Box<dyn Entropy>,
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
@@ -293,6 +296,7 @@ where
             blobs: parts.blobs,
             approver: parts.approver,
             clock: parts.clock,
+            lacking_room: Mutex::default(),
             entropy: parts.entropy,
             skills: None,
             sources: vec![Arc::new(Builtins {
@@ -689,7 +693,7 @@ where
         events: &mut Vec<RawEvent>,
         payload: &T,
         id: EventId,
-        now: jiff::Timestamp,
+        now: Timestamp,
     ) -> Result<(), HarnessError> {
         let header = Header {
             id,

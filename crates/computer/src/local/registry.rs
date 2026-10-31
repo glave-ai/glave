@@ -169,6 +169,15 @@ impl Registry {
         Ok(())
     }
 
+    /// Whether a workspace is open on `root`, or inside it.
+    pub(crate) fn open_on(&self, root: &Path) -> Result<bool, ComputerError> {
+        Ok(self
+            .held()?
+            .workspaces
+            .values()
+            .any(|opened| opened.root.starts_with(root)))
+    }
+
     pub(crate) fn workspace(&self, id: WorkspaceId) -> Result<Arc<Opened>, ComputerError> {
         self.held()?
             .workspaces
