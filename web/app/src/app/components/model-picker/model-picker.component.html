@@ -1,12 +1,32 @@
 @if (hasModels()) {
-  <glz-picker
-    testId="model-picker"
-    quiet
-    [label]="copy.model"
-    [searchLabel]="copy.search"
-    [emptyText]="copy.empty"
-    [options]="options()"
-    [value]="shown()"
-    (valueChange)="pick($event)"
-  />
+  @if (filtered()) {
+    <button
+      glzButton
+      variant="ghost"
+      size="sm"
+      pill
+      type="button"
+      class="trigger"
+      aria-haspopup="dialog"
+      data-testid="model-picker-trigger"
+      [attr.aria-expanded]="choosing()"
+      (click)="openDialog()"
+    >
+      <span class="glz-visually-hidden">{{ copy.prefix }}</span>
+      <span class="text">{{ shownName() }}</span>
+      <glz-icon class="chevron" [icon]="open" />
+    </button>
+    <app-model-dialog [(open)]="choosing" [current]="shown()" (picked)="pick($event)" />
+  } @else {
+    <glz-picker
+      testId="model-picker"
+      quiet
+      [label]="copy.model"
+      [searchLabel]="copy.search"
+      [emptyText]="copy.empty"
+      [options]="options()"
+      [value]="shown()"
+      (valueChange)="pick($event)"
+    />
+  }
 }

@@ -1,0 +1,72 @@
+@if (known()) {
+  <div class="glz-stack glz-gap-2" data-testid="model-filters">
+    <glz-segmented
+      testId="model-filters-sort"
+      [label]="copy.sort"
+      [options]="sorts"
+      [value]="sort()"
+      (valueChange)="chooseSort($event)"
+    />
+    <glz-segmented
+      testId="model-filters-precision"
+      [label]="copy.precision"
+      [options]="precisions"
+      [value]="precision()"
+      (valueChange)="choosePrecision($event)"
+    />
+    <div class="glz-row glz-gap-2">
+      <glz-segmented
+        testId="model-filters-place"
+        [label]="copy.place"
+        [options]="places"
+        [value]="shownPlace()"
+        (valueChange)="choosePlace($event)"
+      />
+      @if (offerCountries()) {
+        <button
+          glzButton
+          size="sm"
+          variant="ghost"
+          type="button"
+          data-testid="model-filters-countries"
+          (click)="openCountries()"
+        >
+          {{ copy.countries }}
+        </button>
+      }
+    </div>
+    @if (choosingCountries()) {
+      <fieldset
+        #countryList
+        class="countries glz-row glz-gap-2"
+        data-testid="model-filters-country-list"
+      >
+        <legend class="glz-visually-hidden">{{ copy.countries }}</legend>
+        @for (country of countries(); track country.code) {
+          <glz-checkbox
+            testId="model-filters-country"
+            [checked]="country.checked"
+            (checkedChange)="chooseCountry(country.code, $event)"
+            >{{ country.name }}</glz-checkbox
+          >
+        }
+      </fieldset>
+    }
+    <glz-checkbox
+      testId="model-filters-keeps-nothing"
+      [checked]="keepsNothing()"
+      (checkedChange)="chooseKeepsNothing($event)"
+      >{{ copy.data }}</glz-checkbox
+    >
+    @if (problem(); as problem) {
+      <p class="problem" role="alert" data-testid="model-filters-problem">{{ problem }}</p>
+    }
+  </div>
+} @else if (problem(); as problem) {
+  <div class="glz-row glz-gap-2" data-testid="model-filters-unread">
+    <p class="problem" role="alert">{{ problem }}</p>
+    <button glzButton size="sm" type="button" data-testid="model-filters-retry" (click)="retry()">
+      {{ copy.retry }}
+    </button>
+  </div>
+}

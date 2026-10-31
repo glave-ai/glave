@@ -4,6 +4,7 @@
 #[test]
 fn the_eval_s_program_is_its_own_lifeline_helper() {
     let helper = env!("CARGO_BIN_EXE_glave-eval");
+    glave_ports::testing::read_program(helper).unwrap();
     let tied = glave_ports::block_on!(glave_process::Processes::unrecorded().with_lifeline(helper));
     assert!(tied.is_ok(), "{:?}", tied.err());
 }
