@@ -91,8 +91,8 @@ where
         Ok(Reply::Done {})
     }
 
-    /// Reads, for as long as it runs, what removals other servers on the store made: every
-    /// [`LOOK_AGAIN`]. Runs until dropped.
+    /// Finds, for as long as it runs, the removals other servers on the store made: every five
+    /// seconds. Runs until dropped.
     #[expect(
         clippy::infinite_loop,
         reason = "it runs until the server drops it, and an async fn cannot return `!`"
