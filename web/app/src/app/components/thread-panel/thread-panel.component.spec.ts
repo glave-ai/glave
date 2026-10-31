@@ -145,14 +145,38 @@ describe('ThreadPanelComponent', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps where the thread works from sight until its project is known', async () => {
+  it("keeps its facts from sight until the thread's project is known", async () => {
     const { root, fixture } = await render(worked(), WORKED, false, false);
-    const where = root.querySelector('[data-testid="panel-where"]');
-    expect(where?.classList.contains('reading')).toBe(true);
+    const facts = root.querySelector('[data-testid="panel-facts"]');
+    expect(facts?.classList.contains('reading')).toBe(true);
     await TestBed.inject(ProjectsService).refresh();
     await fixture.whenStable();
-    expect(where?.classList.contains('reading')).toBe(false);
+    expect(facts?.classList.contains('reading')).toBe(false);
     expect(texts(root, 'panel-where-part')).toContain('glave');
+  });
+
+  it('shows its facts, with no name, when the lists hold no such project', async () => {
+    const fake = worked();
+    const { root, fixture } = await render(fake, WORKED, false, false);
+    fake.answer('project/list', { projects: [], gone: [] });
+    await TestBed.inject(ProjectsService).refresh();
+    await fixture.whenStable();
+    const facts = root.querySelector('[data-testid="panel-facts"]');
+    expect(facts?.classList.contains('reading')).toBe(false);
+    expect(texts(root, 'panel-where-part')).not.toContain('glave');
+  });
+
+  it('shows its facts, with no name, when the lists cannot be read', async () => {
+    const fake = worked();
+    const { root, fixture } = await render(fake, WORKED, false, false);
+    fake.answer('project/list', () => {
+      throw new Error('it could not be read');
+    });
+    await TestBed.inject(ProjectsService).refresh();
+    await fixture.whenStable();
+    const facts = root.querySelector('[data-testid="panel-facts"]');
+    expect(facts?.classList.contains('reading')).toBe(false);
+    expect(texts(root, 'panel-where-part')).not.toContain('glave');
   });
 
   it('shows where the thread works and each section that has something', async () => {

@@ -53,8 +53,10 @@ for (const late of ['project/list', 'thread/list'] as const) {
     await held.sent;
     await expect(byTestId(page, 'thread-message').last()).toBeVisible();
     await atRest(page);
+    await expect(byTestId(page, 'panel-facts')).toBeHidden();
     held.letGo();
     await expect(byTestId(page, 'nav-thread').first()).toBeVisible();
+    await expect(byTestId(page, 'panel-where-part').filter({ hasText: 'glave' })).toBeVisible();
     await atRest(page);
     expectStill(await feltOn(page));
   });

@@ -18,14 +18,9 @@
     <glz-icon [icon]="icons.close" />
   </button>
 </div>
-<div class="facts" data-testid="panel-facts">
+<div class="facts" data-testid="panel-facts" [class.reading]="reading()">
   @if (where(); as where) {
-    <ul
-      class="where"
-      data-testid="panel-where"
-      [class.reading]="where.reading"
-      [attr.aria-label]="copy.where"
-    >
+    <ul class="where" data-testid="panel-where" [attr.aria-label]="copy.where">
       @for (part of where.before; track part.key) {
         <li class="part" data-testid="panel-where-part">
           <glz-icon [icon]="part.icon" [label]="part.label" /><span>{{ part.text }}</span>
