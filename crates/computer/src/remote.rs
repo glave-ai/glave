@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed, GitCredential,
+    CredentialAsk, CredentialHost, DiskUse, Environment, FileWrite, Finished, Freed, GitCredential,
     GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved,
     Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
@@ -411,6 +411,10 @@ impl Computers for RemoteComputers {
         computer: ComputerId,
     ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
         Box::pin(async move { self.typed(&Request::Worktrees { computer }).await })
+    }
+
+    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
+        Box::pin(async move { self.typed(&Request::DiskUse { computer }).await })
     }
 
     fn free_worktree<'a>(

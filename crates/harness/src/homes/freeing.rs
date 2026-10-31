@@ -8,9 +8,9 @@
 
 use std::sync::{Arc, PoisonError};
 
-use glave_event::{ComputerKind, RemovedReason, ThreadId, WorkspaceRemoved};
-use glave_ports::computer::{ComputerId, DiskSpace, Freed, KeptWorktree};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, Standing};
+use glave_event::{ComputerKind, PrincipalId, RemovedReason, ThreadId, WorkspaceRemoved};
+use glave_ports::computer::{ComputerId, DiskSpace, DiskUse, Freed, KeptWorktree};
+use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, Standing};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::approval::Approver;
@@ -24,6 +24,13 @@ const IDLE: SignedDuration = SignedDuration::from_hours(7 * 24);
 /// How long after a look that freed nothing the next one waits: what fills the disk is the
 /// person's, and asking about each worktree at every turn's end would only slow them.
 const AFTER_NOTHING: SignedDuration = SignedDuration::from_hours(1);
+
+/// A computer short of room, with nothing more glave can free: its disk, and what uses it most.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShortOfRoom {
+    pub disk: DiskSpace,
+    pub largest: Vec<DiskUse>,
+}
 
 /// A worktree that may go for room: archived before idle, then the oldest.
 struct Candidate {
@@ -59,6 +66,7 @@ where
     async fn free_room(&self, thread: &Thread, home: &Arc<Workspace>) -> Result<(), HarnessError> {
         let (computers, computer) = (home.computers(), home.info().computer);
         if !self.is_full(home, computer).await? {
+            self.note_short(computer, None);
             return Ok(());
         }
         let kept = computers.worktrees(computer).await?;
@@ -81,7 +89,51 @@ where
         if !freed {
             self.freed_nothing(computer, self.clock.now());
         }
+        self.say_what_uses_it(home, computer).await
+    }
+
+    /// With nothing left to free and more than 90% of the disk used, notes what uses it, for
+    /// the person to be told; otherwise that there's nothing to tell them.
+    async fn say_what_uses_it(
+        &self,
+        home: &Workspace,
+        computer: ComputerId,
+    ) -> Result<(), HarnessError> {
+        let computers = home.computers();
+        let short = computers
+            .status(computer)
+            .await?
+            .disk
+            .filter(|disk| disk.short());
+        let Some(disk) = short else {
+            self.note_short(computer, None);
+            return Ok(());
+        };
+        let largest = computers.disk_use(computer).await?;
+        self.note_short(computer, Some(ShortOfRoom { disk, largest }));
         Ok(())
+    }
+
+    fn note_short(&self, computer: ComputerId, short: Option<ShortOfRoom>) {
+        let mut noted = self
+            .short_of_room
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        match short {
+            Some(short) => noted.insert(computer, short),
+            None => noted.remove(&computer),
+        };
+    }
+
+    /// What this server last found of `person`'s own computer being short of room, nothing more
+    /// to free: what they're told. It reaches nothing.
+    pub fn short_of_room(&self, org: OrgId, person: PrincipalId) -> Option<ShortOfRoom> {
+        let home = self.own_home(org, person)?.ok()?;
+        self.short_of_room
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&home.info().computer)
+            .cloned()
     }
 
     /// Whether the last look at `computer`'s disk, within [`AFTER_NOTHING`], freed nothing.

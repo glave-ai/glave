@@ -18,7 +18,7 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::computer::{ComputerError, DiskSpace};
+use glave_ports::computer::{ComputerError, DiskSpace, DiskUse};
 use glave_ports::{Clock, SystemClock};
 use glave_process::Processes;
 use tokio::io::AsyncWriteExt as _;
@@ -60,6 +60,80 @@ const FETCHED_IN_THE_SANDBOX: [&str; 2] = ["cargo/registry", "rustup/toolchains"
 
 /// The most things one pass looks at, of each kind.
 const MOST_LOOKED_AT: usize = 1_000;
+
+/// How many of what uses the disk most the person is told of.
+const LARGEST: usize = 10;
+
+/// The most files and folders one look at what uses the disk walks: past this it says what it
+/// saw, since an answer that's nearly right is what's wanted of it.
+const MOST_WALKED: u64 = 2_000_000;
+
+/// What uses the disk under `home` most, the largest first: each entry one level down in its
+/// folders, and its files; a link or another disk counting nothing. Blocking.
+pub(crate) fn largest(home: &Path) -> Vec<DiskUse> {
+    let Ok(here) = std::fs::symlink_metadata(home) else {
+        return Vec::new();
+    };
+    let mut walked = 0;
+    let mut found: Vec<DiskUse> = Vec::new();
+    let mut note = |path: &Path, bytes: u64| {
+        let path = path.strip_prefix(home).unwrap_or(path);
+        found.push(DiskUse {
+            path: path.to_string_lossy().into_owned(),
+            bytes,
+        });
+    };
+    for entry in entries(home) {
+        let Ok(top) = entry.symlink_metadata() else {
+            continue;
+        };
+        if !top.is_dir() {
+            note(&entry, on_disk(&top));
+            continue;
+        }
+        if top.dev() != here.dev() {
+            continue;
+        }
+        for inside in entries(&entry) {
+            note(&inside, size_of(&inside, here.dev(), &mut walked));
+        }
+    }
+    found.retain(|use_| use_.bytes > 0);
+    found.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.path.cmp(&b.path)));
+    found.truncate(LARGEST);
+    found
+}
+
+/// The entries of `folder`, in no order; none if it can't be read.
+fn entries(folder: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(folder).map_or_else(
+        |_| Vec::new(),
+        |entries| entries.flatten().map(|entry| entry.path()).collect(),
+    )
+}
+
+/// What `path` holds on the disk `dev`, as long as `walked` stays within [`MOST_WALKED`].
+fn size_of(path: &Path, dev: u64, walked: &mut u64) -> u64 {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    *walked = walked.saturating_add(1);
+    if metadata.dev() != dev || metadata.file_type().is_symlink() || *walked > MOST_WALKED {
+        return 0;
+    }
+    let mut bytes = on_disk(&metadata);
+    if metadata.is_dir() {
+        for inside in entries(path) {
+            bytes = bytes.saturating_add(size_of(&inside, dev, walked));
+        }
+    }
+    bytes
+}
+
+/// What a file takes on the disk: its blocks, not its length, which a sparse file overstates.
+fn on_disk(metadata: &std::fs::Metadata) -> u64 {
+    metadata.blocks().saturating_mul(512)
+}
 
 /// The space on the disk `path` is on, as the system says.
 pub(crate) fn space(path: &Path) -> std::io::Result<DiskSpace> {

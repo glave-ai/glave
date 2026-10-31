@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
-    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    DiskUse, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed,
+    Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources,
+    Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -355,6 +355,16 @@ impl Computers for Waking {
         Box::pin(async move {
             let home = self.real(self.home.id).await?;
             home.computers.worktrees(home.computer).await
+        })
+    }
+
+    fn disk_use(
+        &self,
+        _computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
+        Box::pin(async move {
+            let home = self.real(self.home.id).await?;
+            home.computers.disk_use(home.computer).await
         })
     }
 

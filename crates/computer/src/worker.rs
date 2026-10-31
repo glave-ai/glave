@@ -23,8 +23,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
-    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Freed,
-    KeptWorktree, Limits, Output, Refusal, Sources, WorkspaceId, WorkspaceInfo,
+    Command, ComputerError, ComputerId, ComputerInfo, Computers, DiskUse, Ending, Environment,
+    Freed, KeptWorktree, Limits, Output, Refusal, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, Clock, NeverCancelled, SystemClock};
 use glave_process::Glave;
@@ -480,6 +480,13 @@ impl Computers for WorkerComputers {
         Box::pin(async move {
             let worker = self.worker(computer)?;
             self.remote(&worker).await?.worktrees(computer).await
+        })
+    }
+
+    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
+        Box::pin(async move {
+            let worker = self.worker(computer)?;
+            self.remote(&worker).await?.disk_use(computer).await
         })
     }
 

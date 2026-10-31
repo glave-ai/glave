@@ -29,9 +29,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
-    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    DiskSpace, DiskUse, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
+    Glob, Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save,
+    Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -526,6 +526,23 @@ impl Computers for LocalComputers {
                     owner: record.owner,
                 })
                 .collect())
+        })
+    }
+
+    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let home = self
+                .environment
+                .iter()
+                .find(|(name, _)| name == "HOME")
+                .map(|(_, value)| PathBuf::from(value));
+            let Some(home) = home else {
+                return Ok(Vec::new());
+            };
+            tokio::task::spawn_blocking(move || crate::disk::largest(&home))
+                .await
+                .map_err(|error| ComputerError::Failed(error.to_string()))
         })
     }
 

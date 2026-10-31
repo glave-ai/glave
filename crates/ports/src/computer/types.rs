@@ -115,11 +115,37 @@ impl DiskSpace {
     /// (`specs/computers.md`, decision 7).
     const FULL_PERCENT: u64 = 80;
 
+    /// The share of the disk used above which the person is told, in percent, once nothing
+    /// more can go (`specs/computers.md`, decision 7).
+    const SHORT_PERCENT: u64 = 90;
+
     /// Whether more than 80% of it is used.
     pub fn full(self) -> bool {
-        let used = self.size.saturating_sub(self.free);
-        u128::from(used) * 100 > u128::from(self.size) * u128::from(Self::FULL_PERCENT)
+        self.used_above(Self::FULL_PERCENT)
     }
+
+    /// Whether more than 90% of it is used.
+    pub fn short(self) -> bool {
+        self.used_above(Self::SHORT_PERCENT)
+    }
+
+    /// How much of it is used, in whole percent.
+    pub fn percent_used(self) -> u64 {
+        let used = u128::from(self.size.saturating_sub(self.free));
+        u64::try_from(used * 100 / u128::from(self.size.max(1))).unwrap_or(100)
+    }
+
+    fn used_above(self, percent: u64) -> bool {
+        let used = self.size.saturating_sub(self.free);
+        u128::from(used) * 100 > u128::from(self.size) * u128::from(percent)
+    }
+}
+
+/// What uses a computer's disk: a folder or a file, by its path from the person's home.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DiskUse {
+    pub path: String,
+    pub bytes: u64,
 }
 
 /// A worktree a computer keeps for a thread.

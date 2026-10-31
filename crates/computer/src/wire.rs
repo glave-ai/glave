@@ -27,8 +27,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// in the background: `command/start`, `command/output`, `command/stop` and `command/list`,
 /// `on_timeout` on a command, and the `backgrounded` and `idle` endings. `2026-10-28` added
 /// `command/ended`, how a command in the background ended, waited for without reading it.
-/// `2026-10-31` added `disk` to `computer/status`, and `computer/worktrees` and
-/// `computer/free_worktree`, which a server frees room with.
+/// `2026-10-31` added `disk` to `computer/status`, `computer/worktrees` and
+/// `computer/free_worktree`, which a server frees room with, and `computer/disk_use`, what it
+/// tells the person of what is left.
 pub(crate) const PROTOCOL: &str = "2026-10-31";
 
 /// The notification that carries a command's output.
@@ -55,6 +56,8 @@ pub(crate) enum Request {
     Destroy { computer: ComputerId },
     #[serde(rename = "computer/worktrees")]
     Worktrees { computer: ComputerId },
+    #[serde(rename = "computer/disk_use")]
+    DiskUse { computer: ComputerId },
     #[serde(rename = "computer/free_worktree")]
     FreeWorktree { computer: ComputerId, path: String },
     /// `credential`, when given, is kept in memory by the computer for fetching and saving.
@@ -151,6 +154,7 @@ impl Request {
             Self::Status { .. } => "computer/status",
             Self::Destroy { .. } => "computer/destroy",
             Self::Worktrees { .. } => "computer/worktrees",
+            Self::DiskUse { .. } => "computer/disk_use",
             Self::FreeWorktree { .. } => "computer/free_worktree",
             Self::Open { .. } => "workspace/open",
             Self::Close { .. } => "workspace/close",
@@ -180,6 +184,7 @@ const METHODS: &[&str] = &[
     "computer/status",
     "computer/destroy",
     "computer/worktrees",
+    "computer/disk_use",
     "computer/free_worktree",
     "workspace/open",
     "workspace/close",

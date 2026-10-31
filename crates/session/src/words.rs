@@ -132,21 +132,26 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
     }
 }
 
-/// Whether `thread` shows what its project asks to be trusted in the server's own words.
+/// Whether `thread` says what its project asks to be trusted, or that its computer is short of
+/// room, in the server's own words.
 fn trusting(thread: &ThreadSummary) -> bool {
     thread
         .trust
         .iter()
         .flat_map(|ask| &ask.items)
         .any(|item| item.text.translatable())
+        || thread.disk.is_some()
 }
 
-/// Writes what `thread`'s project asks to be trusted in `language`.
+/// Writes what `thread`'s project asks to be trusted, and what it says of room, in `language`.
 fn trust_in(thread: &mut ThreadSummary, language: Language) {
     if let Some(ask) = &mut thread.trust {
         for item in &mut ask.items {
             item.text.translate(language);
         }
+    }
+    if let Some(disk) = &mut thread.disk {
+        disk.told.translate(language);
     }
 }
 

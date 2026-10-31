@@ -29,7 +29,7 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };
 pub use types::{
-    Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, Ending, Entry,
+    Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, DiskUse, Ending, Entry,
     EntryKind, FileWrite, Finished, Freed, KeptWorktree, Listed, Listing, OnTimeout, Save, Saved,
     Sources, State, WorkspaceId, WorkspaceInfo,
 };
@@ -200,6 +200,13 @@ pub trait Computers: Send + Sync {
         &self,
         computer: ComputerId,
     ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        let _ = computer;
+        Box::pin(std::future::ready(Ok(Vec::new())))
+    }
+
+    /// What uses its disk most, the largest first (`computer/disk_use`): at most the person's
+    /// home's entries one level down, and its files. None where it can't say.
+    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
         let _ = computer;
         Box::pin(std::future::ready(Ok(Vec::new())))
     }

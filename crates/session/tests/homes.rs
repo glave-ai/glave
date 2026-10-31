@@ -136,7 +136,11 @@ impl Here {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
                 let full_while = Arc::clone(&full_while);
-                let computers = LocalComputers::for_here(std::env::vars_os())
+                // Its home is its own: nothing here looks at this machine's person's.
+                let environment = std::env::vars_os()
+                    .filter(|(name, _)| name != "HOME")
+                    .chain([("HOME".into(), at.clone().into_os_string())]);
+                let computers = LocalComputers::for_here(environment)
                     .with_disk_measure(move || {
                         let full = full_while
                             .lock()
@@ -145,7 +149,7 @@ impl Here {
                             .is_some_and(|path: &PathBuf| path.exists());
                         DiskSpace {
                             size: 100,
-                            free: if full { 10 } else { 50 },
+                            free: if full { 9 } else { 50 },
                         }
                     })
                     .with_worktrees(at.join(".glave/worktrees"))
@@ -724,5 +728,47 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
         *homes.full_while.lock().unwrap() = None;
         turn(&server, older, "hello again").await.unwrap();
         assert!(older_root.exists(), "{}", older_root.display());
+    });
+}
+
+/// Past 90%, with nothing more it can free, the server tells the person what uses their disk, as a
+/// fact on their thread, largest first, and asks nothing more of the computer to say it.
+#[test]
+fn a_person_is_told_what_uses_their_disk_once_nothing_more_can_go() {
+    let dir = folder("session-homes-disk");
+    block_on!(async {
+        let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
+        let answers = vec![answer(None, Some(wrote)), answer(Some("Done."), None)];
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let mut setup = Setup::new(answers);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let person = server.person().unwrap();
+        let (project, _) = new_garden(&server).await;
+        let big = homes.home_folder(person).join("films/long");
+        std::fs::create_dir_all(big.parent().unwrap()).unwrap();
+        std::fs::write(&big, vec![1_u8; 3_000_000]).unwrap();
+        let marker = dir.join("full");
+        std::fs::write(&marker, "").unwrap();
+        *homes.full_while.lock().unwrap() = Some(marker);
+
+        let thread = started(&server, Some(project.id)).await;
+        assert_eq!(thread.disk, None, "nothing looked at yet");
+        turn(&server, thread.id, "write it down").await.unwrap();
+
+        let asked = homes.asked();
+        let read = server
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        let Reply::Thread { thread: read } = read else {
+            panic!("a thread, not {read:?}");
+        };
+        assert_eq!(homes.asked(), asked, "saying so reaches nothing");
+        let disk = read.disk.expect("it says so");
+        assert!(disk.told.to_string().contains("91%"), "{}", &*disk.told);
+        assert_eq!((disk.size, disk.free), (100, 9));
+        assert_eq!(disk.largest[0].path, "films/long");
+        assert!(disk.largest[0].bytes >= 3_000_000, "{:?}", disk.largest);
     });
 }

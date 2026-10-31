@@ -195,3 +195,25 @@ fn a_disk_is_full_past_eighty_percent_used() {
     assert!(!empty.full());
     assert!(space(Path::new("/")).unwrap().size > 0, "the real disk's");
 }
+
+#[test]
+fn what_uses_the_disk_most_is_named_largest_first_one_level_down_never_through_a_link() {
+    let dir = TempDir::new("disk-largest").unwrap();
+    let home = dir.join("home");
+    let write = |path: &str, bytes: usize| {
+        let path = home.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, vec![1_u8; bytes]).unwrap();
+    };
+    write("glave/garden/deep/down/big", 2_000_000);
+    write("glave/shed/small", 200_000);
+    write("loose", 1_000_000);
+    std::fs::create_dir_all(dir.join("outside")).unwrap();
+    std::fs::write(dir.join("outside/huge"), vec![1_u8; 5_000_000]).unwrap();
+    std::os::unix::fs::symlink(dir.join("outside"), home.join("glave/linked")).unwrap();
+    let found = largest(&home);
+    let paths: Vec<&str> = found.iter().map(|use_| use_.path.as_str()).collect();
+    assert_eq!(paths, ["glave/garden", "loose", "glave/shed"], "{found:?}");
+    assert!(found[0].bytes >= 2_000_000, "{found:?}");
+    assert_eq!(largest(&dir.join("nothing here")), Vec::new());
+}
