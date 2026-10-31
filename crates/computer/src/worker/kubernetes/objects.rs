@@ -257,9 +257,14 @@ impl Shape<'_> {
         .into_iter()
         .map(Value::from)
         .collect();
-        // A person's computer sleeps on its own once idle, servers or not (#558).
+        // A person's computer sleeps on its own once idle, servers or not (#558), and keeps
+        // its disk from filling.
         if let Some(home) = &self.home {
-            command.extend([json!("--idle"), json!(home.idle_minutes.to_string())]);
+            command.extend([
+                json!("--idle"),
+                json!(home.idle_minutes.to_string()),
+                json!("--keep-disk"),
+            ]);
         }
         command
     }

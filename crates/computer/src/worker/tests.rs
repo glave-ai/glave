@@ -81,7 +81,7 @@ impl InProcess {
         let listener = listen_socket(&self.socket(name)).unwrap();
         let tokens = crate::Tokens::file(self.token_file(name));
         let task = tokio::spawn(async move {
-            let _ = serve_socket(computers, listener, tokens, None).await;
+            let _ = serve_socket(computers, listener, tokens, None, None).await;
         });
         (Link::Bridged, task)
     }

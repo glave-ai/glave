@@ -272,7 +272,13 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
             busy: Box::new(move || running.load(Ordering::SeqCst)),
         };
         let token = Token::mint(UNIX_EPOCH, Duration::from_secs(600)).unwrap();
-        let mut serving = tokio::spawn(serve_socket(local(&copies), listener, token, Some(idle)));
+        let mut serving = tokio::spawn(serve_socket(
+            local(&copies),
+            listener,
+            token,
+            Some(idle),
+            None,
+        ));
         // A command in the background keeps it serving, however long.
         let kept = tokio::time::timeout(Duration::from_hours(3), &mut serving).await;
         assert!(kept.is_err(), "it serves while a command runs");
@@ -315,7 +321,13 @@ fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_b
         let (first, carried) = bridged(&socket);
         tokio::task::yield_now().await;
         let listener = listen_socket(&socket).unwrap();
-        let serving = tokio::spawn(serve_socket(local(&copies), listener, token.clone(), None));
+        let serving = tokio::spawn(serve_socket(
+            local(&copies),
+            listener,
+            token.clone(),
+            None,
+            None,
+        ));
         first.authenticate(token.secret()).await.unwrap();
         first.check_protocol().await.unwrap();
         let verdict =

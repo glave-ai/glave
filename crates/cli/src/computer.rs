@@ -12,10 +12,12 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, bail};
 use glave_computer::{
-    Identity, Idle, LocalComputers, MIN_SECRET, Tokens, bridge, listen_socket, serve, serve_socket,
-    serve_tcp, serve_tls,
+    Identity, Idle, Keeper, LocalComputers, MIN_SECRET, Tokens, bridge, listen_socket, serve,
+    serve_socket, serve_tcp, serve_tls,
 };
+use glave_ports::computer::Computers;
 use glave_ports::{Clock as _, SystemClock};
+use glave_process::Processes;
 use tokio::io::{AsyncReadExt as _, BufReader};
 use tokio::net::TcpListener;
 
@@ -38,13 +40,18 @@ Usage:
                                      a harness reaches a worker on Docker. With
                                      --until-input-ends, it ends when its standard input
                                      does, as a worker ends with the glave that started it
-  glave computer serve --socket <path> <folder> [--idle <minutes>]
+  glave computer serve --socket <path> <folder> [--idle <minutes>] [--keep-disk]
                                      serve it on a Unix socket at <path>, open to this user
                                      alone, to clients that first send the token in <folder>
                                      (as for --tls); how a computer in a Pod is reached. With
                                      --idle, it ends once no request has run and no command
                                      has run in the background for that many minutes, as a
-                                     person's computer in the cloud does
+                                     person's computer in the cloud does. With --keep-disk,
+                                     whenever more than 80% of the disk $HOME is on is used
+                                     and no request or command runs, it frees what can be
+                                     rebuilt and went untouched for an hour (build outputs
+                                     git ignores in its worktrees, caches, then the Trash),
+                                     recorded in $GLAVE_HOME/disk.log
   glave computer bridge <path>       carry one connection between standard input and output
                                      and the computer serving on the socket at <path>,
                                      waiting up to 30 seconds for it to be there; it ends
@@ -69,8 +76,16 @@ enum Transport {
     Tcp(SocketAddr),
     /// The address, the folder of the identity and token, and until when it serves.
     Tls(SocketAddr, PathBuf, Until),
-    /// The socket's path, the folder of the token, and the minutes idle after which it ends.
-    Socket(PathBuf, PathBuf, Option<u32>),
+    /// The socket's path, the folder of the token, and how a person's computer runs.
+    Socket(PathBuf, PathBuf, Person),
+}
+
+/// How a computer on a socket runs as a person's computer in the cloud: the minutes idle
+/// after which it ends, and whether it keeps its disk from filling.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Person {
+    idle: Option<u32>,
+    keep_disk: bool,
 }
 
 /// Until when glave serving over TLS serves.
@@ -83,18 +98,30 @@ enum Until {
     InputEnds,
 }
 
-/// What follows `--socket <path> <folder>`: nothing, or `--idle <minutes>`.
-fn idle(rest: &[String]) -> Result<Option<u32>, String> {
-    match rest {
-        [] => Ok(None),
-        [flag] if flag == "--idle" => Err("--idle needs a number of minutes".into()),
-        [flag, minutes, more @ ..] if flag == "--idle" => match (minutes.parse::<u32>(), more) {
-            (Ok(minutes), []) if minutes > 0 => Ok(Some(minutes)),
-            (_, []) => Err(format!("--idle {minutes:?} is not a number of minutes")),
-            (_, [again, ..]) if again == "--idle" => Err("--idle is given more than once".into()),
-            (_, [other, ..]) => Err(format!("{other:?} is not an option of serve --socket")),
-        },
-        [other, ..] => Err(format!("{other:?} is not an option of serve --socket")),
+/// What follows `--socket <path> <folder>`: `--idle <minutes>` and `--keep-disk`, each at
+/// most once, in either order.
+fn person(mut rest: &[String]) -> Result<Person, String> {
+    let mut person = Person::default();
+    loop {
+        rest = match rest {
+            [] => return Ok(person),
+            [flag, more @ ..] if flag == "--keep-disk" && !person.keep_disk => {
+                person.keep_disk = true;
+                more
+            }
+            [flag] if flag == "--idle" => return Err("--idle needs a number of minutes".into()),
+            [flag, minutes, more @ ..] if flag == "--idle" && person.idle.is_none() => {
+                match minutes.parse::<u32>() {
+                    Ok(minutes) if minutes > 0 => person.idle = Some(minutes),
+                    _ => return Err(format!("--idle {minutes:?} is not a number of minutes")),
+                }
+                more
+            }
+            [flag, ..] if flag == "--idle" || flag == "--keep-disk" => {
+                return Err(format!("{flag} is given more than once"));
+            }
+            [other, ..] => return Err(format!("{other:?} is not an option of serve --socket")),
+        };
     }
 }
 
@@ -138,13 +165,14 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
             serving(Transport::Socket(
                 PathBuf::from(path),
                 PathBuf::from(folder),
-                idle(rest)?,
+                person(rest)?,
             ))
         }
         [bridge, path] if bridge == "bridge" => Ok(Asked::Bridge(PathBuf::from(path))),
         _ => Err(
             "expected: glave computer serve --stdio, --tcp <port>, --tls <host:port> <folder> \
-             [--until-input-ends], or --socket <path> <folder> [--idle <minutes>]; or glave \
+             [--until-input-ends], or --socket <path> <folder> [--idle <minutes>] [--keep-disk]; \
+             or glave \
              computer bridge <path>"
                 .into(),
         ),
@@ -205,6 +233,10 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
     let processes = home::reaped().await?;
+    let keeping = Keeping {
+        processes: processes.clone(),
+        glave: home.clone(),
+    };
     let computers = crate::helpers::with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
@@ -257,22 +289,52 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 () = input_ends() => Ok(()),
             }
         }
-        Transport::Socket(path, folder, minutes) => {
-            let token = tokens(&folder).await?;
-            let listener = listen_socket(&path)
-                .with_context(|| format!("could not listen on {}", path.display()))?;
-            let idle = minutes.map(|minutes| {
-                let busy = Arc::clone(&computers);
-                Idle {
-                    after: Duration::from_mins(u64::from(minutes)),
-                    busy: Box::new(move || busy.busy()),
-                }
-            });
-            serve_socket(computers, listener, token, idle)
-                .await
-                .with_context(|| format!("serving on {}", path.display()))
+        Transport::Socket(path, folder, person) => {
+            let busy = {
+                let computers = Arc::clone(&computers);
+                move || computers.busy()
+            };
+            on_socket(computers, busy, (&path, &folder), person, keeping).await
         }
     }
+}
+
+/// Serves `computers` on the socket at the first path, with the token in the folder at the
+/// second, as a person's computer runs as `person` says; `busy` says whether anything runs
+/// there in the background.
+async fn on_socket<C: Computers + 'static>(
+    computers: Arc<C>,
+    busy: impl Fn() -> bool + Clone + Send + Sync + 'static,
+    (path, folder): (&Path, &Path),
+    person: Person,
+    keeping: Keeping,
+) -> anyhow::Result<()> {
+    let token = tokens(folder).await?;
+    let listener =
+        listen_socket(path).with_context(|| format!("could not listen on {}", path.display()))?;
+    let idle = person.idle.map(|minutes| Idle {
+        after: Duration::from_mins(u64::from(minutes)),
+        busy: Box::new(busy.clone()),
+    });
+    let keeper = person.keep_disk.then(|| {
+        Keeper::new(
+            keeping.glave.clone(),
+            keeping.glave.join(crate::worktrees::FOLDER),
+            keeping.processes,
+            std::env::vars_os().collect(),
+            Box::new(busy),
+        )
+    });
+    serve_socket(computers, listener, token, idle, keeper)
+        .await
+        .with_context(|| format!("serving on {}", path.display()))
+}
+
+/// What a person's computer keeps its disk with: the processes git runs as, and glave's
+/// folder, which holds the worktrees and the record.
+struct Keeping {
+    processes: Processes,
+    glave: PathBuf,
 }
 
 /// The token in `folder`, read again for each connection so the harness can renew it, and
@@ -348,7 +410,11 @@ mod tests {
             parse(&words(
                 "serve --socket /opt/glave/glave.sock /opt/glave/secret"
             )),
-            Ok(Asked::Serve(Transport::Socket(socket(), folder(), None)))
+            Ok(Asked::Serve(Transport::Socket(
+                socket(),
+                folder(),
+                Person::default()
+            )))
         );
         assert_eq!(
             parse(&words(
@@ -357,10 +423,32 @@ mod tests {
             Ok(Asked::Serve(Transport::Socket(
                 socket(),
                 folder(),
-                Some(10)
+                Person {
+                    idle: Some(10),
+                    keep_disk: false
+                }
             )))
         );
-        for wrong in ["--idle 0", "--idle", "--idle 1 --idle 2", "--other"] {
+        assert_eq!(
+            parse(&words(
+                "serve --socket /opt/glave/glave.sock /opt/glave/secret --keep-disk --idle 10"
+            )),
+            Ok(Asked::Serve(Transport::Socket(
+                socket(),
+                folder(),
+                Person {
+                    idle: Some(10),
+                    keep_disk: true
+                }
+            )))
+        );
+        for wrong in [
+            "--idle 0",
+            "--idle",
+            "--idle 1 --idle 2",
+            "--keep-disk --keep-disk",
+            "--other",
+        ] {
             let line = format!("serve --socket /opt/glave/glave.sock /opt/glave/secret {wrong}");
             assert!(parse(&words(&line)).is_err(), "{wrong}");
         }
