@@ -1,7 +1,8 @@
 //! The seccomp filter every sandboxed command runs under, Codex's: no `ptrace` or reading and
 //! writing other processes' memory, no `io_uring` (which can open sockets without `socket`),
 //! and the network by socket family. With the network off, only Unix sockets may be made and
-//! nothing may connect, bind, listen or `sendto` an address (`sendmsg` stays, for socket pairs); with it on, only internet sockets
+//! nothing may connect, bind, listen or `sendto` an address (`sendmsg` stays, for socket pairs);
+//! with it on, only internet sockets
 //! may be made, so no Unix socket on the machine (`docker.sock`, the ssh agent) is reachable,
 //! as on macOS. Built with Firecracker's `seccompiler`; a blocked call fails with `EPERM`.
 
