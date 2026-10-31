@@ -3,10 +3,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use glave_harness::{Found, Skill, SkillSource, Skills, find_skills, skill_folders};
-use glave_ports::ToolSource;
 
 use crate::home;
 
@@ -48,12 +46,8 @@ fn with_built_in(mut found: Found) -> Found {
 }
 
 /// The `skill` tool for the project at `root`, when there are any skills; nothing otherwise.
-pub(crate) async fn offered(root: &Path) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
-    let found = find(root).await?;
-    Ok(Skills::offer(found.skills)
-        .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
-        .into_iter()
-        .collect())
+pub(crate) async fn offered(root: &Path) -> anyhow::Result<Option<Skills>> {
+    Ok(Skills::offer(find(root).await?.skills))
 }
 
 /// `glave skills`: every skill the model is offered here, and where each comes from.

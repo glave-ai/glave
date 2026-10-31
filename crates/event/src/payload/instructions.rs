@@ -17,6 +17,20 @@ pub struct InstructionsRead {
     pub root: String,
     /// Each file read, in the order a thread is sent them; none when the folder has none.
     pub files: Vec<InstructionsFile>,
+    /// The skills found there for it, in the order a thread is offered them; their bodies are
+    /// read there when one is loaded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<SkillFound>,
+}
+
+/// One skill found on a person's own computer, as a thread is offered it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillFound {
+    pub name: String,
+    pub description: String,
+    /// Its SKILL.md, as that computer names it.
+    pub path: String,
 }
 
 /// One file of instructions, as a thread is sent it.

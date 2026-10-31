@@ -142,7 +142,7 @@ async fn read_on(
 
 /// The folders [`project_dirs`] looks in, found through `home`: from the repository's root
 /// down to `root`, or `root` alone, never above the home.
-async fn dirs_on(home: &Workspace, root: &Path) -> Result<Vec<PathBuf>, ComputerError> {
+pub(crate) async fn dirs_on(home: &Workspace, root: &Path) -> Result<Vec<PathBuf>, ComputerError> {
     let base = home.root();
     let mut dirs = Vec::new();
     for dir in root.ancestors().take_while(|dir| dir.starts_with(base)) {
@@ -161,7 +161,7 @@ async fn dirs_on(home: &Workspace, root: &Path) -> Result<Vec<PathBuf>, Computer
 /// Whether something is at `path` in `home`, one the computer lets glave see. A path with
 /// nothing there answers so, so one not found means the home itself is gone: an error, never
 /// taken for an empty folder.
-async fn there(home: &Workspace, path: &str) -> Result<bool, ComputerError> {
+pub(crate) async fn there(home: &Workspace, path: &str) -> Result<bool, ComputerError> {
     match home.computers().stat(home.info().id, path).await {
         Ok(stat) => Ok(stat.kind.is_some()),
         Err(ComputerError::Refused(_)) => Ok(false),
@@ -170,7 +170,7 @@ async fn there(home: &Workspace, path: &str) -> Result<bool, ComputerError> {
 }
 
 /// `path` as the home at `base` names it: relative to it.
-fn inside(base: &Path, path: &Path) -> Option<String> {
+pub(crate) fn inside(base: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(base).ok()?;
     Some(relative.to_string_lossy().into_owned())
 }

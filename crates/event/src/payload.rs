@@ -60,7 +60,7 @@ pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use grouping::{Grouping, GroupingSet};
 pub use hook::{HookPoint, HookRan, HookResult};
-pub use instructions::{InstructionsFile, InstructionsRead};
+pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,

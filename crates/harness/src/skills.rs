@@ -6,6 +6,7 @@
 //! named `glave:<name>` (`specs/model.md`, "Configuration is files").
 
 pub(crate) mod frontmatter;
+pub(crate) mod on_home;
 mod tool;
 
 use std::collections::HashMap;
@@ -111,50 +112,70 @@ pub fn skill_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
 /// skill that cannot be read or breaks the format is skipped with a warning, never fatal, and
 /// past `MAX_SKILLS` or [`MAX_LISTED`] the rest are left out with one.
 pub async fn find_skills(folders: &[PathBuf]) -> Found {
-    let mut found = Found::default();
-    let mut names: HashMap<String, PathBuf> = HashMap::new();
-    let mut listed = 0usize;
-    let mut left_out = Vec::new();
+    let mut gathered = Gathered::default();
     for folder in folders {
-        for file in skill_files(folder, &mut found.warnings).await {
-            let skill = match read(&file).await {
-                Ok(Some(skill)) => skill,
-                Ok(None) => continue,
-                Err(why) => {
-                    found
-                        .warnings
-                        .push(format!("skipped {}: {why}", file.display()));
-                    continue;
-                }
-            };
-            if let Some(kept) = names.get(&skill.name) {
-                found.warnings.push(format!(
-                    "skipped {}: the skill {:?} in {} comes first",
-                    file.display(),
-                    skill.name,
-                    kept_folder(kept)
-                ));
-                continue;
-            }
-            names.insert(skill.name.clone(), file.clone());
-            let after = listed.saturating_add(skill.listed());
-            if found.skills.len() >= MAX_SKILLS || after > MAX_LISTED {
-                left_out.push(skill.name);
-                continue;
-            }
-            listed = after;
-            found.skills.push(skill);
+        for file in skill_files(folder, &mut gathered.found.warnings).await {
+            let read = read(&file).await;
+            gathered.add(&file, read);
         }
     }
-    if !left_out.is_empty() {
-        found.warnings.push(format!(
-            "left out {} (at most {MAX_SKILLS} skills and {MAX_LISTED} characters of names \
-             and descriptions are offered)",
-            left_out.join(", ")
-        ));
+    gathered.finish()
+}
+
+/// The skills found so far, first found first, within what is offered.
+#[derive(Default)]
+pub(crate) struct Gathered {
+    pub(crate) found: Found,
+    names: HashMap<String, PathBuf>,
+    listed: usize,
+    left_out: Vec<String>,
+}
+
+impl Gathered {
+    /// Takes in what reading `file` found: a skill, unless one of its name came first or it
+    /// doesn't fit; a warning, for one that can't be read.
+    pub(crate) fn add(&mut self, file: &Path, read: Result<Option<Skill>, String>) {
+        let skill = match read {
+            Ok(Some(skill)) => skill,
+            Ok(None) => return,
+            Err(why) => {
+                self.found
+                    .warnings
+                    .push(format!("skipped {}: {why}", file.display()));
+                return;
+            }
+        };
+        if let Some(kept) = self.names.get(&skill.name) {
+            self.found.warnings.push(format!(
+                "skipped {}: the skill {:?} in {} comes first",
+                file.display(),
+                skill.name,
+                kept_folder(kept)
+            ));
+            return;
+        }
+        self.names.insert(skill.name.clone(), file.to_path_buf());
+        let after = self.listed.saturating_add(skill.listed());
+        if self.found.skills.len() >= MAX_SKILLS || after > MAX_LISTED {
+            self.left_out.push(skill.name);
+            return;
+        }
+        self.listed = after;
+        self.found.skills.push(skill);
     }
-    found.skills.sort_by(|a, b| a.name.cmp(&b.name));
-    found
+
+    /// What was found, by name, with a warning for what was left out.
+    pub(crate) fn finish(mut self) -> Found {
+        if !self.left_out.is_empty() {
+            self.found.warnings.push(format!(
+                "left out {} (at most {MAX_SKILLS} skills and {MAX_LISTED} characters of names \
+                 and descriptions are offered)",
+                self.left_out.join(", ")
+            ));
+        }
+        self.found.skills.sort_by(|a, b| a.name.cmp(&b.name));
+        self.found
+    }
 }
 
 /// The SKILL.md in each subfolder of `folder`, in name order. A folder that is not there has
@@ -203,7 +224,13 @@ async fn read(file: &Path) -> Result<Option<Skill>, String> {
     let text = tokio::fs::read_to_string(file)
         .await
         .map_err(|err| err.to_string())?;
-    let document = frontmatter::parse(&text)?;
+    parsed(&text, file)
+}
+
+/// The skill in `text`, the SKILL.md at `file`: `None` when it asks not to be offered to the
+/// model.
+pub(crate) fn parsed(text: &str, file: &Path) -> Result<Option<Skill>, String> {
+    let document = frontmatter::parse(text)?;
     if text_field(&document, "disable-model-invocation")?.as_deref() == Some("true") {
         return Ok(None);
     }

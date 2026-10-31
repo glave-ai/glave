@@ -11,7 +11,7 @@ import {
   forgetFelt,
   watchFeel,
 } from './feel';
-import { SIGNED_IN, atRest, byTestId, expect, test } from './support';
+import { SIGNED_IN, atRest, byTestId, expect, hold, test } from './support';
 
 // Run in Chromium alone, one at a time once the rest of the run is done (playwright.config.ts,
 // the `feel` project): WebKit, as Safari, reports neither layout shifts nor event timings, nor
@@ -41,6 +41,24 @@ for (const opened of OPENED) {
 
   test(`nothing moves on opening ${opened.name}`, async ({ page }) => {
     expectStill(await opening(page, opened.path, opened.shown));
+  });
+}
+
+for (const late of ['project/list', 'thread/list'] as const) {
+  test(`nothing moves on opening a thread when ${late} answers late`, async ({ page }) => {
+    await watchFeel(page);
+    await fakeApi(page);
+    const held = await hold(page, '/', late);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await held.sent;
+    await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+    await atRest(page);
+    await expect(byTestId(page, 'panel-facts')).toBeHidden();
+    held.letGo();
+    await expect(byTestId(page, 'nav-thread').first()).toBeVisible();
+    await expect(byTestId(page, 'panel-where-part').filter({ hasText: 'glave' })).toBeVisible();
+    await atRest(page);
+    expectStill(await feltOn(page));
   });
 }
 
