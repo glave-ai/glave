@@ -76,9 +76,13 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   const again = await tab();
   const problemsAgain = watchForProblems(again);
   await again.goto(`${PASSKEYS_ORIGIN}/settings`);
-  await byTestId(again, 'settings-sign-out').click();
-  await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
-  await expect(byTestId(page, 'sign-in')).toBeVisible();
+  await problems.signingOut(() =>
+    problemsAgain.signingOut(async () => {
+      await byTestId(again, 'settings-sign-out').click();
+      await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
+      await expect(byTestId(page, 'sign-in')).toBeVisible();
+    }),
+  );
   await expectAccessible(again);
   await byTestId(again, 'sign-in-passkey').click();
   await expect(byTestId(again, 'home-composer-input')).toBeVisible();
