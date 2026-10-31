@@ -115,7 +115,7 @@ impl DiskSpace {
     /// (`specs/computers.md`, decision 7).
     const FULL_PERCENT: u64 = 80;
 
-    /// Whether more than [`DiskSpace::FULL_PERCENT`] of it is used.
+    /// Whether more than 80% of it is used.
     pub fn full(self) -> bool {
         let used = self.size.saturating_sub(self.free);
         u128::from(used) * 100 > u128::from(self.size) * u128::from(Self::FULL_PERCENT)
