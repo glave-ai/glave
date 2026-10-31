@@ -32,6 +32,7 @@ use crate::memory::MemoryState;
 use crate::plan::Planning;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
+use crate::skills::Skills;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::waits::Opened;
@@ -71,6 +72,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
+    /// The skills on this computer and glave's own (`with_skills`).
+    pub(crate) skills: Option<Arc<Skills>>,
     /// The person's own tools, such as their MCP servers', offered after the other sources to
     /// their threads alone: they run with the person's sign-ins. None by default; the host
     /// replaces them when the person's settings change.
@@ -291,6 +294,7 @@ where
             approver: parts.approver,
             clock: parts.clock,
             entropy: parts.entropy,
+            skills: None,
             sources: vec![Arc::new(Builtins {
                 workspace: Arc::clone(&workspace),
                 commands: Arc::default(),
@@ -393,6 +397,14 @@ where
         self
     }
 
+    /// Offers `skills` to its threads, those on this computer's and glave's own; a thread on a
+    /// person's own computer is offered what is found there, with glave's own.
+    #[must_use]
+    pub fn with_skills(mut self, skills: Option<Skills>) -> Self {
+        self.skills = skills.map(Arc::new);
+        self
+    }
+
     /// Offers the tools of `sources`, the person's own, to the threads of the person the
     /// harness works for alone, after its other sources.
     #[must_use]
@@ -431,6 +443,9 @@ where
                 .saturating_add(1)
                 .min(sources.len());
             sources.insert(after, Arc::clone(web));
+        }
+        if let (None, Some(skills)) = (&thread.home, &self.skills) {
+            sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
         }
         if self.trusting(thread.for_) {
             let own = self.own.read().unwrap_or_else(PoisonError::into_inner);

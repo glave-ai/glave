@@ -177,7 +177,7 @@ pub(crate) async fn wire(
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
         web: crate::project_folders::web_offered(&choices.web.value)?,
-        tools: crate::skills::offered(&root).await?,
+        skills: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
         own: servers.sources(),
         worktree: choices.worktree.value,

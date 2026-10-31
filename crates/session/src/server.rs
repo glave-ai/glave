@@ -61,8 +61,11 @@ pub struct Wiring<P, L, B> {
     /// `web_fetch`, which a project's own settings replace for its threads; none when it is
     /// off.
     pub web: Option<Arc<dyn ToolSource>>,
-    /// Tools beside the built-in ones and `web_fetch`, such as skills.
+    /// Tools beside the built-in ones and `web_fetch`.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// The skills on the server's computer and glave's own; a thread on a person's own computer
+    /// is offered what is found there, with glave's own.
+    pub skills: Option<glave_harness::Skills>,
     /// The person's own tools, such as their MCP servers': for their threads alone, never a
     /// thread of anyone signed in from elsewhere.
     pub own: Vec<Arc<dyn ToolSource>>,
@@ -169,6 +172,7 @@ impl<P, L, B> Wiring<P, L, B> {
             workspace,
             web: None,
             tools: Vec::new(),
+            skills: None,
             own: Vec::new(),
             worktree: false,
             hooks: Hooks::default(),
@@ -355,6 +359,7 @@ where
         }
         .with_web(wiring.web)
         .with_tools(wiring.tools)
+        .with_skills(wiring.skills)
         .with_own_tools(wiring.own)
         .with_hooks(wiring.hooks)
         .with_memory_if(wiring.memory)
