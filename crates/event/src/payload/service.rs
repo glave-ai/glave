@@ -271,10 +271,11 @@ mod tests {
         ]
     }
 
-    fn checked(values: &Value) -> Option<String> {
+    /// The field `values` do not fit, or nothing when they all fit.
+    fn checked(values: &Value) -> String {
         let fields = form();
         let values = values.as_object().unwrap();
-        misfit(&fields, values).map(str::to_owned)
+        misfit(&fields, values).unwrap_or_default().to_owned()
     }
 
     #[test]
@@ -283,13 +284,9 @@ mod tests {
             checked(&json!({
                 "words": "hi", "count": 2, "sure": true, "one": "a", "many": ["a", "b"]
             })),
-            None
+            ""
         );
-        assert_eq!(
-            checked(&json!({"words": "hi"})),
-            None,
-            "the rest is optional"
-        );
+        assert_eq!(checked(&json!({"words": "hi"})), "", "the rest is optional");
         for (wrong, values) in [
             ("words", json!({})),
             ("words", json!({"words": "  "})),
@@ -302,7 +299,7 @@ mod tests {
             ("many", json!({"words": "w", "many": "a"})),
             ("extra", json!({"words": "w", "extra": 1})),
         ] {
-            assert_eq!(checked(&values).as_deref(), Some(wrong), "{values}");
+            assert_eq!(checked(&values), wrong, "{values}");
         }
     }
 }

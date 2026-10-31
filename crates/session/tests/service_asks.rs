@@ -119,6 +119,6 @@ fn with_no_one_to_answer_it_is_declined_and_nothing_waits() {
         let reply = turn(&server, thread, "file it").await.unwrap();
         assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));
         assert_eq!(source.unasked(), 1);
-        assert!(source.given().is_empty());
+        assert_eq!(source.given(), Vec::new());
     });
 }

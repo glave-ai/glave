@@ -245,6 +245,10 @@ pub fn encode<P: Payload>(header: Header, payload: &P) -> Result<RawEvent, Encod
 
 /// Decodes a stored event, upgrading an old payload version to the latest. Unknown types and
 /// newer versions come back as [`Body::Unknown`] with their bytes untouched.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm for each event type, all in one table"
+)]
 pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
     if raw.glave != ENVELOPE_VERSION {
         return Err(DecodeError::UnsupportedEnvelope {
@@ -332,6 +336,10 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
 impl Event {
     /// Encodes the event back into its stored form: known payloads at their latest version,
     /// unknown ones exactly as they were read.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm for each event type, all in one table"
+    )]
     pub fn to_raw(&self) -> Result<RawEvent, EncodeError> {
         let header = self.header;
         match &self.body {

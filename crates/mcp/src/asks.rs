@@ -132,20 +132,23 @@ impl Asking {
         let bad = |err: serde_json::Error| Unanswered::Failed(format!("{server}: {err}"));
         self.state = asked.state;
         for (key, request) in asked.requests {
-            match request {
-                Asked::Readable(InputRequest::ListRoots(_)) => {
+            let Asked::Readable(request) = request else {
+                self.decline(key, Note::Refused).map_err(bad)?;
+                continue;
+            };
+            match *request {
+                InputRequest::ListRoots(_) => {
                     let roots = serde_json::to_value(client.roots()).map_err(bad)?;
                     self.responses.insert(key, roots);
                 }
-                Asked::Readable(InputRequest::Elicitation(request)) => {
+                InputRequest::Elicitation(request) => {
                     let form = form(&key, request.params);
                     match form.filter(|_| self.forms.len() < MOST_FORMS) {
                         Some(form) => self.forms.push_back(form),
                         None => self.decline(key, Note::Refused).map_err(bad)?,
                     }
                 }
-                Asked::Unreadable => self.decline(key, Note::Refused).map_err(bad)?,
-                Asked::Readable(_) => {
+                _ => {
                     return Err(Unanswered::Failed(format!(
                         "{server} asked for more input, which glave cannot give it yet."
                     )));
@@ -179,7 +182,7 @@ pub(crate) struct InputRound {
 
 /// One request of a round.
 enum Asked {
-    Readable(InputRequest),
+    Readable(Box<InputRequest>),
     /// A form glave cannot read, as one with a field whose format MCP does not know
     /// (`"format": "password"`), which could be asking for anything.
     Unreadable,
@@ -190,7 +193,9 @@ impl From<InputRequiredResult> for InputRound {
         let requests: InputRequests = asked.input_requests.unwrap_or_default();
         let requests = requests.into_iter();
         Self {
-            requests: requests.map(|(k, r)| (k, Asked::Readable(r))).collect(),
+            requests: requests
+                .map(|(key, request)| (key, Asked::Readable(Box::new(request))))
+                .collect(),
             state: asked.request_state,
         }
     }
@@ -209,7 +214,7 @@ impl InputRound {
         let mut requests = BTreeMap::new();
         for (key, request) in listed.into_iter().flatten() {
             let asked = match serde_json::from_value(request.clone()) {
-                Ok(readable) => Asked::Readable(readable),
+                Ok(readable) => Asked::Readable(Box::new(readable)),
                 Err(_) if request.get("method")?.as_str()? == "elicitation/create" => {
                     Asked::Unreadable
                 }

@@ -434,11 +434,7 @@ impl TestServer {
         }
         let what = argument(request, "what");
         let state = request.request_state.as_deref();
-        let again = match (what.as_str(), state) {
-            ("forever", _) => true,
-            ("twice", Some("first")) => true,
-            _ => false,
-        };
+        let again = what == "forever" || (what == "twice" && state == Some("first"));
         let Some(given) = request.input_responses.as_ref().filter(|_| !again) else {
             self.heard(request);
             let asks = asks(&what, state).map_err(|err| failed(err.to_string()))?;

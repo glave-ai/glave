@@ -328,7 +328,7 @@ fn with_no_one_to_answer_the_source_declines_and_nothing_waits() {
         let ended = turn(&harness, &mut thread, "file it").await;
         assert_eq!(ended.outcome, Outcome::Completed);
         assert_eq!(source.unasked(), 1);
-        assert!(source.given().is_empty());
+        assert_eq!(source.given(), Vec::new());
         let events = events(harness.log(), thread.id).await;
         assert!(!kinds(&events).contains(&"service.asked"));
     });
@@ -360,6 +360,6 @@ fn a_subagents_call_never_reaches_the_person() {
         let ended = turn(&harness, &mut thread, "file it").await;
         assert_eq!(ended.outcome, Outcome::Completed);
         assert_eq!(source.unasked(), 1);
-        assert!(source.given().is_empty());
+        assert_eq!(source.given(), Vec::new());
     });
 }

@@ -5,15 +5,13 @@
 //! Where no one can answer, a source declines for them. What was typed, and what the source
 //! keeps meanwhile, stay in blobs the events point to: neither a client nor the model reads them.
 
-use std::sync::Arc;
-
 use glave_event::{
-    Arguments, BlobRef, Body, CallId, Event, Principal, PrincipalId, Seq, ServiceAnswer,
-    ServiceAnswered, ServiceAsked, ServiceOutcome, ThreadId, misfit,
+    BlobRef, Body, CallId, Event, Principal, PrincipalId, Seq, ServiceAnswer, ServiceAnswered,
+    ServiceAsked, ServiceOutcome, ThreadId, misfit,
 };
 use glave_ports::{
-    BlobStore, Called, EventLog, ModelProvider, Pieces, Scope, ServiceAsks, ServiceGiven,
-    ToolOutput, ToolSource, WaitKind, read_all,
+    BlobStore, EventLog, ModelProvider, Pieces, Scope, ServiceAsks, ServiceGiven, ToolOutput,
+    WaitKind, read_all,
 };
 use serde::Serialize;
 
@@ -196,6 +194,10 @@ where
     /// there waits for it, as when it asked something else since, or another answer came first,
     /// and when it does not fit what was asked. The turn goes on from the log
     /// ([`Harness::go_on`]).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "where it goes, what it answers, the answer, and who gave it"
+    )]
     pub async fn answer_service(
         &self,
         scope: Scope,
@@ -231,23 +233,5 @@ where
             by: by(&view, person),
         };
         self.answer_with(scope, id, &view, &answered, refused).await
-    }
-
-    /// Runs one call on `source`: where a person can be asked, it may come back with what the
-    /// service asks them; otherwise the source declines for them.
-    pub(crate) async fn call_source(
-        &self,
-        thread: &Thread,
-        source: &Arc<dyn ToolSource>,
-        tool: &str,
-        arguments: &Arguments,
-        given: Option<ServiceGiven>,
-        cancel: &Cancel,
-    ) -> Called {
-        if given.is_some() || self.someone_answers(thread) {
-            source.call_asking(tool, arguments, given, cancel).await
-        } else {
-            Called::Done(source.call(tool, arguments, cancel).await)
-        }
     }
 }

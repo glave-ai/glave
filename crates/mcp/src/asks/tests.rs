@@ -3,7 +3,7 @@ use serde_json::json;
 
 use super::*;
 
-fn form_of(schema: Value, message: &str) -> Option<Form> {
+fn form_of(schema: &Value, message: &str) -> Option<Form> {
     let params = json!({"mode": "form", "message": message, "requestedSchema": schema});
     form("k", serde_json::from_value(params).unwrap())
 }
@@ -30,7 +30,7 @@ fn a_field_that_asks_for_a_secret_is_refused() {
         ("value", "x", "your credentials"),
     ] {
         assert!(
-            form_of(text_field(name, title, description), "Which?").is_none(),
+            form_of(&text_field(name, title, description), "Which?").is_none(),
             "{name} {title} {description}"
         );
     }
@@ -46,7 +46,7 @@ fn a_field_that_only_sounds_near_a_secret_is_not() {
         ("monkey", "Monkey", "x"),
     ] {
         assert!(
-            form_of(text_field(name, title, description), "Which?").is_some(),
+            form_of(&text_field(name, title, description), "Which?").is_some(),
             "{name} {title} {description}"
         );
     }
@@ -55,11 +55,11 @@ fn a_field_that_only_sounds_near_a_secret_is_not() {
 #[test]
 fn a_message_that_asks_for_a_secret_is_refused_where_it_could_be_typed() {
     let typed = text_field("value", "Value", "x");
-    assert!(form_of(typed.clone(), "Please enter your password").is_none());
-    assert!(form_of(typed, "Which label?").is_some());
+    assert!(form_of(&typed, "Please enter your password").is_none());
+    assert!(form_of(&typed, "Which label?").is_some());
     let yes_no = json!({"type": "object", "properties": {"go": {"type": "boolean"}}});
     assert!(
-        form_of(yes_no, "Rotate the token?").is_some(),
+        form_of(&yes_no, "Rotate the token?").is_some(),
         "a yes or no gives nothing away"
     );
 }
@@ -75,13 +75,13 @@ fn a_page_to_open_is_refused() {
 
 #[test]
 fn too_much_to_show_is_refused() {
-    assert!(form_of(text_field("a", "A", "x"), &"y".repeat(LONGEST_MESSAGE + 1)).is_none());
-    assert!(form_of(text_field("a", &"y".repeat(LONGEST_WORDS + 1), "x"), "m").is_none());
+    assert!(form_of(&text_field("a", "A", "x"), &"y".repeat(LONGEST_MESSAGE + 1)).is_none());
+    assert!(form_of(&text_field("a", &"y".repeat(LONGEST_WORDS + 1), "x"), "m").is_none());
     let many: serde_json::Map<String, Value> = (0..=MOST_FIELDS)
         .map(|at| (format!("f{at}"), json!({"type": "boolean"})))
         .collect();
     let schema = json!({"type": "object", "properties": many});
-    assert!(form_of(schema, "m").is_none());
+    assert!(form_of(&schema, "m").is_none());
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn every_kind_of_field_reads_as_glaves() {
         "part": {"type": "number"},
         "sure": {"type": "boolean", "default": true},
     }});
-    let form = form_of(schema, "m").unwrap();
+    let form = form_of(&schema, "m").unwrap();
     let kinds: Vec<(&str, &ServiceFieldKind, bool)> = form
         .fields
         .iter()

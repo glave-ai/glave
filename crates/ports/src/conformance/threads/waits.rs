@@ -12,7 +12,7 @@ use super::{Writer, started, turn};
 use crate::conformance::{Verdict as Checked, ensure, thread};
 use crate::log::EventLog;
 use crate::scope::Scope;
-use crate::view::{Standing, ThreadQuery, Wait, WaitKind};
+use crate::view::{Standing, ThreadQuery, Unfinished, Wait, WaitKind};
 
 fn call(id: &str) -> Result<CallId, String> {
     CallId::new(id).map_err(|e| e.to_string())
@@ -220,73 +220,85 @@ async fn service<L: EventLog>(
         writer.next(47, &decided)?,
     ];
     log.append(here, &opened).await.map_err(|e| e.to_string())?;
-    let state = BlobRef {
-        sha256: Sha256::from_digest([7; 32]),
-        bytes: 2,
-        media_type: "application/json".into(),
-    };
     for _round in 0..2 {
-        let asks = ServiceAsked {
-            call_id: call("call_7")?,
-            service: "GitHub".into(),
-            ask: "GitHub asks you, not the model".into(),
-            message: "Which repository?".into(),
-            fields: Vec::new(),
-            state: state.clone(),
-        };
-        let asked = writer.next(47, &asks)?;
-        let asked_at = asked.seq;
-        log.append(here, &[asked])
-            .await
-            .map_err(|e| e.to_string())?;
-        ensure(
-            wait_of(log, here, parent).await?.is_some_and(|wait| {
-                wait.kind == WaitKind::Service
-                    && wait.seq == asked_at
-                    && wait.call.as_str() == "call_7"
-            }),
-            "what a service asks must be the turn's wait, after any approval of its call",
-        )?;
-        let view = log
-            .thread_view(here, parent)
-            .await
-            .map_err(|e| e.to_string())?;
-        ensure(
-            view.and_then(|view| view.turn)
-                .and_then(|turn| turn.unfinished.into_iter().next())
-                .is_some_and(|call| !call.decided),
-            "a call a service waits at must not read as answered",
-        )?;
-        let answer = ServiceAnswered {
-            call_id: call("call_7")?,
-            service: "GitHub".into(),
-            outcome: ServiceOutcome::Declined,
-            told: "You declined GitHub's question".into(),
-            answers: None,
-            by: None,
-        };
-        let answered = writer.next(47, &answer)?;
-        log.append(here, &[answered])
-            .await
-            .map_err(|e| e.to_string())?;
-        ensure(
-            wait_of(log, here, parent).await?.is_none(),
-            "what a service asked, answered, must no longer wait",
-        )?;
-        let view = log
-            .thread_view(here, parent)
-            .await
-            .map_err(|e| e.to_string())?;
-        ensure(
-            view.and_then(|view| view.turn)
-                .and_then(|turn| turn.unfinished.into_iter().next())
-                .is_some_and(|call| call.decided && call.service.is_none()),
-            "an answered service's call must say so until it has a result",
-        )?;
+        service_round(log, here, writer, parent).await?;
     }
     let done = writer.next(47, &completed("call_7")?)?;
     log.append(here, &[done]).await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// The service of `call_7` asks, which is the turn's wait, and is answered, which ends it.
+async fn service_round<L: EventLog>(
+    log: &L,
+    here: &Scope,
+    writer: &mut Writer,
+    parent: glave_event::ThreadId,
+) -> Checked {
+    let asks = ServiceAsked {
+        call_id: call("call_7")?,
+        service: "GitHub".into(),
+        ask: "GitHub asks you, not the model".into(),
+        message: "Which repository?".into(),
+        fields: Vec::new(),
+        state: BlobRef {
+            sha256: Sha256::from_digest([7; 32]),
+            bytes: 2,
+            media_type: "application/json".into(),
+        },
+    };
+    let asked = writer.next(47, &asks)?;
+    let asked_at = asked.seq;
+    log.append(here, &[asked])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        wait_of(log, here, parent).await?.is_some_and(|wait| {
+            wait.kind == WaitKind::Service && wait.seq == asked_at && wait.call.as_str() == "call_7"
+        }),
+        "what a service asks must be the turn's wait, after any approval of its call",
+    )?;
+    let first = first_unfinished(log, here, parent).await?;
+    ensure(
+        first.is_some_and(|call| !call.decided),
+        "a call a service waits at must not read as answered",
+    )?;
+    let answer = ServiceAnswered {
+        call_id: call("call_7")?,
+        service: "GitHub".into(),
+        outcome: ServiceOutcome::Declined,
+        told: "You declined GitHub's question".into(),
+        answers: None,
+        by: None,
+    };
+    let answered = writer.next(47, &answer)?;
+    log.append(here, &[answered])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        wait_of(log, here, parent).await?.is_none(),
+        "what a service asked, answered, must no longer wait",
+    )?;
+    let first = first_unfinished(log, here, parent).await?;
+    ensure(
+        first.is_some_and(|call| call.decided && call.service.is_none()),
+        "an answered service's call must say so until it has a result",
+    )
+}
+
+/// The first call without a result of the turn open in `thread`.
+async fn first_unfinished<L: EventLog>(
+    log: &L,
+    here: &Scope,
+    thread: glave_event::ThreadId,
+) -> Result<Option<Unfinished>, String> {
+    let view = log
+        .thread_view(here, thread)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(view
+        .and_then(|view| view.turn)
+        .and_then(|turn| turn.unfinished.into_iter().next()))
 }
 
 /// A subagent's thread is found by the call that started it, and by no other.

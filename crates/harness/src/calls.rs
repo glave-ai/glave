@@ -9,8 +9,8 @@ use glave_event::{
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
-    Assessment, BlobStore, Called, Effect, EventLog, Message, ModelProvider, ServiceGiven,
-    ToolCall, ToolOutput, ToolSource, describe_call,
+    Assessment, BlobStore, Called, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
+    ToolSource, describe_call,
 };
 
 use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there};
@@ -23,6 +23,7 @@ use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::room::fit;
 use crate::sandbox::{self, Asks};
+use crate::service::Round;
 use crate::tools::Tool;
 use crate::toolset::ToolSet;
 use crate::turn::{Live, Step};
@@ -193,6 +194,19 @@ where
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
+        self.call_offered(thread, call, step, cancel, live).await
+    }
+
+    /// Runs one call of a tool a source offers, asking the person first when its effect needs
+    /// them in this mode or when its source says it does, unless it goes on from an answer.
+    async fn call_offered(
+        &self,
+        thread: &mut Thread,
+        call: &ToolCall,
+        step: &mut Step,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<ToolOutput, HarnessError> {
         let round = step
             .round
             .take_if(|round| round.asked.call_id == call.call_id);
@@ -214,20 +228,11 @@ where
             .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
             .flatten();
         let lifted = outside.as_ref().map(|outside| outside.lifted);
-        if let Some(round) = round {
+        if round.is_some() {
             // Its hooks ran and it was allowed before the service asked: only the answer is left.
-            let given = self.given(thread, round, cancel, &summary, live).await?;
-            return match given {
-                Ok(given) => {
-                    let run = Run {
-                        summary,
-                        given: Some(given),
-                    };
-                    self.run_call(thread, call, &source, &hooked, run, cancel, live)
-                        .await
-                }
-                Err(stopped) => Ok(stopped),
-            };
+            return self
+                .run_call(thread, call, &source, &hooked, summary, round, cancel, live)
+                .await;
         }
         if let Some(answered) = waited {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
@@ -242,12 +247,8 @@ where
             if let Some(lifted) = lifted {
                 step.summary.let_out(lifted);
             }
-            let run = Run {
-                summary,
-                given: None,
-            };
             return self
-                .run_call(thread, call, &source, &hooked, run, cancel, live)
+                .run_call(thread, call, &source, &hooked, summary, None, cancel, live)
                 .await;
         }
         let hook = self.stopped_by_hook(thread, &hooked, &summary, cancel, live);
@@ -284,11 +285,7 @@ where
         if let Some(lifted) = lifted {
             step.summary.let_out(lifted);
         }
-        let run = Run {
-            summary,
-            given: None,
-        };
-        self.run_call(thread, call, &source, &hooked, run, cancel, live)
+        self.run_call(thread, call, &source, &hooked, summary, None, cancel, live)
             .await
     }
 
@@ -326,7 +323,7 @@ where
     /// hooks after.
     #[expect(
         clippy::too_many_arguments,
-        reason = "one call's run: the thread, the call, its source and hook, how it runs, and the turn's switches"
+        reason = "one call's run: the thread, the call, its source and hook, what it shows, what its service last asked, and the turn's switches"
     )]
     async fn run_call(
         &self,
@@ -334,17 +331,23 @@ where
         call: &ToolCall,
         source: &Arc<dyn ToolSource>,
         hooked: &ToolHook<'_>,
-        run: Run,
+        summary: String,
+        round: Option<Round>,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        let Run { summary, given } = run;
-        // A call that goes on from what the person answered was told when it began.
-        if given.is_none() {
+        let given = if let Some(round) = round {
+            // It goes on from what the person answered, and was told when it began.
+            match self.given(thread, round, cancel, &summary, live).await? {
+                Ok(given) => Some(given),
+                Err(stopped) => return Ok(stopped),
+            }
+        } else {
             live(Live::ToolStarted {
                 summary: summary.clone(),
             });
-        }
+            None
+        };
         // A command it starts in the background is recorded under this call.
         thread.commands.calling(call.call_id.clone());
         // A command, a write or an edit may change what the thread opens with, on its person's
@@ -355,7 +358,16 @@ where
         ) {
             crate::homes::changed(thread);
         }
-        let called = self.call_source(thread, source, hooked.tool, &call.arguments, given, cancel);
+        let called = async {
+            if given.is_some() || self.someone_answers(thread) {
+                let arguments = &call.arguments;
+                source
+                    .call_asking(hooked.tool, arguments, given, cancel)
+                    .await
+            } else {
+                Called::Done(source.call(hooked.tool, &call.arguments, cancel).await)
+            }
+        };
         let output = match crate::telemetry::tool_call(hooked.tool, called).await {
             Called::Done(output) => output,
             Called::Asks(asks) => {
@@ -765,13 +777,6 @@ fn settle(
             ))
         }
     }
-}
-
-/// How one call runs, once nothing stops it: what it shows, and what the person answered when it
-/// goes on from what its service asked them.
-struct Run {
-    summary: String,
-    given: Option<ServiceGiven>,
 }
 
 /// What a call needs before it runs: the person's yes, asked as `request`, unless the judge may

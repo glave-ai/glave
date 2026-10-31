@@ -64,6 +64,10 @@ pub(crate) enum Answerer {
 /// Calls a tool with `params` on `server`'s `peer`, within `waits` for each round, giving the
 /// server what it asks for along the way from `client` and `answerer`, until it answers or asks
 /// the person.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one call: where it goes, what it asks, who answers along the way, and its limits"
+)]
 pub(crate) async fn call(
     server: &str,
     peer: &Peer<RoleClient>,
@@ -97,13 +101,13 @@ pub(crate) async fn call(
         params.input_responses = (!responses.is_empty()).then_some(responses);
         params.request_state = asking.state.take();
         let request = ClientRequest::CallToolRequest(CallToolRequest::new(params.clone()));
-        let answered = match send(server, peer, request, cancel, waits).await {
+        let came = match send(server, peer, request, cancel, waits).await {
             Err(Unanswered::Refused(why)) => {
                 return Err(Unanswered::Refused(asking.told_with(server, why)));
             }
             other => other?,
         };
-        let round = match answered {
+        let round = match came {
             ServerResult::CallToolResult(result) => return Ok(Ran::Done(result, asking)),
             ServerResult::InputRequiredResult(asked) => Some(InputRound::from(asked)),
             ServerResult::CustomResult(CustomResult(result)) => InputRound::unread(&result),

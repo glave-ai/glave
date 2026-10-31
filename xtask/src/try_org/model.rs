@@ -67,16 +67,17 @@ fn told_to_ask(request: &Received) -> bool {
     let Ok(body) = serde_json::from_str::<serde_json::Value>(&request.body) else {
         return false;
     };
-    let last = body["messages"].as_array().and_then(|all| all.last());
+    let listed = |key: &str| body.get(key).and_then(serde_json::Value::as_array);
+    let last = listed("messages").and_then(|all| all.last());
     let said = last.is_some_and(|last| {
-        last["role"] == "user" && last.to_string().to_lowercase().contains(ASK)
+        last.get("role").and_then(serde_json::Value::as_str) == Some("user")
+            && last.to_string().to_lowercase().contains(ASK)
     });
-    let offered = body["tools"].as_array().is_some_and(|tools| {
-        tools
-            .iter()
-            .any(|tool| tool["function"]["name"] == ASKING_TOOL)
-    });
-    said && offered
+    let named = |tool: &serde_json::Value| {
+        let name = tool.pointer("/function/name");
+        name.and_then(serde_json::Value::as_str) == Some(ASKING_TOOL)
+    };
+    said && listed("tools").is_some_and(|tools| tools.iter().any(named))
 }
 
 /// A streamed chat answer that calls [`ASKING_TOOL`].
