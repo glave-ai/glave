@@ -113,7 +113,7 @@ pub struct DiskSpace {
 impl DiskSpace {
     /// The share of the disk used above which what can be rebuilt is freed, in percent
     /// (`specs/computers.md`, decision 7).
-    pub const FULL_PERCENT: u64 = 80;
+    const FULL_PERCENT: u64 = 80;
 
     /// Whether more than [`DiskSpace::FULL_PERCENT`] of it is used.
     pub fn full(self) -> bool {
