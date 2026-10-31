@@ -1,16 +1,20 @@
-//! A project on a person's own computer asks them to trust it (`specs/policy.md`, "Project
-//! trust"): from what was last read there, in the thread's summary, with the computer left asleep,
-//! from any client of theirs, and from no one else's.
+//! A project's choices on a person's own computer, read there and kept, and what it asks them to
+//! trust (`specs/policy.md`, "Project trust"): from what was last read there, in the thread's
+//! summary, with the computer left asleep, from any client of theirs, and from no one else's.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
-use glave_ports::{BoxFuture, Caller, Scope};
+use glave_harness::{Homes, ProjectFolders, Settled};
+use glave_ports::{BoxFuture, Caller, ProjectId, Scope};
 use glave_session::ProjectTrust;
-use glave_session::protocol::{ApiError, Reply, Request, Status, TrustAsk, TrustChoice, TrustItem};
+use glave_session::protocol::{
+    ApiError, ModelInfo, Reply, Request, Status, TrustAsk, TrustChoice, TrustItem,
+};
+use serde_json::json;
 
-use crate::homes::{config_kept, later_on, started};
+use crate::homes::{Here, later_on, new_garden, started};
 use crate::support::*;
 
 /// What a person's project there asks, its `config.toml` the whole ask, and each yes kept.
@@ -177,5 +181,75 @@ fn no_one_else_sees_or_answers_what_a_person_s_project_asks() {
             .await;
         assert!(answered.is_err(), "nor the ask theirs to answer");
         assert!(host.trusted.lock().unwrap().is_empty(), "nothing is kept");
+    });
+}
+
+/// What a host makes of a project's `config.toml` on a person's computer: its text, as the
+/// model its threads go to.
+struct ConfigIsTheModel;
+
+impl ProjectFolders for ConfigIsTheModel {
+    fn for_folder<'a>(
+        &'a self,
+        _root: &'a Path,
+        _project: Option<&'a Path>,
+        _trusting: bool,
+    ) -> BoxFuture<'a, Option<String>> {
+        Box::pin(async { None })
+    }
+
+    fn settled_at_home<'a>(
+        &'a self,
+        _scope: Scope,
+        _project: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Settled> {
+        Box::pin(async move {
+            Settled {
+                model: Some(config.trim().to_owned()),
+                ..Settled::default()
+            }
+        })
+    }
+}
+
+/// A server on `log` whose person's new project has `config` as its `config.toml` on their
+/// computer, read by the end of a turn that changed a file there, and kept.
+async fn config_kept(dir: &Path, log: &Shared, config: &str) -> (Tested<Shared>, ProjectId) {
+    let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
+    let answers = vec![answer(None, Some(wrote)), answer(Some("Done."), None)];
+    let homes = Arc::new(Here::new(&dir.join("people")));
+    let first = Setup {
+        homes: Some(Arc::clone(&homes) as Arc<dyn Homes>),
+        ..Setup::new(answers)
+    };
+    let (server, _) = first.build_on(dir, log.clone()).await;
+    let (project, folder) = new_garden(&server).await;
+    let glave = PathBuf::from(&folder.checkout.path).join(".glave");
+    std::fs::create_dir_all(&glave).unwrap();
+    std::fs::write(glave.join("config.toml"), config).unwrap();
+    let thread = started(&server, Some(project.id)).await;
+    turn(&server, thread.id, "write it down").await.unwrap();
+    (server, project.id)
+}
+
+#[test]
+fn a_project_s_choices_are_read_on_its_person_s_computer_and_kept() {
+    let dir = folder("session-homes-choices");
+    block_on!(async {
+        let log = Shared::default();
+        let (server, project) = config_kept(&dir, &log, "chosen\n").await;
+
+        // A server started later goes by what was kept, and nothing is asked of the computer.
+        let mut next = Setup::new(vec![answer(Some("Hello."), None)]);
+        next.models = vec![ModelInfo::new("chosen")];
+        next.project_folders = Some(Arc::new(ConfigIsTheModel));
+        let (later, next) = later_on(next, &dir, &server);
+        let (again, seen) = next.build_on(&dir, log).await;
+        let thread = started(&again, Some(project)).await;
+        turn(&again, thread.id, "hi").await.unwrap();
+        assert_eq!(later.asked(), 0, "nothing asked of their computer");
+        let sent: serde_json::Value = serde_json::from_str(&json(&seen)[0]).unwrap();
+        assert_eq!(sent["model"], "chosen");
     });
 }
