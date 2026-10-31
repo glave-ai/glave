@@ -17,7 +17,7 @@ pub struct ThreadSteps {
 }
 
 /// Tool calls one after another in a turn, with nothing said between them: no message with
-/// words, and no questions for the person.
+/// words, and no questions for the person, the model's or a service's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CallRun {
     /// The `seq` of its first call's `tool.call.requested`.

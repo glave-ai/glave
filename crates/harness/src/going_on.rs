@@ -93,6 +93,7 @@ where
                     repeats: Repeats::default(),
                     summary,
                     answered: open.asked,
+                    round: open.round,
                     proposed: false,
                 };
                 let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());

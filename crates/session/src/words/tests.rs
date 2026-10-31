@@ -576,3 +576,77 @@ fn an_organization_s_name_is_written_again_in_a_listing_of_them() {
         "the name as it is"
     );
 }
+
+#[test]
+fn what_a_service_asks_and_what_came_of_it_are_written_in_the_readers_language() {
+    let asked = serde_json::json!({
+        "call_id": "call_1", "service": "GitHub", "ask": "GitHub asks you, not the model",
+        "message": "Which repository?", "fields": [],
+        "state": {
+            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "bytes": 1, "media_type": "application/json"
+        }
+    });
+    let answered = |outcome: &str, told: &str| {
+        serde_json::json!({
+            "call_id": "call_1", "service": "GitHub", "outcome": outcome, "told": told
+        })
+    };
+    let raw = |kind: &str, data: &serde_json::Value| -> glave_event::RawEvent {
+        let event = serde_json::json!({
+            "glave": 1, "id": "0192f5c2-7000-7000-8000-00000000000e",
+            "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c12", "seq": 14,
+            "at": "2026-10-10T09:02:06.000Z", "type": kind, "v": 1, "data": data
+        });
+        glave_event::RawEvent::from_json(&event.to_string()).unwrap()
+    };
+    let field = |event: &glave_event::RawEvent, name: &str| {
+        let data = serde_json::to_value(&event.data).unwrap();
+        data[name].as_str().unwrap().to_owned()
+    };
+    // What the harness recorded is the catalog's English, so a reader of English reads the same.
+    let english = |sentence: &Sentence| say(Language::English, sentence);
+    let service = || "GitHub".to_owned();
+    assert_eq!(
+        english(&Sentence::ServiceAsks { service: service() }),
+        "GitHub asks you, not the model"
+    );
+    for (outcome, told, sentence) in [
+        (
+            "answered",
+            "You answered GitHub",
+            Sentence::ServiceAnswered { service: service() },
+        ),
+        (
+            "declined",
+            "You declined GitHub's question",
+            Sentence::ServiceDeclined { service: service() },
+        ),
+        (
+            "cancelled",
+            "GitHub's question went unanswered",
+            Sentence::ServiceUnanswered { service: service() },
+        ),
+    ] {
+        assert_eq!(english(&sentence), told);
+        let event = raw("service.answered", &answered(outcome, told));
+        assert!(asks(&event));
+        assert!(event_in(&event, Language::English).is_none());
+        let written = event_in(&event, Language::Accented).unwrap();
+        let said = field(&written, "told");
+        assert!(said.contains("GitHub"), "the name stays as it is: {said}");
+        assert_ne!(said, told);
+    }
+    let event = raw("service.asked", &asked);
+    let written = event_in(&event, Language::Accented).unwrap();
+    let said = field(&written, "ask");
+    assert!(
+        said.contains("GitHub") && said != "GitHub asks you, not the model",
+        "{said}"
+    );
+    assert_eq!(
+        field(&written, "message"),
+        "Which repository?",
+        "the service's own words"
+    );
+}

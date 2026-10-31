@@ -9,7 +9,7 @@ use glave_event::{
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
-    Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
+    Assessment, BlobStore, Called, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
     ToolSource, describe_call,
 };
 
@@ -23,6 +23,7 @@ use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::room::fit;
 use crate::sandbox::{self, Asks};
+use crate::service::Round;
 use crate::tools::Tool;
 use crate::toolset::ToolSet;
 use crate::turn::{Live, Step};
@@ -193,6 +194,22 @@ where
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
+        self.call_offered(thread, call, step, cancel, live).await
+    }
+
+    /// Runs one call of a tool a source offers, asking the person first when its effect needs
+    /// them in this mode or when its source says it does, unless it goes on from an answer.
+    async fn call_offered(
+        &self,
+        thread: &mut Thread,
+        call: &ToolCall,
+        step: &mut Step,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<ToolOutput, HarnessError> {
+        let round = step
+            .round
+            .take_if(|round| round.asked.call_id == call.call_id);
         let waited = step.waited(&call.call_id);
         let tools = &step.toolset;
         let Some((index, info)) = tools.get(&call.tool) else {
@@ -211,6 +228,12 @@ where
             .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
             .flatten();
         let lifted = outside.as_ref().map(|outside| outside.lifted);
+        if round.is_some() {
+            // Its hooks ran and it was allowed before the service asked: only the answer is left.
+            return self
+                .run_call(thread, call, &source, &hooked, summary, round, cancel, live)
+                .await;
+        }
         if let Some(answered) = waited {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
             // would have the moment it came, unless the sandbox changed meanwhile.
@@ -225,7 +248,7 @@ where
                 step.summary.let_out(lifted);
             }
             return self
-                .run_call(thread, call, &source, &hooked, summary, cancel, live)
+                .run_call(thread, call, &source, &hooked, summary, None, cancel, live)
                 .await;
         }
         let hook = self.stopped_by_hook(thread, &hooked, &summary, cancel, live);
@@ -262,7 +285,7 @@ where
         if let Some(lifted) = lifted {
             step.summary.let_out(lifted);
         }
-        self.run_call(thread, call, &source, &hooked, summary, cancel, live)
+        self.run_call(thread, call, &source, &hooked, summary, None, cancel, live)
             .await
     }
 
@@ -300,7 +323,7 @@ where
     /// hooks after.
     #[expect(
         clippy::too_many_arguments,
-        reason = "one call's run: the thread, the call, its source and hook, what it shows, and the turn's switches"
+        reason = "one call's run: the thread, the call, its source and hook, what it shows, what its service last asked, and the turn's switches"
     )]
     async fn run_call(
         &self,
@@ -309,12 +332,22 @@ where
         source: &Arc<dyn ToolSource>,
         hooked: &ToolHook<'_>,
         summary: String,
+        round: Option<Round>,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        live(Live::ToolStarted {
-            summary: summary.clone(),
-        });
+        let given = if let Some(round) = round {
+            // It goes on from what the person answered, and was told when it began.
+            match self.given(thread, round, cancel, &summary, live).await? {
+                Ok(given) => Some(given),
+                Err(stopped) => return Ok(stopped),
+            }
+        } else {
+            live(Live::ToolStarted {
+                summary: summary.clone(),
+            });
+            None
+        };
         // A command it starts in the background is recorded under this call.
         thread.commands.calling(call.call_id.clone());
         // A command, a write or an edit may change what the thread opens with, on its person's
@@ -325,8 +358,24 @@ where
         ) {
             crate::homes::changed(thread);
         }
-        let output = source.call(hooked.tool, &call.arguments, cancel);
-        let output = crate::telemetry::tool_call(hooked.tool, output).await;
+        let called = async {
+            if given.is_some() || self.someone_answers(thread) {
+                let arguments = &call.arguments;
+                source
+                    .call_asking(hooked.tool, arguments, given, cancel)
+                    .await
+            } else {
+                Called::Done(source.call(hooked.tool, &call.arguments, cancel).await)
+            }
+        };
+        let output = match crate::telemetry::tool_call(hooked.tool, called).await {
+            Called::Done(output) => output,
+            Called::Asks(asks) => {
+                // The turn stops here: the answer comes to the log, and the turn goes on from it.
+                self.record_asked(thread, &call.call_id, asks).await?;
+                return Err(HarnessError::Waits(thread.id));
+            }
+        };
         live(Live::ToolFinished {
             summary,
             is_error: output.is_error,

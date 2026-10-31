@@ -8,7 +8,7 @@
 use std::time::Instant;
 
 use glave_event::{Outcome, ThreadId, TraceId, Verdict};
-use glave_ports::ToolOutput;
+use glave_ports::Called;
 use glave_ports::computer::Ending;
 use tracing::{Instrument as _, Span, field};
 
@@ -46,11 +46,14 @@ pub(crate) fn turn_ended(span: &Span, began: Instant, ended: Option<(Outcome, u3
 }
 
 /// Runs `call`, a call of the tool `tool`, in its span, and counts it.
-pub(crate) async fn tool_call(tool: &str, call: impl Future<Output = ToolOutput>) -> ToolOutput {
+pub(crate) async fn tool_call(tool: &str, call: impl Future<Output = Called>) -> Called {
     let span = tracing::info_span!("tool.call", tool, is_error = field::Empty);
-    let output = call.instrument(span.clone()).await;
-    tool_ended(&span, tool, output.is_error);
-    output
+    let called = call.instrument(span.clone()).await;
+    // One that stops at what its service asks ends when it goes on.
+    if let Called::Done(output) = &called {
+        tool_ended(&span, tool, output.is_error);
+    }
+    called
 }
 
 /// Records how a call of `tool` ended, on its span and as metrics.

@@ -1,14 +1,24 @@
 import type { ChangedFile, Outcome, ReplySources, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
-import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
+import type {
+  ApprovalItem,
+  Draft,
+  MessageItem,
+  QuestionItem,
+  ServiceItem,
+  ThreadItem,
+} from './conversation';
 import { roomFor } from './files';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
 
-/** What waits for the person in a turn: an approval not yet decided, a question not answered. */
-export type Waiting = ApprovalItem | QuestionItem;
+/**
+ * What waits for the person in a turn: an approval not yet decided, a question not answered, what
+ * a service asks.
+ */
+export type Waiting = ApprovalItem | QuestionItem | ServiceItem;
 
 /** What a turn's work came to, in a line: its status, the facts, and how many steps. */
 export interface Receipt {
@@ -74,7 +84,8 @@ const STOPPED: readonly Outcome[] = ['cancelled', 'interrupted', 'limit_reached'
 function waits(item: ThreadItem): item is Waiting {
   return (
     (item.kind === 'approval' && item.decision === null) ||
-    (item.kind === 'question' && item.answers === null)
+    (item.kind === 'question' && item.answers === null) ||
+    (item.kind === 'service' && item.told === null)
   );
 }
 

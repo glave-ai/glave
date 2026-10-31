@@ -18,7 +18,7 @@ pub use turn::{AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Unfinished, Wait, 
 
 /// The version of [`ThreadView`]'s folding. Stores rebuild every view when the version they
 /// built with is older.
-pub const THREAD_VIEW_VERSION: u32 = 4;
+pub const THREAD_VIEW_VERSION: u32 = 5;
 
 /// The longest title taken from a thread's first message, in characters.
 pub const TITLE_CHARS: usize = 80;

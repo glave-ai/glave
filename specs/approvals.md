@@ -152,6 +152,17 @@ command = "cargo fmt --all"
 
 Later: `additionalContext` (a hook adding text for the model), `updatedInput`, hooks at session start and end and around compaction, and hooks an organization provides.
 
+## A service asks
+
+A connected service can need something from the person in the middle of a call: which repository, whether to go on (MCP's elicitation). That is the person and the service talking, past the model, so its answer does not pass through the model.
+
+- **A durable wait, as an approval is.** The turn records `service.asked` and stops, holding nothing; `service/answer` records the answer in the log; the turn goes on from the log by making the call again with that answer, past its hooks and its approval, which it passed before it asked. An approved call that then asks waits at the service, not the approval: the latest thing asked is what the call waits at, so a waiting form never reads as answered, and is kept through a restart.
+- **The server's input rounds.** Only a server on MCP 2026-07-28 reaches the person: it asks in a round and holds nothing. An older server asks and waits with the call open, so it is declined at once, and nothing hangs. The rounds stay capped at ten across every wait. One round may ask several things: each reaches the person on its own, in order, one at a time.
+- **Who asks is plain.** The card names the service in a sentence of glave's, and shows its words as its own, so a tool can't pass as the model or as glave. Only the fields it asks for: choices, text, numbers, yes or no.
+- **What is typed goes to the service alone.** It is kept in a blob the event points to, so no client reads it back and search never finds it; what the service needs back with it too. The model is told that the person answered or declined, never what they typed. A service that repeats the answer in its result shows it to the model itself; that is the service's own to choose.
+- **Never a password or a key.** glave declines for the person, with no card, when a form names one by a field's name, title or description, or in its message where it could be typed; when it asks them to open a page, which glave does not do; when it cannot be read (a format MCP does not know, such as `password`); or when it is too much to show. The model is told it was declined, and not to ask for it itself. This catches a service that says what it wants; one that hides it gets past, as it could in a chat.
+- **With no one to ask, glave declines.** A task, a subagent, a script, and a gateway serving its tools on: the call goes on and the model is told, and nothing is recorded as the person's. Stopping a turn that waits records `cancelled`, and the call ends as one the turn never ran.
+
 ## No one at the keyboard
 
 Whether someone can answer is a fact about the run, not a mode. With a terminal, glave asks there: once, always in this thread, or no. Without one (scripts, CI, piped input), anything that would ask is not run, and:

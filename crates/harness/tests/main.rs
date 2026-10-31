@@ -34,6 +34,7 @@ mod plan;
 mod project_folders;
 mod purposes;
 mod retry;
+mod service;
 mod skills;
 mod sources;
 mod steer;

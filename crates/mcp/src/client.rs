@@ -12,8 +12,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rmcp::ClientHandler;
 use rmcp::model::{
-    ClientCapabilities, ClientConfig, Implementation, ListRootsResult, Root, RootsCapabilities,
-    ServerNotification, SubscriptionFilter,
+    ClientCapabilities, ClientConfig, ElicitationCapability, FormElicitationCapability,
+    Implementation, ListRootsResult, Root, RootsCapabilities, ServerNotification,
+    SubscriptionFilter,
 };
 use rmcp::service::{NotificationContext, Peer, RequestContext, RoleClient, Subscription};
 
@@ -58,6 +59,11 @@ impl ClientHandler for Client {
             // project of their own.
             capabilities.roots = Some(RootsCapabilities::default());
         }
+        // A form the person answers, inside a call on MCP 2026-07-28 (`asks.rs`). A server on the
+        // older protocol that asks at any time, which would hold the turn open while it waits, is
+        // declined: rmcp's `create_elicitation` does that unless a client says otherwise.
+        capabilities.elicitation =
+            Some(ElicitationCapability::new().with_form(FormElicitationCapability::new()));
         ClientConfig::new(
             capabilities,
             Implementation::new("glave", env!("CARGO_PKG_VERSION")),

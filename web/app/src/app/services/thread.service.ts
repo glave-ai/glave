@@ -703,7 +703,8 @@ export class ThreadService {
     this.streaming.set(0);
   }
 
-  private async act(call: () => Promise<unknown>): Promise<void> {
+  /** Runs `call`, an answer to what the turn waits for, then catches up on what it recorded. */
+  async act(call: () => Promise<unknown>): Promise<void> {
     this.deciding.set(true);
     try {
       await call();

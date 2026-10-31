@@ -1,0 +1,31 @@
+@use '../../styles/needs-you';
+@include needs-you.card;
+
+// Once answered it collapses to its line, nothing around it.
+:host(.glz-service-card--answered) {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.who {
+  font-weight: var(--glz-weight-bold);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+}
+
+.name {
+  font-weight: var(--glz-weight-bold);
+}
+
+.description,
+.note,
+.told {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

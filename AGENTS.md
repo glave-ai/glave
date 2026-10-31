@@ -97,7 +97,7 @@ cargo xtask unused-pub  # what a library crate exports has a caller outside it: 
 cargo xtask package-age # every package version new in Cargo.lock or web/package-lock.json was published at least 7 days ago
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
-cargo xtask try-org     # a throwaway glave people on this computer share (localhost origin, key file in a temp folder, a stand-in model that answers and says what each answer cost, and stands in for OpenRouter for an account connected with any key): try invites, Admin, chats and the model picker's filters by hand; --credits, organizations' credits too
+cargo xtask try-org     # a throwaway glave people on this computer share (localhost origin, key file in a temp folder, a stand-in model that answers and says what each answer cost, stands in for OpenRouter for an account connected with any key, and told to "ask me something" calls a service's tool that asks the person): try invites, Admin, chats and the model picker's filters by hand; --credits, organizations' credits too
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
 cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents); the endpoint from .env (or `--env-file <path>`)
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)

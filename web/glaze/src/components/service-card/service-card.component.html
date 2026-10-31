@@ -1,0 +1,100 @@
+@if (told(); as line) {
+  <p class="told" [attr.data-testid]="ids().told">{{ line }}</p>
+} @else {
+  <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
+  <p class="who" [attr.data-testid]="ids().who">{{ who() }}</p>
+  <p class="summary" dir="auto" [attr.data-testid]="ids().message">{{ message() }}</p>
+  @for (field of shown(); track field.name) {
+    <div
+      class="field"
+      role="group"
+      [attr.aria-labelledby]="field.id"
+      [attr.data-testid]="ids().field"
+    >
+      @if (field.typed) {
+        <label class="name" dir="auto" [id]="field.id" [attr.for]="field.inputId">
+          {{ field.label }}
+        </label>
+      } @else {
+        <p class="name" dir="auto" [id]="field.id">{{ field.label }}</p>
+      }
+      @if (field.description) {
+        <p class="description" dir="auto">{{ field.description }}</p>
+      }
+      @switch (field.control) {
+        @case ('text') {
+          <input
+            class="glz-input"
+            [id]="field.inputId"
+            [value]="field.text"
+            (input)="typed(field.name, $event)"
+          />
+        }
+        @case ('number') {
+          <input
+            class="glz-input"
+            type="number"
+            [id]="field.inputId"
+            [step]="field.step"
+            [value]="field.text"
+            (input)="typed(field.name, $event)"
+          />
+        }
+        @case ('yes_no') {
+          <glz-radio-group
+            [label]="field.label"
+            [value]="field.picked"
+            (valueChange)="pickYesNo(field.name, $event)"
+          >
+            <glz-radio [attr.data-testid]="ids().choice" [value]="yes">{{ yesLabel() }}</glz-radio>
+            <glz-radio [attr.data-testid]="ids().choice" [value]="no">{{ noLabel() }}</glz-radio>
+          </glz-radio-group>
+        }
+        @case ('one') {
+          <glz-radio-group
+            [label]="field.label"
+            [value]="field.picked"
+            (valueChange)="pickOne(field.name, $event)"
+          >
+            @for (option of field.options; track option.value) {
+              <glz-radio [attr.data-testid]="ids().choice" [value]="option.value">
+                {{ option.label }}
+              </glz-radio>
+            }
+          </glz-radio-group>
+        }
+        @case ('many') {
+          @for (option of field.options; track option.value) {
+            <glz-checkbox
+              [testId]="ids().choice"
+              [checked]="option.checked"
+              (checkedChange)="pickMany(field.name, option.value, $event)"
+            >
+              {{ option.label }}
+            </glz-checkbox>
+          }
+        }
+      }
+    </div>
+  }
+  <p class="note" [attr.data-testid]="ids().note">{{ note() }}</p>
+  <div class="actions">
+    <button
+      glzButton
+      variant="primary"
+      [attr.data-testid]="ids().send"
+      [disabled]="cannotSend()"
+      (click)="send()"
+    >
+      {{ sendLabel() }}
+    </button>
+    <button
+      glzButton
+      [attr.data-testid]="ids().decline"
+      [disabled]="busy()"
+      (click)="decline.emit()"
+    >
+      {{ declineLabel() }}
+    </button>
+  </div>
+}

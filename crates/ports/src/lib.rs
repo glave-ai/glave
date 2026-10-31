@@ -70,8 +70,8 @@ pub use scope::{Located, OrgId, ProjectId, Scope};
 pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
-    Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolFile, ToolInfo,
-    ToolOutput, ToolSource, describe_call, unless_cancelled,
+    Assessment, BoxFuture, Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ServiceGiven,
+    ToolError, ToolFile, ToolInfo, ToolOutput, ToolSource, describe_call, unless_cancelled,
 };
 pub use view::{
     AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Standing, THREAD_VIEW_VERSION, TITLE_CHARS,
