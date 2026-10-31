@@ -452,6 +452,10 @@
             "null"
           ]
         },
+        "signed_out": {
+          "description": "Its sign-in has ended, with nothing left to renew it: only signing in again brings it\nback.",
+          "type": "boolean"
+        },
         "url": {
           "description": "Where the host is: `https://github.com`.",
           "type": "string"

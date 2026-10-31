@@ -39,6 +39,7 @@ export class GithubRowComponent {
   protected readonly copy = {
     github: 'GitHub',
     offer: $localize`:@@githubRow.offer:Let glave work in your repositories: clone, push and open pull requests.`,
+    signedOut: $localize`:@@githubRow.signedOut:Your sign-in expired. Connect again to keep working in your repositories.`,
     connect: $localize`:@@githubRow.connect:Connect`,
     starting: $localize`:@@githubRow.starting:Starting…`,
     enter: $localize`:@@githubRow.enter:Enter this code on GitHub`,
@@ -55,6 +56,10 @@ export class GithubRowComponent {
     () =>
       this.credentials.accounts().find((account) => account.url === this.credentials.github()) ??
       null,
+  );
+  /** What the GitHub row offers: to connect, or again once its sign-in ended for good. */
+  protected readonly offer = computed(() =>
+    this.github()?.signed_out === true ? this.copy.signedOut : this.copy.offer,
   );
   /** What the GitHub row says once connected. */
   protected readonly connected = computed(() => {
@@ -81,7 +86,8 @@ export class GithubRowComponent {
     if (this.code() !== null) {
       return 'signing';
     }
-    return this.github() === null ? 'offer' : 'connected';
+    const github = this.github();
+    return github === null || github.signed_out === true ? 'offer' : 'connected';
   });
   protected readonly connectLabel = computed(() =>
     this.starting() ? this.copy.starting : this.copy.connect,

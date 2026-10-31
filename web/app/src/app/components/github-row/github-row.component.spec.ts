@@ -185,6 +185,20 @@ describe('GithubRowComponent', () => {
     }
   });
 
+  it('offers Connect again once its sign-in has ended with nothing left to renew it', async () => {
+    const github: CredentialInfo = { ...GITHUB, signed_out: true };
+    const fake = new FakeSession().answer('credential/list', {
+      credentials: [github],
+      github: GITHUB_SIGN_IN,
+    });
+    const { root } = await rendered(fake);
+    expect(byTestId(root, 'github-offer')?.textContent.trim()).toBe(
+      'Your sign-in expired. Connect again to keep working in your repositories.',
+    );
+    expect(byTestId(root, 'github-connect')).not.toBeNull();
+    expect(byTestId(root, 'github-connected')).toBeNull();
+  });
+
   it('is the GitHub Enterprise Server the server signs in at, not github.com alone', async () => {
     const enterprise: CredentialInfo = { ...GITHUB, url: 'https://github.example.com' };
     const fake = new FakeSession().answer('credential/list', {

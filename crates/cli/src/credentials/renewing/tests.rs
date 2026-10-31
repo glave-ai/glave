@@ -6,11 +6,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Principal, Renewal, Secret};
+use glave_ports::computer::{CredentialAsk, GitCredentials as _};
 use glave_ports::testing::{FakeHttp, fake_secret};
 use glave_ports::{Clock as _, SystemClock};
 use serde_json::json;
 
 use super::*;
+use crate::credentials::Hosts;
+
+/// The app a test's sign-ins come through.
+const APP: &str = "Iv23li0test";
 
 /// A GitHub App's sign-in to `url`, about to expire.
 fn signed_in(url: &str) -> CredentialConnected {
@@ -29,6 +34,7 @@ fn signed_in(url: &str) -> CredentialConnected {
         renewal: Some(Renewal {
             expires: At::from(soon),
             refresh: Secret::new(fake_secret("ghr_")),
+            client_id: APP.to_owned(),
         }),
         by: Principal::glave(),
     }
@@ -36,7 +42,7 @@ fn signed_in(url: &str) -> CredentialConnected {
 
 fn github(url: &str) -> Github {
     let file = GithubFile {
-        client_id: "Iv23li0test".into(),
+        client_id: APP.into(),
         app: None,
         url: Some(url.to_owned()),
     };
@@ -309,5 +315,70 @@ fn a_renewal_not_kept_goes_once_its_sign_in_is_no_longer_kept() {
             None::<Renewing<Counted>>
         });
         assert_eq!(again.await, None);
+    });
+}
+
+/// `url`'s `[github]` app, another than the one that issued [`signed_in`]'s sign-ins.
+fn another_app(url: &str) -> GithubFile {
+    GithubFile {
+        client_id: "Iv23li0other".into(),
+        app: None,
+        url: Some(url.to_owned()),
+    }
+}
+
+#[test]
+fn a_sign_in_goes_only_to_the_app_that_issued_it_and_with_none_left_is_signed_out() {
+    let fake = FakeHttp::start(Vec::new()).unwrap();
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
+    block_on(async {
+        let first = signed_in(&fake.url);
+        ledger.keep_credential(&first).await.unwrap();
+        let hosts = Hosts::open(ledger.clone(), Some(&another_app(&fake.url)))
+            .await
+            .unwrap();
+        let (protocol, host) = fake.url.split_once("://").unwrap();
+        let ask = CredentialAsk {
+            protocol: protocol.to_owned(),
+            host: host.to_owned(),
+            path: None,
+        };
+
+        // Good for a minute yet, and served as it is: nothing asks the app that didn't issue it.
+        let served = hosts.request(&ask).await.unwrap();
+        assert_eq!(served.password.expose(), first.token.expose());
+        assert!(!hosts.signed_out(&first));
+
+        let past = SystemClock
+            .now()
+            .checked_sub(jiff::SignedDuration::from_secs(60))
+            .unwrap();
+        let mut expired = first.clone();
+        if let Some(renewal) = &mut expired.renewal {
+            renewal.expires = At::from(past);
+        }
+        assert!(hosts.signed_out(&expired), "only signing in brings it back");
+        assert!(hosts.renewer(&expired).is_none());
+    });
+    assert_eq!(fake.received().len(), 0, "no refresh token left this glave");
+}
+
+#[test]
+fn a_sign_in_through_glave_s_own_app_renews_through_it_whatever_github_names_since() {
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
+    block_on(async {
+        let hosts = Hosts::open(ledger, Some(&another_app("https://github.com")))
+            .await
+            .unwrap();
+        let mut own = signed_in("https://github.com");
+        if let Some(renewal) = &mut own.renewal {
+            renewal.client_id = super::super::device::OWN_CLIENT_ID.to_owned();
+        }
+        assert!(hosts.renewer(&own).is_some());
+        // Before glave kept who issued it: nothing renews it.
+        if let Some(renewal) = &mut own.renewal {
+            renewal.client_id = String::new();
+        }
+        assert!(hosts.renewer(&own).is_none());
     });
 }

@@ -32,7 +32,7 @@
           <span class="detail" data-testid="github-connected">{{ connected() }}</span>
         }
         @default {
-          <span class="detail">{{ copy.offer }}</span>
+          <span class="detail" data-testid="github-offer">{{ offer() }}</span>
         }
       }
       @switch (state()) {

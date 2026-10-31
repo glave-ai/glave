@@ -273,6 +273,7 @@ mod tests {
             url: url.to_owned(),
             login: Some("ana".to_owned()),
             can,
+            signed_out: false,
         }
     }
 

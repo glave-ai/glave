@@ -41,6 +41,7 @@ impl Hosts {
             url,
             login,
             can: None,
+            signed_out: false,
         };
         kept.push(info.clone());
         info

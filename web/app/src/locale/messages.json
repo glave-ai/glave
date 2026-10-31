@@ -104,6 +104,7 @@
     "githubRow.offer": "Let glave work in your repositories: clone, push and open pull requests.",
     "githubRow.open": "Copy code and open GitHub",
     "githubRow.repositories": "Choose repositories",
+    "githubRow.signedOut": "Your sign-in expired. Connect again to keep working in your repositories.",
     "githubRow.starting": "Starting…",
     "githubRow.waiting": "Waiting while you approve glave on GitHub.",
     "githubRow.works": "glave can clone, push and open pull requests in the repositories you chose.",

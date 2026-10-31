@@ -70,6 +70,10 @@ pub struct Renewal {
     pub expires: At,
     #[serde(serialize_with = "crate::secret::serialize_exposed")]
     pub refresh: Secret,
+    /// The GitHub App that issued it, the only one that can renew it. Empty on a sign-in from
+    /// before glave kept this, which no app renews: its person signs in again.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_id: String,
 }
 
 /// A git host was removed: its token was destroyed with it. Content-free.

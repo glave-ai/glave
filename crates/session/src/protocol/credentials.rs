@@ -19,6 +19,10 @@ pub struct CredentialInfo {
     /// host did not say, so a client claims nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub can: Option<Vec<Ability>>,
+    /// Its sign-in has ended, with nothing left to renew it: only signing in again brings it
+    /// back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub signed_out: bool,
 }
 
 /// One thing glave can do with a connected host. Whether an action runs without asking is
