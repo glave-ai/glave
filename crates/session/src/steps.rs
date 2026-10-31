@@ -74,6 +74,8 @@ impl Reading {
             Body::ToolCallRequested(call) if CallKind::of(&call.tool) == CallKind::Question => {
                 self.open = false;
             }
+            // What a service asks stands between runs too, as what the person answers in place.
+            Body::ServiceAsked(_) => self.open = false,
             Body::ToolCallRequested(call) => {
                 let made = Call {
                     path: path_of(call.kind, &call.arguments),

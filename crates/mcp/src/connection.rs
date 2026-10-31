@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use glave_event::Arguments;
 use glave_ports::{
-    Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput, ToolSpec,
-    unless_cancelled,
+    Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ToolError, ToolInfo, ToolOutput,
+    ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, JsonObject,
@@ -23,7 +23,7 @@ use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::call::{Unanswered, Waits, call};
+use crate::call::{Answerer, Ran, Unanswered, Waits, call};
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
@@ -239,7 +239,8 @@ impl Connection {
     }
 
     /// Calls `tool` with `arguments` within `waits`, giving back the server's own result, for a
-    /// gateway that serves its tools on. A call that is dropped leaves the server to finish it.
+    /// gateway that serves its tools on, with no way to reach the person: what the server asks is
+    /// declined. A call that is dropped leaves the server to finish it.
     pub(crate) async fn forward(
         &self,
         tool: &str,
@@ -257,11 +258,14 @@ impl Connection {
             &self.peer,
             &self.client,
             params,
+            Answerer::NoOne,
             &NeverCancelled,
             waits,
         );
         match called.await {
-            Ok((result, _)) => Ok(result),
+            Ok(Ran::Done(result, _)) => Ok(result),
+            // With no one to answer, it never asks.
+            Ok(Ran::Asks(..)) => Err(format!("{} answered something else.", self.name)),
             Err(Unanswered::Refused(why) | Unanswered::Failed(why)) => Err(why),
             Err(Unanswered::Cancelled) => Err(CANCELLED.to_owned()),
         }
@@ -355,16 +359,18 @@ impl Connection {
         }
     }
 
-    /// Calls the tool the model knows as `name`, within `waits`: `Ok` with what the server
-    /// answered, a result or an error in its own words, untrusted when the tool reaches an
-    /// open world; `Err` with glave's own words when it gave no answer.
+    /// Calls the tool the model knows as `name`, within `waits`, asking `answerer` what the server
+    /// asks: `Ok` with what the server answered, a result or an error in its own words, untrusted
+    /// when the tool reaches an open world, or what it asks; `Err` with glave's own words when it
+    /// gave no answer.
     pub(crate) async fn call(
         &self,
         name: &str,
         arguments: &Arguments,
+        answerer: Answerer,
         cancel: &dyn Cancellation,
         waits: Waits,
-    ) -> Result<ToolOutput, ToolOutput> {
+    ) -> Result<Called, ToolOutput> {
         let Some((tool, open_world)) = self
             .named
             .lock()
@@ -381,15 +387,33 @@ impl Connection {
             return Err(ToolOutput::text(true, "The arguments were not valid JSON."));
         };
         let params = CallToolRequestParams::new(tool).with_arguments(arguments.clone());
-        let called = call(&self.name, &self.peer, &self.client, params, cancel, waits).await;
-        let mut output = match called {
-            Ok((result, asking)) => asking.told(&self.name, output(&result)),
+        let called = call(
+            &self.name,
+            &self.peer,
+            &self.client,
+            params,
+            answerer,
+            cancel,
+            waits,
+        );
+        let mut output = match called.await {
+            Ok(Ran::Done(result, asking)) => asking.told(&self.name, output(&result)),
+            Ok(Ran::Asks(form, asking)) => {
+                let state = serde_json::to_value(&asking)
+                    .map_err(|err| ToolOutput::text(true, format!("{}: {err}", self.name)))?;
+                return Ok(Called::Asks(ServiceAsks {
+                    service: self.name.clone(),
+                    message: form.message,
+                    fields: form.fields,
+                    state,
+                }));
+            }
             Err(Unanswered::Refused(why)) => ToolOutput::text(true, why),
             Err(Unanswered::Failed(why)) => return Err(ToolOutput::text(true, why)),
             Err(Unanswered::Cancelled) => return Err(ToolOutput::text(true, CANCELLED)),
         };
         output.untrusted |= open_world;
-        Ok(output)
+        Ok(Called::Done(output))
     }
 }
 

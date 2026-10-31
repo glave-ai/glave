@@ -9,13 +9,16 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use glave_event::{
-    ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode,
+    ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, Seq, ServiceAnswer,
+    ServiceAsked, ThreadId, decode,
 };
 use glave_harness::{Cancel, Goal, Permissions, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
+use glave_session::protocol::{
+    Answer, ApiError, ErrorData, Notification, Reply, Request, Update, code,
+};
 use glave_session::{Sent, Server, TurnItem, TurnStream};
 
 use crate::asking;
@@ -281,6 +284,15 @@ impl Client<'_> {
                     return false;
                 };
                 match decoded.body {
+                    // A subagent's never asks: no one is there for it.
+                    Body::ServiceAsked(asked) if *thread == self.thread => {
+                        return self
+                            .answer_service(decoded.header.seq, &asked, printer, interrupt)
+                            .await;
+                    }
+                    Body::ServiceAnswered(answered) if *thread == self.thread => {
+                        printer.status(&answered.told);
+                    }
                     // Asked about once pending; dropped once decided.
                     Body::ApprovalRequested(asked) => {
                         requested.insert((*thread, asked.call_id.clone()), asked);
@@ -370,6 +382,64 @@ impl Client<'_> {
         };
         if let Err(error) = self.server.request(answer).await {
             printer.error(&error.to_string());
+        }
+        false
+    }
+
+    /// Puts what a service asks to the person, a field at a time, and sends what they answer, or
+    /// that they declined. True when the person pressed Ctrl-C instead of answering.
+    async fn answer_service(
+        &self,
+        at: Seq,
+        asked: &ServiceAsked,
+        printer: &mut Printer,
+        interrupt: &Cancel,
+    ) -> bool {
+        printer.service_asks(asked);
+        let mut values = serde_json::Map::new();
+        let mut declined = false;
+        for field in &asked.fields {
+            let answer = loop {
+                printer.service_field(field);
+                let Some(line) = interrupt.run(self.input.line()).await else {
+                    return true;
+                };
+                match asking::field_answer(field, line.as_deref().unwrap_or_default()) {
+                    Ok(answer) => break answer,
+                    Err(why) => printer.status(&why),
+                }
+            };
+            match answer {
+                asking::Field::Value(value) => {
+                    values.insert(field.name.clone(), value);
+                }
+                asking::Field::Skipped => {}
+                asking::Field::Declined => {
+                    declined = true;
+                    break;
+                }
+            }
+        }
+        let send = |answer| Request::ServiceAnswer {
+            thread: self.thread,
+            call: asked.call_id.clone(),
+            asked: at,
+            answer,
+        };
+        let answer = if declined {
+            ServiceAnswer::Declined
+        } else {
+            ServiceAnswer::Answered { values }
+        };
+        if let Err(error) = self.server.request(send(answer)).await {
+            printer.error(&error.to_string());
+            // Refused, nothing here asks again: declined, so the turn does not wait on.
+            if error.code == code::INVALID_PARAMS {
+                let declined = self.server.request(send(ServiceAnswer::Declined)).await;
+                if let Err(error) = declined {
+                    printer.error(&error.to_string());
+                }
+            }
         }
         false
     }

@@ -288,6 +288,12 @@ impl From<&HarnessError> for ApiError {
                     question: call.as_str().to_owned(),
                 },
             ),
+            HarnessError::NoServiceAsk(call) => Self::new(
+                code::NO_QUESTION,
+                Sentence::NoServiceAsk {
+                    question: call.as_str().to_owned(),
+                },
+            ),
             HarnessError::Entropy(_) => Self::new(code::INTERNAL, error.to_string()),
             HarnessError::Log(log) => log.clone().into(),
             HarnessError::Blob(_) | HarnessError::Event(_) => Self::internal(error),
@@ -300,6 +306,9 @@ fn invalid_said(invalid: &Invalid) -> Sentence {
     match invalid {
         Invalid::ComputerNotYet(computer) => Sentence::NoComputerYet {
             computer: computer.clone(),
+        },
+        Invalid::ServiceAnswer(field) => Sentence::ServiceAnswerMisfit {
+            field: field.clone(),
         },
         Invalid::ModelId(most) => Sentence::ModelIdLength { most: *most },
         Invalid::EffortLevel(most) => Sentence::EffortWord { most: *most },
@@ -516,6 +525,8 @@ mod tests {
             HarnessError::NoApproval(call()),
             HarnessError::NoQuestion(call()),
             HarnessError::PromptBlocked("it names a secret".into()),
+            HarnessError::NoServiceAsk(call()),
+            HarnessError::Invalid(Invalid::ServiceAnswer("repository".to_owned())),
             HarnessError::Invalid(Invalid::ModelId(255)),
             HarnessError::Invalid(Invalid::EffortLevel(32)),
             HarnessError::Invalid(Invalid::Title(80)),

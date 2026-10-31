@@ -55,6 +55,7 @@ mod remote;
 mod removing;
 mod schedules;
 mod server;
+mod service_asks;
 mod sharing;
 mod signups;
 mod site;

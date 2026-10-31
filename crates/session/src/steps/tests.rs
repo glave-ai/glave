@@ -91,6 +91,28 @@ fn lines(steps: &ThreadSteps) -> Vec<String> {
 }
 
 #[test]
+fn what_a_service_asks_stands_between_runs() {
+    let mut thread = Thread::default();
+    thread
+        .starts("file it")
+        .calls("mcp__x__y", "other", "", Some(false));
+    thread.add(
+        "service.asked",
+        &json!({
+            "call_id": "call_1", "service": "x", "ask": "x asks you, not the model",
+            "note": "Your answer goes only to x.",
+            "message": "Which?", "fields": [],
+            "state": {
+                "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                "bytes": 2, "media_type": "application/json"
+            }
+        }),
+    );
+    thread.calls("mcp__x__y", "other", "", Some(false)).ends();
+    assert_eq!(thread.steps().runs.len(), 2);
+}
+
+#[test]
 fn a_run_is_the_calls_between_words_told_by_kind_with_its_failures() {
     let mut thread = Thread::default();
     thread

@@ -6,6 +6,7 @@
 //! their own, removed when they are done. Behind the `conformance` feature, so no production
 //! build carries them.
 
+mod asking;
 mod faulty;
 mod git;
 mod http;
@@ -26,6 +27,7 @@ use jiff::Timestamp;
 use crate::env::{Clock, Entropy, EntropyError};
 use crate::tools::{BoxFuture, Cancellation};
 
+pub use asking::{ASKING_TOOL, AskingTool};
 pub use faulty::FaultyLog;
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received, sent_in_part};

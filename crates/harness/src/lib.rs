@@ -37,6 +37,7 @@ mod resume;
 mod retry;
 mod room;
 mod sandbox;
+mod service;
 mod skills;
 mod standing;
 mod subagent;

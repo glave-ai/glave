@@ -1,45 +1,75 @@
 //! The server's own sentences an event holds, written again in the caller's language as a
 //! transport sends the event: what an approval asks (`approval.requested`'s `ask`), recorded in
 //! English, as every sentence is where it is made, and found again in the table by those words;
-//! and why it asks (its `caution`), written again from the typed `reason` it was written from.
+//! why it asks (its `caution`), written again from the typed `reason` it was written from; and
+//! who asks and what came of it when a service asks the person, from the service's name.
 
 use std::sync::Arc;
 
-use glave_event::{ApprovalRequested, Body, Event, Payload as _, RawEvent, decode};
+use glave_event::{
+    ApprovalRequested, Body, Event, Payload as _, RawEvent, ServiceAnswered, ServiceAsked,
+    ServiceOutcome, decode,
+};
 
 use super::{Language, Sentence, caution_in, say};
 use crate::protocol::{Notification, Update};
 
-/// Whether `event` may hold a sentence of the server's own: an approval does.
+/// Whether `event` may hold a sentence of the server's own: an approval does, and what a service
+/// asks and its answer.
 pub(super) fn asks(event: &RawEvent) -> bool {
-    event.kind.as_str() == ApprovalRequested::TYPE
+    [
+        ApprovalRequested::TYPE,
+        ServiceAsked::TYPE,
+        ServiceAnswered::TYPE,
+    ]
+    .contains(&event.kind.as_str())
 }
 
 /// `event` as a caller who reads `language` is sent it: what an approval asks written in their
 /// language, when the table holds the words it was recorded in, and why it asks, when it was
-/// recorded with its reason; `None` when nothing in it changes, as in English.
+/// recorded with its reason; what a service asks and how it was answered; `None` when nothing in
+/// it changes, as in English.
 pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent> {
     if language == Language::English || !asks(event) {
         return None;
     }
-    let Event {
-        header,
-        body: Body::ApprovalRequested(mut asked),
-    } = decode(event.clone()).ok()?
-    else {
-        return None;
+    let Event { header, body } = decode(event.clone()).ok()?;
+    let body = match body {
+        Body::ApprovalRequested(mut asked) => {
+            let ask = Sentence::asking(&asked.ask).map(|ask| say(language, &ask));
+            let caution = asked
+                .reason
+                .as_ref()
+                .and_then(|reason| caution_in(language, reason));
+            if ask.is_none() && caution.is_none() {
+                return None;
+            }
+            asked.ask = ask.unwrap_or(asked.ask);
+            asked.caution = caution.or(asked.caution);
+            Body::ApprovalRequested(asked)
+        }
+        Body::ServiceAsked(mut asked) => {
+            let service = || asked.service.clone();
+            let ask = say(language, &Sentence::ServiceAsks { service: service() });
+            let note = say(language, &Sentence::ServiceNote { service: service() });
+            asked.ask = ask;
+            asked.note = note;
+            Body::ServiceAsked(asked)
+        }
+        Body::ServiceAnswered(mut answered) => {
+            let service = answered.service.clone();
+            answered.told = say(
+                language,
+                &match answered.outcome {
+                    ServiceOutcome::Answered => Sentence::ServiceAnswered { service },
+                    ServiceOutcome::Declined => Sentence::ServiceDeclined { service },
+                    ServiceOutcome::Cancelled => Sentence::ServiceUnanswered { service },
+                },
+            );
+            Body::ServiceAnswered(answered)
+        }
+        _ => return None,
     };
-    let ask = Sentence::asking(&asked.ask).map(|ask| say(language, &ask));
-    let caution = asked
-        .reason
-        .as_ref()
-        .and_then(|reason| caution_in(language, reason));
-    if ask.is_none() && caution.is_none() {
-        return None;
-    }
-    asked.ask = ask.unwrap_or(asked.ask);
-    asked.caution = caution.or(asked.caution);
-    let body = Body::ApprovalRequested(asked);
     Event { header, body }.to_raw().ok()
 }
 

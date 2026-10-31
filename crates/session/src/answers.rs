@@ -1,6 +1,6 @@
 //! Answers to what a turn waits for (`specs/one-server.md`, "An answer continues the turn"): a
-//! turn that waits holds nothing in memory, so `approval/decide` and `question/answer` check the
-//! log, record the answer there exactly as the turn would, and the turn goes on from the log
+//! turn that waits holds nothing in memory, so `approval/decide`, `question/answer` and
+//! `service/answer` check the log, record the answer there exactly as the turn would, and the turn goes on from the log
 //! (`Harness::go_on`), in this server, under the lease of the thread whose turn it is: the
 //! waiting thread's own, or its parent's for a subagent's wait. Stopping a waiting turn goes on
 //! with it stopped, which declines what it waits for. The client that started the turn keeps
@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{CallId, ParentCall, ThreadId, TurnResult};
+use glave_event::{CallId, ParentCall, Seq, ServiceAnswer, ThreadId, TurnResult};
 use glave_harness::{Decision, HarnessError};
 use glave_ports::{
     BlobStore, BoxFuture, CallKind, Caller, EventLog, ModelProvider, Scope, Standing, ThreadQuery,
@@ -117,6 +117,29 @@ where
             Box::pin(async move {
                 let harness = &inner.harness;
                 harness.answer(scope, thread, &call, &answers).await
+            })
+        });
+        self.answered(caller, scope, thread, record).await
+    }
+
+    /// Answers `service/answer` for `caller`: `answer` is recorded for what `call` in `thread`
+    /// waits at, the `service.asked` at `asked`, and the turn goes on.
+    pub(crate) async fn answer_service(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        call: CallId,
+        asked: Seq,
+        answer: ServiceAnswer,
+    ) -> Result<Reply, ApiError> {
+        let scope = self.authorize(caller, thread).await?;
+        let person = caller.person;
+        let record: Record<P, L, B> = Box::new(move |inner| {
+            Box::pin(async move {
+                let harness = &inner.harness;
+                harness
+                    .answer_service(scope, thread, &call, asked, answer, person)
+                    .await
             })
         });
         self.answered(caller, scope, thread, record).await
@@ -264,8 +287,8 @@ where
         }
     }
 
-    /// Whether the turn open in `view` waits for the person: at its own approval or questions,
-    /// or at subagents' work while one of them waits at theirs.
+    /// Whether the turn open in `view` waits for the person: at its own approval or questions, at
+    /// what a service asks them, or at subagents' work while one of them waits at theirs.
     pub(crate) async fn view_waits(
         &self,
         scope: &Scope,
@@ -275,7 +298,7 @@ where
             return Ok(false);
         };
         match turn.wait.as_ref().map(|wait| wait.kind) {
-            Some(WaitKind::Approval | WaitKind::Question) => Ok(true),
+            Some(WaitKind::Approval | WaitKind::Question | WaitKind::Service) => Ok(true),
             None => Ok(false),
             Some(WaitKind::Agent) => {
                 let agents = turn

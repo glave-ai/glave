@@ -1,18 +1,18 @@
 //! One request to a server that may take a while: answered within its limits, kept alive by
 //! the word a long one sends of its progress, and cancelled with the turn. A call of a tool may
 //! also be answered with what the server needs first (MCP 2026-07-28's input rounds), which
-//! glave gives it before asking again (`asks.rs`).
+//! glave gives it before asking again, the person's part once they have given it (`asks.rs`).
 
 use std::time::Duration;
 
-use glave_ports::{Cancellation, unless_cancelled};
+use glave_ports::{Cancellation, ServiceGiven, unless_cancelled};
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, CallToolResult, CancelledNotificationParam,
     ClientRequest, CustomResult, DEFAULT_MRTR_MAX_ROUNDS, ServerResult,
 };
 use rmcp::service::{Peer, PeerRequestOptions, RoleClient, ServiceError};
 
-use crate::asks::{Asking, InputRound};
+use crate::asks::{Asking, Form, InputRound};
 use crate::client::Client;
 use crate::reason::failed;
 
@@ -45,23 +45,59 @@ pub(crate) enum Unanswered {
     Failed(String),
 }
 
-/// What a call of a tool came to: the server's result, and what to tell the model of what was
-/// asked along the way.
-pub(crate) type Called = Result<(CallToolResult, Asking), Unanswered>;
+/// What a call of a tool came to.
+pub(crate) enum Ran {
+    /// The server's result, and what to tell the model of what was asked along the way.
+    Done(CallToolResult, Asking),
+    /// The server asks the person this, and the call waits: its form is the first in `asking`.
+    Asks(Form, Asking),
+}
+
+/// Who answers what the server asks along the way.
+pub(crate) enum Answerer {
+    /// No one: glave declines.
+    NoOne,
+    /// The person, who has given this so far.
+    Person(Option<ServiceGiven>),
+}
 
 /// Calls a tool with `params` on `server`'s `peer`, within `waits` for each round, giving the
-/// server what it asks for along the way from `client`, and declining what it asks the person,
-/// until it answers.
+/// server what it asks for along the way from `client` and `answerer`, until it answers or asks
+/// the person.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one call: where it goes, what it asks, who answers along the way, and its limits"
+)]
 pub(crate) async fn call(
     server: &str,
     peer: &Peer<RoleClient>,
     client: &Client,
     mut params: CallToolRequestParams,
+    answerer: Answerer,
     cancel: &dyn Cancellation,
     waits: Waits,
-) -> Called {
+) -> Result<Ran, Unanswered> {
+    let bad = |err: serde_json::Error| Unanswered::Failed(format!("{server}: {err}"));
     let mut asking = Asking::default();
+    let person = matches!(answerer, Answerer::Person(_));
+    if let Answerer::Person(Some(given)) = answerer {
+        asking = serde_json::from_value(given.state).map_err(bad)?;
+        // What the person answered goes to the server they answered, and no other.
+        if asking.server != server {
+            return Err(Unanswered::Failed(format!(
+                "{server} is not {}, which asked, so what the person answered was not sent.",
+                asking.server
+            )));
+        }
+        asking.given(given.answer).map_err(bad)?;
+    }
     loop {
+        if !person {
+            asking.no_one_there().map_err(bad)?;
+        }
+        if let Some(form) = asking.forms.front() {
+            return Ok(Ran::Asks(form.clone(), asking));
+        }
         if asking.rounds >= DEFAULT_MRTR_MAX_ROUNDS {
             return Err(Unanswered::Failed(format!(
                 "{server} kept asking for more, {DEFAULT_MRTR_MAX_ROUNDS} times, without answering."
@@ -79,7 +115,7 @@ pub(crate) async fn call(
             other => other?,
         };
         let round = match came {
-            ServerResult::CallToolResult(result) => return Ok((result, asking)),
+            ServerResult::CallToolResult(result) => return Ok(Ran::Done(result, asking)),
             ServerResult::InputRequiredResult(asked) => Some(InputRound::from(asked)),
             ServerResult::CustomResult(CustomResult(result)) => InputRound::unread(&result),
             _ => None,

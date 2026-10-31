@@ -108,13 +108,15 @@ impl Turn {
 }
 
 /// `event` with its `seq`, when it is one of those a turn's replies and calls are read from:
-/// its start and end, its calls and their results, and its messages.
+/// its start and end, its calls and their results, what a service asks along the way, and its
+/// messages.
 pub(crate) fn turn_event(event: RawEvent) -> Option<(Seq, Body)> {
     let kinds = [
         "turn.started",
         "turn.ended",
         "tool.call.requested",
         "tool.call.completed",
+        "service.asked",
         "message.added",
     ];
     if !kinds.contains(&event.kind.as_str()) {
