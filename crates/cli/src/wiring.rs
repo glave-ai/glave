@@ -458,7 +458,7 @@ async fn line_up(
     person: glave_event::PrincipalId,
     (credits, floor): (
         Option<&Arc<Credits<crate::data::DataLog>>>,
-        Option<&glave_config::policy::RouterFloorFile>,
+        Option<&policy::RouterFloorFile>,
     ),
     through_gateway: bool,
 ) -> anyhow::Result<Lined> {
