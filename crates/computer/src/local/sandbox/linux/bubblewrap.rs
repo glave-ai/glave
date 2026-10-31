@@ -74,10 +74,7 @@ pub(super) fn starts(bwrap: &Path) -> Result<Offline, String> {
         Err(why) => why,
     };
     match empty_sandbox(bwrap, &[]) {
-        Ok(()) => {
-            tracing::info!(%why, "commands without the network keep to the seccomp filter here");
-            Ok(Offline::FilterAlone)
-        }
+        Ok(()) => Ok(Offline::FilterAlone),
         Err(_) => Err(why),
     }
 }
