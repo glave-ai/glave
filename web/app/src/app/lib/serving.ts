@@ -207,7 +207,7 @@ function hiddenWhy(endpoint: EndpointInfo, by: Hides, locale: string): string {
 }
 
 /** The providers the filters hide, each with why: `DeepSeek (based in China)`. */
-export function hiddenText(endpoints: readonly EndpointInfo[], locale: string): string {
+function hiddenText(endpoints: readonly EndpointInfo[], locale: string): string {
   const reasons = new Intl.ListFormat(locale, { type: 'unit' });
   const each = endpoints.map((endpoint) => {
     const provider = endpoint.provider;
@@ -217,6 +217,21 @@ export function hiddenText(endpoints: readonly EndpointInfo[], locale: string): 
     return $localize`:@@serving.hiddenOne:${provider}:PROVIDER: (${why}:WHY:)`;
   });
   return new Intl.ListFormat(locale, { type: 'conjunction' }).format(each);
+}
+
+/**
+ * The line that says which providers are hidden and why: the person's filters, or this server
+ * where nothing else of theirs hides them, so they aren't blamed for what isn't theirs.
+ */
+export function hiddenLine(endpoints: readonly EndpointInfo[], locale: string): string {
+  if (endpoints.every((endpoint) => (endpoint.hidden_by ?? []).every((by) => by === 'server'))) {
+    const names = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+      endpoints.map((endpoint) => endpoint.provider),
+    );
+    return $localize`:@@serving.hiddenByServer:This server doesn’t use ${names}:PROVIDERS:.`;
+  }
+  const which = hiddenText(endpoints, locale);
+  return $localize`:@@serving.hiddenByFilters:Your filters hide ${which}:PROVIDERS:.`;
 }
 
 /** Who serves a model, as the picker offers it: an order, or one provider by its slug. */

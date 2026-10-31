@@ -100,10 +100,15 @@ pub struct RouterFloorFile {
     pub keeps_nothing: bool,
 }
 
-/// A list of countries, each two capital letters, refused otherwise: a floor that a misspelling
-/// widened or emptied would keep nothing out.
+/// A list of countries, each two capital letters, and at least one, refused otherwise: a floor
+/// that a misspelling or an empty list turned off would keep nothing out, unseen.
 fn countries<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Vec<String>, D::Error> {
     let places = Vec::<String>::deserialize(reader)?;
+    if places.is_empty() {
+        return Err(serde::de::Error::custom(
+            "based_in names no country: name at least one, or leave it out for anywhere",
+        ));
+    }
     match places
         .iter()
         .find(|place| place.len() != 2 || !place.bytes().all(|b| b.is_ascii_uppercase()))

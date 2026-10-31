@@ -35,7 +35,7 @@ import {
   choiceOf,
   fastest,
   hiddenEndpoints,
-  hiddenText,
+  hiddenLine,
   listed,
   priceLine,
   providerDetail,
@@ -336,8 +336,7 @@ export class ModelDialogComponent {
   }
 
   private hiddenSentence(hidden: readonly EndpointInfo[]): string {
-    const which = hiddenText(hidden, this.locale);
-    return $localize`:@@modelDialog.hidden:Your filters hide ${which}:PROVIDERS:.`;
+    return hiddenLine(hidden, this.locale);
   }
 
   /** Who may serve `each`: glave's choice by price or speed, then each provider once. */

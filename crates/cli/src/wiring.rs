@@ -137,7 +137,8 @@ pub(crate) async fn wire(
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let credits = credits(choices, &store);
-    let floor = crate::gateway::router_floor(choices);
+    let chosen = choices.router_floor.as_ref();
+    let floor = crate::gateway::router_floor(chosen.map(|floor| &floor.value));
     let through_gateway = remote.is_some();
     let lined = line_up(
         args,

@@ -590,6 +590,11 @@ fn a_router_floor_is_the_server_s_own_choice_and_names_real_countries() {
         .unwrap_err()
         .to_string();
     assert!(refused.contains("two-letter code"), "{refused}");
+    let none = "[router_floor]\nbased_in = []\n";
+    let refused = files::config(none, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("names no country"), "{refused}");
 }
 
 #[test]

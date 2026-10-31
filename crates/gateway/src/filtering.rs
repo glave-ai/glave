@@ -98,7 +98,7 @@ pub(crate) struct Keeping {
     /// Whether the server has a floor: only a router can keep to one, whether or not one is
     /// among the call's targets.
     pub(crate) floor: bool,
-    /// Whether the person chose where providers are based, or anything else that narrows.
+    /// Whether the person chose anything that narrows who may serve it.
     pub(crate) own: bool,
     /// Whether the countries the person chose and the floor's have none in common: no provider
     /// can fit both. Without this, none in common would read as anywhere.

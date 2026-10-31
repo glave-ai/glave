@@ -24,7 +24,7 @@ use crate::config::Endpoint;
 use crate::data::DataLog;
 use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
-use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
+use glave_config::policy::{Constraints, ModelEntry, RouterFloorFile, Source, check_model};
 use glave_session::PersonFilters;
 use glave_session::protocol::ModelInfo;
 
@@ -147,8 +147,8 @@ pub(crate) fn gateway(
 
 /// What the server's own settings allow among a router's providers for everyone it serves, as
 /// the filters it holds every call to; none when `[router_floor]` asks nothing.
-pub(crate) fn router_floor(choices: &Choices) -> Option<Filters> {
-    let floor = &choices.router_floor.as_ref()?.value;
+pub(crate) fn router_floor(floor: Option<&RouterFloorFile>) -> Option<Filters> {
+    let floor = floor?;
     (!floor.based_in.is_empty() || floor.keeps_nothing).then(|| Filters {
         based_in: floor.based_in.clone(),
         keeps_nothing: floor.keeps_nothing,
