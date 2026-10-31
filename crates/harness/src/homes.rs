@@ -20,7 +20,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 use crate::approval::Approver;
 use crate::background::Commands;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::project_folders::{Brought, Settled};
+use crate::project_folders::{Brought, Settled, project_of};
 use crate::removed::owner_label;
 use crate::skills::on_home::skills_on;
 use crate::skills::{Skill, SkillSource, Skills};
@@ -157,14 +157,18 @@ where
         let Some(host) = &self.project_folders else {
             return Settled::default();
         };
-        match self
-            .last_read(scope, root)
-            .await
-            .and_then(|read| read.config)
-        {
-            Some(config) => host.settled_at_home(root, &config).await,
+        match self.kept_config(scope, root).await {
+            Some(config) => host.settled_at_home(scope, root, &config).await,
             None => Settled::default(),
         }
+    }
+
+    /// The `config.toml` last read for `root` on its person's own computer and kept, which
+    /// reaches nothing: what their project there asks them to trust is read from it.
+    pub async fn kept_config(&self, scope: Scope, root: &Path) -> Option<String> {
+        self.last_read(scope, root)
+            .await
+            .and_then(|read| read.config)
     }
 
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
@@ -253,11 +257,10 @@ where
             (None, Opened::Clone { .. }) => None,
         };
         let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
+        // A worktree goes by its repository's folder, which its project's yes is kept for.
+        let root = project_of(&at.bound.opened).unwrap_or_else(|| PathBuf::from(&at.bound.root));
         let settled = match (&self.project_folders, &config) {
-            (Some(host), Some(config)) => {
-                host.settled_at_home(Path::new(&at.bound.root), config)
-                    .await
-            }
+            (Some(host), Some(config)) => host.settled_at_home(scope, &root, config).await,
             _ => Settled::default(),
         };
         let mut skills: Vec<Skill> = found

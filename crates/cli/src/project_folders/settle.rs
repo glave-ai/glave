@@ -12,8 +12,8 @@ use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
 use glave_config::trust::{self, Outcome, Project};
 use glave_harness::Settled;
-use glave_ports::ToolSource;
 use glave_ports::settings::Judge;
+use glave_ports::{Scope, ToolSource};
 use glave_web::{Web, WebSettings};
 
 use super::ProjectFolders;
@@ -67,30 +67,44 @@ fn config_of(root: &Path) -> std::path::PathBuf {
 }
 
 impl ProjectFolders {
-    /// What the project at `root` on a person's own computer chooses, from `config`, its
-    /// `config.toml` as read there: what needs no trust, since nothing there has been trusted,
-    /// whatever a rule says of a path on this computer. One that doesn't parse chooses nothing.
-    /// What it says stays out of this server's log, which isn't theirs.
-    pub(super) fn settled_there(&self, root: &Path, config: &str) -> Settled {
+    /// The project at `root` on `person`'s own computer, as `config`, its `config.toml` as read
+    /// there, brings it: none when it doesn't parse. Its `[web]` isn't part of it, since
+    /// `web_fetch` runs on this server, whose network a person's project may not widen. Nor are
+    /// tools: its `.mcp.json` isn't read there yet.
+    pub(super) fn there(root: &Path, config: &str) -> Option<Project> {
         let Ok(parsed) = policy::config(config, &config_of(root)) else {
             tracing::warn!("a project's settings on a person's computer don't read");
-            return Settled::default();
+            return None;
         };
-        let project = Project {
+        Some(Project {
             root: root.to_path_buf(),
             remote: None,
-            config: Some(parsed),
+            config: Some(policy::ConfigFile {
+                web: None,
+                ..parsed
+            }),
             servers: BTreeMap::new(),
+        })
+    }
+
+    /// What the project of `scope` at `root` on its person's own computer chooses, from `config`:
+    /// what needs trust only once they trusted it, in its own ledger; a ledger that can't be read
+    /// trusts nothing. What it says stays out of this server's log, which isn't theirs.
+    pub(super) async fn settled_there(&self, scope: Scope, root: &Path, config: &str) -> Settled {
+        let Some(project) = Self::there(root, config) else {
+            return Settled::default();
         };
-        let outcome = Outcome {
-            config: project.config_without_trust(),
-            servers: BTreeMap::new(),
-            hooks: Vec::new(),
-            withheld: Vec::new(),
-            hooks_off: Vec::new(),
-            decisions: None,
-            rows: Vec::new(),
+        let ledger = self.trust.in_project(scope, self.trust.person());
+        let record = match ledger.record().await {
+            Ok(record) => record,
+            Err(error) => {
+                tracing::warn!(%error, "what a person trusted could not be read");
+                trust::Record::default()
+            }
         };
+        let constraints = self.base().loaded.constraints.clone();
+        let outcome =
+            trust::assess_there(project, &record, &constraints).apply(trust::Answer::Later);
         let read = self.read(root, &outcome);
         if !read.aside.is_empty() {
             let aside = read.aside.len();

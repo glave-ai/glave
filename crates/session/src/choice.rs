@@ -170,7 +170,7 @@ where
 
     /// Whether what a project chooses counts for a thread of `person`: the person on this
     /// computer, whose trust turns it on; or anyone where people have computers of their own,
-    /// whose projects' choices are theirs alone and what loosens stays off.
+    /// whose projects' choices are theirs alone and what loosens is on only once they trust it.
     pub(crate) fn goes_by_project(&self, person: Option<PrincipalId>) -> bool {
         self.inner.homes.is_some() || person.is_none_or(|person| Some(person) == self.person())
     }
