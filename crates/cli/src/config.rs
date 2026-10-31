@@ -94,6 +94,25 @@ pub(crate) fn endpoint(
 /// `[provider]` in the `config.toml` in glave's folder, for a command that reads no project
 /// settings, such as `glave gateway serve`: a project never chooses it.
 pub(crate) async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
+    let Some((file, path)) = file_here().await? else {
+        return Ok(None);
+    };
+    Ok(file.provider.map(|value| Chosen {
+        value,
+        from: glave_config::policy::Source::File(path),
+    }))
+}
+
+/// `[router_floor]` in glave's own settings file, for `glave gateway serve`, which reads no other
+/// choices from it.
+pub(crate) async fn router_floor_here()
+-> anyhow::Result<Option<glave_config::policy::RouterFloorFile>> {
+    Ok(file_here().await?.and_then(|(file, _)| file.router_floor))
+}
+
+/// Glave's own settings file and where it is; none when there is none.
+async fn file_here()
+-> anyhow::Result<Option<(glave_config::policy::ConfigFile, std::path::PathBuf)>> {
     let path = crate::home::folder()?.join(glave_config::policy::CONFIG);
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(text) => text,
@@ -103,10 +122,7 @@ pub(crate) async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile
         }
     };
     let file = glave_config::policy::config(&text, &path)?;
-    Ok(file.provider.map(|value| Chosen {
-        value,
-        from: glave_config::policy::Source::File(path),
-    }))
+    Ok(Some((file, path)))
 }
 
 /// What to change when a model call fails in a way the person can fix, naming the setting.
