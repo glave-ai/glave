@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, inject, viewChild } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterOutlet, isActive } from '@angular/router';
 import {
   GlzIconComponent,
   GlzNavItemComponent,
@@ -23,7 +23,6 @@ import { SessionService } from '../../services/session.service';
   selector: 'app-admin',
   imports: [
     RouterLink,
-    RouterLinkActive,
     RouterOutlet,
     GlzIconComponent,
     GlzNavItemComponent,
@@ -50,8 +49,6 @@ export class AdminComponent {
   protected readonly chatsLink = '/';
   protected readonly peopleLink = '/admin';
   protected readonly brandLink = '/admin/brand';
-  /** People is current on its own page alone: Brand's is under it. */
-  protected readonly exact = { exact: true } as const;
   private readonly nav = inject(NavService);
   protected readonly navOpen = this.nav.open;
   protected readonly navWidth = this.nav.width;
@@ -60,6 +57,9 @@ export class AdminComponent {
   private readonly layout = viewChild.required(GlzSidenavLayoutComponent);
   private readonly router = inject(Router);
   private readonly session = inject(SessionService);
+  /** People is current on its own page alone: Brand's is under it. */
+  protected readonly peopleCurrent = isActive(this.peopleLink, this.router, { paths: 'exact' });
+  protected readonly brandCurrent = isActive(this.brandLink, this.router);
 
   /** A refused sign-in (or signing out) ends the session: back to the sign-in page. */
   protected readonly leaving = effect(() => {

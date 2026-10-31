@@ -2,12 +2,15 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  Injector,
   LOCALE_ID,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GlzIconButtonComponent, GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
@@ -17,7 +20,8 @@ import Search from 'lucide/dist/esm/icons/search.mjs';
 
 import { hasProjects } from '../../lib/nav';
 import { GroupingService } from '../../services/grouping.service';
-import { BrandService } from '../../services/brand.service';
+import { AppearanceService } from '../../services/appearance.service';
+import type { BrandService } from '../../services/brand.service';
 import { OrganizationsService } from '../../services/organizations.service';
 import { ProjectsService } from '../../services/projects.service';
 import { TasksService } from '../../services/tasks.service';
@@ -76,15 +80,19 @@ export class SideNavComponent {
   private readonly projects = inject(ProjectsService);
   private readonly grouped = inject(GroupingService);
   private readonly organizations = inject(OrganizationsService);
-  private readonly brand = inject(BrandService);
-  /** What heads the side nav: the team the person works in, else glave. */
+  private readonly injector = inject(Injector);
+  /** The organization's look, where it is shown to the person. */
+  private readonly look = inject(AppearanceService).organization;
+  /** What reads the organization's logo, loaded only for one that has a logo: few do. */
+  private readonly brand = signal<BrandService | null>(null);
+  /** What heads the side nav: the organization's name, the team the person works in, else glave. */
   protected readonly heading = computed(
-    () => this.brand.name() ?? this.organizations.heading() ?? this.copy.name,
+    () => this.look()?.name ?? this.organizations.heading() ?? this.copy.name,
   );
   /** The organization's logo, in its name's place. */
-  protected readonly logo = this.brand.logoUrl;
+  protected readonly logo = computed(() => this.brand()?.logoUrl() ?? null);
   protected readonly logoName = computed(
-    () => this.brand.name() ?? $localize`:@@sideNav.logo:Your organization’s logo`,
+    () => this.look()?.name ?? $localize`:@@sideNav.logo:Your organization’s logo`,
   );
   private readonly grouping = this.grouped.grouping;
   /** Whether the lists have been read, so the threads come in all at once, in their place. */
@@ -105,11 +113,25 @@ export class SideNavComponent {
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
 
   constructor() {
+    effect(() => {
+      if ((this.look()?.logo ?? null) !== null && untracked(this.brand) === null) {
+        void this.loadBrand();
+      }
+    });
     void this.organizations.load();
     const unwatch = this.tasks.watch();
     inject(DestroyRef).onDestroy(unwatch);
     // Read as the side nav opens, beside the lists' first read, so it groups them as it shows.
     void this.grouped.read();
+  }
+
+  private async loadBrand(): Promise<void> {
+    try {
+      const { BrandService } = await import('../../services/brand.service');
+      this.brand.set(this.injector.get(BrandService));
+    } catch {
+      // It could not load: the name stands in the logo's place.
+    }
   }
 
   protected search(event: Event): void {

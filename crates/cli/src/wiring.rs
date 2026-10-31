@@ -444,8 +444,9 @@ fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<crate::data::D
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
 /// may connect here unless an organization sets up the models: through its gateway
-/// (`through_gateway`), or on a server people sign in to with OIDC. Their calls are charged
-/// to `credits`, where the server keeps them.
+/// (`through_gateway`), or on a server people sign in to with OIDC, unless it is the server's
+/// own OpenRouter, whose catalog is kept the same way. Their calls are charged to `credits`,
+/// where the server keeps them.
 async fn line_up(
     args: &Args,
     lineup: Lineup,
@@ -454,7 +455,8 @@ async fn line_up(
     credits: Option<&Arc<Credits<crate::data::DataLog>>>,
     through_gateway: bool,
 ) -> anyhow::Result<Lined> {
-    let ledgers = if through_gateway || !args.issuers.is_empty() {
+    let no_ledgers = !args.issuers.is_empty() && lineup.own_account().is_none();
+    let ledgers = if through_gateway || no_ledgers {
         None
     } else {
         crate::providers::check_stand_in()?;

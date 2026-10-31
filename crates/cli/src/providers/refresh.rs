@@ -76,11 +76,13 @@ fn unhurried(models: &[CatalogModel]) -> Vec<CatalogModel> {
 }
 
 impl ModelAccounts {
-    /// Lists the models of every account's service again: those whose catalog is a day old or
-    /// more, or with `all`, every one. Keeps the catalogs when any changed; a service that
+    /// Lists the models of every account's service again, the server's own among them: those
+    /// whose catalog is a day old or more, or with `all`, every one. Keeps the catalogs when any changed; a service that
     /// cannot be listed keeps its own, and says why.
     pub(super) async fn refresh(&self, all: bool) -> Result<Refreshed, ApiError> {
-        let accounts = self.ledger.accounts().await?.providers;
+        let own = self.lineup().own_account();
+        let connected = self.ledger.accounts().await?.providers;
+        let accounts: Vec<ProviderConnected> = own.into_iter().chain(connected).collect();
         let kept = self.kept_catalogs().await?;
         let now = At::from(SystemClock.now());
         let mut catalogs: Vec<Catalog> = Vec::new();
@@ -161,15 +163,23 @@ async fn listed(
                 format!("{service} could not say who serves its models: {why}"),
             )
         };
-        let (providers, whole) = endpoints::read(model, &mut models, before)
-            .await
-            .map_err(unread)?;
-        if !whole {
-            late = Some(unread(
-                "some models' providers were not read in time".to_owned(),
-            ));
+        match endpoints::read(model, &mut models, before).await {
+            Ok((providers, whole)) => {
+                if !whole {
+                    late = Some(unread(
+                        "some models' providers were not read in time".to_owned(),
+                    ));
+                }
+                providers
+            }
+            // With no catalog yet its models' prices are worth keeping without their providers:
+            // the listing is due again, and filters by country refuse until then.
+            Err(why) if old.is_none() => {
+                late = Some(unread(why));
+                Vec::new()
+            }
+            Err(why) => return Err(unread(why)),
         }
-        providers
     } else {
         Vec::new()
     };

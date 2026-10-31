@@ -82,6 +82,8 @@ impl ModelAccounts {
         let accounts = self.ledger.accounts().await?;
         let built = lineup.build(&accounts.providers, &self.catalogs.latest().await?)?;
         *self.lineup.lock().unwrap_or_else(PoisonError::into_inner) = lineup;
+        // It may name a service of the server's own with no catalog yet.
+        *self.due.lock().unwrap_or_else(PoisonError::into_inner) = None;
         self.switch.set(built.gateway);
         Ok(built.models)
     }
@@ -250,6 +252,13 @@ fn base_url(kind: ProviderKind, url: Option<&str>) -> Option<String> {
         }
         .to_owned(),
     )
+}
+
+/// Whether `url` is where glave reaches OpenRouter, its stand-in on this computer when one is
+/// set: the only place an account's key may go.
+fn at_openrouter(url: &str) -> bool {
+    base_url(ProviderKind::Openrouter, None)
+        .is_some_and(|base| base.trim_end_matches('/') == url.trim_end_matches('/'))
 }
 
 /// The endpoint of `model` at `account`, with its key.
