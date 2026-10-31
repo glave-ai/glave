@@ -12,7 +12,7 @@ use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
 use glave_config::trust::{self, Outcome, Project};
 use glave_harness::Settled;
-use glave_ports::settings::Judge;
+use glave_ports::settings::{Hooks, Judge};
 use glave_ports::{Scope, ToolSource};
 use glave_web::{Web, WebSettings};
 
@@ -91,20 +91,9 @@ impl ProjectFolders {
     /// what needs trust only once they trusted it, in its own ledger; a ledger that can't be read
     /// trusts nothing. What it says stays out of this server's log, which isn't theirs.
     pub(super) async fn settled_there(&self, scope: Scope, root: &Path, config: &str) -> Settled {
-        let Some(project) = Self::there(root, config) else {
+        let Some(outcome) = self.outcome_there(scope, root, config).await else {
             return Settled::default();
         };
-        let ledger = self.trust.in_project(scope, self.trust.person());
-        let record = match ledger.record().await {
-            Ok(record) => record,
-            Err(error) => {
-                tracing::warn!(%error, "what a person trusted could not be read");
-                trust::Record::default()
-            }
-        };
-        let constraints = self.base().loaded.constraints.clone();
-        let outcome =
-            trust::assess_there(project, &record, &constraints).apply(trust::Answer::Later);
         let read = self.read(root, &outcome);
         if !read.aside.is_empty() {
             let aside = read.aside.len();
@@ -114,6 +103,35 @@ impl ProjectFolders {
             );
         }
         read.settled
+    }
+
+    /// The hooks of the project of `scope` at `root` on its person's own computer that they
+    /// trusted, from `config`; none where the ledger can't be read.
+    pub(super) async fn hooks_there(&self, scope: Scope, root: &Path, config: &str) -> Hooks {
+        let Some(outcome) = self.outcome_there(scope, root, config).await else {
+            return Hooks::default();
+        };
+        Hooks::new(outcome.hooks).unwrap_or_else(|error| {
+            tracing::warn!(%error, "a project's trusted hooks could not be used");
+            Hooks::default()
+        })
+    }
+
+    /// What the project of `scope` at `root` on its person's own computer runs, as `config`
+    /// says and its own ledger trusts; none when `config` doesn't parse, and a ledger that can't
+    /// be read trusts nothing.
+    async fn outcome_there(&self, scope: Scope, root: &Path, config: &str) -> Option<Outcome> {
+        let project = Self::there(root, config)?;
+        let ledger = self.trust.in_project(scope, self.trust.person());
+        let record = match ledger.record().await {
+            Ok(record) => record,
+            Err(error) => {
+                tracing::warn!(%error, "what a person trusted could not be read");
+                trust::Record::default()
+            }
+        };
+        let constraints = self.base().loaded.constraints.clone();
+        Some(trust::assess_there(project, &record, &constraints).apply(trust::Answer::Later))
     }
 
     /// What the project at `root`, as `outcome` applies its files, chooses for its threads,

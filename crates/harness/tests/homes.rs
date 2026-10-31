@@ -11,9 +11,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_computer::{LocalComputers, Wake, Waking};
-use glave_event::{Permissions, PrincipalId, StopReason};
+use glave_event::{HookPoint, Permissions, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
 use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel};
+use glave_ports::settings::{Hook, Hooks};
 use glave_ports::stream::Reserved;
 use glave_ports::{BoxFuture, Caller, EventLog, InMemoryLog, OrgId};
 use serde_json::json;
@@ -97,6 +98,18 @@ impl Sleepy {
 
     fn asked(&self) -> usize {
         self.asked.load(Ordering::SeqCst)
+    }
+
+    /// `reached`, its home at `home`, its commands in glave's sandbox.
+    fn in_sandbox(reached: &Home, scratch: &Path, home: &Path) -> Self {
+        let mut sleepy = Self::new(reached, scratch);
+        sleepy.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: Some(home.to_owned()),
+            glave_home: Some(home.join(".glave")),
+        });
+        sleepy
     }
 }
 
@@ -309,14 +322,7 @@ fn commands_on_a_person_s_computer_run_in_glave_s_sandbox_and_nothing_is_asked()
             in_the_sandbox(),
         )
         .await;
-        let mut sleepy = Sleepy::new(&reached, &base.join("scratch"));
-        sleepy.sandbox = Some(Sandbox {
-            level: SandboxLevel::Project,
-            network: false,
-            home: Some(home.clone()),
-            glave_home: Some(home.join(".glave")),
-        });
-        let sleepy = Arc::new(sleepy);
+        let sleepy = Arc::new(Sleepy::in_sandbox(&reached, &base.join("scratch"), &home));
         let harness = harness.with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
         let place = || Place::Folder(project.to_string_lossy().into_owned());
 
@@ -336,6 +342,96 @@ fn commands_on_a_person_s_computer_run_in_glave_s_sandbox_and_nothing_is_asked()
         turn(&harness, &mut asking, "write").await;
         assert!(!project.join("asked").exists(), "Ask first's sandbox holds");
         assert!(person.asked().is_empty(), "the sandbox holds: no one asked");
+        serving.abort();
+    });
+}
+
+/// What the host says of a project there: its trusted hook, whatever its `config.toml` holds.
+struct HookThere(Hook);
+
+impl ProjectFolders for HookThere {
+    fn for_folder<'a>(
+        &'a self,
+        _root: &'a Path,
+        _project: Option<&'a Path>,
+        _trusting: bool,
+    ) -> BoxFuture<'a, Option<String>> {
+        Box::pin(std::future::ready(None))
+    }
+
+    fn hooks_at_home<'a>(
+        &'a self,
+        _scope: glave_ports::Scope,
+        _project: &'a Path,
+        _config: &'a str,
+    ) -> BoxFuture<'a, Hooks> {
+        let hooks = Hooks::new(vec![self.0.clone()]).unwrap();
+        Box::pin(std::future::ready(hooks))
+    }
+}
+
+/// A trusted hook of a project there runs on that computer through the port, in its sandbox, and
+/// a turn that only talks, which runs no such hook, still wakes nothing.
+#[test]
+fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_and_wakes_nothing_by_itself() {
+    let Some(base) = sandboxed("home-hook") else {
+        return;
+    };
+    let server = folder("hook-server");
+    let home = base.join("home");
+    let project = home.join("app");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::create_dir_all(project.join(".glave")).unwrap();
+    std::fs::write(
+        project.join(".glave/config.toml"),
+        "[[hooks.PostToolUse]]\n",
+    )
+    .unwrap();
+    block_on!(async {
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
+        let computers = Arc::new(LocalComputers::new(base.join("copies"), environment));
+        let (reached, serving) = home_across_the_wire(computers, &home).await;
+        let answers = vec![
+            answer(
+                None,
+                vec![("bash", json!({ "command": "true" }))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+            answer(Some("Hello."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_seeing(
+            &server,
+            answers,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        )
+        .await;
+        let hook = Hook {
+            point: HookPoint::PostToolUse,
+            matcher: None,
+            command: "echo ran > hook-ran; echo lost > ../hook-lost".to_owned(),
+            timeout_secs: None,
+        };
+        let sleepy = Arc::new(Sleepy::in_sandbox(&reached, &base.join("scratch"), &home));
+        let harness = harness
+            .with_project_folders(Some(Arc::new(HookThere(hook))))
+            .with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
+        let path = project.to_string_lossy().into_owned();
+        let at_home = Workspace::new(reached.computers, reached.home);
+        harness.keep_instructions(scope(), &at_home, &path).await;
+
+        // Started and talked to, with a hook only after tools, it reaches nothing.
+        let mut talking = thread_in(&harness, Place::Folder(path.clone())).await;
+        let mut working = thread_in(&harness, Place::Folder(path)).await;
+        turn(&harness, &mut working, "run it").await;
+        assert!(project.join("hook-ran").exists(), "it ran on that computer");
+        assert!(!home.join("hook-lost").exists(), "in its sandbox");
+        let woken = sleepy.asked();
+        turn(&harness, &mut talking, "hello").await;
+        assert_eq!(sleepy.asked(), woken, "a turn that only talks asks nothing");
         serving.abort();
     });
 }

@@ -232,7 +232,8 @@ where
 
     /// What `thread` on its person's own computer brings for its next turn: what was last read
     /// there and kept, never the server's: its project's choices, within the server's
-    /// constraints, and the `skill` tool for what was found there, with glave's own beside them.
+    /// constraints, the hooks they trusted, and the `skill` tool for what was found there, with
+    /// glave's own beside them.
     /// None read yet, or that read failing, only glave's own for this turn. A worktree goes by
     /// what its repository's folder was last read to hold, until a turn of its own reads its own.
     /// Loading a skill reads it there, as any tool call does.
@@ -259,9 +260,12 @@ where
         let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
         // A worktree goes by its repository's folder, which its project's yes is kept for.
         let root = project_of(&at.bound.opened).unwrap_or_else(|| PathBuf::from(&at.bound.root));
-        let settled = match (&self.project_folders, &config) {
-            (Some(host), Some(config)) => host.settled_at_home(scope, &root, config).await,
-            _ => Settled::default(),
+        let (settled, hooks) = match (&self.project_folders, &config) {
+            (Some(host), Some(config)) => (
+                host.settled_at_home(scope, &root, config).await,
+                host.hooks_at_home(scope, &root, config).await,
+            ),
+            _ => Default::default(),
         };
         let mut skills: Vec<Skill> = found
             .into_iter()
@@ -280,6 +284,7 @@ where
                 .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
                 .into_iter()
                 .collect(),
+            hooks,
             ..Brought::default()
         }
     }
