@@ -350,9 +350,7 @@ where
         let person = settings.person;
         let catalog = crate::models::catalog(&settings.model, wiring.models);
         let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
-        let leases = wiring
-            .leases
-            .unwrap_or_else(|| Arc::new(InMemoryLeases::new(Arc::clone(&clock))));
+        let leases = wiring.leases.unwrap_or_else(|| in_memory_leases(&clock));
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
@@ -687,3 +685,8 @@ pub(crate) fn no_thread(thread: ThreadId) -> ApiError {
 
 /// A finished turn's summary, for callers that only need the result.
 pub(crate) type Ended = Result<TurnResult, HarnessError>;
+
+/// Leases for a server no store gives any: timed by `clock`, gone when it stops.
+fn in_memory_leases(clock: &Arc<dyn Clock>) -> Arc<dyn Leases> {
+    Arc::new(InMemoryLeases::new(Arc::clone(clock)))
+}
