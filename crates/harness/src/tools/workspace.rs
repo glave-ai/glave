@@ -45,9 +45,17 @@ pub struct Workspace {
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
     temp: Option<PathBuf>,
+    /// Whether its computer may be asleep, as a person's may: asking it anything before a call
+    /// needs it would wake it.
+    asleep_at_times: bool,
     /// What the model last read of each file, by its path in the workspace.
     reads: Mutex<HashMap<String, Sha256>>,
 }
+
+/// What a command is told where a person's computer can't run the sandbox it's set to.
+const NO_SANDBOX_THERE: &str = "the sandbox can't start on this person's computer, so the command \
+     did not run. Whoever runs this server has to run people's computers where it can start, or \
+     set them to go without it.";
 
 impl fmt::Debug for Workspace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -70,8 +78,18 @@ impl Workspace {
             asks_network: true,
             planning: false,
             credentials: None,
+            asleep_at_times: false,
             reads: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The same binding on a computer that may be asleep, as a person's may: a sandbox is taken
+    /// without asking it, so no sandbox wakes it, and the first command to reach it finds out,
+    /// refused by a computer that cannot enforce it.
+    #[must_use]
+    pub(crate) fn asleep_at_times(mut self) -> Self {
+        self.asleep_at_times = true;
+        self
     }
 
     /// Lets a command whose sandbox has no network ask the person to run with it, or outside
@@ -121,6 +139,7 @@ impl Workspace {
         let other = Self {
             asks_network: self.asks_network,
             planning: self.planning,
+            asleep_at_times: self.asleep_at_times,
             ..other
         };
         match &self.credentials {
@@ -132,8 +151,13 @@ impl Workspace {
     /// Runs every command in `sandbox`. Fails if the computer cannot enforce it, so a
     /// requested sandbox is never quietly skipped, and within 10 seconds when it starts no
     /// command; on success, learns the temp folder its commands get, which the shell
-    /// assessment treats as theirs to write.
+    /// assessment treats as theirs to write. On a computer that may be asleep nothing is asked
+    /// (`asleep_at_times`).
     pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> Result<Self, ComputerError> {
+        if self.asleep_at_times {
+            self.sandbox = Some(sandbox.clone());
+            return Ok(self);
+        }
         let mut probe = Command::new(r#"printf '%s' "$TMPDIR""#);
         probe.sandbox = Some(sandbox.clone());
         probe.timeout_secs = Some(SANDBOX_STARTS_WITHIN);
@@ -365,7 +389,23 @@ impl Workspace {
         let finished = tracing::Instrument::instrument(running, span.clone()).await;
         let ended = finished.as_ref().ok();
         crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
-        finished
+        finished.map_err(|error| self.said_plainly(error))
+    }
+
+    /// `error`, a command's: where a person's computer refuses the sandbox its server set it to,
+    /// that is a mistake in the server's settings no one at the computer can act on, so it says
+    /// so to them, and what the computer said goes in the server's log.
+    fn said_plainly(&self, error: ComputerError) -> ComputerError {
+        if !self.asleep_at_times || self.sandbox.is_none() {
+            return error;
+        }
+        match error {
+            ComputerError::Unsupported(why) => {
+                tracing::warn!(%why, "a person's computer cannot run the sandbox it is set to");
+                ComputerError::Unsupported(NO_SANDBOX_THERE.into())
+            }
+            other => other,
+        }
     }
 
     /// Starts `script` in this workspace, in its sandbox if it has one, and keeps it running in

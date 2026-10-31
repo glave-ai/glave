@@ -129,9 +129,15 @@ where
         let mode = thread.defaults.permissions(protections, thread.permissions);
         let planning = mode == Permissions::Plan;
         // A worker's own container or virtual machine is its wall: only this computer's
-        // commands run in the sandbox.
-        if workspace.info().computer == self.workspace.info().computer {
-            let wanted = protections.sandbox(mode, thread.defaults.sandbox.as_ref());
+        // commands and those on a person's own computer run in the sandbox.
+        let here = workspace.info().computer == self.workspace.info().computer;
+        if here || thread.home.is_some() {
+            let most = if here {
+                thread.defaults.sandbox.as_ref()
+            } else {
+                thread.defaults.home_sandbox.as_ref()
+            };
+            let wanted = protections.sandbox(mode, most);
             let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref()
                 || workspace.asks_network() != asks

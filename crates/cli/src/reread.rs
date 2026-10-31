@@ -14,6 +14,7 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
+use glave_computer::person_sandbox;
 use glave_config::policy::{Choices, Locations};
 use glave_harness::Defaults;
 use glave_ports::computer::SandboxLevel;
@@ -199,6 +200,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         || start.store != now.store
         || start.telemetry != now.telemetry
         || start.workers != now.workers
+        || start.computers != now.computers
         || start.github != now.github
         || start.origin != now.origin
         || start.acme != now.acme
@@ -206,7 +208,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
     if waits {
         tracing::warn!(
             "glave's settings changed where only a restart applies them (the store, the \
-             gateway, the provider, telemetry, workers, GitHub or where people reach glave); \
+             gateway, the provider, telemetry, workers, people's computers, GitHub or where people reach glave); \
              restart glave for them"
         );
     }
@@ -216,6 +218,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         store: start.store.clone(),
         telemetry: start.telemetry.clone(),
         workers: start.workers.clone(),
+        computers: start.computers.clone(),
         github: start.github.clone(),
         origin: start.origin.clone(),
         acme: start.acme.clone(),
@@ -238,6 +241,11 @@ fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow:
             judge: choices.judge.value.clone(),
             titles: choices.titles.value,
             sandbox,
+            home_sandbox: choices
+                .computers
+                .as_ref()
+                .filter(|computers| computers.value.sandbox != Some(false))
+                .map(|_| person_sandbox(choices.network.value)),
             ask_network: setup.loaded.constraints.network_ask_forbidden().is_none(),
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,

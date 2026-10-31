@@ -29,6 +29,9 @@ pub struct Defaults {
     /// The most a sandbox on this computer allows, which each thread's mode narrows: the
     /// project, or only reading where nothing else can run; none where no sandbox can.
     pub sandbox: Option<Sandbox>,
+    /// The same on people's own computers, where a deployment gives them any; none where
+    /// their own wall is the only one.
+    pub home_sandbox: Option<Sandbox>,
     /// Whether a command whose sandbox has no network may ask to run with it, or outside the
     /// sandbox: not where the organization's policy forbids it. Each turn gives it to its
     /// thread's workspace as it does the sandbox (`Harness::bring`), which enforces it.
@@ -48,6 +51,7 @@ impl std::fmt::Debug for Defaults {
             .field("judge", &self.judge)
             .field("titles", &self.titles)
             .field("sandbox", &self.sandbox)
+            .field("home_sandbox", &self.home_sandbox)
             .field("ask_network", &self.ask_network)
             .field("hooks", &self.hooks)
             .field("web", &self.web.is_some())
