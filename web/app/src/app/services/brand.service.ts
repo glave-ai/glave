@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Service, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Service, effect, inject, signal, untracked } from '@angular/core';
 import type { Accent, Logo, OrganizationLook, Shades } from '@glave/client';
 
 import { AppearanceService } from './appearance.service';
@@ -12,7 +12,7 @@ function blobOf({ data, media_type: type }: Logo): Blob {
 }
 
 /**
- * The person's organization's name and logo, for the corner of the side nav, and an admin's
+ * The person's organization's logo, for the corner of the side nav, and an admin's
  * reading and keeping of them with its accent (`brand/get`, `brand/set`). The logo is read only
  * when the server says it is another one.
  */
@@ -27,8 +27,6 @@ export class BrandService {
   /** How many were asked for: only the latest one's answer is shown. */
   private asked = 0;
 
-  /** What the organization is called, where it is shown and named. */
-  readonly name = computed(() => this.appearance.organization()?.name ?? null);
   /** Its logo, as a URL for this page. */
   readonly logoUrl = this.url.asReadonly();
 
