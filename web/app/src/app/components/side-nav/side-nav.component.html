@@ -3,11 +3,14 @@
      the threads once read, and Tasks under them once the tasks are. -->
 <div class="above">
   <div class="top">
-    @if (logo(); as logo) {
-      <img class="logo" data-testid="nav-logo" [src]="logo" [alt]="logoName()" />
-    } @else {
-      <span class="name" dir="auto" data-testid="nav-heading">{{ heading() }}</span>
-    }
+    <!-- Here from the first paint, so what is beside it never moves as it is filled. -->
+    <span class="corner">
+      @if (logo(); as logo) {
+        <img class="logo" data-testid="nav-logo" [src]="logo" [alt]="logoName()" />
+      } @else {
+        <span class="name" dir="auto" data-testid="nav-heading">{{ heading() }}</span>
+      }
+    </span>
     <a
       glzIconButton
       class="new"
