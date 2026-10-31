@@ -38,11 +38,11 @@ except OSError as error:
 "#;
 
 /// A call of system call `$1`, which prints its errno.
-const SYSCALL: &str = r#"
+const SYSCALL: &str = r"
 import ctypes, sys
 libc = ctypes.CDLL(None, use_errno=True)
 print(libc.syscall(int(sys.argv[1]), 0, 0, 0, 0), ctypes.get_errno())
-"#;
+";
 
 /// A listener on loopback, and a connection to it from the same command.
 const LOOPBACK: &str = r#"
@@ -207,7 +207,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("ptrace", offline.clone(), py(SYSCALL, "101"), Comes::Prints("-1 1")),
             ("io_uring", offline.clone(), py(SYSCALL, "425"), Comes::Prints("-1 1")),
             // Processes of its own.
-            ("see glave's process", offline.clone(), "s=serv; for p in /proc/[0-9]*; do tr '\\0' ' ' <\"$p/cmdline\"; echo; done 2>/dev/null | grep -c \"computer ${s}e\" || true".into(), Comes::Prints("0")),
+            ("see glave's process", offline.clone(), "for p in /proc/[0-9]*; do tr '\\0' ' ' <\"$p/cmdline\"; echo; done 2>/dev/null | grep -c \"computer [s]erve\" || true".into(), Comes::Prints("0")),
             ("no capabilities", offline.clone(), "awk '/^CapEff/ { print $2 }' /proc/self/status".into(), Comes::Prints("0000000000000000")),
         ];
         let mut wrong = Vec::new();

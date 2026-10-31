@@ -52,7 +52,7 @@ glave --permissions full-access "…"                   # no sandbox, nothing as
 
 A command the model keeps running in the background (a dev server, a watcher, `computers.md`, "Background commands") runs in the sandbox it started in for its whole life, as any command does: started there with `background`, or moved there at its timeout, still confined. One let out of the sandbox (*Letting one command out*) stays out for its life, so the person is asked for it as for any. A server it starts listens on loopback, which the sandbox allows with the network on.
 
-Threads on workers (`on = "cloud"`, `computers.md`) are not sandboxed again inside them: each worker's container or virtual machine is their wall, so Auto asks only before risky actions there even where the sandbox cannot run on the person's computer.
+Threads on workers (`on = "cloud"`, `computers.md`) are not sandboxed again inside them: each worker's container or virtual machine is their wall, and what it holds is one task's clone, so Auto asks only before risky actions there even where the sandbox cannot run on the person's computer. A person's computer in the cloud holds all their work, so it keeps this sandbox (*On a person's computer*).
 
 **It fails closed when a policy asks for it.** A policy that leaves no full access (`[permissions] highest` below it, or `[sandbox] network = false`) requires the sandbox: where it cannot run, glave refuses to start and says why. A person's own Auto or Ask first gives way to asking instead, as glave's default does, since nothing then runs unconfined without asking.
 
@@ -137,7 +137,8 @@ Decided for when it does: only sandboxed commands lose the list. glave's own pro
 | macOS | `/usr/bin/sandbox-exec`, by absolute path so a planted `sandbox-exec` earlier in `PATH` cannot stand in, with a profile glave writes for each command. It starts from "deny everything" (based on Codex's audited base policy, Apache-2.0) and allows reads, process launch, the writable roots minus protected paths, and the network only with `--network`. Deny-by-default also closes Apple Events and XPC, which could otherwise launch apps outside the sandbox. Deprecated by Apple but present and working on macOS 26.6 (tested 2026-10-08) | version 1 |
 | Linux | bubblewrap with a seccomp filter (below); Landlock with the same filter at `read-only` where bubblewrap cannot start; refused where neither can, saying what to install | version 1 |
 | Windows | not yet; Auto and Ask first ask before every command | later |
-| Cloud Computers | the virtual machine is the wall | with Computers |
+| A person's computer in the cloud | the same as Linux, inside its Pod, the network off by the filter alone under gVisor (*On a person's computer*, below) | built, proven on CI's `kind` under gVisor; on GKE Sandbox itself, to measure |
+| Workers | the container or virtual machine is the wall | built |
 
 Paths go into the profile resolved: macOS matches real paths, and `/var` is really `/private/var`. Seatbelt also compares names as the folder does: on APFS that ignores case, a command writing `.git/hookſ/x`, `.GIT/hooks/x`, `.git/hooKs/x` (the Kelvin sign), `.vſcode` or `refſ/heads/x` is refused like the plain spelling, through `literal`, `subpath` and `regex` rules alike, whether the protected folder exists yet or not, while a name that only looks alike (`.git/lookſ`) stays writable (tested on macOS 26.6, 2026-10-11). Names APFS keeps apart, such as one with a zero-width joiner, are other files and need no protecting. Seatbelt checks a rename as `file-write-unlink` of the old path and `file-write-create` of the new one, never what a moved folder holds or the folder it lands in (tested on macOS 26.6, 2026-10-11), so the profile protects a folder whole wherever a prepared one could be moved in, and denies writes to the folders above protected paths themselves (the project, `.git`, the shared git folder, the worktree's own folder), which renaming them needs. A move across volumes is no rename: the kernel refuses it before Seatbelt is asked, and `mv` copies, then deletes, each file judged by its own path (tested on macOS 26.6, 2026-10-24); so the tests move prepared folders from the project's own volume, or they would test no rename (#687). Symlinks are resolved before glave's own file tools check a path, so they never write through a link a command planted (CVE-2026-39861).
 
@@ -170,6 +171,38 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 ```
 
 **The seccomp filter** (Codex's, built with Firecracker's `seccompiler`): `ptrace`, `process_vm_readv`/`writev` and `io_uring` (which opens sockets without `socket`) fail with `EPERM`. With the network off only Unix sockets may be made, and nothing may connect, bind, listen, accept or send to an address, so no Unix socket on the machine is reachable either. With it on, only internet sockets may be made: as on macOS, `docker.sock` and the ssh agent stay out of reach. On x86-64 the same rules cover the x32 numbers of those calls.
+
+### On a person's computer
+
+Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, decision 12) runs each command in this same sandbox, inside its Pod. The Pod is the person's wall against everyone else; the sandbox is the wall around what a command does to their own home and secrets, which the Pod can't be, since all of it runs as one user on one disk.
+
+**Two ways were weighed:**
+
+- **The Pod and its NetworkPolicy as the boundary.** No code to run, but a command, or one planted in a page, can then delete the person's other projects, read `~/.ssh`, plant a hook that runs later, read glave's token from its folder and change glave's own files, and the network could be chosen only for the whole computer, never per command.
+- **bubblewrap inside the Pod, the network off by the seccomp filter.** Chosen: one sandbox on every Linux, so what Auto promises a person on a laptop it promises here.
+
+**The one thing gVisor refuses** is bubblewrap's `--unshare-net`: it can't set up the new namespace's loopback (`RTM_NEWADDR`). So where an empty sandbox starts only without it, a command without the network shares the computer's namespace, and the seccomp filter alone keeps it off: only Unix sockets may be made, and nothing may connect, bind, listen or send to an address. The filter was already there beside the namespace, so nothing is added; with gVisor the namespace is simply absent. All a command gains is sight of the computer's own interfaces in `/proc/net`. Where the namespace can be made, as on every laptop and server, it is still used.
+
+**Measured on CI's `kind` job under gVisor** (`worker/kubernetes/home/sandboxed.rs`, on glave's image, nonroot, read-only root, no capabilities, across the protocol, 2026-10-31):
+
+- Every wall holds: writes beside the project and in glave's folders refused; a key in the home, a project's `.env` and glave's token hidden; git hooks and config, and `.glave`, read-only; committing works; the `read-only` level writes nothing.
+- The network off: an internet socket, a netlink socket and glave's own Unix socket each refused with `EPERM`, `curl` and loopback failing. The network on: the internet and loopback reached, glave's socket and netlink refused.
+- `ptrace` and `io_uring` refused with `EPERM`; no capabilities; only the sandbox's own processes in sight.
+- What it costs, in two runs, each number including a round trip across the protocol: an empty command 25 and 15 ms outside it, 71 and 56 ms in it; `git status` 26 ms against 72 ms; compiling Python's library 1.57 s against 1.72 s, 9% more.
+
+**Where it cannot start** (a cluster's runc, whose seccomp profile or AppArmor stops bubblewrap making a user namespace): the organization sets `[computers] sandbox = false`, and the Pod and its NetworkPolicy are the commands' only wall, as on a worker. Auto then asks only before risky actions, Ask first before every change and command, and the server says so in plain words (`unsandboxed`, in `server/discover`). It's a setting rather than a thing found at each wake because a thread's mode is settled before the computer wakes (`computers.md`, decision 6), and a guess that proved wrong at the first command would run it, or refuse it, under the wrong promise. Left on where bubblewrap can't start, every command is refused and says why: a mistake that shows at once, never commands quietly running without the wall they were promised.
+
+**What the server asks of the computer.** Nothing before it needs it: a sandbox is taken without a probe, since a probe would wake the computer (decision 6). The first command finds out, and a computer that can't enforce its sandbox refuses it, as every computer does.
+
+**Checked against what's promised.** `approvals.md`, "Modes": Auto is in the `project` sandbox and Ask first in `read-only`, here as anywhere, and letting one command out asks, each time. `invariants.md`, 23 (a sandboxed command never reads glave's own folder) holds here for `~/.glave` and for `/opt/glave/secret`; 22 (plan mode changes nothing) gains the sandbox here.
+
+**Five deployments.** 1 and 2, a laptop and a person's own server: unchanged, and if `--unshare-net` alone fails on one, its commands without the network keep to the filter. 3 and 4, Glave Cloud: this. 5, an enterprise's own cluster: this under gVisor, where the network off now holds per command; `sandbox = false` under runc, its Pod the wall, and no per-command network there, named.
+
+**Gaps, named** (#1118):
+
+- With the network on, commands can't make Unix sockets (the filter's rule on every Linux). So Python's `multiprocessing` forkserver fails (`compileall -j`, and any pool in Python 3.14, where it's the default), and so does anything else that talks over one to itself.
+- The version managers keep what they add in the home, which the sandbox doesn't let commands write. `rustup default stable`, a new toolchain and a Rust dependency not yet downloaded are blocked and ask to run outside the sandbox, each time, as a crate does on a laptop (*Package caches*). pip, uv and npm work.
+- GKE Sandbox itself is not measured: `kind` runs the same `runsc`, on another platform.
 
 **Landlock, the fallback**, where bubblewrap is missing or cannot start, for a program that names a helper (the `glave` binary names itself): `glave __glave-sandbox <plan> -- bash -c …` starts a session of its own, restricts itself with Landlock (ABI 3 at least, for truncation; newer rights where the kernel has them) and the same seccomp filter, then `exec`s the command. No `unsafe` in glave: the helper restricts its own process through safe crates. It is weaker, so it covers only `read-only`:
 

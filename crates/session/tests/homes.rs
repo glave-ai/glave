@@ -14,8 +14,8 @@ use glave_computer::{LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
 use glave_harness::Homes;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, Sources, WorkspaceId,
-    WorkspaceInfo,
+    ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, SandboxLevel, Sources,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Message, OrgId, ProjectId};
 use glave_session::Answering;
@@ -44,6 +44,8 @@ struct Here {
     /// While what this names is there, each computer's disk says it is full.
     full_while: Arc<Mutex<Option<PathBuf>>>,
     planned: Mutex<BTreeMap<PrincipalId, Home>>,
+    /// The sandbox commands run in there; none, its wall the only one, unless a test sets it.
+    sandbox: Option<Sandbox>,
 }
 
 /// One turn or task holding a computer, counted while it is kept.
@@ -73,6 +75,7 @@ impl Here {
             held_when_woken: Arc::default(),
             full_while: Arc::default(),
             planned: Mutex::new(BTreeMap::new()),
+            sandbox: None,
         }
     }
 
@@ -179,7 +182,7 @@ impl Homes for Here {
     }
 
     fn sandbox(&self) -> Option<Sandbox> {
-        None
+        self.sandbox.clone()
     }
 
     fn home(&self, _org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
@@ -199,6 +202,42 @@ async fn served_with_homes(dir: &Path, log: &Shared) -> (Arc<Here>, Tested<Share
     let (server, _) = setup.build_on(dir, log.clone()).await;
     let person = server.person().unwrap();
     (homes, server, person)
+}
+
+/// What the server tells every client of commands' walls goes by people's computers, not by its
+/// own: a sandbox there says nothing, however this one stands, and none says what that means.
+#[test]
+fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
+    let dir = folder("session-homes-walls");
+    block_on!(async {
+        for (sandbox, says) in [
+            (
+                Some(Sandbox {
+                    level: SandboxLevel::Project,
+                    network: true,
+                    home: None,
+                    glave_home: None,
+                }),
+                json!(null),
+            ),
+            (
+                None,
+                json!(
+                    "This computer can't run the sandbox: in Auto, commands can change anything \
+                     in your home, and Ask first asks before every change and command."
+                ),
+            ),
+        ] {
+            let mut homes = Here::new(&dir.join("people"));
+            homes.sandbox = sandbox;
+            let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+            setup.homes = Some(Arc::new(homes) as Arc<dyn Homes>);
+            let (server, _) = setup.build_on(&dir, Shared::default()).await;
+            let told = server.request(Request::Discover {}).await.unwrap();
+            let told = serde_json::to_value(&told).unwrap();
+            assert_eq!(told["unsandboxed"], says);
+        }
+    });
 }
 
 /// A thread `server` started for its person, in `project` or a chat of their own.
