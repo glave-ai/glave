@@ -104,17 +104,24 @@ async fn shown(server: &Tested<Shared>, caller: &Caller, thread: ThreadId) -> Op
     thread.trust
 }
 
+/// A server started after its person's new project was read there, its `config.toml` asking one
+/// thing: what it asks through, the person's computer, the server and the project.
+async fn a_later_server(dir: &Path) -> (Arc<AsksThere>, Arc<Here>, Tested<Shared>, ProjectId) {
+    let log = Shared::default();
+    let (server, project) = config_kept(dir, &log, "the hook\n").await;
+    let host = Arc::new(AsksThere::default());
+    let mut next = Setup::new(Vec::new());
+    next.trust = Some(Arc::clone(&host) as Arc<dyn ProjectTrust>);
+    let (later, next) = later_on(next, dir, &server);
+    let (again, _) = next.build_on(dir, log).await;
+    (host, later, again, project)
+}
+
 #[test]
 fn a_project_on_a_person_s_computer_asks_them_from_any_client_and_keeps_their_yes() {
     let dir = folder("session-homes-trust");
     block_on!(async {
-        let log = Shared::default();
-        let (server, project) = config_kept(&dir, &log, "the hook\n").await;
-        let host = Arc::new(AsksThere::default());
-        let mut next = Setup::new(Vec::new());
-        next.trust = Some(Arc::clone(&host) as Arc<dyn ProjectTrust>);
-        let (later, next) = later_on(next, &dir, &server);
-        let (again, _) = next.build_on(&dir, log).await;
+        let (host, later, again, project) = a_later_server(&dir).await;
         let person = again.person().unwrap();
 
         // Opened here, it waits for them, and asking reaches nothing.
@@ -153,13 +160,7 @@ fn a_project_on_a_person_s_computer_asks_them_from_any_client_and_keeps_their_ye
 fn no_one_else_sees_or_answers_what_a_person_s_project_asks() {
     let dir = folder("session-homes-trust-others");
     block_on!(async {
-        let log = Shared::default();
-        let (server, project) = config_kept(&dir, &log, "the hook\n").await;
-        let host = Arc::new(AsksThere::default());
-        let mut next = Setup::new(Vec::new());
-        next.trust = Some(Arc::clone(&host) as Arc<dyn ProjectTrust>);
-        let (_later, next) = later_on(next, &dir, &server);
-        let (again, _) = next.build_on(&dir, log).await;
+        let (host, _later, again, project) = a_later_server(&dir).await;
         let waiting = started(&again, Some(project)).await;
         let asked = waiting.trust.expect("it asks its person");
 
