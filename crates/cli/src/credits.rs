@@ -91,7 +91,7 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
             },
         };
         let Reply::Credits { credits } =
-            reach::with(async |server| server.request(request).await).await?
+            Box::pin(reach::with(async |server| server.request(request).await)).await?
         else {
             bail!("glave answered about credits with something else");
         };

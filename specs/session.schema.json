@@ -1196,6 +1196,11 @@
           "const": "avoided",
           "description": "The person chose to avoid it.",
           "type": "string"
+        },
+        {
+          "const": "server",
+          "description": "The server allows it for no one: where it is based, or what it keeps.",
+          "type": "string"
         }
       ]
     },

@@ -4,7 +4,7 @@ import {
   cheapest,
   choiceOf,
   fastest,
-  hiddenText,
+  hiddenLine,
   listed,
   placeCountries,
   placeOf,
@@ -125,8 +125,16 @@ describe('serving', () => {
       endpoint('deepseek', 'CN', { hidden_by: ['based_in'] }),
       endpoint('slow', 'US', { precision: 'four_bit', hidden_by: ['precision', 'keeps_some'] }),
     ];
-    expect(hiddenText(hidden, 'en')).toBe(
-      'DEEPSEEK (based in China) and SLOW (4-bit, may keep chats)',
+    expect(hiddenLine(hidden, 'en')).toBe(
+      'Your filters hide DEEPSEEK (based in China) and SLOW (4-bit, may keep chats).',
+    );
+    const both = [endpoint('deepseek', 'CN', { hidden_by: ['based_in', 'server'] })];
+    expect(hiddenLine(both, 'en')).toBe(
+      'Your filters hide DEEPSEEK (based in China, not used on this server).',
+    );
+    const serverAlone = [endpoint('deepseek', 'CN', { hidden_by: ['server'] })];
+    expect(hiddenLine(serverAlone, 'en'), 'never blamed on them').toBe(
+      'This server doesn’t use DEEPSEEK.',
     );
   });
 
