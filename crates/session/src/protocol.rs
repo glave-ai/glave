@@ -3,6 +3,7 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 mod acts_on;
+mod appearance;
 mod changes;
 pub mod code;
 mod connections;
@@ -34,6 +35,7 @@ use glave_ports::computer::{CommandId, ComputerId};
 use glave_ports::{OrgId, ProjectId};
 use serde::{Deserialize, Serialize};
 
+pub use appearance::Shades;
 pub use changes::{
     ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
 };
@@ -42,7 +44,7 @@ pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
-pub use glave_event::{Filters, Grouping, Hides, Permissions, TurnResult};
+pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, TurnResult};
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};
@@ -131,6 +133,10 @@ methods! {
     /// Chooses the caller's filters among a router's providers, for every call of their work
     /// from now on. Refused for a place that is not a country's two-letter code.
     "filters/set" => FiltersSet { filters: Filters } -> [Filters],
+    /// The caller's accent: what they chose, and the light and dark values it is drawn as.
+    "appearance/get" => AppearanceGet {} -> [Appearance],
+    /// Chooses the caller's accent.
+    "appearance/set" => AppearanceSet { accent: Accent } -> [Appearance],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

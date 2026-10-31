@@ -146,7 +146,7 @@ Decided 2026-10-29 (#424).
 ## The look
 
 - **glave is monochrome by default.**
-- **A person** chooses light or dark, an accent colour, and a name for their assistant, each unless their organization fixes it.
+- **A person** chooses light or dark, an accent colour, and a name for their assistant, each unless their organization fixes it. Light or dark is this browser's. The accent is kept in their settings ledger (`appearance.set`) as what they chose. One function works out its light and dark values: tuned, and every result reads at WCAG AA, unless they ask for the exact colour. The server says the two values, and a client sets them as Glaze's two tokens at the root, so no component knows where a colour came from; with none, glave stays monochrome.
 - **An organization's theme** sets its name, logo and accent, and its assistant's name and icon, and either lets people personalize the accent and the assistant's name or fixes them (#283, #287).
 - **The assistant is called Hope by default,** with fine text saying it's the person's assistant.
 - **A person on their own** sets all of it for themselves.
@@ -160,7 +160,7 @@ What today's code doesn't do yet, so no one takes it as built.
 3. The gateway, when it runs as a service of its own, takes its settings from its own environment rather than the server's files (`gateway.md`, "Surfaces"). It will become part of the server.
 4. Roles are kept and checked (#645), but nothing grants from groups yet: the identity provider's groups are recorded and give no models, connections or budget, so every Member gets the same access, and the only spending limit is each person's per day, kept by the gateway when it runs as a service of its own (`gateway.md`, "Budgets"); the monthly budget groups set waits for them (#645, #662).
 5. The admin methods are listing people, setting a role, removing someone and inviting (`session.md`, "The organization's people"); invites are emailed only where `[email]` names a mail server, and no screen opens a link yet. Of the admin screens (#222), Admin › People is built: the people and their roles, removing someone, inviting and the invites waiting; the organization's policy and skills have none yet, and there is no `glave admin`, so where people sign in through an identity provider, the first roles are given from the server's computer through the session API, or its browser signed in there.
-6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
+6. A person chooses their accent, but an organization's name, logo and accent are not built yet (#1096), nor is choosing the assistant's name (#283, #287).
 7. Of "Identity", what is not built yet, each line edited by the pull request that builds it:
    - The daily sweep of blobs runs for the server's own organization alone (#1031). The web app names the organization each request works in, switched from the person's menu (#423).
    - Of glave accounts for more than the local person: limits per day. Built: limits per network (#1052); getting back in by email, with the notice of a passkey made so to the address and to the other browsers; the email plug (SMTP, `[email]`, sending invites), an invited person's passkey and account, several passkeys each, sign-in with any of them.

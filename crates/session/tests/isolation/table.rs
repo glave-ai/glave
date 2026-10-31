@@ -263,6 +263,9 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "filters/set",
             vec![json!({"filters": {"based_in": ["US"]}})],
         ),
+        // The caller's own accent, naming no one's.
+        ("appearance/get", vec![json!({})]),
+        ("appearance/set", vec![json!({"accent": "plain"})]),
         ("invite/show", vec![json!({"code": "@invite_code"})]),
         ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),

@@ -1,0 +1,40 @@
+<span class="choices" role="radiogroup" [attr.aria-label]="label()">
+  @for (choice of choices(); track choice.value) {
+    @if (choice.color; as color) {
+      <label class="swatch" [attr.data-testid]="ids().option" [glzSwatchColor]="color">
+        <input
+          type="radio"
+          class="native"
+          [name]="name"
+          [value]="choice.value"
+          [checked]="choice.checked"
+          [attr.aria-label]="choice.label"
+          (change)="pick(choice.value)"
+        />
+      </label>
+    } @else {
+      <label class="word" [attr.data-testid]="ids().option">
+        <input
+          type="radio"
+          class="native"
+          [name]="name"
+          [value]="choice.value"
+          [checked]="choice.checked"
+          (change)="pick(choice.value)"
+        />
+        <span>{{ choice.label }}</span>
+      </label>
+    }
+  }
+  <label class="swatch any" [class.picked]="picked()">
+    <input
+      inert
+      type="color"
+      [attr.inert]="null"
+      [attr.aria-label]="anyLabel()"
+      [attr.data-testid]="ids().any"
+      [value]="anyValue()"
+      (change)="pickAny($event)"
+    />
+  </label>
+</span>

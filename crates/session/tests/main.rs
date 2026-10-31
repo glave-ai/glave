@@ -7,6 +7,7 @@
 mod support;
 
 mod accounts;
+mod appearance;
 mod awake;
 mod background_commands;
 mod browsers;

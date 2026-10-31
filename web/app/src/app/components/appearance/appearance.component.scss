@@ -1,0 +1,18 @@
+:host {
+  display: block;
+}
+
+.title {
+  font-size: var(--glz-text-md);
+  font-weight: var(--glz-weight-bold);
+}
+
+.details {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}

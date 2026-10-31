@@ -25,6 +25,41 @@
         }
       ]
     },
+    "Accent": {
+      "description": "The accent a person chose.",
+      "oneOf": [
+        {
+          "const": "plain",
+          "description": "glave's plain look.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A colour, tuned so that text stays easy to read where `adjust` says, else drawn exactly.",
+          "properties": {
+            "color": {
+              "properties": {
+                "adjust": {
+                  "type": "boolean"
+                },
+                "color": {
+                  "$ref": "#/$defs/Color"
+                }
+              },
+              "required": [
+                "color",
+                "adjust"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "color"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "AcceptedPasskeys": {
       "description": "Every passkey that signs the person in with a relying party, after a sign-in, for the\nbrowser to tell its passkey manager (`PublicKeyCredential.signalAllAcceptedCredentials`),\nwhich then hides or deletes the person's others there.",
       "properties": {
@@ -282,6 +317,10 @@
         "label"
       ],
       "type": "object"
+    },
+    "Color": {
+      "description": "A colour in sRGB, written `#rrggbb`.",
+      "type": "string"
     },
     "CommandId": {
       "description": "Identifies a command kept running in the background, unique everywhere (UUID v7, minted by\nthe computer it runs on).",
@@ -2601,6 +2640,11 @@
           "type": "string"
         },
         {
+          "const": "appearance",
+          "description": "Their accent (`appearance/get`).",
+          "type": "string"
+        },
+        {
           "const": "awake",
           "description": "Whether the computer is kept awake while glave works (`awake/get`).",
           "type": "string"
@@ -2621,6 +2665,23 @@
           "type": "string"
         }
       ]
+    },
+    "Shades": {
+      "additionalProperties": false,
+      "description": "The accent as it is drawn, in each of light and dark.",
+      "properties": {
+        "dark": {
+          "$ref": "#/$defs/Color"
+        },
+        "light": {
+          "$ref": "#/$defs/Color"
+        }
+      },
+      "required": [
+        "light",
+        "dark"
+      ],
+      "type": "object"
     },
     "Show": {
       "description": "Which threads `thread/list` shows.",
@@ -3972,6 +4033,70 @@
     }
   },
   "methods": {
+    "appearance/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The person's accent: what they chose, and the light and dark values it is drawn as,\nnone for glave's plain look.",
+        "properties": {
+          "chosen": {
+            "$ref": "#/$defs/Accent"
+          },
+          "shades": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Shades"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chosen"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "appearance/set": {
+      "params": {
+        "properties": {
+          "accent": {
+            "$ref": "#/$defs/Accent"
+          }
+        },
+        "required": [
+          "accent"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The person's accent: what they chose, and the light and dark values it is drawn as,\nnone for glave's plain look.",
+        "properties": {
+          "chosen": {
+            "$ref": "#/$defs/Accent"
+          },
+          "shades": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Shades"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chosen"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "approval/decide": {
       "params": {
         "properties": {

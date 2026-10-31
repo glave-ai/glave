@@ -1,0 +1,66 @@
+@use '../../styles/choice';
+
+:host {
+  display: block;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+@include choice.native;
+
+.word,
+.swatch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-block-size: var(--glz-control-height-touch);
+  border: var(--glz-border-width) solid var(--glz-color-control-edge);
+  border-radius: var(--glz-radius-full);
+  cursor: pointer;
+}
+
+.word {
+  padding-inline: var(--glz-space-3);
+  font-size: var(--glz-text-sm);
+}
+
+.swatch {
+  overflow: hidden;
+  inline-size: var(--glz-control-height-touch);
+}
+
+.any {
+  background: var(--glz-swatch-any);
+}
+
+// The browser's own picker, over the swatch, clear: it is what is clicked and focused.
+.any input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+// The one chosen is drawn round in the selected marker, as a fill alone may not show on it.
+.word:has(:checked),
+.swatch:has(:checked),
+.any.picked {
+  border-color: var(--glz-selected-marker);
+  box-shadow: 0 0 0 var(--glz-border-width) var(--glz-selected-marker);
+}
+
+.word:has(:checked) {
+  background: var(--glz-surface-selected);
+}
+
+.word:has(:focus-visible),
+.swatch:has(:focus-visible) {
+  box-shadow: var(--glz-focus-ring);
+}

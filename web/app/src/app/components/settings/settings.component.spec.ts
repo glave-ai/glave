@@ -4,7 +4,6 @@ import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { SessionService } from '../../services/session.service';
-import { ThemeService } from '../../services/theme.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS } from '../../testing/fixtures';
 
@@ -22,7 +21,7 @@ describe('SettingsComponent', () => {
     localStorage.clear();
   });
 
-  it('shows the server, picks a theme and signs out', async () => {
+  it('shows the server and signs out', async () => {
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
       .answer('provider/list', { providers: [] })
@@ -46,14 +45,8 @@ describe('SettingsComponent', () => {
     expect(root.querySelector('[data-testid="settings-connections"]')?.getAttribute('href')).toBe(
       '/settings/connections',
     );
-    const themes = Array.from(root.querySelectorAll('glz-radio'), (radio) =>
-      radio.textContent.trim(),
-    );
-    expect(themes).toEqual(['System', 'Light', 'Dark']);
+    expect(root.querySelector('app-appearance')).not.toBeNull();
     await expectAccessible(root);
-
-    root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2]?.click();
-    expect(TestBed.inject(ThemeService).choice()).toBe('dark');
 
     root.querySelector<HTMLButtonElement>('[data-testid="settings-sign-out-others"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
