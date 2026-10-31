@@ -90,7 +90,10 @@ export class SettingsComponent {
   /** What the Connections card says: what is connected, by name, else what connections are. */
   protected readonly connected = computed(() => {
     const names = [
-      ...this.hosts.accounts().map((account) => hostName(account)),
+      ...this.hosts
+        .accounts()
+        .filter((account) => account.expired !== true)
+        .map((account) => hostName(account)),
       ...(this.connections.connections() ?? [])
         .filter((connection) => connection.status === 'signed_in')
         .map((connection) => serviceName(connection)),

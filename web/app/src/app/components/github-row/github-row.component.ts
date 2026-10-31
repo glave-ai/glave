@@ -39,6 +39,7 @@ export class GithubRowComponent {
   protected readonly copy = {
     github: 'GitHub',
     offer: $localize`:@@githubRow.offer:Let glave work in your repositories: clone, push and open pull requests.`,
+    expired: $localize`:@@githubRow.expired:Your sign-in expired. Connect again to keep working in your repositories.`,
     connect: $localize`:@@githubRow.connect:Connect`,
     starting: $localize`:@@githubRow.starting:Starting…`,
     enter: $localize`:@@githubRow.enter:Enter this code on GitHub`,
@@ -76,12 +77,16 @@ export class GithubRowComponent {
   /** The code a sign-in on GitHub waits on, while it does. */
   protected readonly code = signal<DeviceCode | null>(null);
   protected readonly starting = signal(false);
-  /** What the row shows: GitHub's code while a sign-in waits on it, whom it is connected as, or the offer to connect. */
-  protected readonly state = computed<'signing' | 'connected' | 'offer'>(() => {
+  /** What the row shows: GitHub's code while a sign-in waits on it, whom it is connected as, that its sign-in expired, or the offer to connect. */
+  protected readonly state = computed<'signing' | 'connected' | 'expired' | 'offer'>(() => {
     if (this.code() !== null) {
       return 'signing';
     }
-    return this.github() === null ? 'offer' : 'connected';
+    const github = this.github();
+    if (github === null) {
+      return 'offer';
+    }
+    return github.expired === true ? 'expired' : 'connected';
   });
   protected readonly connectLabel = computed(() =>
     this.starting() ? this.copy.starting : this.copy.connect,

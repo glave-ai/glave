@@ -130,6 +130,7 @@ impl Hosts {
             url: credential.url.clone(),
             login: credential.login.clone(),
             can,
+            expired: Self::expired(credential),
         }
     }
 
