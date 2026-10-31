@@ -10,6 +10,8 @@
 mod freeing;
 mod kept;
 
+pub use freeing::ShortOfRoom;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
