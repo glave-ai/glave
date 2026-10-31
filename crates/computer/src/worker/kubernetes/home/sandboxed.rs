@@ -7,18 +7,16 @@ use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers as _, Ending, Environment, Image, Limits, Network, Sandbox,
-    SandboxLevel, Sources, WorkspaceId,
+    Command, ComputerError, Computers as _, Ending, Sandbox, SandboxLevel, Sources, WorkspaceId,
 };
 
 use super::super::objects::PERSON_HOME;
-use super::super::sizing::Size;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
+use super::measured::two_cpus;
 use super::tests::ran;
-use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
-use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
+use crate::{CancelSwitch, WorkerComputers};
 
 /// A project with a commit, and a secret where glave hides them.
 const PREPARE: &str = "mkdir -p ~/.ssh ~/p ~/.glave && echo key > ~/.ssh/id_rsa && \
@@ -125,23 +123,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
         };
         let id = crate::local::new_id().unwrap().simple().to_string();
         let key = format!("sandboxed-{}", id.get(id.len() - 12..).unwrap());
-        let person = PersonComputer::new(cluster.clone(), &key, 2).unwrap();
-        person.sizing.wake_at(Size {
-            cpu_millis: 2_000,
-            memory_mib: 2_048,
-        });
-        let limits = Limits {
-            isolation: cluster.isolation(),
-            cpus: Some(2),
-            memory_gb: Some(2),
-            ..Limits::default()
-        };
-        let computers = WorkerComputers::on(Box::new(person), limits, WorkerCredentials::None);
-        let environment = Environment {
-            image: Image::Oci(image),
-            network: Some(Network::On),
-            ..Environment::host()
-        };
+        let (computers, environment) = two_cpus(&cluster, &key, image);
         let woke = computers.create(&environment).await.unwrap();
         let prepared = ran(&computers, woke.id, PREPARE).await;
         let project = computers
