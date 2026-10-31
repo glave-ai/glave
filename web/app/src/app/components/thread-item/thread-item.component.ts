@@ -15,6 +15,7 @@ import {
   GlzMessageComponent,
   GlzQuestionCardComponent,
   GlzReceiptComponent,
+  GlzServiceCardComponent,
 } from '@glave/glaze';
 
 import { sizeOf } from '../../lib/attachments';
@@ -23,6 +24,7 @@ import type {
   CallItem,
   MessageItem,
   QuestionItem,
+  ServiceItem,
   ThreadItem,
 } from '../../lib/conversation';
 import { toolIcon } from '../../lib/steps';
@@ -48,7 +50,13 @@ interface ShownCall extends CallItem {
   readonly icon: GlzIconData;
 }
 
-type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem;
+/** What a service asks as the thread shows it: with where the answer goes, naming it. */
+interface ShownService extends ServiceItem {
+  readonly sendLabel: string;
+  readonly note: string;
+}
+
+type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService;
 
 /**
  * `item` as the thread shows it, its sizes written for `locale`: a message of the model's said
@@ -78,6 +86,12 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
     case 'approval':
     case 'question':
       return item;
+    case 'service':
+      return {
+        ...item,
+        sendLabel: $localize`:@@threadItem.serviceSend:Send to ${item.service}:SERVICE:`,
+        note: $localize`:@@threadItem.serviceNote:Your answer goes only to ${item.service}:SERVICE:. The model sees that you answered, not what you typed.`,
+      };
   }
 }
 
@@ -85,8 +99,8 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
  * One thing in a thread, as its kind shows: a message (the person's as a bubble of what they
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
  * it, each with a copy button; its reasoning in a line, which opens to it in full), a tool call
- * as a quiet line, an approval or questions as a card that needs the person, answered in place,
- * which rises into place when it `rises`.
+ * as a quiet line, an approval, questions or what a service asks as a card that needs the person,
+ * answered in place, which rises into place when it `rises`.
  */
 @Component({
   selector: 'app-thread-item',
@@ -97,6 +111,7 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
     GlzMessageComponent,
     GlzQuestionCardComponent,
     GlzReceiptComponent,
+    GlzServiceCardComponent,
     MessageTextComponent,
     ThoughtComponent,
   ],
@@ -124,5 +139,13 @@ export class ThreadItemComponent {
 
   protected answer(question: string, answers: readonly string[]): void {
     void this.thread.answer(question, answers);
+  }
+
+  protected answerService(
+    call: string,
+    asked: number,
+    values: Readonly<Record<string, unknown>> | null,
+  ): void {
+    void this.thread.answerService(call, asked, values);
   }
 }

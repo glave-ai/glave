@@ -17,14 +17,14 @@ use crate::payload::{
     MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
     ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
     PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
-    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished,
-    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, credential, credits,
-    filters, gateway, goal, grouping, hook, instructions, language, memory, message, model,
-    passkey, people, plan, project, provider, remembering, signup, standing, task, thread, tool,
-    trust, turn, workspace,
+    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, ServiceAnswered,
+    ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, appearance, approval, awake, browser, catalog, certificate, chosen, command,
+    connection, credential, credits, filters, gateway, goal, grouping, hook, instructions,
+    language, memory, message, model, passkey, people, plan, project, provider, remembering,
+    service, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -55,6 +55,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),
+    (service::ASKED, 1),
+    (service::ANSWERED, 1),
     (goal::SET, 1),
     (goal::ENDED, 1),
     (goal::RESUMED, 1),
@@ -142,6 +144,8 @@ pub enum Body {
     TurnEnded(TurnResult),
     ApprovalRequested(ApprovalRequested),
     ApprovalDecided(ApprovalDecided),
+    ServiceAsked(ServiceAsked),
+    ServiceAnswered(ServiceAnswered),
     GoalSet(GoalSet),
     GoalEnded(GoalEnded),
     GoalResumed(GoalResumed),
@@ -285,6 +289,10 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         approval::DECIDED => {
             approval::decode_decided(version, data).map(|r| r.map(Body::ApprovalDecided))
         }
+        service::ASKED => service::decode_asked(version, data).map(|r| r.map(Body::ServiceAsked)),
+        service::ANSWERED => {
+            service::decode_answered(version, data).map(|r| r.map(Body::ServiceAnswered))
+        }
         goal::SET => goal::decode_set(version, data).map(|r| r.map(Body::GoalSet)),
         goal::ENDED => goal::decode_ended(version, data).map(|r| r.map(Body::GoalEnded)),
         goal::RESUMED => goal::decode_resumed(version, data).map(|r| r.map(Body::GoalResumed)),
@@ -344,6 +352,8 @@ impl Event {
             Body::TurnEnded(payload) => encode(header, payload),
             Body::ApprovalRequested(payload) => encode(header, payload),
             Body::ApprovalDecided(payload) => encode(header, payload),
+            Body::ServiceAsked(payload) => encode(header, payload),
+            Body::ServiceAnswered(payload) => encode(header, payload),
             Body::GoalSet(payload) => encode(header, payload),
             Body::GoalEnded(payload) => encode(header, payload),
             Body::GoalResumed(payload) => encode(header, payload),

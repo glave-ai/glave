@@ -13,6 +13,7 @@ mod error;
 mod files;
 mod live;
 mod meta;
+mod methods;
 mod models;
 mod passkeys;
 mod people;
@@ -65,43 +66,10 @@ pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use told::Told;
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
+use methods::methods;
+
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
-
-/// The one table of methods: each method's name, its request's params, and the replies it
-/// answers with, by the titles of their [`Reply`] variants. It makes [`Request`], whose serde
-/// names are the methods, [`Request::method`], and [`RESULTS`] for the schema.
-macro_rules! methods {
-    ($(
-        $(#[$doc:meta])*
-        $method:literal => $variant:ident { $($params:tt)* } -> [$($reply:ident),+],
-    )*) => {
-        /// A request, by method.
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-        #[serde(tag = "method", content = "params")]
-        pub enum Request {
-            $(
-                $(#[$doc])*
-                #[serde(rename = $method)]
-                $variant { $($params)* },
-            )*
-        }
-
-        impl Request {
-            /// The method's name, as JSON-RPC and the `Glave-Method` header carry it.
-            pub fn method(&self) -> &'static str {
-                match self {
-                    $(Self::$variant { .. } => $method,)*
-                }
-            }
-        }
-
-        /// Every method, with the titles of the replies it answers with.
-        pub(crate) const RESULTS: &[(&str, &[&str])] = &[
-            $(($method, &[$(stringify!($reply)),+]),)*
-        ];
-    };
-}
 
 methods! {
     /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
@@ -478,6 +446,16 @@ methods! {
         thread: ThreadId,
         question: CallId,
         answers: Vec<String>,
+    } -> [Done],
+    /// Answers what a connected service asks the person in the middle of a call: the turn goes
+    /// on with the call. What they answer goes to the service alone.
+    "service/answer" => ServiceAnswer {
+        thread: ThreadId,
+        /// The call that waits.
+        call: CallId,
+        /// What it waits at: the `seq` of its `service.asked`, since a call may ask more than once.
+        asked: Seq,
+        answer: glave_event::ServiceAnswer,
     } -> [Done],
     /// Answers what a thread's project asks to be trusted (its summary's `trust`): `trust`
     /// turns on what it listed from the thread's next turn and keeps the answer; `not_now`

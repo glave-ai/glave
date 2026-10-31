@@ -6,7 +6,7 @@ use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
 
-use glave_event::{Arguments, Part, Risk, ToolKind};
+use glave_event::{Arguments, Part, Risk, ServiceAnswer, ServiceField, ToolKind};
 use thiserror::Error;
 
 use crate::model::ToolSpec;
@@ -155,6 +155,37 @@ pub enum Assessment {
     },
 }
 
+/// What a call that may ask the person came to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Called {
+    /// It ran.
+    Done(ToolOutput),
+    /// The service needs the person first: the call is made again with their answer, whenever
+    /// that comes ([`ToolSource::call_asking`]).
+    Asks(ServiceAsks),
+}
+
+/// What a service asks the person in the middle of a call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceAsks {
+    /// The service, by the name the person knows it by.
+    pub service: String,
+    /// What it asks, in its own words.
+    pub message: String,
+    pub fields: Vec<ServiceField>,
+    /// What the source needs to go on from here, its own, given back with the answer. It may
+    /// hold what the person answered earlier in the call, so it is never shown to anyone.
+    pub state: serde_json::Value,
+}
+
+/// The person's answer to what a call asked, for the call to go on with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceGiven {
+    /// What [`ServiceAsks::state`] held.
+    pub state: serde_json::Value,
+    pub answer: ServiceAnswer,
+}
+
 /// Anything that offers tools.
 pub trait ToolSource: Send + Sync {
     /// The tools on offer now.
@@ -198,13 +229,28 @@ pub trait ToolSource: Send + Sync {
         Box::pin(std::future::ready(None))
     }
 
-    /// Runs one call. Failures are outputs the model can read, never errors.
+    /// Runs one call. Failures are outputs the model can read, never errors. With no one to ask,
+    /// what the service asks along the way is declined.
     fn call<'a>(
         &'a self,
         name: &'a str,
         arguments: &'a Arguments,
         cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, ToolOutput>;
+
+    /// Runs one call where the person can be asked: what the service asks comes back
+    /// ([`Called::Asks`]), and the call is made again with `given`, their answer to it, holding
+    /// nothing meanwhile. A source whose tools never ask just runs the call.
+    fn call_asking<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Arguments,
+        given: Option<ServiceGiven>,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, Called> {
+        let _ = given;
+        Box::pin(async move { Called::Done(self.call(name, arguments, cancel).await) })
+    }
 }
 
 /// How much of a call's arguments its description shows.

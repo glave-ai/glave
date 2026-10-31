@@ -76,7 +76,7 @@ export type CallId = string;
 
 /**
  * Tool calls one after another in a turn, with nothing said between them: no message with
- * words, and no questions for the person.
+ * words, and no questions for the person, the model's or a service's.
  */
 export type CallRun = {
   /** Its calls, in order. */
@@ -992,6 +992,13 @@ export type ServerInfo = {
   readonly unsandboxed?: string | null;
   readonly version: string;
 };
+
+/** The person's answer to what a service asks. */
+export type ServiceAnswer = {
+  readonly answered: {
+    readonly values: { readonly [key: string]: unknown };
+  };
+} | "declined";
 
 /** A person's own settings or connections, by what a client reads to show them. */
 export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
@@ -2267,6 +2274,17 @@ export type ServerDiscoverParams = Readonly<Record<string, never>>;
 
 export type ServerDiscoverResult = ServerInfo;
 
+export type ServiceAnswerParams = {
+  readonly answer: ServiceAnswer;
+  /** What it waits at: the `seq` of its `service.asked`, since a call may ask more than once. */
+  readonly asked: Seq;
+  /** The call that waits. */
+  readonly call: CallId;
+  readonly thread: ThreadId;
+};
+
+export type ServiceAnswerResult = Readonly<Record<string, never>>;
+
 export type SigninEndParams = Readonly<Record<string, never>>;
 
 export type SigninEndResult = Readonly<Record<string, never>>;
@@ -2669,6 +2687,7 @@ export interface Methods {
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
+  readonly "service/answer": { readonly params: ServiceAnswerParams; readonly result: ServiceAnswerResult };
   readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };

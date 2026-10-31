@@ -1,6 +1,6 @@
 //! A turn as its log left it open (`specs/one-server.md`, "Durable turns"): stopped at a wait
-//! (an approval asked and not decided, the model's questions, or subagents' work while one of
-//! them waits), or left open by a glave that stopped mid-call. A waiting turn holds nothing: an
+//! (an approval asked and not decided, what a service asks the person, the model's questions, or
+//! subagents' work while one of them waits), or left open by a glave that stopped mid-call. A waiting turn holds nothing: an
 //! answer is recorded in the log exactly as the turn would record it, and the turn goes on from
 //! the log ([`Harness::go_on`]). What a turn did so far is read from the log too.
 
@@ -17,6 +17,7 @@ use glave_ports::{
 
 use crate::approval::{Approver, Decision};
 use crate::harness::{Harness, HarnessError};
+use crate::service::{Round, round_of};
 use crate::tools::Tool;
 use crate::turn::Step;
 
@@ -28,6 +29,9 @@ pub(crate) struct Open {
     pub(crate) started: usize,
     pub(crate) calls: Vec<ToolCall>,
     pub(crate) asked: Option<Answered>,
+    /// What the service of the first of them last asked the person, with their answer when one
+    /// came. It asked once any approval was answered, so it is what the call waits at.
+    pub(crate) round: Option<Round>,
 }
 
 /// The approval a turn stopped at, and its answer once one is recorded.
@@ -41,6 +45,7 @@ impl Step {
     /// Whether `call` is the one the turn going on from the log stopped at.
     pub(crate) fn waits_on(&self, call: &CallId) -> bool {
         (self.answered.as_ref()).is_some_and(|answered| answered.asked.call_id == *call)
+            || (self.round.as_ref()).is_some_and(|round| round.asked.call_id == *call)
     }
 
     /// The approval the turn going on from the log stopped at, taken when `call` is its call:
@@ -94,13 +99,18 @@ pub(crate) fn open_turn(events: &[Event]) -> Option<Open> {
             _ => None,
         })
         .collect();
+    let round = calls
+        .first()
+        .and_then(|first| round_of(turn, &first.call_id));
     let asked = calls
         .first()
+        .filter(|_| round.is_none())
         .and_then(|first| answered(turn, &first.call_id));
     Some(Open {
         started,
         calls,
         asked,
+        round,
     })
 }
 
@@ -150,6 +160,13 @@ where
         let Some(first) = open.calls.first() else {
             return Ok(left);
         };
+        if let Some(round) = &open.round {
+            return Ok(Some(if round.answered.is_some() {
+                Opened::Answered
+            } else {
+                Opened::Waits
+            }));
+        }
         Ok(match (&open.asked, CallKind::of(&first.tool)) {
             (Some(answered), _) if answered.decided.is_some() => Some(Opened::Answered),
             (Some(_), _) | (None, CallKind::Question) => Some(Opened::Waits),
@@ -317,7 +334,7 @@ where
 
     /// Thread `id`'s view, and the `seq` its turn waits at when it waits at `call` for an
     /// answer of `kind`.
-    async fn waiting(
+    pub(crate) async fn waiting(
         &self,
         scope: &Scope,
         id: ThreadId,
@@ -339,7 +356,12 @@ where
     }
 
     /// Thread `id`'s event at `seq`.
-    async fn event_at(&self, scope: &Scope, id: ThreadId, seq: Seq) -> Result<Event, HarnessError> {
+    pub(crate) async fn event_at(
+        &self,
+        scope: &Scope,
+        id: ThreadId,
+        seq: Seq,
+    ) -> Result<Event, HarnessError> {
         let before = Seq::new(seq.get().saturating_sub(1)).ok();
         let raw = self.log.read(scope, id, before, 1).await?;
         let raw = raw.into_iter().next().ok_or(HarnessError::NotFound(id))?;
@@ -348,7 +370,7 @@ where
 
     /// Appends `answer` right after `view`'s last event: the first answer wins, and one that
     /// meets another's write is refused as `refused` says.
-    async fn answer_with<T: Payload>(
+    pub(crate) async fn answer_with<T: Payload>(
         &self,
         scope: Scope,
         id: ThreadId,
@@ -370,7 +392,7 @@ where
 }
 
 /// Who answered, as a decision records them: absent for the person the thread is for.
-fn by(view: &ThreadView, person: Option<PrincipalId>) -> Option<Principal> {
+pub(crate) fn by(view: &ThreadView, person: Option<PrincipalId>) -> Option<Principal> {
     let theirs = view.whose();
     person
         .filter(|person| Some(*person) != theirs)

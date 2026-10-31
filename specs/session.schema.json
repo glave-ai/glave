@@ -201,7 +201,7 @@
       "type": "string"
     },
     "CallRun": {
-      "description": "Tool calls one after another in a turn, with nothing said between them: no message with\nwords, and no questions for the person.",
+      "description": "Tool calls one after another in a turn, with nothing said between them: no message with\nwords, and no questions for the person, the model's or a service's.",
       "properties": {
         "calls": {
           "description": "Its calls, in order.",
@@ -2664,6 +2664,38 @@
         "modes"
       ],
       "type": "object"
+    },
+    "ServiceAnswer": {
+      "description": "The person's answer to what a service asks.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "They answered: each field's name, with its value.",
+          "properties": {
+            "answered": {
+              "properties": {
+                "values": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              },
+              "required": [
+                "values"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "answered"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "declined",
+          "description": "They said no: the service is told so, and nothing else.",
+          "type": "string"
+        }
+      ]
     },
     "Setting": {
       "description": "A person's own settings or connections, by what a client reads to show them.",
@@ -6606,6 +6638,37 @@
       },
       "result": {
         "$ref": "#/$defs/ServerInfo"
+      },
+      "streams": false
+    },
+    "service/answer": {
+      "params": {
+        "properties": {
+          "answer": {
+            "$ref": "#/$defs/ServiceAnswer"
+          },
+          "asked": {
+            "$ref": "#/$defs/Seq",
+            "description": "What it waits at: the `seq` of its `service.asked`, since a call may ask more than once."
+          },
+          "call": {
+            "$ref": "#/$defs/CallId",
+            "description": "The call that waits."
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "call",
+          "asked",
+          "answer"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
       },
       "streams": false
     },

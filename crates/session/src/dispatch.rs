@@ -412,6 +412,15 @@ where
                 self.answer_questions(caller, thread, question, answers)
                     .await
             }
+            Request::ServiceAnswer {
+                thread,
+                call,
+                asked,
+                answer,
+            } => {
+                self.answer_service(caller, thread, call, asked, answer)
+                    .await
+            }
             Request::TrustAnswer {
                 thread,
                 ask,

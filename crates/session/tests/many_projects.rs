@@ -87,8 +87,14 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
         },
         Request::QuestionAnswer {
             thread,
-            question: call,
+            question: call.clone(),
             answers: vec!["yes".into()],
+        },
+        Request::ServiceAnswer {
+            thread,
+            call,
+            asked: glave_event::Seq::new(1).unwrap(),
+            answer: glave_event::ServiceAnswer::Declined,
         },
         Request::GoalGet { thread },
         Request::ThreadArchive { thread },

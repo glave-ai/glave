@@ -5,7 +5,9 @@
 //! that port, with a key file there and nothing of the person's own glave: not their
 //! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. Its model is a
 //! stand-in on this computer (`model.rs`) that answers every chat and says what each answer
-//! cost, and stands in for OpenRouter for an account connected with any key; with `--credits`,
+//! cost, and stands in for OpenRouter for an account connected with any key, and it has one
+//! service, glave's MCP test server, whose tool the stand-in calls when told to "ask me
+//! something", to try what a service asks the person; with `--credits`,
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
 //! joined by invites, and an invite waiting (`seed.rs`), so its Admin has something to show at
@@ -70,6 +72,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let root = crate::workspace::root()?;
     crate::cmd::run_in(&root.join("web"), "npm", &["run", "build"], &[])?;
     crate::cmd::run("cargo", &["build", "-p", "glave"])?;
+    crate::cmd::run("cargo", &crate::web::TEST_SERVER)?;
     let runs = std::env::temp_dir().join(RUNS);
     sweep(&runs);
     let folder = runs.join(std::process::id().to_string());
@@ -101,13 +104,17 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
     } else {
         SETTINGS.to_owned()
     };
+    // Asked of cargo before the runtime starts: asking blocks.
+    let glave = crate::web::debug_glave()?;
+    let service = serde_json::json!({"mcpServers": {model::SERVICE: {
+        "command": glave.with_file_name("glave-mcp-test-server").display().to_string(),
+    }}});
     std::fs::create_dir_all(&home)
         .and_then(|()| std::fs::write(home.join("config.toml"), settings))
+        .and_then(|()| std::fs::write(home.join("mcp.json"), service.to_string()))
         .map_err(|err| format!("could not write glave's settings: {err}"))?;
     let web = root.join("web/dist/app/browser");
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
-    // Asked of cargo before the runtime starts: asking blocks.
-    let glave = crate::web::debug_glave()?;
     crate::cmd::with_lifeline(|processes: Processes| async move {
         let model = model::start()?;
         let mut command = Program::new(&glave);

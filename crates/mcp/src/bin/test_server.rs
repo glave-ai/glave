@@ -25,7 +25,9 @@
 //! tool `extra` and says the tools changed), `listed` (how often its tools were listed),
 //! `flood` (more output than a model should be given), `whose` (which `--token` the request
 //! came with), and `roots` (the folders the client says it works for: asked of it on the older
-//! protocol, or inside the call on MCP 2026-07-28). Its resources: `test://greeting` (text) and
+//! protocol, or inside the call on MCP 2026-07-28), `ask` (asks the person something: inside the
+//! call on MCP 2026-07-28, as its `what` says, or at once on the older protocol) and `answers`
+//! (what the person has answered it so far). Its resources: `test://greeting` (text) and
 //! `test://logo` (binary). Its prompt: `review` (arguments `pr` and `focus`), whose text names
 //! both.
 
@@ -42,13 +44,13 @@ use hyper::service::Service as _;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverRequestMethod,
-    DiscoverResult, GetPromptRequestParams, GetPromptResponse, GetPromptResult, InputRequest,
-    InputRequests, InputRequiredResult, JsonObject, ListPromptsResult, ListResourcesResult,
-    ListRootsResult, ListToolsResult, PaginatedRequestParams, Prompt, PromptArgument,
-    PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-    ResourceContents, Role, ServerCapabilities, ServerConfig, SubscriptionFilter, Tool,
-    ToolAnnotations,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ClientResult, ContentBlock,
+    DiscoverRequestMethod, DiscoverResult, ElicitRequest, GetPromptRequestParams,
+    GetPromptResponse, GetPromptResult, InputRequest, InputRequests, InputRequiredResult,
+    JsonObject, ListPromptsResult, ListResourcesResult, ListRootsResult, ListToolsResult,
+    PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, ReadResourceRequestParams,
+    ReadResourceResponse, ReadResourceResult, Resource, ResourceContents, Role, ServerCapabilities,
+    ServerConfig, ServerRequest, SubscriptionFilter, Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -68,6 +70,8 @@ struct TestServer {
     tokens: Arc<Vec<String>>,
     /// What every search finds, under `--results`.
     results: Option<Arc<str>>,
+    /// What the person answered `ask`, in order.
+    answers: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 fn schema(value: &serde_json::Value) -> Arc<JsonObject> {
@@ -98,6 +102,7 @@ impl TestServer {
         let text = json!({"type": "object", "properties": {"text": {"type": "string"}}});
         let name = json!({"type": "object", "properties": {"name": {"type": "string"}}});
         let none = json!({"type": "object"});
+        let what = json!({"type": "object", "properties": {"what": {"type": "string"}}});
         let mut echo = Tool::new("echo", "Say the text back.", schema(&text));
         echo.annotations = Some(ToolAnnotations::new().read_only(true));
         // A web search, as MCP flags one: what it returns comes from an open world.
@@ -114,6 +119,8 @@ impl TestServer {
             Tool::new("flood", "Far too much text.", schema(&none)),
             Tool::new("whose", "Which token signed the request in.", schema(&none)),
             Tool::new("roots", "The client's roots.", schema(&none)),
+            Tool::new("ask", "Asks the person something.", schema(&what)),
+            Tool::new("answers", "What the person answered.", schema(&none)),
             lookup,
         ];
         if self.grown.load(Ordering::SeqCst) {
@@ -338,6 +345,11 @@ impl ServerHandler for TestServer {
             }
             "listed" => said(self.listings.load(Ordering::SeqCst).to_string()),
             "roots" => return self.roots(&request, &context).await,
+            "ask" => return self.ask(&request, &context).await,
+            "answers" => {
+                let answers = self.answers.lock().unwrap_or_else(PoisonError::into_inner);
+                said(serde_json::Value::Array(answers.clone()).to_string())
+            }
             "extra" if self.grown.load(Ordering::SeqCst) => said("extra here"),
             "flood" => said("x".repeat(250_000)),
             "whose" => {
@@ -392,6 +404,121 @@ impl TestServer {
         let uris: Vec<String> = listed.roots.into_iter().map(|root| root.uri).collect();
         Ok(CallToolResponse::Complete(said(uris.join("\n"))))
     }
+}
+
+impl TestServer {
+    /// Asks the person something, as `what` says, and says what came of it, never what they
+    /// answered, which `answers` gives. On the older protocol it asks at once and waits there; on
+    /// MCP 2026-07-28 it asks in a round: `twice` in two, `forever` in every one, `several` two
+    /// forms and the client's roots in one, `password` for a password, `page` to open a page,
+    /// anything else a form of each kind of field.
+    async fn ask(
+        &self,
+        request: &CallToolRequestParams,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let failed = |err: String| ErrorData::internal_error(err, None);
+        if self.legacy {
+            let params = serde_json::from_value(form_params("Which label?"))
+                .map_err(|err| failed(err.to_string()))?;
+            let asked = ServerRequest::ElicitRequest(ElicitRequest::new(params));
+            let answered = context
+                .peer
+                .send_request(asked)
+                .await
+                .map_err(|err| failed(err.to_string()))?;
+            let ClientResult::ElicitResult(answered) = answered else {
+                return Err(failed("it answered something else".to_owned()));
+            };
+            return Ok(said(format!("You said: {:?}", answered.action)).into());
+        }
+        let what = argument(request, "what");
+        let state = request.request_state.as_deref();
+        let again = match (what.as_str(), state) {
+            ("forever", _) => true,
+            ("twice", Some("first")) => true,
+            _ => false,
+        };
+        let Some(given) = request.input_responses.as_ref().filter(|_| !again) else {
+            self.heard(request);
+            let asks = asks(&what, state).map_err(|err| failed(err.to_string()))?;
+            let state = (what == "twice").then(|| "first".to_owned());
+            let state = if again {
+                Some("second".to_owned())
+            } else {
+                state
+            };
+            return Ok(InputRequiredResult::new(Some(asks), state).into());
+        };
+        self.heard(request);
+        let actions = given
+            .values()
+            .filter_map(|given| given.get("action").and_then(|action| action.as_str()));
+        let actions: Vec<&str> = actions.collect();
+        Ok(said(format!("You said: {}", actions.join(", "))).into())
+    }
+
+    /// Keeps what the person answered in `request`.
+    fn heard(&self, request: &CallToolRequestParams) {
+        let given = request.input_responses.iter().flatten();
+        let contents = given.filter_map(|(_, given)| given.get("content").cloned());
+        self.answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(contents);
+    }
+}
+
+/// The params of a form with one field of each kind.
+fn form_params(message: &str) -> serde_json::Value {
+    json!({"mode": "form", "message": message, "requestedSchema": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+            "label": {"type": "string", "title": "Label", "oneOf": [
+                {"const": "bug", "title": "Bug"},
+                {"const": "idea", "title": "Idea"},
+            ]},
+            "note": {"type": "string", "title": "Note", "description": "Anything to add"},
+            "urgent": {"type": "boolean", "title": "Urgent"},
+        },
+    }})
+}
+
+/// What `what` asks in a round.
+fn asks(what: &str, state: Option<&str>) -> Result<InputRequests, serde_json::Error> {
+    let elicit = |params: serde_json::Value| -> Result<InputRequest, serde_json::Error> {
+        serde_json::from_value(json!({"method": "elicitation/create", "params": params}))
+    };
+    let mut asks = InputRequests::new();
+    match what {
+        "several" => {
+            asks.insert("first".to_owned(), elicit(form_params("First?"))?);
+            asks.insert("second".to_owned(), elicit(form_params("Second?"))?);
+            let roots = serde_json::from_value(json!({"method": "roots/list"}))?;
+            asks.insert("roots".to_owned(), roots);
+        }
+        "password" => {
+            let form = json!({"mode": "form", "message": "Sign in", "requestedSchema": {
+                "type": "object", "properties": {"password": {"type": "string"}},
+            }});
+            asks.insert("form".to_owned(), elicit(form)?);
+        }
+        "page" => {
+            let page = json!({
+                "mode": "url", "message": "Open this", "url": "https://example.com/sign-in",
+                "elicitationId": "page-1",
+            });
+            asks.insert("form".to_owned(), elicit(page)?);
+        }
+        "twice" if state.is_some() => {
+            asks.insert("form".to_owned(), elicit(form_params("And then?"))?);
+        }
+        _ => {
+            asks.insert("form".to_owned(), elicit(form_params("Which label?"))?);
+        }
+    }
+    Ok(asks)
 }
 
 fn main() -> ExitCode {

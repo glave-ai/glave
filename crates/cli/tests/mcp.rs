@@ -75,6 +75,8 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "mcp__tests__flood",
             "mcp__tests__whose",
             "mcp__tests__roots",
+            "mcp__tests__ask",
+            "mcp__tests__answers",
             "mcp__tests__lookup",
             "list_mcp_resources",
             "read_mcp_resource",
@@ -146,4 +148,75 @@ fn a_servers_prompt_is_sent_as_the_persons_message_when_they_type_its_command() 
             .any(|text| text.contains("Review PR 12, looking at the error paths.")),
         "{asked:?}"
     );
+}
+
+/// A model that calls the test server's `ask`, then says what it heard.
+fn asking_model() -> FakeServer {
+    FakeServer::start(vec![
+        Reply::tool_call("call_1", "mcp__tests__ask", &json!({"what": "form"})),
+        Reply::text("It heard you."),
+    ])
+    .unwrap()
+}
+
+#[test]
+fn a_person_at_a_terminal_answers_what_a_service_asks_and_the_model_sees_only_that_they_did() {
+    let place = crate::turns::asking("ms");
+    let _stopped = Stopped(&place);
+    settings(&place, &json!({ "tests": { "command": test_server() } }));
+    let model = asking_model();
+    let mut running = terminal(&place, &model, &["file it"]);
+    // A project here, then the call allowed, then its fields: a choice, words, a yes or no.
+    typed(&mut running, "y\ny\n1\nfor the service alone\nn\n");
+    let ended = running.wait_with_output().unwrap();
+    let shown = text(&ended);
+    assert!(ended.status.success(), "{shown}");
+    assert!(shown.contains("tests asks you, not the model"), "{shown}");
+    assert!(shown.contains("tests: Which label?"), "{shown}");
+    assert!(shown.contains("You answered tests"), "{shown}");
+    assert!(shown.contains("It heard you."), "{shown}");
+    let received = model.received();
+    let result = said(&received.last().unwrap().body, "tool").concat();
+    assert!(result.contains("You said: accept"), "{result}");
+    assert!(result.contains("they answered it"), "{result}");
+    let sent = received.last().unwrap().body.to_string();
+    assert!(!sent.contains("for the service alone"), "{sent}");
+}
+
+#[test]
+fn a_required_field_left_empty_at_a_terminal_declines() {
+    let place = crate::turns::asking("md");
+    let _stopped = Stopped(&place);
+    settings(&place, &json!({ "tests": { "command": test_server() } }));
+    let model = asking_model();
+    let mut running = terminal(&place, &model, &["file it"]);
+    typed(&mut running, "y\ny\n\n");
+    let ended = running.wait_with_output().unwrap();
+    let shown = text(&ended);
+    assert!(ended.status.success(), "{shown}");
+    assert!(shown.contains("You declined tests's question"), "{shown}");
+    let received = model.received();
+    let result = said(&received.last().unwrap().body, "tool").concat();
+    assert!(result.contains("You said: decline"), "{result}");
+}
+
+#[test]
+fn with_no_one_at_the_terminal_what_a_service_asks_is_declined_and_the_turn_goes_on() {
+    let place = place("mcp-nobody");
+    settings(&place, &json!({ "tests": { "command": test_server() } }));
+    let model = asking_model();
+    let output = glave(
+        &place,
+        &model,
+        &["--model", "m", "--permissions", "full-access", "file it"],
+        "",
+    );
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    assert!(!shown.contains("asks you"), "no card: {shown}");
+    assert!(shown.contains("It heard you."), "{shown}");
+    let received = model.received();
+    let result = said(&received.last().unwrap().body, "tool").concat();
+    assert!(result.contains("You said: decline"), "{result}");
+    assert!(result.contains("no one was there to answer"), "{result}");
 }

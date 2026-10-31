@@ -415,3 +415,107 @@ describe('conversation', () => {
     expect(mergeEvents(events, [event('b', {}, 2)])).toBe(events);
   });
 });
+
+describe('what a service asks', () => {
+  const asked = (seq: number, call: string): RawEvent =>
+    ({
+      seq,
+      type: 'service.asked',
+      data: {
+        call_id: call,
+        service: 'GitHub',
+        ask: 'GitHub asks you, not the model',
+        message: 'Which label?',
+        state: { sha256: 'x', bytes: 1, media_type: 'application/json' },
+        fields: [
+          {
+            name: 'label',
+            label: 'Label',
+            required: true,
+            kind: {
+              type: 'choice',
+              options: [{ value: 'bug', label: 'Bug' }],
+              multiple: true,
+              default: ['bug'],
+            },
+          },
+          {
+            name: 'note',
+            label: 'Note',
+            description: 'More',
+            kind: { type: 'text', default: 'x' },
+          },
+          { name: 'count', label: 'Count', kind: { type: 'number', integer: true, default: 2 } },
+          { name: 'sure', label: 'Sure', kind: { type: 'yes_no', default: false } },
+        ],
+      },
+    }) as unknown as RawEvent;
+  const answered = (seq: number, call: string, told: string): RawEvent =>
+    ({
+      seq,
+      type: 'service.answered',
+      data: { call_id: call, service: 'GitHub', outcome: 'answered', told },
+    }) as unknown as RawEvent;
+
+  it('reads who asks, what, and its fields, as they were recorded', () => {
+    expect(threadItems([asked(4, 'c1')])).toEqual([
+      {
+        kind: 'service',
+        key: 'service-4',
+        seq: 4,
+        call: 'c1',
+        service: 'GitHub',
+        ask: 'GitHub asks you, not the model',
+        message: 'Which label?',
+        told: null,
+        fields: [
+          {
+            name: 'label',
+            label: 'Label',
+            description: '',
+            required: true,
+            kind: {
+              type: 'choice',
+              options: [{ value: 'bug', label: 'Bug' }],
+              multiple: true,
+              default: ['bug'],
+            },
+          },
+          {
+            name: 'note',
+            label: 'Note',
+            description: 'More',
+            required: false,
+            kind: { type: 'text', default: 'x' },
+          },
+          {
+            name: 'count',
+            label: 'Count',
+            description: '',
+            required: false,
+            kind: { type: 'number', integer: true, default: 2 },
+          },
+          {
+            name: 'sure',
+            label: 'Sure',
+            description: '',
+            required: false,
+            kind: { type: 'yes_no', default: false },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps each thing a call asks apart, each with what came of it', () => {
+    const items = threadItems([
+      asked(4, 'c1'),
+      answered(5, 'c1', 'You answered GitHub'),
+      asked(6, 'c1'),
+    ]);
+    expect(items.map((item) => (item.kind === 'service' ? [item.key, item.told] : null))).toEqual([
+      ['service-4', 'You answered GitHub'],
+      ['service-6', null],
+    ]);
+  });
+});

@@ -22,6 +22,17 @@
         (decide)="decide($event)"
       />
       <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
+      <glz-service-card
+        testId="showcase-service"
+        [who]="copy.service.who"
+        [message]="copy.service.message"
+        [sendLabel]="copy.service.send"
+        [note]="copy.service.note"
+        [fields]="serviceFields"
+        [told]="serviceTold()"
+        (answer)="serviceAnswered()"
+        (decline)="serviceDeclined()"
+      />
       <glz-trust-card
         testId="showcase-trust"
         [summary]="copy.trust"

@@ -33,8 +33,8 @@ pub struct Wait {
     pub kind: WaitKind,
     /// The call that waits.
     pub call: CallId,
-    /// The event it waits at: the approval's `approval.requested`, or the call's
-    /// `tool.call.requested`.
+    /// The event it waits at: the approval's `approval.requested`, the service's
+    /// `service.asked`, or the call's `tool.call.requested`.
     pub seq: Seq,
 }
 
@@ -46,6 +46,8 @@ pub enum WaitKind {
     Approval,
     /// The model's questions, not answered.
     Question,
+    /// What a connected service asks the person, mid-call, not answered.
+    Service,
     /// An `agent` call: the turn waits while one of its subagents' turns waits, which their
     /// own views say (`ThreadQuery::parent`).
     Agent,
@@ -62,7 +64,11 @@ pub struct Unfinished {
     /// Its `approval.requested`, while no decision follows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asked: Option<Seq>,
-    /// Whether its approval was decided: the turn goes on with it, and waits no more.
+    /// Its latest `service.asked`, while no answer follows it: what it ran into after any
+    /// approval, so it comes before one in what the call waits at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<Seq>,
+    /// Whether what it last waited at was answered: the turn goes on with it, and waits no more.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub decided: bool,
 }
@@ -108,6 +114,8 @@ impl OpenTurn {
             "tool.call.completed",
             "approval.requested",
             "approval.decided",
+            "service.asked",
+            "service.answered",
         ];
         if !kinds.contains(&event.kind.as_str()) {
             return;
@@ -121,6 +129,7 @@ impl OpenTurn {
                 call: call.call_id,
                 seq: event.seq,
                 asked: None,
+                service: None,
                 decided: false,
             }),
             Body::ToolCallCompleted(done) => {
@@ -128,6 +137,8 @@ impl OpenTurn {
             }
             Body::ApprovalRequested(asked) => self.asked(&asked.call_id, Some(event.seq), false),
             Body::ApprovalDecided(decided) => self.asked(&decided.call_id, None, true),
+            Body::ServiceAsked(asked) => self.serviced(&asked.call_id, Some(event.seq), false),
+            Body::ServiceAnswered(answered) => self.serviced(&answered.call_id, None, true),
             _ => {}
         }
         self.wait = self.first_wait();
@@ -140,14 +151,22 @@ impl OpenTurn {
         }
     }
 
+    fn serviced(&mut self, call: &CallId, asked: Option<Seq>, decided: bool) {
+        if let Some(unfinished) = self.unfinished.iter_mut().find(|found| found.call == *call) {
+            unfinished.service = asked;
+            unfinished.decided = decided;
+        }
+    }
+
     /// The wait at its first call without a result, if that call waits.
     fn first_wait(&self) -> Option<Wait> {
         let first = self.unfinished.first()?;
-        let (kind, seq) = match (first.asked, first.kind) {
-            (Some(asked), _) => (WaitKind::Approval, asked),
-            (None, CallKind::Question) => (WaitKind::Question, first.seq),
-            (None, CallKind::Agent) => (WaitKind::Agent, first.seq),
-            (None, CallKind::Tool) => return None,
+        let (kind, seq) = match (first.service, first.asked, first.kind) {
+            (Some(asked), _, _) => (WaitKind::Service, asked),
+            (None, Some(asked), _) => (WaitKind::Approval, asked),
+            (None, None, CallKind::Question) => (WaitKind::Question, first.seq),
+            (None, None, CallKind::Agent) => (WaitKind::Agent, first.seq),
+            (None, None, CallKind::Tool) => return None,
         };
         Some(Wait {
             kind,

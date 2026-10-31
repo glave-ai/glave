@@ -59,6 +59,9 @@ pub enum HarnessError {
     /// No turn in the thread waits for answers to this call's questions.
     #[error("no question {} is waiting", .0.as_str())]
     NoQuestion(CallId),
+    /// No turn in the thread waits for an answer to what this call's service asked, as asked.
+    #[error("no service's question waits at {}", .0.as_str())]
+    NoServiceAsk(CallId),
 }
 
 /// What was asked for that is not valid, by what was wrong with it.
@@ -70,6 +73,9 @@ pub enum Invalid {
          until a later version"
     )]
     ComputerNotYet(String),
+    /// An answer to what a service asked, this field of it not fitting.
+    #[error("the answer to {0} does not fit what was asked")]
+    ServiceAnswer(String),
     /// A model's id, at most this many bytes.
     #[error("a model id is 1 to {0} bytes, not only spaces")]
     ModelId(usize),

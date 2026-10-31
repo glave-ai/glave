@@ -369,6 +369,12 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             vec![json!({"thread": "@thread", "question": "@question", "answers": ["yes"]})],
         ),
         (
+            "service/answer",
+            vec![json!({
+                "thread": "@thread", "call": "@question", "asked": 1, "answer": "declined"
+            })],
+        ),
+        (
             "trust/answer",
             vec![json!({"thread": "@thread", "ask": "@ask", "answer": "trust"})],
         ),
