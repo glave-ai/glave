@@ -9,6 +9,7 @@ use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCre
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 
 use super::Hosts;
+use super::device::Github;
 use super::renewing::{HostRenewal, RENEW_BEFORE, Renewing};
 
 impl GitCredentials for Hosts {
@@ -56,18 +57,22 @@ impl Hosts {
         }
     }
 
-    /// The renewal of `current`, when glave's GitHub App can renew it, keeping `fresh` when
-    /// it was renewed already.
+    /// Whether `credential`'s token has expired with nothing left to renew it: only signing in
+    /// again brings it back.
+    pub(super) fn expired(credential: &CredentialConnected) -> bool {
+        left(credential).is_some_and(|left| left <= 0) && Github::issuer(credential).is_none()
+    }
+
+    /// The renewal of `current`, through the app that issued it, when it can be renewed, keeping
+    /// `fresh` when it was renewed already.
     fn renewing(
         &self,
         current: &CredentialConnected,
         fresh: Option<CredentialConnected>,
     ) -> Option<Renewing<HostRenewal>> {
-        let github = Some(&self.github)
-            .filter(|github| github.url == current.url && current.renewal.is_some());
-        let Some(github) = github else {
-            tracing::warn!(
-                "the sign-in to {} expires, and glave cannot renew it",
+        let Some(github) = Github::issuer(current) else {
+            tracing::info!(
+                "the sign-in to {} expires, and cannot be renewed",
                 current.url
             );
             return None;
@@ -75,7 +80,7 @@ impl Hosts {
         let job = HostRenewal {
             ledger: self.ledger.clone(),
             http: self.http.clone(),
-            github: github.clone(),
+            github,
             current: current.clone(),
         };
         Some(Renewing { job, fresh })

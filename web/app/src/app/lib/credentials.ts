@@ -24,6 +24,9 @@ export function accountName(account: CredentialInfo): string {
 
 /** Whom an account is signed in as, as far as the host said. */
 export function accountDetail(account: CredentialInfo): string {
+  if (account.expired === true) {
+    return $localize`:@@credentials.expired:Your sign-in expired`;
+  }
   const login = account.login ?? '';
   return login === ''
     ? $localize`:@@credentials.connected:Connected`

@@ -226,8 +226,23 @@ fn shown(credential: &CredentialInfo) -> String {
     line
 }
 
+/// What the person types to connect `credential` again.
+fn connect_as(credential: &CredentialInfo) -> &str {
+    if credential.url == GITHUB {
+        "github"
+    } else {
+        &credential.url
+    }
+}
+
 /// What glave can do with a git host, in plain words; nothing claimed the host did not say.
 fn can(credential: &CredentialInfo) -> String {
+    if credential.expired {
+        return format!(
+            "Its sign-in expired. Sign in again with glave connect {}.",
+            connect_as(credential)
+        );
+    }
     let Some(can) = &credential.can else {
         return "What it can do depends on the access you gave its token.".to_owned();
     };
@@ -273,7 +288,24 @@ mod tests {
             url: url.to_owned(),
             login: Some("ana".to_owned()),
             can,
+            expired: false,
         }
+    }
+
+    #[test]
+    fn a_host_whose_sign_in_expired_says_how_to_sign_in_again() {
+        let mut github = connection(GITHUB, Forge::Github, None);
+        github.expired = true;
+        assert_eq!(
+            can(&github),
+            "Its sign-in expired. Sign in again with glave connect github."
+        );
+        let mut other = connection("https://git.example.com", Forge::Gitlab, None);
+        other.expired = true;
+        assert_eq!(
+            can(&other),
+            "Its sign-in expired. Sign in again with glave connect https://git.example.com."
+        );
     }
 
     #[test]

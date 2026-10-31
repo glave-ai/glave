@@ -41,6 +41,7 @@ impl Hosts {
             url,
             login,
             can: None,
+            expired: false,
         };
         kept.push(info.clone());
         info

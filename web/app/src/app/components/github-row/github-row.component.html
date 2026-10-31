@@ -31,6 +31,9 @@
         @case ('connected') {
           <span class="detail" data-testid="github-connected">{{ connected() }}</span>
         }
+        @case ('expired') {
+          <span class="detail" data-testid="github-expired">{{ copy.expired }}</span>
+        }
         @default {
           <span class="detail">{{ copy.offer }}</span>
         }
@@ -50,6 +53,23 @@
                 {{ copy.repositories }}
               </a>
             }
+            <button glzButton size="sm" data-testid="github-disconnect" (click)="askGithub()">
+              {{ copy.disconnect }}
+            </button>
+          </div>
+        }
+        @case ('expired') {
+          <div appServiceAction class="glz-row glz-gap-2">
+            <button
+              glzButton
+              variant="primary"
+              size="sm"
+              data-testid="github-connect"
+              [disabled]="starting()"
+              (click)="signIn()"
+            >
+              {{ connectLabel() }}
+            </button>
             <button glzButton size="sm" data-testid="github-disconnect" (click)="askGithub()">
               {{ copy.disconnect }}
             </button>

@@ -478,6 +478,10 @@
             "null"
           ]
         },
+        "expired": {
+          "description": "Its sign-in has expired, with nothing left to renew it: only signing in again brings it\nback.",
+          "type": "boolean"
+        },
         "forge": {
           "$ref": "#/$defs/Forge"
         },
