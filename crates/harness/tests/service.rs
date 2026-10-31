@@ -45,10 +45,8 @@ async fn asked_once<A: Approver>(
 }
 
 /// The thread's turn run to where it stops: it must stop at a wait.
-async fn stops_at_a_wait<P, L, B, A>(
-    harness: &glave_harness::Harness<P, L, B, A>,
-    thread: &mut Thread,
-) where
+async fn stops_at_a_wait<P, L, B, A>(harness: &Harness<P, L, B, A>, thread: &mut Thread)
+where
     P: ModelProvider,
     L: EventLog,
     B: BlobStore,
