@@ -4,12 +4,13 @@
 //! defaults. Its constraints only narrow, as everywhere. A model it chooses must be one glave
 //! offers, and settings the constraints refuse are set aside whole, each with a sentence.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
-use glave_config::trust::{self, Outcome};
+use glave_config::trust::{self, Outcome, Project};
 use glave_harness::Settled;
 use glave_ports::ToolSource;
 use glave_ports::settings::Judge;
@@ -66,8 +67,53 @@ fn config_of(root: &Path) -> std::path::PathBuf {
 }
 
 impl ProjectFolders {
-    /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
+    /// What the project at `root` on a person's own computer chooses, from `config`, its
+    /// `config.toml` as read there: what needs no trust, since nothing there has been trusted,
+    /// whatever a rule says of a path on this computer. One that doesn't parse chooses nothing.
+    /// What it says stays out of this server's log, which isn't theirs.
+    pub(super) fn settled_there(&self, root: &Path, config: &str) -> Settled {
+        let Ok(parsed) = policy::config(config, &config_of(root)) else {
+            tracing::warn!("a project's settings on a person's computer don't read");
+            return Settled::default();
+        };
+        let project = Project {
+            root: root.to_path_buf(),
+            remote: None,
+            config: Some(parsed),
+            servers: BTreeMap::new(),
+        };
+        let outcome = Outcome {
+            config: project.config_without_trust(),
+            servers: BTreeMap::new(),
+            hooks: Vec::new(),
+            withheld: Vec::new(),
+            hooks_off: Vec::new(),
+            decisions: None,
+            rows: Vec::new(),
+        };
+        let read = self.read(root, &outcome);
+        if !read.aside.is_empty() {
+            let aside = read.aside.len();
+            tracing::warn!(
+                aside,
+                "a project's settings on a person's computer were set aside"
+            );
+        }
+        read.settled
+    }
+
+    /// What the project at `root`, as `outcome` applies its files, chooses for its threads,
+    /// saying in the log what was set aside.
     pub(super) fn settle(&self, root: &Path, outcome: &Outcome) -> Read {
+        let read = self.read(root, outcome);
+        for line in &read.aside {
+            tracing::warn!(project = %root.display(), "{line}");
+        }
+        read
+    }
+
+    /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
+    fn read(&self, root: &Path, outcome: &Outcome) -> Read {
         let base = self.base();
         let constraints = &base.loaded.constraints;
         let protections = trust::protections(outcome, &base.choices, constraints);
@@ -76,7 +122,6 @@ impl ProjectFolders {
         let choices = match base.loaded.with_project(&path, config).settle() {
             Ok(choices) => choices,
             Err(error) => {
-                tracing::warn!(project = %root.display(), %error, "a project's settings are set aside");
                 return Read {
                     settled: Settled {
                         protections,
@@ -122,9 +167,6 @@ impl ProjectFolders {
             titles: ours(&choices.titles.from).then_some(choices.titles.value),
             worktree: ours(&choices.worktree.from).then_some(choices.worktree.value),
         };
-        for line in &aside {
-            tracing::warn!(project = %root.display(), "{line}");
-        }
         Read {
             settled,
             choices: Some(choices),

@@ -118,7 +118,7 @@ where
     }
 
     /// The id of the computer this server's threads work on, as checkouts name it.
-    fn computer(&self) -> uuid::Uuid {
+    pub(crate) fn computer(&self) -> uuid::Uuid {
         self.inner.harness.workspace().info().computer.as_uuid()
     }
 

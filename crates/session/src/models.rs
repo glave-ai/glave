@@ -178,7 +178,7 @@ where
         let scope = self.scope_of(thread)?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let whose = view.and_then(|view| view.whose());
-        if whose.is_some_and(|person| Some(person) != self.person()) {
+        if !self.goes_by_project(whose) {
             return Ok(None);
         }
         Ok(self.project_settled(scope.located()).await.model)

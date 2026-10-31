@@ -21,6 +21,9 @@ pub struct InstructionsRead {
     /// read there when one is loaded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<SkillFound>,
+    /// The folder's project's `.glave/config.toml` there, as it read, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
 }
 
 /// One skill found on a person's own computer, as a thread is offered it.
