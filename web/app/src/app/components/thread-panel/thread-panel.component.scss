@@ -56,6 +56,11 @@
   list-style: none;
 }
 
+// Its room is kept, unseen, while the project's name is on its way: nothing moves as it comes.
+.reading {
+  visibility: hidden;
+}
+
 .part {
   display: inline-flex;
   align-items: center;

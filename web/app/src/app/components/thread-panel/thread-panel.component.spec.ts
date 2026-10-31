@@ -59,6 +59,7 @@ async function render(
   fake: FakeSession,
   events: readonly unknown[],
   narrow = false,
+  read = true,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadPanelComponent>>;
@@ -80,7 +81,9 @@ async function render(
       ThreadPanelService,
     ],
   });
-  await TestBed.inject(ProjectsService).refresh();
+  if (read) {
+    await TestBed.inject(ProjectsService).refresh();
+  }
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadPanelComponent);
   await fixture.whenStable();
@@ -140,6 +143,16 @@ function worked(workspace: WorkspaceBound = WORKTREE): FakeSession {
 describe('ThreadPanelComponent', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('keeps where the thread works from sight until its project is known', async () => {
+    const { root, fixture } = await render(worked(), WORKED, false, false);
+    const where = root.querySelector('[data-testid="panel-where"]');
+    expect(where?.classList.contains('reading')).toBe(true);
+    await TestBed.inject(ProjectsService).refresh();
+    await fixture.whenStable();
+    expect(where?.classList.contains('reading')).toBe(false);
+    expect(texts(root, 'panel-where-part')).toContain('glave');
   });
 
   it('shows where the thread works and each section that has something', async () => {

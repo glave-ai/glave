@@ -126,6 +126,8 @@ export class ThreadPanelComponent {
       text: string | null,
     ): readonly Part[] => (text === null ? [] : [{ key, icon, label, text }]);
     return {
+      // Kept from sight until its project is known, whose name goes in the middle of the line.
+      reading: project === undefined && !this.projects.loaded(),
       // The project's own name, as the server names it, and where its tools act in full.
       folder: project?.kind === 'project' ? { name: project.name, path: workspace.root } : null,
       before: part('computer', Laptop, this.copy.computer, computer),
