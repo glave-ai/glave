@@ -375,6 +375,7 @@ fn deadline(request: &Request) -> Duration {
         Request::Create { .. }
         | Request::Destroy { .. }
         | Request::Open { .. }
+        | Request::FreeWorktree { .. }
         | Request::Save { .. } => SLOW,
         Request::Authenticate { .. } | Request::Discover {} => HELLO,
         _ => QUICK,

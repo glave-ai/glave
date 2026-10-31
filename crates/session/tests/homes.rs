@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::{LocalComputers, Wake, Waking};
@@ -38,8 +38,8 @@ struct Here {
     holds: Arc<AtomicUsize>,
     /// How many held a computer each time one was woken.
     held_when_woken: Arc<Mutex<Vec<usize>>>,
-    /// What each computer's disk of 100 says it has free.
-    free: Arc<AtomicU64>,
+    /// While what this names is there, each computer's disk says it is full.
+    full_while: Arc<Mutex<Option<PathBuf>>>,
     planned: Mutex<BTreeMap<PrincipalId, Home>>,
 }
 
@@ -68,7 +68,7 @@ impl Here {
             woken: Arc::default(),
             holds: Arc::default(),
             held_when_woken: Arc::default(),
-            free: Arc::new(AtomicU64::new(50)),
+            full_while: Arc::default(),
             planned: Mutex::new(BTreeMap::new()),
         }
     }
@@ -110,9 +110,9 @@ impl Here {
         );
         let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
         let at = folder.clone();
-        let free = Arc::clone(&self.free);
+        let full_while = Arc::clone(&self.full_while);
         let wake: Wake = Arc::new(move || {
-            let free = Arc::clone(&free);
+            let full_while = Arc::clone(&full_while);
             asked.fetch_add(1, Ordering::SeqCst);
             let (woken, holds, held, awake) = (
                 Arc::clone(&woken),
@@ -121,7 +121,7 @@ impl Here {
                 Arc::clone(&awake),
             );
             let (scratch, projects, at) = (scratch.clone(), projects.clone(), at.clone());
-            let free = Arc::clone(&free);
+            let full_while = Arc::clone(&full_while);
             Box::pin(async move {
                 let mut awake = awake.lock().await;
                 if let Some(home) = awake.as_ref() {
@@ -131,11 +131,18 @@ impl Here {
                 held.lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
-                let free = Arc::clone(&free);
+                let full_while = Arc::clone(&full_while);
                 let computers = LocalComputers::for_here(std::env::vars_os())
-                    .with_disk_measure(move || DiskSpace {
-                        size: 100,
-                        free: free.load(Ordering::SeqCst),
+                    .with_disk_measure(move || {
+                        let full = full_while
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .as_ref()
+                            .is_some_and(|path: &PathBuf| path.exists());
+                        DiskSpace {
+                            size: 100,
+                            free: if full { 10 } else { 50 },
+                        }
                     })
                     .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
@@ -585,8 +592,10 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
         let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
         let mut setup = Setup::new(vec![
             answer(Some("Busy, then quiet."), None),
-            answer(None, Some(wrote)),
+            answer(None, Some(wrote.clone())),
             answer(Some("Written."), None),
+            answer(None, Some(wrote)),
+            answer(Some("Written again."), None),
             answer(Some("Back."), None),
         ]);
         setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
@@ -619,33 +628,45 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
                 .unwrap();
             assert!(done.status.success(), "{done:?}");
         }
+        let (older, older_root) = in_a_worktree(&server, project.id).await;
         let (archived, archived_root) = in_a_worktree(&server, project.id).await;
-        let (idle, idle_root) = in_a_worktree(&server, project.id).await;
-        turn(&server, idle, "hi").await.unwrap();
         let (recent, recent_root) = in_a_worktree(&server, project.id).await;
         server
             .request(Request::ThreadArchive { thread: archived })
             .await
             .unwrap();
 
-        // Eight days on, those let go of, the disk full, and a turn that uses the computer ends.
+        // Eight days on, what's quiet is let go of, and one thread has just worked.
         clock.advance_seconds(8 * 24 * 60 * 60);
+        turn(&server, recent, "hi").await.unwrap();
         server.tick().await.unwrap();
         let writing = started(&server, Some(project.id)).await;
-        homes.free.store(10, Ordering::SeqCst);
-        turn(&server, writing.id, "write it down").await.unwrap();
+        let says_full = |path: &Path| {
+            *homes.full_while.lock().unwrap() = Some(path.to_path_buf());
+        };
 
+        // Full until the archived thread's goes: it goes first, and that's enough.
+        says_full(&archived_root);
+        turn(&server, writing.id, "write it down").await.unwrap();
         assert_eq!(
             removed_because(&server, archived).await,
             [RemovedReason::Archived]
         );
-        assert_eq!(removed_because(&server, idle).await, [RemovedReason::Idle]);
-        assert!(!archived_root.exists() && !idle_root.exists());
-        let _ = (recent, recent_root);
+        assert!(!archived_root.exists());
+        assert_eq!(removed_because(&server, older).await, []);
+        assert!(older_root.exists(), "it stopped once there was room");
+
+        // Full for good: the idle one goes, and never one that worked within the week.
+        says_full(&root);
+        turn(&server, writing.id, "and again").await.unwrap();
+        assert_eq!(removed_because(&server, older).await, [RemovedReason::Idle]);
+        assert!(!older_root.exists());
+        assert_eq!(removed_because(&server, recent).await, []);
+        assert!(recent_root.exists(), "it worked within the week");
 
         // Back, it opens its worktree again.
-        homes.free.store(50, Ordering::SeqCst);
-        turn(&server, idle, "hello again").await.unwrap();
-        assert!(idle_root.exists(), "{}", idle_root.display());
+        *homes.full_while.lock().unwrap() = None;
+        turn(&server, older, "hello again").await.unwrap();
+        assert!(older_root.exists(), "{}", older_root.display());
     });
 }

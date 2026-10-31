@@ -506,10 +506,20 @@ fn a_worktree_is_freed_only_when_all_it_holds_can_be_rebuilt_and_nothing_has_it_
         );
         sh(root, "git push -q origin HEAD");
         std::fs::write(root.join(".env"), "mine").unwrap();
-        kept(free(&path).await, "ignores");
+        kept(free(&path).await, "build");
         std::fs::remove_file(root.join(".env")).unwrap();
         std::fs::create_dir_all(root.join("target")).unwrap();
         std::fs::write(root.join("target/built"), "x").unwrap();
+        // Part of a build folder git tracks is the person's.
+        std::fs::create_dir_all(root.join("build")).unwrap();
+        std::fs::write(root.join("build/tracked"), "x").unwrap();
+        std::fs::write(root.join(".gitignore"), "target\nbuild/.env\n").unwrap();
+        let commit = "git add . && git -c user.name=t -c user.email=t@example.com commit -qm b";
+        sh(root, commit);
+        sh(root, "git push -q origin HEAD");
+        std::fs::write(root.join("build/.env"), "mine").unwrap();
+        kept(free(&path).await, "build");
+        std::fs::remove_file(root.join("build/.env")).unwrap();
         assert_eq!(free(&path).await, Freed::Removed);
         assert!(!root.exists());
         assert!(branches(&repo).contains("glave/free"), "its branch stays");

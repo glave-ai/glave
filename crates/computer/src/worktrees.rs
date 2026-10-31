@@ -170,26 +170,66 @@ pub async fn release(
     }
 }
 
-/// Whether `kept` holds a file git ignores that a build wouldn't make again: the person's, such
-/// as a `.env`, which a worktree freed for room would lose.
-pub(crate) async fn holds_own_ignored(
+/// Whether all `kept` holds beyond its commits a build would make again: nothing but whole build
+/// folders git ignores. Anything else counts against it, a line git says that glave doesn't
+/// read included: a file of the person's git ignores, such as a `.env`, one inside a build folder
+/// git tracks part of, and whatever changed since it was last looked at.
+pub(crate) async fn only_rebuildable(
     kept: &Kept,
     environment: &[(OsString, OsString)],
     processes: &Processes,
 ) -> Result<bool, ComputerError> {
-    let git = Git {
-        processes,
-        environment,
-        at: &kept.path,
-        options: Vec::new(),
-        credential: None,
+    let git = Git::at(processes, environment, &kept.path);
+    let args = [
+        "status",
+        "--porcelain",
+        "--untracked-files=normal",
+        "--ignored=traditional",
+    ];
+    let said = git.must(&args).await?;
+    Ok(said.lines().all(|line| {
+        line.strip_prefix("!! ")
+            .and_then(|path| path.strip_suffix('/'))
+            .is_some_and(|folder| crate::disk::BUILT.contains(&folder))
+    }))
+}
+
+/// What's recorded of the worktrees under `base`, one folder per repository, sorted by path, with
+/// no git: what the server chooses among, which asks about each one it picks. A folder with no
+/// record, or a record that can't be read, is left out.
+pub(crate) async fn recorded(base: &Path) -> Result<Vec<(PathBuf, Record)>, ComputerError> {
+    let mut found = Vec::new();
+    for repository in folders(base).await? {
+        for path in folders(&repository).await? {
+            if found.len() >= MAX_LISTED {
+                break;
+            }
+            if let Ok(Some(record)) = read_record(&path).await {
+                found.push((path, record));
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(found)
+}
+
+/// `path` as a worktree kept under `base`: `None` when it is not one.
+pub(crate) async fn at(
+    base: &Path,
+    path: &Path,
+    environment: &[(OsString, OsString)],
+    processes: &Processes,
+) -> Result<Option<Kept>, ComputerError> {
+    let (Ok(base), Ok(path)) = (
+        tokio::fs::canonicalize(base).await,
+        tokio::fs::canonicalize(path).await,
+    ) else {
+        return Ok(None);
     };
-    let said = git.must(&["status", "--ignored", "--porcelain"]).await?;
-    Ok(said
-        .lines()
-        .filter_map(|line| line.strip_prefix("!! "))
-        .filter_map(|path| path.split('/').next())
-        .any(|top| !crate::disk::BUILT.contains(&top)))
+    if !path.starts_with(&base) || path == base {
+        return Ok(None);
+    }
+    describe(&path, environment, processes).await
 }
 
 /// Removes the worktree, whatever it holds, and its record; its branch is kept. For a worktree
@@ -274,7 +314,7 @@ async fn describe(
     }
     // Anything git cannot answer counts against removing it.
     let changed = git
-        .run(&["status", "--porcelain"])
+        .run(&["status", "--porcelain", "--untracked-files=normal"])
         .await
         .map_or(true, |status| !status.is_empty());
     let unpushed = git

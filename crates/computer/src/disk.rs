@@ -1,7 +1,7 @@
 //! A person's computer in the cloud keeps its disk from filling (`specs/computers.md`, "A
 //! person's computer in the cloud", decision 7). Its disk is its budget: the volume the
 //! person's home is on. Once a minute, while no request runs and nothing runs in the
-//! background, if more than [`FULL_PERCENT`] of it is used, glave frees what can be rebuilt,
+//! background, if more than 80% of it is used, glave frees what can be rebuilt,
 //! the oldest first, until it is below again: build outputs git ignores at the root of the
 //! worktrees glave made, then the caches commands fill, which a later command fetches again,
 //! and last what the Trash holds. Only what has gone untouched for [`UNTOUCHED`], never a link
@@ -25,9 +25,6 @@ use tokio::io::AsyncWriteExt as _;
 
 use crate::local::git::Git;
 use crate::worktrees::{Trash, folders};
-
-/// Above this share of the disk used, in percent, what can be rebuilt is freed.
-const FULL_PERCENT: u64 = DiskSpace::FULL_PERCENT;
 
 /// How often the disk is looked at.
 const EVERY: Duration = Duration::from_mins(1);
@@ -56,27 +53,12 @@ const CACHES: [&str; 2] = [".npm/_cacache", ".cargo/registry/cache"];
 /// The most things one pass looks at, of each kind.
 const MOST_LOOKED_AT: usize = 1_000;
 
-/// How much a disk holds and how much of it is free, in bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Space {
-    pub(crate) size: u64,
-    pub(crate) available: u64,
-}
-
-impl Space {
-    /// Whether more than [`FULL_PERCENT`] of it is used.
-    fn full(self) -> bool {
-        let used = self.size.saturating_sub(self.available);
-        used.saturating_mul(100) > self.size.saturating_mul(FULL_PERCENT)
-    }
-}
-
 /// The space on the disk `path` is on, as the system says.
-pub(crate) fn space(path: &Path) -> std::io::Result<Space> {
+pub(crate) fn space(path: &Path) -> std::io::Result<DiskSpace> {
     let stats = rustix::fs::statvfs(path)?;
-    Ok(Space {
+    Ok(DiskSpace {
         size: stats.f_blocks.saturating_mul(stats.f_frsize),
-        available: stats.f_bavail.saturating_mul(stats.f_frsize),
+        free: stats.f_bavail.saturating_mul(stats.f_frsize),
     })
 }
 
@@ -107,7 +89,7 @@ struct Candidate {
 }
 
 /// How a keeper reads the space on a disk.
-type Measure = Box<dyn Fn(&Path) -> std::io::Result<Space> + Send + Sync>;
+type Measure = Box<dyn Fn(&Path) -> std::io::Result<DiskSpace> + Send + Sync>;
 
 /// What keeps a person's computer's disk from filling, beside the computer it serves.
 pub struct Keeper {
@@ -221,7 +203,7 @@ impl Keeper {
     /// Whether the disk is full now.
     fn full(&self) -> Result<bool, ComputerError> {
         (self.measure)(&self.home)
-            .map(Space::full)
+            .map(DiskSpace::full)
             .map_err(|error| {
                 ComputerError::Failed(format!("could not read how full the disk is: {error}"))
             })
