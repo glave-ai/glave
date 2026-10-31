@@ -234,7 +234,7 @@ where
             Request::SigninEndOthers {} => self.end_others(caller).await,
             Request::ModelList {} => {
                 self.reread().await;
-                Ok(self.list_models())
+                self.list_models(caller).await
             }
             Request::ThreadStart {
                 computer: Some(computer),
