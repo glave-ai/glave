@@ -9,10 +9,10 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Auth, AuthMethod, ThreadId};
+use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
 use glave_harness::{Brought, ProjectFolders};
 use glave_ports::{
-    BoxFuture, Caller, Effect, InMemoryTools, ProjectId, ToolInfo, ToolOutput, ToolSpec,
+    BoxFuture, Caller, Effect, InMemoryTools, ProjectId, Scope, ToolInfo, ToolOutput, ToolSpec,
 };
 use glave_session::protocol::{
     ApiError, NewFolder, Notification, Reply, Request, Status, ThreadSummary, TrustAsk,
@@ -72,6 +72,26 @@ impl ProjectTrust for Repository {
             *self.trusted.lock().unwrap() = Some(self.version());
         }
         Box::pin(async move { Ok(trusted) })
+    }
+
+    fn ask_there<'a>(
+        &'a self,
+        _scope: Scope,
+        _root: &'a Path,
+        _config: &'a str,
+    ) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn trust_there<'a>(
+        &'a self,
+        _scope: Scope,
+        _person: PrincipalId,
+        _root: &'a Path,
+        _config: &'a str,
+        _ask: &'a str,
+    ) -> BoxFuture<'a, Result<bool, ApiError>> {
+        Box::pin(async { Ok(false) })
     }
 }
 

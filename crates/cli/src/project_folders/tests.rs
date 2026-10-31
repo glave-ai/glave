@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
+use glave_event::PrincipalId;
 use glave_harness::Permissions;
 use glave_ports::block_on;
 use glave_ports::settings::{Judge, Protections};
@@ -18,6 +19,8 @@ use super::*;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
 use glave_harness::ProjectFolders as _;
+use glave_ports::{Clock as _, OrgId, Scope, SystemClock};
+use glave_session::ProjectTrust as _;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
 /// `config`, both fresh for the test `name`, in a folder removed when the first drops.
@@ -348,25 +351,74 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
 }
 
 #[test]
-fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosens_nothing() {
+fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosens_only_once_trusted()
+ {
     let home = TempDir::new("settled-at-home").unwrap();
     block_on!(async {
         let projects = projects(&home, Vec::new(), &["alpha"]).await;
         let root = Path::new("/home/glave/garden");
-        let config = "model = \"alpha\"\n";
-        let settled = projects.settled_at_home(root, config).await;
+        let ana = PrincipalId::new(SystemClock.now(), crate::accounts::random().unwrap()).unwrap();
+        let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
+        let there = Scope::glaves_own(org, project_id());
+        let another = Scope::glaves_own(org, ProjectId::from_uuid(uuid::Uuid::from_u128(3)));
+        let settled = projects
+            .settled_at_home(there, root, "model = \"alpha\"\n")
+            .await;
         assert_eq!(settled.model.as_deref(), Some("alpha"));
-        let not_offered = projects.settled_at_home(root, "model = \"beta\"\n").await;
+        let not_offered = projects
+            .settled_at_home(there, root, "model = \"beta\"\n")
+            .await;
         assert_eq!(not_offered.model, None, "one the server doesn't offer");
-        let judged = "judge_model = \"alpha\"\npermissions = \"full-access\"\n";
-        let loosening = projects.settled_at_home(root, judged).await;
-        assert_eq!(loosening.judge, None, "what needs trust stays off");
-        assert_eq!(loosening.protections.permissions, None, "and full access");
-        let broken = projects.settled_at_home(root, "model = ").await;
+        let broken = projects.settled_at_home(there, root, "model = ").await;
         assert_eq!(
             broken,
             Settled::default(),
             "one that doesn't parse chooses nothing"
         );
+
+        // What needs trust stays off, and is asked of its person, until they say yes.
+        let judged = "judge_model = \"alpha\"\npermissions = \"full-access\"\n";
+        let loosening = projects.settled_at_home(there, root, judged).await;
+        assert_eq!(loosening.judge, None, "what needs trust stays off");
+        assert_eq!(loosening.protections.permissions, None, "and full access");
+        let asked = projects
+            .ask_there(there, root, judged)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !projects
+                .trust_there(there, ana, root, judged, "another")
+                .await
+                .unwrap()
+        );
+        assert!(
+            projects
+                .trust_there(there, ana, root, judged, &asked.ask)
+                .await
+                .unwrap()
+        );
+        let trusted = projects.settled_at_home(there, root, judged).await;
+        assert_eq!(trusted.judge, Some(Judge::Model("alpha".into())));
+        assert_eq!(
+            trusted.protections.permissions,
+            Some(Permissions::FullAccess)
+        );
+        assert_eq!(projects.ask_there(there, root, judged).await.unwrap(), None);
+
+        // A yes is that project's: the same path in another is another's to answer.
+        let others = projects.settled_at_home(another, root, judged).await;
+        assert_eq!(others.protections.permissions, None);
+        assert!(
+            projects
+                .ask_there(another, root, judged)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        // A wider [web] isn't theirs to bring: `web_fetch` runs on the server.
+        let web = "[web]\nprivate_addresses = true\n";
+        assert_eq!(projects.ask_there(there, root, web).await.unwrap(), None);
     });
 }

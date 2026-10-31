@@ -17,21 +17,19 @@ use glave_ports::computer::{
     ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, SandboxLevel, Sources,
     WorkspaceId, WorkspaceInfo,
 };
-use glave_ports::{BoxFuture, Message, OrgId, ProjectId};
+use glave_ports::{Message, OrgId, ProjectId};
 use glave_session::Answering;
 
-use glave_session::protocol::{
-    ModelInfo, NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary,
-};
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
 
-use glave_harness::{ProjectFolders, Settled, Skill, SkillSource, Skills};
+use glave_harness::{Skill, SkillSource, Skills};
 
 use crate::support::*;
 
 /// People's computers on this machine: each person's a folder of their own with its scratch
 /// folders, planned until a call needs it, then woken; every wake is counted.
-struct Here {
+pub(crate) struct Here {
     base: PathBuf,
     /// How many times a call asked for a computer, woken or not.
     asked: Arc<AtomicUsize>,
@@ -65,7 +63,7 @@ impl Drop for Hold {
 }
 
 impl Here {
-    fn new(base: &Path) -> Self {
+    pub(crate) fn new(base: &Path) -> Self {
         std::fs::create_dir_all(base).unwrap();
         Self {
             base: base.canonicalize().unwrap(),
@@ -83,7 +81,7 @@ impl Here {
         self.woken.load(Ordering::SeqCst)
     }
 
-    fn asked(&self) -> usize {
+    pub(crate) fn asked(&self) -> usize {
         self.asked.load(Ordering::SeqCst)
     }
 
@@ -241,7 +239,7 @@ fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
 }
 
 /// A thread `server` started for its person, in `project` or a chat of their own.
-async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
+pub(crate) async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
     let started = server
         .request(Request::ThreadStart {
             project,
@@ -468,7 +466,7 @@ const SKILL_TEXT: &str =
 
 /// `next` as a server started later on `server`'s store, for the same person, and the computers
 /// it reaches.
-fn later_on(mut next: Setup, dir: &Path, server: &Tested<Shared>) -> (Arc<Here>, Setup) {
+pub(crate) fn later_on(mut next: Setup, dir: &Path, server: &Tested<Shared>) -> (Arc<Here>, Setup) {
     next.seed = 2;
     next.settings.person = server.person();
     next.projects = Some(Arc::clone(server.projects()));
@@ -503,7 +501,7 @@ async fn garden_with_a_skill(
 }
 
 /// A new project with a folder of its own on `server`'s person's computer.
-async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project, ProjectFolder) {
+pub(crate) async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project, ProjectFolder) {
     let made = Request::ProjectCreate {
         name: "Garden".into(),
         folder: Some(NewFolder::Empty),
@@ -726,68 +724,5 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
         *homes.full_while.lock().unwrap() = None;
         turn(&server, older, "hello again").await.unwrap();
         assert!(older_root.exists(), "{}", older_root.display());
-    });
-}
-
-/// What a host makes of a project's `config.toml` on a person's computer: its text, as the
-/// model its threads go to.
-struct ConfigIsTheModel;
-
-impl ProjectFolders for ConfigIsTheModel {
-    fn for_folder<'a>(
-        &'a self,
-        _root: &'a Path,
-        _project: Option<&'a Path>,
-        _trusting: bool,
-    ) -> BoxFuture<'a, Option<String>> {
-        Box::pin(async { None })
-    }
-
-    fn settled_at_home<'a>(
-        &'a self,
-        _project: &'a Path,
-        config: &'a str,
-    ) -> BoxFuture<'a, Settled> {
-        Box::pin(async move {
-            Settled {
-                model: Some(config.trim().to_owned()),
-                ..Settled::default()
-            }
-        })
-    }
-}
-
-#[test]
-fn a_project_s_choices_are_read_on_its_person_s_computer_and_kept() {
-    let dir = folder("session-homes-choices");
-    block_on!(async {
-        let log = Shared::default();
-        let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
-        let answers = vec![answer(None, Some(wrote)), answer(Some("Done."), None)];
-        let homes = Arc::new(Here::new(&dir.join("people")));
-        let first = Setup {
-            homes: Some(Arc::clone(&homes) as Arc<dyn Homes>),
-            ..Setup::new(answers)
-        };
-        let (server, _) = first.build_on(&dir, log.clone()).await;
-        let (project, folder) = new_garden(&server).await;
-        // Choices put there since, read by the end of a turn that changed a file.
-        let glave = PathBuf::from(&folder.checkout.path).join(".glave");
-        std::fs::create_dir_all(&glave).unwrap();
-        std::fs::write(glave.join("config.toml"), "chosen\n").unwrap();
-        let thread = started(&server, Some(project.id)).await;
-        turn(&server, thread.id, "write it down").await.unwrap();
-
-        // A server started later goes by what was kept, and nothing is asked of the computer.
-        let mut next = Setup::new(vec![answer(Some("Hello."), None)]);
-        next.models = vec![ModelInfo::new("chosen")];
-        next.project_folders = Some(Arc::new(ConfigIsTheModel));
-        let (later, next) = later_on(next, &dir, &server);
-        let (again, seen) = next.build_on(&dir, log).await;
-        let thread = started(&again, Some(project.id)).await;
-        turn(&again, thread.id, "hi").await.unwrap();
-        assert_eq!(later.asked(), 0, "nothing asked of their computer");
-        let sent: serde_json::Value = serde_json::from_str(&json(&seen)[0]).unwrap();
-        assert_eq!(sent["model"], "chosen");
     });
 }
