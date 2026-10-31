@@ -102,8 +102,12 @@ pub(crate) async fn agents_md_on(
     read_on(home, files).await
 }
 
+/// The most of a project's `config.toml` on a person's own computer glave keeps and reads.
+const MAX_CONFIG: usize = 64 * 1024;
+
 /// The `.glave/config.toml` of the repository `root` is in on its person's own computer, read
-/// there through `home`; none when it has none, or the computer won't show it.
+/// there through `home`; none when it has none, the computer won't show it or it's too long to
+/// be one.
 pub(crate) async fn config_on(
     home: &Workspace,
     root: &Path,
@@ -119,6 +123,7 @@ pub(crate) async fn config_on(
         return Ok(None);
     }
     match home.read(&path).await {
+        Ok(bytes) if bytes.as_slice().len() > MAX_CONFIG => Ok(None),
         Ok(bytes) => Ok(Some(String::from_utf8_lossy(bytes.as_slice()).into_owned())),
         Err(ComputerError::Refused(_)) => Ok(None),
         Err(error) => Err(error),

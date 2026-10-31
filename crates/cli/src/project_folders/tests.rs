@@ -358,9 +358,10 @@ fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosen
         assert_eq!(settled.model.as_deref(), Some("alpha"));
         let not_offered = projects.settled_at_home(root, "model = \"beta\"\n").await;
         assert_eq!(not_offered.model, None, "one the server doesn't offer");
-        let judged = "[judge]\nmodel = \"alpha\"\n";
+        let judged = "judge_model = \"alpha\"\npermissions = \"full-access\"\n";
         let loosening = projects.settled_at_home(root, judged).await;
         assert_eq!(loosening.judge, None, "what needs trust stays off");
+        assert_eq!(loosening.protections.permissions, None, "and full access");
         let broken = projects.settled_at_home(root, "model = ").await;
         assert_eq!(
             broken,

@@ -12,9 +12,7 @@ mod kept;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glave_event::{
-    ComputerKind, InstructionsFile, Opened, PrincipalId, SkillFound, WorkspaceBound,
-};
+use glave_event::{ComputerKind, InstructionsRead, Opened, PrincipalId, WorkspaceBound};
 use glave_ports::computer::{ComputerError, Home};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 
@@ -147,6 +145,23 @@ where
         crate::instructions::compose(root, &files)
     }
 
+    /// What the project in `scope`, its folder at `root` on its person's own computer, chooses
+    /// for its threads, from what was last read there: the server's account of a thread there,
+    /// which reaches nothing.
+    pub async fn settled_at_home(&self, scope: Scope, root: &Path) -> Settled {
+        let Some(host) = &self.project_folders else {
+            return Settled::default();
+        };
+        match self
+            .last_read(scope, root)
+            .await
+            .and_then(|read| read.config)
+        {
+            Some(config) => host.settled_at_home(root, &config).await,
+            None => Settled::default(),
+        }
+    }
+
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
     /// a command or changed a file there, which the computer is awake for: what a compaction
     /// opens the conversation with and, kept, what the next thread in its folder, or the next
@@ -160,13 +175,12 @@ where
         if matches!(bound.opened, Opened::Clone { .. }) {
             return;
         }
-        let Ok((read, kept_for)) = self.read_at_home(thread.scope, thread.for_, &bound).await
-        else {
+        let Ok((read, kept)) = self.read_at_home(thread.scope, thread.for_, &bound).await else {
             return;
         };
         thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read.files);
-        if let Some(kept_for) = kept_for {
-            self.keep_read(thread.scope, &kept_for, read).await;
+        if kept {
+            self.keep_read(thread.scope, read).await;
         } else if let Some(home) = thread.home.as_mut() {
             home.own = Some(read);
         }
@@ -177,8 +191,8 @@ where
     /// keeps it, so the project's threads open with it.
     pub async fn keep_instructions(&self, scope: Scope, home: &Workspace, root: &str) {
         let root = Path::new(root);
-        match read_there(home, Some(root)).await {
-            Ok(read) => self.keep_read(scope, root, read).await,
+        match read_there(home, root, Some(root)).await {
+            Ok(read) => self.keep_read(scope, read).await,
             Err(error) => tracing::warn!(%error, "a new project's instructions were not read"),
         }
     }
@@ -193,20 +207,14 @@ where
         scope: Scope,
         person: Option<PrincipalId>,
         bound: &WorkspaceBound,
-    ) -> Result<(ReadThere, Option<PathBuf>), HarnessError> {
+    ) -> Result<(InstructionsRead, bool), HarnessError> {
         let (home, _) = self.home_of(scope, person)?;
         let root = Path::new(&bound.root);
         Ok(match bound.opened {
-            Opened::Scratch { .. } => (
-                read_there(&home, None).await?,
-                Some(home.root().to_path_buf()),
-            ),
-            Opened::Folder { .. } => (
-                read_there(&home, Some(root)).await?,
-                Some(root.to_path_buf()),
-            ),
+            Opened::Scratch { .. } => (read_there(&home, home.root(), None).await?, true),
+            Opened::Folder { .. } => (read_there(&home, root, Some(root)).await?, true),
             Opened::Worktree { .. } | Opened::Clone { .. } => {
-                (read_there(&home, Some(root)).await?, None)
+                (read_there(&home, root, Some(root)).await?, false)
             }
         })
     }
@@ -233,26 +241,19 @@ where
                 | Opened::Worktree {
                     repository: path, ..
                 },
-            ) => self
-                .last_read(scope, Path::new(path))
-                .await
-                .map(ReadThere::from),
-            (None, Opened::Scratch { .. }) => self
-                .last_read(scope, home.root())
-                .await
-                .map(ReadThere::from),
+            ) => self.last_read(scope, Path::new(path)).await,
+            (None, Opened::Scratch { .. }) => self.last_read(scope, home.root()).await,
             (None, Opened::Clone { .. }) => None,
-        }
-        .unwrap_or_default();
-        let settled = match (&self.project_folders, &read.config) {
+        };
+        let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
+        let settled = match (&self.project_folders, &config) {
             (Some(host), Some(config)) => {
                 host.settled_at_home(Path::new(&at.bound.root), config)
                     .await
             }
             _ => Settled::default(),
         };
-        let mut skills: Vec<Skill> = read
-            .skills
+        let mut skills: Vec<Skill> = found
             .into_iter()
             .map(|skill| Skill {
                 name: skill.name,
@@ -274,27 +275,13 @@ where
     }
 }
 
-/// What is read on a person's own computer for a folder of theirs.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ReadThere {
-    pub(crate) files: Vec<InstructionsFile>,
-    pub(crate) skills: Vec<SkillFound>,
-    pub(crate) config: Option<String>,
-}
-
-impl From<glave_event::InstructionsRead> for ReadThere {
-    fn from(read: glave_event::InstructionsRead) -> Self {
-        Self {
-            files: read.files,
-            skills: read.skills,
-            config: read.config,
-        }
-    }
-}
-
 /// What a thread at `root`, or a chat with none, opens with and is offered, read through `home`,
-/// which wakes the computer if it sleeps.
-async fn read_there(home: &Workspace, root: Option<&Path>) -> Result<ReadThere, ComputerError> {
+/// which wakes the computer if it sleeps; as read for `kept_as`.
+async fn read_there(
+    home: &Workspace,
+    kept_as: &Path,
+    root: Option<&Path>,
+) -> Result<InstructionsRead, ComputerError> {
     let (files, config) = match root {
         Some(root) => (
             crate::instructions::agents_md_on(home, root).await?,
@@ -302,7 +289,8 @@ async fn read_there(home: &Workspace, root: Option<&Path>) -> Result<ReadThere, 
         ),
         None => (crate::instructions::personal_on(home).await?, None),
     };
-    Ok(ReadThere {
+    Ok(InstructionsRead {
+        root: kept_as.display().to_string(),
         files,
         skills: skills_on(home, root).await?,
         config,
@@ -319,7 +307,7 @@ pub(crate) struct AtHome {
     pub(crate) changed: bool,
     /// What a turn of its own read in a worktree there, which no other thread goes by and so
     /// isn't kept; `None` for all else, which goes by what was kept.
-    pub(crate) own: Option<ReadThere>,
+    pub(crate) own: Option<InstructionsRead>,
 }
 
 impl AtHome {
