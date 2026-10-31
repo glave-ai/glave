@@ -5,6 +5,7 @@
 mod changes;
 mod client;
 mod http;
+mod limits;
 mod probe;
 mod resources;
 mod server;

@@ -75,7 +75,6 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "mcp__tests__flood",
             "mcp__tests__whose",
             "mcp__tests__roots",
-            "mcp__tests__progress",
             "mcp__tests__lookup",
             "list_mcp_resources",
             "read_mcp_resource",
