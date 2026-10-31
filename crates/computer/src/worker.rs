@@ -23,8 +23,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
-    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Limits,
-    Output, Refusal, Sources, WorkspaceId, WorkspaceInfo,
+    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Freed,
+    KeptWorktree, Limits, Output, Refusal, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, Clock, NeverCancelled, SystemClock};
 use glave_process::Glave;
@@ -470,6 +470,28 @@ impl Computers for WorkerComputers {
                 Ok(worker) => self.remote(&worker).await?.status(computer).await,
                 Err(_) => Ok(route::gone(computer)),
             }
+        })
+    }
+
+    fn worktrees(
+        &self,
+        computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        Box::pin(async move {
+            let worker = self.worker(computer)?;
+            self.remote(&worker).await?.worktrees(computer).await
+        })
+    }
+
+    fn free_worktree<'a>(
+        &'a self,
+        computer: ComputerId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
+        Box::pin(async move {
+            let worker = self.worker(computer)?;
+            let remote = self.remote(&worker).await?;
+            remote.free_worktree(computer, path).await
         })
     }
 

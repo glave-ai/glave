@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Environment, FileWrite, Finished, GitCredential, GitCredentials,
-    Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed, GitCredential,
+    GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved,
+    Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -375,6 +375,7 @@ fn deadline(request: &Request) -> Duration {
         Request::Create { .. }
         | Request::Destroy { .. }
         | Request::Open { .. }
+        | Request::FreeWorktree { .. }
         | Request::Save { .. } => SLOW,
         Request::Authenticate { .. } | Request::Discover {} => HELLO,
         _ => QUICK,
@@ -403,6 +404,25 @@ impl Computers for RemoteComputers {
 
     fn status(&self, computer: ComputerId) -> BoxFuture<'_, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move { self.typed(&Request::Status { computer }).await })
+    }
+
+    fn worktrees(
+        &self,
+        computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        Box::pin(async move { self.typed(&Request::Worktrees { computer }).await })
+    }
+
+    fn free_worktree<'a>(
+        &'a self,
+        computer: ComputerId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
+        let request = Request::FreeWorktree {
+            computer,
+            path: path.to_owned(),
+        };
+        Box::pin(async move { self.typed(&request).await })
     }
 
     fn destroy(&self, computer: ComputerId) -> BoxFuture<'_, Result<(), ComputerError>> {

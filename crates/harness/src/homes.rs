@@ -7,6 +7,7 @@
 //! offered, are read there too, through the computer port, only when glave has just used the computer (its folder made, or a
 //! turn that changed files there ending), and kept: a thread there opens with what was kept.
 
+mod freeing;
 mod kept;
 
 use std::path::{Path, PathBuf};
@@ -172,6 +173,8 @@ where
         };
         home.changed = false;
         let bound = home.bound.clone();
+        // It has just been used, so asking it wakes nothing.
+        self.free_room_at_home(thread).await;
         if matches!(bound.opened, Opened::Clone { .. }) {
             return;
         }

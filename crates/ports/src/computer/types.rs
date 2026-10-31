@@ -98,6 +98,51 @@ pub struct ComputerInfo {
     pub size: Size,
     /// The recipe it was made from; `None` once it is gone.
     pub environment: Option<Environment>,
+    /// How much its disk holds and has free, where it can say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk: Option<DiskSpace>,
+}
+
+/// How much a computer's disk holds and has free, in bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiskSpace {
+    pub size: u64,
+    pub free: u64,
+}
+
+impl DiskSpace {
+    /// The share of the disk used above which what can be rebuilt is freed, in percent
+    /// (`specs/computers.md`, decision 7).
+    const FULL_PERCENT: u64 = 80;
+
+    /// Whether more than 80% of it is used.
+    pub fn full(self) -> bool {
+        let used = self.size.saturating_sub(self.free);
+        u128::from(used) * 100 > u128::from(self.size) * u128::from(Self::FULL_PERCENT)
+    }
+}
+
+/// A worktree a computer keeps for a thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeptWorktree {
+    /// Its folder, as that computer names it.
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Whose it is: the label it was opened with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+/// What became of a worktree a computer was asked to free.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Freed {
+    Removed,
+    /// It stays: nothing of it was touched. Why, for the record.
+    Kept {
+        why: String,
+    },
 }
 
 /// What a workspace is checked out from.
