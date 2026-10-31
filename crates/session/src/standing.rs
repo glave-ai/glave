@@ -252,7 +252,7 @@ where
         protections: Protections,
     ) -> Result<ThreadSummary, ApiError> {
         let theirs = view.whose();
-        let protections = if theirs.is_none_or(|person| Some(person) == self.person()) {
+        let protections = if self.goes_by_project(theirs) {
             protections
         } else {
             Protections::default()

@@ -102,6 +102,34 @@ pub(crate) async fn agents_md_on(
     read_on(home, files).await
 }
 
+/// The most of a project's `config.toml` on a person's own computer glave keeps and reads.
+const MAX_CONFIG: usize = 64 * 1024;
+
+/// The `.glave/config.toml` of the repository `root` is in on its person's own computer, read
+/// there through `home`; none when it has none, the computer won't show it or it's too long to
+/// be one.
+pub(crate) async fn config_on(
+    home: &Workspace,
+    root: &Path,
+) -> Result<Option<String>, ComputerError> {
+    let dirs = dirs_on(home, root).await?;
+    let Some(path) = dirs
+        .first()
+        .and_then(|dir| inside(home.root(), &dir.join(".glave/config.toml")))
+    else {
+        return Ok(None);
+    };
+    if !there(home, &path).await? {
+        return Ok(None);
+    }
+    match home.read(&path).await {
+        Ok(bytes) if bytes.as_slice().len() > MAX_CONFIG => Ok(None),
+        Ok(bytes) => Ok(Some(String::from_utf8_lossy(bytes.as_slice()).into_owned())),
+        Err(ComputerError::Refused(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// The person's own instructions on their own computer, read there through `home`, their home
 /// on it, as [`agents_md_on`] reads them: what a chat opens with, as on a laptop.
 pub(crate) async fn personal_on(home: &Workspace) -> Result<Vec<InstructionsFile>, ComputerError> {

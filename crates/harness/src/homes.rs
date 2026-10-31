@@ -12,15 +12,14 @@ mod kept;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glave_event::{
-    ComputerKind, InstructionsFile, Opened, PrincipalId, SkillFound, WorkspaceBound,
-};
+use glave_event::{ComputerKind, InstructionsRead, Opened, PrincipalId, WorkspaceBound};
 use glave_ports::computer::{ComputerError, Home};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 
 use crate::approval::Approver;
 use crate::background::Commands;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::project_folders::{Brought, Settled};
 use crate::removed::owner_label;
 use crate::skills::on_home::skills_on;
 use crate::skills::{Skill, SkillSource, Skills};
@@ -140,10 +139,27 @@ where
                 let (home, _) = self.home_of(scope, person).ok()?;
                 self.last_read(scope, home.root()).await?.files
             }
-            Opened::Worktree { .. } => self.read_at_home(scope, person, bound).await.ok()?.0,
+            Opened::Worktree { .. } => self.read_at_home(scope, person, bound).await.ok()?.0.files,
             Opened::Clone { .. } => return None,
         };
         crate::instructions::compose(root, &files)
+    }
+
+    /// What the project in `scope`, its folder at `root` on its person's own computer, chooses
+    /// for its threads, from what was last read there: the server's account of a thread there,
+    /// which reaches nothing.
+    pub async fn settled_at_home(&self, scope: Scope, root: &Path) -> Settled {
+        let Some(host) = &self.project_folders else {
+            return Settled::default();
+        };
+        match self
+            .last_read(scope, root)
+            .await
+            .and_then(|read| read.config)
+        {
+            Some(config) => host.settled_at_home(root, &config).await,
+            None => Settled::default(),
+        }
     }
 
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
@@ -159,18 +175,15 @@ where
         if matches!(bound.opened, Opened::Clone { .. }) {
             return;
         }
-        let Ok((read, skills, kept_for)) =
-            self.read_at_home(thread.scope, thread.for_, &bound).await
-        else {
+        let Ok((read, kept)) = self.read_at_home(thread.scope, thread.for_, &bound).await else {
             return;
         };
-        if let Some(kept_for) = kept_for {
-            self.keep_read(thread.scope, &kept_for, read.clone(), skills)
-                .await;
-        } else {
-            home.skills = Some(skills);
+        thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read.files);
+        if kept {
+            self.keep_read(thread.scope, read).await;
+        } else if let Some(home) = thread.home.as_mut() {
+            home.own = Some(read);
         }
-        thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read);
     }
 
     /// Reads what a thread in the project folder at `root` in `scope` opens with through
@@ -178,12 +191,8 @@ where
     /// keeps it, so the project's threads open with it.
     pub async fn keep_instructions(&self, scope: Scope, home: &Workspace, root: &str) {
         let root = Path::new(root);
-        let read = async {
-            let files = crate::instructions::agents_md_on(home, root).await?;
-            Ok::<_, ComputerError>((files, skills_on(home, Some(root)).await?))
-        };
-        match read.await {
-            Ok((files, skills)) => self.keep_read(scope, root, files, skills).await,
+        match read_there(home, root, Some(root)).await {
+            Ok(read) => self.keep_read(scope, read).await,
             Err(error) => tracing::warn!(%error, "a new project's instructions were not read"),
         }
     }
@@ -198,42 +207,33 @@ where
         scope: Scope,
         person: Option<PrincipalId>,
         bound: &WorkspaceBound,
-    ) -> Result<(Vec<InstructionsFile>, Vec<SkillFound>, Option<PathBuf>), HarnessError> {
+    ) -> Result<(InstructionsRead, bool), HarnessError> {
         let (home, _) = self.home_of(scope, person)?;
         let root = Path::new(&bound.root);
         Ok(match bound.opened {
-            Opened::Scratch { .. } => (
-                crate::instructions::personal_on(&home).await?,
-                skills_on(&home, None).await?,
-                Some(home.root().to_path_buf()),
-            ),
-            Opened::Folder { .. } => (
-                crate::instructions::agents_md_on(&home, root).await?,
-                skills_on(&home, Some(root)).await?,
-                Some(root.to_path_buf()),
-            ),
-            Opened::Worktree { .. } | Opened::Clone { .. } => (
-                crate::instructions::agents_md_on(&home, root).await?,
-                skills_on(&home, Some(root)).await?,
-                None,
-            ),
+            Opened::Scratch { .. } => (read_there(&home, home.root(), None).await?, true),
+            Opened::Folder { .. } => (read_there(&home, root, Some(root)).await?, true),
+            Opened::Worktree { .. } | Opened::Clone { .. } => {
+                (read_there(&home, root, Some(root)).await?, false)
+            }
         })
     }
 
-    /// The `skill` tool of `thread` on its person's own computer, for its next turn: what was
-    /// last read there and kept, never the server's, with glave's own beside them; none read
-    /// yet, or that read failing, only glave's own for this turn. A worktree is offered what its
-    /// repository's folder was last read to hold, until a turn of its own reads its own. Loading
-    /// one reads it there, as any tool call does.
-    pub(crate) async fn skills_at_home(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
+    /// What `thread` on its person's own computer brings for its next turn: what was last read
+    /// there and kept, never the server's: its project's choices, within the server's
+    /// constraints, and the `skill` tool for what was found there, with glave's own beside them.
+    /// None read yet, or that read failing, only glave's own for this turn. A worktree goes by
+    /// what its repository's folder was last read to hold, until a turn of its own reads its own.
+    /// Loading a skill reads it there, as any tool call does.
+    pub(crate) async fn brought_at_home(&self, thread: &Thread) -> Brought {
         let Some(at) = thread.home.as_ref() else {
-            return Vec::new();
+            return Brought::default();
         };
         let (scope, person) = (thread.scope, thread.for_);
         let Ok((home, _)) = self.home_of(scope, person) else {
-            return Vec::new();
+            return Brought::default();
         };
-        let found = match (&at.skills, &at.bound.opened) {
+        let read = match (&at.own, &at.bound.opened) {
             (Some(own), _) => Some(own.clone()),
             (
                 None,
@@ -241,17 +241,18 @@ where
                 | Opened::Worktree {
                     repository: path, ..
                 },
-            ) => self
-                .last_read(scope, Path::new(path))
-                .await
-                .map(|read| read.skills),
-            (None, Opened::Scratch { .. }) => self
-                .last_read(scope, home.root())
-                .await
-                .map(|read| read.skills),
+            ) => self.last_read(scope, Path::new(path)).await,
+            (None, Opened::Scratch { .. }) => self.last_read(scope, home.root()).await,
             (None, Opened::Clone { .. }) => None,
         };
-        let found = found.unwrap_or_default();
+        let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
+        let settled = match (&self.project_folders, &config) {
+            (Some(host), Some(config)) => {
+                host.settled_at_home(Path::new(&at.bound.root), config)
+                    .await
+            }
+            _ => Settled::default(),
+        };
         let mut skills: Vec<Skill> = found
             .into_iter()
             .map(|skill| Skill {
@@ -263,11 +264,37 @@ where
         if let Some(own) = &self.skills {
             skills.extend(own.built_in());
         }
-        Skills::offer_on(skills, home)
-            .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
-            .into_iter()
-            .collect()
+        Brought {
+            settled,
+            tools: Skills::offer_on(skills, home)
+                .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
+                .into_iter()
+                .collect(),
+            ..Brought::default()
+        }
     }
+}
+
+/// What a thread at `root`, or a chat with none, opens with and is offered, read through `home`,
+/// which wakes the computer if it sleeps; as read for `kept_as`.
+async fn read_there(
+    home: &Workspace,
+    kept_as: &Path,
+    root: Option<&Path>,
+) -> Result<InstructionsRead, ComputerError> {
+    let (files, config) = match root {
+        Some(root) => (
+            crate::instructions::agents_md_on(home, root).await?,
+            crate::instructions::config_on(home, root).await?,
+        ),
+        None => (crate::instructions::personal_on(home).await?, None),
+    };
+    Ok(InstructionsRead {
+        root: kept_as.display().to_string(),
+        files,
+        skills: skills_on(home, root).await?,
+        config,
+    })
 }
 
 /// Where a thread works on its person's own computer.
@@ -278,9 +305,9 @@ pub(crate) struct AtHome {
     /// Whether its turn ran a command or changed a file there, so what it opens with is read
     /// there again as the turn ends.
     pub(crate) changed: bool,
-    /// The skills found in a worktree there by a turn of its own, which no other thread is
-    /// offered and so aren't kept; `None` for all else, which reads what was kept.
-    pub(crate) skills: Option<Vec<SkillFound>>,
+    /// What a turn of its own read in a worktree there, which no other thread goes by and so
+    /// isn't kept; `None` for all else, which goes by what was kept.
+    pub(crate) own: Option<InstructionsRead>,
 }
 
 impl AtHome {
@@ -290,7 +317,7 @@ impl AtHome {
         Self {
             bound: self.bound.clone(),
             changed: false,
-            skills: self.skills.clone(),
+            own: self.own.clone(),
         }
     }
 }
@@ -303,7 +330,7 @@ pub(crate) fn at_home(bound: Option<&WorkspaceBound>) -> Option<AtHome> {
         .map(|bound| AtHome {
             bound: bound.clone(),
             changed: false,
-            skills: None,
+            own: None,
         })
 }
 

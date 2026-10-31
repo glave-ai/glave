@@ -5,9 +5,7 @@
 
 use std::path::Path;
 
-use glave_event::{
-    Body, InstructionsFile, InstructionsRead, Payload as _, Seq, SkillFound, decode,
-};
+use glave_event::{Body, InstructionsRead, Payload as _, Seq, decode};
 use glave_ports::stream::{Reserved, append_retrying};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
@@ -34,21 +32,9 @@ where
         }
     }
 
-    /// Keeps `files` and `skills`, just read for `root`, as what `scope`'s project's threads
-    /// there open with (for a chat, the person's own, read for their home), unless they are what
-    /// was kept already.
-    pub(crate) async fn keep_read(
-        &self,
-        scope: Scope,
-        root: &Path,
-        files: Vec<InstructionsFile>,
-        skills: Vec<SkillFound>,
-    ) {
-        let read = InstructionsRead {
-            root: root.display().to_string(),
-            files,
-            skills,
-        };
+    /// Keeps `read`, just made, as what `scope`'s project's threads there open with (for a chat,
+    /// the person's own, read for their home), unless it is what was kept already.
+    pub(crate) async fn keep_read(&self, scope: Scope, read: InstructionsRead) {
         let ledger = Reserved::Instructions.id();
         let (this, read) = (self, &read);
         let kept = append_retrying(&self.log, &scope, ledger, move || async move {

@@ -429,6 +429,10 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         })
     }
 
+    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
+        Box::pin(std::future::ready(self.settled_there(project, config)))
+    }
+
     fn brought<'a>(&'a self, project: &'a Path, id: ProjectId) -> BoxFuture<'a, Brought> {
         Box::pin(async move {
             let root = self.root(project).await;

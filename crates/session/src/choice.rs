@@ -4,7 +4,9 @@
 //! above the policy's cap, and only a mode the cap leaves may be chosen, so the log tells any
 //! server of the deployment what a thread may do.
 
-use glave_event::{Body, Permissions, ThreadId};
+use std::path::Path;
+
+use glave_event::{Body, Permissions, PrincipalId, ThreadId};
 use glave_harness::{HarnessError, Settled, Thread};
 use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::Protections;
@@ -141,16 +143,29 @@ where
         }
     }
 
-    /// What the project of `project` chooses for its threads: for the person on this
-    /// computer's threads.
+    /// What the project at `at` chooses for its threads: read from its folder here, for the
+    /// person on this computer's threads; for a folder on its person's own computer, from what
+    /// was last read there, which reaches nothing.
     pub(crate) async fn project_settled(&self, at: Located) -> Settled {
-        match self.folder_here(at).await {
-            Ok(Some(folder)) => {
-                let folder = std::path::Path::new(&folder);
-                self.inner.harness.settled(folder).await
+        let harness = &self.inner.harness;
+        match self.folder_of(at).await {
+            Ok(Some(folder)) if folder.checkout.computer == self.computer() => {
+                harness.settled(Path::new(&folder.checkout.path)).await
+            }
+            Ok(Some(folder)) if self.inner.homes.is_some() => {
+                let scope = Scope::glaves_own(at.org, at.project);
+                let root = Path::new(&folder.checkout.path);
+                harness.settled_at_home(scope, root).await
             }
             _ => Settled::default(),
         }
+    }
+
+    /// Whether what a project chooses counts for a thread of `person`: the person on this
+    /// computer, whose trust turns it on; or anyone where people have computers of their own,
+    /// whose projects' choices are theirs alone and what loosens stays off.
+    pub(crate) fn goes_by_project(&self, person: Option<PrincipalId>) -> bool {
+        self.inner.homes.is_some() || person.is_none_or(|person| Some(person) == self.person())
     }
 
     /// The mode last chosen for `thread`, from its log.

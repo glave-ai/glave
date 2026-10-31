@@ -41,6 +41,14 @@ pub trait ProjectFolders: Send + Sync {
         Box::pin(async { Settled::default() })
     }
 
+    /// What a project on a person's own computer chooses for its threads, from `config`, its
+    /// `config.toml` as last read there at `project`: within the server's constraints, and
+    /// without what loosens commands, which nothing there has trusted. Nothing by default.
+    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
+        let _ = (project, config);
+        Box::pin(async { Settled::default() })
+    }
+
     /// What the project whose folder is `project`, the project `id`, chooses and turns on
     /// for its threads now: its choices, its trusted tools (started the first time they are
     /// asked for) and its trusted hooks. Nothing by default.
@@ -105,10 +113,7 @@ where
         self.come_home(thread).await?;
         thread.defaults = self.defaults();
         let brought = match (&self.project_folders, &thread.project) {
-            _ if thread.home.is_some() => Brought {
-                tools: self.skills_at_home(thread).await,
-                ..Brought::default()
-            },
+            _ if thread.home.is_some() => self.brought_at_home(thread).await,
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
                 host.brought(project, thread.scope.project()).await
             }
