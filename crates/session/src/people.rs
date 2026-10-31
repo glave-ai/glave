@@ -36,6 +36,8 @@ pub(crate) enum Permit {
     Owners,
     /// Make invites to the organization, list them and revoke them.
     Invites,
+    /// Edit the organization's name, logo and accent.
+    Brand,
     /// Set what the organization may spend (`specs/gateway.md`, "Credits").
     Billing,
 }
@@ -48,8 +50,9 @@ pub(crate) fn permits(role: OrgRole) -> &'static [Permit] {
             Permit::Owners,
             Permit::Invites,
             Permit::Billing,
+            Permit::Brand,
         ],
-        OrgRole::Admin => &[Permit::People, Permit::Invites],
+        OrgRole::Admin => &[Permit::People, Permit::Invites, Permit::Brand],
         OrgRole::Member => &[],
     }
 }
@@ -401,7 +404,7 @@ where
             Ok(role)
         } else {
             Err(match needed {
-                Permit::People | Permit::Invites => admins_only(),
+                Permit::People | Permit::Invites | Permit::Brand => admins_only(),
                 Permit::Owners => ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly),
                 Permit::Billing => ApiError::new(code::NOT_ALLOWED, Sentence::OwnersSetLimit),
             })

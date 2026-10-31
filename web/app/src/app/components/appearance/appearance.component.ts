@@ -7,7 +7,8 @@ import {
   GlzSegmentedComponent,
 } from '@glave/glaze';
 
-import { AppearanceService, PLAIN } from '../../services/appearance.service';
+import { personSwatches } from '../../lib/accents';
+import { AppearanceService, ORGANIZATION, PLAIN, offered } from '../../services/appearance.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
 
 /**
@@ -35,15 +36,6 @@ export class AppearanceComponent {
     { value: 'light', label: $localize`:@@appearance.light:Light` },
     { value: 'dark', label: $localize`:@@appearance.dark:Dark` },
   ] as const;
-  protected readonly accents: readonly GlzColorOption[] = [
-    { value: PLAIN, label: $localize`:@@appearance.plain:No accent` },
-    { value: '#0f766e', label: $localize`:@@appearance.teal:Teal`, color: '#0f766e' },
-    { value: '#2f7d32', label: $localize`:@@appearance.green:Green`, color: '#2f7d32' },
-    { value: '#d9580f', label: $localize`:@@appearance.orange:Orange`, color: '#d9580f' },
-    { value: '#c62828', label: $localize`:@@appearance.red:Red`, color: '#c62828' },
-    { value: '#6d3bd1', label: $localize`:@@appearance.purple:Purple`, color: '#6d3bd1' },
-    { value: '#f2c200', label: $localize`:@@appearance.yellow:Yellow`, color: '#f2c200' },
-  ];
   private readonly themeService = inject(ThemeService);
   private readonly service = inject(AppearanceService);
 
@@ -51,11 +43,39 @@ export class AppearanceComponent {
   protected readonly value = this.service.value;
   protected readonly adjust = this.service.adjust;
   protected readonly problem = this.service.problem;
-  protected readonly line = computed(() =>
-    this.value() === PLAIN
-      ? $localize`:@@appearance.usingPlain:You’re using glave’s plain look.`
-      : $localize`:@@appearance.usingOwn:You’re using your own color.`,
+  private readonly organization = this.service.organization;
+  /** Everyone uses the organization's accent, so the person chooses none. */
+  protected readonly locked = computed(() => this.organization()?.locked ?? false);
+  /** What the organization is called, as a person reads it in a sentence. */
+  private readonly theirs = computed(
+    () => this.organization()?.name ?? $localize`:@@appearance.yourOrganization:your organization`,
   );
+  protected readonly accents = computed<readonly GlzColorOption[]>(() => {
+    const name = this.theirs();
+    return [
+      ...(offered(this.organization())
+        ? [{ value: ORGANIZATION, label: $localize`:@@appearance.theirs:${name}:NAME:’s color` }]
+        : []),
+      { value: PLAIN, label: $localize`:@@appearance.plain:No accent` },
+      ...personSwatches(),
+    ];
+  });
+  protected readonly line = computed(() => {
+    const name = this.theirs();
+    if (this.locked()) {
+      return $localize`:@@appearance.usingLocked:Everyone in ${name}:NAME: uses the same color.`;
+    }
+    const value = this.value();
+    if (value === ORGANIZATION) {
+      return $localize`:@@appearance.usingTheirs:You’re using ${name}:NAME:’s color.`;
+    }
+    if (value === PLAIN) {
+      return $localize`:@@appearance.usingPlain:You’re using glave’s plain look.`;
+    }
+    return offered(this.organization())
+      ? $localize`:@@appearance.usingOwnBeside:You’re using your own color. ${name}:NAME:’s still applies to everyone else.`
+      : $localize`:@@appearance.usingOwn:You’re using your own color.`;
+  });
   protected readonly adjustLine = computed(() =>
     this.adjust()
       ? $localize`:@@appearance.adjusted:glave tunes your color a little so text stays easy to read.`
@@ -75,10 +95,11 @@ export class AppearanceComponent {
   }
 
   protected pickAdjust(adjust: boolean): void {
-    if (this.value() === PLAIN) {
+    const value = this.value();
+    if (value === PLAIN || value === ORGANIZATION) {
       this.service.tune(adjust);
     } else {
-      void this.service.choose(this.value(), adjust);
+      void this.service.choose(value, adjust);
     }
   }
 }

@@ -1253,6 +1253,28 @@
         }
       ]
     },
+    "Logo": {
+      "additionalProperties": false,
+      "description": "A logo's content.",
+      "properties": {
+        "data": {
+          "description": "In base64.",
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "media_type",
+        "data"
+      ],
+      "type": "object"
+    },
     "MaxPrice": {
       "additionalProperties": false,
       "description": "The most a provider's tokens may cost, in millionths of a US dollar per million tokens.",
@@ -1640,6 +1662,39 @@
         "name",
         "people",
         "role"
+      ],
+      "type": "object"
+    },
+    "OrganizationLook": {
+      "additionalProperties": false,
+      "description": "What the caller's organization says of how glave looks to them.",
+      "properties": {
+        "accent": {
+          "$ref": "#/$defs/Accent",
+          "description": "Its accent."
+        },
+        "locked": {
+          "description": "Whether everyone uses that accent, so the caller chooses none.",
+          "type": "boolean"
+        },
+        "logo": {
+          "description": "Which logo it has (`brand/logo/get`), by its hash, so a client reads it once.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What it is called; none until someone names it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accent",
+        "locked"
       ],
       "type": "object"
     },
@@ -4045,7 +4100,26 @@
         "description": "The person's accent: what they chose, and the light and dark values it is drawn as,\nnone for glave's plain look.",
         "properties": {
           "chosen": {
-            "$ref": "#/$defs/Accent"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Accent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What they chose; none, their organization's. Always there, so no other reply reads\nas this one."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OrganizationLook"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What their organization says of it, where it is shown."
           },
           "shades": {
             "anyOf": [
@@ -4058,8 +4132,35 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "appearance/preview": {
+      "params": {
+        "properties": {
+          "adjust": {
+            "type": "boolean"
+          },
+          "color": {
+            "$ref": "#/$defs/Color"
+          }
+        },
         "required": [
-          "chosen"
+          "color",
+          "adjust"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The light and dark values a color would be drawn as.",
+        "properties": {
+          "shades": {
+            "$ref": "#/$defs/Shades"
+          }
+        },
+        "required": [
+          "shades"
         ],
         "type": "object"
       },
@@ -4069,19 +4170,42 @@
       "params": {
         "properties": {
           "accent": {
-            "$ref": "#/$defs/Accent"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Accent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "accent"
-        ],
         "type": "object"
       },
       "result": {
         "description": "The person's accent: what they chose, and the light and dark values it is drawn as,\nnone for glave's plain look.",
         "properties": {
           "chosen": {
-            "$ref": "#/$defs/Accent"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Accent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What they chose; none, their organization's. Always there, so no other reply reads\nas this one."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OrganizationLook"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What their organization says of it, where it is shown."
           },
           "shades": {
             "anyOf": [
@@ -4094,9 +4218,6 @@
             ]
           }
         },
-        "required": [
-          "chosen"
-        ],
         "type": "object"
       },
       "streams": false
@@ -4165,6 +4286,116 @@
         },
         "required": [
           "awake"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "brand/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's name, logo and accent.",
+        "properties": {
+          "brand": {
+            "$ref": "#/$defs/OrganizationLook"
+          }
+        },
+        "required": [
+          "brand"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "brand/logo/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A logo; none when there is none.",
+        "properties": {
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Logo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Always there, so no other reply reads as this one."
+          }
+        },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "brand/logo/upload": {
+      "params": {
+        "properties": {
+          "data": {
+            "description": "Its content, in base64.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A logo kept for `brand/set` to name.",
+        "properties": {
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "brand/set": {
+      "params": {
+        "properties": {
+          "accent": {
+            "$ref": "#/$defs/Accent"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "logo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accent",
+          "locked"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's name, logo and accent.",
+        "properties": {
+          "brand": {
+            "$ref": "#/$defs/OrganizationLook"
+          }
+        },
+        "required": [
+          "brand"
         ],
         "type": "object"
       },

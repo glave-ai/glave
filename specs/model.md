@@ -10,7 +10,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 | Level | Is | Holds |
 | --- | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy file (its approved connections among it, `policy.md`), company skills, environments, the theme, the budget |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy file (its approved connections among it, `policy.md`), company skills, environments, its brand, the budget |
 | Team | A flat group of people, made in glave by its admins ("Identity") | What it is granted on top of its people's roles (#645): models, connections, a budget ("Configuration is files"), and "may add their own" |
 | Person | Someone who signs in, with a role in each organization they belong to ("Identity") | Their Chats and projects, their computer, their own files (`~/.glave`), their own sign-ins (git hosts, connections) |
 | Project | One person's named place for work: one folder. It belongs to the organization and to that person alone | Its folder, whose files are its instructions, skills and setup; its threads; its memory, which is the person's |
@@ -64,6 +64,7 @@ Everything that configures glave is a file, read where it lives, and glave holds
   - people, groups and roles ("Admin");
   - memory;
   - the record of what happened (the log).
+- **One named exception: an organization's brand** (its name, logo, accent and the switch that makes everyone use it) is kept in a ledger of its own in the organization's scope, not in a file. A screen's save has no file to go to on a server with many organizations. An organization's policy and skills stay files.
 - **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. The machine holds only a placeholder, which the outbound proxy fills in for the hosts a secret is allowed to reach (#643).
 
 ## Models
@@ -147,7 +148,7 @@ Decided 2026-10-29 (#424).
 
 - **glave is monochrome by default.**
 - **A person** chooses light or dark, an accent colour, and a name for their assistant, each unless their organization fixes it. Light or dark is this browser's. The accent is kept in their settings ledger (`appearance.set`) as what they chose. One function works out its light and dark values: tuned, and every result reads at WCAG AA, unless they ask for the exact colour. The server says the two values, and a client sets them as Glaze's two tokens at the root, so no component knows where a colour came from; with none, glave stays monochrome.
-- **An organization's theme** sets its name, logo and accent, and its assistant's name and icon, and either lets people personalize the accent and the assistant's name or fixes them (#283, #287).
+- **An organization's brand** sets its name, logo and accent, and, later, its assistant's name and icon, and either lets people personalize the accent and the assistant's name or fixes them (#283, #287). The nearest choice wins, the person's over the organization's over glave's plain look, and the switch narrows the person's to the organization's. Its admins edit it in Admin › Brand; a person alone sees none of it.
 - **The assistant is called Hope by default,** with fine text saying it's the person's assistant.
 - **A person on their own** sets all of it for themselves.
 
@@ -159,8 +160,8 @@ What today's code doesn't do yet, so no one takes it as built.
 2. A company's server turns away people's own model accounts, and glave uses one cloud provider at a time. Using several, with glave picking the route for each model, comes with #289 and #290.
 3. The gateway, when it runs as a service of its own, takes its settings from its own environment rather than the server's files (`gateway.md`, "Surfaces"). It will become part of the server.
 4. Roles are kept and checked (#645), but nothing grants from groups yet: the identity provider's groups are recorded and give no models, connections or budget, so every Member gets the same access, and the only spending limit is each person's per day, kept by the gateway when it runs as a service of its own (`gateway.md`, "Budgets"); the monthly budget groups set waits for them (#645, #662).
-5. The admin methods are listing people, setting a role, removing someone and inviting (`session.md`, "The organization's people"); invites are emailed only where `[email]` names a mail server, and no screen opens a link yet. Of the admin screens (#222), Admin › People is built: the people and their roles, removing someone, inviting and the invites waiting; the organization's policy and skills have none yet, and there is no `glave admin`, so where people sign in through an identity provider, the first roles are given from the server's computer through the session API, or its browser signed in there.
-6. A person chooses their accent, but an organization's name, logo and accent are not built yet (#1096), nor is choosing the assistant's name (#283, #287).
+5. The admin methods are listing people, setting a role, removing someone and inviting (`session.md`, "The organization's people"); invites are emailed only where `[email]` names a mail server, and no screen opens a link yet. Of the admin screens (#222), Admin › People is built: the people and their roles, removing someone, inviting and the invites waiting; Admin › Brand is too (`brand/get`, `brand/set`, `brand/logo/upload`); the organization's policy and skills have none yet, and there is no `glave admin`, so where people sign in through an identity provider, the first roles are given from the server's computer through the session API, or its browser signed in there.
+6. There is no choosing the assistant's name or icon yet (#283, #287). A change to an organization's brand reaches its people the next time they open glave, not at once.
 7. Of "Identity", what is not built yet, each line edited by the pull request that builds it:
    - The daily sweep of blobs runs for the server's own organization alone (#1031). The web app names the organization each request works in, switched from the person's menu (#423).
    - Of glave accounts for more than the local person: limits per day. Built: limits per network (#1052); getting back in by email, with the notice of a passkey made so to the address and to the other browsers; the email plug (SMTP, `[email]`, sending invites), an invited person's passkey and account, several passkeys each, sign-in with any of them.

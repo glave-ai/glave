@@ -266,6 +266,18 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // The caller's own accent, naming no one's.
         ("appearance/get", vec![json!({})]),
         ("appearance/set", vec![json!({"accent": "plain"})]),
+        (
+            "appearance/preview",
+            vec![json!({"color": "#1558d6", "adjust": true})],
+        ),
+        // The caller's own organization's brand: editing it is for its admins.
+        ("brand/get", vec![json!({})]),
+        (
+            "brand/set",
+            vec![json!({"accent": "plain", "locked": false})],
+        ),
+        ("brand/logo/upload", vec![json!({"data": "AAAA"})]),
+        ("brand/logo/get", vec![json!({})]),
         ("invite/show", vec![json!({"code": "@invite_code"})]),
         ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),

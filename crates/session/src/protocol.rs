@@ -35,7 +35,7 @@ use glave_ports::computer::{CommandId, ComputerId};
 use glave_ports::{OrgId, ProjectId};
 use serde::{Deserialize, Serialize};
 
-pub use appearance::Shades;
+pub use appearance::{Logo, OrganizationLook, Shades};
 pub use changes::{
     ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
 };
@@ -44,7 +44,7 @@ pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
-pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, TurnResult};
+pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, Sha256, TurnResult};
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};
@@ -133,10 +133,38 @@ methods! {
     /// Chooses the caller's filters among a router's providers, for every call of their work
     /// from now on. Refused for a place that is not a country's two-letter code.
     "filters/set" => FiltersSet { filters: Filters } -> [Filters],
-    /// The caller's accent: what they chose, and the light and dark values it is drawn as.
+    /// The caller's accent: what they chose, the light and dark values it is drawn as, and what
+    /// their organization says of it, where it is shown.
     "appearance/get" => AppearanceGet {} -> [Appearance],
-    /// Chooses the caller's accent.
-    "appearance/set" => AppearanceSet { accent: Accent } -> [Appearance],
+    /// Chooses the caller's accent; none, their organization's. Refused where their organization
+    /// has everyone use its own.
+    "appearance/set" => AppearanceSet {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accent: Option<Accent>,
+    } -> [Appearance],
+    /// The light and dark values a color would be drawn as, for showing it before it is kept.
+    "appearance/preview" => AppearancePreview { color: Color, adjust: bool } -> [Shades],
+    /// The organization's name, logo and accent. An admin method.
+    "brand/get" => BrandGet {} -> [Brand],
+    /// Keeps the organization's name, logo and accent, and whether everyone uses that accent.
+    /// `logo` names one `brand/logo/upload` kept, or the one it has. An admin method.
+    "brand/set" => BrandSet {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(with = "Option<String>")]
+        logo: Option<Sha256>,
+        accent: Accent,
+        locked: bool,
+    } -> [Brand],
+    /// Keeps a logo for `brand/set` to name, a day unless it does: PNG, JPEG or WebP, up to
+    /// 256 KB. An admin method.
+    "brand/logo/upload" => BrandLogoUpload {
+        /// Its content, in base64.
+        data: String,
+    } -> [LogoKept],
+    /// The organization's logo, for everyone in it; none until it has one.
+    "brand/logo/get" => BrandLogoGet {} -> [BrandLogo],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

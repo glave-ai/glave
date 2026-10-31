@@ -35,6 +35,12 @@
   gap: var(--glz-space-2);
 }
 
+.logo {
+  min-inline-size: 0;
+  max-block-size: var(--glz-control-height);
+  object-fit: contain;
+}
+
 .name {
   font-size: var(--glz-text-wordmark);
   font-weight: var(--glz-weight-bold);

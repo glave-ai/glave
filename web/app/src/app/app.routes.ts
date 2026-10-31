@@ -88,6 +88,14 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./components/people/people.component').then((m) => m.PeopleComponent),
       },
+      {
+        path: 'brand',
+        title: () => $localize`:@@routes.brand:Brand · Admin · glave`,
+        loadComponent: () =>
+          import('./components/admin-brand/admin-brand.component').then(
+            (m) => m.AdminBrandComponent,
+          ),
+      },
     ],
   },
   {

@@ -3,7 +3,11 @@
      the threads once read, and Tasks under them once the tasks are. -->
 <div class="above">
   <div class="top">
-    <span class="name" data-testid="nav-heading">{{ heading() }}</span>
+    @if (logo(); as logo) {
+      <img class="logo" data-testid="nav-logo" [src]="logo" [alt]="logoName()" />
+    } @else {
+      <span class="name" dir="auto" data-testid="nav-heading">{{ heading() }}</span>
+    }
     <a
       glzIconButton
       class="new"

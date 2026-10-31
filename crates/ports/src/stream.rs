@@ -68,11 +68,14 @@ pub enum Reserved {
     /// `credits.charged`), in its own scope ([`Scope::of_organization`]), on a server that
     /// keeps them.
     Credits,
+    /// `…000d`: the organization's name, logo and accent (`brand.set`), in its own scope
+    /// ([`Scope::of_organization`]), read for everyone in it.
+    Brand,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -86,6 +89,7 @@ impl Reserved {
         Self::Signups,
         Self::Instructions,
         Self::Credits,
+        Self::Brand,
     ];
 
     /// The ledger's id, the same in every project.
@@ -104,6 +108,7 @@ impl Reserved {
             Self::Signups => 10,
             Self::Instructions => 11,
             Self::Credits => 12,
+            Self::Brand => 13,
         };
         ThreadId::reserved(number)
     }

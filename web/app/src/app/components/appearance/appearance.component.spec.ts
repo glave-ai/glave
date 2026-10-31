@@ -9,18 +9,25 @@ import { AppearanceComponent } from './appearance.component';
 const SHADES = { light: '#0f766e', dark: '#59c5b8' };
 
 /** The server's answer for `accent`. */
-function answered(accent: Accent): object {
-  return accent === 'plain' ? { chosen: 'plain' } : { chosen: accent, shades: SHADES };
+function answered(accent: Accent | undefined, read: object): object {
+  if (accent === undefined) {
+    return read;
+  }
+  return accent === 'plain'
+    ? { ...read, chosen: 'plain', shades: undefined }
+    : { ...read, chosen: accent, shades: SHADES };
 }
 
-async function render(): Promise<{
+async function render(read: object = {}): Promise<{
   root: HTMLElement;
   fake: FakeSession;
   settle: () => Promise<void>;
 }> {
-  const fake = new FakeSession().answer('appearance/set', (params) =>
-    answered((params as { readonly accent: Accent }).accent),
-  );
+  const fake = new FakeSession()
+    .answer('appearance/get', read)
+    .answer('appearance/set', (params) =>
+      answered((params as { readonly accent?: Accent }).accent, read),
+    );
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
   const fixture = TestBed.createComponent(AppearanceComponent);
   const settle = async (): Promise<void> => {
@@ -74,5 +81,44 @@ describe('AppearanceComponent', () => {
     expect(TestBed.inject(ThemeService).choice()).toBe('dark');
     expect(fake.paramsOf('appearance/set')).toEqual([]);
     TestBed.inject(ThemeService).set('system');
+  });
+
+  it('offers the organization’s color where it has one, as what holds until they choose', async () => {
+    const { root, fake, settle } = await render({
+      organization: {
+        name: 'Acme',
+        accent: { color: { color: '#1558d6', adjust: true } },
+        locked: false,
+      },
+      shades: SHADES,
+    });
+    expect(text(root, 'appearance-line')).toBe('You’re using Acme’s color.');
+    expect(root.querySelector('[data-testid="appearance-accent"]')?.textContent).toContain(
+      'Acme’s color',
+    );
+    root.querySelector<HTMLInputElement>('input[aria-label="Teal"]')?.click();
+    await settle();
+    expect(text(root, 'appearance-line')).toContain('Acme’s still applies to everyone else.');
+    Array.from(root.querySelectorAll<HTMLElement>('[data-testid="appearance-accent-option"]'))
+      .find((option) => option.textContent.includes('Acme’s color'))
+      ?.querySelector('input')
+      ?.click();
+    await settle();
+    expect(fake.paramsOf('appearance/set').at(-1)).toEqual({});
+  });
+
+  it('offers no choice where everyone uses the organization’s', async () => {
+    const { root } = await render({
+      organization: {
+        name: 'Acme',
+        accent: { color: { color: '#1558d6', adjust: true } },
+        locked: true,
+      },
+      shades: SHADES,
+    });
+    expect(root.querySelector('[data-testid="appearance-accent"]')).toBeNull();
+    expect(root.querySelector('[data-testid="appearance-adjust"]')).toBeNull();
+    expect(text(root, 'appearance-line')).toBe('Everyone in Acme uses the same color.');
+    await expectAccessible(root);
   });
 });

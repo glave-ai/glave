@@ -76,6 +76,13 @@ sentences! {
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
         "you're no longer in this organization: ask its admins for an invite",
+    AccentLocked = "accent-locked" "your organization has everyone use its accent",
+    BrandName { most: usize } = "brand-name"
+        "an organization's name can be { $most } characters at most",
+    LogoKind = "logo-kind" "a logo has to be a PNG, JPEG or WebP picture",
+    LogoTooLarge { kilobytes: u64 } = "logo-too-large"
+        "a logo can be { $kilobytes } KB at most: use a smaller picture",
+    LogoGone = "logo-gone" "that logo was kept too long without being saved: upload it again",
     OwnersSetLimit = "owners-set-limit" "only an owner can change the monthly spending limit",
     NotYourself = "not-yourself"
         "you can't change your own role or take yourself out: ask another admin",

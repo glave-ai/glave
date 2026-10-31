@@ -1,5 +1,6 @@
 import { fakeAdmin, INVITE_CODE } from './fake-admin';
 import { fakeApi } from './fake-api';
+import { LOGO_PNG, fakeBrand } from './fake-appearance';
 import { ADMIN_WORDS, SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -89,3 +90,54 @@ test('A person alone on their own server invites someone from their menu, with n
   );
   expect(admin.sent).toContainEqual({ method: 'invite/create', params: { role: 'member' } });
 });
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`An Owner gives the organization a name and an accent, seen in light and dark (${colorScheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await fakeApi(page);
+    await fakeAdmin(page);
+    const brand = await fakeBrand(page);
+    await page.goto(`/admin/brand${SIGNED_IN}`);
+    await expect(byTestId(page, 'admin-brand')).toHaveAttribute('aria-current', 'page');
+    await byTestId(page, 'brand-name').fill('Acme');
+    // In the order offered: no accent, blue, lime, then a person's, teal first.
+    await byTestId(page, 'brand-accent-option').nth(3).click();
+    await expect(byTestId(page, 'brand-preview-light')).toBeVisible();
+    await expect(byTestId(page, 'brand-preview-dark')).toBeVisible();
+    await expectAccessible(page);
+
+    await byTestId(page, 'brand-logo-file').setInputFiles({
+      name: 'logo.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(LOGO_PNG, 'base64'),
+    });
+    await expect(byTestId(page, 'brand-logo')).toBeVisible();
+
+    await byTestId(page, 'brand-adjust-input').uncheck();
+    await expect(byTestId(page, 'brand-adjust-line')).toContainText('may be hard to read');
+    await byTestId(page, 'brand-adjust-input').check();
+    await byTestId(page, 'brand-locked-input').check();
+    await expect(byTestId(page, 'brand-locked-line')).toContainText('Nobody');
+    await byTestId(page, 'brand-save').click();
+    await expect(byTestId(page, 'brand-saved')).toBeVisible();
+    expect(brand.kept).toEqual([
+      {
+        name: 'Acme',
+        logo: expect.any(String),
+        accent: { color: { color: '#0f766e', adjust: true } },
+        locked: true,
+      },
+    ]);
+
+    // A person's side of it: the name in the corner, and no choice of accent left.
+    await page.goto('/settings');
+    // Drawn under the page's real rules: a logo that couldn't load has no width.
+    const logo = byTestId(page, 'nav-logo');
+    await expect(logo).toHaveAttribute('alt', 'Acme');
+    await expect.poll(() => logo.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
+    await expect(byTestId(page, 'appearance-line')).toContainText('Everyone in Acme');
+    await expect(byTestId(page, 'appearance-accent')).toHaveCount(0);
+  });
+}

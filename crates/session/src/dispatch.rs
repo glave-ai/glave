@@ -192,6 +192,18 @@ where
             Request::FiltersSet { filters } => self.set_filters(caller, filters).await,
             Request::AppearanceGet {} => self.appearance(caller).await,
             Request::AppearanceSet { accent } => self.set_appearance(caller, accent).await,
+            Request::AppearancePreview { color, adjust } => Ok(Reply::Shades {
+                shades: crate::accent::shades(color, adjust),
+            }),
+            Request::BrandGet {} => self.brand(caller).await,
+            Request::BrandSet {
+                name,
+                logo,
+                accent,
+                locked,
+            } => self.set_brand(caller, name, logo, accent, locked).await,
+            Request::BrandLogoUpload { data } => self.upload_logo(caller, &data).await,
+            Request::BrandLogoGet {} => self.logo(caller).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code, link } => match link {

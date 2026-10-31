@@ -136,6 +136,7 @@ fn answers_within(request: &Request) -> Duration {
         | Request::ThreadCompact { .. }
         | Request::ProjectCreate { .. }
         | Request::FileUpload { .. }
+        | Request::BrandLogoUpload { .. }
         | Request::ProviderConnect { .. }
         | Request::ProviderRefresh {}
         | Request::CredentialConnect { .. }

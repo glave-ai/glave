@@ -22,6 +22,7 @@ pub async fn blob_store<B: BlobStore>(
     objects: Option<&dyn Objects>,
 ) -> Verdict {
     named_kept_once_and_isolated(blobs).await?;
+    in_an_organization_s_own_scope(blobs).await?;
     large_and_empty(blobs).await?;
     over_the_limit(blobs).await?;
     super::sweep::sweeping(blobs, clock, objects).await
@@ -100,6 +101,29 @@ async fn named_kept_once_and_isolated<B: BlobStore>(blobs: &B) -> Verdict {
 }
 
 /// A blob of several megabytes, given in uneven pieces, reads back whole; so does an empty one.
+/// An organization's own scope holds blobs as a project's does, as its logo needs.
+async fn in_an_organization_s_own_scope<B: BlobStore>(blobs: &B) -> Verdict {
+    let project = scope(1);
+    let own = Scope::of_organization(project.org());
+    let holder = thread(90)?;
+    let kept = put(blobs, &own, holder, Pieces::from(b"a logo".to_vec())).await?;
+    let found = read(blobs, &own, &kept.sha256).await?;
+    ensure(
+        found.is_some_and(|(_, bytes)| bytes == b"a logo"),
+        "an organization's own blob comes back",
+    )?;
+    let other = blobs.get(&project, &kept.sha256).await;
+    let other = other.map_err(|error| error.to_string())?;
+    ensure(
+        other.is_none(),
+        "an organization's own blob is not its projects'",
+    )?;
+    blobs
+        .release(&own, holder)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn large_and_empty<B: BlobStore>(blobs: &B) -> Verdict {
     let here = scope(3);
     let t = thread(3)?;
