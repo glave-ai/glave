@@ -7,7 +7,7 @@ use glave_event::{AuthMethod, OrgRole};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 use uuid::Uuid;
 
-use crate::protocol::{ApiError, OrganizationInfo, Reply, code};
+use crate::protocol::{ApiError, OrganizationInfo, Reply, Told, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -46,14 +46,19 @@ where
                     .and_then(|owner| people.known_as(owner));
                 (counted, own, role, owner)
             });
-            let name = match (own, owner) {
-                (true, _) => Sentence::OwnOrganization,
-                (false, Some(owner)) => Sentence::OwnersTeam { owner },
-                (false, None) => Sentence::SomeTeam,
+            let name = match (
+                self.brand_of(org).await?.and_then(|brand| brand.name),
+                own,
+                owner,
+            ) {
+                (Some(name), ..) => Told::from(name),
+                (None, true, _) => Sentence::OwnOrganization.into(),
+                (None, false, Some(owner)) => Sentence::OwnersTeam { owner }.into(),
+                (None, false, None) => Sentence::SomeTeam.into(),
             };
             organizations.push(OrganizationInfo {
                 id: org,
-                name: name.into(),
+                name,
                 people,
                 own,
                 role,

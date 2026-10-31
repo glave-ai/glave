@@ -107,7 +107,7 @@ export class FakeTurn {
  * `thread/steps`, no runs and no replies;
  * `command/list`, nothing running; `credential/list`, nothing connected; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose; `memory/get`, memory on;
- * `appearance/get`, glave's plain look; `grouping/get`, by project, and `grouping/set`, the grouping asked for; `organization/list`,
+ * `appearance/get`, glave's plain look; `brand/get`, a brand that says nothing; `brand/logo/get`, none; `grouping/get`, by project, and `grouping/set`, the grouping asked for; `organization/list`,
  * the person's own alone; a watch, of a thread
  * or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
@@ -276,7 +276,10 @@ function unanswered(method: Method, params: unknown): Answer {
     return { remembering: { kind: 'chosen', on: true } };
   }
   if (method === 'appearance/get') {
-    return { chosen: 'plain' };
+    return {};
+  }
+  if (method === 'brand/get') {
+    return { brand: { accent: 'plain', locked: false } };
   }
   if (method === 'grouping/get') {
     return { grouping: 'project' };

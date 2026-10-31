@@ -1,0 +1,85 @@
+@use '../page';
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+}
+
+.title {
+  font-weight: var(--glz-weight-bold);
+}
+
+.details {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
+
+.logo-row {
+  align-items: center;
+}
+
+.logo-words {
+  flex: 1 1 14rem;
+}
+
+.logo {
+  inline-size: var(--glz-control-height-touch);
+  block-size: var(--glz-control-height-touch);
+  border-radius: var(--glz-radius-control);
+  object-fit: contain;
+}
+
+.previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--glz-space-2);
+}
+
+// Each in its own scheme, whichever the page is in, the shade it is given (`--shade`) worked out
+// on its own as the page's tokens work out the accent.
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glz-space-2);
+  padding: var(--glz-inset-card);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-page);
+  color: var(--glz-color-text);
+}
+
+.in-light {
+  color-scheme: light;
+}
+
+.in-dark {
+  color-scheme: dark;
+}
+
+.send {
+  padding: var(--glz-inset-button);
+  border-radius: var(--glz-radius-control);
+  background: var(--shade);
+  color: oklch(from var(--shade) clamp(0, (0.65 - l) * 999, 1) 0 none);
+  font-weight: var(--glz-weight-bold);
+}
+
+.link {
+  text-decoration: underline;
+}
+
+// As --glz-accent-text draws the accent as text on the page.
+.in-light .link {
+  color: oklch(from var(--shade) min(l, 0.5) c h);
+}
+
+.in-dark .link {
+  color: oklch(from var(--shade) max(l, 0.78) c h);
+}

@@ -1,0 +1,131 @@
+<app-page-header />
+<div class="page">
+  <div class="heading">
+    <div class="glz-stack glz-gap-1">
+      <h1>{{ copy.heading }}</h1>
+      <p class="details">{{ copy.intro }}</p>
+    </div>
+  </div>
+  <div class="list">
+    <glz-card>
+      <div class="glz-stack glz-gap-3">
+        <glz-form-field [label]="copy.name">
+          <input
+            glzInput
+            dir="auto"
+            data-testid="brand-name"
+            [value]="name()"
+            (input)="named($event)"
+          />
+        </glz-form-field>
+        <div class="glz-row glz-gap-3 logo-row">
+          @if (logoUrl(); as logo) {
+            <img class="logo" data-testid="brand-logo" [src]="logo" [alt]="copy.logo" />
+          } @else {
+            <glz-avatar [name]="shownName()" />
+          }
+          <div class="glz-stack glz-gap-1 logo-words">
+            <span class="title">{{ copy.logo }}</span>
+            <span class="details">{{ copy.logoHint }}</span>
+          </div>
+          <button
+            #pickButton
+            glzButton
+            type="button"
+            data-testid="brand-logo-pick"
+            (click)="pickLogo()"
+          >
+            {{ copy.upload }}
+          </button>
+          @if (logoUrl()) {
+            <button glzButton type="button" data-testid="brand-logo-remove" (click)="removeLogo()">
+              {{ copy.remove }}
+            </button>
+          }
+          <input
+            #picker
+            hidden
+            type="file"
+            tabindex="-1"
+            data-testid="brand-logo-file"
+            [accept]="logoKinds"
+            (change)="pickedLogo($event)"
+          />
+        </div>
+      </div>
+    </glz-card>
+    <glz-card>
+      <h2 glzCardHeader>{{ copy.accent }}</h2>
+      <div class="glz-stack glz-gap-3">
+        <p class="details">{{ copy.accentHint }}</p>
+        <glz-color-choice
+          testId="brand-accent"
+          [label]="copy.accent"
+          [anyLabel]="copy.any"
+          [options]="accents"
+          [value]="accent()"
+          (valueChange)="pickAccent($event)"
+        />
+        @if (shades(); as shades) {
+          <div class="previews">
+            <div
+              class="preview in-light"
+              data-testid="brand-preview-light"
+              [appAccentShade]="shades.light"
+            >
+              <span class="details">{{ copy.inLight }}</span>
+              <span class="send">{{ copy.send }}</span>
+              <span class="link">{{ copy.link }}</span>
+            </div>
+            <div
+              class="preview in-dark"
+              data-testid="brand-preview-dark"
+              [appAccentShade]="shades.dark"
+            >
+              <span class="details">{{ copy.inDark }}</span>
+              <span class="send">{{ copy.send }}</span>
+              <span class="link">{{ copy.link }}</span>
+            </div>
+          </div>
+        }
+        <div class="glz-stack glz-gap-1">
+          <glz-checkbox
+            testId="brand-adjust"
+            [checked]="adjust()"
+            (checkedChange)="pickAdjust($event)"
+            >{{ copy.adjust }}</glz-checkbox
+          >
+          <p class="details" data-testid="brand-adjust-line">{{ adjustLine() }}</p>
+        </div>
+      </div>
+    </glz-card>
+    <glz-card>
+      <h2 glzCardHeader>{{ copy.own }}</h2>
+      <div class="glz-stack glz-gap-1">
+        <glz-checkbox
+          testId="brand-locked"
+          [checked]="locked()"
+          (checkedChange)="pickLocked($event)"
+          >{{ copy.locked }}</glz-checkbox
+        >
+        <p class="details" data-testid="brand-locked-line">{{ lockedLine() }}</p>
+      </div>
+    </glz-card>
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="brand-problem">{{ problem }}</p>
+    }
+    <p class="details" role="status" data-testid="brand-saved">{{ savedLine() }}</p>
+    <div class="glz-row glz-gap-2">
+      <button
+        glzButton
+        variant="primary"
+        type="button"
+        data-testid="brand-save"
+        [disabled]="unsaveable()"
+        (click)="save()"
+      >
+        {{ copy.save }}
+      </button>
+    </div>
+  </div>
+</div>

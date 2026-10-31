@@ -3,7 +3,7 @@
 
 use glave_event::{
     Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
-    Seq, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
+    Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, CreditsInfo, DeviceCode, FileInfo,
-    GoneFolder, Grouping, InviteInfo, ModelInfo, OrganizationInfo, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told,
-    TrustAsk, WatchEnd,
+    GoneFolder, Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
+    PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
+    ScheduleInfo, SearchInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -401,9 +401,34 @@ pub enum Reply {
     /// none for glave's plain look.
     #[schemars(title = "Appearance")]
     Appearance {
-        chosen: Accent,
+        /// What they chose; none, their organization's. Always there, so no other reply reads
+        /// as this one.
+        #[serde(deserialize_with = "Option::deserialize")]
+        chosen: Option<Accent>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         shades: Option<Shades>,
+        /// What their organization says of it, where it is shown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        organization: Option<OrganizationLook>,
+    },
+    /// The light and dark values a color would be drawn as.
+    #[schemars(title = "Shades")]
+    Shades { shades: Shades },
+    /// The organization's name, logo and accent.
+    #[schemars(title = "Brand")]
+    Brand { brand: OrganizationLook },
+    /// A logo kept for `brand/set` to name.
+    #[schemars(title = "LogoKept")]
+    LogoKept {
+        #[schemars(with = "String")]
+        sha256: Sha256,
+    },
+    /// A logo; none when there is none.
+    #[schemars(title = "BrandLogo")]
+    BrandLogo {
+        /// Always there, so no other reply reads as this one.
+        #[serde(deserialize_with = "Option::deserialize")]
+        logo: Option<Logo>,
     },
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]

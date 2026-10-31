@@ -1,16 +1,21 @@
-//! The settings ledger's record of a person's accent (`specs/model.md`, "The look").
-//! `appearance.set`: the accent they chose; the latest replaces every one before it, and with
-//! none glave keeps its plain look.
+//! How glave looks (`specs/model.md`, "The look"). `appearance.set`, in the settings ledger: the
+//! accent a person chose; the latest replaces every one before it, and with none they have their
+//! organization's, else glave's plain look. `brand.set`, in the brand ledger: the organization's
+//! name, logo and accent, and whether everyone uses that accent; the latest replaces every one
+//! before it.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+use crate::blob::BlobRef;
 use crate::codec::{Body, Payload, parse};
 use crate::error::InvalidValue;
+use crate::id::ThreadId;
 
 pub(crate) const SET: &str = "appearance.set";
+pub(crate) const BRAND_SET: &str = "brand.set";
 
 /// A colour in sRGB, written `#rrggbb`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -72,15 +77,47 @@ pub enum Accent {
     Color { color: Color, adjust: bool },
 }
 
-/// The accent a person chose, as they set it.
+/// The accent a person chose, as they set it; none, their organization's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AppearanceSet {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<Accent>,
+}
+
+/// An organization's logo, and the id its blob is referred to under: its own for each logo kept,
+/// so one is let go of only once another is written down, and a failure leaves one too many
+/// rather than none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldLogo {
+    pub blob: BlobRef,
+    pub holder: ThreadId,
+}
+
+/// An organization's name, logo and accent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrandSet {
+    /// What it is called; none until someone names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Its logo, in the organization's own blobs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<HeldLogo>,
+    /// Its accent.
     pub accent: Accent,
+    /// Whether everyone uses that accent, whatever they chose.
+    pub locked: bool,
 }
 
 impl Payload for AppearanceSet {
     const TYPE: &'static str = SET;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for BrandSet {
+    const TYPE: &'static str = BRAND_SET;
     const VERSION: u32 = 1;
 }
 
@@ -89,7 +126,14 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    (kind == SET && version == 1).then(|| parse(data).map(Body::AppearanceSet))
+    if version != 1 {
+        return None;
+    }
+    Some(match kind {
+        SET => parse(data).map(Body::AppearanceSet),
+        BRAND_SET => parse(data).map(Body::BrandSet),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

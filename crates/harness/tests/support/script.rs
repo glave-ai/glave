@@ -331,6 +331,7 @@ pub(crate) fn text_of(message: &Message) -> String {
         .collect()
 }
 
+#[expect(clippy::too_many_lines, reason = "one arm for each kind of event")]
 pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
     events
         .iter()
@@ -396,6 +397,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::GroupingSet(_) => "grouping.set",
             Body::FiltersSet(_) => "filters.set",
             Body::AppearanceSet(_) => "appearance.set",
+            Body::BrandSet(_) => "brand.set",
             Body::MemorySet(_) => "memory.set",
             Body::PersonJoined(_) => "person.joined",
             Body::RoleSet(_) => "role.set",

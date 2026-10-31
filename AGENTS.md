@@ -23,7 +23,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 
 | Term | Meaning |
 | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, its policy file, company skills, the theme, the budget (`specs/model.md`) |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, its policy file, company skills, its brand (name, logo, accent; a ledger, the one exception to configuration being files), the budget (`specs/model.md`) |
 | Team | A flat group of people, granted models, connections and budgets |
 | Person | Someone who signs in, with a role: their Chats and projects, their computer, their own files (`~/.glave`) and sign-ins |
 | Project | The scope boundary, and personal: one person's project (one folder, whose files are its instructions, skills and setup), or their Chats, their project of kind `personal`. No members: people share through the repository and the organization. Holds memory, history, files, policy, budget, default environment |
@@ -32,7 +32,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. Fresh per-task workers are an upgrade |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |
-| Data store | Everything durable glave holds, which is only what can't be a file: the event log (history), memory, files given to threads, secret values and sign-ins, people, groups and roles. Configuration is files (`specs/model.md`). Enforces scope on every query |
+| Data store | Everything durable glave holds, which is only what can't be a file: the event log (history), memory, files given to threads, secret values and sign-ins, people, groups and roles, and an organization's brand. Configuration is files (`specs/model.md`). Enforces scope on every query |
 | Hope | Glave's open model. Great in any harness, best in Glave |
 
 ## Repository

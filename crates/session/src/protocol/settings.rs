@@ -69,7 +69,7 @@ impl Request {
             Self::SearchSet { .. } => Setting::Search,
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::FiltersSet { .. } => Setting::Filters,
-            Self::AppearanceSet { .. } => Setting::Appearance,
+            Self::AppearanceSet { .. } | Self::BrandSet { .. } => Setting::Appearance,
             Self::AwakeSet { .. } => Setting::Awake,
             Self::MemorySet { .. } => Setting::Memory,
             Self::PasskeyCreate { .. }
@@ -102,7 +102,7 @@ mod tests {
         };
         assert_eq!(filters.changes(), Some(Setting::Filters));
         let appearance = Request::AppearanceSet {
-            accent: glave_event::Accent::Plain,
+            accent: Some(glave_event::Accent::Plain),
         };
         assert_eq!(appearance.changes(), Some(Setting::Appearance));
         assert_eq!(Request::FiltersGet {}.changes(), None);

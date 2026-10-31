@@ -17,6 +17,7 @@ import Search from 'lucide/dist/esm/icons/search.mjs';
 
 import { hasProjects } from '../../lib/nav';
 import { GroupingService } from '../../services/grouping.service';
+import { BrandService } from '../../services/brand.service';
 import { OrganizationsService } from '../../services/organizations.service';
 import { ProjectsService } from '../../services/projects.service';
 import { TasksService } from '../../services/tasks.service';
@@ -75,8 +76,16 @@ export class SideNavComponent {
   private readonly projects = inject(ProjectsService);
   private readonly grouped = inject(GroupingService);
   private readonly organizations = inject(OrganizationsService);
+  private readonly brand = inject(BrandService);
   /** What heads the side nav: the team the person works in, else glave. */
-  protected readonly heading = computed(() => this.organizations.heading() ?? this.copy.name);
+  protected readonly heading = computed(
+    () => this.brand.name() ?? this.organizations.heading() ?? this.copy.name,
+  );
+  /** The organization's logo, in its name's place. */
+  protected readonly logo = this.brand.logoUrl;
+  protected readonly logoName = computed(
+    () => this.brand.name() ?? $localize`:@@sideNav.logo:Your organization’s logo`,
+  );
   private readonly grouping = this.grouped.grouping;
   /** Whether the lists have been read, so the threads come in all at once, in their place. */
   protected readonly read = this.projects.loaded;

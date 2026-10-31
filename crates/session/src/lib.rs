@@ -10,6 +10,7 @@ mod appearance;
 mod approvals;
 mod awake;
 mod background;
+mod brand;
 mod browsers;
 mod changes;
 mod choice;

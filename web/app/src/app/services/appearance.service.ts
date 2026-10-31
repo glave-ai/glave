@@ -1,6 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { Service, effect, inject, signal, untracked } from '@angular/core';
-import { type Accent, ApiError, type Shades } from '@glave/client';
+import { type Accent, ApiError, type OrganizationLook, type Shades } from '@glave/client';
 
 import { readStored, forget, storageOf, writeStored } from '../lib/storage';
 import { sentence, unreached } from '../lib/text';
@@ -9,6 +9,8 @@ import { SessionService } from './session.service';
 
 /** The value that stands for glave's plain look among the accents offered. */
 export const PLAIN = 'plain';
+/** The value that stands for the organization's accent among those offered. */
+export const ORGANIZATION = 'organization';
 
 const KEY = 'glave-accent';
 const HEX = /^#[0-9a-f]{6}$/u;
@@ -17,6 +19,16 @@ const HEX = /^#[0-9a-f]{6}$/u;
 function isShades(value: unknown): value is Shades {
   const shades = value as Partial<Shades> | null;
   return HEX.test(String(shades?.light)) && HEX.test(String(shades?.dark));
+}
+
+/** Whether `organization` has an accent to offer. */
+export function offered(organization: OrganizationLook | null): boolean {
+  return organization !== null && organization.accent !== PLAIN;
+}
+
+/** What `value`, {@link PLAIN} or a `#rrggbb`, asks the server to keep. */
+function pick(value: string, adjust: boolean): Accent {
+  return value === PLAIN ? PLAIN : { color: { color: value, adjust } };
 }
 
 /**
@@ -35,8 +47,9 @@ export class AppearanceService {
   private readonly chosen = signal<string>(PLAIN);
   private readonly tuned = signal(true);
   private readonly failed = signal<string | null>(null);
-  /** What the server last said is chosen. */
-  private kept: Accent = PLAIN;
+  private readonly look = signal<OrganizationLook | null>(null);
+  /** What the server last said is chosen; none, the organization's. */
+  private kept: Accent | null = null;
   /** How many choices the person made in this tab: only the latest one's answer is shown. */
   private choices = 0;
   /** How many choices are on their way. */
@@ -46,12 +59,17 @@ export class AppearanceService {
   /** Whether this tab has been signed in, so that signing out takes the accent away. */
   private signedIn = false;
 
-  /** The accent chosen: {@link PLAIN}, or its `#rrggbb` as the person chose it. */
+  /**
+   * The accent chosen: {@link PLAIN}, {@link ORGANIZATION}, or its `#rrggbb` as the person chose
+   * it.
+   */
   readonly value = this.chosen.asReadonly();
   /** Whether a color is tuned so that text stays easy to read. */
   readonly adjust = this.tuned.asReadonly();
   /** Why the last choice was not kept, until the next. */
   readonly problem = this.failed.asReadonly();
+  /** What the person's organization says of how glave looks, where it is shown to them. */
+  readonly organization = this.look.asReadonly();
 
   constructor() {
     const remembered = readStored(this.storage, KEY);
@@ -72,22 +90,29 @@ export class AppearanceService {
     });
   }
 
-  /** Keeps `value`, {@link PLAIN} or a `#rrggbb`, as the person's accent, tuned as `adjust` says. */
+  /**
+   * Keeps `value`, {@link PLAIN}, {@link ORGANIZATION} or a `#rrggbb`, as the person's accent, tuned
+   * as `adjust` says.
+   */
   async choose(value: string, adjust: boolean): Promise<void> {
     this.choices += 1;
     this.sendingNow += 1;
     const choice = this.choices;
     this.chosen.set(value);
     this.tuned.set(adjust);
-    const accent: Accent = value === PLAIN ? PLAIN : { color: { color: value, adjust } };
-    const answered = this.sending.then(() => this.session.call('appearance/set', { accent }));
+    const answered = this.sending.then(() =>
+      this.session.call(
+        'appearance/set',
+        value === ORGANIZATION ? {} : { accent: pick(value, adjust) },
+      ),
+    );
     this.sending = answered.catch(() => undefined);
     try {
-      const { chosen, shades } = await answered;
-      this.kept = chosen;
+      const { chosen, shades, organization } = await answered;
+      this.kept = chosen ?? null;
       if (choice === this.choices) {
         this.failed.set(null);
-        this.keep(chosen, shades ?? null);
+        this.keep(chosen ?? null, shades ?? null, organization ?? null);
       }
     } catch (error: unknown) {
       if (choice === this.choices) {
@@ -104,20 +129,26 @@ export class AppearanceService {
     this.tuned.set(adjust);
   }
 
-  private async read(): Promise<void> {
+  /** Reads again, as after the person's organization changed what it says. */
+  async read(): Promise<void> {
     const choices = this.choices;
     try {
-      const { chosen, shades } = await this.session.call('appearance/get', {});
+      const { chosen, shades, organization } = await this.session.call('appearance/get', {});
       if (choices === this.choices && this.sendingNow === 0) {
-        this.keep(chosen, shades ?? null);
+        this.keep(chosen ?? null, shades ?? null, organization ?? null);
       }
     } catch {
       // The page stays as it was drawn; the next change, or the next load, reads it again.
     }
   }
 
-  private keep(chosen: Accent, shades: Shades | null): void {
+  private keep(
+    chosen: Accent | null,
+    shades: Shades | null,
+    organization: OrganizationLook | null,
+  ): void {
     this.kept = chosen;
+    this.look.set(organization);
     this.show(chosen);
     this.draw(shades);
     if (shades === null) {
@@ -127,8 +158,10 @@ export class AppearanceService {
     }
   }
 
-  private show(accent: Accent): void {
-    if (accent === PLAIN) {
+  private show(accent: Accent | null): void {
+    if (accent === null) {
+      this.chosen.set(offered(this.look()) ? ORGANIZATION : PLAIN);
+    } else if (accent === PLAIN) {
       this.chosen.set(PLAIN);
     } else {
       this.chosen.set(accent.color.color);
@@ -139,7 +172,8 @@ export class AppearanceService {
   /** Back to glave's plain look, and no answer still on its way is shown or remembered. */
   private signOut(): void {
     this.choices += 1;
-    this.kept = PLAIN;
+    this.kept = null;
+    this.look.set(null);
     this.chosen.set(PLAIN);
     this.tuned.set(true);
     this.failed.set(null);
