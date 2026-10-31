@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{ComputerError, Entry, EntryKind, Listed, Listing};
 use rustix::fs::{AtFlags, Dir, FileType, Mode, openat, statat};
 
-use super::anchored::{FOLDER, Found, Root, changed, count, plain, resolve, shown};
+use super::anchored::{FOLDER, Found, Root, changed, count, not_a_folder, plain, resolve, shown};
 use super::files::{blocking, io};
 use super::paths::relative;
 use super::walk;
@@ -43,7 +43,7 @@ fn open_folder(root: &Root<'_>, found: &Found, path: &str) -> Result<OwnedFd, Co
         return Err(ComputerError::NotFound(format!("{path}: no such file")));
     }
     if !found.is_folder() {
-        return Err(ComputerError::Failed(format!("{path}: not a folder")));
+        return Err(not_a_folder(path));
     }
     match &found.name {
         None => root.fd.try_clone().map_err(|error| io(path, &error)),

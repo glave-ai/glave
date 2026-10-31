@@ -125,6 +125,7 @@ impl Here {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
                 let computers = LocalComputers::for_here(std::env::vars_os())
+                    .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
                     .with_projects(projects)
                     .known_as(ComputerId::from_uuid(person.as_uuid()));
@@ -477,5 +478,55 @@ fn a_thread_on_a_person_s_computer_is_offered_the_skills_there_and_never_the_ser
         assert_eq!(later.asked(), asked, "a turn that talks asks for nothing");
         let offered = json(&seen).pop().unwrap();
         assert!(offered.contains("Lay out new beds."), "{offered}");
+    });
+}
+
+#[test]
+fn a_worktree_on_a_person_s_computer_is_offered_what_its_repository_was_last_read_to_hold() {
+    let dir = folder("session-homes-worktree-skills");
+    block_on!(async {
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let mut setup = Setup::new(vec![answer(Some("Hello."), None)]);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let (server, seen) = setup.build_on(&dir, Shared::default()).await;
+        let person = server.person().unwrap();
+        let own = homes.home_folder(person).join(".glave/skills/tidy");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join("SKILL.md"), SKILL_TEXT).unwrap();
+        let made = Request::ProjectCreate {
+            name: "Garden".into(),
+            folder: Some(NewFolder::Empty),
+        };
+        let Reply::Project {
+            project,
+            folder: Some(folder),
+        } = server.request(made).await.unwrap()
+        else {
+            panic!("a project with its folder")
+        };
+        let committed = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(["commit", "--allow-empty", "-m", "first"])
+            .current_dir(&folder.checkout.path)
+            .output()
+            .unwrap();
+        assert!(committed.status.success(), "{committed:?}");
+        let started = Request::ThreadStart {
+            project: Some(project.id),
+            worktree: Some(true),
+            background: false,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        };
+        let Reply::Thread { thread } = server.request(started).await.unwrap() else {
+            panic!("a thread")
+        };
+        let woken = homes.woken();
+        turn(&server, thread.id, "hi").await.unwrap();
+        assert_eq!(homes.woken(), woken, "a turn that talks wakes nothing");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Tidy the garden beds."), "{offered}");
     });
 }

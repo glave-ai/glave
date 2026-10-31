@@ -165,11 +165,12 @@ where
             return;
         };
         if let Some(kept_for) = kept_for {
-            self.keep_read(thread.scope, &kept_for, read.clone(), skills.clone())
+            self.keep_read(thread.scope, &kept_for, read.clone(), skills)
                 .await;
+        } else {
+            home.skills = Some(skills);
         }
         thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read);
-        home.skills = Some(skills);
     }
 
     /// Reads what a thread in the project folder at `root` in `scope` opens with through
@@ -219,36 +220,38 @@ where
         })
     }
 
-    /// The `skill` tool of `thread` on its person's own computer, once for each thread held:
-    /// what it found there as last read and kept (a worktree, which woke the computer to be
-    /// made, what is read there now), never the server's, with glave's own beside them. Loading
+    /// The `skill` tool of `thread` on its person's own computer, for its next turn: what was
+    /// last read there and kept, never the server's, with glave's own beside them; none read
+    /// yet, or that read failing, only glave's own for this turn. A worktree is offered what its
+    /// repository's folder was last read to hold, until a turn of its own reads its own. Loading
     /// one reads it there, as any tool call does.
-    pub(crate) async fn skills_at_home(&self, thread: &mut Thread) -> Vec<Arc<dyn ToolSource>> {
-        let (scope, person) = (thread.scope, thread.for_);
-        let Some(at) = thread.home.as_mut() else {
+    pub(crate) async fn skills_at_home(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
+        let Some(at) = thread.home.as_ref() else {
             return Vec::new();
         };
+        let (scope, person) = (thread.scope, thread.for_);
         let Ok((home, _)) = self.home_of(scope, person) else {
             return Vec::new();
         };
-        if at.skills.is_none() {
-            let root = Path::new(&at.bound.root);
-            at.skills = Some(
-                match at.bound.opened {
-                    Opened::Folder { .. } => {
-                        self.last_read(scope, root).await.map(|read| read.skills)
-                    }
-                    Opened::Scratch { .. } => self
-                        .last_read(scope, home.root())
-                        .await
-                        .map(|read| read.skills),
-                    Opened::Worktree { .. } => skills_on(&home, Some(root)).await.ok(),
-                    Opened::Clone { .. } => None,
-                }
-                .unwrap_or_default(),
-            );
-        }
-        let found = at.skills.clone().unwrap_or_default();
+        let found = match (&at.skills, &at.bound.opened) {
+            (Some(own), _) => Some(own.clone()),
+            (
+                None,
+                Opened::Folder { path }
+                | Opened::Worktree {
+                    repository: path, ..
+                },
+            ) => self
+                .last_read(scope, Path::new(path))
+                .await
+                .map(|read| read.skills),
+            (None, Opened::Scratch { .. }) => self
+                .last_read(scope, home.root())
+                .await
+                .map(|read| read.skills),
+            (None, Opened::Clone { .. }) => None,
+        };
+        let found = found.unwrap_or_default();
         let mut skills: Vec<Skill> = found
             .into_iter()
             .map(|skill| Skill {
@@ -275,7 +278,8 @@ pub(crate) struct AtHome {
     /// Whether its turn ran a command or changed a file there, so what it opens with is read
     /// there again as the turn ends.
     pub(crate) changed: bool,
-    /// The skills found there for it, once read; `None` until a turn needs them.
+    /// The skills found in a worktree there by a turn of its own, which no other thread is
+    /// offered and so aren't kept; `None` for all else, which reads what was kept.
     pub(crate) skills: Option<Vec<SkillFound>>,
 }
 
