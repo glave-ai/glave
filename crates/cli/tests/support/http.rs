@@ -30,6 +30,16 @@ pub(crate) fn serve_http_with(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> (Running, String, Said) {
+    serve_http_at(place, server.url(), args, env)
+}
+
+/// [`serve_http_with`], its models at `url`, and with `env` over everything else it is given.
+pub(crate) fn serve_http_at(
+    place: &Place,
+    url: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> (Running, String, Said) {
     // No titles: a title call would race the next turn for the fake model's replies. First,
     // so a table the test's own settings end with does not take it in.
     std::fs::create_dir_all(&place.home).unwrap();
@@ -43,14 +53,14 @@ pub(crate) fn serve_http_with(
         .args(args)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env(SEARCH_STAND_IN.0, SEARCH_STAND_IN.1)
-        .envs(env.iter().copied())
         .current_dir(&place.project)
-        .env("GLAVE_BASE_URL", server.url())
+        .env("GLAVE_BASE_URL", url)
         .env("GLAVE_HOME", &place.home)
         .env("GLAVE_API_KEY", &place.key)
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
         .env_remove("GLAVE_JUDGE_MODEL")
+        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

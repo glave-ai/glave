@@ -274,6 +274,9 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
+    /// The catalogs' refresh under way, which nothing waits for: stopped, not awaited, when the
+    /// server stops, as it can take minutes.
+    pub(crate) refreshing: Mutex<Option<JoinHandle<()>>>,
     /// The commands in the background of the threads held here, watched (`background.rs`).
     pub(crate) watched: Mutex<crate::background::Watched>,
     /// Turns started with an idempotency key, for retries.
@@ -391,6 +394,7 @@ where
                 approvals,
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
+                refreshing: Mutex::new(None),
                 watched: Mutex::new(HashMap::new()),
                 keyed: Keyed::default(),
                 trust: wiring.trust,
