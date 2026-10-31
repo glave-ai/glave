@@ -3,7 +3,7 @@
 //! the server adds credits; a turn is charged what the model said it cost; and once they are
 //! spent, the next turn is refused again.
 
-use glave_ports::testing::FakeHttp;
+use glave_ports::testing::{FakeHttp, Running};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::{Value, json};
 
@@ -119,6 +119,18 @@ fn own_openrouter() -> FakeHttp {
     .unwrap()
 }
 
+/// A server in `place` whose own OpenRouter is `router`, and its session API.
+fn served_by(router: &FakeHttp, place: &Place, args: &[&str]) -> (Running, Api) {
+    let at = format!("{}/api/v1", router.url);
+    let env = [
+        ("GLAVE_PROVIDER", "openrouter"),
+        ("GLAVE_OPENROUTER_URL", at.as_str()),
+    ];
+    let (served, url, _) = serve_http_at(place, &at, args, &env);
+    let api = Api::new(place, &url);
+    (served, api)
+}
+
 /// The server's entry for [`OWN_MODEL`], from `model/list`.
 fn own_entry(api: &Api) -> Value {
     let listed = api.call("model/list", json!({}));
@@ -134,13 +146,7 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     let settings = "[credits]\nmonthly_limit_usd = 10\n";
     std::fs::write(place.home.join("config.toml"), settings).unwrap();
     let router = own_openrouter();
-    let at = format!("{}/api/v1", router.url);
-    let env = [
-        ("GLAVE_PROVIDER", "openrouter"),
-        ("GLAVE_OPENROUTER_URL", at.as_str()),
-    ];
-    let (_served, url, _) = serve_http_at(&place, &at, &["--model", OWN_MODEL], &env);
-    let api = Api::new(&place, &url);
+    let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
 
     // No one connected an account, and the server's own is read all the same.
     let refreshed = api.call("provider/refresh", json!({}));
@@ -206,11 +212,6 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
 fn a_server_people_sign_in_to_with_oidc_reads_its_own_openrouter_too() {
     let place = place("oidc-own-openrouter");
     let router = own_openrouter();
-    let at = format!("{}/api/v1", router.url);
-    let env = [
-        ("GLAVE_PROVIDER", "openrouter"),
-        ("GLAVE_OPENROUTER_URL", at.as_str()),
-    ];
     let args = [
         "--model",
         OWN_MODEL,
@@ -219,8 +220,7 @@ fn a_server_people_sign_in_to_with_oidc_reads_its_own_openrouter_too() {
         "--audience",
         "glave",
     ];
-    let (_served, url, _) = serve_http_at(&place, &at, &args, &env);
-    let api = Api::new(&place, &url);
+    let (_served, api) = served_by(&router, &place, &args);
     let refreshed = api.call("provider/refresh", json!({}));
     assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
     let entry = own_entry(&api);
@@ -234,13 +234,7 @@ fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let settings = "[credits]\nmonthly_limit_usd = 10\n\n[router_floor]\nbased_in = [\"US\"]\n";
     std::fs::write(place.home.join("config.toml"), settings).unwrap();
     let router = own_openrouter();
-    let at = format!("{}/api/v1", router.url);
-    let env = [
-        ("GLAVE_PROVIDER", "openrouter"),
-        ("GLAVE_OPENROUTER_URL", at.as_str()),
-    ];
-    let (_served, url, _) = serve_http_at(&place, &at, &["--model", OWN_MODEL], &env);
-    let api = Api::new(&place, &url);
+    let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
     let refreshed = api.call("provider/refresh", json!({}));
     assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
 
