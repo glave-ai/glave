@@ -36,6 +36,9 @@ function serve(request: IncomingMessage, response: ServerResponse): void {
   response.end(JSON.stringify({ login: 'ana' }));
 }
 
+// One person on one real glave: an accent one test chooses is what the other draws, so one at a time.
+test.describe.configure({ mode: 'serial' });
+
 let host: Server;
 
 test.beforeAll(async () => {
