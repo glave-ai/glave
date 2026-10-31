@@ -21,6 +21,8 @@ use glave_session::Answering;
 use glave_session::protocol::{NewFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
 
+use glave_harness::{Skill, SkillSource, Skills};
+
 use crate::support::*;
 
 /// People's computers on this machine: each person's a folder of their own with its scratch
@@ -82,7 +84,7 @@ impl Here {
 
     /// Where `person`'s computer makes new projects' folders.
     fn projects(&self, person: PrincipalId) -> PathBuf {
-        self.base.join(person.to_string()).join("projects")
+        self.home_folder(person).join("glave")
     }
 
     /// `person`'s home on their computer.
@@ -387,4 +389,93 @@ async fn started_later(
         matches!(&opening, Some(Part::Text { text }) if text.contains("Be brief.")),
         "the person's own instructions, kept: {opening:?}"
     );
+}
+
+const SKILL_TEXT: &str =
+    "---\nname: tidy\ndescription: Tidy the garden beds.\n---\nPrune only in winter.\n";
+
+/// A skill on the server's own computer, and one built into glave.
+fn on_the_server() -> Option<Skills> {
+    let built_in = "---\nname: sheets\ndescription: Work with spreadsheets.\n---\nCount twice.\n";
+    Skills::offer(vec![
+        Skill {
+            name: "servers-own".into(),
+            description: "Only for the server's computer.".into(),
+            source: SkillSource::File(PathBuf::from("/nowhere/SKILL.md")),
+        },
+        Skill::built_in(built_in).unwrap(),
+    ])
+}
+
+#[test]
+fn a_thread_on_a_person_s_computer_is_offered_the_skills_there_and_never_the_server_s() {
+    let dir = folder("session-homes-skills");
+    block_on!(async {
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let log = Shared::default();
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
+        let person = server.person().unwrap();
+        let own = homes.home_folder(person).join(".glave/skills/tidy");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join("SKILL.md"), SKILL_TEXT).unwrap();
+        let made = Request::ProjectCreate {
+            name: "Garden".into(),
+            folder: Some(NewFolder::Empty),
+        };
+        let Reply::Project {
+            project,
+            folder: Some(folder),
+        } = server.request(made).await.unwrap()
+        else {
+            panic!("a project with its folder")
+        };
+
+        // A server started later: offered as last read there, with nothing asked of it.
+        let mut next = Setup::new(vec![
+            answer(Some("Hello."), None),
+            answer(None, Some(("skill", json!({"name": "tidy"})))),
+            answer(
+                None,
+                Some(("write", json!({"path": "n.txt", "content": "x"}))),
+            ),
+            answer(Some("Done."), None),
+            answer(Some("Hello again."), None),
+        ]);
+        next.seed = 2;
+        next.settings.person = Some(person);
+        next.projects = Some(Arc::clone(server.projects()));
+        next.skills = on_the_server();
+        let later = Arc::new(Here::new(&dir.join("people")));
+        next.homes = Some(Arc::clone(&later) as Arc<dyn Homes>);
+        let (again, seen) = next.build_on(&dir, log).await;
+        let thread = started(&again, Some(project.id)).await;
+        turn(&again, thread.id, "hi").await.unwrap();
+        assert_eq!(later.asked(), 0, "nothing asked of their computer");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Tidy the garden beds."), "{offered}");
+        assert!(offered.contains("glave:sheets"), "glave's own: {offered}");
+        assert!(!offered.contains("servers-own"), "{offered}");
+
+        // Loading one reads it there; and a turn that changed a file reads them all again.
+        let root = PathBuf::from(&folder.checkout.path);
+        let beds = root.join(".glave/skills/beds");
+        std::fs::create_dir_all(&beds).unwrap();
+        let text = "---\nname: beds\ndescription: Lay out new beds.\n---\nDig first.\n";
+        std::fs::write(beds.join("SKILL.md"), text).unwrap();
+        turn(&again, thread.id, "tidy up").await.unwrap();
+        let loaded = json(&seen);
+        assert!(
+            loaded
+                .iter()
+                .any(|sent| sent.contains("Prune only in winter."))
+        );
+        let next_thread = started(&again, Some(project.id)).await;
+        let asked = later.asked();
+        turn(&again, next_thread.id, "hi").await.unwrap();
+        assert_eq!(later.asked(), asked, "a turn that talks asks for nothing");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Lay out new beds."), "{offered}");
+    });
 }
