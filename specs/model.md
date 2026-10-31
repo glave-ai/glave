@@ -26,6 +26,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 - **The server** holds history, projects, sign-ins and keys, reads the configuration files ("Configuration is files"), runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
+- **What a person chooses runs from their computer, never from the server** (`computers.md`, "What a person chooses", 2026-10-31): local MCP programs, remote MCP servers and connectors with their sign-in, and pages the agent reads. The server talks only to its store, its models and connectors with a shared key an admin set up, a list short enough for a network rule. Sign-ins stay sealed on the server, and each request asks for its token.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
 - **People work with glave in the browser; the CLI is commands.** It runs one turn (`glave "…"`, approvals asked in place, for scripts and CI), goals, tasks and schedules, and serves. `glave` alone opens the browser at the current folder's project, or prints the link where there's no browser. A terminal UI comes later (#308), laid out like the app (Chats and projects, a thread, what needs the person), as another thin client of the server; until then the CLI is commands and has no chat.
 - **The server says what happened; each client draws it** (AGENTS.md, "Keeping principle 4"). A thread's items come from the server as typed facts with one plain sentence each, so the web app, the CLI, a notification and an outside agent say the same thing; how they look stays in each client. Items are worked out from the thread's events, which stay the record (#311).
@@ -65,7 +66,7 @@ Everything that configures glave is a file, read where it lives, and glave holds
   - memory;
   - the record of what happened (the log).
 - **One named exception: an organization's brand** (its name, logo, accent and the switch that makes everyone use it) is kept in a ledger of its own in the organization's scope, not in a file. A screen's save has no file to go to on a server with many organizations. An organization's policy and skills stay files.
-- **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. The machine holds only a placeholder, which the outbound proxy fills in for the hosts a secret is allowed to reach (#643).
+- **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. A command's machine holds only a placeholder, which the outbound proxy fills in for the hosts a secret is allowed to reach (#643); a connector's token is asked for by glave's own process there, for one request (`computers.md`, "What a person chooses").
 
 ## Models
 
@@ -171,3 +172,4 @@ What today's code doesn't do yet, so no one takes it as built.
 10. Skills come from the repository, the person's own folders and glave itself (`glave:spreadsheets`), and a folder's can replace another's of the same name. There are no company skills in `/etc/glave/skills`, no `acme:` names, and no way for a policy to turn personal skills off.
 11. A company's policy file can take the agent's network away (#641), but nothing writes it for one yet: a company starts with the network on until its policy says otherwise, and Glave Cloud's starting policy comes with the admin screens (#222).
 12. Where no sandbox can run (Windows, and a person's cloud computer until it has one inside it, #221), no zones are drawn: Auto and Ask first ask before every change and command instead, and only Full access runs without asking. An organization that caps the modes below Full access gets no glave there at all: it refuses to start.
+13. Remote MCP servers, their sign-in and `web_fetch` run on the server, and a person's computer in the cloud runs no MCP server at all (`computers.md`, "What a person chooses", #1132).
