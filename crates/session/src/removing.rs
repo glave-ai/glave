@@ -119,7 +119,7 @@ where
 
     /// Reads the people ledger of each organization where a watch or work here follows someone,
     /// which tells the watches of whoever was removed, and ends what those people run here.
-    /// [`READS`] at once, so a slow organization holds up few others; each read's work ends
+    /// Some at once, so a slow organization holds up few others; each read's work ends
     /// right after it, so forgetting a ledger past the most kept loses nothing.
     pub async fn look_for_removals(&self) {
         let mut orgs: BTreeMap<OrgId, Vec<Theirs>> = BTreeMap::new();
