@@ -279,14 +279,16 @@ where
         });
         let disk = theirs
             .and_then(|person| self.inner.harness.short_of_room(scope.org(), person))
-            .map(|short| DiskShort {
-                told: Sentence::DiskShort {
-                    percent: short.disk.percent_used().to_string(),
-                }
-                .into(),
-                size: short.disk.size,
-                free: short.disk.free,
-                largest: short.largest,
+            .map(|short| {
+                Box::new(DiskShort {
+                    told: Sentence::DiskShort {
+                        percent: short.disk.percent_used().to_string(),
+                    }
+                    .into(),
+                    size: short.disk.size,
+                    free: short.disk.free,
+                    largest: short.largest,
+                })
             });
         Ok(ThreadSummary {
             id: view.thread,

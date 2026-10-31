@@ -68,6 +68,22 @@ const LARGEST: usize = 10;
 /// saw, since an answer that's nearly right is what's wanted of it.
 const MOST_WALKED: u64 = 2_000_000;
 
+/// What uses the disk under the home of `environment` most ([`largest`]); none without a home.
+pub(crate) async fn largest_in(
+    environment: &[(OsString, OsString)],
+) -> Result<Vec<DiskUse>, ComputerError> {
+    let home = environment
+        .iter()
+        .find(|(name, _)| name == "HOME")
+        .map(|(_, value)| PathBuf::from(value));
+    let Some(home) = home else {
+        return Ok(Vec::new());
+    };
+    tokio::task::spawn_blocking(move || largest(&home))
+        .await
+        .map_err(|error| ComputerError::Failed(error.to_string()))
+}
+
 /// What uses the disk under `home` most, the largest first: each entry one level down in its
 /// folders, and its files; a link or another disk counting nothing. Blocking.
 pub(crate) fn largest(home: &Path) -> Vec<DiskUse> {

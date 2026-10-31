@@ -532,17 +532,7 @@ impl Computers for LocalComputers {
     fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
         Box::pin(async move {
             self.registry.environment(computer)?;
-            let home = self
-                .environment
-                .iter()
-                .find(|(name, _)| name == "HOME")
-                .map(|(_, value)| PathBuf::from(value));
-            let Some(home) = home else {
-                return Ok(Vec::new());
-            };
-            tokio::task::spawn_blocking(move || crate::disk::largest(&home))
-                .await
-                .map_err(|error| ComputerError::Failed(error.to_string()))
+            crate::disk::largest_in(&self.environment).await
         })
     }
 

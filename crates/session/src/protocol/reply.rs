@@ -174,7 +174,7 @@ pub struct ThreadSummary {
     /// Its person's own computer being short of room, with nothing more glave can free, when
     /// the server last found it so; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk: Option<DiskShort>,
+    pub disk: Option<Box<DiskShort>>,
 }
 
 /// A person's computer short of room, more than 90% of its disk used and nothing more glave can
