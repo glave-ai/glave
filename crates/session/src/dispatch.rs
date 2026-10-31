@@ -187,6 +187,8 @@ where
             Request::LanguageSet { language } => self.set_language(caller, language).await,
             Request::GroupingGet {} => self.grouping(caller).await,
             Request::GroupingSet { grouping } => self.set_grouping(caller, grouping).await,
+            Request::FiltersGet {} => self.filters(caller).await,
+            Request::FiltersSet { filters } => self.set_filters(caller, filters).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code, link } => match link {

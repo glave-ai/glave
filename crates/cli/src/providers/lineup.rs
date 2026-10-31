@@ -7,15 +7,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
-use glave_event::{Catalog, ProviderConnected, ProviderKind};
-use glave_gateway::{Gateway, Target};
+use glave_event::{Catalog, CatalogProvider, ProviderConnected, ProviderKind};
+use glave_gateway::{Gateway, Router, Target};
 use glave_ports::settings::Judge;
 use glave_session::Models;
 use glave_session::protocol::ModelInfo;
 
 use crate::config::Endpoint;
 use crate::gateway::remote::Remote;
-use crate::gateway::{Allowed, free_if_here, gateway, offered};
+use crate::gateway::{Allowed, free_if_here, gateway, offered, routing_if_router};
 use crate::model::Model;
 use crate::setup::Setup;
 
@@ -94,16 +94,12 @@ impl Lineup {
             let handle: Arc<dyn glave_gateway::Model> = Arc::new(Model::for_endpoint(&endpoint)?);
             let provider = &endpoint.provider.provider;
             let catalog = super::catalog_of(account, catalogs);
+            let providers: Arc<[CatalogProvider]> =
+                catalog.map_or_else(Arc::default, |catalog| catalog.providers.clone().into());
             for model in allowed {
-                let target = Target::new(Arc::clone(&handle), provider.clone(), model)
-                    .at_service(service_name(provider));
-                let card = catalog.and_then(|catalog| {
-                    let card = catalog.models.iter().find(|card| card.id == model)?;
-                    Some((card, catalog))
-                });
+                let target = target_at(&handle, provider, model, catalog, &providers);
                 about.insert(target.name.clone(), (catalog, service_name(provider)));
-                let target = free_if_here(describe::described(target, card), &endpoint);
-                targets.push((rank(account.kind), target));
+                targets.push((rank(account.kind), free_if_here(target, &endpoint)));
             }
             first.get_or_insert(endpoint);
         }
@@ -196,4 +192,29 @@ impl Lineup {
         let name = entry.and_then(|e| e.name.as_deref());
         describe::info(id, &cards, providers, name, first.copied(), routed)
     }
+}
+
+/// `model` at `provider` through `handle`, as its `catalog`'s card describes it, and a router
+/// that keeps to people's filters where `provider` is OpenRouter, with who the catalog says
+/// serves the model (`providers` shared by its models).
+fn target_at(
+    handle: &Arc<dyn glave_gateway::Model>,
+    provider: &str,
+    model: &str,
+    catalog: Option<&Catalog>,
+    providers: &Arc<[CatalogProvider]>,
+) -> Target {
+    let card = catalog.and_then(|catalog| {
+        let card = catalog.models.iter().find(|card| card.id == model)?;
+        Some((card, catalog))
+    });
+    let router = Router {
+        providers: Arc::clone(providers),
+        endpoints: card
+            .map(|(card, _)| card.endpoints.clone())
+            .unwrap_or_default(),
+    };
+    let target =
+        Target::new(Arc::clone(handle), provider, model).at_service(service_name(provider));
+    describe::described(routing_if_router(target, provider, router), card)
 }

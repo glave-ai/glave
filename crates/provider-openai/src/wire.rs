@@ -1,8 +1,8 @@
 //! The chat completions wire format: glave's neutral request in, OpenAI's JSON out, and the
 //! shape of each streamed chunk coming back.
 
-use glave_event::{Arguments, Part};
-use glave_ports::{InlineFile, Message, ModelRequest, ToolChoice, ToolSpec};
+use glave_event::{Arguments, Part, Sort};
+use glave_ports::{InlineFile, Message, ModelRequest, Route, ToolChoice, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
@@ -38,9 +38,10 @@ pub(crate) struct ChatRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<&'a str>,
     /// For OpenRouter, on every request: no provider that keeps or trains on prompts, and
-    /// none that would drop a parameter the request uses, such as its tools.
+    /// none that would drop a parameter the request uses, such as its tools; then the
+    /// person's filters among its providers.
     #[serde(skip_serializing_if = "Option::is_none")]
-    provider: Option<Preferences>,
+    provider: Option<Preferences<'a>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,10 +49,64 @@ struct Effort<'a> {
     effort: &'a str,
 }
 
+/// OpenRouter's provider preferences, by its names for them.
 #[derive(Debug, Serialize)]
-struct Preferences {
+struct Preferences<'a> {
     data_collection: &'static str,
     require_parameters: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    only: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    ignore: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    quantizations: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sort: Option<&'static str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    zdr: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_price: Option<WirePrice>,
+}
+
+/// The most a provider's tokens may cost, as OpenRouter takes it: US dollars per million
+/// tokens, written out exactly from glave's millionths.
+#[derive(Debug, Serialize)]
+struct WirePrice {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt: Option<Box<RawValue>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    completion: Option<Box<RawValue>>,
+}
+
+impl<'a> Preferences<'a> {
+    /// What every OpenRouter request asks, then what `route` does.
+    fn of(route: Option<&'a Route>) -> Self {
+        let none: &[String] = &[];
+        Self {
+            data_collection: "deny",
+            require_parameters: true,
+            only: route.and_then(|route| route.only.as_deref()),
+            ignore: route.map_or(none, |route| &route.ignore),
+            quantizations: route.map_or(none, |route| &route.quantizations),
+            sort: route.and_then(|route| route.sort).map(|sort| match sort {
+                Sort::Price => "price",
+                Sort::Speed => "throughput",
+            }),
+            zdr: route.is_some_and(|route| route.zdr),
+            max_price: route
+                .and_then(|route| route.max_price)
+                .map(|max| WirePrice {
+                    prompt: max.input.and_then(dollars),
+                    completion: max.output.and_then(dollars),
+                }),
+        }
+    }
+}
+
+/// `millionths` of a US dollar as a JSON number of dollars, exactly.
+fn dollars(millionths: u64) -> Option<Box<RawValue>> {
+    let (whole, part) = (millionths / 1_000_000, millionths % 1_000_000);
+    RawValue::from_string(format!("{whole}.{part:06}")).ok()
 }
 
 #[derive(Debug, Serialize)]
@@ -311,10 +366,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .filter(|_| openrouter)
             .map(|effort| Effort { effort }),
         reasoning_effort: effort.filter(|_| !openrouter),
-        provider: openrouter.then_some(Preferences {
-            data_collection: "deny",
-            require_parameters: true,
-        }),
+        provider: openrouter.then(|| Preferences::of(request.route.as_ref())),
     }
 }
 

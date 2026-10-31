@@ -257,6 +257,7 @@ where
             files: Vec::new(),
             effort: None,
             payer: Some(thread.payer()),
+            route: None,
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion

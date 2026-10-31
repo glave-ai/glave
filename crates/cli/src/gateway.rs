@@ -15,7 +15,7 @@ pub(crate) mod serve;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::Currency;
-use glave_gateway::{Credits, Gateway, Price, Routes, Target};
+use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
 use glave_ports::{
     Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
 };
@@ -25,6 +25,7 @@ use crate::data::DataLog;
 use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
+use glave_session::PersonFilters;
 use glave_session::protocol::ModelInfo;
 
 /// What a model on this computer costs, called straight rather than through a gateway
@@ -44,6 +45,16 @@ fn free_here() -> Price {
 pub(crate) fn free_if_here(target: Target, endpoint: &Endpoint) -> Target {
     if endpoint.local && endpoint.gateway.is_none() && target.price.is_none() {
         target.with_price(free_here())
+    } else {
+        target
+    }
+}
+
+/// `target`, a router that keeps to a person's filters among the providers its catalog says
+/// serve its model, `router`, when `provider` is OpenRouter.
+pub(crate) fn routing_if_router(target: Target, provider: &str, router: Router) -> Target {
+    if provider == "openrouter" {
+        target.routing(router)
     } else {
         target
     }
@@ -78,6 +89,8 @@ pub(crate) fn gateway(
     // No catalog describes these: Claude among them reasons as Anthropic documents.
     let at = |model: &str| {
         let target = Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+        // No catalog says who serves a configured model: the router finds out each time.
+        let target = routing_if_router(target, name, Router::default());
         let target = free_if_here(target, endpoint);
         match documented_reasoning(endpoint, model) {
             Some(reasoning) => target.with_reasoning(&reasoning),
@@ -140,6 +153,9 @@ pub(crate) fn gateway(
 pub(crate) struct GatewaySwitch {
     current: Arc<RwLock<Option<Arc<Gateway>>>>,
     credits: Option<Arc<Credits<DataLog>>>,
+    /// Each person's filters among a router's providers, which the session server answers
+    /// once it is made.
+    filters: Arc<PersonFilters>,
 }
 
 impl GatewaySwitch {
@@ -147,6 +163,7 @@ impl GatewaySwitch {
         let switch = Self {
             current: Arc::default(),
             credits,
+            filters: Arc::default(),
         };
         switch.set(gateway);
         switch
@@ -154,11 +171,19 @@ impl GatewaySwitch {
 
     /// Sends calls to `gateway` from now on; calls already sent finish where they are.
     pub(crate) fn set(&self, gateway: Option<Gateway>) {
-        let gateway = gateway.map(|gateway| match &self.credits {
-            Some(credits) => gateway.with_credits(Arc::clone(credits)),
-            None => gateway,
+        let gateway = gateway.map(|gateway| {
+            let gateway = gateway.with_filters(Arc::clone(&self.filters) as Arc<dyn Filtering>);
+            match &self.credits {
+                Some(credits) => gateway.with_credits(Arc::clone(credits)),
+                None => gateway,
+            }
         });
         *self.current.write().unwrap_or_else(PoisonError::into_inner) = gateway.map(Arc::new);
+    }
+
+    /// What its gateways ask for each person's filters, for the session server to answer.
+    pub(crate) fn filters(&self) -> Arc<PersonFilters> {
+        Arc::clone(&self.filters)
     }
 
     fn current(&self) -> Option<Arc<Gateway>> {

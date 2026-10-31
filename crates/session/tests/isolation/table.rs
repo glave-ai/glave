@@ -256,6 +256,12 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "credits/add",
             vec![json!({"amount": {"micros": 1_000_000, "currency": "USD"}, "reference": "o-1"})],
         ),
+        // The caller's own filters among providers, naming no one's.
+        ("filters/get", vec![json!({})]),
+        (
+            "filters/set",
+            vec![json!({"filters": {"based_in": ["US"]}})],
+        ),
         ("invite/show", vec![json!({"code": "@invite_code"})]),
         ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),

@@ -166,7 +166,9 @@ pub(crate) async fn wire(
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     say(&told, &projects, &folder).await;
-    tidy(memory.as_ref(), &lined.switch, settings.model.clone());
+    // Memory is tidied once the server answers the filters its calls keep to.
+    let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
+    let tidy_model = settings.model.clone();
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
         rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
@@ -206,6 +208,8 @@ pub(crate) async fn wire(
         )
     };
     let server = Server::new(wiring, settings, scope.org(), answering);
+    server.answer_filters(&filters);
+    tidy(memory.as_ref(), &tidier, tidy_model);
     let reach = crate::serving::reach(args, choices, &store, identity.person).await?;
     if start_folder(args, &setup.choices, &folder) {
         keep_here(&server, scope.project(), &root).await?;

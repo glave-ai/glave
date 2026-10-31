@@ -29,6 +29,7 @@ fn ask(model: &str, text: &str) -> ModelRequest {
         files: Vec::new(),
         effort: None,
         payer: None,
+        route: None,
     }
 }
 

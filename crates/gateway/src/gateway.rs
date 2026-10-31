@@ -5,14 +5,15 @@ use std::sync::Arc;
 
 use glave_event::{Currency, Money};
 use glave_ports::{
-    Completion, Delta, EventLog, Failure, ModelProvider, ModelRequest, ProviderError, Served,
-    Unpaid,
+    Completion, Delta, EventLog, Failure, ModelProvider, ModelRequest, ProviderError, Route,
+    Served, Unpaid,
 };
 use tracing::Instrument as _;
 
 use crate::budget::{BudgetKey, Budgets, Charge, Ledger, OverBudget};
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
+use crate::filtering::Filtering;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
 use crate::target::Target;
@@ -29,6 +30,9 @@ pub struct Gateway {
     /// The organizations' credits each call with a payer is charged to; none where the
     /// server keeps none.
     credits: Option<Arc<dyn Charging>>,
+    /// Where each call with a payer finds its person's filters among a router's providers;
+    /// none where the host keeps none.
+    filters: Option<Arc<dyn Filtering>>,
 }
 
 impl Gateway {
@@ -38,6 +42,7 @@ impl Gateway {
             routes,
             ledger: Ledger::default(),
             credits: None,
+            filters: None,
         }
     }
 
@@ -45,6 +50,13 @@ impl Gateway {
     #[must_use]
     pub fn with_credits<L: EventLog + 'static>(mut self, credits: Arc<Credits<L>>) -> Self {
         self.credits = Some(credits);
+        self
+    }
+
+    /// Sends each call that says whose work it is only as its person's `filters` ask.
+    #[must_use]
+    pub fn with_filters(mut self, filters: Arc<dyn Filtering>) -> Self {
+        self.filters = Some(filters);
         self
     }
 
@@ -97,11 +109,18 @@ impl Gateway {
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
         let needs = Needs::of(request);
-        let targets = candidates(targets, request, &needs)?;
+        // Filters choose among a router's providers: where none is among the targets, they
+        // change nothing, and are not read.
+        let routed = targets.iter().any(|target| target.router.is_some());
+        let filters = match (&self.filters, request.payer) {
+            (Some(filters), Some(payer)) if routed => filters.filters(payer).await?,
+            _ => None,
+        };
+        let targets = candidates(targets, request, filters.as_ref(), &needs)?;
         let mut failed: Option<ProviderError> = None;
         let mut over: Option<OverBudget> = None;
         let mut unpaid: Option<ProviderError> = None;
-        for target in targets {
+        for (target, route) in targets {
             let worst = worst(target, request, &needs);
             let hold = match self.ledger.reserve(caller, worst) {
                 Ok(hold) => hold,
@@ -121,7 +140,8 @@ impl Gateway {
                     continue;
                 }
             };
-            let sent = Self::send_to(target, request, &needs, paying.as_ref(), on_delta).await;
+            let sent = (request, route.as_ref());
+            let sent = Self::send_to(target, sent, &needs, paying.as_ref(), on_delta).await;
             match sent {
                 Ok(completion) => {
                     hold.settle(actual(&completion));
@@ -155,17 +175,17 @@ impl Gateway {
 }
 
 impl Gateway {
-    /// Sends `request` to `target`, as its route's purpose and the target take it, noting what
-    /// comes for `paying`, and says who served it; its cost is its target's price when its
-    /// provider reports none.
+    /// Sends `request` to `target`, as its route's purpose and the target take it and with what
+    /// `route` asks of a router, noting what comes for `paying`, and says who served it; its
+    /// cost is its target's price when its provider reports none.
     async fn send_to(
         target: &Target,
-        request: &ModelRequest,
+        (request, route): (&ModelRequest, Option<&Route>),
         needs: &Needs<'_>,
         paying: Option<&Paying<'_>>,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
-        let (sent, stripped) = prepare(request, target, needs);
+        let (sent, stripped) = prepare(request, route, target, needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
         let mut counted = |delta: Delta| {

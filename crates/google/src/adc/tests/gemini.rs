@@ -35,6 +35,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         files: Vec::new(),
         effort: None,
         payer: None,
+        route: None,
     };
     let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(

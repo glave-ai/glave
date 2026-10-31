@@ -1,7 +1,7 @@
 //! The wire format's shape, checked as JSON.
 
 use super::*;
-use glave_event::CallId;
+use glave_event::{CallId, MaxPrice};
 use glave_ports::ToolCall;
 use serde_json::json;
 
@@ -48,6 +48,7 @@ fn a_request_has_the_chat_completions_shape() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -98,6 +99,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -129,6 +131,7 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
         effort: Some("high".into()),
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     for provider in ["openrouter", "openai", "ollama"] {
         let sent = serde_json::to_value(chat_request(&request, provider)).unwrap();
@@ -165,6 +168,7 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -201,6 +205,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
@@ -224,6 +229,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -247,6 +253,7 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
         effort: None,
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -262,6 +269,53 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
 }
 
 #[test]
+fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
+    let route = Route {
+        only: Some(vec!["groq".into(), "fireworks".into()]),
+        ignore: vec!["deepseek".into()],
+        quantizations: vec!["fp8".into(), "bf16".into()],
+        sort: Some(Sort::Speed),
+        zdr: true,
+        max_price: Some(MaxPrice {
+            input: Some(150_000),
+            output: Some(2_000_000),
+        }),
+    };
+    let request = ModelRequest {
+        model: "deepseek/deepseek-v4.1-flash".into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        effort: None,
+        files: Vec::new(),
+        payer: None,
+        route: Some(route),
+    };
+    let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert_eq!(
+        routed["provider"],
+        json!({
+            "data_collection": "deny",
+            "require_parameters": true,
+            "only": ["groq", "fireworks"],
+            "ignore": ["deepseek"],
+            "quantizations": ["fp8", "bf16"],
+            "sort": "throughput",
+            "zdr": true,
+            "max_price": {"prompt": 0.15, "completion": 2.0},
+        })
+    );
+    let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert!(
+        plain.get("provider").is_none(),
+        "only a router is sent them"
+    );
+}
+
+#[test]
 fn a_reasoning_level_is_sent_as_each_service_takes_it() {
     let request = ModelRequest {
         model: "m".into(),
@@ -274,6 +328,7 @@ fn a_reasoning_level_is_sent_as_each_service_takes_it() {
         effort: Some("high".into()),
         files: Vec::new(),
         payer: None,
+        route: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(routed["reasoning"], json!({"effort": "high"}));
@@ -319,6 +374,7 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         effort: None,
         files,
         payer: None,
+        route: None,
     }
 }
 

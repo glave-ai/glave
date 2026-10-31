@@ -162,6 +162,18 @@ impl Precision {
         ("fp32", Self::Full),
     ];
 
+    /// How a router names the ways of storing weights at this precision or better: none for
+    /// [`Precision::Unstated`], which asks for nothing.
+    pub fn at_least(self) -> Vec<&'static str> {
+        if self == Self::Unstated {
+            return Vec::new();
+        }
+        let enough = Self::NAMED
+            .iter()
+            .filter(|(_, precision)| *precision >= self);
+        enough.map(|(name, _)| *name).collect()
+    }
+
     /// The precision of weights stored as `quantization` says, as a router names it.
     pub fn of(quantization: Option<&str>) -> Self {
         let named = quantization.map(str::to_ascii_lowercase);
@@ -232,5 +244,14 @@ mod tests {
         assert_eq!(Precision::of(Some("unknown")), Precision::Unstated);
         assert_eq!(Precision::of(None), Precision::Unstated);
         assert!(Precision::Full > Precision::EightBit && Precision::EightBit > Precision::FourBit);
+        assert_eq!(Precision::Full.at_least(), ["fp16", "bf16", "fp32"]);
+        assert_eq!(
+            Precision::EightBit.at_least(),
+            ["int8", "fp8", "mxfp8", "fp16", "bf16", "fp32"]
+        );
+        assert!(
+            Precision::Unstated.at_least().is_empty(),
+            "asks for nothing"
+        );
     }
 }

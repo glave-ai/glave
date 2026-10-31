@@ -47,6 +47,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         files: Vec::new(),
         effort: None,
         payer: None,
+        route: None,
     }
 }
 

@@ -637,6 +637,7 @@ where
             files,
             effort: thread.effort.clone(),
             payer: Some(thread.payer()),
+            route: None,
         };
         let retries = self.settings.retries;
         let mut retry = 0;

@@ -258,6 +258,18 @@ sentences! {
         "{ $model } offers no choice of how much it reasons: start without a level",
     NoSuchEffort { model: String, effort: String, efforts: String } = "no-such-effort"
         "{ $model } does not offer the reasoning level \"{ $effort }\": choose one of { $efforts }",
+    FiltersTooMany { most: usize } = "filters-too-many"
+        "your filters name at most { $most } countries, { $most } providers to avoid and { $most } models",
+    NotACountry { place: String } = "not-a-country"
+        "\"{ $place }\" is not a country: name each by its two-letter code, such as US",
+    FilterName { most: usize } = "filter-name"
+        "a model's name in your filters is 1 to { $most } characters, not only spaces",
+    NotAProvider { provider: String } = "not-a-provider"
+        "\"{ $provider }\" is not a provider: name each as the router does, such as deepinfra",
+    NoMostPrice = "no-most-price"
+        "a price limit says what input, output or both may cost at most",
+    FiltersUnreadable = "filters-unreadable"
+        "glave can't read your filters among providers: choose them again",
     PermissionsNotAllowed { mode: String, left: String } = "permissions-not-allowed"
         "{ $mode } isn't allowed here: choose { $left }",
     Unsandboxed = "unsandboxed"

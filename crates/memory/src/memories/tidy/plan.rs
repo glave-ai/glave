@@ -120,6 +120,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool, payer: Payer) -> Mo
         files: Vec::new(),
         effort: None,
         payer: Some(payer),
+        route: None,
     }
 }
 

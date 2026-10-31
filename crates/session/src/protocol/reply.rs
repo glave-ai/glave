@@ -2,8 +2,8 @@
 //! the server, threads and turns.
 
 use glave_event::{
-    At, EventId, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId,
-    TokenCounts, TurnResult, WorkspaceBound,
+    At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret, Seq,
+    ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
@@ -383,6 +383,14 @@ pub enum Reply {
     /// How the caller's clients group their threads.
     #[schemars(title = "Grouping")]
     Grouping { grouping: Grouping },
+    /// The caller's filters among a router's providers, and the countries, by ISO 3166-1
+    /// alpha-2 code, that "Europe" means among them: the European Economic Area, Switzerland
+    /// and the United Kingdom.
+    #[schemars(title = "Filters")]
+    Filters {
+        filters: Filters,
+        europe: Vec<String>,
+    },
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },
