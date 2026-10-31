@@ -200,6 +200,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Integration tests live in each crate's `tests/`, as one program: `tests/main.rs` declares each file as a module (`autotests = false`), so the dependency tree is linked once per crate, not once per file. nextest still runs each test in a process of its own.
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
+- A limit on a program a test starts never counts the program being read from the drive: it reads the program first (`glave_ports::testing::read_through`), with no limit but the test runner's (#1089).
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
 - Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets, temp folders) behind the `conformance` feature. Never write a second copy in a crate.
 - Every test removes what it makes: its folders are `glave_ports::testing::TempDir`s (`outside_temp` for the sandbox's tests), removed with what they hold when dropped, and a server it starts in the background is stopped by a guard when it drops. What it starts is stopped and waited for before the folder it writes to goes: declared after the folder, or before it in a struct, whose fields drop in order.

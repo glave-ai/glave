@@ -9,10 +9,12 @@ use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
-use glave_ports::testing::{TempDir, any_secret};
+use glave_ports::testing::{TempDir, any_secret, read_through};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
 use crate::support::Lifeline;
+
+const GLAVE: &str = env!("CARGO_BIN_EXE_glave");
 
 #[derive(Default)]
 struct Collect(Mutex<String>);
@@ -30,8 +32,9 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
     let key = any_secret();
+    read_through(GLAVE).unwrap();
     block_on!(async {
-        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
+        let mut child = tokio::process::Command::new(GLAVE)
             .args(["computer", "serve", "--stdio"])
             .env("GLAVE_HOME", dir.join("home"))
             .env("GLAVE_API_KEY", &key)
@@ -87,8 +90,9 @@ fn a_worker_s_glave_serving_tls_ends_when_its_input_does() {
     let now = SystemTime::from(SystemClock.now());
     let token = Token::mint(now, Duration::from_mins(10)).unwrap();
     std::fs::write(tls.join("token"), token.to_file()).unwrap();
+    read_through(GLAVE).unwrap();
     block_on!(async {
-        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
+        let mut child = tokio::process::Command::new(GLAVE)
             .args(["computer", "serve", "--tls", "127.0.0.1:0"])
             .arg(&tls)
             .arg("--until-input-ends")
@@ -116,8 +120,9 @@ fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
     let socket = dir.join("glave.sock");
     // Each glave ends with the test, however it ends.
     let lifeline = Lifeline::new(&dir);
+    read_through(GLAVE).unwrap();
     let glave = || {
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"));
+        let mut command = tokio::process::Command::new(GLAVE);
         command.env(Lifeline::VARIABLE, &lifeline.path);
         command
     };
