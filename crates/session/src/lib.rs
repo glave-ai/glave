@@ -39,6 +39,7 @@ mod lists;
 mod mailing;
 mod memory;
 mod models;
+mod naming;
 mod never;
 mod organizations;
 mod people;

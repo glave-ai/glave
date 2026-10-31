@@ -292,6 +292,7 @@ where
         signing: Signing,
         credential: &serde_json::Value,
         name: Option<&str>,
+        person_name: Option<String>,
     ) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(signing.person).await?;
@@ -312,7 +313,8 @@ where
         let random = self.inner.harness.entropy().bytes()?;
         let org =
             OrgId::from_uuid(Builder::from_unix_timestamp_millis(millis, &random).into_uuid());
-        self.found(org, signing.person, &signing.email).await?;
+        self.found(org, signing.person, &signing.email, person_name)
+            .await?;
         accounts.join(signing.person, org).await?;
         Ok(self.signed_in(session, &browsers))
     }
@@ -332,14 +334,21 @@ where
         .await
     }
 
-    /// Records `person`, with `email`, as the first of the new organization `org`, its Owner,
-    /// as glave makes them.
-    async fn found(&self, org: OrgId, person: PrincipalId, email: &str) -> Result<(), ApiError> {
+    /// Records `person`, with `email` and `name`, as the first of the new organization `org`,
+    /// its Owner, as glave makes them.
+    async fn found(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+        email: &str,
+        name: Option<String>,
+    ) -> Result<(), ApiError> {
         let joined = PersonJoined {
             person,
             issuer: None,
             subject: None,
             profile: Profile {
+                name,
                 email: Some(email.to_owned()),
                 ..Profile::default()
             },

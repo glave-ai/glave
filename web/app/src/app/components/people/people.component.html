@@ -18,7 +18,7 @@
         <div class="row" data-testid="people-person">
           <glz-avatar [name]="person.name" />
           <div class="who">
-            <p class="title" data-testid="people-name">{{ person.name }}</p>
+            <p class="title" dir="auto" data-testid="people-name">{{ person.name }}</p>
             @if (person.detail; as detail) {
               <p class="details">{{ detail }}</p>
             }

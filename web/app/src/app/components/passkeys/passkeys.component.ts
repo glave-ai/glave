@@ -6,9 +6,15 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent } from '@glave/glaze';
+import {
+  GlzButtonComponent,
+  GlzCardComponent,
+  GlzConfirmDialogComponent,
+  GlzFormFieldComponent,
+  GlzInputDirective,
+} from '@glave/glaze';
 
-import { PasskeysService } from '../../services/passkeys.service';
+import { LONGEST_NAME, PasskeysService } from '../../services/passkeys.service';
 
 /**
  * A passkey as the card shows it: its name, when it was added and last used, and whether it
@@ -27,7 +33,13 @@ interface Shown {
  */
 @Component({
   selector: 'app-passkeys',
-  imports: [GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent],
+  imports: [
+    GlzButtonComponent,
+    GlzCardComponent,
+    GlzConfirmDialogComponent,
+    GlzFormFieldComponent,
+    GlzInputDirective,
+  ],
   templateUrl: './passkeys.component.html',
   styleUrl: './passkeys.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -45,6 +57,8 @@ export class PasskeysComponent {
     removeHeading: $localize`:@@passkeys.removeHeading:Remove this passkey?`,
     removeText: $localize`:@@passkeys.removeText:It signs you in no more, and the browsers it signed in are signed out.`,
     email: $localize`:@@passkeys.email:Email, for getting back in`,
+    yourName: $localize`:@@passkeys.yourName:Your name`,
+    save: $localize`:@@passkeys.save:Save`,
     current: $localize`:@@passkeys.current:This device`,
     emailed: $localize`:@@passkeys.emailed:From an emailed link`,
   } as const;
@@ -52,6 +66,13 @@ export class PasskeysComponent {
   protected readonly email = this.keys.email;
   /** What the server tells of a passkey made by email lately, on another device. */
   protected readonly notice = this.keys.notice;
+  /** Whether the person changes their name here, as the server says. */
+  protected readonly nameable = this.keys.nameable;
+  /** The name typed, until it is typed over the server's. */
+  private readonly typed = signal<string | null>(null);
+  protected readonly personName = computed(() => this.typed() ?? this.keys.personName() ?? '');
+  protected readonly naming = signal(false);
+  protected readonly longestName = LONGEST_NAME;
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
   protected readonly confirming = signal(false);
@@ -84,6 +105,24 @@ export class PasskeysComponent {
     void this.keys.load().then((problem) => {
       this.problem.set(problem);
     });
+  }
+
+  protected typedName(event: Event): void {
+    if (event.target instanceof HTMLInputElement) {
+      this.typed.set(event.target.value);
+    }
+  }
+
+  /** Changes the name the person goes by, saying why when the server will not. */
+  protected async rename(event: Event): Promise<void> {
+    event.preventDefault();
+    this.naming.set(true);
+    const problem = await this.keys.rename(this.personName());
+    this.naming.set(false);
+    this.problem.set(problem);
+    if (problem === null) {
+      this.typed.set(null);
+    }
   }
 
   /** Adds a passkey on this device, saying why when it cannot. */

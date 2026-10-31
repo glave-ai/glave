@@ -68,9 +68,10 @@ impl Request {
             Self::FiltersSet { .. } => Setting::Filters,
             Self::AwakeSet { .. } => Setting::Awake,
             Self::MemorySet { .. } => Setting::Memory,
-            Self::PasskeyCreate { .. } | Self::PasskeyAdd { .. } | Self::PasskeyRemove { .. } => {
-                Setting::Passkeys
-            }
+            Self::PasskeyCreate { .. }
+            | Self::PasskeyAdd { .. }
+            | Self::PasskeyRemove { .. }
+            | Self::PersonName { .. } => Setting::Passkeys,
             Self::LanguageSet { .. } => Setting::Language,
             _ => return None,
         })

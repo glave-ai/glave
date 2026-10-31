@@ -68,6 +68,7 @@ async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) 
         ceremony: options["ceremony"].as_str().unwrap().to_owned(),
         credential,
         name: Some("Phone".into()),
+        person_name: None,
     };
     let signed_in = asked(&mut anyone, &created).await;
     signed_in["session"].as_str().unwrap().to_owned()

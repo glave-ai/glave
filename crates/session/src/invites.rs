@@ -329,6 +329,8 @@ where
         code: &str,
     ) -> Result<Reply, ApiError> {
         let org = self.invited_to(code);
+        // A glave account's name goes with them to each organization they join.
+        let name = self.account_name(caller).await?;
         let joined = match (joined_of(caller), caller.person) {
             (Some(joined), _) if org == self.org_of(caller) => joined,
             // Another organization's code opens nothing for someone a company login signed in.
@@ -338,7 +340,10 @@ where
                     person,
                     issuer: None,
                     subject: None,
-                    profile: Profile::default(),
+                    profile: Profile {
+                        name,
+                        ..Profile::default()
+                    },
                 }
             }
             (None, _) => return Err(ApiError::new(code::NOT_ALLOWED, Sentence::InviteSignIn)),

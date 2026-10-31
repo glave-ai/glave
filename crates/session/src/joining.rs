@@ -94,13 +94,14 @@ where
         joining: Joining,
         credential: &serde_json::Value,
         name: Option<&str>,
+        person_name: Option<String>,
     ) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(joining.person).await?;
         // Checked, then the invite spent, and only then is anything of the account kept: a
         // code spent meanwhile leaves nothing behind.
         let checked = browsers.checked(&joining.ceremony, credential, name)?;
-        self.spend_joining(&joining).await?;
+        self.spend_joining(&joining, person_name).await?;
         let session = browsers.keep(checked).await?;
         accounts.join(joining.person, joining.org).await?;
         // The address the invite went to, which they opened, is theirs for getting back in,
@@ -116,7 +117,7 @@ where
 
     /// Records the person of `joining` as joined, with the role of the invite its code opens
     /// now, spending it; refused when it opens none any more.
-    async fn spend_joining(&self, joining: &Joining) -> Result<(), ApiError> {
+    async fn spend_joining(&self, joining: &Joining, name: Option<String>) -> Result<(), ApiError> {
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
         self.record_people(joining.org, |people, next| {
@@ -127,6 +128,7 @@ where
                 issuer: None,
                 subject: None,
                 profile: Profile {
+                    name: name.clone(),
                     email: opened.email.clone(),
                     ..Profile::default()
                 },

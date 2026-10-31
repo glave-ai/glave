@@ -1,9 +1,16 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import type { OrgRole, ShownInvite } from '@glave/client';
-import { GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent } from '@glave/glaze';
+import {
+  GlzButtonComponent,
+  GlzEmptyStateComponent,
+  GlzFormFieldComponent,
+  GlzInputDirective,
+  GlzTopBarComponent,
+} from '@glave/glaze';
 import MailOpen from 'lucide/dist/esm/icons/mail-open.mjs';
 
+import { LONGEST_NAME } from '../../services/passkeys.service';
 import { InviteService } from '../../services/invite.service';
 
 /** What the page asks of the person, from what the invite opens and whether they signed in. */
@@ -38,7 +45,14 @@ function invitedBy(shown: ShownInvite): string {
  */
 @Component({
   selector: 'app-invite',
-  imports: [RouterLink, GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent],
+  imports: [
+    RouterLink,
+    GlzButtonComponent,
+    GlzEmptyStateComponent,
+    GlzFormFieldComponent,
+    GlzInputDirective,
+    GlzTopBarComponent,
+  ],
   templateUrl: './invite.component.html',
   styleUrl: './invite.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -50,6 +64,8 @@ export class InviteComponent {
     name: 'glave',
     passkeyText: $localize`:@@invite.passkeyText:Make a passkey to join. It signs you in with your fingerprint, face or device code. No password to remember.`,
     passkeyAction: $localize`:@@invite.passkeyAction:Make a passkey and join`,
+    yourName: $localize`:@@invite.yourName:Your name`,
+    missingName: $localize`:@@invite.missingName:Give your name first, so your team knows who joined.`,
     companyText: $localize`:@@invite.companyText:Your team signs you in with its own login. Use your work account.`,
     companyAction: $localize`:@@invite.companyAction:Continue with your team's sign-in`,
     joinHeading: $localize`:@@invite.joinHeading:Join this team?`,
@@ -83,6 +99,8 @@ export class InviteComponent {
         return opened.shown.joining;
     }
   });
+  protected readonly personName = signal('');
+  protected readonly longestName = LONGEST_NAME;
   private readonly shown = computed(() => {
     const opened = this.invite.opened();
     return opened.kind === 'shown' ? opened.shown : null;
@@ -122,9 +140,26 @@ export class InviteComponent {
     void this.invite.load();
   }
 
+  /** Enter in the name makes the passkey, as its button does. */
+  protected async submitted(event: Event): Promise<void> {
+    event.preventDefault();
+    await this.makePasskey();
+  }
+
+  protected typedName(event: Event): void {
+    if (event.target instanceof HTMLInputElement) {
+      this.personName.set(event.target.value);
+    }
+  }
+
   /** Makes a passkey and joins, then opens glave. */
   protected async makePasskey(): Promise<void> {
-    await this.doing(() => this.invite.joinWithPasskey());
+    const name = this.personName().trim();
+    if (name === '') {
+      this.problem.set(this.copy.missingName);
+      return;
+    }
+    await this.doing(() => this.invite.joinWithPasskey(name));
   }
 
   /** Joins as the person signed in, then opens glave. */

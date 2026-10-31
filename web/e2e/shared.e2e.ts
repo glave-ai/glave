@@ -47,6 +47,7 @@ test('on a shared computer, the owner invites someone, who joins, and is given a
   await invited.goto(link);
   await expect(byTestId(invited, 'invite-passkey')).toBeVisible();
   await expectAccessible(invited);
+  await byTestId(invited, 'invite-name').fill('Sam Ortiz');
   await byTestId(invited, 'invite-make-passkey').click();
   await expect(byTestId(invited, 'home-composer-input')).toBeVisible();
 
@@ -56,6 +57,7 @@ test('on a shared computer, the owner invites someone, who joins, and is given a
   await byTestId(page, 'nav-admin').click();
   const people = byTestId(page, 'people-person');
   await expect(people).toHaveCount(2);
+  await expect(people.filter({ hasText: 'Sam Ortiz' })).toHaveCount(1);
   const newcomer = people.filter({ has: byTestId(page, 'people-remove') });
   await newcomer.getByTestId('people-role').click();
   await page.getByRole('menuitemradio', { name: 'Admin' }).click();
