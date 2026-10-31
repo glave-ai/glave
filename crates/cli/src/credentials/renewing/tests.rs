@@ -6,11 +6,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Principal, Renewal, Secret};
+use glave_ports::computer::{CredentialAsk, GitCredentials as _};
 use glave_ports::testing::{FakeHttp, fake_secret};
 use glave_ports::{Clock as _, SystemClock};
 use serde_json::json;
 
 use super::*;
+use crate::credentials::Hosts;
+
+/// The app a test's sign-ins come through.
+const APP: &str = "Iv23li0test";
 
 /// A GitHub App's sign-in to `url`, about to expire.
 fn signed_in(url: &str) -> CredentialConnected {
@@ -29,6 +34,7 @@ fn signed_in(url: &str) -> CredentialConnected {
         renewal: Some(Renewal {
             expires: At::from(soon),
             refresh: Secret::new(fake_secret("ghr_")),
+            client_id: APP.to_owned(),
         }),
         by: Principal::glave(),
     }
@@ -36,7 +42,7 @@ fn signed_in(url: &str) -> CredentialConnected {
 
 fn github(url: &str) -> Github {
     let file = GithubFile {
-        client_id: "Iv23li0test".into(),
+        client_id: APP.into(),
         app: None,
         url: Some(url.to_owned()),
     };
@@ -111,7 +117,7 @@ fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_a
 }
 
 #[test]
-fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
+fn a_renewal_github_refused_is_kept_without_what_renewed_it_and_never_asked_again() {
     let refused = json!({"error": "bad_refresh_token", "error_description": "no\nlonger"});
     let fake = FakeHttp::start(vec![(200, refused.to_string())]).unwrap();
     let ledger = block_on(crate::accounts::in_memory()).unwrap();
@@ -120,13 +126,12 @@ fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
     block_on(async {
         ledger.keep_credential(&first).await.unwrap();
         let id = first.credential;
-        for _ in 0..2 {
-            let waited = renewals.wait(id, |_| Some(job(&ledger, &fake, &first)));
-            assert!(waited.await.is_none());
-        }
+        let waited = renewals.wait(id, |_| Some(job(&ledger, &fake, &first)));
+        assert!(waited.await.is_none());
         let accounts = ledger.accounts().await.unwrap();
         let kept = accounts.credential(id).unwrap();
         assert_eq!(kept.token.expose(), first.token.expose());
+        assert!(Github::issuer(kept).is_none(), "nothing left to renew it");
     });
     assert_eq!(fake.received().len(), 1);
 }
@@ -310,4 +315,68 @@ fn a_renewal_not_kept_goes_once_its_sign_in_is_no_longer_kept() {
         });
         assert_eq!(again.await, None);
     });
+}
+
+#[test]
+fn a_sign_in_renews_through_the_app_that_issued_it_whatever_github_names_since() {
+    let (second, renewed) = renewal_answer();
+    let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
+    block_on(async {
+        let first = signed_in(&fake.url);
+        ledger.keep_credential(&first).await.unwrap();
+        let another = GithubFile {
+            client_id: "Iv23li0other".into(),
+            app: None,
+            url: Some(fake.url.clone()),
+        };
+        let hosts = Hosts::open(ledger.clone(), Some(&another)).await.unwrap();
+        let (protocol, host) = fake.url.split_once("://").unwrap();
+        let ask = CredentialAsk {
+            protocol: protocol.to_owned(),
+            host: host.to_owned(),
+            path: None,
+        };
+        let served = hosts.request(&ask).await.unwrap();
+        assert_eq!(served.password.expose(), second);
+        // The renewal is of the same app, for the next one.
+        let accounts = ledger.accounts().await.unwrap();
+        let kept = accounts.credential(first.credential).unwrap();
+        assert_eq!(kept.renewal.as_ref().unwrap().client_id, APP);
+    });
+    let asked = fake.received();
+    assert_eq!(asked.len(), 1);
+    assert!(
+        asked[0].body.contains(&format!("client_id={APP}")),
+        "{}",
+        asked[0].body
+    );
+}
+
+#[test]
+fn a_sign_in_with_nothing_to_renew_it_goes_nowhere_and_is_told_once_it_expires() {
+    let mut first = signed_in("https://github.invalid");
+    // Good for a minute yet, it isn't said to be over.
+    assert!(!Hosts::expired(&first));
+    assert!(Github::issuer(&first).is_some());
+    let renewal = first.renewal.as_mut().unwrap();
+    renewal.client_id = String::new();
+    assert!(Github::issuer(&first).is_none());
+    assert!(!Hosts::expired(&first));
+    let past = SystemClock
+        .now()
+        .checked_sub(jiff::SignedDuration::from_secs(60))
+        .unwrap();
+    first.renewal.as_mut().unwrap().expires = At::from(past);
+    assert!(Hosts::expired(&first));
+}
+
+#[test]
+fn a_renewal_from_before_glave_kept_its_app_still_reads() {
+    let renewal: Renewal = serde_json::from_value(json!({
+        "expires": "2026-10-15T17:00:00.000Z",
+        "refresh": "not-a-real-refresh",
+    }))
+    .unwrap();
+    assert_eq!(renewal.client_id, "");
 }

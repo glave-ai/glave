@@ -185,7 +185,9 @@ function relative(tokens: ReadonlyMap<string, string>, scheme: Scheme, body: str
   const base = parse(tokens, scheme, origin);
   const named = { l: base.l, c: base.c, h: Number.isNaN(base.h) ? 0 : base.h };
   const [l = '', c = '', h = ''] = channels;
-  return { l: evaluate(l, named), c: evaluate(c, named), h: evaluate(h, named), a: base.a };
+  // A hue of `none` is missing, so what it is mixed with keeps its own.
+  const hue = h === 'none' ? Number.NaN : evaluate(h, named);
+  return { l: evaluate(l, named), c: evaluate(c, named), h: hue, a: base.a };
 }
 
 /** `text` split at its own spaces, outside brackets. */

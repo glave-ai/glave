@@ -11,6 +11,7 @@ export * from './components/badge/badge.component';
 export * from './components/button/button.component';
 export * from './components/card/card.component';
 export * from './components/checkbox/checkbox.component';
+export * from './components/color-choice/color-choice.component';
 export * from './components/composer/composer.component';
 export * from './components/confirm-dialog/confirm-dialog.component';
 export * from './components/copy-button/copy-button.component';

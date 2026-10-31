@@ -94,7 +94,7 @@ where
 
     /// Records what the thread's commands are waiting to have recorded, when no turn holds it;
     /// a turn that does records it with its next event.
-    async fn record_commands(&self, thread: ThreadId) {
+    pub(crate) async fn record_commands(&self, thread: ThreadId) {
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }

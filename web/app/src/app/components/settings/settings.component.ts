@@ -7,14 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import {
-  GlzButtonComponent,
-  GlzCardComponent,
-  GlzConfirmDialogComponent,
-  GlzFormFieldComponent,
-  GlzRadioComponent,
-  GlzRadioGroupComponent,
-} from '@glave/glaze';
+import { GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent } from '@glave/glaze';
 
 import { serviceName } from '../../lib/connections';
 import { accountName as hostName } from '../../lib/credentials';
@@ -27,14 +20,14 @@ import { ProvidersService } from '../../services/providers.service';
 
 import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
-import { ThemeService, isChoice } from '../../services/theme.service';
+import { AppearanceComponent } from '../appearance/appearance.component';
 import { AwakeComponent } from '../awake/awake.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
 
 /**
- * Settings: the theme, the model accounts (add, change, remove), connections (what is
+ * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove), connections (what is
  * connected, and the page where they are) and memory (its own page), whether glave may search
  * the web, the passkeys that sign the person in where glave is reached from elsewhere, whether
  * their own computer stays awake while glave works, the server, signing this browser or every
@@ -43,6 +36,7 @@ import { WebSearchComponent } from '../web-search/web-search.component';
 @Component({
   selector: 'app-settings',
   imports: [
+    AppearanceComponent,
     AwakeComponent,
     PasskeysComponent,
     PageHeaderComponent,
@@ -50,9 +44,6 @@ import { WebSearchComponent } from '../web-search/web-search.component';
     GlzButtonComponent,
     GlzCardComponent,
     GlzConfirmDialogComponent,
-    GlzFormFieldComponent,
-    GlzRadioComponent,
-    GlzRadioGroupComponent,
     RouterLink,
   ],
   templateUrl: './settings.component.html',
@@ -62,11 +53,6 @@ import { WebSearchComponent } from '../web-search/web-search.component';
 export class SettingsComponent {
   protected readonly copy = {
     heading: $localize`:@@settings.heading:Settings`,
-    appearance: $localize`:@@settings.appearance:Appearance`,
-    theme: $localize`:@@settings.theme:Theme`,
-    system: $localize`:@@settings.system:System`,
-    light: $localize`:@@settings.light:Light`,
-    dark: $localize`:@@settings.dark:Dark`,
     models: $localize`:@@settings.models:Models`,
     noAccounts: $localize`:@@settings.noAccounts:No model accounts yet.`,
     add: $localize`:@@settings.add:Add a model account`,
@@ -90,12 +76,6 @@ export class SettingsComponent {
     signedOutOthers: $localize`:@@settings.signedOutOthers:Every other browser is signed out. This one stays signed in.`,
     signOutOthersFailed: $localize`:@@settings.signOutOthersFailed:Other browsers could not be signed out. Try again.`,
   } as const;
-  protected readonly themes = [
-    { value: 'system', label: this.copy.system },
-    { value: 'light', label: this.copy.light },
-    { value: 'dark', label: this.copy.dark },
-  ] as const;
-  private readonly theme = inject(ThemeService);
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
   private readonly info = inject(ServerService).info;
@@ -110,7 +90,10 @@ export class SettingsComponent {
   /** What the Connections card says: what is connected, by name, else what connections are. */
   protected readonly connected = computed(() => {
     const names = [
-      ...this.hosts.accounts().map((account) => hostName(account)),
+      ...this.hosts
+        .accounts()
+        .filter((account) => account.expired !== true)
+        .map((account) => hostName(account)),
       ...(this.connections.connections() ?? [])
         .filter((connection) => connection.status === 'signed_in')
         .map((connection) => serviceName(connection)),
@@ -148,7 +131,6 @@ export class SettingsComponent {
   protected readonly others = signal<string | null>(null);
   private removing: string | null = null;
 
-  protected readonly choice = this.theme.choice;
   protected readonly server = computed(() => {
     const info = this.info();
     if (info === null) {
@@ -200,12 +182,6 @@ export class SettingsComponent {
       this.problem.set(refreshProblem(error));
     } finally {
       this.refreshing.set(false);
-    }
-  }
-
-  protected pick(choice: string | null): void {
-    if (isChoice(choice)) {
-      this.theme.set(choice);
     }
   }
 

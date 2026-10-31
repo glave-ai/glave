@@ -95,6 +95,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::LanguageSet(_)
         | Body::GroupingSet(_)
         | Body::FiltersSet(_)
+        | Body::AppearanceSet(_)
         | Body::MemorySet(_)
         | Body::PersonJoined(_)
         | Body::RoleSet(_)

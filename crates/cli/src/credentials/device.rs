@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use glave_config::policy::GithubFile;
-use glave_event::{At, Forge, Renewal, Secret};
+use glave_event::{At, CredentialConnected, Forge, Renewal, Secret};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::CredentialHost;
 use glave_ports::{Clock as _, SystemClock};
@@ -96,6 +96,17 @@ impl Github {
         }
     }
 
+    /// The app that issued `credential`, the only one its refresh token goes to, whatever
+    /// `[github]` names by now: none for one with nothing left to renew it.
+    pub(super) fn issuer(credential: &CredentialConnected) -> Option<Self> {
+        let renewal = credential.renewal.as_ref()?;
+        (!renewal.client_id.is_empty()).then(|| Self {
+            client_id: renewal.client_id.clone(),
+            url: credential.url.clone(),
+            app: None,
+        })
+    }
+
     /// The page where the person installs the app on their account or organizations and
     /// chooses its repositories, when the app's name is known.
     pub(super) fn install(&self) -> Option<String> {
@@ -176,7 +187,7 @@ impl Github {
             encoded("urn:ietf:params:oauth:grant-type:device_code")
         );
         let answer = post(http, &self.token_url(), form).await?;
-        if let Some(grant) = granted(&answer) {
+        if let Some(grant) = granted(&answer, &self.client_id) {
             flows.end(flow);
             return Ok(Polled::Granted(grant));
         }
@@ -204,15 +215,25 @@ impl Github {
         })
     }
 
-    /// A new token for the one `refresh` renews, and a new refresh token with it.
-    pub(super) async fn refresh(&self, http: &Http, refresh: &Secret) -> Result<Grant, ApiError> {
+    /// A new token for the one `refresh` renews, and a new refresh token with it; none when
+    /// GitHub refuses it, which it would again.
+    pub(super) async fn refresh(
+        &self,
+        http: &Http,
+        refresh: &Secret,
+    ) -> Result<Option<Grant>, ApiError> {
         let form = format!(
             "client_id={}&grant_type=refresh_token&refresh_token={}",
             encoded(&self.client_id),
             encoded(refresh.expose())
         );
         let answer = post(http, &self.token_url(), form).await?;
-        granted(&answer).ok_or_else(|| refused(&answer, "GitHub would not renew the sign-in"))
+        let grant = granted(&answer, &self.client_id);
+        if grant.is_none() {
+            let refused = refused(&answer, "GitHub would not renew the sign-in");
+            tracing::warn!("{}: it is kept without what renewed it", refused.message);
+        }
+        Ok(grant)
     }
 
     fn token_url(&self) -> String {
@@ -220,9 +241,9 @@ impl Github {
     }
 }
 
-/// The grant in GitHub's answer, when it holds one: the token, and for a token that expires,
-/// when, and the refresh token that renews it.
-fn granted(answer: &Value) -> Option<Grant> {
+/// The grant in GitHub's answer to the app `client_id`, when it holds one: the token, and for a
+/// token that expires, when, and the refresh token that renews it through that app.
+fn granted(answer: &Value, client_id: &str) -> Option<Grant> {
     let token = answer.get("access_token").and_then(Value::as_str)?;
     let expires_in = answer.get("expires_in").and_then(Value::as_i64);
     let refresh = answer.get("refresh_token").and_then(Value::as_str);
@@ -236,6 +257,7 @@ fn granted(answer: &Value) -> Option<Grant> {
             Some(Renewal {
                 expires: At::from(expires),
                 refresh: Secret::new(refresh),
+                client_id: client_id.to_owned(),
             })
         }
         _ => None,
@@ -390,29 +412,39 @@ mod tests {
         assert_eq!(encoded("a&b=c"), "a%26b%3Dc");
     }
 
+    /// The app a test's grant comes through.
+    const APP: &str = "Iv23li0test";
+
     #[test]
     fn a_grant_that_expires_keeps_how_to_renew_it() {
         let token = any_secret();
-        let lasting = granted(&json!({"access_token": token, "token_type": "bearer"}));
+        let lasting = granted(&json!({"access_token": token, "token_type": "bearer"}), APP);
         assert!(lasting.unwrap().renewal.is_none());
         let refresh = fake_secret("ghr_");
-        let expiring = granted(&json!({
-            "access_token": token, "expires_in": 28800,
-            "refresh_token": refresh, "refresh_token_expires_in": 15_897_600
-        }))
+        let expiring = granted(
+            &json!({
+                "access_token": token, "expires_in": 28800,
+                "refresh_token": refresh, "refresh_token_expires_in": 15_897_600
+            }),
+            APP,
+        )
         .unwrap();
         let renewal = expiring.renewal.unwrap();
         assert_eq!(renewal.refresh.expose(), refresh);
+        assert_eq!(renewal.client_id, APP);
         let left = renewal
             .expires
             .timestamp()
             .duration_since(SystemClock.now());
         assert!(left.as_secs() > 28_000, "{left:?}");
-        assert!(granted(&json!({"error": "authorization_pending"})).is_none());
+        assert!(granted(&json!({"error": "authorization_pending"}), APP).is_none());
         for absurd in [-1, i64::MAX] {
-            let grant = granted(&json!({
-                "access_token": token, "expires_in": absurd, "refresh_token": refresh
-            }));
+            let grant = granted(
+                &json!({
+                    "access_token": token, "expires_in": absurd, "refresh_token": refresh
+                }),
+                APP,
+            );
             assert!(grant.and_then(|grant| grant.renewal).is_some(), "{absurd}");
         }
     }

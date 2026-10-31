@@ -27,8 +27,8 @@ use crate::words::Sentence;
 pub(crate) struct Access {
     /// Their browsers, and the session of theirs it follows, when they signed in with one.
     session: Option<(Arc<Browsers>, String)>,
-    /// Who they are in which organization, and the people ledgers this server has read.
-    member: Option<(PrincipalId, OrgId, Arc<Mutex<Peoples>>)>,
+    /// Who they are, and their place in which organization.
+    member: Option<(PrincipalId, Following)>,
     sign_ins: watch::Receiver<()>,
     /// Whether a sign-in may have ended since the session was last looked at: waiting for
     /// the change takes it as seen.
@@ -68,11 +68,43 @@ impl Access {
         {
             return Some(ApiError::from(BrowserError::Ended));
         }
-        let (person, org, peoples) = self.member.as_ref()?;
-        let peoples = peoples.lock().unwrap_or_else(PoisonError::into_inner);
-        peoples
-            .removed(*org, *person)
+        let (person, place) = self.member.as_ref()?;
+        place
+            .removed(*person)
             .then(|| ApiError::new(code::NO_SIGN_IN, Sentence::Removed))
+    }
+}
+
+/// A watch's hold on an organization's people ledger, which this server reads again while
+/// any watch holds it, so a removal on another server on the store reaches the watch.
+struct Following {
+    org: OrgId,
+    peoples: Arc<Mutex<Peoples>>,
+}
+
+impl Following {
+    fn new(org: OrgId, peoples: Arc<Mutex<Peoples>>) -> Self {
+        peoples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .watch(org);
+        Self { org, peoples }
+    }
+
+    fn removed(&self, person: PrincipalId) -> bool {
+        self.peoples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .removed(self.org, person)
+    }
+}
+
+impl Drop for Following {
+    fn drop(&mut self) {
+        self.peoples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .unwatch(self.org);
     }
 }
 
@@ -102,10 +134,15 @@ where
                 .map(|browsers| (browsers, session.to_owned())),
             None => None,
         };
-        let peoples = Arc::clone(&self.inner.people);
+        let org = self.org_of(caller);
+        // The person on the server's computer is never removed from its own organization.
         let member = caller
             .person
-            .map(|person| (person, self.org_of(caller), peoples));
+            .filter(|person| self.refuse_local(org, *person).is_ok())
+            .map(|person| {
+                let peoples = Arc::clone(&self.inner.people);
+                (person, Following::new(org, peoples))
+            });
         if session.is_none() && member.is_none() {
             return Ok(None);
         }

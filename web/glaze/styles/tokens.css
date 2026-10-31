@@ -19,12 +19,14 @@
 
   /*
    * The accent: what needs the person, the primary action and what is chosen. A theme sets
-   * --glz-accent alone, on :root; the rest follow from it in CSS.
+   * --glz-accent-light and --glz-accent-dark alone, on :root; the rest follow from them in CSS.
    */
-  --glz-accent: light-dark(#1b1c1d, #ececec);
+  --glz-accent-light: #1b1c1d;
+  --glz-accent-dark: #ececec;
+  --glz-accent: light-dark(var(--glz-accent-light), var(--glz-accent-dark));
 
   /* White on a dark accent, black on a light one. */
-  --glz-on-accent: oklch(from var(--glz-accent) clamp(0, (0.65 - l) * 999, 1) 0 0deg);
+  --glz-on-accent: oklch(from var(--glz-accent) clamp(0, (0.65 - l) * 999, 1) 0 none);
   --glz-accent-hover: color-mix(in oklch, var(--glz-accent), var(--glz-on-accent) 14%);
   --glz-accent-soft: color-mix(in oklch, var(--glz-accent) 12%, transparent);
 
@@ -71,6 +73,9 @@
     var(--glz-color-danger),
     var(--glz-color-on-danger) 9%
   );
+
+  /* The swatch that stands for any color: the one place colors are shown for their own sake. */
+  --glz-swatch-any: conic-gradient(#e5383b, #f2c200, #2f9e44, #1558d6, #6d3bd1, #e5383b);
 
   /* Surfaces: the page, the side panes on it, and the boxes that sit on either. */
   --glz-surface-page: light-dark(#fafafa, #121314);

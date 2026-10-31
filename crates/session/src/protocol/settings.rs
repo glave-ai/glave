@@ -24,6 +24,8 @@ pub enum Setting {
     Grouping,
     /// Their filters among a router's providers (`filters/get`).
     Filters,
+    /// Their accent (`appearance/get`).
+    Appearance,
     /// Whether the computer is kept awake while glave works (`awake/get`).
     Awake,
     /// Whether glave remembers for them (`memory/get`).
@@ -37,13 +39,14 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
         Self::Search,
         Self::Grouping,
         Self::Filters,
+        Self::Appearance,
         Self::Awake,
         Self::Memory,
         Self::Passkeys,
@@ -66,6 +69,7 @@ impl Request {
             Self::SearchSet { .. } => Setting::Search,
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::FiltersSet { .. } => Setting::Filters,
+            Self::AppearanceSet { .. } => Setting::Appearance,
             Self::AwakeSet { .. } => Setting::Awake,
             Self::MemorySet { .. } => Setting::Memory,
             Self::PasskeyCreate { .. }
@@ -97,6 +101,10 @@ mod tests {
             filters: glave_event::Filters::default(),
         };
         assert_eq!(filters.changes(), Some(Setting::Filters));
+        let appearance = Request::AppearanceSet {
+            accent: glave_event::Accent::Plain,
+        };
+        assert_eq!(appearance.changes(), Some(Setting::Appearance));
         assert_eq!(Request::FiltersGet {}.changes(), None);
         assert_eq!(
             Request::ProviderRefresh {}.changes(),

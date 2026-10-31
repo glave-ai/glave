@@ -152,13 +152,15 @@ where
             }),
             Work::Goal(goal) => self.start_goal_as(caller, thread, goal, false).await,
         };
-        let stream = match stream {
+        let mut stream = match stream {
             Ok(stream) => stream,
             Err(error) => {
                 self.inner.approvals.attend(thread);
                 return Err(error);
             }
         };
+        // Its end is what the ledger records, though its person signs out meanwhile.
+        stream.outlasting_access();
         let started = TaskStarted {
             thread,
             title,
@@ -288,6 +290,17 @@ where
             let _ = finished.wait_for(|done| *done).await;
         }
         Ok(Reply::Done {})
+    }
+
+    /// Records that `thread`'s task, if it runs one, is stopped by `by`, unless someone
+    /// stopped it first; stopping what runs is the caller's.
+    pub(crate) fn task_stopped_by(&self, thread: ThreadId, by: Option<PrincipalId>) {
+        if let Some(running) = self.tasks().get_mut(&thread)
+            && !running.stopped
+        {
+            running.stopped = true;
+            running.stopped_by = by;
+        }
     }
 
     /// Stops `thread`'s task, if it runs one, before it is archived or deleted.

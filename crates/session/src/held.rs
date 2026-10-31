@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
-use glave_event::ThreadId;
+use glave_event::{PrincipalId, ThreadId};
 use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Standing};
 use jiff::Timestamp;
@@ -40,6 +40,9 @@ pub(crate) enum Slot {
         commands: Arc<Commands>,
         /// Where it is, which never changes, for glave's own work on it meanwhile.
         at: Located,
+        /// The person whose work it is, which ends if they are removed from `at`'s
+        /// organization (`removing.rs`).
+        person: Option<PrincipalId>,
     },
 }
 
@@ -160,6 +163,7 @@ where
                     inbox,
                     commands: held.commands(),
                     at: held.scope.located(),
+                    person: held.for_person(),
                 };
                 threads.insert(thread, slot);
                 Ok(*held)

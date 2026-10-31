@@ -3,6 +3,7 @@
 // The label at the start, the segments at the end, on one line.
 :host {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--glz-space-2);
