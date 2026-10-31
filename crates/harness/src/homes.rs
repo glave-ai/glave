@@ -201,8 +201,13 @@ where
                 read_there(&home, None).await?,
                 Some(home.root().to_path_buf()),
             ),
-            Opened::Folder { .. } => (read_there(&home, Some(root)).await?, Some(root.to_path_buf())),
-            Opened::Worktree { .. } | Opened::Clone { .. } => (read_there(&home, Some(root)).await?, None),
+            Opened::Folder { .. } => (
+                read_there(&home, Some(root)).await?,
+                Some(root.to_path_buf()),
+            ),
+            Opened::Worktree { .. } | Opened::Clone { .. } => {
+                (read_there(&home, Some(root)).await?, None)
+            }
         })
     }
 
@@ -232,15 +237,17 @@ where
                 .last_read(scope, Path::new(path))
                 .await
                 .map(ReadThere::from),
-            (None, Opened::Scratch { .. }) => {
-                self.last_read(scope, home.root()).await.map(ReadThere::from)
-            }
+            (None, Opened::Scratch { .. }) => self
+                .last_read(scope, home.root())
+                .await
+                .map(ReadThere::from),
             (None, Opened::Clone { .. }) => None,
         }
         .unwrap_or_default();
         let settled = match (&self.project_folders, &read.config) {
             (Some(host), Some(config)) => {
-                host.settled_at_home(Path::new(&at.bound.root), config).await
+                host.settled_at_home(Path::new(&at.bound.root), config)
+                    .await
             }
             _ => Settled::default(),
         };

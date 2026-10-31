@@ -429,11 +429,7 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         })
     }
 
-    fn settled_at_home<'a>(
-        &'a self,
-        project: &'a Path,
-        config: &'a str,
-    ) -> BoxFuture<'a, Settled> {
+    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
         Box::pin(std::future::ready(self.settled_there(project, config)))
     }
 

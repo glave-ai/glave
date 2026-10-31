@@ -9,8 +9,8 @@ use glave_event::{Body, InstructionsRead, Payload as _, Seq, decode};
 use glave_ports::stream::{Reserved, append_retrying};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
-use crate::approval::Approver;
 use super::ReadThere;
+use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError};
 
 impl<P, L, B, A> Harness<P, L, B, A>

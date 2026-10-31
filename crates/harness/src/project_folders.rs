@@ -44,11 +44,7 @@ pub trait ProjectFolders: Send + Sync {
     /// What a project on a person's own computer chooses for its threads, from `config`, its
     /// `config.toml` as last read there at `project`: within the server's constraints, and
     /// without what loosens commands, which nothing there has trusted. Nothing by default.
-    fn settled_at_home<'a>(
-        &'a self,
-        project: &'a Path,
-        config: &'a str,
-    ) -> BoxFuture<'a, Settled> {
+    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
         let _ = (project, config);
         Box::pin(async { Settled::default() })
     }

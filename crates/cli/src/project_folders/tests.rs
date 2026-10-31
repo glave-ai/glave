@@ -362,6 +362,10 @@ fn a_project_on_a_person_s_computer_chooses_within_the_server_s_rules_and_loosen
         let loosening = projects.settled_at_home(root, judged).await;
         assert_eq!(loosening.judge, None, "what needs trust stays off");
         let broken = projects.settled_at_home(root, "model = ").await;
-        assert_eq!(broken, Settled::default(), "one that doesn't parse chooses nothing");
+        assert_eq!(
+            broken,
+            Settled::default(),
+            "one that doesn't parse chooses nothing"
+        );
     });
 }
