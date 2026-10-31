@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use glave_config::policy::GithubFile;
-use glave_event::{At, Forge, Renewal, Secret};
+use glave_event::{At, CredentialConnected, Forge, Renewal, Secret};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::CredentialHost;
 use glave_ports::{Clock as _, SystemClock};
@@ -37,7 +37,7 @@ const LONGEST_TOKEN: i64 = 366 * 24 * 3600;
 
 /// glave's own GitHub App, `glave-ai`, which signs people in where `[github]` names none: its
 /// client id is public.
-pub(super) const OWN_CLIENT_ID: &str = "Iv23liU5bL1a8inEeAkT";
+const OWN_CLIENT_ID: &str = "Iv23liU5bL1a8inEeAkT";
 /// Its name in its URL.
 const OWN_APP: &str = "glave-ai";
 
@@ -96,9 +96,15 @@ impl Github {
         }
     }
 
-    /// Whether this app issued what `renewal` renews, at `url`.
-    pub(super) fn issued(&self, url: &str, renewal: &Renewal) -> bool {
-        self.url == url && self.client_id == renewal.client_id
+    /// The app that issued `credential`, the only one its refresh token goes to, whatever
+    /// `[github]` names by now: none for one with nothing left to renew it.
+    pub(super) fn issuer(credential: &CredentialConnected) -> Option<Self> {
+        let renewal = credential.renewal.as_ref()?;
+        (!renewal.client_id.is_empty()).then(|| Self {
+            client_id: renewal.client_id.clone(),
+            url: credential.url.clone(),
+            app: None,
+        })
     }
 
     /// The page where the person installs the app on their account or organizations and
@@ -209,16 +215,25 @@ impl Github {
         })
     }
 
-    /// A new token for the one `refresh` renews, and a new refresh token with it.
-    pub(super) async fn refresh(&self, http: &Http, refresh: &Secret) -> Result<Grant, ApiError> {
+    /// A new token for the one `refresh` renews, and a new refresh token with it; none when
+    /// GitHub refuses it, which it would again.
+    pub(super) async fn refresh(
+        &self,
+        http: &Http,
+        refresh: &Secret,
+    ) -> Result<Option<Grant>, ApiError> {
         let form = format!(
             "client_id={}&grant_type=refresh_token&refresh_token={}",
             encoded(&self.client_id),
             encoded(refresh.expose())
         );
         let answer = post(http, &self.token_url(), form).await?;
-        granted(&answer, &self.client_id)
-            .ok_or_else(|| refused(&answer, "GitHub would not renew the sign-in"))
+        let grant = granted(&answer, &self.client_id);
+        if grant.is_none() {
+            let refused = refused(&answer, "GitHub would not renew the sign-in");
+            tracing::warn!("{}: it is kept without what renewed it", refused.message);
+        }
+        Ok(grant)
     }
 
     fn token_url(&self) -> String {

@@ -151,7 +151,9 @@ export class NewProjectComponent {
   private readonly params = computed(() => createParams(this.draft()));
   protected readonly fromFolder = computed(() => this.draft().start === 'folder');
   protected readonly fromRepository = computed(() => this.draft().start === 'repository');
-  protected readonly connected = computed(() => this.credentials.accounts().length > 0);
+  protected readonly connected = computed(() =>
+    this.credentials.accounts().some((account) => account.expired !== true),
+  );
   protected readonly cloning = computed(() => this.creating() && this.fromRepository());
   /**
    * While the project can't be made yet, or is being made, Create reads as unavailable but is

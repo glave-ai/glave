@@ -39,7 +39,7 @@ export class GithubRowComponent {
   protected readonly copy = {
     github: 'GitHub',
     offer: $localize`:@@githubRow.offer:Let glave work in your repositories: clone, push and open pull requests.`,
-    signedOut: $localize`:@@githubRow.signedOut:Your sign-in expired. Connect again to keep working in your repositories.`,
+    expired: $localize`:@@githubRow.expired:Your sign-in expired. Connect again to keep working in your repositories.`,
     connect: $localize`:@@githubRow.connect:Connect`,
     starting: $localize`:@@githubRow.starting:Starting…`,
     enter: $localize`:@@githubRow.enter:Enter this code on GitHub`,
@@ -56,10 +56,6 @@ export class GithubRowComponent {
     () =>
       this.credentials.accounts().find((account) => account.url === this.credentials.github()) ??
       null,
-  );
-  /** What the GitHub row offers: to connect, or again once its sign-in ended for good. */
-  protected readonly offer = computed(() =>
-    this.github()?.signed_out === true ? this.copy.signedOut : this.copy.offer,
   );
   /** What the GitHub row says once connected. */
   protected readonly connected = computed(() => {
@@ -81,13 +77,16 @@ export class GithubRowComponent {
   /** The code a sign-in on GitHub waits on, while it does. */
   protected readonly code = signal<DeviceCode | null>(null);
   protected readonly starting = signal(false);
-  /** What the row shows: GitHub's code while a sign-in waits on it, whom it is connected as, or the offer to connect. */
-  protected readonly state = computed<'signing' | 'connected' | 'offer'>(() => {
+  /** What the row shows: GitHub's code while a sign-in waits on it, whom it is connected as, that its sign-in expired, or the offer to connect. */
+  protected readonly state = computed<'signing' | 'connected' | 'expired' | 'offer'>(() => {
     if (this.code() !== null) {
       return 'signing';
     }
     const github = this.github();
-    return github === null || github.signed_out === true ? 'offer' : 'connected';
+    if (github === null) {
+      return 'offer';
+    }
+    return github.expired === true ? 'expired' : 'connected';
   });
   protected readonly connectLabel = computed(() =>
     this.starting() ? this.copy.starting : this.copy.connect,

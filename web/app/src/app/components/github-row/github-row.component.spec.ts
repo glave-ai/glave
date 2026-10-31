@@ -185,18 +185,29 @@ describe('GithubRowComponent', () => {
     }
   });
 
-  it('offers Connect again once its sign-in has ended with nothing left to renew it', async () => {
-    const github: CredentialInfo = { ...GITHUB, signed_out: true };
+  it('offers Connect again, and Disconnect, once its sign-in has expired for good', async () => {
+    const github: CredentialInfo = { ...GITHUB, expired: true };
     const fake = new FakeSession().answer('credential/list', {
       credentials: [github],
       github: GITHUB_SIGN_IN,
     });
     const { root } = await rendered(fake);
-    expect(byTestId(root, 'github-offer')?.textContent.trim()).toBe(
+    expect(byTestId(root, 'github-expired')?.textContent.trim()).toBe(
       'Your sign-in expired. Connect again to keep working in your repositories.',
     );
     expect(byTestId(root, 'github-connect')).not.toBeNull();
+    expect(byTestId(root, 'github-disconnect')).not.toBeNull();
     expect(byTestId(root, 'github-connected')).toBeNull();
+  });
+
+  it('says of another git host that its sign-in expired', async () => {
+    const gitlab: CredentialInfo = { ...GITLAB, expired: true };
+    const fake = new FakeSession().answer('credential/list', {
+      credentials: [gitlab],
+      github: GITHUB_SIGN_IN,
+    });
+    const { root } = await rendered(fake);
+    expect(byTestId(root, 'git-host')?.textContent).toContain('Your sign-in expired');
   });
 
   it('is the GitHub Enterprise Server the server signs in at, not github.com alone', async () => {

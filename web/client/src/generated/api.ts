@@ -173,15 +173,15 @@ export type CredentialInfo = {
    * host did not say, so a client claims nothing.
    */
   readonly can?: readonly (Ability)[] | null;
+  /**
+   * Its sign-in has expired, with nothing left to renew it: only signing in again brings it
+   * back.
+   */
+  readonly expired?: boolean;
   readonly forge: Forge;
   readonly id: CredentialId;
   /** Whom the host said the token is for, when it said. */
   readonly login?: string | null;
-  /**
-   * Its sign-in has ended, with nothing left to renew it: only signing in again brings it
-   * back.
-   */
-  readonly signed_out?: boolean;
   /** Where the host is: `https://github.com`. */
   readonly url: string;
 };

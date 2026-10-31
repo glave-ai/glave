@@ -57,32 +57,22 @@ impl Hosts {
         }
     }
 
-    /// The GitHub App that can renew `credential`: the one that issued it, for as long as it is
-    /// `[github]`'s or glave's own. A refresh token goes back to no other, which GitHub would
-    /// only refuse.
-    pub(super) fn renewer(&self, credential: &CredentialConnected) -> Option<Github> {
-        let renewal = credential.renewal.as_ref()?;
-        [self.github.clone(), Github::own()]
-            .into_iter()
-            .find(|app| app.issued(&credential.url, renewal))
-    }
-
-    /// Whether `credential`'s token has expired with no app left to renew it: only signing in
+    /// Whether `credential`'s token has expired with nothing left to renew it: only signing in
     /// again brings it back.
-    pub(super) fn signed_out(&self, credential: &CredentialConnected) -> bool {
-        left(credential).is_some_and(|left| left <= 0) && self.renewer(credential).is_none()
+    pub(super) fn expired(credential: &CredentialConnected) -> bool {
+        left(credential).is_some_and(|left| left <= 0) && Github::issuer(credential).is_none()
     }
 
-    /// The renewal of `current`, when an app can renew it, keeping `fresh` when it was renewed
-    /// already.
+    /// The renewal of `current`, through the app that issued it, when it can be renewed, keeping
+    /// `fresh` when it was renewed already.
     fn renewing(
         &self,
         current: &CredentialConnected,
         fresh: Option<CredentialConnected>,
     ) -> Option<Renewing<HostRenewal>> {
-        let Some(github) = self.renewer(current) else {
+        let Some(github) = Github::issuer(current) else {
             tracing::info!(
-                "the sign-in to {} expires, and no app glave has can renew it",
+                "the sign-in to {} expires, and cannot be renewed",
                 current.url
             );
             return None;

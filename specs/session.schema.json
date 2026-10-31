@@ -439,6 +439,10 @@
             "null"
           ]
         },
+        "expired": {
+          "description": "Its sign-in has expired, with nothing left to renew it: only signing in again brings it\nback.",
+          "type": "boolean"
+        },
         "forge": {
           "$ref": "#/$defs/Forge"
         },
@@ -451,10 +455,6 @@
             "string",
             "null"
           ]
-        },
-        "signed_out": {
-          "description": "Its sign-in has ended, with nothing left to renew it: only signing in again brings it\nback.",
-          "type": "boolean"
         },
         "url": {
           "description": "Where the host is: `https://github.com`.",

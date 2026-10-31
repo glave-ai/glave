@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use glave_event::{CredentialConnected, CredentialId};
+use glave_event::{CredentialConnected, CredentialId, Secret};
 use glave_session::AccountsError;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -264,10 +264,20 @@ impl Renew for HostRenewal {
             failed()
         })?;
         match self.github.refresh(&self.http, &renewal.refresh).await {
-            Ok(grant) => Ok(CredentialConnected {
+            Ok(Some(grant)) => Ok(CredentialConnected {
                 credential: id,
                 token: grant.token,
                 renewal: grant.renewal,
+                ..current.clone()
+            }),
+            // It works until it expires, and asks nothing of GitHub again.
+            Ok(None) => Ok(CredentialConnected {
+                credential: id,
+                renewal: Some(glave_event::Renewal {
+                    expires: renewal.expires,
+                    refresh: Secret::new(""),
+                    client_id: String::new(),
+                }),
                 ..current.clone()
             }),
             Err(error) => {
