@@ -71,8 +71,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) clock: Box<dyn Clock>,
     /// The people's computers whose last look at their disks freed nothing, and when.
     pub(crate) lacking_room: Mutex<BTreeMap<ComputerId, Timestamp>>,
-    /// Each computer last found short of room with nothing left to free, as this server looked.
-    pub(crate) short_of_room: Mutex<BTreeMap<ComputerId, ShortOfRoom>>,
+    /// Each computer that last said it's short of room with nothing left to free, and when.
+    pub(crate) short_of_room: Mutex<BTreeMap<ComputerId, (Timestamp, ShortOfRoom)>>,
     pub(crate) entropy: Box<dyn Entropy>,
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.

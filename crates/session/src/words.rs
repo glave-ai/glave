@@ -50,8 +50,8 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
-        Ok(Reply::Thread { thread }) => trusting(thread),
-        Ok(Reply::Threads { threads, .. }) => threads.iter().any(trusting),
+        Ok(Reply::Thread { thread }) => in_its_own_words(thread),
+        Ok(Reply::Threads { threads, .. }) => threads.iter().any(in_its_own_words),
         Ok(_) => false,
     }
 }
@@ -122,10 +122,10 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 }
             }
         }
-        Ok(Reply::Thread { thread }) => trust_in(thread, language),
+        Ok(Reply::Thread { thread }) => summary_in(thread, language),
         Ok(Reply::Threads { threads, .. }) => {
             for thread in threads {
-                trust_in(thread, language);
+                summary_in(thread, language);
             }
         }
         Ok(_) => {}
@@ -134,7 +134,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
 
 /// Whether `thread` says what its project asks to be trusted, or that its computer is short of
 /// room, in the server's own words.
-fn trusting(thread: &ThreadSummary) -> bool {
+fn in_its_own_words(thread: &ThreadSummary) -> bool {
     thread
         .trust
         .iter()
@@ -144,7 +144,7 @@ fn trusting(thread: &ThreadSummary) -> bool {
 }
 
 /// Writes what `thread`'s project asks to be trusted, and what it says of room, in `language`.
-fn trust_in(thread: &mut ThreadSummary, language: Language) {
+pub(crate) fn summary_in(thread: &mut ThreadSummary, language: Language) {
     if let Some(ask) = &mut thread.trust {
         for item in &mut ask.items {
             item.text.translate(language);

@@ -204,13 +204,6 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Ok(Vec::new())))
     }
 
-    /// What uses its disk most, the largest first (`computer/disk_use`): at most the person's
-    /// home's entries one level down, and its files. None where it can't say.
-    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
-        let _ = computer;
-        Box::pin(std::future::ready(Ok(Vec::new())))
-    }
-
     /// Frees the worktree at `path`, when what it holds can be rebuilt: nothing uncommitted,
     /// every commit on a remote, no file git ignores but build outputs, and no workspace open on
     /// it, all looked at again now (`computer/free_worktree`). Its branch stays.

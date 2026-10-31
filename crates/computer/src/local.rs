@@ -29,9 +29,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    DiskSpace, DiskUse, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
-    Glob, Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save,
-    Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
+    Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
+    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -42,6 +42,7 @@ use command::Keep;
 pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
+use crate::disk::Largest;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
@@ -62,6 +63,8 @@ pub struct LocalComputers {
     base: PathBuf,
     /// What measures its disk in place of the system, for a test that can't fill one.
     measure: Option<Measure>,
+    /// What uses its disk most, as its keeper last looked.
+    largest: Largest,
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
@@ -118,6 +121,7 @@ impl LocalComputers {
             background: Backgrounds::default(),
             cgroup: pressure::cgroup(),
             processes: Processes::unrecorded(),
+            largest: Largest::default(),
         }
     }
 
@@ -143,6 +147,13 @@ impl LocalComputers {
     #[must_use]
     pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
         self.worktrees = Some(folder.into());
+        self
+    }
+
+    /// Says of what uses its disk what `largest` holds, which its [`crate::Keeper`] fills.
+    #[must_use]
+    pub fn with_largest(mut self, largest: Largest) -> Self {
+        self.largest = largest;
         self
     }
 
@@ -264,6 +275,7 @@ impl LocalComputers {
             },
             environment,
             disk: None,
+            largest: Vec::new(),
         }
     }
 
@@ -504,6 +516,7 @@ impl Computers for LocalComputers {
             let environment = self.registry.environment(computer)?;
             let mut info = Self::describe(computer, environment);
             info.disk = self.disk_space();
+            info.largest = self.largest.get();
             Ok(info)
         })
     }
@@ -526,13 +539,6 @@ impl Computers for LocalComputers {
                     owner: record.owner,
                 })
                 .collect())
-        })
-    }
-
-    fn disk_use(&self, computer: ComputerId) -> BoxFuture<'_, Result<Vec<DiskUse>, ComputerError>> {
-        Box::pin(async move {
-            self.registry.environment(computer)?;
-            crate::disk::largest_in(&self.environment).await
         })
     }
 

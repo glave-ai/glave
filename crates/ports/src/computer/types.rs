@@ -101,6 +101,11 @@ pub struct ComputerInfo {
     /// How much its disk holds and has free, where it can say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk: Option<DiskSpace>,
+    /// What uses its disk most, the largest first, as it last looked: when it had nothing more
+    /// it could free with the disk more than 90% used. Empty otherwise, and old once the person
+    /// has made room since, which `disk` shows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub largest: Vec<DiskUse>,
 }
 
 /// How much a computer's disk holds and has free, in bytes.

@@ -23,7 +23,7 @@ mod worker;
 pub mod worktrees;
 
 pub use cancel::CancelSwitch;
-pub use disk::Keeper;
+pub use disk::{Keeper, Largest};
 pub use environment::{EnvironmentError, Found, read_environment};
 pub use local::{LocalComputers, glave_on_path, sandbox_available, sandbox_helper};
 pub use remote::RemoteComputers;

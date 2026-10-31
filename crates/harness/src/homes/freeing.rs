@@ -25,6 +25,13 @@ const IDLE: SignedDuration = SignedDuration::from_hours(7 * 24);
 /// person's, and asking about each worktree at every turn's end would only slow them.
 const AFTER_NOTHING: SignedDuration = SignedDuration::from_hours(1);
 
+/// How long what a computer said of being short of room is said to its person with no turn hearing
+/// from it since: another server of the store may be the one using it by then.
+const SAID_FOR: SignedDuration = SignedDuration::from_hours(1);
+
+/// The most computers it's kept for; past this the one heard from longest ago is forgotten.
+const MOST_HEARD: usize = 4_096;
+
 /// A computer short of room, with nothing more glave can free: its disk, and what uses it most.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShortOfRoom {
@@ -55,6 +62,7 @@ where
             return;
         };
         let (computer, now) = (home.info().computer, self.clock.now());
+        self.hear_what_uses_it(&home, computer, now).await;
         if self.freed_nothing_lately(computer, now) {
             return;
         }
@@ -66,7 +74,6 @@ where
     async fn free_room(&self, thread: &Thread, home: &Arc<Workspace>) -> Result<(), HarnessError> {
         let (computers, computer) = (home.computers(), home.info().computer);
         if !self.is_full(home, computer).await? {
-            self.note_short(computer, None);
             return Ok(());
         }
         let kept = computers.worktrees(computer).await?;
@@ -89,51 +96,59 @@ where
         if !freed {
             self.freed_nothing(computer, self.clock.now());
         }
-        self.say_what_uses_it(home, computer).await
-    }
-
-    /// With nothing left to free and more than 90% of the disk used, notes what uses it, for
-    /// the person to be told; otherwise that there's nothing to tell them.
-    async fn say_what_uses_it(
-        &self,
-        home: &Workspace,
-        computer: ComputerId,
-    ) -> Result<(), HarnessError> {
-        let computers = home.computers();
-        let short = computers
-            .status(computer)
-            .await?
-            .disk
-            .filter(|disk| disk.short());
-        let Some(disk) = short else {
-            self.note_short(computer, None);
-            return Ok(());
-        };
-        let largest = computers.disk_use(computer).await?;
-        self.note_short(computer, Some(ShortOfRoom { disk, largest }));
         Ok(())
     }
 
-    fn note_short(&self, computer: ComputerId, short: Option<ShortOfRoom>) {
-        let mut noted = self
+    /// Takes what `home`'s computer says of being short of room, just used by a turn: said to its
+    /// person from now, until it says otherwise or [`SAID_FOR`] has passed.
+    async fn hear_what_uses_it(&self, home: &Workspace, computer: ComputerId, now: Timestamp) {
+        let Ok(info) = home.computers().status(computer).await else {
+            return;
+        };
+        let Some(disk) = info.disk else {
+            return;
+        };
+        let mut heard = self
             .short_of_room
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        match short {
-            Some(short) => noted.insert(computer, short),
-            None => noted.remove(&computer),
-        };
+        if disk.short() && !info.largest.is_empty() {
+            let short = ShortOfRoom {
+                disk,
+                largest: info.largest,
+            };
+            heard.insert(computer, (now, short));
+            while heard.len() > MOST_HEARD {
+                let oldest = heard.iter().min_by_key(|(_, (at, _))| *at);
+                let Some(oldest) = oldest.map(|(computer, _)| *computer) else {
+                    break;
+                };
+                heard.remove(&oldest);
+            }
+        } else {
+            heard.remove(&computer);
+        }
     }
 
     /// What this server last found of `person`'s own computer being short of room, nothing more
     /// to free: what they're told. It reaches nothing.
     pub fn short_of_room(&self, org: OrgId, person: PrincipalId) -> Option<ShortOfRoom> {
+        let hears_of_none = self
+            .short_of_room
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty();
+        if hears_of_none {
+            return None;
+        }
         let home = self.own_home(org, person)?.ok()?;
+        let now = self.clock.now();
         self.short_of_room
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(&home.info().computer)
-            .cloned()
+            .filter(|(at, _)| now.duration_since(*at) < SAID_FOR)
+            .map(|(_, short)| short.clone())
     }
 
     /// Whether the last look at `computer`'s disk, within [`AFTER_NOTHING`], freed nothing.
