@@ -1,8 +1,9 @@
 //! The model a throwaway glave talks to: a stand-in on this computer, at an address the system
-//! gives it (glave-ports' fake HTTP server, answering every request the same), that answers
-//! every chat with one short sentence and says each answer cost a dime, as OpenRouter's
-//! `usage.cost` says what a call cost. So chats answer, and receipts show a cost, with no
-//! account, network or cost.
+//! gives it (glave-ports' fake HTTP server), that answers every chat with one short sentence
+//! and says each answer cost a dime, as OpenRouter's `usage.cost` says what a call cost. So
+//! chats answer, and receipts show a cost, with no account, network or cost. Under
+//! [`OPENROUTER`] it answers as OpenRouter too (`router.rs`), for an OpenRouter account
+//! connected with any key.
 
 use glave_ports::testing::FakeHttp;
 use serde_json::json;
@@ -16,10 +17,26 @@ const SAID: &str = "Hello from try-org's stand-in model: it answers every messag
 /// What every answer says it cost, in dollars.
 const COST: &str = "0.10";
 
-/// Starts the stand-in, answering until it is dropped.
+/// Where under the stand-in's address it answers as OpenRouter's API.
+pub(crate) const OPENROUTER: &str = "/api/v1";
+
+/// Starts the stand-in, answering until it is dropped: a chat anywhere, OpenRouter's lists
+/// under [`OPENROUTER`].
 pub(crate) fn start() -> Result<FakeHttp, String> {
-    FakeHttp::always(200, &chat())
-        .map_err(|err| format!("could not start the stand-in model: {err}"))
+    let chat = chat();
+    FakeHttp::answering(move |method, path| {
+        let listed = if method == "GET" && path.starts_with(OPENROUTER) {
+            super::router::answer(path)
+        } else {
+            None
+        };
+        match listed {
+            Some(listed) => (200, listed.to_string()),
+            None if method == "GET" => (404, r#"{"error":{"message":"not found"}}"#.to_owned()),
+            None => (200, chat.clone()),
+        }
+    })
+    .map_err(|err| format!("could not start the stand-in model: {err}"))
 }
 
 /// A streamed chat answer, as OpenAI's are, with its usage and what it cost.

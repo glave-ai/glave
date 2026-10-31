@@ -205,13 +205,47 @@ impl Providers for ModelAccounts {
     }
 }
 
-/// Where the API of `kind` is: the service's own, or `url` for another server.
+/// The variable that puts a stand-in on this computer in place of OpenRouter's API, such as
+/// try-org's, so its screens are tried with no account, network or cost. Nothing else: people's
+/// OpenRouter keys go to it, so glave takes none elsewhere (`stand_in`).
+const OPENROUTER_STAND_IN: &str = "GLAVE_OPENROUTER_URL";
+
+/// OpenRouter's own API.
+const OPENROUTER: &str = "https://openrouter.ai/api/v1";
+
+/// The stand-in for OpenRouter `value` names, when it is one on this computer; none when it
+/// names none. Refused, saying why, for one elsewhere.
+fn stand_in(value: Option<String>) -> anyhow::Result<Option<String>> {
+    let Some(url) = value.filter(|url| !url.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let here = Config::for_url(url.clone(), None).is_some_and(|config| config.is_local());
+    anyhow::ensure!(
+        here,
+        "{OPENROUTER_STAND_IN} names {url}, which is not on this computer: it only stands in for \
+         OpenRouter here, since people's OpenRouter keys go to it"
+    );
+    Ok(Some(url))
+}
+
+/// Refuses to start with a stand-in for OpenRouter that is not on this computer.
+pub(crate) fn check_stand_in() -> anyhow::Result<()> {
+    stand_in(std::env::var(OPENROUTER_STAND_IN).ok()).map(|_| ())
+}
+
+/// Where the API of `kind` is: the service's own, OpenRouter's stand-in on this computer when
+/// one is set, or `url` for another server.
 fn base_url(kind: ProviderKind, url: Option<&str>) -> Option<String> {
     Some(
         match kind {
             ProviderKind::Openai => "https://api.openai.com/v1",
             ProviderKind::Anthropic => "https://api.anthropic.com",
-            ProviderKind::Openrouter => "https://openrouter.ai/api/v1",
+            ProviderKind::Openrouter => {
+                let set = stand_in(std::env::var(OPENROUTER_STAND_IN).ok())
+                    .ok()
+                    .flatten();
+                return Some(set.unwrap_or_else(|| OPENROUTER.to_owned()));
+            }
             ProviderKind::Compatible => url?,
         }
         .to_owned(),
@@ -224,6 +258,10 @@ pub(crate) fn endpoint_of(account: &ProviderConnected, model: &str) -> Option<En
     let mut provider = Config::for_url(base, Some(account.key.expose().to_owned()))?;
     if model::speaks_anthropic(&provider) {
         "anthropic".clone_into(&mut provider.provider);
+    }
+    // OpenRouter, wherever it is reached: its stand-in too is a router.
+    if account.kind == ProviderKind::Openrouter {
+        "openrouter".clone_into(&mut provider.provider);
     }
     Some(Endpoint {
         local: provider.is_local(),
@@ -366,4 +404,24 @@ fn refused(account: &ProviderConnected, error: &ProviderError) -> ApiError {
         _ => format!("{service} did not answer as glave expected: try again shortly"),
     };
     provider_failed(failure, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openrouter_s_stand_in_is_taken_only_on_this_computer() {
+        let here = "http://127.0.0.1:4321/api/v1".to_owned();
+        assert_eq!(stand_in(Some(here.clone())).unwrap(), Some(here));
+        assert_eq!(stand_in(None).unwrap(), None);
+        assert_eq!(stand_in(Some("  ".into())).unwrap(), None, "empty is unset");
+        let elsewhere = stand_in(Some("https://keys.example.com/api/v1".into()));
+        assert!(
+            elsewhere
+                .unwrap_err()
+                .to_string()
+                .contains("not on this computer")
+        );
+    }
 }

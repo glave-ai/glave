@@ -459,6 +459,7 @@ async fn line_up(
     let ledgers = if through_gateway || !args.issuers.is_empty() {
         None
     } else {
+        crate::providers::check_stand_in()?;
         let accounts = crate::accounts::open(store, person).await?;
         Some((accounts, Catalogs::open(store, person).await?))
     };
