@@ -18,8 +18,11 @@ use glave_ports::computer::{
 };
 use glave_ports::{Message, OrgId, ProjectId};
 use glave_session::Answering;
-use glave_session::protocol::{NewFolder, Reply, Request, Show, ThreadSummary};
+
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
+
+use glave_harness::{Skill, SkillSource, Skills};
 
 use crate::support::*;
 
@@ -82,7 +85,7 @@ impl Here {
 
     /// Where `person`'s computer makes new projects' folders.
     fn projects(&self, person: PrincipalId) -> PathBuf {
-        self.base.join(person.to_string()).join("projects")
+        self.home_folder(person).join("glave")
     }
 
     /// `person`'s home on their computer.
@@ -123,6 +126,7 @@ impl Here {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
                 let computers = LocalComputers::for_here(std::env::vars_os())
+                    .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
                     .with_projects(projects)
                     .known_as(ComputerId::from_uuid(person.as_uuid()));
@@ -160,6 +164,16 @@ impl Homes for Here {
             .or_insert_with(|| self.plan(person))
             .clone())
     }
+}
+
+/// A server on `log` whose person has a computer of their own, with no answers to give.
+async fn served_with_homes(dir: &Path, log: &Shared) -> (Arc<Here>, Tested<Shared>, PrincipalId) {
+    let homes = Arc::new(Here::new(&dir.join("people")));
+    let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+    setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+    let (server, _) = setup.build_on(dir, log.clone()).await;
+    let person = server.person().unwrap();
+    (homes, server, person)
 }
 
 /// A thread `server` started for its person, in `project` or a chat of their own.
@@ -282,12 +296,8 @@ async fn resumed_later(
 fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_there() {
     let dir = folder("session-homes-project");
     block_on!(async {
-        let homes = Arc::new(Here::new(&dir.join("people")));
-        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
-        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
         let log = Shared::default();
-        let (server, _) = setup.build_on(&dir, log.clone()).await;
-        let person = server.person().unwrap();
+        let (homes, server, person) = served_with_homes(&dir, &log).await;
         let create = |folder| Request::ProjectCreate {
             name: "Garden".into(),
             folder: Some(folder),
@@ -387,4 +397,140 @@ async fn started_later(
         matches!(&opening, Some(Part::Text { text }) if text.contains("Be brief.")),
         "the person's own instructions, kept: {opening:?}"
     );
+}
+
+const SKILL_TEXT: &str =
+    "---\nname: tidy\ndescription: Tidy the garden beds.\n---\nPrune only in winter.\n";
+
+/// A skill on the server's own computer, and one built into glave.
+fn on_the_server() -> Option<Skills> {
+    let built_in = "---\nname: sheets\ndescription: Work with spreadsheets.\n---\nCount twice.\n";
+    Skills::offer(vec![
+        Skill {
+            name: "servers-own".into(),
+            description: "Only for the server's computer.".into(),
+            source: SkillSource::File(PathBuf::from("/nowhere/SKILL.md")),
+        },
+        Skill::built_in(built_in).unwrap(),
+    ])
+}
+
+/// A new project on `person`'s computer, read there with a skill of their own already in place.
+async fn garden_with_a_skill(
+    homes: &Here,
+    server: &Tested<Shared>,
+    person: PrincipalId,
+) -> (glave_ports::Project, ProjectFolder) {
+    let own = homes.home_folder(person).join(".glave/skills/tidy");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("SKILL.md"), SKILL_TEXT).unwrap();
+    let made = Request::ProjectCreate {
+        name: "Garden".into(),
+        folder: Some(NewFolder::Empty),
+    };
+    let reply = server.request(made).await.unwrap();
+    let Reply::Project {
+        project,
+        folder: Some(folder),
+    } = reply
+    else {
+        panic!("a project with its folder, not {reply:?}")
+    };
+    (project, folder)
+}
+
+#[test]
+fn a_thread_on_a_person_s_computer_is_offered_the_skills_there_and_never_the_server_s() {
+    let dir = folder("session-homes-skills");
+    block_on!(async {
+        let log = Shared::default();
+        let (homes, server, person) = served_with_homes(&dir, &log).await;
+        let (project, folder) = garden_with_a_skill(&homes, &server, person).await;
+
+        // A server started later: offered as last read there, with nothing asked of it.
+        let mut next = Setup::new(vec![
+            answer(Some("Hello."), None),
+            answer(None, Some(("skill", json!({"name": "tidy"})))),
+            answer(
+                None,
+                Some(("write", json!({"path": "n.txt", "content": "x"}))),
+            ),
+            answer(Some("Done."), None),
+            answer(Some("Hello again."), None),
+        ]);
+        next.seed = 2;
+        next.settings.person = Some(person);
+        next.projects = Some(Arc::clone(server.projects()));
+        next.skills = on_the_server();
+        let later = Arc::new(Here::new(&dir.join("people")));
+        next.homes = Some(Arc::clone(&later) as Arc<dyn Homes>);
+        let (again, seen) = next.build_on(&dir, log).await;
+        let thread = started(&again, Some(project.id)).await;
+        turn(&again, thread.id, "hi").await.unwrap();
+        assert_eq!(later.asked(), 0, "nothing asked of their computer");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Tidy the garden beds."), "{offered}");
+        assert!(offered.contains("glave:sheets"), "glave's own: {offered}");
+        assert!(!offered.contains("servers-own"), "{offered}");
+
+        // Loading one reads it there; and a turn that changed a file reads them all again.
+        let root = PathBuf::from(&folder.checkout.path);
+        let beds = root.join(".glave/skills/beds");
+        std::fs::create_dir_all(&beds).unwrap();
+        let text = "---\nname: beds\ndescription: Lay out new beds.\n---\nDig first.\n";
+        std::fs::write(beds.join("SKILL.md"), text).unwrap();
+        turn(&again, thread.id, "tidy up").await.unwrap();
+        let loaded = json(&seen);
+        assert!(
+            loaded
+                .iter()
+                .any(|sent| sent.contains("Prune only in winter."))
+        );
+        let next_thread = started(&again, Some(project.id)).await;
+        let asked = later.asked();
+        turn(&again, next_thread.id, "hi").await.unwrap();
+        assert_eq!(later.asked(), asked, "a turn that talks asks for nothing");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Lay out new beds."), "{offered}");
+    });
+}
+
+#[test]
+fn a_worktree_on_a_person_s_computer_is_offered_what_its_repository_was_last_read_to_hold() {
+    let dir = folder("session-homes-worktree-skills");
+    block_on!(async {
+        let setup = Setup::new(vec![answer(Some("Hello."), None)]);
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let setup = Setup {
+            homes: Some(Arc::clone(&homes) as Arc<dyn Homes>),
+            ..setup
+        };
+        let (server, seen) = setup.build_on(&dir, Shared::default()).await;
+        let person = server.person().unwrap();
+        let (project, folder) = garden_with_a_skill(&homes, &server, person).await;
+        let committed = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(["commit", "--allow-empty", "-m", "first"])
+            .current_dir(&folder.checkout.path)
+            .output()
+            .unwrap();
+        assert!(committed.status.success(), "{committed:?}");
+        let started = Request::ThreadStart {
+            project: Some(project.id),
+            worktree: Some(true),
+            background: false,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        };
+        let Reply::Thread { thread } = server.request(started).await.unwrap() else {
+            panic!("a thread")
+        };
+        let woken = homes.woken();
+        turn(&server, thread.id, "hi").await.unwrap();
+        assert_eq!(homes.woken(), woken, "a turn that talks wakes nothing");
+        let offered = json(&seen).pop().unwrap();
+        assert!(offered.contains("Tidy the garden beds."), "{offered}");
+    });
 }

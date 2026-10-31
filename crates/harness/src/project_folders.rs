@@ -105,6 +105,10 @@ where
         self.come_home(thread).await?;
         thread.defaults = self.defaults();
         let brought = match (&self.project_folders, &thread.project) {
+            _ if thread.home.is_some() => Brought {
+                tools: self.skills_at_home(thread).await,
+                ..Brought::default()
+            },
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
                 host.brought(project, thread.scope.project()).await
             }

@@ -12,7 +12,7 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Component, Path, PathBuf};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat, fstat, openat, readlinkat, statat};
 use rustix::io::Errno;
 
@@ -187,10 +187,7 @@ pub(crate) fn resolve(root: &Root<'_>, path: &str) -> Result<Found, ComputerErro
                 });
             }
             _ => {
-                return Err(ComputerError::Failed(format!(
-                    "{path}: {} is a file, not a folder",
-                    Path::new(&name).display()
-                )));
+                return Err(not_a_folder(path));
             }
         }
     }
@@ -334,4 +331,14 @@ pub(crate) fn shown(names: &[OsString]) -> String {
         .map(|name| name.to_string_lossy())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Refused: `path` goes through a file, or lists one, as a folder.
+pub(super) fn not_a_folder(path: &str) -> ComputerError {
+    ComputerError::Refused(
+        Refusal::NotAFolder {
+            path: path.to_owned(),
+        }
+        .into(),
+    )
 }

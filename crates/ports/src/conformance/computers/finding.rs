@@ -66,6 +66,16 @@ async fn stats<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
         missing.path == "find/new/file.txt" && missing.kind.is_none(),
         "a stat of nothing resolves the path and finds nothing",
     )?;
+    let under = computers.stat(here, "find/src/lib.rs/below").await;
+    ensure(
+        matches!(under, Err(ComputerError::Refused(_))),
+        "a stat of something under a file is refused, not a failure of the computer",
+    )?;
+    let listed = computers.list(here, &Listing::of("find/src/lib.rs")).await;
+    ensure(
+        matches!(listed, Err(ComputerError::Refused(_))),
+        "a listing of a file is refused, not a failure of the computer",
+    )?;
     let folder = computers
         .stat(here, "find")
         .await

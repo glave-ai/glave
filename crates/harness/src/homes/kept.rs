@@ -5,7 +5,9 @@
 
 use std::path::Path;
 
-use glave_event::{Body, InstructionsFile, InstructionsRead, Payload as _, Seq, decode};
+use glave_event::{
+    Body, InstructionsFile, InstructionsRead, Payload as _, Seq, SkillFound, decode,
+};
 use glave_ports::stream::{Reserved, append_retrying};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
@@ -19,15 +21,11 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The files of instructions last read for `root` in `scope`'s project, when that read was
-    /// for `root`: the project's folder then is the folder now.
-    pub(crate) async fn last_read(
-        &self,
-        scope: Scope,
-        root: &Path,
-    ) -> Option<Vec<InstructionsFile>> {
+    /// What was last read for `root` in `scope`'s project, when that read was for `root`: the
+    /// project's folder then is the folder now.
+    pub(crate) async fn last_read(&self, scope: Scope, root: &Path) -> Option<InstructionsRead> {
         match self.latest_read(scope).await {
-            Ok(Some((_, Some(read)))) if Path::new(&read.root) == root => Some(read.files),
+            Ok(Some((_, Some(read)))) if Path::new(&read.root) == root => Some(read),
             Ok(_) => None,
             Err(error) => {
                 tracing::warn!(%error, "could not read what a project's folder opens with");
@@ -36,13 +34,20 @@ where
         }
     }
 
-    /// Keeps `files`, just read for `root`, as what `scope`'s project's threads there open with
-    /// (for a chat, the person's own, read for their home), unless they are what was kept
-    /// already.
-    pub(crate) async fn keep_read(&self, scope: Scope, root: &Path, files: Vec<InstructionsFile>) {
+    /// Keeps `files` and `skills`, just read for `root`, as what `scope`'s project's threads
+    /// there open with (for a chat, the person's own, read for their home), unless they are what
+    /// was kept already.
+    pub(crate) async fn keep_read(
+        &self,
+        scope: Scope,
+        root: &Path,
+        files: Vec<InstructionsFile>,
+        skills: Vec<SkillFound>,
+    ) {
         let read = InstructionsRead {
             root: root.display().to_string(),
             files,
+            skills,
         };
         let ledger = Reserved::Instructions.id();
         let (this, read) = (self, &read);

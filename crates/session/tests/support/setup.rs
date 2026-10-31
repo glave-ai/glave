@@ -167,6 +167,7 @@ pub(crate) struct Setup {
     pub model: Option<ScriptedModel>,
     /// Tools beside the built-in ones.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    pub skills: Option<glave_harness::Skills>,
     /// Variables its computer gives in place of this process's, such as its `HOME`.
     pub variables: Vec<(String, PathBuf)>,
     /// The workers threads of one project work on; with none, every thread works here.
@@ -215,6 +216,7 @@ impl Setup {
             leases: None,
             model: None,
             tools: Vec::new(),
+            skills: None,
             variables: Vec::new(),
             workers: None,
             identity_provider: false,
@@ -335,6 +337,7 @@ impl Setup {
             forwarded: self.forwarded,
             leases: self.leases,
             tools: self.tools,
+            skills: self.skills,
             awake: self.awake,
             worktrees: self.release,
             workers: self.workers,

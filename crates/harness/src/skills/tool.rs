@@ -5,6 +5,8 @@
 
 use std::fmt::Write as _;
 use std::future::ready;
+use std::path::Path;
+use std::sync::Arc;
 
 use glave_event::Arguments;
 use glave_ports::{
@@ -13,6 +15,7 @@ use glave_ports::{
 use serde_json::json;
 
 use super::{Skill, SkillSource, frontmatter};
+use crate::tools::workspace::Workspace;
 
 /// The tool's name.
 pub const SKILL: &str = "skill";
@@ -24,13 +27,32 @@ const MAX_BODY: usize = 32 * 1024;
 #[derive(Debug, Clone)]
 pub struct Skills {
     skills: Vec<Skill>,
+    /// Where their files are read, when not on this computer: the person's own computer.
+    on: Option<Arc<Workspace>>,
 }
 
 impl Skills {
     /// The `skill` tool for `skills`, or `None` when there are none: then the model is offered
     /// no tool and told nothing new.
     pub fn offer(skills: Vec<Skill>) -> Option<Self> {
-        (!skills.is_empty()).then_some(Self { skills })
+        (!skills.is_empty()).then_some(Self { skills, on: None })
+    }
+
+    /// The `skill` tool for `skills`, whose files are read through `home`, their person's home
+    /// on their own computer, which that wakes; or `None` when there are none.
+    pub(crate) fn offer_on(skills: Vec<Skill>, home: Arc<Workspace>) -> Option<Self> {
+        (!skills.is_empty()).then_some(Self {
+            skills,
+            on: Some(home),
+        })
+    }
+
+    /// glave's own skills among these, which come along wherever a thread works.
+    pub(crate) fn built_in(&self) -> impl Iterator<Item = Skill> {
+        self.skills
+            .iter()
+            .filter(|skill| matches!(skill.source, SkillSource::BuiltIn(_)))
+            .cloned()
     }
 
     fn spec(&self) -> ToolSpec {
@@ -96,16 +118,28 @@ fn escaped(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// What `file` holds: through `on`, the person's own computer, when its files are there.
+async fn read_file(on: Option<&Workspace>, file: &Path) -> Result<String, String> {
+    let failed = |why: String| format!("Could not read {}: {why}", file.display());
+    let Some(home) = on else {
+        return tokio::fs::read_to_string(file)
+            .await
+            .map_err(|err| failed(err.to_string()));
+    };
+    let path = crate::instructions::inside(home.root(), file)
+        .ok_or_else(|| failed("it is not on your computer".to_owned()))?;
+    let bytes = home
+        .read(&path)
+        .await
+        .map_err(|err| failed(err.to_string()))?;
+    Ok(String::from_utf8_lossy(bytes.as_slice()).into_owned())
+}
+
 /// The skill's body, read now so an edit since the thread began counts, with where its
 /// files are; a built-in skill's from glave itself, with no folder.
-async fn load(skill: &Skill) -> Result<String, String> {
+async fn load(skill: &Skill, on: Option<&Workspace>) -> Result<String, String> {
     let (text, file) = match &skill.source {
-        SkillSource::File(file) => {
-            let text = tokio::fs::read_to_string(file)
-                .await
-                .map_err(|err| format!("Could not read {}: {err}", file.display()))?;
-            (text, Some(file))
-        }
+        SkillSource::File(file) => (read_file(on, file).await?, Some(file)),
         SkillSource::BuiltIn(text) => ((*text).to_owned(), None),
     };
     let document = frontmatter::parse(&text).map_err(|why| {
@@ -151,7 +185,7 @@ impl ToolSource for Skills {
     ) -> BoxFuture<'a, ToolOutput> {
         Box::pin(async move {
             let loaded = match self.named(arguments) {
-                Ok(skill) => load(skill).await,
+                Ok(skill) => load(skill, self.on.as_deref()).await,
                 Err(why) => Err(why),
             };
             match loaded {
