@@ -46,6 +46,7 @@ pub(super) fn available() -> bool {
 enum How {
     Bubblewrap {
         bwrap: PathBuf,
+        offline: bubblewrap::Offline,
         filter: Vec<u8>,
     },
     /// The helper program, which confines itself with Landlock.
@@ -114,7 +115,11 @@ impl Enforcer {
         let layout = Arc::clone(&self.layout);
         let path = temp.path().to_owned();
         match &self.how {
-            How::Bubblewrap { bwrap, filter } => {
+            How::Bubblewrap {
+                bwrap,
+                offline,
+                filter,
+            } => {
                 let stand_ins = Arc::clone(&self.stand_ins);
                 let (mounts, held) =
                     tokio::task::spawn_blocking(move || mounts::plan(&layout, &path, &stand_ins))
@@ -123,7 +128,7 @@ impl Enforcer {
                         .map_err(|refused| ComputerError::Refused(refused.into()))?;
                 Ok(Launch {
                     program: PathBuf::from(bubblewrap::SH),
-                    args: bubblewrap::args(bwrap, &self.layout, &mounts),
+                    args: bubblewrap::args(bwrap, *offline, &self.layout, &mounts),
                     input: Some(filter.clone()),
                     own_session: false,
                     temp,
@@ -181,16 +186,22 @@ async fn choose(
         let Some(bwrap) = bubblewrap::find(&writable) else {
             return Err("bubblewrap is not installed".to_owned());
         };
-        bubblewrap::starts(&bwrap).map_err(|said| {
+        let offline = bubblewrap::starts(&bwrap).map_err(|said| {
             format!("bubblewrap ({}) cannot start here: {said}", bwrap.display())
         })?;
         let filter = seccomp::program(network)?;
-        Ok((bwrap, seccomp::bytes(&filter)))
+        Ok((bwrap, offline, seccomp::bytes(&filter)))
     })
     .await
     .map_err(|error| ComputerError::Failed(error.to_string()))?;
     let why = match tried {
-        Ok((bwrap, filter)) => return Ok(How::Bubblewrap { bwrap, filter }),
+        Ok((bwrap, offline, filter)) => {
+            return Ok(How::Bubblewrap {
+                bwrap,
+                offline,
+                filter,
+            });
+        }
         Err(why) => why,
     };
     let landlock = landlocked::available();
