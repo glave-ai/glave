@@ -28,6 +28,7 @@ import type {
   ThreadItem,
 } from '../../lib/conversation';
 import { toolIcon } from '../../lib/steps';
+import { SessionService } from '../../services/session.service';
 import { ThreadService } from '../../services/thread.service';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { ThoughtComponent } from '../thought/thought.component';
@@ -127,6 +128,7 @@ export class ThreadItemComponent {
   readonly interim = input(false);
 
   private readonly thread = inject(ThreadService);
+  private readonly session = inject(SessionService);
   /** Whether an answer is being sent, so the cards wait. */
   protected readonly sending = this.thread.sending;
   private readonly locale = inject(LOCALE_ID);
@@ -146,6 +148,12 @@ export class ThreadItemComponent {
     asked: number,
     values: Readonly<Record<string, unknown>> | null,
   ): void {
-    void this.thread.answerService(call, asked, values);
+    const thread = this.thread.thread();
+    if (thread !== null) {
+      const answer = values === null ? ('declined' as const) : { answered: { values } };
+      void this.thread.act(() =>
+        this.session.call('service/answer', { thread, call, asked, answer }),
+      );
+    }
   }
 }

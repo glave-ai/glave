@@ -2,16 +2,17 @@
 //! and goes on from with the answer; what they typed reaches the source alone; and where no one
 //! can answer, or the turn is stopped, nothing waits.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{
     Body, CallId, Event, Outcome, Seq, ServiceAnswer, ServiceOutcome, StopReason, Verdict,
 };
-use glave_harness::{Cancel, Decision, HarnessError, NoOneToAsk, Thread};
-use glave_ports::testing::{ASKING_TOOL, AskingTool};
+use glave_harness::{Approver, Cancel, Decision, Harness, HarnessError, NoOneToAsk, Thread};
+use glave_ports::testing::{ASKING_TOOL, AskingTool, ScriptedModel};
 use glave_ports::{
-    BlobStore, Caller, EventLog, InMemoryLog, ModelProvider, ServiceGiven, ToolSource, WaitKind,
-    block_on,
+    BlobStore, Caller, EventLog, InMemoryBlobs, InMemoryLog, ModelProvider, ServiceGiven,
+    ToolSource, WaitKind, block_on,
 };
 use serde_json::json;
 
@@ -27,6 +28,22 @@ fn calling(then: &str) -> Vec<glave_ports::Completion> {
     ]
 }
 
+/// A tool that asks one thing, a harness whose model calls it, and a thread there.
+async fn asked_once<A: Approver>(
+    dir: &Path,
+    approver: A,
+) -> (
+    Arc<AskingTool>,
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    Thread,
+) {
+    let source = AskingTool::asking(&["Which repository?"]);
+    let harness = harness(dir, calling("Filed."), approver).await;
+    let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
+    let thread = harness.start_thread(scope()).await.unwrap();
+    (source, harness, thread)
+}
+
 /// The thread's turn run to where it stops: it must stop at a wait.
 async fn stops_at_a_wait<P, L, B, A>(
     harness: &glave_harness::Harness<P, L, B, A>,
@@ -35,7 +52,7 @@ async fn stops_at_a_wait<P, L, B, A>(
     P: ModelProvider,
     L: EventLog,
     B: BlobStore,
-    A: glave_harness::Approver,
+    A: Approver,
 {
     let ran = harness
         .run_turn(thread, "file it", &Cancel::new(), &mut |_| {})
@@ -266,10 +283,7 @@ fn an_approved_call_that_then_asks_waits_at_what_it_asks_through_a_restart() {
 fn an_answer_a_crash_left_unused_is_closed_as_a_leftover() {
     let dir = folder("service-crashed");
     block_on!(async {
-        let source = AskingTool::asking(&["Which repository?"]);
-        let harness = harness(&dir, calling("Filed."), InTheLog).await;
-        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (_, harness, mut thread) = asked_once(&dir, InTheLog).await;
         stops_at_a_wait(&harness, &mut thread).await;
         let (call, at) = asked_at(&events(harness.log(), thread.id).await);
         harness
@@ -289,10 +303,7 @@ fn an_answer_a_crash_left_unused_is_closed_as_a_leftover() {
 fn stopping_a_turn_that_waits_settles_what_was_asked() {
     let dir = folder("service-stopped");
     block_on!(async {
-        let source = AskingTool::asking(&["Which repository?"]);
-        let harness = harness(&dir, calling("Filed."), InTheLog).await;
-        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (source, harness, mut thread) = asked_once(&dir, InTheLog).await;
         stops_at_a_wait(&harness, &mut thread).await;
         let stop = Cancel::new();
         stop.cancel();
@@ -321,10 +332,7 @@ fn stopping_a_turn_that_waits_settles_what_was_asked() {
 fn with_no_one_to_answer_the_source_declines_and_nothing_waits() {
     let dir = folder("service-nobody");
     block_on!(async {
-        let source = AskingTool::asking(&["Which repository?"]);
-        let harness = harness(&dir, calling("Filed."), NoOneToAsk).await;
-        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (source, harness, mut thread) = asked_once(&dir, NoOneToAsk).await;
         let ended = turn(&harness, &mut thread, "file it").await;
         assert_eq!(ended.outcome, Outcome::Completed);
         assert_eq!(source.unasked(), 1);

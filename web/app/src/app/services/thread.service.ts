@@ -367,22 +367,6 @@ export class ThreadService {
     }
   }
 
-  /**
-   * Answers what a call's service asked, at its `service.asked`, with `values`, or declines with
-   * `null`; the paused turn goes on.
-   */
-  async answerService(
-    call: string,
-    asked: number,
-    values: Readonly<Record<string, unknown>> | null,
-  ): Promise<void> {
-    const thread = this.id();
-    if (thread !== null) {
-      const answer = values === null ? ('declined' as const) : { answered: { values } };
-      await this.act(() => this.session.call('service/answer', { thread, call, asked, answer }));
-    }
-  }
-
   /** Reads what was recorded since the last event this view has. */
   async catchUp(): Promise<void> {
     const thread = this.id();
@@ -719,7 +703,8 @@ export class ThreadService {
     this.streaming.set(0);
   }
 
-  private async act(call: () => Promise<unknown>): Promise<void> {
+  /** Runs `call`, an answer to what the turn waits for, then catches up on what it recorded. */
+  async act(call: () => Promise<unknown>): Promise<void> {
     this.deciding.set(true);
     try {
       await call();

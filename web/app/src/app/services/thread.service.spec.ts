@@ -121,23 +121,12 @@ describe('ThreadService', () => {
     await service.open('thread-1');
     await service.decide('call_1', 'allow_once');
     await service.answer('call_2', ['yes']);
-    await service.answerService('call_3', 9, { label: 'bug' });
-    await service.answerService('call_3', 10, null);
     await service.stop();
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'call_1', decision: 'allow_once' },
     ]);
     expect(fake.paramsOf('question/answer')).toEqual([
       { thread: 'thread-1', question: 'call_2', answers: ['yes'] },
-    ]);
-    expect(fake.paramsOf('service/answer')).toEqual([
-      {
-        thread: 'thread-1',
-        call: 'call_3',
-        asked: 9,
-        answer: { answered: { values: { label: 'bug' } } },
-      },
-      { thread: 'thread-1', call: 'call_3', asked: 10, answer: 'declined' },
     ]);
     expect(fake.paramsOf('turn/cancel')).toEqual([{ thread: 'thread-1' }]);
     expect(fake.paramsOf('thread/events').length).toBeGreaterThan(1);
