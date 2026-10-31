@@ -30,8 +30,9 @@ const ISOLATION: &[&str] = &[
     "ALL",
 ];
 
-/// The first `bwrap` on `PATH` that a command could not have planted: a real file outside
-/// the temp folders, the current folder and `writable`, the folders commands may write.
+/// The system's `bwrap`, else the first on `PATH`, that a command could not have planted: a real
+/// file outside the temp folders, the current folder and `writable`, the folders commands may
+/// write.
 pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let mut unsafe_places: Vec<PathBuf> = [std::env::temp_dir(), PathBuf::from("/tmp")]
@@ -40,7 +41,10 @@ pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .collect();
     unsafe_places.extend(writable.iter().map(|place| place.to_path_buf()));
-    std::env::split_paths(&path)
+    // The system's first: a folder earlier on `PATH` may be the person's, which a command let out
+    // of the sandbox once could fill, and the wall must not be what it left there.
+    std::iter::once(PathBuf::from("/usr/bin"))
+        .chain(std::env::split_paths(&path))
         .filter(|folder| folder.is_absolute())
         .filter_map(|folder| std::fs::canonicalize(folder.join("bwrap")).ok())
         .find(|real| real.is_file() && !unsafe_places.iter().any(|place| real.starts_with(place)))
@@ -49,13 +53,38 @@ pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
 /// How long bubblewrap has to start an empty sandbox, which takes it milliseconds.
 const STARTS_WITHIN: Duration = Duration::from_secs(10);
 
-/// Whether `bwrap` can make the sandbox here: it cannot where unprivileged user namespaces
-/// are off, or where AppArmor stops it making them (Ubuntu 23.10 and later, without a
-/// profile for it). Blocking; says why not, a sandbox that did not start in time included.
-pub(super) fn starts(bwrap: &Path) -> Result<(), String> {
+/// What keeps a command without the network from it. The seccomp filter always does: only Unix
+/// sockets may be made, and nothing may connect or send to an address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Offline {
+    /// A network namespace of its own besides.
+    OwnNetwork,
+    /// The filter alone, where a namespace cannot be made: gVisor refuses bubblewrap the
+    /// loopback of a new one (`specs/sandbox.md`, "On a person's computer").
+    FilterAlone,
+}
+
+/// Whether `bwrap` can make the sandbox here, and how it keeps a command from the network: it
+/// cannot where unprivileged user namespaces are off, or where AppArmor stops it making them
+/// (Ubuntu 23.10 and later, without a profile for it). Blocking; says why not, a sandbox that
+/// did not start in time included.
+pub(super) fn starts(bwrap: &Path) -> Result<Offline, String> {
+    let why = match empty_sandbox(bwrap, &["--unshare-net"]) {
+        Ok(()) => return Ok(Offline::OwnNetwork),
+        Err(why) => why,
+    };
+    match empty_sandbox(bwrap, &[]) {
+        Ok(()) => Ok(Offline::FilterAlone),
+        Err(_) => Err(why),
+    }
+}
+
+/// Runs an empty sandbox with `network`'s arguments, and says why it did not run.
+fn empty_sandbox(bwrap: &Path, network: &[&str]) -> Result<(), String> {
     let output = Program::new(bwrap)
         .args(ISOLATION)
-        .args(["--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev"])
+        .args(network)
+        .args(["--ro-bind", "/", "/", "--dev", "/dev"])
         .args(["--proc", "/proc", "--", "true"])
         .no_input()
         .output_blocking(STARTS_WITHIN)
@@ -68,10 +97,15 @@ pub(super) fn starts(bwrap: &Path) -> Result<(), String> {
 }
 
 /// The arguments for `sh` that start one command in the sandbox, up to the command itself.
-pub(super) fn args(bwrap: &Path, layout: &Layout, mounts: &[Mount]) -> Vec<OsString> {
+pub(super) fn args(
+    bwrap: &Path,
+    offline: Offline,
+    layout: &Layout,
+    mounts: &[Mount],
+) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["-c".into(), SHELL.into(), bwrap.into()];
     args.extend(ISOLATION.iter().map(OsString::from));
-    if !layout.network {
+    if !layout.network && offline == Offline::OwnNetwork {
         args.push("--unshare-net".into());
     }
     // The whole machine read-only, with fresh devices and processes of its own: the host's

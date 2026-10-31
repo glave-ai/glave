@@ -17,6 +17,7 @@ pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
         size: Size::default(),
         environment: None,
         disk: None,
+        largest: Vec::new(),
     }
 }
 

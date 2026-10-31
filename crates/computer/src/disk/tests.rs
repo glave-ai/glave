@@ -61,10 +61,14 @@ fn person_home(dir: &Path) -> (PathBuf, PathBuf) {
          git -c user.name=t -c user.email=t@example.com commit -q -m one && \
          cd .. && git init -q linked && cd linked && printf 'node_modules\\n' > .gitignore && \
          ln -s ../../../../mine node_modules && cd ../../../.. && \
-         mkdir -p .npm/_cacache .cargo/registry/cache .cache/pip .cache/uv junk && \
+         mkdir -p .npm/_cacache .cargo/registry/cache .cache/pip .cache/uv \
+         .glave/sandbox-cache/pip .glave/sandbox-cache/rustup/toolchains junk && \
          touch -t 202001010000 .glave/worktrees/app/wt/node_modules .cache/uv && \
          touch -t 202002010000 .glave/worktrees/app/wt/target .cache/pip && \
-         touch -t 202003010000 .npm/_cacache .cargo/registry/cache",
+         touch -t 202003010000 .npm/_cacache .cargo/registry/cache && \
+         touch -t 202004010000 .glave/sandbox-cache/pip && \
+         touch -t 202005010000 .glave/sandbox-cache/rustup/toolchains && \
+         touch .glave/sandbox-cache/rustup/settings.toml",
     );
     // The Trash where this system keeps it, as glave puts things in it.
     let trash = Trash::for_home(&home, None, "").unwrap();
@@ -90,6 +94,7 @@ fn keeper(home: &Path, full: impl Fn() -> bool + Send + Sync + 'static) -> Keepe
         Processes::unrecorded(),
         environment(home),
         Box::new(|| false),
+        Largest::default(),
     );
     kept.measure = Box::new(move |_| Ok(if full() { FULL } else { ROOMY }));
     kept.clock = Box::new(ManualClock::at_millis(1_791_001_000_000));
@@ -125,6 +130,8 @@ fn a_full_disk_frees_build_outputs_then_caches_then_the_trash_oldest_first() {
             said("cache", home.join(".cache/pip")),
             said("cache", home.join(".npm/_cacache")),
             said("cache", home.join(".cargo/registry/cache")),
+            said("cache", home.join(".glave/sandbox-cache/pip")),
+            said("cache", home.join(".glave/sandbox-cache/rustup/toolchains")),
             said("trash", trashed),
         ]
     );
@@ -133,6 +140,11 @@ fn a_full_disk_frees_build_outputs_then_caches_then_the_trash_oldest_first() {
         "what git tracks is never freed"
     );
     assert!(home.join("mine/kept").exists(), "a link is never followed");
+    assert!(
+        home.join(".glave/sandbox-cache/rustup/settings.toml")
+            .exists(),
+        "the sandbox's homes are never freed whole"
+    );
     let left = block_on!(Trash::for_home(&home, None, "").unwrap().held(10));
     assert_eq!(left.len(), 0, "{left:?}");
 }
@@ -183,4 +195,50 @@ fn a_disk_is_full_past_eighty_percent_used() {
     let empty = DiskSpace { size: 0, free: 0 };
     assert!(!empty.full());
     assert!(space(Path::new("/")).unwrap().size > 0, "the real disk's");
+}
+
+#[test]
+fn what_uses_the_disk_most_is_named_largest_first_never_through_a_link() {
+    let dir = TempDir::new("disk-largest").unwrap();
+    let home = dir.join("home");
+    let write = |path: &str, bytes: usize| {
+        let path = home.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, vec![1_u8; bytes]).unwrap();
+    };
+    write("glave/garden/deep/down/big", 4_000_000);
+    write("glave/shed/small", 2_000);
+    write("loose", 2_000_000);
+    // What fills a folder as many small files names the folder.
+    for n in 0..200 {
+        write(&format!("data/file-{n}"), 10_000);
+    }
+    std::fs::create_dir_all(dir.join("outside")).unwrap();
+    std::fs::write(dir.join("outside/huge"), vec![1_u8; 5_000_000]).unwrap();
+    std::os::unix::fs::symlink(dir.join("outside"), home.join("glave/linked")).unwrap();
+    let found = largest(&home);
+    let paths: Vec<&str> = found.iter().map(|use_| use_.path.as_str()).collect();
+    assert_eq!(paths, ["glave/garden", "data", "loose"], "{found:?}");
+    assert!(found[0].bytes >= 4_000_000, "{found:?}");
+    assert_eq!(largest(&dir.join("nothing here")), Vec::new());
+}
+
+#[test]
+fn the_keeper_says_what_uses_the_disk_only_with_nothing_left_to_free_and_past_90_percent() {
+    let dir = TempDir::new("disk-told").unwrap();
+    let (home, _) = person_home(&dir);
+    let told = Largest::default();
+    let mut kept = keeper(&home, || true);
+    kept.largest = told.clone();
+    kept.measure = Box::new(|_| Ok(DiskSpace { size: 100, free: 9 }));
+    block_on!(kept.look_at_what_is_left());
+    assert!(!told.get().is_empty(), "past 90%: it says");
+    kept.measure = Box::new(|_| {
+        Ok(DiskSpace {
+            size: 100,
+            free: 15,
+        })
+    });
+    block_on!(kept.look_at_what_is_left());
+    assert_eq!(told.get(), Vec::new(), "85%: it doesn't");
 }

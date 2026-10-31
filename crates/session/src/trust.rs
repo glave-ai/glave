@@ -4,15 +4,18 @@
 //! trusting keeps the answer where the terminal keeps it, and turns on what was listed from
 //! the thread's next turn; not now keeps it off and stops asking in that thread. What a
 //! project asks is read again from its files and the person's answers every time, so it is
-//! never stale, and a server that restarts asks again when the thread is opened. A caller
-//! signed in from elsewhere is never asked: what a project runs, runs on this computer.
+//! never stale, and a server that restarts asks again when the thread is opened. Whoever signed
+//! in from elsewhere is asked only about a project on their own computer, where it runs, from any
+//! client, and the yes is kept in that project's own ledger; never about what runs on this computer.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{MutexGuard, PoisonError};
 
-use glave_event::ThreadId;
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, Located, ModelProvider, ProjectId};
+use glave_event::{PrincipalId, ThreadId};
+use glave_ports::{
+    BlobStore, BoxFuture, Caller, EventLog, Located, ModelProvider, ProjectId, Scope,
+};
 
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
 use crate::providers::local;
@@ -28,6 +31,39 @@ pub trait ProjectTrust: Send + Sync {
     /// keeps the answer; `false`, trusting nothing, when it no longer asks exactly that.
     fn trust<'a>(&'a self, folder: &'a Path, ask: &'a str)
     -> BoxFuture<'a, Result<bool, ApiError>>;
+
+    /// What the project of `scope` at `root` on its person's own computer asks them to trust,
+    /// from `config`, its `config.toml` as last read there, which reaches nothing.
+    fn ask_there<'a>(
+        &'a self,
+        scope: Scope,
+        root: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>>;
+
+    /// Trusts what the ask named `ask` showed of it, for `person`, kept in that project's own
+    /// ledger; `false`, trusting nothing, when it no longer asks exactly that.
+    fn trust_there<'a>(
+        &'a self,
+        scope: Scope,
+        person: PrincipalId,
+        root: &'a Path,
+        config: &'a str,
+        ask: &'a str,
+    ) -> BoxFuture<'a, Result<bool, ApiError>>;
+}
+
+/// Where a project's ask is answered, as its folder and the caller have it.
+enum Asked {
+    /// Its folder on this computer, for the person here.
+    Here(String),
+    /// Its folder on the caller's own computer, and what was last read there.
+    There {
+        scope: Scope,
+        person: PrincipalId,
+        root: String,
+        config: String,
+    },
 }
 
 /// The threads whose asks are remembered; past this the oldest is forgotten, and asks again
@@ -112,15 +148,46 @@ where
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// What the project of `project` asks `caller` to trust now: only for the person on this
-    /// computer, where someone answers, in a project with a folder here.
+    /// Where the project `at` asks `caller`, if it can: the person on this computer, in a project
+    /// with a folder here; or the person whose own computer holds its folder, from what was
+    /// last read there, whichever client they answer from. A folder there never read asks
+    /// nothing yet.
+    async fn asked_at(&self, caller: &Caller, at: Located) -> Result<Option<Asked>, ApiError> {
+        if self.inner.homes.is_some()
+            && let Some(person) = caller.person.or_else(|| self.person())
+            && let Some(root) = self.folder_at_home_of(person, at).await?
+        {
+            let scope = Scope::glaves_own(at.org, at.project);
+            let kept = self.inner.harness.kept_config(scope, Path::new(&root));
+            return Ok(kept.await.map(|config| Asked::There {
+                scope,
+                person,
+                root,
+                config,
+            }));
+        }
+        if !local(caller) {
+            return Ok(None);
+        }
+        Ok(self.folder_here(at).await?.map(Asked::Here))
+    }
+
+    /// What the project `at` asks `caller` to trust now, where someone answers.
     pub(crate) async fn trust_in(&self, caller: &Caller, at: Located) -> Option<TrustAsk> {
         let host = self.inner.trust.as_ref()?;
-        if !local(caller) || !self.inner.approvals.clients_answer() {
+        if !self.inner.approvals.clients_answer() {
             return None;
         }
-        let folder = self.folder_here(at).await.ok().flatten()?;
-        match host.ask(Path::new(&folder)).await {
+        let asked = match self.asked_at(caller, at).await.ok().flatten()? {
+            Asked::Here(folder) => host.ask(Path::new(&folder)).await,
+            Asked::There {
+                scope,
+                root,
+                config,
+                ..
+            } => host.ask_there(scope, Path::new(&root), &config).await,
+        };
+        match asked {
             Ok(ask) => ask,
             Err(error) => {
                 tracing::warn!(%error, "could not read what a project asks to be trusted");
@@ -183,20 +250,28 @@ where
         ask: &str,
         answer: TrustChoice,
     ) -> Result<Reply, ApiError> {
-        if !local(caller) {
-            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::TrustOnlyHere));
-        }
         if !self.inner.approvals.clients_answer() {
             return Err(nothing_waits());
         }
         let scope = self.scope_of(thread)?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
-        let folder = self
-            .folder_here(scope.located())
-            .await?
-            .ok_or_else(nothing_waits)?;
-        let folder = Path::new(&folder);
-        let current = host.ask(folder).await?.ok_or_else(nothing_waits)?;
+        let Some(asked) = self.asked_at(caller, scope.located()).await? else {
+            return Err(if local(caller) || self.inner.homes.is_some() {
+                nothing_waits()
+            } else {
+                ApiError::new(code::NOT_ALLOWED, Sentence::TrustOnlyHere)
+            });
+        };
+        let current = match &asked {
+            Asked::Here(folder) => host.ask(Path::new(folder)).await?,
+            Asked::There {
+                scope,
+                root,
+                config,
+                ..
+            } => host.ask_there(*scope, Path::new(root), config).await?,
+        }
+        .ok_or_else(nothing_waits)?;
         if current.ask != ask {
             return Err(changed());
         }
@@ -204,7 +279,19 @@ where
         let answered = match answer {
             // Every thread of the project that showed the ask waits no more.
             TrustChoice::Trust => {
-                if !host.trust(folder, ask).await? {
+                let kept = match &asked {
+                    Asked::Here(folder) => host.trust(Path::new(folder), ask).await?,
+                    Asked::There {
+                        scope,
+                        person,
+                        root,
+                        config,
+                    } => {
+                        host.trust_there(*scope, *person, Path::new(root), config, ask)
+                            .await?
+                    }
+                };
+                if !kept {
                     return Err(changed());
                 }
                 self.asks().raised_in(project)

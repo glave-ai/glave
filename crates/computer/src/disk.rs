@@ -16,9 +16,10 @@ use std::convert::Infallible;
 use std::ffi::OsString;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime};
 
-use glave_ports::computer::{ComputerError, DiskSpace};
+use glave_ports::computer::{ComputerError, DiskSpace, DiskUse};
 use glave_ports::{Clock, SystemClock};
 use glave_process::Processes;
 use tokio::io::AsyncWriteExt as _;
@@ -47,11 +48,189 @@ const RECORD_MOST: u64 = 1024 * 1024;
 pub(crate) const BUILT: [&str; 5] = ["target", "node_modules", ".venv", "dist", "build"];
 
 /// Caches in the person's home that commands fill and fetch again: npm's and cargo's
-/// downloads; then each one in the cache home (pip's and uv's among them).
+/// downloads; then each one in the cache home (pip's and uv's among them), and each in glave's
+/// sandbox cache folder, where sandboxed commands keep theirs.
 const CACHES: [&str; 2] = [".npm/_cacache", ".cargo/registry/cache"];
+
+/// Folders of the sandbox's cache that hold more than what is fetched again (settings, installed
+/// programs, modules that can't be removed), never freed whole.
+const HOMES_IN_THE_SANDBOX: [&str; 3] = ["cargo", "rustup", "go"];
+
+/// What in those is fetched again: rustup installs a toolchain it finds gone as it's used.
+const FETCHED_IN_THE_SANDBOX: [&str; 2] = ["cargo/registry", "rustup/toolchains"];
 
 /// The most things one pass looks at, of each kind.
 const MOST_LOOKED_AT: usize = 1_000;
+
+/// How many of what uses the disk most the person is told of.
+const LARGEST: usize = 10;
+
+/// The most files and folders one look at what uses the disk reads, and how long it takes at
+/// most: past either it says what it saw, since an answer that's nearly right is what's wanted.
+const MOST_WALKED: u64 = 2_000_000;
+const WALKS_FOR: Duration = Duration::from_mins(1);
+
+/// How deep it looks, where a chain of folders could otherwise hold a file open at each.
+const DEEPEST: usize = 64;
+
+/// A folder's share of all that's looked at, one part in this, below which it isn't named: so what
+/// fills a folder as many small files names the folder rather than a few of them.
+const WORTH_NAMING: u64 = 20;
+
+/// What uses a computer's disk most, as its [`Keeper`] last looked, for the computer to say: empty
+/// until it finds it has nothing more it can free with more than 90% of the disk used.
+#[derive(Debug, Clone, Default)]
+pub struct Largest(Arc<Mutex<Vec<DiskUse>>>);
+
+impl Largest {
+    /// Says what uses it, as the test of a server that can't fill a disk does.
+    pub fn set(&self, largest: Vec<DiskUse>) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = largest;
+    }
+
+    pub(crate) fn get(&self) -> Vec<DiskUse> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+/// How far a look has got.
+struct Walk {
+    dev: u64,
+    walked: u64,
+    until: Instant,
+}
+
+impl Walk {
+    fn over(&self) -> bool {
+        self.walked > MOST_WALKED || Instant::now() > self.until
+    }
+
+    /// What `path` holds on the disk it looks at; a link or another disk counts nothing.
+    fn size_of(&mut self, path: &Path, depth: usize) -> u64 {
+        let Ok(metadata) = std::fs::symlink_metadata(path) else {
+            return 0;
+        };
+        self.walked = self.walked.saturating_add(1);
+        if metadata.dev() != self.dev || metadata.file_type().is_symlink() {
+            return 0;
+        }
+        let mut bytes = on_disk(&metadata);
+        if metadata.is_dir() && depth < DEEPEST {
+            let Ok(entries) = std::fs::read_dir(path) else {
+                return bytes;
+            };
+            for entry in entries.flatten() {
+                if self.over() {
+                    break;
+                }
+                bytes = bytes.saturating_add(self.size_of(&entry.path(), depth + 1));
+            }
+        }
+        bytes
+    }
+}
+
+/// The `kept` largest of `found`, largest first, the same path order each time.
+fn keep_largest(found: &mut Vec<DiskUse>, kept: usize) {
+    found.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.path.cmp(&b.path)));
+    found.truncate(kept);
+}
+
+/// What uses the disk under `home` most, the largest first: its files and each folder one level
+/// down that's worth naming, and of a folder what those leave, when that's worth naming too. A
+/// link or another disk counts nothing. Blocking, for a minute at most.
+pub(crate) fn largest(home: &Path) -> Vec<DiskUse> {
+    let Ok(here) = std::fs::symlink_metadata(home) else {
+        return Vec::new();
+    };
+    let Ok(tops) = std::fs::read_dir(home) else {
+        return Vec::new();
+    };
+    let mut walk = Walk {
+        dev: here.dev(),
+        walked: 0,
+        until: Instant::now() + WALKS_FOR,
+    };
+    let relative = |path: &Path| {
+        path.strip_prefix(home)
+            .unwrap_or(path)
+            .display()
+            .to_string()
+    };
+    let mut total: u64 = 0;
+    // Each folder at the top: its path, all it holds, and its largest entries.
+    let mut folders: Vec<(String, u64, Vec<DiskUse>)> = Vec::new();
+    let mut files: Vec<DiskUse> = Vec::new();
+    for top in tops.flatten() {
+        if walk.over() {
+            break;
+        }
+        let path = top.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !metadata.is_dir() {
+            let bytes = walk.size_of(&path, 0);
+            total = total.saturating_add(bytes);
+            files.push(DiskUse {
+                path: relative(&path),
+                bytes,
+            });
+            keep_largest(&mut files, LARGEST);
+            continue;
+        }
+        if metadata.dev() != here.dev() {
+            continue;
+        }
+        let (mut holds, mut inside) = (on_disk(&metadata), Vec::new());
+        for entry in std::fs::read_dir(&path).into_iter().flatten().flatten() {
+            if walk.over() {
+                break;
+            }
+            let bytes = walk.size_of(&entry.path(), 1);
+            holds = holds.saturating_add(bytes);
+            inside.push(DiskUse {
+                path: relative(&entry.path()),
+                bytes,
+            });
+            keep_largest(&mut inside, LARGEST);
+        }
+        total = total.saturating_add(holds);
+        folders.push((relative(&path), holds, inside));
+    }
+    named(total, folders, files)
+}
+
+/// Of what a look found, `total` in all, what's worth naming.
+fn named(
+    total: u64,
+    folders: Vec<(String, u64, Vec<DiskUse>)>,
+    files: Vec<DiskUse>,
+) -> Vec<DiskUse> {
+    let worth = |bytes: u64| bytes > 0 && bytes >= total / WORTH_NAMING;
+    let mut found: Vec<DiskUse> = files.into_iter().filter(|file| worth(file.bytes)).collect();
+    for (path, holds, inside) in folders {
+        let listed: Vec<DiskUse> = inside
+            .into_iter()
+            .filter(|entry| worth(entry.bytes))
+            .collect();
+        let rest = holds.saturating_sub(listed.iter().map(|entry| entry.bytes).sum());
+        found.extend(listed);
+        if worth(rest) {
+            found.push(DiskUse { path, bytes: rest });
+        }
+    }
+    keep_largest(&mut found, LARGEST);
+    found
+}
+
+/// What a file takes on the disk: its blocks, not its length, which a sparse file overstates.
+fn on_disk(metadata: &std::fs::Metadata) -> u64 {
+    metadata.blocks().saturating_mul(512)
+}
 
 /// The space on the disk `path` is on, as the system says.
 pub(crate) fn space(path: &Path) -> std::io::Result<DiskSpace> {
@@ -108,19 +287,22 @@ pub struct Keeper {
     busy: Box<dyn Fn() -> bool + Send + Sync>,
     clock: Box<dyn Clock>,
     measure: Measure,
+    /// What it found uses the disk, which its computer says.
+    largest: Largest,
 }
 
 impl Keeper {
     /// A keeper of the disk the person's home is on, in `environment` (`HOME` and the XDG
     /// folders read from it), recording in glave's folder `glave`, freeing build outputs in
     /// the worktrees under `worktrees`, running git as one of `processes`, never while
-    /// `busy`.
+    /// `busy`, and saying in `largest` what uses the disk when nothing more can go.
     pub fn new(
         glave: PathBuf,
         worktrees: PathBuf,
         processes: Processes,
         environment: Vec<(OsString, OsString)>,
         busy: Box<dyn Fn() -> bool + Send + Sync>,
+        largest: Largest,
     ) -> Self {
         let read = |name: &str| {
             environment
@@ -142,6 +324,7 @@ impl Keeper {
             busy,
             clock: Box::new(SystemClock),
             measure: Box::new(space),
+            largest,
         }
     }
 
@@ -161,14 +344,32 @@ impl Keeper {
                 continue;
             }
             match self.keep(&quiet).await {
-                Ok(true) => {}
-                Ok(false) => wait = AFTER_FULL,
+                Ok(true) => self.largest.set(Vec::new()),
+                Ok(false) => {
+                    self.look_at_what_is_left().await;
+                    wait = AFTER_FULL;
+                }
                 Err(error) => {
                     self.note(&format!("could not keep the disk: {error}"))
                         .await;
                 }
             }
         }
+    }
+
+    /// With nothing more to free, notes what uses the disk when more than 90% of it is used; a
+    /// walk of the home, so it runs here, between requests, and never as one.
+    async fn look_at_what_is_left(&self) {
+        let short = (self.measure)(&self.home).is_ok_and(DiskSpace::short);
+        let home = self.home.clone();
+        let found = if short {
+            tokio::task::spawn_blocking(move || largest(&home))
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        self.largest.set(found);
     }
 
     /// While the disk is full and `quiet` says nothing runs, frees what can be rebuilt, in
@@ -227,6 +428,20 @@ impl Keeper {
         }
         let mut caches: Vec<PathBuf> = CACHES.iter().map(|cache| self.home.join(cache)).collect();
         caches.extend(folders(&self.caches).await.unwrap_or_default());
+        let in_the_sandbox = self.glave.join(crate::local::CACHE_FOLDER);
+        let kept = in_the_sandbox.clone();
+        caches.extend(
+            folders(&in_the_sandbox)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|folder| {
+                    !HOMES_IN_THE_SANDBOX
+                        .iter()
+                        .any(|home| *folder == kept.join(home))
+                }),
+        );
+        caches.extend(FETCHED_IN_THE_SANDBOX.iter().map(|cache| kept.join(cache)));
         let trash = match &self.trash {
             Some(trash) => trash.held(MOST_LOOKED_AT).await,
             None => Vec::new(),

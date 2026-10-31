@@ -11,13 +11,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_computer::{LocalComputers, Wake, Waking};
-use glave_event::{PrincipalId, StopReason};
-use glave_harness::{AllowAll, Cancel, Homes, Place, ProjectFolders, Workspace};
-use glave_ports::computer::{ComputerError, Home};
+use glave_event::{HookPoint, Permissions, PrincipalId, StopReason};
+use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
+use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel};
+use glave_ports::settings::{Hook, Hooks};
 use glave_ports::stream::Reserved;
-use glave_ports::{BoxFuture, EventLog, InMemoryLog, OrgId};
+use glave_ports::{BoxFuture, Caller, EventLog, InMemoryLog, OrgId};
 use serde_json::json;
 
+use crate::outside_sandbox::{Person, sandboxed};
 use crate::support::*;
 use crate::wire::home_across_the_wire;
 
@@ -50,6 +52,10 @@ impl Homes for Reached {
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(()))
     }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        None
+    }
 }
 
 /// Everyone's computer the same one reached across the protocol, behind a [`Waking`] that wakes
@@ -58,6 +64,7 @@ impl Homes for Reached {
 struct Sleepy {
     planned: Home,
     asked: Arc<AtomicUsize>,
+    sandbox: Option<Sandbox>,
 }
 
 impl Sleepy {
@@ -82,11 +89,27 @@ impl Sleepy {
         });
         let scratch = scratch.to_string_lossy();
         let planned = Waking::home(wake, None, reached.home.clone(), &scratch);
-        Self { planned, asked }
+        Self {
+            planned,
+            asked,
+            sandbox: None,
+        }
     }
 
     fn asked(&self) -> usize {
         self.asked.load(Ordering::SeqCst)
+    }
+
+    /// `reached`, its home at `home`, its commands in glave's sandbox.
+    fn in_sandbox(reached: &Home, scratch: &Path, home: &Path) -> Self {
+        let mut sleepy = Self::new(reached, scratch);
+        sleepy.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: Some(home.to_owned()),
+            glave_home: Some(home.join(".glave")),
+        });
+        sleepy
     }
 }
 
@@ -97,6 +120,10 @@ impl Homes for Sleepy {
 
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(()))
+    }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        self.sandbox.clone()
     }
 }
 
@@ -251,6 +278,182 @@ fn a_project_s_thread_opens_with_its_last_read_and_reaches_the_computer_only_for
         let (scope, ledger) = (scope(), Reserved::Instructions.id());
         let kept = harness.log().read(&scope, ledger, None, usize::MAX);
         assert_eq!(kept.await.unwrap().len(), 1, "one read kept, not more");
+        serving.abort();
+    });
+}
+
+/// glave's sandbox on a person's computer, as on this one, across the protocol: a thread started
+/// and talked to asks nothing of the computer, no sandbox wakes it, and at each level a command
+/// is held there with no one asked: in Auto to the project, in Ask first to nothing it can write.
+#[test]
+fn commands_on_a_person_s_computer_run_in_glave_s_sandbox_and_nothing_is_asked() {
+    let Some(base) = sandboxed("home") else {
+        return;
+    };
+    let server = folder("walled-server");
+    let home = base.join("home");
+    let project = home.join("app");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    block_on!(async {
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
+        let computers = Arc::new(LocalComputers::new(base.join("copies"), environment));
+        let (reached, serving) = home_across_the_wire(computers, &home).await;
+        let run = |command: &str| {
+            answer(
+                None,
+                vec![("bash", json!({ "command": command }))],
+                StopReason::ToolUse,
+            )
+        };
+        let answers = vec![
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+            run("echo kept > kept; echo lost > ../lost"),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+            run("echo asked > asked"),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let person = Person::answering(Decision::Deny);
+        let (harness, _) = harness_seeing(
+            &server,
+            answers,
+            person.clone(),
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        )
+        .await;
+        let sleepy = Arc::new(Sleepy::in_sandbox(&reached, &base.join("scratch"), &home));
+        let harness = harness.with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
+        let place = || Place::Folder(project.to_string_lossy().into_owned());
+
+        let mut auto = thread_in(&harness, place()).await;
+        turn(&harness, &mut auto, "hello").await;
+        assert_eq!(sleepy.asked(), 0, "a thread that only talks wakes nothing");
+        turn(&harness, &mut auto, "write").await;
+        assert!(sleepy.asked() > 0, "the command wakes it");
+        assert!(project.join("kept").exists(), "the project is writable");
+        assert!(!home.join("lost").exists(), "what is beside it is not");
+
+        let mut asking = thread_in(&harness, place()).await;
+        harness
+            .choose_permissions(&mut asking, &Caller::default(), Permissions::Ask)
+            .await
+            .unwrap();
+        turn(&harness, &mut asking, "write").await;
+        assert!(!project.join("asked").exists(), "Ask first's sandbox holds");
+        assert!(person.asked().is_empty(), "the sandbox holds: no one asked");
+        serving.abort();
+    });
+}
+
+/// What the host says of a project there: its trusted hook, whatever its `config.toml` holds.
+struct HookThere(Hook);
+
+impl ProjectFolders for HookThere {
+    fn for_folder<'a>(
+        &'a self,
+        _root: &'a Path,
+        _project: Option<&'a Path>,
+        _trusting: bool,
+    ) -> BoxFuture<'a, Option<String>> {
+        Box::pin(std::future::ready(None))
+    }
+
+    fn hooks_at_home<'a>(
+        &'a self,
+        _scope: glave_ports::Scope,
+        _project: &'a Path,
+        _config: &'a str,
+    ) -> BoxFuture<'a, Hooks> {
+        let hooks = Hooks::new(vec![self.0.clone()]).unwrap();
+        Box::pin(std::future::ready(hooks))
+    }
+}
+
+/// A trusted hook of a project there runs on that computer through the port, in its sandbox. A
+/// turn no hook applies to wakes nothing; one that a hook applies to wakes it, talking or not.
+#[test]
+fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_waking_it_only_where_it_applies() {
+    let Some(base) = sandboxed("home-hook") else {
+        return;
+    };
+    let server = folder("hook-server");
+    let home = base.join("home");
+    let project = home.join("app");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::create_dir_all(project.join(".glave")).unwrap();
+    std::fs::write(
+        project.join(".glave/config.toml"),
+        "[[hooks.PostToolUse]]\n",
+    )
+    .unwrap();
+    block_on!(async {
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
+        let computers = Arc::new(LocalComputers::new(base.join("copies"), environment));
+        let (reached, serving) = home_across_the_wire(computers, &home).await;
+        let answers = vec![
+            answer(
+                None,
+                vec![("bash", json!({ "command": "true" }))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+            answer(Some("Hello."), vec![], StopReason::EndTurn),
+            answer(Some("Bye."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_seeing(
+            &server,
+            answers,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        )
+        .await;
+        let hook = Hook {
+            point: HookPoint::PostToolUse,
+            matcher: None,
+            command: "echo ran > hook-ran; echo lost > ../hook-lost".to_owned(),
+            timeout_secs: None,
+        };
+        let sleepy = Arc::new(Sleepy::in_sandbox(&reached, &base.join("scratch"), &home));
+        let harness = harness
+            .with_project_folders(Some(Arc::new(HookThere(hook))))
+            .with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
+        let path = project.to_string_lossy().into_owned();
+        let reached_again = reached.clone();
+        let at_home = Workspace::new(reached.computers, reached.home);
+        harness.keep_instructions(scope(), &at_home, &path).await;
+
+        // Started and talked to, with a hook only after tools, it reaches nothing.
+        let mut talking = thread_in(&harness, Place::Folder(path.clone())).await;
+        let mut working = thread_in(&harness, Place::Folder(path)).await;
+        turn(&harness, &mut working, "run it").await;
+        assert!(project.join("hook-ran").exists(), "it ran on that computer");
+        assert!(!home.join("hook-lost").exists(), "in its sandbox");
+        let woken = sleepy.asked();
+        turn(&harness, &mut talking, "hello").await;
+        assert_eq!(sleepy.asked(), woken, "no hook applies: it asks nothing");
+
+        // A hook as a turn ends is a command there, so it applies to one that only talks.
+        let at_the_end = Hook {
+            point: HookPoint::Stop,
+            matcher: None,
+            command: "echo ended > hook-ended".to_owned(),
+            timeout_secs: None,
+        };
+        let later = Arc::new(Sleepy::in_sandbox(
+            &reached_again,
+            &base.join("scratch"),
+            &home,
+        ));
+        let harness = harness
+            .with_project_folders(Some(Arc::new(HookThere(at_the_end))))
+            .with_homes(Some(Arc::clone(&later) as Arc<dyn Homes>));
+        let mut resumed = harness.resume_thread(scope(), talking.id).await.unwrap();
+        turn(&harness, &mut resumed, "bye").await;
+        assert!(later.asked() > 0, "the hook wakes it");
+        assert!(project.join("hook-ended").exists(), "and ran there");
         serving.abort();
     });
 }

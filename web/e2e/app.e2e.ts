@@ -292,3 +292,15 @@ test('tasks, settings and memory open from the side nav', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Memory' })).toBeVisible();
   await expectAccessible(page);
 });
+
+/** The check of accessibility relies on nothing moving with motion off, so it says what could. */
+test('a check of accessibility names what would still move with motion off', async ({ page }) => {
+  await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  await byTestId(page, 'home-composer-input').waitFor();
+  await page.evaluate(() => {
+    document.body.classList.add('still-moves');
+    document.body.style.transition = 'color 1s';
+  });
+  await expect(expectAccessible(page)).rejects.toThrow('body.still-moves');
+});

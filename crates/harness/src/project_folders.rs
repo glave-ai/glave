@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use glave_event::Permissions;
 use glave_ports::settings::{Hooks, Judge, Protections};
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, ToolSource};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, Scope, ToolSource};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -41,12 +41,30 @@ pub trait ProjectFolders: Send + Sync {
         Box::pin(async { Settled::default() })
     }
 
-    /// What a project on a person's own computer chooses for its threads, from `config`, its
-    /// `config.toml` as last read there at `project`: within the server's constraints, and
-    /// without what loosens commands, which nothing there has trusted. Nothing by default.
-    fn settled_at_home<'a>(&'a self, project: &'a Path, config: &'a str) -> BoxFuture<'a, Settled> {
-        let _ = (project, config);
+    /// What the project of `scope`, on its person's own computer, chooses for its threads, from
+    /// `config`, its `config.toml` as last read there at `project`: within the server's
+    /// constraints, what needs trust only once they trusted it. Nothing by default.
+    fn settled_at_home<'a>(
+        &'a self,
+        scope: Scope,
+        project: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Settled> {
+        let _ = (scope, project, config);
         Box::pin(async { Settled::default() })
+    }
+
+    /// The hooks of the project of `scope` on its person's own computer that they trusted, from
+    /// `config`, its `config.toml` as last read there at `project`: run there through the
+    /// computer port, in its sandbox. None by default.
+    fn hooks_at_home<'a>(
+        &'a self,
+        scope: Scope,
+        project: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Hooks> {
+        let _ = (scope, project, config);
+        Box::pin(async { Hooks::default() })
     }
 
     /// What the project whose folder is `project`, the project `id`, chooses and turns on
@@ -124,9 +142,15 @@ where
         let mode = thread.defaults.permissions(protections, thread.permissions);
         let planning = mode == Permissions::Plan;
         // A worker's own container or virtual machine is its wall: only this computer's
-        // commands run in the sandbox.
-        if workspace.info().computer == self.workspace.info().computer {
-            let wanted = protections.sandbox(mode, thread.defaults.sandbox.as_ref());
+        // commands and those on a person's own computer run in the sandbox.
+        let here = workspace.info().computer == self.workspace.info().computer;
+        if here || thread.home.is_some() {
+            let most = if here {
+                thread.defaults.sandbox.as_ref()
+            } else {
+                thread.defaults.home_sandbox.as_ref()
+            };
+            let wanted = protections.sandbox(mode, most);
             let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref()
                 || workspace.asks_network() != asks

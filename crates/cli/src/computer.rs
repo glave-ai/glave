@@ -12,8 +12,8 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, bail};
 use glave_computer::{
-    Identity, Idle, Keeper, LocalComputers, MIN_SECRET, Tokens, bridge, listen_socket, serve,
-    serve_socket, serve_tcp, serve_tls,
+    Identity, Idle, Keeper, Largest, LocalComputers, MIN_SECRET, Tokens, bridge, listen_socket,
+    serve, serve_socket, serve_tcp, serve_tls,
 };
 use glave_ports::computer::Computers;
 use glave_ports::{Clock as _, SystemClock};
@@ -233,15 +233,24 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
     let processes = home::reaped().await?;
+    let largest = Largest::default();
     let keeping = Keeping {
         processes: processes.clone(),
         glave: home.clone(),
+        largest: largest.clone(),
+    };
+    // The token a computer on a socket serves with is its own, and no command's to read.
+    let hidden: Vec<PathBuf> = match &transport {
+        Transport::Socket(_, folder, _) => vec![folder.clone()],
+        Transport::Stdio | Transport::Tcp(_) | Transport::Tls(..) => Vec::new(),
     };
     let computers = crate::helpers::with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
             .with_scratch(home.join(crate::worktrees::SCRATCH))
             .with_projects(home::projects()?)
+            .with_hidden(hidden)
+            .with_largest(largest)
             .with_processes(processes),
     );
     let computers = Arc::new(crate::helpers::with_glave_on_path(computers, &home).await?);
@@ -323,6 +332,7 @@ async fn on_socket<C: Computers + 'static>(
             keeping.processes,
             std::env::vars_os().collect(),
             Box::new(busy),
+            keeping.largest,
         )
     });
     serve_socket(computers, listener, token, idle, keeper)
@@ -335,6 +345,7 @@ async fn on_socket<C: Computers + 'static>(
 struct Keeping {
     processes: Processes,
     glave: PathBuf,
+    largest: Largest,
 }
 
 /// The token in `folder`, read again for each connection so the harness can renew it, and

@@ -325,4 +325,6 @@ impl Backend for PersonComputer {
 #[cfg(test)]
 mod measured;
 #[cfg(test)]
+mod sandboxed;
+#[cfg(test)]
 pub(super) mod tests;

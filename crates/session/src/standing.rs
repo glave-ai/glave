@@ -15,7 +15,7 @@ use tokio::sync::watch;
 
 use crate::choice::Choice;
 use crate::held::{Slot, Use, finished};
-use crate::protocol::{ApiError, ContextUse, Reply, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, ContextUse, DiskShort, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
 
@@ -277,6 +277,19 @@ where
         let context = view.context.as_ref().map(|last| {
             ContextUse::of(last.tokens, self.inner.harness.context_window(&last.model))
         });
+        let disk = theirs
+            .and_then(|person| self.inner.harness.short_of_room(scope.org(), person))
+            .map(|short| {
+                Box::new(DiskShort {
+                    told: Sentence::DiskShort {
+                        percent: short.disk.percent_used().to_string(),
+                    }
+                    .into(),
+                    size: short.disk.size,
+                    free: short.disk.free,
+                    largest: short.largest,
+                })
+            });
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -299,6 +312,7 @@ where
             estimated: view.estimated,
             workspace,
             context,
+            disk,
         })
     }
 
