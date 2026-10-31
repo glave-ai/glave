@@ -3,6 +3,8 @@
 //! accounts and builds models from them; the server decides who may ask, and offers the
 //! models each change leaves.
 
+use std::sync::PoisonError;
+
 use glave_event::{AuthMethod, ProviderId, ProviderKind, Secret};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
@@ -166,7 +168,15 @@ where
                 tracing::warn!("could not run the refreshed models: {}", error.message);
             }
         });
-        self.own(task);
+        let before = self
+            .inner
+            .refreshing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace(task);
+        if let Some(before) = before {
+            before.abort();
+        }
     }
 
     /// Runs the models of the accounts kept now, when `changed`.

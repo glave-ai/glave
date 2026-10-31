@@ -7,11 +7,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
-use glave_event::{Catalog, CatalogProvider, ProviderConnected, ProviderKind};
+use glave_event::{
+    Catalog, CatalogProvider, Principal, ProviderConnected, ProviderId, ProviderKind,
+};
 use glave_gateway::{Gateway, Router, Target};
 use glave_ports::settings::Judge;
 use glave_session::Models;
 use glave_session::protocol::ModelInfo;
+use jiff::Timestamp;
 
 use crate::config::Endpoint;
 use crate::gateway::remote::Remote;
@@ -32,6 +35,8 @@ pub(crate) struct Lineup {
     entries: Vec<ModelEntry>,
     entries_from: Source,
     constraints: Constraints,
+    /// Whether the server keeps credits (`[credits]`).
+    credits: bool,
 }
 
 /// The models of one lineup: the gateway to them, what `model/list` offers, and the endpoint
@@ -61,6 +66,7 @@ impl Lineup {
                 .as_ref()
                 .map_or(Source::Default, |models| models.from.clone()),
             constraints: setup.loaded.constraints.clone(),
+            credits: choices.credits.is_some(),
         }
     }
 
@@ -77,17 +83,23 @@ impl Lineup {
         if provider.provider != "openrouter" || !super::at_openrouter(&provider.base_url) {
             return None;
         }
-        super::unconnected(
-            ProviderKind::Openrouter,
-            provider.auth.fixed_key()?,
-            &endpoint.model,
-        )
+        Some(ProviderConnected {
+            // Never kept or shown: it only has to be one.
+            provider: ProviderId::new(Timestamp::UNIX_EPOCH, [0; 10]).ok()?,
+            kind: ProviderKind::Openrouter,
+            url: None,
+            key: provider.auth.fixed_key()?.clone(),
+            models: vec![endpoint.model.clone()],
+            by: Principal::glave(),
+        })
     }
 
-    /// Whether the server's own account offers `model`: every model its catalog lists, unless
-    /// the settings name the models to offer, then those, the main model and the judge's.
+    /// Whether the server's own account offers `model`, `main` being the model its settings
+    /// choose: every model its catalog lists on a server whose people pay for what they use and
+    /// whose settings name no models, otherwise only those it names, `main` and the judge's. So
+    /// choosing one model in the settings never offers everyone the rest on the server's key.
     fn offers(&self, model: &str, main: &str) -> bool {
-        self.entries.is_empty()
+        (self.credits && self.entries.is_empty())
             || model == main
             || self.judge.model(main).as_deref() == Some(model)
             || self.entries.iter().any(|entry| entry.id.trim() == model)
@@ -124,12 +136,15 @@ impl Lineup {
                     })
                 })
                 .collect();
-            let Some(endpoint) = allowed
+            let Some(mut endpoint) = allowed
                 .first()
                 .and_then(|model| super::endpoint_of(account, model))
             else {
                 continue;
             };
+            if let Some(configured) = self.configured.as_ref().filter(|_| own_main.is_some()) {
+                endpoint.provider.idle_timeout = configured.provider.idle_timeout;
+            }
             let handle: Arc<dyn glave_gateway::Model> = Arc::new(Model::for_endpoint(&endpoint)?);
             let provider = &endpoint.provider.provider;
             let catalog = super::catalog_of(account, catalogs);
@@ -256,4 +271,65 @@ fn target_at(
     let target =
         Target::new(Arc::clone(handle), provider, model).at_service(service_name(provider));
     describe::described(routing_if_router(target, provider, router), card)
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_ports::testing::fake_secret;
+
+    use super::*;
+
+    /// A lineup whose settings choose `model` at `url`, named `provider`.
+    fn lineup(url: &str, provider: &str, model: &str) -> Lineup {
+        let mut config =
+            glave_provider_openai::Config::for_url(url, Some(fake_secret("sk-or-"))).unwrap();
+        provider.clone_into(&mut config.provider);
+        Lineup {
+            configured: Some(Endpoint {
+                local: false,
+                provider: config,
+                claude: None,
+                model: model.to_owned(),
+                gateway: None,
+                at: String::new(),
+                key_from: "",
+            }),
+            judge: Judge::Main,
+            judge_from: Source::Default,
+            main_from: None,
+            entries: Vec::new(),
+            entries_from: Source::Default,
+            constraints: Constraints::default(),
+            credits: false,
+        }
+    }
+
+    const OPENROUTER: &str = "https://openrouter.ai/api/v1";
+
+    #[test]
+    fn only_openrouter_itself_is_the_servers_own_account() {
+        let own = lineup(OPENROUTER, "openrouter", "m").own_account().unwrap();
+        assert!(own.key.expose().starts_with("sk-or-"));
+        assert_eq!(own.models, ["m"]);
+        assert!(
+            lineup("https://keys.example.com/v1", "openrouter", "m")
+                .own_account()
+                .is_none(),
+            "a key named for OpenRouter never goes elsewhere for a catalog"
+        );
+        assert!(lineup(OPENROUTER, "other", "m").own_account().is_none());
+    }
+
+    #[test]
+    fn the_whole_catalog_is_offered_only_where_people_pay_and_no_models_are_named() {
+        let mut plain = lineup(OPENROUTER, "openrouter", "m");
+        assert!(plain.offers("m", "m") && !plain.offers("n", "m"));
+        plain.credits = true;
+        assert!(plain.offers("n", "m"));
+        plain.entries = vec![ModelEntry {
+            id: "n".to_owned(),
+            name: None,
+        }];
+        assert!(plain.offers("n", "m") && plain.offers("m", "m") && !plain.offers("o", "m"));
+    }
 }

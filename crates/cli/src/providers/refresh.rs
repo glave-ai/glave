@@ -163,15 +163,23 @@ async fn listed(
                 format!("{service} could not say who serves its models: {why}"),
             )
         };
-        let (providers, whole) = endpoints::read(model, &mut models, before)
-            .await
-            .map_err(unread)?;
-        if !whole {
-            late = Some(unread(
-                "some models' providers were not read in time".to_owned(),
-            ));
+        match endpoints::read(model, &mut models, before).await {
+            Ok((providers, whole)) => {
+                if !whole {
+                    late = Some(unread(
+                        "some models' providers were not read in time".to_owned(),
+                    ));
+                }
+                providers
+            }
+            // With no catalog yet its models' prices are worth keeping without their providers:
+            // the listing is due again, and filters by country refuse until then.
+            Err(why) if old.is_none() => {
+                late = Some(unread(why));
+                Vec::new()
+            }
+            Err(why) => return Err(unread(why)),
         }
-        providers
     } else {
         Vec::new()
     };

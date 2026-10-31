@@ -201,3 +201,28 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
         sent.body
     );
 }
+
+#[test]
+fn a_server_people_sign_in_to_with_oidc_reads_its_own_openrouter_too() {
+    let place = place("oidc-own-openrouter");
+    let router = own_openrouter();
+    let at = format!("{}/api/v1", router.url);
+    let env = [
+        ("GLAVE_PROVIDER", "openrouter"),
+        ("GLAVE_OPENROUTER_URL", at.as_str()),
+    ];
+    let args = [
+        "--model",
+        OWN_MODEL,
+        "--issuer",
+        "https://id.example.com",
+        "--audience",
+        "glave",
+    ];
+    let (_served, url, _) = serve_http_at(&place, &at, &args, &env);
+    let api = Api::new(&place, &url);
+    let refreshed = api.call("provider/refresh", json!({}));
+    assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
+    let entry = own_entry(&api);
+    assert_eq!(entry["endpoints"][0]["based_in"], "US", "{entry}");
+}
