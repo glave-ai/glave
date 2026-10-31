@@ -70,8 +70,10 @@ pub(crate) struct People {
     /// The `seq` the next event will take.
     next: u64,
     known: BTreeMap<PrincipalId, Kept>,
-    /// Those removed and not back by an invite since.
-    removed: BTreeSet<PrincipalId>,
+    /// Those removed and not back by an invite since, each with who removed them.
+    removed: BTreeMap<PrincipalId, Principal>,
+    /// Whether someone was removed since the watches were last told.
+    heard_removal: bool,
     /// Whom glave made its Owner as it made it, by sign-up: whose own it is.
     founder: Option<PrincipalId>,
     /// The invites made and not yet spent or revoked, expired ones included until dropped.
@@ -90,21 +92,46 @@ pub(crate) struct Acting {
 /// What each organization's people ledger says, as far as this server has read it. Past
 /// [`PEOPLES`] organizations, the others are forgotten and read again when next asked for.
 #[derive(Debug, Default)]
-pub(crate) struct Peoples(HashMap<OrgId, People>);
+pub(crate) struct Peoples {
+    held: HashMap<OrgId, People>,
+    /// How many watches follow someone's place in each organization: its ledger is read again
+    /// while any does, so a removal on another server reaches them (`removing.rs`).
+    watched: BTreeMap<OrgId, usize>,
+}
 
 impl Peoples {
     /// Whether `person` was removed from `org`, as far as this server has read.
     pub(crate) fn removed(&self, org: OrgId, person: PrincipalId) -> bool {
-        self.0
+        self.held
             .get(&org)
             .is_some_and(|people| people.removed(person))
     }
 
-    fn of(&mut self, org: OrgId) -> &mut People {
-        if self.0.len() >= PEOPLES && !self.0.contains_key(&org) {
-            self.0.clear();
+    /// One more watch follows someone's place in `org`.
+    pub(crate) fn watch(&mut self, org: OrgId) {
+        *self.watched.entry(org).or_default() += 1;
+    }
+
+    /// A watch that followed someone's place in `org` has ended.
+    pub(crate) fn unwatch(&mut self, org: OrgId) {
+        if let Some(watches) = self.watched.get_mut(&org) {
+            *watches = watches.saturating_sub(1);
+            if *watches == 0 {
+                self.watched.remove(&org);
+            }
         }
-        self.0.entry(org).or_default()
+    }
+
+    /// The organizations watches follow someone's place in.
+    pub(crate) fn watched(&self) -> impl Iterator<Item = OrgId> {
+        self.watched.keys().copied()
+    }
+
+    fn of(&mut self, org: OrgId) -> &mut People {
+        if self.held.len() >= PEOPLES && !self.held.contains_key(&org) {
+            self.held.clear();
+        }
+        self.held.entry(org).or_default()
     }
 }
 
@@ -135,7 +162,8 @@ impl People {
             }
             Body::PersonRemoved(gone) => {
                 self.known.remove(&gone.person);
-                self.removed.insert(gone.person);
+                self.removed.insert(gone.person, gone.by);
+                self.heard_removal = true;
             }
             Body::RoleSet(set) => {
                 if set.by.kind == glave_event::PrincipalKind::Glave && self.founder.is_none() {
@@ -171,7 +199,12 @@ impl People {
 
     /// Whether `person` was removed, and has not come back by an invite since.
     pub(crate) fn removed(&self, person: PrincipalId) -> bool {
-        self.removed.contains(&person)
+        self.removed.contains_key(&person)
+    }
+
+    /// Who removed `person`, while they have not come back by an invite since.
+    pub(crate) fn removed_by(&self, person: PrincipalId) -> Option<Principal> {
+        self.removed.get(&person).cloned()
     }
 
     /// Whether `person` is in the ledger now.
@@ -528,7 +561,16 @@ where
             });
         })
         .await?;
+        self.tell_of_removals(org);
         Ok(())
+    }
+
+    /// Tells every watch here a sign-in may have ended, when reading `org`'s ledger found
+    /// someone removed, wherever they were: theirs end at once.
+    fn tell_of_removals(&self, org: OrgId) {
+        if self.people(org, |people| std::mem::take(&mut people.heard_removal)) {
+            self.inner.hub.sign_ins_changed();
+        }
     }
 
     /// What `org`'s people ledger says, read apart from what this server keeps: for what a
@@ -588,6 +630,7 @@ where
                 held.apply(raw);
             }
         });
+        self.tell_of_removals(org);
         Ok(())
     }
 
@@ -615,5 +658,22 @@ where
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         look(held.of(org))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_organization_is_followed_only_while_a_watch_is_on_it() {
+        let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
+        let mut peoples = Peoples::default();
+        peoples.watch(org);
+        peoples.watch(org);
+        peoples.unwatch(org);
+        assert_eq!(peoples.watched().collect::<Vec<_>>(), [org]);
+        peoples.unwatch(org);
+        assert_eq!(peoples.watched().count(), 0);
     }
 }

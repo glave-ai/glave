@@ -58,6 +58,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
+# Time held still, to say how long a server takes to hear of a removal.
+tokio = { workspace = true, features = ["test-util"] }
 # The software authenticator the passkey tests sign in with.
 glave-identity = { workspace = true, features = ["fake-authenticator"] }
 glave-computer.workspace = true
