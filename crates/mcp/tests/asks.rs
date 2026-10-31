@@ -48,7 +48,8 @@ async fn ask(server: &McpServer, what: &str, given: Option<ServiceGiven>) -> Cal
         .await
 }
 
-/// What `called` asks; it must ask.
+/// What `called` asks; it must ask. What it came to instead is the service's own words: its
+/// answer never echoes what the person typed.
 fn asks(called: Called) -> ServiceAsks {
     match called {
         Called::Asks(asks) => asks,
@@ -60,7 +61,7 @@ fn asks(called: Called) -> ServiceAsks {
 fn done(called: Called) -> ToolOutput {
     match called {
         Called::Done(output) => output,
-        Called::Asks(asks) => panic!("it asked: {asks:?}"),
+        Called::Asks(_) => panic!("it asked"),
     }
 }
 
@@ -74,13 +75,14 @@ fn answered(asks: ServiceAsks, values: &Value) -> ServiceGiven {
     }
 }
 
-/// What the server heard from the person.
-async fn heard(server: &McpServer) -> Value {
+/// Whether the server heard `answers` from the person, compared here so that a failure never
+/// prints what was typed.
+async fn heard_is(server: &McpServer, answers: &Value) -> bool {
     let none = arguments(json!({}));
     let said = server
         .call("mcp__github__answers", &none, &NeverCancelled)
         .await;
-    serde_json::from_str(&text(&said)).unwrap()
+    serde_json::from_str::<Value>(&text(&said)).unwrap() == *answers
 }
 
 #[test]
@@ -103,15 +105,16 @@ fn a_form_comes_back_and_the_call_goes_on_with_the_answer() {
         );
         let typed = json!({"label": "bug", "note": "only the service reads this"});
         let output = done(ask(&server, "form", Some(answered(form, &typed))).await);
-        assert!(!output.is_error, "{output:?}");
-        assert_eq!(heard(&server).await, json!([typed]));
+        assert!(heard_is(&server, &json!([typed])).await);
         let said = text(&output);
+        // First, so what the rest print cannot hold what was typed.
+        assert!(!said.contains("only the service reads this"));
+        assert!(!output.is_error, "{said}");
         assert!(said.contains("You said: accept"), "{said}");
         assert!(
             said.contains("[github asked the person something directly"),
             "{said}"
         );
-        assert!(!said.contains("only the service reads this"), "{said}");
         server.close().await;
     });
 }
@@ -128,7 +131,7 @@ fn a_person_who_declines_is_said_to_have_and_the_call_goes_on() {
         let said = text(&done(ask(&server, "form", Some(given)).await));
         assert!(said.contains("You said: decline"), "{said}");
         assert!(said.contains("they declined"), "{said}");
-        assert_eq!(heard(&server).await, json!([]));
+        assert!(heard_is(&server, &json!([])).await);
         server.close().await;
     });
 }
@@ -144,10 +147,7 @@ fn a_second_round_asks_again_and_keeps_what_it_asked_to_have_back() {
         assert_eq!(second.message, "And then?");
         let given = answered(second, &json!({"label": "idea"}));
         done(ask(&server, "twice", Some(given)).await);
-        assert_eq!(
-            heard(&server).await,
-            json!([{"label": "bug"}, {"label": "idea"}])
-        );
+        assert!(heard_is(&server, &json!([{"label": "bug"}, {"label": "idea"}])).await);
         server.close().await;
     });
 }
@@ -161,13 +161,13 @@ fn several_forms_in_a_round_reach_the_person_one_at_a_time() {
         let given = answered(first, &json!({"label": "bug"}));
         let second = asks(ask(&server, "several", Some(given)).await);
         assert_eq!(second.message, "Second?");
-        assert_eq!(heard(&server).await, json!([]), "the round waits for both");
+        assert!(
+            heard_is(&server, &json!([])).await,
+            "the round waits for both"
+        );
         let given = answered(second, &json!({"label": "idea"}));
         let said = text(&done(ask(&server, "several", Some(given)).await));
-        assert_eq!(
-            heard(&server).await,
-            json!([{"label": "bug"}, {"label": "idea"}])
-        );
+        assert!(heard_is(&server, &json!([{"label": "bug"}, {"label": "idea"}])).await);
         assert!(said.contains("You said: accept, accept"), "{said}");
         server.close().await;
     });
@@ -250,7 +250,7 @@ fn a_server_on_the_older_protocol_is_declined_at_once_so_nothing_hangs() {
         let server = start(&["--legacy"]).await;
         let said = text(&done(ask(&server, "form", None).await));
         assert_eq!(said, "You said: Decline");
-        assert_eq!(heard(&server).await, json!([]));
+        assert!(heard_is(&server, &json!([])).await);
         server.close().await;
     });
 }

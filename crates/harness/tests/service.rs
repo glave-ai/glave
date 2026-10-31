@@ -137,17 +137,17 @@ fn a_call_that_asks_waits_in_the_log_and_goes_on_with_the_answer() {
         // The source had it back, what it kept and what was typed.
         let given = source.given();
         assert_eq!(given.len(), 2);
-        assert_eq!(
-            given[1],
-            Some(ServiceGiven {
+        // Compared without printing: a failure must not show what was typed.
+        let same = given[1]
+            == Some(ServiceGiven {
                 state: json!({"round": "kept"}),
                 answer: typed(),
-            })
-        );
+            });
+        assert!(same);
         // No event, and nothing the model is sent, holds what was typed.
         assert!(!raw(harness.log(), thread.id).await.contains(TYPED));
         let sent = format!("{:?}", seen.lock().unwrap().last().unwrap().messages);
-        assert!(!sent.contains(TYPED), "{sent}");
+        assert!(!sent.contains(TYPED));
         let events = crate::support::events(harness.log(), thread.id).await;
         let told = events.iter().find_map(|event| match &event.body {
             Body::ServiceAnswered(answered) => Some(answered.told.clone()),

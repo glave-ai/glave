@@ -222,15 +222,14 @@ fn the_model_is_told_what_came_of_it_never_what_was_answered() {
         })
         .unwrap();
     assert!(asking.forms.is_empty());
-    assert_eq!(
-        asking.responses.get("k"),
-        Some(&json!({"action": "accept", "content": values}))
-    );
+    // Compared without printing: a failure must not show what was typed.
+    let same = asking.responses.get("k") == Some(&json!({"action": "accept", "content": values}));
+    assert!(same);
     let told = asking.told("github", ToolOutput::text(false, "done"));
     let [Part::Text { text }] = told.parts.as_slice() else {
-        panic!("{told:?}");
+        panic!("not one text part");
     };
+    assert!(!text.contains("what they typed"));
     assert!(text.starts_with("[github asked the person"), "{text}");
     assert!(text.ends_with("\ndone"), "{text}");
-    assert!(!text.contains("what they typed"), "{text}");
 }

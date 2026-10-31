@@ -167,20 +167,23 @@ fn a_person_at_a_terminal_answers_what_a_service_asks_and_the_model_sees_only_th
     let model = asking_model();
     let mut running = terminal(&place, &model, &["file it"]);
     // A project here, then the call allowed, then its fields: a choice, words, a yes or no.
-    typed(&mut running, "y\ny\n1\nfor the service alone\nn\n");
+    let answer = "for the service alone";
+    typed(&mut running, &format!("y\ny\n1\n{answer}\nn\n"));
     let ended = running.wait_with_output().unwrap();
-    let shown = text(&ended);
+    // The terminal echoes what is typed, which a failure here must not print.
+    let shown = text(&ended).replace(answer, "[what was typed]");
     assert!(ended.status.success(), "{shown}");
     assert!(shown.contains("tests asks you, not the model"), "{shown}");
     assert!(shown.contains("tests: Which label?"), "{shown}");
     assert!(shown.contains("You answered tests"), "{shown}");
     assert!(shown.contains("It heard you."), "{shown}");
     let received = model.received();
+    let sent = received.last().unwrap().body.to_string();
+    // First, so what the rest print cannot hold what was typed.
+    assert!(!sent.contains(answer));
     let result = said(&received.last().unwrap().body, "tool").concat();
     assert!(result.contains("You said: accept"), "{result}");
     assert!(result.contains("they answered it"), "{result}");
-    let sent = received.last().unwrap().body.to_string();
-    assert!(!sent.contains("for the service alone"), "{sent}");
 }
 
 #[test]

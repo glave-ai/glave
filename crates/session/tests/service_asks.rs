@@ -91,7 +91,9 @@ fn a_client_answers_what_a_service_asks_and_the_turn_goes_on() {
         assert_eq!(told, ["You answered GitHub"]);
         let given = source.given();
         assert_eq!(given.len(), 2);
-        assert_eq!(given[1].as_ref().unwrap().answer, typed());
+        // Compared without printing: a failure must not show what was typed.
+        let same = given[1].as_ref().unwrap().answer == typed();
+        assert!(same);
         // What a client reads back holds nothing of what was typed.
         for event in events(&server, thread).await {
             assert!(!event.to_json().unwrap().contains(TYPED));
