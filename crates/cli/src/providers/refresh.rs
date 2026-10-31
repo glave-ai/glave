@@ -76,11 +76,13 @@ fn unhurried(models: &[CatalogModel]) -> Vec<CatalogModel> {
 }
 
 impl ModelAccounts {
-    /// Lists the models of every account's service again: those whose catalog is a day old or
-    /// more, or with `all`, every one. Keeps the catalogs when any changed; a service that
+    /// Lists the models of every account's service again, the server's own among them: those
+    /// whose catalog is a day old or more, or with `all`, every one. Keeps the catalogs when any changed; a service that
     /// cannot be listed keeps its own, and says why.
     pub(super) async fn refresh(&self, all: bool) -> Result<Refreshed, ApiError> {
-        let accounts = self.ledger.accounts().await?.providers;
+        let own = self.lineup().own_account();
+        let connected = self.ledger.accounts().await?.providers;
+        let accounts: Vec<ProviderConnected> = own.into_iter().chain(connected).collect();
         let kept = self.kept_catalogs().await?;
         let now = At::from(SystemClock.now());
         let mut catalogs: Vec<Catalog> = Vec::new();

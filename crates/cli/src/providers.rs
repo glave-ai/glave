@@ -16,7 +16,9 @@ mod refresh;
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
-use glave_event::{At, Catalog, Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
+use glave_event::{
+    At, Catalog, Principal, PrincipalKind, ProviderConnected, ProviderId, ProviderKind, Secret,
+};
 use glave_ports::auth::safe_to_send;
 use glave_ports::{BoxFuture, Clock as _, Failure, ProviderError, SystemClock};
 use glave_provider_openai::Config;
@@ -250,6 +252,31 @@ fn base_url(kind: ProviderKind, url: Option<&str>) -> Option<String> {
         }
         .to_owned(),
     )
+}
+
+/// Whether `url` is where glave reaches OpenRouter, its stand-in on this computer when one is
+/// set: the only place an account's key may go.
+fn at_openrouter(url: &str) -> bool {
+    base_url(ProviderKind::Openrouter, None)
+        .is_some_and(|base| base.trim_end_matches('/') == url.trim_end_matches('/'))
+}
+
+/// An account of `kind` with `key` that no person connected, offering `model` until its
+/// catalog is read; none when no id can be made for it.
+fn unconnected(kind: ProviderKind, key: &Secret, model: &str) -> Option<ProviderConnected> {
+    Some(ProviderConnected {
+        provider: random()
+            .and_then(|random| Ok(ProviderId::new(SystemClock.now(), random)?))
+            .ok()?,
+        kind,
+        url: None,
+        key: key.clone(),
+        models: vec![model.to_owned()],
+        by: Principal {
+            kind: PrincipalKind::Agent,
+            id: None,
+        },
+    })
 }
 
 /// The endpoint of `model` at `account`, with its key.

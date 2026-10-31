@@ -11,6 +11,10 @@ use serde_json::json;
 /// The model glave is told to use.
 pub(crate) const MODEL: &str = "try-org";
 
+/// The model a glave that keeps credits is told to use, one of OpenRouter's sample models, so
+/// its catalog prices it (`router.rs`).
+pub(crate) const PRICED_MODEL: &str = "deepseek/deepseek-v4.1-flash";
+
 /// What every answer says.
 const SAID: &str = "Hello from try-org's stand-in model: it answers every message with this.";
 

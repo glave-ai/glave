@@ -110,7 +110,20 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
     let glave = crate::web::debug_glave()?;
     crate::cmd::with_lifeline(|processes: Processes| async move {
         let model = model::start()?;
+        let router = format!("{}{}", model.url, model::OPENROUTER);
         let mut command = Program::new(&glave);
+        if credits {
+            // As Glave Cloud: its server's own OpenRouter, with no account of anyone's.
+            command
+                .env("GLAVE_BASE_URL", &router)
+                .env("GLAVE_PROVIDER", "openrouter")
+                .env("GLAVE_API_KEY", "stand-in")
+                .env("GLAVE_MODEL", model::PRICED_MODEL);
+        } else {
+            command
+                .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
+                .env("GLAVE_MODEL", model::MODEL);
+        }
         command
             .args(["serve", "--http", "127.0.0.1:0"])
             .arg("--web")
@@ -122,18 +135,21 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
                     .filter(|(name, _)| !name.to_string_lossy().starts_with("GLAVE_")),
             )
             .env("GLAVE_HOME", &home)
-            .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
-            .env("GLAVE_MODEL", model::MODEL)
-            .env(
-                "GLAVE_OPENROUTER_URL",
-                format!("{}{}", model.url, model::OPENROUTER),
-            )
+            .env("GLAVE_OPENROUTER_URL", &router)
             .current_dir(root)
             .no_input();
         let mut child = processes
             .spawn(&mut command)
             .await
             .map_err(|err| failed(&err))?;
+        let router_said = if credits {
+            "xtask: its models are the server's own OpenRouter, as on Glave Cloud, with no \
+             account to connect: the stand-in serves sample models from sample providers, so \
+             choose who serves one in the model picker"
+        } else {
+            "xtask: to try choosing who serves a model, connect OpenRouter with any key: the \
+             stand-in serves sample models from sample providers"
+        };
         eprintln!(
             "xtask: a throwaway glave for people who share this computer, in {}\n\
              xtask: you, its owner: it opens in your browser, signed in, once it is ready, with \
@@ -142,8 +158,7 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
              localhost address glave prints\n\
              xtask: its model is a stand-in that answers every message the same, and says each \
              answer cost $0.10\n\
-             xtask: to try choosing who serves a model, connect OpenRouter with any key: the \
-             stand-in serves sample models from sample providers\n\
+             {router_said}\n\
              xtask: it runs until Ctrl-C in this window, which stops it and removes it all; \
              press Enter here to open it in your browser again",
             folder.display()

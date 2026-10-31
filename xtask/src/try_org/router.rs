@@ -155,6 +155,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_model_a_glave_keeping_credits_uses_is_one_the_lists_price() {
+        let listed = answer("/api/v1/models").unwrap();
+        let known = listed["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["id"] == crate::try_org::model::PRICED_MODEL);
+        assert!(known.is_some_and(|model| model["pricing"]["prompt"].is_string()));
+    }
+
+    #[test]
     fn it_answers_as_openrouter_for_each_list_glave_reads() {
         let models = answer("/api/v1/models").unwrap();
         assert_eq!(models["data"].as_array().unwrap().len(), 3);
