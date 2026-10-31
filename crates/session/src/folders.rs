@@ -11,8 +11,8 @@
 use std::path::Path;
 
 use glave_event::{
-    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, PrincipalKind,
-    ProjectFolderSet, Seq, ThreadId, decode, encode,
+    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, PrincipalId,
+    PrincipalKind, ProjectFolderSet, Seq, ThreadId, decode, encode,
 };
 use glave_harness::{Looked, Workspace};
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
@@ -336,6 +336,21 @@ where
             return Ok(Some((folder.checkout.path, true)));
         }
         Ok(self.folder_found(at).await?.map(|path| (path, false)))
+    }
+
+    /// The folder of the project `at` when it is on `person`'s own computer and the project
+    /// theirs: never for anyone else.
+    pub(crate) async fn folder_at_home_of(
+        &self,
+        person: PrincipalId,
+        at: Located,
+    ) -> Result<Option<String>, ApiError> {
+        let Some(folder) = self.folder_of(at).await? else {
+            return Ok(None);
+        };
+        let theirs = self.project(at.org, at.project).await?.owner.id == Some(person);
+        let there = theirs && self.at_its_person_s(at, &folder.checkout).await?;
+        Ok(there.then_some(folder.checkout.path))
     }
 
     /// Whether `checkout` is on the own computer of the person whose project `at` is.

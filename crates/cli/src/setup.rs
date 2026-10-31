@@ -144,7 +144,8 @@ pub(crate) async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     let trust = Trust::open(&store, person).await?;
     let outcome = resolve(&folder, &constraints, Asking::Explaining, &trust).await?;
     let mut loaded = read(args, &folder, Some(&outcome)).await?;
-    if !glave_computer::sandbox_available() {
+    // Where people have computers of their own, their commands run there.
+    if loaded.choices.computers.is_none() && !glave_computer::sandbox_available() {
         loaded.no_sandbox_here = Some(NO_SANDBOX.to_owned());
     }
     // The provider names models as the gateway sees them; without a model there is none.

@@ -237,11 +237,17 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         processes: processes.clone(),
         glave: home.clone(),
     };
+    // The token a computer on a socket serves with is its own, and no command's to read.
+    let hidden: Vec<PathBuf> = match &transport {
+        Transport::Socket(_, folder, _) => vec![folder.clone()],
+        Transport::Stdio | Transport::Tcp(_) | Transport::Tls(..) => Vec::new(),
+    };
     let computers = crate::helpers::with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
             .with_scratch(home.join(crate::worktrees::SCRATCH))
             .with_projects(home::projects()?)
+            .with_hidden(hidden)
             .with_processes(processes),
     );
     let computers = Arc::new(crate::helpers::with_glave_on_path(computers, &home).await?);

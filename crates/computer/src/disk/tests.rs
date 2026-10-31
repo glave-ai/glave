@@ -61,10 +61,14 @@ fn person_home(dir: &Path) -> (PathBuf, PathBuf) {
          git -c user.name=t -c user.email=t@example.com commit -q -m one && \
          cd .. && git init -q linked && cd linked && printf 'node_modules\\n' > .gitignore && \
          ln -s ../../../../mine node_modules && cd ../../../.. && \
-         mkdir -p .npm/_cacache .cargo/registry/cache .cache/pip .cache/uv junk && \
+         mkdir -p .npm/_cacache .cargo/registry/cache .cache/pip .cache/uv \
+         .glave/sandbox-cache/pip .glave/sandbox-cache/rustup/toolchains junk && \
          touch -t 202001010000 .glave/worktrees/app/wt/node_modules .cache/uv && \
          touch -t 202002010000 .glave/worktrees/app/wt/target .cache/pip && \
-         touch -t 202003010000 .npm/_cacache .cargo/registry/cache",
+         touch -t 202003010000 .npm/_cacache .cargo/registry/cache && \
+         touch -t 202004010000 .glave/sandbox-cache/pip && \
+         touch -t 202005010000 .glave/sandbox-cache/rustup/toolchains && \
+         touch .glave/sandbox-cache/rustup/settings.toml",
     );
     // The Trash where this system keeps it, as glave puts things in it.
     let trash = Trash::for_home(&home, None, "").unwrap();
@@ -125,6 +129,8 @@ fn a_full_disk_frees_build_outputs_then_caches_then_the_trash_oldest_first() {
             said("cache", home.join(".cache/pip")),
             said("cache", home.join(".npm/_cacache")),
             said("cache", home.join(".cargo/registry/cache")),
+            said("cache", home.join(".glave/sandbox-cache/pip")),
+            said("cache", home.join(".glave/sandbox-cache/rustup/toolchains")),
             said("trash", trashed),
         ]
     );
@@ -133,6 +139,11 @@ fn a_full_disk_frees_build_outputs_then_caches_then_the_trash_oldest_first() {
         "what git tracks is never freed"
     );
     assert!(home.join("mine/kept").exists(), "a link is never followed");
+    assert!(
+        home.join(".glave/sandbox-cache/rustup/settings.toml")
+            .exists(),
+        "the sandbox's homes are never freed whole"
+    );
     let left = block_on!(Trash::for_home(&home, None, "").unwrap().held(10));
     assert_eq!(left.len(), 0, "{left:?}");
 }

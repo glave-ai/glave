@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use glave_ports::block_on;
 use glave_ports::computer::{Computers as _, Environment, Image, Limits, Network};
 
+use super::super::Kubernetes;
 use super::super::sizing::Size;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
@@ -48,6 +49,34 @@ async fn timed(
     (started.elapsed(), said)
 }
 
+/// A person's computer named `key` on `cluster` of two CPUs and 2 GiB, the same under every
+/// runtime so the work compares: its one wake starts there, not at the smallest size. And the
+/// environment that wakes it, on `image`.
+pub(super) fn two_cpus(
+    cluster: &Kubernetes,
+    key: &str,
+    image: String,
+) -> (WorkerComputers, Environment) {
+    let person = PersonComputer::new(cluster.clone(), key, 2).unwrap();
+    person.sizing.wake_at(Size {
+        cpu_millis: 2_000,
+        memory_mib: 2_048,
+    });
+    let limits = Limits {
+        isolation: cluster.isolation(),
+        cpus: Some(2),
+        memory_gb: Some(2),
+        ..Limits::default()
+    };
+    let computers = WorkerComputers::on(Box::new(person), limits, WorkerCredentials::None);
+    let environment = Environment {
+        image: Image::Oci(image),
+        network: Some(Network::On),
+        ..Environment::host()
+    };
+    (computers, environment)
+}
+
 #[test]
 fn a_persons_computer_measured_under_its_runtime() {
     let (Ok(_), Ok(image), Ok("1")) = (
@@ -71,25 +100,7 @@ fn a_persons_computer_measured_under_its_runtime() {
         };
         let id = crate::local::new_id().unwrap().simple().to_string();
         let key = format!("measured-{}", id.get(id.len() - 12..).unwrap());
-        let person = PersonComputer::new(cluster.clone(), &key, 2).unwrap();
-        // Two CPUs and 2 GiB, the same under both runtimes, so the work compares: its one wake
-        // starts there, not at the smallest size.
-        person.sizing.wake_at(Size {
-            cpu_millis: 2_000,
-            memory_mib: 2_048,
-        });
-        let limits = Limits {
-            isolation: cluster.isolation(),
-            cpus: Some(2),
-            memory_gb: Some(2),
-            ..Limits::default()
-        };
-        let computers = WorkerComputers::on(Box::new(person), limits, WorkerCredentials::None);
-        let environment = Environment {
-            image: Image::Oci(image),
-            network: Some(Network::On),
-            ..Environment::host()
-        };
+        let (computers, environment) = two_cpus(&cluster, &key, image);
         let started = Instant::now();
         let woke = computers.create(&environment).await;
         let wake_took = started.elapsed();

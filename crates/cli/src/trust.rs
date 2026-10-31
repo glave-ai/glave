@@ -32,6 +32,21 @@ impl Trust {
         })
     }
 
+    /// The trust ledger in `scope`'s project, kept by `person`: for a project on their own
+    /// computer, whose decisions go with it, and no path there means the same in another.
+    pub(crate) fn in_project(&self, scope: Scope, person: PrincipalId) -> Self {
+        Self {
+            log: self.log.clone(),
+            scope,
+            person,
+        }
+    }
+
+    /// Whose decisions it keeps.
+    pub(crate) fn person(&self) -> PrincipalId {
+        self.person
+    }
+
     /// Every project's latest decisions.
     pub(crate) async fn record(&self) -> anyhow::Result<Record> {
         Ok(self.read().await?.0)

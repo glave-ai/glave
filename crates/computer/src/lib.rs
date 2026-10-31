@@ -33,5 +33,5 @@ pub use token::{MIN_SECRET, Token, Tokens};
 pub use waking::{Grow, Short, Wake, Waking};
 pub use worker::{Docker, DockerSettings, WorkerComputers, WorkerCredentials, https_url};
 #[cfg(feature = "kubernetes")]
-pub use worker::{Holding, Kubernetes, KubernetesSettings, Leasing, People};
+pub use worker::{Holding, Kubernetes, KubernetesSettings, Leasing, People, person_sandbox};
 pub use worktrees::{Condition, Kept, Released, Trash};
