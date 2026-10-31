@@ -19,7 +19,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
+use crate::support::web::{
+    ORIGIN, Served, Web, asked, elsewhere, make_named_passkey, make_passkey, serve_with,
+};
 use crate::support::*;
 
 /// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
@@ -205,6 +207,100 @@ pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> 
     let code = emailed_code(outbox, before + 1).await;
     let made = make(served, code, &mut device).await;
     elsewhere(served, made["session"].as_str().map(str::to_owned))
+}
+
+/// The name `person` goes by among `listed`'s people, the first who is not the caller's own
+/// unless `you`.
+fn named(listed: &Value, you: bool) -> Value {
+    let people = listed["people"].as_array().unwrap();
+    let found = people
+        .iter()
+        .find(|person| person.get("you").is_some() == you && person.get("local").is_none());
+    found.unwrap()["name"].clone()
+}
+
+#[test]
+fn a_name_given_with_the_first_passkey_goes_with_the_person_and_can_be_changed() {
+    block_on!(async {
+        let dir = folder("signups-names");
+        let outbox = Arc::new(Outbox::default());
+        let served = serve(&dir, true, &outbox).await;
+        let mut anyone = elsewhere(&served, None);
+        let start = Request::SignupStart {
+            email: "ada@example.com".into(),
+        };
+        assert_eq!(asked(&mut anyone, &start).await, json!({}));
+        let code = emailed_code(&outbox, 1).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let signup = LinkKind::Signup;
+        let refused =
+            make_named_passkey(&served, code.clone(), signup, &mut phone, Some("  ")).await;
+        assert_eq!(refused, json!(code::INVALID_PARAMS), "no name in it");
+        let made =
+            make_named_passkey(&served, code, signup, &mut phone, Some(" Ada Lovelace ")).await;
+        let mut ada = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let keys = asked(&mut ada, &Request::PasskeyList {}).await;
+        assert_eq!(keys["person_name"], json!("Ada Lovelace"), "{keys}");
+        assert_eq!(keys["nameable"], json!(true));
+        assert_eq!(
+            named(&asked(&mut ada, &listed).await, true),
+            json!("Ada Lovelace")
+        );
+
+        // An invite she makes says who made it, and someone it makes an account for is named.
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        let invited = asked(&mut ada, &invite).await;
+        let code = Secret::new(invited["code"].as_str().unwrap());
+        let shown = Request::InviteShow { code: code.clone() };
+        assert_eq!(
+            asked(&mut anyone, &shown).await["shown"]["by"],
+            json!("Ada Lovelace")
+        );
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        let bob =
+            make_named_passkey(&served, code, LinkKind::Invite, &mut laptop, Some("Bob")).await;
+        assert!(bob["session"].is_string(), "{bob}");
+        assert_eq!(named(&asked(&mut ada, &listed).await, false), json!("Bob"));
+
+        // Joining another organization, her name goes with her; changed, it changes in both.
+        let mut carol = signed_up(&served, &outbox, "carol@example.com").await;
+        let team = asked(&mut carol, &invite).await;
+        let accept = Request::InviteAccept {
+            code: Secret::new(team["code"].as_str().unwrap()),
+        };
+        asked(&mut ada, &accept).await;
+        assert_eq!(
+            named(&asked(&mut carol, &listed).await, false),
+            json!("Ada Lovelace")
+        );
+        let renamed = Request::PersonName {
+            name: "Ada King".into(),
+        };
+        assert_eq!(asked(&mut ada, &renamed).await, json!({}));
+        assert_eq!(
+            named(&asked(&mut carol, &listed).await, false),
+            json!("Ada King")
+        );
+        assert_eq!(
+            asked(&mut ada, &Request::PasskeyList {}).await["person_name"],
+            json!("Ada King")
+        );
+        let too_long = Request::PersonName {
+            name: "a".repeat(101),
+        };
+        assert_eq!(
+            asked(&mut ada, &too_long).await,
+            json!(code::INVALID_PARAMS)
+        );
+        served.close().await;
+    });
 }
 
 #[test]

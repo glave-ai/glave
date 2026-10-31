@@ -137,4 +137,45 @@ describe('PasskeysComponent', () => {
     expect(problem()).toContain('only the person may');
     await expectAccessible(root);
   });
+
+  it('changes the name of someone with a glave account, in the server’s words when refused', async () => {
+    let name = 'Ada';
+    const fake = new FakeSession()
+      .answer('passkey/list', () => ({ passkeys: [], person_name: name, nameable: true }))
+      .answer('person/name', (params) => {
+        name = (params as { readonly name: string }).name;
+        return {};
+      });
+    const { fixture, root } = await render(fake, answering(null));
+    const field = root.querySelector<HTMLInputElement>('[data-testid="passkeys-name"]');
+    if (field === null) {
+      throw new Error('no name field');
+    }
+    expect(field.value).toBe('Ada');
+    await expectAccessible(root);
+    field.value = 'Ada King';
+    field.dispatchEvent(new Event('input'));
+    click(root, 'passkeys-name-save');
+    await settle(fixture);
+    expect(fake.paramsOf('person/name')).toEqual([{ name: 'Ada King' }]);
+    expect(field.value).toBe('Ada King');
+
+    fake.answer(
+      'person/name',
+      new ApiError({ code: ErrorCode.INVALID_PARAMS, message: "that can't be your name" }),
+    );
+    field.value = '';
+    field.dispatchEvent(new Event('input'));
+    click(root, 'passkeys-name-save');
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="passkeys-problem"]')?.textContent).toContain(
+      "that can't be your name",
+    );
+  });
+
+  it('offers no name to someone their sign-in names', async () => {
+    const fake = new FakeSession().answer('passkey/list', { passkeys: [] });
+    const { root } = await render(fake, answering(null));
+    expect(root.querySelector('[data-testid="passkeys-name"]')).toBeNull();
+  });
 });

@@ -92,6 +92,10 @@ sentences! {
         "this is your only passkey, so it can't be removed: add another first",
     NoAccounts = "no-accounts"
         "people sign in to this glave another way, so an invite here makes no passkey",
+    NameNotOurs = "name-not-ours"
+        "your name here comes with the way you sign in, so it can't be changed here",
+    NotAName = "not-a-name"
+        "that can't be your name: write it on one line, in at most 100 characters",
     NoEmail = "no-email" "this glave sends no email: share the invite's link yourself",
     NotAnEmail = "not-an-email" "that isn't an email address: check it and try again",
     InviteNotSent = "invite-not-sent"

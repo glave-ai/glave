@@ -64,9 +64,10 @@ impl Request {
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::AwakeSet { .. } => Setting::Awake,
             Self::MemorySet { .. } => Setting::Memory,
-            Self::PasskeyCreate { .. } | Self::PasskeyAdd { .. } | Self::PasskeyRemove { .. } => {
-                Setting::Passkeys
-            }
+            Self::PasskeyCreate { .. }
+            | Self::PasskeyAdd { .. }
+            | Self::PasskeyRemove { .. }
+            | Self::PersonName { .. } => Setting::Passkeys,
             Self::LanguageSet { .. } => Setting::Language,
             _ => return None,
         })

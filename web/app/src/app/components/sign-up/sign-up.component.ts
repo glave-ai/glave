@@ -12,7 +12,7 @@ import KeyRound from 'lucide/dist/esm/icons/key-round.mjs';
 import Mail from 'lucide/dist/esm/icons/mail.mjs';
 
 import { unreached } from '../../lib/text';
-import { PasskeysService } from '../../services/passkeys.service';
+import { LONGEST_NAME, PasskeysService } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 
 /** Where the person is in signing up. */
@@ -94,6 +94,8 @@ export class SignUpComponent {
     sentHeading: $localize`:@@signUp.sentHeading:Check your email`,
     again: $localize`:@@signUp.again:Send it again`,
     make: $localize`:@@signUp.make:Make a passkey`,
+    yourName: $localize`:@@signUp.yourName:Your name`,
+    missingName: $localize`:@@signUp.missingName:Give your name first, so people you invite know who you are.`,
     waiting: $localize`:@@signUp.waiting:Waiting for your device…`,
   } as const;
   /** The code of the emailed link the tab was opened with, of this page's kind. */
@@ -102,6 +104,10 @@ export class SignUpComponent {
   protected readonly icons = { mail: Mail, key: KeyRound } as const;
   protected readonly signInLink = '/sign-in';
   protected readonly email = signal('');
+  /** Whether making the passkey makes an account, whose person gives their name with it. */
+  protected readonly asksName = this.emailed === 'signup';
+  protected readonly personName = signal('');
+  protected readonly longestName = LONGEST_NAME;
   private readonly sentTo = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
@@ -148,14 +154,32 @@ export class SignUpComponent {
     await this.send();
   }
 
+  /** Enter in the name makes the passkey, as its button does. */
+  protected async submitted(event: Event): Promise<void> {
+    event.preventDefault();
+    await this.make();
+  }
+
+  protected typedName(event: Event): void {
+    if (event.target instanceof HTMLInputElement) {
+      this.personName.set(event.target.value);
+    }
+  }
+
   /** Makes the passkey with the link the tab was opened with, then opens glave. */
   protected async make(): Promise<void> {
     const code = this.code();
     if (this.busy() || code === null) {
       return;
     }
+    const name = this.personName().trim();
+    if (this.asksName && name === '') {
+      this.problem.set(this.copy.missingName);
+      return;
+    }
     this.busy.set(true);
-    const outcome = await this.passkeys.withEmailedLink(code, this.emailed);
+    const given = this.asksName ? name : null;
+    const outcome = await this.passkeys.withEmailedLink(code, this.emailed, given);
     this.busy.set(false);
     this.problem.set(outcome.problem);
     if (outcome.problem === null) {

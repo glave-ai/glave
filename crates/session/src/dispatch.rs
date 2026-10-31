@@ -163,6 +163,7 @@ where
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
             Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
             Request::PersonRemove { person } => self.remove_person(caller, person).await,
+            Request::PersonName { name } => self.name_person(caller, &name).await,
             Request::InviteCreate { role, email } => {
                 self.create_invite(caller, role, email.as_deref()).await
             }
@@ -205,7 +206,11 @@ where
                 ceremony,
                 credential,
                 name,
-            } => self.create(&ceremony, &credential, name.as_deref()).await,
+                person_name,
+            } => {
+                self.create(&ceremony, &credential, name.as_deref(), person_name)
+                    .await
+            }
             Request::PasskeyAddOptions {} => self.add_options(caller).await,
             Request::PasskeyAdd {
                 ceremony,

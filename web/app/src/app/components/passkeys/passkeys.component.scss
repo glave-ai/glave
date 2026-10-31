@@ -8,6 +8,14 @@
   padding-block: var(--glz-space-2);
 }
 
+.name {
+  align-items: end;
+
+  .field {
+    flex: 1;
+  }
+}
+
 // What the server tells of a passkey made by email lately: set apart, above the list.
 .notice {
   padding: var(--glz-inset-strip);

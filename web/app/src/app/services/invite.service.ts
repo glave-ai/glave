@@ -51,12 +51,12 @@ export class InviteService {
   }
 
   /** Joins by making a passkey on this device: a new account, signed in. */
-  async joinWithPasskey(): Promise<string | null> {
+  async joinWithPasskey(personName: string): Promise<string | null> {
     const code = this.session.inviteCode();
     if (code === null) {
       return null;
     }
-    const problem = await this.passkeys.join(code);
+    const problem = await this.passkeys.join(code, personName);
     if (problem === null) {
       this.session.clearInvite();
     }

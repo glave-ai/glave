@@ -162,6 +162,10 @@ methods! {
         /// What to call the passkey; when it was added, if nothing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// What to call the person, whose first passkey an invite's or a sign-up's link makes;
+        /// any other passkey's person has one, or their sign-in names them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        person_name: Option<String>,
     } -> [Browser],
     /// Begins adding a passkey on this device, for the person signed in.
     "passkey/add_options" => PasskeyAddOptions {} -> [PasskeyOptions],
@@ -180,6 +184,9 @@ methods! {
         ceremony: String,
         credential: serde_json::Value,
     } -> [Browser],
+    /// Changes the name the caller goes by in every organization they are in: someone with a
+    /// glave account, whom a company login does not name.
+    "person/name" => PersonName { name: String } -> [Done],
     /// The person's passkeys, oldest first.
     "passkey/list" => PasskeyList {} -> [Passkeys],
     /// Removes a passkey, and ends the browser sessions it began.

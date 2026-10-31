@@ -1,6 +1,6 @@
 //! What a throwaway glave's organization starts with, so its Admin shows at once with people
-//! in it: two people who joined by invites, an Admin and a Member, and an invite still
-//! waiting. All through the session API over HTTP, as the people themselves would: the owner's
+//! in it: two people who joined by invites and gave their names, an Admin and a Member, and an
+//! invite still waiting. All through the session API over HTTP, as the people themselves would: the owner's
 //! requests from this computer with the server's local token, at its address; each invitee's
 //! at `localhost`, the door people who share this computer come in by, as a browser making its
 //! first passkey there, played by glave-identity's authenticator in software. Nothing in glave
@@ -12,8 +12,8 @@ use std::time::Duration;
 use glave_identity::testing::Authenticator;
 use serde_json::{Value, json};
 
-/// The roles of the people it starts with, each joined by an invite of its own.
-const JOINED: [&str; 2] = ["admin", "member"];
+/// The roles and names of the people it starts with, each joined by an invite of its own.
+const JOINED: [(&str, &str); 2] = [("admin", "Dana Lee"), ("member", "Sam Ortiz")];
 
 /// The role of the invite left waiting.
 const WAITING: &str = "member";
@@ -49,13 +49,13 @@ pub(crate) async fn seed(home: &Path) -> Result<(), String> {
         url: people.clone(),
         token: None,
     };
-    for role in JOINED {
+    for (role, name) in JOINED {
         let invited = owner.call("invite/create", json!({ "role": role })).await?;
         let code = invited
             .get("code")
             .cloned()
             .ok_or("glave answered invite/create with no code")?;
-        join(&browser, &people, code).await?;
+        join(&browser, &people, code, name).await?;
     }
     owner
         .call("invite/create", json!({ "role": WAITING }))
@@ -64,8 +64,8 @@ pub(crate) async fn seed(home: &Path) -> Result<(), String> {
 }
 
 /// Joins with the invite `code` in a new browser at `origin`, making its first passkey there:
-/// a new glave account, in the organization with the invite's role.
-async fn join(browser: &Api<'_>, origin: &str, code: Value) -> Result<(), String> {
+/// a new glave account for the person named `name`, in the organization with the invite's role.
+async fn join(browser: &Api<'_>, origin: &str, code: Value, name: &str) -> Result<(), String> {
     let mut device = Authenticator::new(origin)
         .map_err(|_| "could not make a passkey in software".to_owned())?;
     let asked = json!({ "code": code, "link": "invite" });
@@ -78,7 +78,11 @@ async fn join(browser: &Api<'_>, origin: &str, code: Value) -> Result<(), String
                 .create(options)
                 .map_err(|_| "could not answer glave's request for a passkey")
         })?;
-    let made = json!({ "ceremony": options.get("ceremony"), "credential": credential });
+    let made = json!({
+        "ceremony": options.get("ceremony"),
+        "credential": credential,
+        "person_name": name,
+    });
     browser.call("passkey/create", made).await.map(drop)
 }
 

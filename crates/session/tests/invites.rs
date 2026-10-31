@@ -148,6 +148,23 @@ fn an_invite_gives_its_role_once_and_is_listed_until_then_without_its_code() {
 }
 
 #[test]
+fn a_company_login_s_people_are_named_by_it_not_by_themselves() {
+    let dir = folder("invites-named");
+    block_on!(async {
+        let clock = ManualClock::at_millis(START);
+        let server = organization(&dir, &Shared::default(), 1, 1, &clock).await;
+        let refused = server
+            .request_as(
+                &signed_in("ada"),
+                Request::PersonName { name: "Ada".into() },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED, "{refused:?}");
+    });
+}
+
+#[test]
 fn an_invite_expires_after_seven_days() {
     let dir = folder("invites-expire");
     block_on!(async {
