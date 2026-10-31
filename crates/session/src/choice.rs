@@ -134,7 +134,14 @@ where
     /// run on this computer (and Ask first asks so too), or only one that keeps files as they
     /// are.
     pub(crate) fn unsandboxed(&self) -> Option<Sentence> {
-        match self.inner.harness.defaults().sandbox.as_ref() {
+        let defaults = self.inner.harness.defaults();
+        if self.inner.homes.is_some() {
+            return defaults
+                .home_sandbox
+                .is_none()
+                .then_some(Sentence::OwnComputerWall);
+        }
+        match defaults.sandbox.as_ref() {
             None => Some(Sentence::Unsandboxed),
             Some(sandbox) if sandbox.level != SandboxLevel::Project => {
                 Some(Sentence::OnlyReadOnlySandbox)

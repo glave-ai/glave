@@ -11,13 +11,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_computer::{LocalComputers, Wake, Waking};
-use glave_event::{PrincipalId, StopReason};
-use glave_harness::{AllowAll, Cancel, Homes, Place, ProjectFolders, Workspace};
-use glave_ports::computer::{ComputerError, Home};
+use glave_event::{Permissions, PrincipalId, StopReason};
+use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
+use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel};
 use glave_ports::stream::Reserved;
-use glave_ports::{BoxFuture, EventLog, InMemoryLog, OrgId};
+use glave_ports::{BoxFuture, Caller, EventLog, InMemoryLog, OrgId};
 use serde_json::json;
 
+use crate::outside_sandbox::{Person, sandboxed};
 use crate::support::*;
 use crate::wire::home_across_the_wire;
 
@@ -50,6 +51,10 @@ impl Homes for Reached {
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(()))
     }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        None
+    }
 }
 
 /// Everyone's computer the same one reached across the protocol, behind a [`Waking`] that wakes
@@ -58,6 +63,7 @@ impl Homes for Reached {
 struct Sleepy {
     planned: Home,
     asked: Arc<AtomicUsize>,
+    sandbox: Option<Sandbox>,
 }
 
 impl Sleepy {
@@ -82,7 +88,11 @@ impl Sleepy {
         });
         let scratch = scratch.to_string_lossy();
         let planned = Waking::home(wake, None, reached.home.clone(), &scratch);
-        Self { planned, asked }
+        Self {
+            planned,
+            asked,
+            sandbox: None,
+        }
     }
 
     fn asked(&self) -> usize {
@@ -97,6 +107,10 @@ impl Homes for Sleepy {
 
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(()))
+    }
+
+    fn sandbox(&self) -> Option<Sandbox> {
+        self.sandbox.clone()
     }
 }
 
@@ -251,6 +265,77 @@ fn a_project_s_thread_opens_with_its_last_read_and_reaches_the_computer_only_for
         let (scope, ledger) = (scope(), Reserved::Instructions.id());
         let kept = harness.log().read(&scope, ledger, None, usize::MAX);
         assert_eq!(kept.await.unwrap().len(), 1, "one read kept, not more");
+        serving.abort();
+    });
+}
+
+/// glave's sandbox on a person's computer, as on this one, across the protocol: a thread started
+/// and talked to asks nothing of the computer, no sandbox wakes it, and at each level a command
+/// is held there with no one asked: in Auto to the project, in Ask first to nothing it can write.
+#[test]
+fn commands_on_a_person_s_computer_run_in_glave_s_sandbox_and_nothing_is_asked() {
+    let Some(base) = sandboxed("home") else {
+        return;
+    };
+    let server = folder("walled-server");
+    let home = base.join("home");
+    let project = home.join("app");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    block_on!(async {
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
+        let computers = Arc::new(LocalComputers::new(base.join("copies"), environment));
+        let (reached, serving) = home_across_the_wire(computers, &home).await;
+        let run = |command: &str| {
+            answer(
+                None,
+                vec![("bash", json!({ "command": command }))],
+                StopReason::ToolUse,
+            )
+        };
+        let answers = vec![
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+            run("echo kept > kept; echo lost > ../lost"),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+            run("echo asked > asked"),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let person = Person::answering(Decision::Deny);
+        let (harness, _) = harness_seeing(
+            &server,
+            answers,
+            person.clone(),
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        )
+        .await;
+        let mut sleepy = Sleepy::new(&reached, &base.join("scratch"));
+        sleepy.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: Some(home.clone()),
+            glave_home: Some(home.join(".glave")),
+        });
+        let sleepy = Arc::new(sleepy);
+        let harness = harness.with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
+        let place = || Place::Folder(project.to_string_lossy().into_owned());
+
+        let mut auto = thread_in(&harness, place()).await;
+        turn(&harness, &mut auto, "hello").await;
+        assert_eq!(sleepy.asked(), 0, "a thread that only talks wakes nothing");
+        turn(&harness, &mut auto, "write").await;
+        assert!(sleepy.asked() > 0, "the command wakes it");
+        assert!(project.join("kept").exists(), "the project is writable");
+        assert!(!home.join("lost").exists(), "what is beside it is not");
+
+        let mut asking = thread_in(&harness, place()).await;
+        harness
+            .choose_permissions(&mut asking, &Caller::default(), Permissions::Ask)
+            .await
+            .unwrap();
+        turn(&harness, &mut asking, "write").await;
+        assert!(!project.join("asked").exists(), "Ask first's sandbox holds");
+        assert!(person.asked().is_empty(), "the sandbox holds: no one asked");
         serving.abort();
     });
 }

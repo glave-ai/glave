@@ -43,6 +43,7 @@ pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
 pub use on_path::glave_on_path;
+pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
 
 /// What measures a disk in place of the system.
