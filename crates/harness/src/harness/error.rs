@@ -60,7 +60,7 @@ pub enum HarnessError {
     #[error("no question {} is waiting", .0.as_str())]
     NoQuestion(CallId),
     /// No turn in the thread waits for an answer to what this call's service asked, as asked.
-    #[error("no service's question waits at {}", .0.as_str())]
+    #[error("no service's question is waiting at {}", .0.as_str())]
     NoServiceAsk(CallId),
 }
 
