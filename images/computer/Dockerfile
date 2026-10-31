@@ -44,7 +44,11 @@ RUN sed -i 's#:/home/nonroot:#:/home/glave:#' /etc/passwd
 
 # What a person adds lands in their home: npm's global packages, cargo's and rustup's
 # toolchains, and the Node versions fnm installs, its default (`fnm default 22`) on PATH.
+# GLAVE_SANDBOX_TOOLCHAINS: Rust's homes, in glave's sandbox, are in its cache, so commands build
+# there without asking (specs/sandbox.md, "On a person's computer"). This image holds no toolchain
+# to hide: rustup fetches the one chosen, once.
 ENV HOME=/home/glave \
+    GLAVE_SANDBOX_TOOLCHAINS=1 \
     FNM_DIR=/home/glave/.local/share/fnm \
     NPM_CONFIG_PREFIX=/home/glave/.local \
     PATH=/home/glave/.local/bin:/home/glave/.cargo/bin:/home/glave/.local/share/fnm/aliases/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

@@ -90,11 +90,20 @@ fn committed_repo(dir: &Path, name: &str) -> PathBuf {
 /// This machine's computers, keeping worktrees in glave's folder under `dir/home`, and the
 /// sandbox protecting that home.
 fn computers(dir: &Path) -> (LocalComputers, Sandbox) {
+    computers_saying(dir, &[])
+}
+
+/// The same, with `said` in their own environment too.
+fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandbox) {
     let home = dir.join("home");
     let glave_home = home.join(".glave");
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), home.clone().into_os_string())])
+        .chain(
+            said.iter()
+                .map(|(name, value)| ((*name).into(), (*value).into())),
+        )
         .collect();
     let computers = LocalComputers::new(dir.join("copies"), environment)
         .with_worktrees(glave_home.join("worktrees"));
@@ -150,6 +159,51 @@ fn still_aside(aside: &Path, prepared: &[&str], said: &str) {
 
 /// What the computer is told to hide is unreadable to its sandboxed commands, through a link
 /// too, while what sits beside it stays readable.
+/// A laptop leaves Rust's homes alone; a computer whose own environment asks has its sandboxed
+/// commands keep them in the sandbox cache, where they can write.
+#[test]
+fn rust_s_homes_go_in_the_sandbox_cache_only_where_the_computer_says() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("toolchains");
+    std::fs::create_dir_all(dir.join("app")).unwrap();
+    std::fs::create_dir_all(dir.join("home/.glave")).unwrap();
+    let homes = r#"printf '%s %s' "$CARGO_HOME" "$RUSTUP_HOME"; mkdir -p "$CARGO_HOME/registry""#;
+    block_on!(async {
+        let (laptop, sandbox) = computers(&dir);
+        let there = open_app(&laptop, &dir).await;
+        let (_, said) = run(
+            &laptop,
+            there,
+            &sandbox,
+            r#"printf '%s' "$CARGO_HOME$RUSTUP_HOME""#,
+        )
+        .await;
+        assert_eq!(said, "", "a laptop's are left alone");
+
+        let (image, sandbox) = computers_saying(&dir, &[("GLAVE_SANDBOX_TOOLCHAINS", "1")]);
+        let there = open_app(&image, &dir).await;
+        let (ending, said) = run(&image, there, &sandbox, homes).await;
+        assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
+        let cache = std::fs::canonicalize(dir.join("home/.glave"))
+            .unwrap()
+            .join("sandbox-cache");
+        assert_eq!(
+            said,
+            format!(
+                "{} {}",
+                cache.join("cargo").display(),
+                cache.join("rustup").display()
+            )
+        );
+        assert!(
+            cache.join("cargo/registry").is_dir(),
+            "they can write there"
+        );
+    });
+}
+
 #[test]
 fn what_the_computer_hides_is_unreadable() {
     if !enforced() {

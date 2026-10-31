@@ -47,7 +47,8 @@ const RECORD_MOST: u64 = 1024 * 1024;
 pub(crate) const BUILT: [&str; 5] = ["target", "node_modules", ".venv", "dist", "build"];
 
 /// Caches in the person's home that commands fill and fetch again: npm's and cargo's
-/// downloads; then each one in the cache home (pip's and uv's among them).
+/// downloads; then each one in the cache home (pip's and uv's among them), and each in glave's
+/// sandbox cache folder, where sandboxed commands keep theirs.
 const CACHES: [&str; 2] = [".npm/_cacache", ".cargo/registry/cache"];
 
 /// The most things one pass looks at, of each kind.
@@ -227,6 +228,8 @@ impl Keeper {
         }
         let mut caches: Vec<PathBuf> = CACHES.iter().map(|cache| self.home.join(cache)).collect();
         caches.extend(folders(&self.caches).await.unwrap_or_default());
+        let in_the_sandbox = self.glave.join(crate::local::CACHE_FOLDER);
+        caches.extend(folders(&in_the_sandbox).await.unwrap_or_default());
         let trash = match &self.trash {
             Some(trash) => trash.held(MOST_LOOKED_AT).await,
             None => Vec::new(),

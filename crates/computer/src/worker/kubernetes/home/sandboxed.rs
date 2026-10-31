@@ -243,42 +243,57 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 cost.push(format!("{what}, {under}: {} ms, {ended}", took.as_millis()));
             }
         }
-        // Everyday work in the sandbox, each as it is on a laptop: a finding, printed.
-        let setup = ran(&computers, woke.id, "rustup set profile minimal >/dev/null && rustup default stable >/dev/null 2>&1 && echo toolchain").await;
-        let mut work = vec![format!("toolchain outside it: {setup:?}")];
-        for (what, script) in [
+        // Everyday work in the sandbox: each must pass with no one to ask.
+        for (what, script, comes) in [
             (
-                "a virtual environment and a package",
+                "pip",
                 "python3 -m venv .venv && .venv/bin/pip -q install idna && .venv/bin/python -c 'import idna' && echo installed",
+                "installed",
             ),
             (
                 "uv",
                 "uv venv -q .uvenv && uv pip install -q --python .uvenv/bin/python idna && echo installed",
+                "installed",
             ),
             (
                 "npm",
-                "npm init -y >/dev/null && npm i --silent is-odd && echo installed",
+                "npm init -y >/dev/null 2>&1 && npm i --silent is-odd >/dev/null 2>&1 && echo installed",
+                "installed",
             ),
             (
-                "a small Rust program",
-                "cargo new -q --vcs none hello && cd hello && cargo build -q 2>&1 && echo built",
+                "a toolchain",
+                "rustup set profile minimal >/dev/null 2>&1 && rustup default stable >/dev/null 2>&1 && echo chosen",
+                "chosen",
             ),
             (
-                "a Rust program with a dependency",
-                "cargo new -q --vcs none dep && cd dep && cargo add -q itoa 2>&1 && cargo build -q 2>&1 && echo built",
-            ),
-            (
-                "rustup default in the home",
-                "rustup default nightly 2>&1 | tail -n 2",
+                "a Rust program with a crate",
+                "cargo new -q --vcs none dep 2>&1 && cd dep && cargo add -q itoa 2>&1 && cargo build -q 2>&1 && echo built",
+                "built",
             ),
             (
                 "a compiler",
                 "printf 'int main(){return 0;}' > a.c && cc a.c -o a.out && ./a.out && echo compiled",
+                "compiled",
             ),
         ] {
             let answer = run(&computers, project.id, online.clone(), script).await;
-            work.push(format!("{what}: {answer:?}"));
+            let holds = matches!(&answer, Ok(Ok(text)) if text.ends_with(comes));
+            said.push(format!(
+                "{}: {what}: {answer:?}",
+                if holds { "holds" } else { "WRONG" }
+            ));
+            if !holds {
+                wrong.push(what);
+            }
         }
+        // None of it reached the homes commands outside the sandbox use.
+        let outside = ran(
+            &computers,
+            woke.id,
+            "ls -A ~/.cargo ~/.rustup 2>/dev/null | wc -l",
+        )
+        .await;
+        let keeper_finds = ran(&computers, woke.id, "ls ~/.glave/sandbox-cache").await;
         let _ = computers.destroy(woke.id).await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 2)
             .unwrap()
@@ -286,12 +301,16 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             .await;
         let left = left_behind(&cluster).await;
         eprintln!(
-            "glave's sandbox under {class}\n{}\n\nwhat it costs\n{}\n\neveryday work\n{}",
+            "glave's sandbox under {class}\n{}\n\nwhat it costs\n{}\n\nsandbox cache: {keeper_finds:?}",
             said.join("\n"),
             cost.join("\n"),
-            work.join("\n"),
         );
         assert_eq!(prepared, Ok("prepared".to_owned()));
+        assert_eq!(
+            outside,
+            Ok("0".to_owned()),
+            "the homes outside it stay empty"
+        );
         assert_eq!(wrong, Vec::<&str>::new(), "every wall holds");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
