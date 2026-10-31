@@ -11,6 +11,17 @@ use std::time::{Duration, Instant};
 /// test runner's own limit, so the test says what the program printed.
 pub const HUNG: Duration = Duration::from_secs(90);
 
+/// Reads `program` and the test's own program to their ends, so a test's limit on what it does
+/// next never counts either being read from a busy drive: a program's first start reads itself,
+/// a page at each first touch (#1089). It has no limit of its own but the test runner's, since
+/// how long it takes says nothing of the programs.
+pub fn read_program(program: &str) -> io::Result<()> {
+    for read in [std::path::PathBuf::from(program), std::env::current_exe()?] {
+        io::copy(&mut std::fs::File::open(read)?, &mut io::sink())?;
+    }
+    Ok(())
+}
+
 /// A program a test started, killed and waited for when this drops, so a test that fails, or
 /// ends without stopping it, never leaves it running. It stays in the test's process group,
 /// which the test runner stops whole on a timeout or Ctrl-C, with whatever it started there.

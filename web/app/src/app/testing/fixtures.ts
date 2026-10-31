@@ -147,6 +147,49 @@ export const MODELS: readonly ModelInfo[] = [
   { id: 'hope-12b', name: 'Hope', default: false },
 ];
 
+/** Models a router serves, each provider as the server says it, some hidden by the filters. */
+export const ROUTED: readonly ModelInfo[] = [
+  {
+    id: 'deepseek/deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    maker: 'DeepSeek',
+    default: true,
+    context: 131_072,
+    endpoints: [
+      {
+        provider: 'DeepSeek',
+        slug: 'deepseek',
+        based_in: 'CN',
+        precision: 'eight_bit',
+        keeps_nothing: false,
+        price: { input: 100_000, output: 400_000 },
+        speed: 90,
+        hidden_by: ['based_in'],
+      },
+      {
+        provider: 'Groq',
+        slug: 'groq',
+        based_in: 'US',
+        datacenters: ['US'],
+        precision: 'four_bit',
+        keeps_nothing: true,
+        price: { input: 120_000, output: 500_000 },
+        speed: 210,
+      },
+      {
+        provider: 'Fireworks',
+        slug: 'fireworks',
+        based_in: 'US',
+        precision: 'eight_bit',
+        keeps_nothing: true,
+        price: { input: 150_000, output: 600_000 },
+        speed: 130,
+      },
+    ],
+  },
+  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', maker: 'Anthropic', default: false },
+];
+
 /** What `server/discover` says. */
 export const SERVER = {
   name: 'glave',

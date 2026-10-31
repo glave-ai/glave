@@ -1,0 +1,14 @@
+:host {
+  display: block;
+}
+
+.countries {
+  border: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.problem {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
