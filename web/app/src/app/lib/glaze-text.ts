@@ -114,6 +114,8 @@ function cards(): Pick<
       declineLabel: $localize`:@@glaze.service.decline:Decline`,
       yesLabel: $localize`:@@glaze.service.yes:Yes`,
       noLabel: $localize`:@@glaze.service.no:No`,
+      requiredLabel: $localize`:@@glaze.service.required:Required`,
+      missingLabel: $localize`:@@glaze.service.missing:Answer what’s required, and numbers as numbers, to send.`,
     },
     trustCard: {
       label: needsYou,

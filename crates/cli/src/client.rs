@@ -16,7 +16,9 @@ use glave_harness::{Cancel, Goal, Permissions, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
+use glave_session::protocol::{
+    Answer, ApiError, ErrorData, Notification, Reply, Request, Update, code,
+};
 use glave_session::{Sent, Server, TurnItem, TurnStream};
 
 use crate::asking;
@@ -418,18 +420,26 @@ impl Client<'_> {
                 }
             }
         }
-        let answer = Request::ServiceAnswer {
+        let send = |answer| Request::ServiceAnswer {
             thread: self.thread,
             call: asked.call_id.clone(),
             asked: at,
-            answer: if declined {
-                ServiceAnswer::Declined
-            } else {
-                ServiceAnswer::Answered { values }
-            },
+            answer,
         };
-        if let Err(error) = self.server.request(answer).await {
+        let answer = if declined {
+            ServiceAnswer::Declined
+        } else {
+            ServiceAnswer::Answered { values }
+        };
+        if let Err(error) = self.server.request(send(answer)).await {
             printer.error(&error.to_string());
+            // Refused, nothing here asks again: declined, so the turn does not wait on.
+            if error.code == code::INVALID_PARAMS {
+                let declined = self.server.request(send(ServiceAnswer::Declined)).await;
+                if let Err(error) = declined {
+                    printer.error(&error.to_string());
+                }
+            }
         }
         false
     }

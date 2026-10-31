@@ -51,10 +51,9 @@ interface ShownCall extends CallItem {
   readonly icon: GlzIconData;
 }
 
-/** What a service asks as the thread shows it: with where the answer goes, naming it. */
+/** What a service asks as the thread shows it: its button naming who the answer goes to. */
 interface ShownService extends ServiceItem {
   readonly sendLabel: string;
-  readonly note: string;
 }
 
 type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService;
@@ -91,7 +90,6 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
       return {
         ...item,
         sendLabel: $localize`:@@threadItem.serviceSend:Send to ${item.service}:SERVICE:`,
-        note: $localize`:@@threadItem.serviceNote:Your answer goes only to ${item.service}:SERVICE:. The model sees that you answered, not what you typed.`,
       };
   }
 }

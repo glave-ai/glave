@@ -12,6 +12,7 @@ import {
 import { testIds } from '../../lib/test-ids';
 import {
   type GlzServiceField,
+  type GlzServiceFieldKind,
   type GlzServiceValue,
   type GlzServiceValues,
   answerOf,
@@ -37,21 +38,36 @@ const PARTS = {
   field: 'field',
   choice: 'choice',
   note: 'note',
+  missing: 'missing',
+  required: 'required',
   send: 'send',
   decline: 'decline',
   told: 'told',
 } as const;
 
+/** What a field of `kind` is drawn as. */
+function controlOf(kind: GlzServiceFieldKind): ShownField['control'] {
+  switch (kind.type) {
+    case 'choice':
+      return kind.multiple === true ? 'many' : 'one';
+    case 'yes_no':
+      return 'yes_no';
+    default:
+      return 'typed';
+  }
+}
+
 /** A field as the card shows it. */
 interface ShownField {
   readonly name: string;
   readonly id: string;
-  /** The id of its input, for the two that have one, which its name is the label of. */
-  readonly inputId: string;
-  readonly typed: boolean;
+  /** What its input takes, where it has one. */
+  readonly inputType: 'text' | 'number';
+  /** Whether an answer needs it. */
+  readonly required: boolean;
   readonly label: string;
   readonly description: string;
-  readonly control: 'text' | 'number' | 'yes_no' | 'one' | 'many';
+  readonly control: 'typed' | 'yes_no' | 'one' | 'many';
   readonly step: string;
   /** What is typed in it. */
   readonly text: string;
@@ -107,6 +123,8 @@ export class GlzServiceCardComponent {
     declineLabel: 'Decline',
     yesLabel: 'Yes',
     noLabel: 'No',
+    requiredLabel: 'Required',
+    missingLabel: 'Answer what’s required, and numbers as numbers, to send.',
   });
 
   /** Who asks, in the server's sentence. */
@@ -127,6 +145,10 @@ export class GlzServiceCardComponent {
   readonly declineLabel = input(this.words.declineLabel);
   readonly yesLabel = input(this.words.yesLabel);
   readonly noLabel = input(this.words.noLabel);
+  /** What marks a field an answer needs. */
+  readonly requiredLabel = input(this.words.requiredLabel);
+  /** Why it cannot be sent yet. */
+  readonly missingLabel = input(this.words.missingLabel);
   /** Each field's value, by its name. */
   readonly answer = output<Readonly<Record<string, unknown>>>();
   readonly decline = output();
@@ -143,7 +165,8 @@ export class GlzServiceCardComponent {
     this.fields().map((field, index) => this.shownField(field, index)),
   );
   private readonly answering = computed(() => answerOf(this.fields(), this.values()));
-  protected readonly cannotSend = computed(() => this.busy() || this.answering() === null);
+  protected readonly incomplete = computed(() => this.answering() === null);
+  protected readonly cannotSend = computed(() => this.busy() || this.incomplete());
 
   /** What the service asks: a new array of the same fields asks nothing new. */
   private readonly asked = computed(() => this.fields(), { equal: sameFields });
@@ -158,18 +181,17 @@ export class GlzServiceCardComponent {
   private shownField(field: GlzServiceField, index: number): ShownField {
     const value = this.values()[field.name];
     const kind = field.kind;
-    const many = kind.type === 'choice' && kind.multiple === true;
     const picked: readonly unknown[] = Array.isArray(value) ? value : [];
     const id = `${this.idBase}-${String(index)}`;
     const text = this.textOf(value);
     return {
       name: field.name,
       id,
-      inputId: `${id}-input`,
-      typed: kind.type === 'text' || kind.type === 'number',
+      inputType: kind.type === 'number' ? 'number' : 'text',
+      required: field.required === true,
       label: field.label,
       description: field.description ?? '',
-      control: kind.type === 'choice' ? (many ? 'many' : 'one') : kind.type,
+      control: controlOf(kind),
       step: kind.type === 'number' && kind.integer === true ? '1' : 'any',
       text: text ?? '',
       picked: text === '' ? null : text,

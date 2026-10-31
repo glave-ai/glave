@@ -239,6 +239,7 @@ async fn service_round<L: EventLog>(
         call_id: call("call_7")?,
         service: "GitHub".into(),
         ask: "GitHub asks you, not the model".into(),
+        note: "Your answer goes only to GitHub.".into(),
         message: "Which repository?".into(),
         fields: Vec::new(),
         state: BlobRef {

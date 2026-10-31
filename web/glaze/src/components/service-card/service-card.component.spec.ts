@@ -81,6 +81,10 @@ describe('GlzServiceCardComponent', () => {
     expect(part('message')?.textContent).toBe('Which label?');
     expect(part('note')?.textContent).toBe('Your answer goes only to GitHub.');
     expect(root.querySelectorAll('[data-testid="service-field"]').length).toBe(5);
+    // Only the one an answer needs is marked, to the eye and to a screen reader.
+    expect(root.querySelectorAll('[data-testid="service-required"]').length).toBe(1);
+    expect(root.querySelector('glz-radio-group')?.getAttribute('aria-required')).toBe('true');
+    expect(part('missing')?.textContent).toContain('required');
     const send = part('send') as HTMLButtonElement;
     expect(send.textContent.trim()).toBe('Send to GitHub');
     expect(send.disabled).toBe(true);
@@ -98,6 +102,7 @@ describe('GlzServiceCardComponent', () => {
     root.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click();
     await fixture.whenStable();
     expect(send.disabled).toBe(false);
+    expect(part('missing')).toBeNull();
     send.click();
     expect(fixture.componentInstance.answers).toEqual([
       { label: 'idea', note: 'soon', urgent: true, count: 3, also: ['a'] },

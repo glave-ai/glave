@@ -370,11 +370,8 @@ where
         };
         let output = match crate::telemetry::tool_call(hooked.tool, called).await {
             Called::Done(output) => output,
-            Called::Asks(asks) => {
-                // The turn stops here: the answer comes to the log, and the turn goes on from it.
-                self.record_asked(thread, &call.call_id, asks).await?;
-                return Err(HarnessError::Waits(thread.id));
-            }
+            // The turn stops here: the answer comes to the log, and the turn goes on from it.
+            Called::Asks(asks) => self.record_asked(thread, &call.call_id, asks).await?,
         };
         live(Live::ToolFinished {
             summary,

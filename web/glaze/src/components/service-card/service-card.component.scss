@@ -23,6 +23,12 @@
   font-weight: var(--glz-weight-bold);
 }
 
+.required {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  font-weight: var(--glz-weight-regular);
+}
+
 .description,
 .note,
 .told {

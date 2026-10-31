@@ -425,6 +425,7 @@ describe('what a service asks', () => {
         call_id: call,
         service: 'GitHub',
         ask: 'GitHub asks you, not the model',
+        note: 'Your answer goes only to GitHub.',
         message: 'Which label?',
         state: { sha256: 'x', bytes: 1, media_type: 'application/json' },
         fields: [
@@ -466,6 +467,7 @@ describe('what a service asks', () => {
         call: 'c1',
         service: 'GitHub',
         ask: 'GitHub asks you, not the model',
+        note: 'Your answer goes only to GitHub.',
         message: 'Which label?',
         told: null,
         fields: [

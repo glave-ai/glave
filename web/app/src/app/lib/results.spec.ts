@@ -97,6 +97,7 @@ function service(seq: number, told: string | null = null): ServiceItem {
     call: 's',
     service: 'GitHub',
     ask: 'GitHub asks you, not the model',
+    note: 'Your answer goes only to GitHub.',
     message: 'Which?',
     fields: [],
     told,

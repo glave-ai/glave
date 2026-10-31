@@ -276,6 +276,7 @@ describe('ThreadItemComponent', () => {
     call: 'c3',
     service: 'GitHub',
     ask: 'GitHub asks you, not the model',
+    note: 'Your answer goes only to GitHub, as the server says.',
     message: 'Which label?',
     fields: [
       {
@@ -293,9 +294,7 @@ describe('ThreadItemComponent', () => {
     const part = (name: string): HTMLElement | null =>
       root.querySelector(`[data-testid="thread-service-${name}"]`);
     expect(part('who')?.textContent).toBe('GitHub asks you, not the model');
-    expect(part('note')?.textContent).toBe(
-      'Your answer goes only to GitHub. The model sees that you answered, not what you typed.',
-    );
+    expect(part('note')?.textContent).toBe('Your answer goes only to GitHub, as the server says.');
     expect(part('send')?.textContent.trim()).toBe('Send to GitHub');
     await expectAccessible(root);
     root.querySelector<HTMLInputElement>('[data-testid="thread-service-choice"] input')?.click();

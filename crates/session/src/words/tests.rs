@@ -581,6 +581,7 @@ fn an_organization_s_name_is_written_again_in_a_listing_of_them() {
 fn what_a_service_asks_and_what_came_of_it_are_written_in_the_readers_language() {
     let asked = serde_json::json!({
         "call_id": "call_1", "service": "GitHub", "ask": "GitHub asks you, not the model",
+        "note": "Your answer goes only to GitHub. The model sees that you answered, not what you typed.",
         "message": "Which repository?", "fields": [],
         "state": {
             "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
@@ -610,6 +611,10 @@ fn what_a_service_asks_and_what_came_of_it_are_written_in_the_readers_language()
     assert_eq!(
         english(&Sentence::ServiceAsks { service: service() }),
         "GitHub asks you, not the model"
+    );
+    assert_eq!(
+        english(&Sentence::ServiceNote { service: service() }),
+        "Your answer goes only to GitHub. The model sees that you answered, not what you typed."
     );
     for (outcome, told, sentence) in [
         (
@@ -644,6 +649,8 @@ fn what_a_service_asks_and_what_came_of_it_are_written_in_the_readers_language()
         said.contains("GitHub") && said != "GitHub asks you, not the model",
         "{said}"
     );
+    assert!(field(&written, "note").contains("GitHub"));
+    assert_ne!(field(&written, "note"), field(&event, "note"));
     assert_eq!(
         field(&written, "message"),
         "Which repository?",

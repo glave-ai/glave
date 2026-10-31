@@ -25,6 +25,10 @@ pub struct ServiceAsked {
     /// Who asks, in a sentence of glave's, so a tool cannot pass as the model: "GitHub asks you,
     /// not the model". Recorded in English, written again in the reader's language.
     pub ask: String,
+    /// Where the answer goes, in sentences of glave's: "Your answer goes only to GitHub. The
+    /// model sees that you answered, not what you typed." Recorded in English, written again in
+    /// the reader's language.
+    pub note: String,
     /// What the service asks, in its own words: outside text, shown as the service's.
     pub message: String,
     /// What it asks for, in the order it listed them.

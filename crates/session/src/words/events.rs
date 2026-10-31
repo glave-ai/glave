@@ -49,8 +49,11 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
             Body::ApprovalRequested(asked)
         }
         Body::ServiceAsked(mut asked) => {
-            let service = asked.service.clone();
-            asked.ask = say(language, &Sentence::ServiceAsks { service });
+            let service = || asked.service.clone();
+            let ask = say(language, &Sentence::ServiceAsks { service: service() });
+            let note = say(language, &Sentence::ServiceNote { service: service() });
+            asked.ask = ask;
+            asked.note = note;
             Body::ServiceAsked(asked)
         }
         Body::ServiceAnswered(mut answered) => {

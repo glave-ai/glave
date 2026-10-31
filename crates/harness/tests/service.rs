@@ -113,6 +113,10 @@ fn a_call_that_asks_waits_in_the_log_and_goes_on_with_the_answer() {
         });
         let asked = asked.unwrap();
         assert_eq!(asked.ask, "GitHub asks you, not the model");
+        assert_eq!(
+            asked.note,
+            "Your answer goes only to GitHub. The model sees that you answered, not what you typed."
+        );
         assert_eq!(asked.message, "Which repository?");
         let view = harness
             .log()
@@ -367,5 +371,67 @@ fn a_subagents_call_never_reaches_the_person() {
         assert_eq!(ended.outcome, Outcome::Completed);
         assert_eq!(source.unasked(), 1);
         assert_eq!(source.given(), Vec::new());
+    });
+}
+
+#[test]
+fn no_reference_an_event_holds_gives_away_the_answer() {
+    let dir = folder("service-salted");
+    block_on!(async {
+        let source = AskingTool::asking(&["First?", "Then?"]);
+        let harness = harness(&dir, calling("Filed."), InTheLog).await;
+        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        stops_at_a_wait(&harness, &mut thread).await;
+        for _ in 0..2 {
+            let (call, at) = asked_at(&events(harness.log(), thread.id).await);
+            harness
+                .answer_service(scope(), thread.id, &call, at, typed(), None)
+                .await
+                .unwrap();
+            let _ = harness
+                .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+                .await;
+        }
+        let events = events(harness.log(), thread.id).await;
+        let answers: Vec<_> = events
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ServiceAnswered(answered) => answered.answers.clone(),
+                _ => None,
+            })
+            .collect();
+        let [first, second] = answers.as_slice() else {
+            panic!("two answers were kept");
+        };
+        assert_ne!(first.sha256, second.sha256, "the same answer, salted apart");
+        assert_eq!(first.bytes, 1024, "padded, so its size says little");
+    });
+}
+
+#[test]
+fn what_keeps_more_than_glave_holds_fails_its_call_and_the_turn_goes_on() {
+    let dir = folder("service-too-big");
+    block_on!(async {
+        let kept = json!("x".repeat(2 * 1024 * 1024));
+        let source = AskingTool::keeping(&["Which repository?"], kept);
+        let harness = harness(&dir, calling("Filed."), InTheLog).await;
+        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let ended = turn(&harness, &mut thread, "file it").await;
+        assert_eq!(ended.outcome, Outcome::Completed);
+        let events = events(harness.log(), thread.id).await;
+        assert!(!kinds(&events).contains(&"service.asked"));
+        let result = events.iter().find_map(|event| match &event.body {
+            Body::ToolCallCompleted(done) => Some(done.clone()),
+            _ => None,
+        });
+        let result = result.unwrap();
+        assert!(result.is_error);
+        assert!(
+            format!("{:?}", result.output).contains("keeps more with it than glave holds"),
+            "{:?}",
+            result.output
+        );
     });
 }

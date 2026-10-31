@@ -20,6 +20,8 @@ pub const ASKING_TOOL: &str = "mcp__github__file";
 #[derive(Default)]
 pub struct AskingTool {
     asks: Mutex<VecDeque<String>>,
+    /// What it keeps while the person answers.
+    state: serde_json::Value,
     given: Mutex<Vec<Option<ServiceGiven>>>,
     unasked: Mutex<u32>,
 }
@@ -27,7 +29,15 @@ pub struct AskingTool {
 impl AskingTool {
     /// One that asks each of `asks`, in turn.
     pub fn asking(asks: &[&str]) -> Arc<Self> {
-        let tool = Self::default();
+        Self::keeping(asks, serde_json::Value::Null)
+    }
+
+    /// One that asks each of `asks`, in turn, keeping `state` meanwhile.
+    pub fn keeping(asks: &[&str], state: serde_json::Value) -> Arc<Self> {
+        let tool = Self {
+            state,
+            ..Self::default()
+        };
         *tool.asks.lock().unwrap_or_else(PoisonError::into_inner) =
             asks.iter().map(|ask| (*ask).to_owned()).collect();
         Arc::new(tool)
@@ -99,7 +109,11 @@ impl ToolSource for AskingTool {
                     required: true,
                     kind: ServiceFieldKind::Text { default: None },
                 }],
-                state: json!({"round": "kept"}),
+                state: if self.state.is_null() {
+                    json!({"round": "kept"})
+                } else {
+                    self.state.clone()
+                },
             }),
             None => Called::Done(ToolOutput::text(false, "filed")),
         }))

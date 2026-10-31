@@ -20,6 +20,10 @@ use crate::server::{arguments, text};
 const SERVER: &str = env!("CARGO_BIN_EXE_glave-mcp-test-server");
 
 async fn start(args: &[&str]) -> McpServer {
+    start_as("github", args).await
+}
+
+async fn start_as(name: &str, args: &[&str]) -> McpServer {
     let config = ServerConfig::Stdio {
         command: SERVER.to_owned(),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
@@ -28,14 +32,7 @@ async fn start(args: &[&str]) -> McpServer {
     let processes = glave_process::Processes::unrecorded();
     let folder = Path::new(env!("CARGO_MANIFEST_DIR"));
     let none = BTreeMap::new();
-    let server = McpServer::start(
-        "github",
-        &config,
-        &none,
-        folder,
-        Limits::default(),
-        &processes,
-    );
+    let server = McpServer::start(name, &config, &none, folder, Limits::default(), &processes);
     server.tools().await.unwrap();
     server
 }
@@ -204,14 +201,14 @@ fn rounds_stay_capped_across_every_wait() {
 fn a_password_or_a_page_is_refused_with_no_card() {
     block_on!(async {
         let server = start(&[]).await;
-        for what in ["password", "page"] {
+        for (what, why) in [
+            ("password", "Do not ask them for it yourself"),
+            ("page", "asked the person to open a page"),
+        ] {
             let said = text(&done(ask(&server, what, None).await));
             assert!(said.contains("You said: decline"), "{what}: {said}");
             assert!(said.contains("glave declined for them"), "{what}: {said}");
-            assert!(
-                said.contains("Do not ask them for it yourself"),
-                "{what}: {said}"
-            );
+            assert!(said.contains(why), "{what}: {said}");
         }
         server.close().await;
     });
@@ -228,6 +225,39 @@ fn with_no_one_to_answer_everything_is_declined() {
         let said = text(&said);
         assert!(said.contains("You said: decline, decline"), "{said}");
         assert!(said.contains("no one was there to answer"), "{said}");
+        server.close().await;
+    });
+}
+
+#[test]
+fn an_answer_goes_to_the_server_that_asked_and_no_other() {
+    block_on!(async {
+        let (asking, other) = (start(&[]).await, start_as("other", &[]).await);
+        let form = asks(ask(&asking, "form", None).await);
+        let arguments = arguments(json!({"what": "form"}));
+        let given = answered(form, &json!({"label": "bug"}));
+        let called = other
+            .call_asking("mcp__other__ask", &arguments, Some(given), &NeverCancelled)
+            .await;
+        let said = done(called);
+        assert!(said.is_error);
+        assert!(text(&said).contains("other is not github"), "{said:?}");
+        asking.close().await;
+        other.close().await;
+    });
+}
+
+#[test]
+fn a_service_named_as_glave_asks_no_one() {
+    block_on!(async {
+        let server = start_as("Glave", &[]).await;
+        let arguments = arguments(json!({"what": "form"}));
+        let called = server
+            .call_asking("mcp__Glave__ask", &arguments, None, &NeverCancelled)
+            .await;
+        let said = text(&done(called));
+        assert!(said.contains("You said: decline"), "{said}");
+        assert!(said.contains("could pass as glave"), "{said}");
         server.close().await;
     });
 }

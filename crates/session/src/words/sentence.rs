@@ -203,6 +203,8 @@ sentences! {
     ServiceAnswerMisfit { field: String } = "service-answer-misfit"
         "the answer to { $field } does not fit what was asked",
     ServiceAsks { service: String } = "service-asks" "{ $service } asks you, not the model",
+    ServiceNote { service: String } = "service-note"
+        "Your answer goes only to { $service }. The model sees that you answered, not what you typed.",
     ServiceAnswered { service: String } = "service-answered" "You answered { $service }",
     ServiceDeclined { service: String } = "service-declined" "You declined { $service }'s question",
     ServiceUnanswered { service: String } = "service-unanswered"

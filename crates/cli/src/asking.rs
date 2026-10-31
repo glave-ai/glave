@@ -65,19 +65,17 @@ pub(crate) fn answer(question: &Question, typed: &str) -> String {
 /// Who asks and what, as the terminal shows it: the server's line, then the service's words
 /// marked as theirs, then where the answer goes.
 pub(crate) fn service_shown(color: bool, asked: &ServiceAsked) -> String {
-    let service = &asked.service;
     format!(
-        "\n\n{} {}\n{service}: {}\n{}\n",
+        "\n\n{} {}\n{}: {}\n{} {}\n",
         paint(color, "\x1b[33m", "question"),
         asked.ask,
+        asked.service,
         asked.message,
+        paint(color, DIM, &asked.note),
         paint(
             color,
             DIM,
-            &format!(
-                "Your answer goes only to {service}. The model sees that you answered, not what \
-                 you typed. A required field left empty declines."
-            ),
+            "A required field left empty with nothing to use declines."
         ),
     )
 }
@@ -107,10 +105,10 @@ pub(crate) fn field_shown(color: bool, field: &ServiceField) -> String {
         ServiceFieldKind::Number { .. } => "a number",
         ServiceFieldKind::Text { .. } => "your answer",
     };
-    let how = if field.required {
-        how.to_owned()
-    } else {
-        format!("{how}, or nothing")
+    let how = match (default_shown(field), field.required) {
+        (Some(default), _) => format!("{how}, or Enter for {default}"),
+        (None, true) => how.to_owned(),
+        (None, false) => format!("{how}, or nothing"),
     };
     format!("{text}  {} › ", paint(color, DIM, &how))
 }
@@ -129,11 +127,12 @@ pub(crate) enum Field {
 pub(crate) fn field_answer(field: &ServiceField, typed: &str) -> Result<Field, String> {
     let typed = typed.trim();
     if typed.is_empty() {
-        return Ok(if field.required {
+        let none = if field.required {
             Field::Declined
         } else {
-            default_of(field).map_or(Field::Skipped, Field::Value)
-        });
+            Field::Skipped
+        };
+        return Ok(default_of(field).map_or(none, Field::Value));
     }
     let value = match &field.kind {
         ServiceFieldKind::Text { .. } => Some(Value::String(typed.to_owned())),
@@ -173,6 +172,32 @@ pub(crate) fn field_answer(field: &ServiceField, typed: &str) -> Result<Field, S
     value
         .map(Field::Value)
         .ok_or_else(|| format!("That doesn't fit {}: try again.", field.label))
+}
+
+/// The default a field left empty stands for, as the person reads it.
+fn default_shown(field: &ServiceField) -> Option<String> {
+    match (&field.kind, default_of(field)?) {
+        (ServiceFieldKind::YesNo { .. }, Value::Bool(yes)) => {
+            Some(if yes { "yes" } else { "no" }.to_owned())
+        }
+        (
+            ServiceFieldKind::Choice {
+                options, default, ..
+            },
+            _,
+        ) => {
+            let labels: Vec<&str> = default
+                .iter()
+                .map(|value| {
+                    let found = options.iter().find(|option| option.value == *value);
+                    found.map_or(value.as_str(), |option| option.label.as_str())
+                })
+                .collect();
+            Some(labels.join(", "))
+        }
+        (_, Value::String(text)) => Some(text),
+        (_, other) => Some(other.to_string()),
+    }
 }
 
 /// The answer a field left empty stands for, when it has one.
@@ -263,6 +288,17 @@ mod tests {
             Field::Declined,
             "required, so it declines"
         );
+        let given = field(
+            true,
+            ServiceFieldKind::Text {
+                default: Some("hi".to_owned()),
+            },
+        );
+        assert_eq!(
+            value(&given, ""),
+            Field::Value(json!("hi")),
+            "as the app does"
+        );
         let number = |integer| {
             field(
                 false,
@@ -306,5 +342,17 @@ mod tests {
             "{shown}"
         );
         assert!(shown.ends_with("a number, or nothing › "), "{shown}");
+        let yes = field(
+            false,
+            ServiceFieldKind::YesNo {
+                default: Some(true),
+            },
+        );
+        assert!(field_shown(false, &yes).ends_with("y or n, or Enter for yes › "));
+        let picked = field_shown(false, &field(true, choice(false, &["idea"])));
+        assert!(
+            picked.ends_with("a number, or Enter for IDEA › "),
+            "{picked}"
+        );
     }
 }

@@ -221,8 +221,7 @@ When a client can answer, the model is offered `question`: up to four questions,
 A connected service can ask the person something in the middle of a call (`approvals.md`, "A service asks"). The event says what: `service.asked`, with who asks in the server's sentence, the service's words, and its fields. Any client may answer with `service/answer`, naming the call and the `seq` of the `service.asked`, since a call may ask more than once: with each field's value by its name, or declining. The turn goes on with the call.
 
 - An answer to something no longer waiting, or anything but the latest a call asked, is refused with `-32006`; one that does not fit the fields is refused with `-32602`, saying which field.
-- `service.answered` says what came of it, in the server's line, which every client shows in the card's place. Neither event holds what was typed.
-- A client owns what it says around them: the word on its button and where the answer goes.
+- `service.asked` says who asks and where the answer goes in the server's sentences, and `service.answered` what came of it in the server's line, which every client shows in the card's place. Neither event holds what was typed.
 
 ## Project trust
 

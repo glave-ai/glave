@@ -5,7 +5,7 @@ use super::*;
 
 fn form_of(schema: &Value, message: &str) -> Option<Form> {
     let params = json!({"mode": "form", "message": message, "requestedSchema": schema});
-    form("k", serde_json::from_value(params).unwrap())
+    form("k", serde_json::from_value(params).unwrap()).ok()
 }
 
 fn text_field(name: &str, title: &str, description: &str) -> Value {
@@ -28,6 +28,20 @@ fn a_field_that_asks_for_a_secret_is_refused() {
         ("clientSecret", "x", "x"),
         ("value", "Access token", "x"),
         ("value", "x", "your credentials"),
+        ("passWord", "x", "x"),
+        ("accesstoken", "x", "x"),
+        ("authtoken", "x", "x"),
+        ("clientsecret", "x", "x"),
+        ("sshkey", "x", "x"),
+        ("password1", "x", "x"),
+        ("pass", "x", "x"),
+        ("pin", "x", "x"),
+        ("cvv", "x", "x"),
+        ("value", "Verification code", "x"),
+        ("Passwort", "x", "x"),
+        ("contraseña", "x", "x"),
+        ("contrasen\u{303}a", "x", "x"),
+        ("pass\u{200b}word", "x", "x"),
     ] {
         assert!(
             form_of(&text_field(name, title, description), "Which?").is_none(),
@@ -44,6 +58,8 @@ fn a_field_that_only_sounds_near_a_secret_is_not() {
         ("keyword", "Keyword", "What to search for"),
         ("tokenizer", "Tokenizer", "Which to use"),
         ("monkey", "Monkey", "x"),
+        ("spinner", "Spinner", "x"),
+        ("compass", "Compass", "x"),
     ] {
         assert!(
             form_of(&text_field(name, title, description), "Which?").is_some(),
@@ -65,12 +81,118 @@ fn a_message_that_asks_for_a_secret_is_refused_where_it_could_be_typed() {
 }
 
 #[test]
+fn a_yes_or_no_may_say_what_only_typing_would_give_away() {
+    let yes_no = |name: &str| json!({"type": "object", "properties": {name: {"type": "boolean"}}});
+    assert!(form_of(&yes_no("pass"), "Did the tests go well?").is_some());
+    assert!(form_of(&yes_no("pin"), "Keep it at the top?").is_some());
+    assert!(form_of(&yes_no("password"), "Rotate it?").is_none());
+}
+
+#[test]
+fn what_could_rewrite_a_terminal_or_hide_letters_is_gone_before_anyone_shows_it() {
+    assert_eq!(clean("a\u{1b}[2Kb\nc\u{200b}d\u{202e}e"), "a[2Kb cde");
+    assert_eq!(clean("  two\r\n\tlines\u{2028}here "), "two lines here");
+    let schema = json!({"type": "object", "properties": {
+        "one": {"type": "string", "title": "\u{1b}[1mBold", "description": "x\ny",
+            "oneOf": [{"const": "a\u{7}", "title": "A\u{7}y"}], "default": "a\u{7}"},
+        "words": {"type": "string", "default": "d\u{1b}e\nf"},
+    }});
+    let form = form_of(&schema, "Ask\nglave: all is well\u{1b}[2K").unwrap();
+    assert_eq!(form.message, "Ask glave: all is well[2K");
+    let one = form
+        .fields
+        .iter()
+        .find(|field| field.name == "one")
+        .unwrap();
+    assert_eq!(one.label, "[1mBold");
+    assert_eq!(one.description.as_deref(), Some("x y"));
+    assert_eq!(
+        one.kind,
+        ServiceFieldKind::Choice {
+            // What goes back is as the server sent it.
+            options: vec![ServiceOption {
+                value: "a\u{7}".to_owned(),
+                label: "Ay".to_owned(),
+            }],
+            multiple: false,
+            default: vec!["a\u{7}".to_owned()],
+        }
+    );
+    let words = form
+        .fields
+        .iter()
+        .find(|field| field.name == "words")
+        .unwrap();
+    assert_eq!(
+        words.kind,
+        ServiceFieldKind::Text {
+            default: Some("de f".to_owned())
+        }
+    );
+    assert!(
+        form_of(&schema, "\u{1b}\u{7}").is_none(),
+        "nothing left to show"
+    );
+}
+
+#[test]
+fn a_default_is_one_only_if_it_fits() {
+    let schema = json!({"type": "object", "properties": {
+        "one": {"type": "string", "enum": ["a", "b"], "default": "c"},
+        "many": {"type": "array", "items": {"type": "string", "enum": ["x"]},
+            "default": ["x", "y"]},
+    }});
+    let form = form_of(&schema, "m").unwrap();
+    let default_of = |name: &str| {
+        let field = form.fields.iter().find(|field| field.name == name).unwrap();
+        match &field.kind {
+            ServiceFieldKind::Choice { default, .. } => default.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(default_of("one"), Vec::<String>::new());
+    assert_eq!(default_of("many"), ["x"]);
+    let long = "y".repeat(LONGEST_WORDS + 1);
+    let schema =
+        json!({"type": "object", "properties": {"t": {"type": "string", "default": long}}});
+    assert!(form_of(&schema, "m").is_none());
+}
+
+#[test]
+fn a_service_named_as_glave_or_the_model_does_not_ask() {
+    for name in [
+        "glave",
+        "Glave",
+        "the model",
+        "Model",
+        "GLAVE ",
+        "gla\u{200b}ve",
+        "a\u{1b}b",
+        "",
+    ] {
+        assert!(!may_ask(name), "{name:?}");
+    }
+    for name in ["GitHub", "tests", "My tracker", "glave-docs"] {
+        assert!(may_ask(name), "{name:?}");
+    }
+}
+
+#[test]
+fn each_refusal_says_its_own_reason() {
+    assert!(Note::Refused.said("x").contains("such as a password"));
+    assert!(!Note::TooMuch.said("x").contains("password"));
+    assert!(!Note::Page.said("x").contains("password"));
+    assert!(!Note::Name.said("x").contains("password"));
+}
+
+#[test]
 fn a_page_to_open_is_refused() {
     let params = json!({
         "mode": "url", "message": "Open this", "url": "https://example.com/a",
         "elicitationId": "e1"
     });
-    assert!(form("k", serde_json::from_value(params).unwrap()).is_none());
+    let refused = form("k", serde_json::from_value(params).unwrap()).err();
+    assert_eq!(refused, Some(Note::Page));
 }
 
 #[test]

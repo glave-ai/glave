@@ -96,6 +96,8 @@ export interface ServiceItem extends Placed {
   readonly service: string;
   /** Who asks, in the server's sentence: "GitHub asks you, not the model". */
   readonly ask: string;
+  /** Where the answer goes, in the server's sentences. */
+  readonly note: string;
   /** What it asks, in the service's own words. */
   readonly message: string;
   readonly fields: readonly GlzServiceField[];
@@ -417,6 +419,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           call,
           service: text(data['service']),
           ask: text(data['ask']),
+          note: text(data['note']),
           message: text(data['message']),
           fields: serviceFieldsOf(data['fields']),
           told: null,

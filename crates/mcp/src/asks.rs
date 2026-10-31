@@ -32,6 +32,8 @@ const LONGEST_WORDS: usize = 500;
 /// What the call has come to across its rounds: what the harness keeps while the person answers.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Asking {
+    /// The server that asked, so an answer goes to no other.
+    pub(crate) server: String,
     /// How many times the server has been called.
     pub(crate) rounds: usize,
     /// The state it asked to have back, echoed as it was.
@@ -59,7 +61,14 @@ pub(crate) enum Note {
     Answered,
     Declined,
     NoOneThere,
+    /// It seemed to ask for a secret, or could not be read.
     Refused,
+    /// It asked the person to open a page.
+    Page,
+    /// It was too much to show, or more forms in a round than the person is shown.
+    TooMuch,
+    /// It asked under a name that could pass as glave or the model.
+    Name,
 }
 
 impl Note {
@@ -79,6 +88,19 @@ impl Note {
             Self::Refused => format!(
                 "[{server} asked for something glave does not ask people for, such as a password \
                  or a key, so glave declined for them. Do not ask them for it yourself.]"
+            ),
+            Self::Page => format!(
+                "[{server} asked the person to open a page, which glave does not do, so glave \
+                 declined for them.]"
+            ),
+            Self::TooMuch => format!(
+                "[{server} asked the person more than glave shows at once, so glave declined for \
+                 them.]"
+            ),
+            Self::Name => format!(
+                "[{server} asked the person something, but its name could pass as glave or the \
+                 model, so glave declined for them. They can rename the service in their \
+                 settings.]"
             ),
         }
     }
@@ -130,6 +152,7 @@ impl Asking {
         asked: InputRound,
     ) -> Result<(), Unanswered> {
         let bad = |err: serde_json::Error| Unanswered::Failed(format!("{server}: {err}"));
+        server.clone_into(&mut self.server);
         self.state = asked.state;
         for (key, request) in asked.requests {
             let Asked::Readable(request) = request else {
@@ -142,10 +165,19 @@ impl Asking {
                     self.responses.insert(key, roots);
                 }
                 InputRequest::Elicitation(request) => {
-                    let form = form(&key, request.params);
-                    match form.filter(|_| self.forms.len() < MOST_FORMS) {
-                        Some(form) => self.forms.push_back(form),
-                        None => self.decline(key, Note::Refused).map_err(bad)?,
+                    let made = if may_ask(server) {
+                        form(&key, request.params)
+                    } else {
+                        Err(Note::Name)
+                    };
+                    let made = made.and_then(|form| {
+                        (self.forms.len() < MOST_FORMS)
+                            .then_some(form)
+                            .ok_or(Note::TooMuch)
+                    });
+                    match made {
+                        Ok(form) => self.forms.push_back(form),
+                        Err(note) => self.decline(key, note).map_err(bad)?,
                     }
                 }
                 _ => {
@@ -229,51 +261,117 @@ impl InputRound {
     }
 }
 
-/// The form `params` ask for under `key`, unless glave refuses it: a page to open, which glave
-/// does not, a form it cannot show in full, or one that seems to ask for a secret.
-fn form(key: &str, params: ElicitRequestParams) -> Option<Form> {
+/// The form `params` ask for under `key`, its words clean, unless glave refuses it, saying why: a
+/// page to open, which glave does not, a form it cannot show in full, or one that seems to ask
+/// for a secret.
+fn form(key: &str, params: ElicitRequestParams) -> Result<Form, Note> {
     let ElicitRequestParams::FormElicitationParams {
         message,
         requested_schema,
         ..
     } = params
     else {
-        return None;
+        return Err(Note::Page);
     };
+    let message = clean(&message);
     let fields = fields(&requested_schema)?;
-    let fits = message.chars().count() <= LONGEST_MESSAGE && fields.len() <= MOST_FIELDS;
-    let typed = fields.iter().any(|field| {
-        matches!(
-            field.kind,
-            ServiceFieldKind::Text { .. } | ServiceFieldKind::Number { .. }
-        )
-    });
-    let secret = fields.iter().any(field_asks_for_secret) || (typed && asks_for_secret(&message));
-    (fits && !secret).then(|| Form {
+    if message.is_empty() || message.chars().count() > LONGEST_MESSAGE || fields.len() > MOST_FIELDS
+    {
+        return Err(Note::TooMuch);
+    }
+    let typed = fields.iter().any(can_be_typed);
+    if fields.iter().any(field_asks_for_secret) || (typed && typed_asks_for_secret(&message)) {
+        return Err(Note::Refused);
+    }
+    Ok(Form {
         key: key.to_owned(),
         message,
         fields,
     })
 }
 
-/// `schema`'s fields, in the order the server listed them; `None` when one is of a kind glave
-/// does not know, or too much to show.
-fn fields(schema: &ElicitationSchema) -> Option<Vec<ServiceField>> {
+/// `text` as a client may show it: on one line, without what could rewrite the terminal it is
+/// shown in or hide letters from the eye, control and format characters and the line and
+/// paragraph separators. Line ends, tabs among them, become a space.
+pub(crate) fn clean(text: &str) -> String {
+    let spaced = text.chars().map(|letter| match letter {
+        '\n' | '\r' | '\t' | '\u{2028}' | '\u{2029}' => ' ',
+        other => other,
+    });
+    let kept: String = spaced.filter(|letter| shown(*letter)).collect();
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether `letter` is one a person sees: not a control or format character.
+fn shown(letter: char) -> bool {
+    !letter.is_control()
+        && !matches!(
+            letter,
+            '\u{ad}'
+                | '\u{600}'..='\u{605}'
+                | '\u{61c}'
+                | '\u{6dd}'
+                | '\u{70f}'
+                | '\u{890}'..='\u{891}'
+                | '\u{8e2}'
+                | '\u{180e}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{206f}'
+                | '\u{feff}'
+                | '\u{fff9}'..='\u{fffb}'
+                | '\u{1d173}'..='\u{1d17a}'
+                | '\u{e0001}'
+                | '\u{e0020}'..='\u{e007f}'
+        )
+}
+
+/// Names a service may not ask the person under, as it could pass as glave or the model: its
+/// letters alone, in lowercase.
+const NAMES_NOT_ITS_OWN: [&str; 9] = [
+    "glave",
+    "model",
+    "themodel",
+    "assistant",
+    "system",
+    "hope",
+    "you",
+    "yourassistant",
+    "yourmodel",
+];
+
+/// Whether a service of this name may ask the person: one with nothing unseen in its name, which
+/// could not pass as glave or the model.
+fn may_ask(server: &str) -> bool {
+    let plain = clean(server) == server && !server.is_empty();
+    plain && !NAMES_NOT_ITS_OWN.contains(&collapsed(server).as_str())
+}
+
+/// `schema`'s fields, in the order the server listed them; what it asks that glave cannot show
+/// when one is of a kind glave does not know, or too much to show.
+fn fields(schema: &ElicitationSchema) -> Result<Vec<ServiceField>, Note> {
     let listed = schema.property_order.clone();
     let names = listed.unwrap_or_else(|| schema.properties.keys().cloned().collect());
     let required = schema.required.as_deref().unwrap_or_default();
     names
         .into_iter()
         .map(|name| {
-            let property = schema.properties.get(&name)?;
+            let property = schema.properties.get(&name).ok_or(Note::Refused)?;
             let (title, description, kind) = described(property)?;
-            let label = title.unwrap_or_else(|| name.clone());
+            let title = title.map(|title| clean(&title)).filter(|t| !t.is_empty());
+            let label = title.unwrap_or_else(|| clean(&name));
+            let description = description.map(|words| clean(&words));
+            let description = description.filter(|words| !words.is_empty());
             let shown = [Some(&name), Some(&label), description.as_ref()];
             let fits = shown
                 .iter()
                 .flatten()
                 .all(|words| words.chars().count() <= LONGEST_WORDS);
-            fits.then(|| ServiceField {
+            if !fits || label.is_empty() {
+                return Err(Note::TooMuch);
+            }
+            Ok(ServiceField {
                 required: required.contains(&name),
                 name,
                 label,
@@ -284,19 +382,27 @@ fn fields(schema: &ElicitationSchema) -> Option<Vec<ServiceField>> {
         .collect()
 }
 
-/// A property's title, description and kind.
+/// A property's title, description and kind, as far as it can be shown: a default that does not
+/// fit it is not one, and one too long to show is too much.
 fn described(
     property: &PrimitiveSchemaDefinition,
-) -> Option<(Option<String>, Option<String>, ServiceFieldKind)> {
+) -> Result<(Option<String>, Option<String>, ServiceFieldKind), Note> {
     let words = |word: &Option<std::borrow::Cow<'static, str>>| word.as_deref().map(str::to_owned);
-    Some(match property {
-        PrimitiveSchemaDefinition::String(text) => (
-            words(&text.title),
-            words(&text.description),
-            ServiceFieldKind::Text {
-                default: text.default.clone(),
-            },
-        ),
+    Ok(match property {
+        PrimitiveSchemaDefinition::String(text) => {
+            let default = text.default.as_deref().map(clean);
+            if default
+                .as_ref()
+                .is_some_and(|text| text.chars().count() > LONGEST_WORDS)
+            {
+                return Err(Note::TooMuch);
+            }
+            (
+                words(&text.title),
+                words(&text.description),
+                ServiceFieldKind::Text { default },
+            )
+        }
         PrimitiveSchemaDefinition::Number(number) => (
             words(&number.title),
             words(&number.description),
@@ -321,12 +427,13 @@ fn described(
             },
         ),
         PrimitiveSchemaDefinition::Enum(choice) => return chosen(choice),
-        _ => return None,
+        _ => return Err(Note::Refused),
     })
 }
 
-/// A choice's title, description and kind.
-fn chosen(choice: &EnumSchema) -> Option<(Option<String>, Option<String>, ServiceFieldKind)> {
+/// A choice's title, description and kind: its options' labels clean, and of its defaults only
+/// those it offers.
+fn chosen(choice: &EnumSchema) -> Result<(Option<String>, Option<String>, ServiceFieldKind), Note> {
     let words = |word: &Option<std::borrow::Cow<'static, str>>| word.as_deref().map(str::to_owned);
     let plain = |values: &[String]| -> Vec<ServiceOption> {
         values.iter().map(|value| option(value, value)).collect()
@@ -337,7 +444,7 @@ fn chosen(choice: &EnumSchema) -> Option<(Option<String>, Option<String>, Servic
             .map(|pair| option(&pair.const_, &pair.title))
             .collect()
     };
-    let (title, description, options, multiple, default) = match choice {
+    let (title, description, options, multiple, default): (_, _, _, _, Vec<String>) = match choice {
         EnumSchema::Single(SingleSelectEnumSchema::Untitled(one)) => (
             words(&one.title),
             words(&one.description),
@@ -379,14 +486,22 @@ fn chosen(choice: &EnumSchema) -> Option<(Option<String>, Option<String>, Servic
                 old.default.clone().into_iter().collect(),
             )
         }
-        _ => return None,
+        _ => return Err(Note::Refused),
     };
     let fits = options.len() <= MOST_OPTIONS
         && options.iter().all(|option| {
-            option.value.chars().count() <= LONGEST_WORDS
+            !option.label.is_empty()
+                && option.value.chars().count() <= LONGEST_WORDS
                 && option.label.chars().count() <= LONGEST_WORDS
         });
-    fits.then_some((
+    if !fits {
+        return Err(Note::TooMuch);
+    }
+    let default = default
+        .into_iter()
+        .filter(|value| options.iter().any(|option| option.value == *value))
+        .collect();
+    Ok((
         title,
         description,
         ServiceFieldKind::Choice {
@@ -397,87 +512,150 @@ fn chosen(choice: &EnumSchema) -> Option<(Option<String>, Option<String>, Servic
     ))
 }
 
+/// An option: its value goes back as the server sent it, its label as a client may show it.
 fn option(value: &str, label: &str) -> ServiceOption {
     ServiceOption {
         value: value.to_owned(),
-        label: label.to_owned(),
+        label: clean(label),
     }
+}
+
+/// Whether `field` takes what a person types: a choice or a yes or no gives nothing away.
+fn can_be_typed(field: &ServiceField) -> bool {
+    matches!(
+        field.kind,
+        ServiceFieldKind::Text { .. } | ServiceFieldKind::Number { .. }
+    )
 }
 
 /// Whether `field`'s name, title or description seems to ask for a secret.
 fn field_asks_for_secret(field: &ServiceField) -> bool {
+    let says = |asks: fn(&str) -> bool| {
+        asks(&field.name) || asks(&field.label) || field.description.as_deref().is_some_and(asks)
+    };
     words(&field.name) == ["key"]
-        || asks_for_secret(&field.name)
-        || asks_for_secret(&field.label)
-        || field.description.as_deref().is_some_and(asks_for_secret)
+        || says(asks_for_secret)
+        || (can_be_typed(field) && says(typed_asks_for_secret))
 }
 
-/// Words that ask for a secret wherever they appear.
+/// Words that ask for a secret wherever they stand alone.
 const SECRET_WORDS: [&str; 15] = [
-    "password",
-    "passwords",
-    "passwd",
     "pwd",
-    "passphrase",
-    "passcode",
     "secret",
     "secrets",
     "token",
     "tokens",
     "credential",
     "credentials",
-    "apikey",
     "otp",
+    "totp",
     "mfa",
+    "2fa",
+    "cvv",
+    "cvc",
+    "ssn",
+    "bearer",
 ];
 
-/// Words that make the next `key` a secret, where "key" alone may be anything ("issue key").
-const KEY_KINDS: [&str; 12] = [
-    "api",
-    "access",
-    "auth",
-    "client",
-    "deploy",
-    "encryption",
-    "gpg",
-    "license",
-    "pgp",
-    "private",
-    "signing",
-    "ssh",
+/// What asks for a secret anywhere in a text's letters, however it is spaced, cased or hidden:
+/// `accesstoken`, `client_secret`, `passWord1`. Long enough that no plain word holds one, as
+/// `tokenizer` holds `token`. Some languages' words beside English's.
+const SECRET_LETTERS: [&str; 34] = [
+    "password",
+    "passwd",
+    "passphrase",
+    "passcode",
+    "passwort",
+    "kennwort",
+    "contrasena",
+    "contraseña",
+    "motdepasse",
+    "senha",
+    "wachtwoord",
+    "accesstoken",
+    "authtoken",
+    "idtoken",
+    "refreshtoken",
+    "bearertoken",
+    "sessiontoken",
+    "apitoken",
+    "clientsecret",
+    "apisecret",
+    "secretkey",
+    "apikey",
+    "accesskey",
+    "authkey",
+    "privatekey",
+    "signingkey",
+    "encryptionkey",
+    "sshkey",
+    "deploykey",
+    "gpgkey",
+    "pgpkey",
+    "clientkey",
+    "licensekey",
+    "verificationcode",
 ];
+
+/// Words that ask for a secret only where it could be typed: "Did the tests pass?" and "Pin this
+/// issue?" are a yes or no, and give nothing away.
+const TYPED_SECRET_WORDS: [&str; 2] = ["pass", "pin"];
+
+/// What, in a text's letters, asks for a secret only where it could be typed.
+const TYPED_SECRET_LETTERS: [&str; 4] = ["securitycode", "onetimecode", "logincode", "authcode"];
 
 /// Whether `text` seems to ask for a password, key, token, secret or credential: a person's way
 /// in to something, which a form is never the place for, whoever asks. A service that hides what
 /// it asks for gets past this; a service that says so does not.
 fn asks_for_secret(text: &str) -> bool {
-    let words = words(text);
-    words
+    let letters = collapsed(text);
+    words(text)
         .iter()
         .any(|word| SECRET_WORDS.contains(&word.as_str()))
-        || words.windows(2).any(|pair| match pair {
-            [kind, key] => {
-                KEY_KINDS.contains(&kind.as_str()) && matches!(key.as_str(), "key" | "keys")
-            }
-            _ => false,
-        })
+        || SECRET_LETTERS.iter().any(|secret| letters.contains(secret))
 }
 
-/// `text`'s words in lowercase, split at anything not a letter or a digit and where a lowercase
-/// letter meets a capital (`apiKey`, `client_secret`).
+/// Whether `text` seems to ask for a secret, read as what a person could type.
+fn typed_asks_for_secret(text: &str) -> bool {
+    let letters = collapsed(text);
+    asks_for_secret(text)
+        || words(text)
+            .iter()
+            .any(|word| TYPED_SECRET_WORDS.contains(&word.as_str()))
+        || TYPED_SECRET_LETTERS
+            .iter()
+            .any(|secret| letters.contains(secret))
+}
+
+/// `text`'s letters and digits alone, in lowercase, with what hides them gone.
+fn collapsed(text: &str) -> String {
+    text.chars()
+        .filter(|letter| letter.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// `text`'s words in lowercase, split at anything not a letter or a digit, where a lowercase
+/// letter meets a capital (`apiKey`, `client_secret`), and where digits end (`password1` stays
+/// whole for the letters above; `pin1` is `pin`).
 fn words(text: &str) -> Vec<String> {
     let mut words = vec![String::new()];
     let mut lower = false;
-    for letter in text.chars() {
+    let mut digit = false;
+    for letter in text.chars().filter(|letter| shown(*letter)) {
         if !letter.is_alphanumeric() {
             words.push(String::new());
             lower = false;
+            digit = false;
             continue;
         }
-        if lower && letter.is_uppercase() {
+        if (lower && (letter.is_uppercase() || letter.is_ascii_digit()))
+            || (digit && !letter.is_ascii_digit())
+        {
             words.push(String::new());
         }
         lower = letter.is_lowercase();
+        digit = letter.is_ascii_digit();
         if let Some(word) = words.last_mut() {
             word.extend(letter.to_lowercase());
         }

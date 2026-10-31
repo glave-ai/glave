@@ -100,6 +100,7 @@ fn what_a_service_asks_stands_between_runs() {
         "service.asked",
         &json!({
             "call_id": "call_1", "service": "x", "ask": "x asks you, not the model",
+            "note": "Your answer goes only to x.",
             "message": "Which?", "fields": [],
             "state": {
                 "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",

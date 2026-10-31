@@ -82,6 +82,13 @@ pub(crate) async fn call(
     let person = matches!(answerer, Answerer::Person(_));
     if let Answerer::Person(Some(given)) = answerer {
         asking = serde_json::from_value(given.state).map_err(bad)?;
+        // What the person answered goes to the server they answered, and no other.
+        if asking.server != server {
+            return Err(Unanswered::Failed(format!(
+                "{server} is not {}, which asked, so what the person answered was not sent.",
+                asking.server
+            )));
+        }
         asking.given(given.answer).map_err(bad)?;
     }
     loop {

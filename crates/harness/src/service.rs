@@ -10,10 +10,11 @@ use glave_event::{
     ServiceAsked, ServiceOutcome, ThreadId, misfit,
 };
 use glave_ports::{
-    BlobStore, EventLog, ModelProvider, Pieces, Scope, ServiceAsks, ServiceGiven, ToolOutput,
-    WaitKind, read_all,
+    BlobError, BlobStore, EventLog, ModelProvider, Pieces, Scope, ServiceAsks, ServiceGiven,
+    ToolOutput, WaitKind, read_all,
 };
-use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::approval::Approver;
 use crate::calls::NOT_RUN;
@@ -27,6 +28,22 @@ const STATE_LIMIT: u64 = 1024 * 1024;
 
 /// The most what a person answers one form with may be, an answer to each of its fields.
 const ANSWERS_LIMIT: u64 = 1024 * 1024;
+
+/// What is kept is padded to a multiple of this, so its size says little of what it holds.
+const PADDED_TO: usize = 1024;
+
+/// What is kept: `value`, with a salt of its own so no two have one hash.
+#[derive(Serialize)]
+struct Salted<'a, T> {
+    salt: [u8; 10],
+    value: &'a T,
+}
+
+/// What [`Salted`] reads back as.
+#[derive(Deserialize)]
+struct KeptBack<T> {
+    value: T,
+}
 
 /// What the latest thing a service asked in a call came to.
 #[derive(Debug, Clone)]
@@ -61,6 +78,13 @@ fn asks_sentence(service: &str) -> String {
     format!("{service} asks you, not the model")
 }
 
+/// Where the answer goes.
+fn note_sentence(service: &str) -> String {
+    format!(
+        "Your answer goes only to {service}. The model sees that you answered, not what you typed."
+    )
+}
+
 /// What came of it, in a line.
 fn told(service: &str, outcome: ServiceOutcome) -> String {
     match outcome {
@@ -83,7 +107,9 @@ where
         !thread.delegated() && self.approver.waits(thread.id) && self.approver.can_answer(thread.id)
     }
 
-    /// Stores `value` for `thread`, as nothing an event's reader can read.
+    /// Stores `value` for `thread`, as nothing an event's reader can read or guess: salted, so the
+    /// hash an event holds does not give away a yes or a short answer, and padded, so its size
+    /// does not.
     async fn keep(
         &self,
         scope: &Scope,
@@ -91,7 +117,13 @@ where
         value: &impl Serialize,
         limit: u64,
     ) -> Result<BlobRef, HarnessError> {
-        let bytes = serde_json::to_vec(value).map_err(|e| HarnessError::Event(e.to_string()))?;
+        let salted = Salted {
+            salt: self.entropy.bytes()?,
+            value,
+        };
+        let mut bytes =
+            serde_json::to_vec(&salted).map_err(|e| HarnessError::Event(e.to_string()))?;
+        bytes.resize(bytes.len().next_multiple_of(PADDED_TO), b' ');
         let stored = self.blobs.put(
             scope,
             Some(thread),
@@ -103,7 +135,7 @@ where
     }
 
     /// What `blob`, stored by [`Self::keep`], holds.
-    async fn kept_back<T: serde::de::DeserializeOwned>(
+    async fn kept_back<T: DeserializeOwned>(
         &self,
         scope: &Scope,
         blob: &BlobRef,
@@ -113,29 +145,45 @@ where
         let lost = || HarnessError::Event(format!("{} is gone", blob.sha256.as_str()));
         let mut found = found.ok_or_else(lost)?;
         let bytes = read_all(found.bytes.as_mut(), limit).await?;
-        serde_json::from_slice(&bytes).map_err(|e| HarnessError::Event(e.to_string()))
+        let kept: KeptBack<T> =
+            serde_json::from_slice(&bytes).map_err(|e| HarnessError::Event(e.to_string()))?;
+        Ok(kept.value)
     }
 
-    /// Records what a service asks, with what its source keeps meanwhile, for `call` to wait at.
+    /// Records what a service asks, with what its source keeps meanwhile, for `call` to wait at:
+    /// the turn stops here (`HarnessError::Waits`). What keeps more than glave holds fails its
+    /// call, with a line the model can read.
     pub(crate) async fn record_asked(
         &self,
         thread: &mut Thread,
         call: &CallId,
         asks: ServiceAsks,
-    ) -> Result<(), HarnessError> {
-        let state = self
+    ) -> Result<ToolOutput, HarnessError> {
+        let kept = self
             .keep(&thread.scope, thread.id, &asks.state, STATE_LIMIT)
-            .await?;
+            .await;
+        let state = match kept {
+            Err(HarnessError::Blob(BlobError::TooLarge(_))) => {
+                let service = &asks.service;
+                let said = format!(
+                    "{service} asked the person something, but keeps more with it than glave \
+                     holds while they answer, so the call stopped."
+                );
+                return Ok(ToolOutput::text(true, said));
+            }
+            kept => kept?,
+        };
         let asked = ServiceAsked {
             call_id: call.clone(),
             ask: asks_sentence(&asks.service),
+            note: note_sentence(&asks.service),
             service: asks.service,
             message: asks.message,
             fields: asks.fields,
             state,
         };
         self.record(thread, &asked).await?;
-        Ok(())
+        Err(HarnessError::Waits(thread.id))
     }
 
     /// What a call that waited at `round` goes on with, its answer read back: the result the
@@ -219,7 +267,17 @@ where
                     let field = field.to_owned();
                     return Err(Invalid::ServiceAnswer(field).into());
                 }
-                let blob = self.keep(&scope, id, values, ANSWERS_LIMIT).await?;
+                let kept = self.keep(&scope, id, values, ANSWERS_LIMIT).await;
+                let blob = kept.map_err(|error| match error {
+                    HarnessError::Blob(BlobError::TooLarge(_)) => {
+                        let longest = values
+                            .iter()
+                            .max_by_key(|(_, value)| value.to_string().len());
+                        let field = longest.map_or("", |(name, _)| name.as_str()).to_owned();
+                        Invalid::ServiceAnswer(field).into()
+                    }
+                    other => other,
+                })?;
                 (ServiceOutcome::Answered, Some(blob))
             }
             ServiceAnswer::Declined => (ServiceOutcome::Declined, None),

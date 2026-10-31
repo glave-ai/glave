@@ -11,30 +11,22 @@
       [attr.aria-labelledby]="field.id"
       [attr.data-testid]="ids().field"
     >
-      @if (field.typed) {
-        <label class="name" dir="auto" [id]="field.id" [attr.for]="field.inputId">
-          {{ field.label }}
-        </label>
-      } @else {
-        <p class="name" dir="auto" [id]="field.id">{{ field.label }}</p>
-      }
+      <p class="name" dir="auto" [id]="field.id">
+        {{ field.label }}
+        @if (field.required) {
+          <span class="required" [attr.data-testid]="ids().required">{{ requiredLabel() }}</span>
+        }
+      </p>
       @if (field.description) {
         <p class="description" dir="auto">{{ field.description }}</p>
       }
       @switch (field.control) {
-        @case ('text') {
+        @case ('typed') {
           <input
             class="glz-input"
-            [id]="field.inputId"
-            [value]="field.text"
-            (input)="typed(field.name, $event)"
-          />
-        }
-        @case ('number') {
-          <input
-            class="glz-input"
-            type="number"
-            [id]="field.inputId"
+            [type]="field.inputType"
+            [attr.aria-labelledby]="field.id"
+            [required]="field.required"
             [step]="field.step"
             [value]="field.text"
             (input)="typed(field.name, $event)"
@@ -43,6 +35,7 @@
         @case ('yes_no') {
           <glz-radio-group
             [label]="field.label"
+            [required]="field.required"
             [value]="field.picked"
             (valueChange)="pickYesNo(field.name, $event)"
           >
@@ -53,6 +46,7 @@
         @case ('one') {
           <glz-radio-group
             [label]="field.label"
+            [required]="field.required"
             [value]="field.picked"
             (valueChange)="pickOne(field.name, $event)"
           >
@@ -78,6 +72,9 @@
     </div>
   }
   <p class="note" [attr.data-testid]="ids().note">{{ note() }}</p>
+  @if (incomplete()) {
+    <p class="note" [attr.data-testid]="ids().missing">{{ missingLabel() }}</p>
+  }
   <div class="actions">
     <button
       glzButton
