@@ -147,7 +147,7 @@ impl Workspace {
     /// requested sandbox is never quietly skipped, and within 10 seconds when it starts no
     /// command; on success, learns the temp folder its commands get, which the shell
     /// assessment treats as theirs to write. On a computer that may be asleep nothing is asked
-    /// ([`Self::asleep_at_times`]).
+    /// (`asleep_at_times`).
     pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> Result<Self, ComputerError> {
         if self.asleep_at_times {
             self.sandbox = Some(sandbox.clone());
