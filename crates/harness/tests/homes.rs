@@ -370,10 +370,10 @@ impl ProjectFolders for HookThere {
     }
 }
 
-/// A trusted hook of a project there runs on that computer through the port, in its sandbox, and
-/// a turn that only talks, which runs no such hook, still wakes nothing.
+/// A trusted hook of a project there runs on that computer through the port, in its sandbox. A
+/// turn no hook applies to wakes nothing; one that a hook applies to wakes it, talking or not.
 #[test]
-fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_and_wakes_nothing_by_itself() {
+fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_waking_it_only_where_it_applies() {
     let Some(base) = sandboxed("home-hook") else {
         return;
     };
@@ -399,6 +399,7 @@ fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_and_wakes_nothing_b
             ),
             answer(Some("Done."), vec![], StopReason::EndTurn),
             answer(Some("Hello."), vec![], StopReason::EndTurn),
+            answer(Some("Bye."), vec![], StopReason::EndTurn),
         ];
         let (harness, _) = harness_seeing(
             &server,
@@ -420,6 +421,7 @@ fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_and_wakes_nothing_b
             .with_project_folders(Some(Arc::new(HookThere(hook))))
             .with_homes(Some(Arc::clone(&sleepy) as Arc<dyn Homes>));
         let path = project.to_string_lossy().into_owned();
+        let reached_again = reached.clone();
         let at_home = Workspace::new(reached.computers, reached.home);
         harness.keep_instructions(scope(), &at_home, &path).await;
 
@@ -431,7 +433,27 @@ fn a_trusted_hook_runs_on_a_person_s_computer_in_its_sandbox_and_wakes_nothing_b
         assert!(!home.join("hook-lost").exists(), "in its sandbox");
         let woken = sleepy.asked();
         turn(&harness, &mut talking, "hello").await;
-        assert_eq!(sleepy.asked(), woken, "a turn that only talks asks nothing");
+        assert_eq!(sleepy.asked(), woken, "no hook applies: it asks nothing");
+
+        // A hook as a turn ends is a command there, so it applies to one that only talks.
+        let at_the_end = Hook {
+            point: HookPoint::Stop,
+            matcher: None,
+            command: "echo ended > hook-ended".to_owned(),
+            timeout_secs: None,
+        };
+        let later = Arc::new(Sleepy::in_sandbox(
+            &reached_again,
+            &base.join("scratch"),
+            &home,
+        ));
+        let harness = harness
+            .with_project_folders(Some(Arc::new(HookThere(at_the_end))))
+            .with_homes(Some(Arc::clone(&later) as Arc<dyn Homes>));
+        let mut resumed = harness.resume_thread(scope(), talking.id).await.unwrap();
+        turn(&harness, &mut resumed, "bye").await;
+        assert!(later.asked() > 0, "the hook wakes it");
+        assert!(project.join("hook-ended").exists(), "and ran there");
         serving.abort();
     });
 }
