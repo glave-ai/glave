@@ -8,6 +8,7 @@
 //! cost, and stands in for OpenRouter for an account connected with any key, and it has one
 //! service, glave's MCP test server, whose tool the stand-in calls when told to "ask me
 //! something", to try what a service asks the person; with `--credits`,
+//! it is the server's own OpenRouter, as on Glave Cloud, with no account to connect, and
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
 //! joined by invites, and an invite waiting (`seed.rs`), so its Admin has something to show at
@@ -117,6 +118,7 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
     crate::cmd::with_lifeline(|processes: Processes| async move {
         let model = model::start()?;
+        let router = format!("{}{}", model.url, model::OPENROUTER);
         let mut command = Program::new(&glave);
         command
             .args(["serve", "--http", "127.0.0.1:0"])
@@ -129,42 +131,27 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
                     .filter(|(name, _)| !name.to_string_lossy().starts_with("GLAVE_")),
             )
             .env("GLAVE_HOME", &home)
-            .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
-            .env("GLAVE_MODEL", model::MODEL)
-            .env(
-                "GLAVE_OPENROUTER_URL",
-                format!("{}{}", model.url, model::OPENROUTER),
-            )
+            .env("GLAVE_OPENROUTER_URL", &router)
             .current_dir(root)
             .no_input();
+        // After the variables are cleared above.
+        if credits {
+            // As Glave Cloud: its server's own OpenRouter, with no account of anyone's.
+            command
+                .env("GLAVE_BASE_URL", &router)
+                .env("GLAVE_PROVIDER", "openrouter")
+                .env("GLAVE_API_KEY", "stand-in")
+                .env("GLAVE_MODEL", model::PRICED_MODEL);
+        } else {
+            command
+                .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
+                .env("GLAVE_MODEL", model::MODEL);
+        }
         let mut child = processes
             .spawn(&mut command)
             .await
             .map_err(|err| failed(&err))?;
-        eprintln!(
-            "xtask: a throwaway glave for people who share this computer, in {}\n\
-             xtask: you, its owner: it opens in your browser, signed in, once it is ready, with \
-             an Admin and a Member who joined by invites, and an invite waiting\n\
-             xtask: someone you invite: a private window, opening the invite's link, at the \
-             localhost address glave prints\n\
-             xtask: its model is a stand-in that answers every message the same, and says each \
-             answer cost $0.10\n\
-             xtask: to try choosing who serves a model, connect OpenRouter with any key: the \
-             stand-in serves sample models from sample providers\n\
-             xtask: it runs until Ctrl-C in this window, which stops it and removes it all; \
-             press Enter here to open it in your browser again",
-            folder.display()
-        );
-        if credits {
-            eprintln!(
-                "xtask: credits are on, a dollar a month at most until an owner raises it; once \
-                 it is open, add some and see what is left, as whoever runs it:\n\
-                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits add 1\n\
-                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits",
-                home.display(),
-                home.display()
-            );
-        }
+        say_what_it_is(folder, &home, credits);
         let opening = Opening {
             processes: &processes,
             program: glave,
@@ -175,6 +162,42 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
         drop(model);
         ended
     })
+}
+
+/// Tells the person at the terminal what they are running, in `folder` with glave's folder at
+/// `home`, and how to try it.
+fn say_what_it_is(folder: &Path, home: &Path, credits: bool) {
+    let router_said = if credits {
+        "xtask: its models are the server's own OpenRouter, as on Glave Cloud, with no \
+         account to connect: the stand-in serves sample models from sample providers, so \
+         choose who serves one in the model picker"
+    } else {
+        "xtask: to try choosing who serves a model, connect OpenRouter with any key: the \
+         stand-in serves sample models from sample providers"
+    };
+    eprintln!(
+        "xtask: a throwaway glave for people who share this computer, in {}\n\
+         xtask: you, its owner: it opens in your browser, signed in, once it is ready, with \
+         an Admin and a Member who joined by invites, and an invite waiting\n\
+         xtask: someone you invite: a private window, opening the invite's link, at the \
+         localhost address glave prints\n\
+         xtask: its model is a stand-in that answers every message the same, and says each \
+         answer cost $0.10\n\
+         {router_said}\n\
+         xtask: it runs until Ctrl-C in this window, which stops it and removes it all; \
+         press Enter here to open it in your browser again",
+        folder.display()
+    );
+    if credits {
+        eprintln!(
+            "xtask: credits are on, a dollar a month at most until an owner raises it; once \
+             it is open, add some and see what is left, as whoever runs it:\n\
+             xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits add 1\n\
+             xtask:   GLAVE_HOME={} cargo run -q -p glave -- credits",
+            home.display(),
+            home.display()
+        );
+    }
 }
 
 /// Runs until Ctrl-C, a hang-up, a request to stop, the end of what started xtask or the

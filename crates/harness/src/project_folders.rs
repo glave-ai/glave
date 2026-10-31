@@ -54,6 +54,19 @@ pub trait ProjectFolders: Send + Sync {
         Box::pin(async { Settled::default() })
     }
 
+    /// The hooks of the project of `scope` on its person's own computer that they trusted, from
+    /// `config`, its `config.toml` as last read there at `project`: run there through the
+    /// computer port, in its sandbox. None by default.
+    fn hooks_at_home<'a>(
+        &'a self,
+        scope: Scope,
+        project: &'a Path,
+        config: &'a str,
+    ) -> BoxFuture<'a, Hooks> {
+        let _ = (scope, project, config);
+        Box::pin(async { Hooks::default() })
+    }
+
     /// What the project whose folder is `project`, the project `id`, chooses and turns on
     /// for its threads now: its choices, its trusted tools (started the first time they are
     /// asked for) and its trusted hooks. Nothing by default.

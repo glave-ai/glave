@@ -623,6 +623,58 @@
       ],
       "type": "object"
     },
+    "DiskShort": {
+      "description": "A person's computer short of room, more than 90% of its disk used and nothing more glave can\nfree: said in a sentence, with what uses it most, the largest first, for each client to draw.",
+      "properties": {
+        "free": {
+          "description": "What it has free, in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "largest": {
+          "description": "What uses it most, the largest first, by the path from the person's home.",
+          "items": {
+            "$ref": "#/$defs/DiskUse"
+          },
+          "type": "array"
+        },
+        "size": {
+          "description": "What the disk holds, in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "told": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "told",
+        "size",
+        "free",
+        "largest"
+      ],
+      "type": "object"
+    },
+    "DiskUse": {
+      "description": "What uses a computer's disk: a folder or a file, by its path from the person's home.",
+      "properties": {
+        "bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "bytes"
+      ],
+      "type": "object"
+    },
     "EndpointInfo": {
       "description": "One provider serving a model through a router, as the router says, for a client to filter\nand choose by. What the router does not say is absent, never guessed.",
       "properties": {
@@ -3123,6 +3175,17 @@
         },
         "created_at": {
           "$ref": "#/$defs/At"
+        },
+        "disk": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiskShort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its person's own computer being short of room, with nothing more glave can free, when\nthe server last found it so; absent otherwise."
         },
         "estimated": {
           "description": "True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before\nits provider reported it.",

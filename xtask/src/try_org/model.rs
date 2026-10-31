@@ -21,6 +21,10 @@ const ASKING_TOOL: &str = "mcp__Tracker__ask";
 /// The name of the service it knows, as glave is told of it.
 pub(crate) const SERVICE: &str = "Tracker";
 
+/// The model a glave that keeps credits is told to use, one of OpenRouter's sample models, so
+/// its catalog prices it (`router.rs`).
+pub(crate) const PRICED_MODEL: &str = "deepseek/deepseek-v4.1-flash";
+
 /// What every answer says.
 const SAID: &str = "Hello from try-org's stand-in model: it answers every message with this.";
 

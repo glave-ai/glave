@@ -53,6 +53,16 @@ impl<P, L, B> Server<P, L, B> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
+        let refreshing = self
+            .inner
+            .refreshing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(refreshing) = refreshing {
+            refreshing.abort();
+            let _ = refreshing.await;
+        }
         let tasks: Vec<JoinHandle<()>> = std::mem::take(
             &mut *self
                 .inner

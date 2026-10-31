@@ -74,6 +74,7 @@ impl Computers for Ledger {
             size: Size::default(),
             environment: None,
             disk: None,
+            largest: Vec::new(),
         })))
     }
 

@@ -250,6 +250,26 @@ export type DiffLine = {
 };
 
 /**
+ * A person's computer short of room, more than 90% of its disk used and nothing more glave can
+ * free: said in a sentence, with what uses it most, the largest first, for each client to draw.
+ */
+export type DiskShort = {
+  /** What it has free, in bytes. */
+  readonly free: number;
+  /** What uses it most, the largest first, by the path from the person's home. */
+  readonly largest: readonly (DiskUse)[];
+  /** What the disk holds, in bytes. */
+  readonly size: number;
+  readonly told: string;
+};
+
+/** What uses a computer's disk: a folder or a file, by its path from the person's home. */
+export type DiskUse = {
+  readonly bytes: number;
+  readonly path: string;
+};
+
+/**
  * One provider serving a model through a router, as the router says, for a client to filter
  * and choose by. What the router does not say is absent, never guessed.
  */
@@ -1123,6 +1143,11 @@ export type ThreadSummary = {
    */
   readonly cost?: Money | null;
   readonly created_at: At;
+  /**
+   * Its person's own computer being short of room, with nothing more glave can free, when
+   * the server last found it so; absent otherwise.
+   */
+  readonly disk?: DiskShort | null;
   /**
    * True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before
    * its provider reported it.

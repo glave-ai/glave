@@ -82,6 +82,14 @@ pub(crate) fn note_in(note: &Arc<Notification>, language: Language) -> Arc<Notif
                 });
             }
         }
+        Notification::Changed { thread, summary } if language != Language::English => {
+            let mut summary = summary.clone();
+            super::summary_in(&mut summary, language);
+            return Arc::new(Notification::Changed {
+                thread: *thread,
+                summary,
+            });
+        }
         Notification::Live {
             thread,
             update:
