@@ -157,8 +157,6 @@ fn still_aside(aside: &Path, prepared: &[&str], said: &str) {
     assert!(gone.is_empty(), "no longer aside: {gone:?}: {said}");
 }
 
-/// What the computer is told to hide is unreadable to its sandboxed commands, through a link
-/// too, while what sits beside it stays readable.
 /// A laptop leaves Rust's homes alone; a computer whose own environment asks has its sandboxed
 /// commands keep them in the sandbox cache, where they can write.
 #[test]
@@ -204,6 +202,8 @@ fn rust_s_homes_go_in_the_sandbox_cache_only_where_the_computer_says() {
     });
 }
 
+/// What the computer is told to hide is unreadable to its sandboxed commands, through a link
+/// too, while what sits beside it stays readable.
 #[test]
 fn what_the_computer_hides_is_unreadable() {
     if !enforced() {

@@ -1,5 +1,5 @@
 //! glave's own sandbox inside a person's computer (`GLAVE_TEST_MEASURE=1` under gVisor on `kind`,
-//! `specs/sandbox.md`, "Under gVisor"): every wall a command meets there, each with its control,
+//! `specs/sandbox.md`, "On a person's computer"): every wall a command meets there, each with its control,
 //! as it reaches the computer: across the protocol, its sandbox travelling with the command.
 
 use std::path::PathBuf;
@@ -21,7 +21,8 @@ use crate::worker::route::Tail;
 use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 
 /// A project with a commit, and a secret where glave hides them.
-const PREPARE: &str = "mkdir -p ~/.ssh ~/p && echo key > ~/.ssh/id_rsa && cd ~/p && git init -q && \
+const PREPARE: &str = "mkdir -p ~/.ssh ~/p ~/.glave && echo key > ~/.ssh/id_rsa && \
+    echo planted > ~/.glave/planted && cd ~/p && git init -q && \
     git config user.email a@example.com && git config user.name a && echo hello > readme && \
     echo secret > .env && git add readme && git commit -qm one && echo prepared";
 
@@ -188,7 +189,10 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("write glave's program", offline.clone(), "echo x > /opt/glave/x".into(), Comes::Fails),
             // Whether it can be read, never what it holds, which would show in the test's output.
             ("read glave's token", offline.clone(), "test -r /opt/glave/secret/token && echo readable || echo hidden".into(), Comes::Prints("hidden")),
-            ("see glave's folder", offline.clone(), "ls ~/.glave | grep -c disk.log || true".into(), Comes::Prints("0")),
+            ("see glave's folder", offline.clone(), "test -e ~/.glave/planted && echo seen || echo hidden".into(), Comes::Prints("hidden")),
+            // Each control: outside the sandbox, the same look finds them.
+            ("control: glave's token", None, "test -r /opt/glave/secret/token && echo readable || echo hidden".into(), Comes::Prints("readable")),
+            ("control: glave's folder", None, "test -e ~/.glave/planted && echo seen || echo hidden".into(), Comes::Prints("seen")),
             ("read-only level writes", reading.clone(), "echo x > other".into(), Comes::Fails),
             ("read-only level reads", reading.clone(), "cat readme".into(), Comes::Prints("hello")),
             // The network off, by the filter.
@@ -208,6 +212,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("io_uring", offline.clone(), py(SYSCALL, "425"), Comes::Prints("-1 1")),
             // Processes of its own.
             ("see glave's process", offline.clone(), "for p in /proc/[0-9]*; do tr '\\0' ' ' <\"$p/cmdline\"; echo; done 2>/dev/null | grep -c \"computer [s]erve\" || true".into(), Comes::Prints("0")),
+            ("control: glave's process", None, "for p in /proc/[0-9]*; do tr '\\0' ' ' <\"$p/cmdline\"; echo; done 2>/dev/null | grep -c \"computer [s]erve\" || true".into(), Comes::Prints("1")),
             ("no capabilities", offline.clone(), "awk '/^CapEff/ { print $2 }' /proc/self/status".into(), Comes::Prints("0000000000000000")),
         ];
         let mut wrong = Vec::new();
@@ -293,7 +298,6 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             "ls -A ~/.cargo ~/.rustup 2>/dev/null | wc -l",
         )
         .await;
-        let keeper_finds = ran(&computers, woke.id, "ls ~/.glave/sandbox-cache").await;
         let _ = computers.destroy(woke.id).await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 2)
             .unwrap()
@@ -301,7 +305,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             .await;
         let left = left_behind(&cluster).await;
         eprintln!(
-            "glave's sandbox under {class}\n{}\n\nwhat it costs\n{}\n\nsandbox cache: {keeper_finds:?}",
+            "glave's sandbox under {class}\n{}\n\nwhat it costs\n{}",
             said.join("\n"),
             cost.join("\n"),
         );

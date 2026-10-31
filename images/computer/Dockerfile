@@ -9,7 +9,7 @@
 # upgrade`), so fixes land at once.
 FROM cgr.dev/chainguard/wolfi-base:latest@sha256:88a20e2d017bd20cdc0cb3910de603e7bea9512a6c351a8dd3c9df212ab03d73
 
-# bubblewrap: glave's sandbox, which every command on a person's computer runs in
+# bubblewrap: glave's sandbox, which commands on a person's computer run in
 # (specs/sandbox.md, "On a person's computer").
 RUN apk upgrade --no-cache && apk add --no-cache \
       bash bubblewrap build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \

@@ -62,7 +62,7 @@ const CACHES: &[(&str, &str)] = &[
 /// outside it holds, which a laptop can't (`CACHES`): its settings, tools and crates.
 const TOOLCHAINS: &[(&str, &str)] = &[("CARGO_HOME", "cargo"), ("RUSTUP_HOME", "rustup")];
 
-/// The variable of the computer's own environment that says so.
+/// The variable of the computer's own environment that says so, as `1`.
 const TOOLCHAINS_IN_SANDBOX: &str = "GLAVE_SANDBOX_TOOLCHAINS";
 
 /// Maven has no variable for its repository, only a property, passed through `MAVEN_OPTS`,
@@ -286,7 +286,7 @@ fn bash(
             let toolchains = opened
                 .environment
                 .iter()
-                .any(|(name, _)| name == TOOLCHAINS_IN_SANDBOX);
+                .any(|(name, value)| name == TOOLCHAINS_IN_SANDBOX && value == "1");
             CACHES
                 .iter()
                 .chain(toolchains.then_some(TOOLCHAINS).into_iter().flatten())

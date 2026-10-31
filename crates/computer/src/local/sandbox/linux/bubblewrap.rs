@@ -30,8 +30,9 @@ const ISOLATION: &[&str] = &[
     "ALL",
 ];
 
-/// The first `bwrap` on `PATH` that a command could not have planted: a real file outside
-/// the temp folders, the current folder and `writable`, the folders commands may write.
+/// The system's `bwrap`, else the first on `PATH`, that a command could not have planted: a real
+/// file outside the temp folders, the current folder and `writable`, the folders commands may
+/// write.
 pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let mut unsafe_places: Vec<PathBuf> = [std::env::temp_dir(), PathBuf::from("/tmp")]
@@ -40,7 +41,10 @@ pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .collect();
     unsafe_places.extend(writable.iter().map(|place| place.to_path_buf()));
-    std::env::split_paths(&path)
+    // The system's first: a folder earlier on `PATH` may be the person's, which a command let out
+    // of the sandbox once could fill, and the wall must not be what it left there.
+    std::iter::once(PathBuf::from("/usr/bin"))
+        .chain(std::env::split_paths(&path))
         .filter(|folder| folder.is_absolute())
         .filter_map(|folder| std::fs::canonicalize(folder.join("bwrap")).ok())
         .find(|real| real.is_file() && !unsafe_places.iter().any(|place| real.starts_with(place)))
@@ -56,7 +60,7 @@ pub(super) enum Offline {
     /// A network namespace of its own besides.
     OwnNetwork,
     /// The filter alone, where a namespace cannot be made: gVisor refuses bubblewrap the
-    /// loopback of a new one (`specs/sandbox.md`, "Under gVisor").
+    /// loopback of a new one (`specs/sandbox.md`, "On a person's computer").
     FilterAlone,
 }
 
@@ -70,7 +74,10 @@ pub(super) fn starts(bwrap: &Path) -> Result<Offline, String> {
         Err(why) => why,
     };
     match empty_sandbox(bwrap, &[]) {
-        Ok(()) => Ok(Offline::FilterAlone),
+        Ok(()) => {
+            tracing::info!(%why, "commands without the network keep to the seccomp filter here");
+            Ok(Offline::FilterAlone)
+        }
         Err(_) => Err(why),
     }
 }

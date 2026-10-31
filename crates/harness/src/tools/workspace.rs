@@ -52,6 +52,11 @@ pub struct Workspace {
     reads: Mutex<HashMap<String, Sha256>>,
 }
 
+/// What a command is told where a person's computer can't run the sandbox it's set to.
+const NO_SANDBOX_THERE: &str = "the sandbox can't start on this person's computer, so the command \
+     did not run. Whoever runs this server has to run people's computers where it can start, or \
+     set them to go without it.";
+
 impl fmt::Debug for Workspace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Workspace")
@@ -384,7 +389,23 @@ impl Workspace {
         let finished = tracing::Instrument::instrument(running, span.clone()).await;
         let ended = finished.as_ref().ok();
         crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
-        finished
+        finished.map_err(|error| self.said_plainly(error))
+    }
+
+    /// `error`, a command's: where a person's computer refuses the sandbox its server set it to,
+    /// that is a mistake in the server's settings no one at the computer can act on, so it says
+    /// so to them, and what the computer said goes in the server's log.
+    fn said_plainly(&self, error: ComputerError) -> ComputerError {
+        if !self.asleep_at_times || self.sandbox.is_none() {
+            return error;
+        }
+        match error {
+            ComputerError::Unsupported(why) => {
+                tracing::warn!(%why, "a person's computer cannot run the sandbox it is set to");
+                ComputerError::Unsupported(NO_SANDBOX_THERE.into())
+            }
+            other => other,
+        }
     }
 
     /// Starts `script` in this workspace, in its sandbox if it has one, and keeps it running in

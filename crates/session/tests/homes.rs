@@ -223,8 +223,8 @@ fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
             (
                 None,
                 json!(
-                    "This computer can't run the sandbox: in Auto, commands can change anything \
-                     in your home, and Ask first asks before every change and command."
+                    "Commands here run without glave's sandbox: in Auto they can read and change \
+                     anything in your home, and Ask first asks before every change and command."
                 ),
             ),
         ] {

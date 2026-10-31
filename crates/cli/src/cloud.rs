@@ -176,6 +176,15 @@ async fn homes(
         .sandbox
         .unwrap_or(true)
         .then(|| person_sandbox(choices.network.value));
+    if sandbox.is_none()
+        && let Some(rule) = constraints.sandbox_required()
+    {
+        bail!(
+            "[computers] sandbox = false (from {}) leaves commands without the sandbox {rule} \
+             requires: run people's computers where it can start, under gVisor",
+            computers.from
+        );
+    }
     Ok(Some(Arc::new(OnCluster { people, sandbox })))
 }
 

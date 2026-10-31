@@ -51,6 +51,13 @@ pub(crate) const BUILT: [&str; 5] = ["target", "node_modules", ".venv", "dist", 
 /// sandbox cache folder, where sandboxed commands keep theirs.
 const CACHES: [&str; 2] = [".npm/_cacache", ".cargo/registry/cache"];
 
+/// Folders of the sandbox's cache that hold more than what is fetched again (settings, installed
+/// programs, modules that can't be removed), never freed whole.
+const HOMES_IN_THE_SANDBOX: [&str; 3] = ["cargo", "rustup", "go"];
+
+/// What in those is fetched again: rustup installs a toolchain it finds gone as it's used.
+const FETCHED_IN_THE_SANDBOX: [&str; 2] = ["cargo/registry", "rustup/toolchains"];
+
 /// The most things one pass looks at, of each kind.
 const MOST_LOOKED_AT: usize = 1_000;
 
@@ -229,7 +236,19 @@ impl Keeper {
         let mut caches: Vec<PathBuf> = CACHES.iter().map(|cache| self.home.join(cache)).collect();
         caches.extend(folders(&self.caches).await.unwrap_or_default());
         let in_the_sandbox = self.glave.join(crate::local::CACHE_FOLDER);
-        caches.extend(folders(&in_the_sandbox).await.unwrap_or_default());
+        let kept = in_the_sandbox.clone();
+        caches.extend(
+            folders(&in_the_sandbox)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|folder| {
+                    !HOMES_IN_THE_SANDBOX
+                        .iter()
+                        .any(|home| *folder == kept.join(home))
+                }),
+        );
+        caches.extend(FETCHED_IN_THE_SANDBOX.iter().map(|cache| kept.join(cache)));
         let trash = match &self.trash {
             Some(trash) => trash.held(MOST_LOOKED_AT).await,
             None => Vec::new(),
