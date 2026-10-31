@@ -533,20 +533,33 @@ export function described(violations: readonly Result[]): readonly string[] {
 }
 
 /**
+ * What on the page could still start to move: each element with a transition or an animation of
+ * any length, as `described` names what axe found. With motion off there should be none.
+ */
+function ableToMove(): readonly string[] {
+  const moves = (style: CSSStyleDeclaration): boolean =>
+    style.animationName !== 'none' ||
+    style.transitionDuration.split(',').some((duration) => Number.parseFloat(duration) > 0);
+  return [...document.querySelectorAll('*')]
+    .filter((element) =>
+      [undefined, '::before', '::after'].some((pseudo) => moves(getComputedStyle(element, pseudo))),
+    )
+    .map((element) => `${element.tagName.toLowerCase()}.${element.classList.value}`);
+}
+
+/**
  * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
- * measured once they stop changing: a button fades to its new background after a switch to
- * dark, and a reply fades in as it arrives, and halfway through either its text would fail.
- * What loops while work goes on (a shimmer, a turning ring) never stops, so it runs on.
+ * measured at rest, in less motion, where none of what the app draws moves: a button fades to its
+ * new background after a switch to dark, a reply fades in as it arrives, and a run's words fade in
+ * when the server tells them, at any moment of a live page, even as axe reads them (#1112), and
+ * halfway through any of them its text would fail. What was already moving as motion went off
+ * finishes first, and whatever could still start moving fails here by name, never by chance.
  */
 export async function expectAccessible(page: Page): Promise<void> {
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-        .map((animation) => animation.finished.catch(() => undefined)),
-    ),
-  );
+  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await page.evaluate(ableToMove)).toEqual([]);
+  await atRest(page);
   await withAxe(page);
   const violations = await page.evaluate(async (tags) => {
     const results = await (window as unknown as WithAxe).axe.run(document, {
@@ -555,4 +568,8 @@ export async function expectAccessible(page: Page): Promise<void> {
     return results.violations;
   }, WCAG);
   expect(described(violations)).toEqual([]);
+  await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  // With motion back, what fades in as it appears has faded in again: it comes to rest first, so
+  // what the test does next starts from a still page, as it did before this check.
+  await atRest(page);
 }
