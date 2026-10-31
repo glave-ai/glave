@@ -58,7 +58,7 @@ test('a service asks in a card of its own, answered in place, and the turn goes 
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
   }
-  await byTestId(page, 'thread-service-choice').first().click();
+  await byTestId(page, 'thread-service-choice').first().locator('label').click();
   await send.click();
   await expect(byTestId(page, 'thread-service-told')).toHaveText(`You answered ${SERVICE}`);
   await expect(send).toBeHidden();
