@@ -29,9 +29,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob, Globbed, Image, Listed,
-    Listing, Network, Output, Printed, Refusal, Save, Saved, Search, Searched, Size, Sources, Stat,
-    State, WorkspaceId, WorkspaceInfo,
+    DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
+    Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
+    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -45,10 +45,22 @@ use registry::{Opened, Registry};
 pub use on_path::glave_on_path;
 pub use sandbox::{sandbox_available, sandbox_helper};
 
+/// What measures a disk in place of the system.
+#[derive(Clone)]
+struct Measure(Arc<dyn Fn() -> DiskSpace + Send + Sync>);
+
+impl std::fmt::Debug for Measure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Measure")
+    }
+}
+
 /// This machine's computers.
 #[derive(Debug)]
 pub struct LocalComputers {
     base: PathBuf,
+    /// What measures its disk in place of the system, for a test that can't fill one.
+    measure: Option<Measure>,
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
@@ -92,6 +104,7 @@ impl LocalComputers {
         Self {
             base: base.into(),
             worktrees: None,
+            measure: None,
             worktree_locks: worktree::Locks::default(),
             scratch: None,
             projects: None,
@@ -129,6 +142,16 @@ impl LocalComputers {
     #[must_use]
     pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
         self.worktrees = Some(folder.into());
+        self
+    }
+
+    /// Says its disk holds what `measure` answers, for a test that can't fill one.
+    #[must_use]
+    pub fn with_disk_measure(
+        mut self,
+        measure: impl Fn() -> DiskSpace + Send + Sync + 'static,
+    ) -> Self {
+        self.measure = Some(Measure(Arc::new(measure)));
         self
     }
 
@@ -239,7 +262,18 @@ impl LocalComputers {
                 ..Size::default()
             },
             environment,
+            disk: None,
         }
+    }
+
+    /// What its disk holds and has free, where it keeps worktrees: the disk those are on.
+    fn disk_space(&self) -> Option<DiskSpace> {
+        if let Some(measure) = &self.measure {
+            return Some((measure.0)());
+        }
+        let folder = self.worktrees.as_deref()?;
+        let there = folder.ancestors().find(|path| path.exists())?;
+        crate::disk::space(there).ok()
     }
 
     async fn open_now(
@@ -467,7 +501,67 @@ impl Computers for LocalComputers {
     fn status(&self, computer: ComputerId) -> BoxFuture<'_, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move {
             let environment = self.registry.environment(computer)?;
-            Ok(Self::describe(computer, environment))
+            let mut info = Self::describe(computer, environment);
+            info.disk = self.disk_space();
+            Ok(info)
+        })
+    }
+
+    fn worktrees(
+        &self,
+        computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let Some(base) = &self.worktrees else {
+                return Ok(Vec::new());
+            };
+            let recorded = crate::worktrees::recorded(base).await?;
+            Ok(recorded
+                .into_iter()
+                .map(|(path, record)| KeptWorktree {
+                    path: path.to_string_lossy().into_owned(),
+                    branch: Some(record.branch).filter(|branch| !branch.is_empty()),
+                    owner: record.owner,
+                })
+                .collect())
+        })
+    }
+
+    fn free_worktree<'a>(
+        &'a self,
+        computer: ComputerId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let kept_because = |why: &str| {
+                Ok(Freed::Kept {
+                    why: why.to_owned(),
+                })
+            };
+            let Some(base) = &self.worktrees else {
+                return kept_because("this computer keeps no worktrees");
+            };
+            let (environment, processes) = (&self.environment, &self.processes);
+            let found = crate::worktrees::at(base, Path::new(path), environment, processes);
+            let Some(kept) = found.await? else {
+                return kept_because("it is not here any more");
+            };
+            // Nothing opens a worktree of this repository meanwhile, and a thread that had this
+            // one open is seen last, with the removal to follow at once.
+            let _turn = self.worktree_locks.lock(&kept.repository).await?;
+            if let Some(risk) = kept.at_risk() {
+                return kept_because(&risk);
+            }
+            if !crate::worktrees::only_rebuildable(&kept, environment, processes).await? {
+                return kept_because("it holds more than a build would make again");
+            }
+            if self.registry.open_on(&kept.path)? {
+                return kept_because("a thread has it open");
+            }
+            crate::worktrees::remove(&kept, environment, processes).await?;
+            Ok(Freed::Removed)
         })
     }
 

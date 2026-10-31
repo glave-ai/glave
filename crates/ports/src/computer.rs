@@ -29,9 +29,9 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };
 pub use types::{
-    Command, CommandId, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind,
-    FileWrite, Finished, Listed, Listing, OnTimeout, Save, Saved, Sources, State, WorkspaceId,
-    WorkspaceInfo,
+    Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, Ending, Entry,
+    EntryKind, FileWrite, Finished, Freed, KeptWorktree, Listed, Listing, OnTimeout, Save, Saved,
+    Sources, State, WorkspaceId, WorkspaceInfo,
 };
 
 /// A person's own computer, awake, and the workspace of their home on it: where their
@@ -193,6 +193,29 @@ pub trait Computers: Send + Sync {
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         let _ = workspace;
         Box::pin(std::future::ready(Err(no_background())))
+    }
+
+    /// The worktrees it keeps for threads (`computer/worktrees`); none where it keeps none.
+    fn worktrees(
+        &self,
+        computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        let _ = computer;
+        Box::pin(std::future::ready(Ok(Vec::new())))
+    }
+
+    /// Frees the worktree at `path`, when what it holds can be rebuilt: nothing uncommitted,
+    /// every commit on a remote, no file git ignores but build outputs, and no workspace open on
+    /// it, all looked at again now (`computer/free_worktree`). Its branch stays.
+    fn free_worktree<'a>(
+        &'a self,
+        computer: ComputerId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
+        let _ = (computer, path);
+        Box::pin(std::future::ready(Ok(Freed::Kept {
+            why: "this computer keeps no worktrees".to_owned(),
+        })))
     }
 
     /// Reads one file in the workspace (`files/read`).

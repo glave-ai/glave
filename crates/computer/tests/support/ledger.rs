@@ -73,6 +73,7 @@ impl Computers for Ledger {
             arch: "x86_64".into(),
             size: Size::default(),
             environment: None,
+            disk: None,
         })))
     }
 

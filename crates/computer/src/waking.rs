@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob, Globbed, Home, Listed,
-    Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId,
-    WorkspaceInfo,
+    Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
+    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -345,6 +345,27 @@ impl Computers for Waking {
             let mut info = home.computers.status(home.computer).await?;
             info.id = computer;
             Ok(info)
+        })
+    }
+
+    fn worktrees(
+        &self,
+        _computer: ComputerId,
+    ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
+        Box::pin(async move {
+            let home = self.real(self.home.id).await?;
+            home.computers.worktrees(home.computer).await
+        })
+    }
+
+    fn free_worktree<'a>(
+        &'a self,
+        _computer: ComputerId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
+        Box::pin(async move {
+            let home = self.real(self.home.id).await?;
+            home.computers.free_worktree(home.computer, path).await
         })
     }
 

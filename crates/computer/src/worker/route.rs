@@ -16,6 +16,7 @@ pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
         arch: String::new(),
         size: Size::default(),
         environment: None,
+        disk: None,
     }
 }
 
