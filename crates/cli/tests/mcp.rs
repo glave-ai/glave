@@ -75,6 +75,8 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "mcp__tests__flood",
             "mcp__tests__whose",
             "mcp__tests__roots",
+            "mcp__tests__ask",
+            "mcp__tests__answers",
             "mcp__tests__lookup",
             "list_mcp_resources",
             "read_mcp_resource",
@@ -146,4 +148,28 @@ fn a_servers_prompt_is_sent_as_the_persons_message_when_they_type_its_command() 
             .any(|text| text.contains("Review PR 12, looking at the error paths.")),
         "{asked:?}"
     );
+}
+
+#[test]
+fn what_a_service_asks_the_person_is_declined_and_the_turn_goes_on() {
+    let place = place("mcp-asks");
+    settings(&place, &json!({ "tests": { "command": test_server() } }));
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "mcp__tests__ask", &json!({"what": "form"})),
+        Reply::text("It heard you."),
+    ])
+    .unwrap();
+    let output = glave(
+        &place,
+        &model,
+        &["--model", "m", "--permissions", "full-access", "file it"],
+        "",
+    );
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    assert!(shown.contains("It heard you."), "{shown}");
+    let received = model.received();
+    let result = said(&received.last().unwrap().body, "tool").concat();
+    assert!(result.contains("You said: decline"), "{result}");
+    assert!(result.contains("it was declined"), "{result}");
 }

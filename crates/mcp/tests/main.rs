@@ -2,6 +2,7 @@
 
 #![cfg(test)]
 
+mod asks;
 mod changes;
 mod client;
 mod http;

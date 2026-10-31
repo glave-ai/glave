@@ -4,6 +4,7 @@
 //! that wants the person signed in gets them signed in as MCP's authorization says
 //! (`signin.rs`), and their token, asked for on every request (`signed.rs`).
 
+mod asks;
 mod call;
 mod client;
 mod connection;
