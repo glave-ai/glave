@@ -251,6 +251,11 @@ export type EndpointInfo = {
    */
   readonly datacenters?: readonly (string)[] | null;
   /**
+   * Which of the caller's filters hide it (`filters/get`), so no call of theirs goes to it;
+   * none when it fits them all.
+   */
+  readonly hidden_by?: readonly (Hides)[];
+  /**
    * Whether it keeps nothing of what it is sent (zero data retention). Every provider
    * that serves glave through a router is one that never trains on it.
    */
@@ -406,6 +411,9 @@ export type GoneFolder = {
  * doing (waiting for the person, running, idle).
  */
 export type Grouping = "project" | "status";
+
+/** A filter of a person's that hides a provider of a model. */
+export type Hides = "based_in" | "precision" | "keeps_some" | "price" | "avoided";
 
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;

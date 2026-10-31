@@ -33,21 +33,24 @@ pub struct Router {
 
 /// What a router's catalog says of one provider serving a model, as filters read it.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Facts<'a> {
+pub struct Facts<'a> {
     /// The provider, by slug.
-    pub(crate) slug: &'a str,
+    pub slug: &'a str,
     /// The country it is based in, when said.
-    pub(crate) home: Option<&'a str>,
+    pub home: Option<&'a str>,
     /// The countries of its datacenters, when said.
-    pub(crate) datacenters: Option<&'a [String]>,
-    pub(crate) precision: Precision,
-    pub(crate) price: Option<TokenPrice>,
-    pub(crate) keeps_nothing: bool,
+    pub datacenters: Option<&'a [String]>,
+    /// How precisely it serves the model's weights.
+    pub precision: Precision,
+    /// What its tokens cost, when said.
+    pub price: Option<TokenPrice>,
+    /// Whether it keeps nothing of what it is sent.
+    pub keeps_nothing: bool,
 }
 
 /// Which of `filters` hide the provider `facts` describe, as far as they say: what is not said
 /// never fits a filter that needs it. None when it fits them all.
-pub(crate) fn hidden_by(facts: &Facts<'_>, filters: &Filters) -> Vec<Hides> {
+pub fn hidden_by(facts: &Facts<'_>, filters: &Filters) -> Vec<Hides> {
     let precise = filters
         .precision
         .is_none_or(|least| least == Precision::Unstated || facts.precision >= least);
@@ -230,7 +233,8 @@ fn owned(fitting: BTreeSet<&str>) -> Result<Vec<String>, Kept> {
     Ok(fitting.into_iter().map(str::to_owned).collect())
 }
 
-/// What `router`'s catalog says of `endpoint`'s provider.
+/// What `router`'s catalog says of `endpoint`'s provider. The session reads the same facts from
+/// what `model/list` says of each endpoint, so the list hides what no call goes to.
 pub(crate) fn facts<'a>(endpoint: &'a CatalogEndpoint, router: &'a Router) -> Facts<'a> {
     let provider = router
         .providers

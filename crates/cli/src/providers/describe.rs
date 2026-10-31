@@ -146,6 +146,7 @@ fn endpoints(routed: Option<(&Catalog, &str)>) -> Vec<EndpointInfo> {
                 price: endpoint.price,
                 keeps_nothing: endpoint.zdr,
                 speed: endpoint.speed,
+                hidden_by: Vec::new(),
             }
         })
         .collect()

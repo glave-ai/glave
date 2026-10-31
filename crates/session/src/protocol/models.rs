@@ -4,7 +4,7 @@
 
 mod names;
 
-use glave_event::{Precision, Reasoning, TokenPrice};
+use glave_event::{Hides, Precision, Reasoning, TokenPrice};
 use serde::{Deserialize, Serialize};
 
 /// One model a thread may be sent to.
@@ -84,6 +84,10 @@ pub struct EndpointInfo {
     /// before its catalog was read, when it says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed: Option<u64>,
+    /// Which of the caller's filters hide it (`filters/get`), so no call of theirs goes to it;
+    /// none when it fits them all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_by: Vec<Hides>,
 }
 
 impl ModelInfo {

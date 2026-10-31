@@ -609,6 +609,13 @@
             "null"
           ]
         },
+        "hidden_by": {
+          "description": "Which of the caller's filters hide it (`filters/get`), so no call of theirs goes to it;\nnone when it fits them all.",
+          "items": {
+            "$ref": "#/$defs/Hides"
+          },
+          "type": "array"
+        },
         "keeps_nothing": {
           "description": "Whether it keeps nothing of what it is sent (zero data retention). Every provider\nthat serves glave through a router is one that never trains on it.",
           "type": "boolean"
@@ -1066,6 +1073,36 @@
         "status"
       ],
       "type": "string"
+    },
+    "Hides": {
+      "description": "A filter of a person's that hides a provider of a model.",
+      "oneOf": [
+        {
+          "const": "based_in",
+          "description": "It is based, or runs, outside the countries chosen, or the router does not say where\nit is based.",
+          "type": "string"
+        },
+        {
+          "const": "precision",
+          "description": "It serves the model's weights at less than the precision chosen, or does not say.",
+          "type": "string"
+        },
+        {
+          "const": "keeps_some",
+          "description": "It may keep what it is sent, where only providers that keep nothing are chosen.",
+          "type": "string"
+        },
+        {
+          "const": "price",
+          "description": "Its tokens cost more than the most chosen, or the router does not say what they cost.",
+          "type": "string"
+        },
+        {
+          "const": "avoided",
+          "description": "The person chose to avoid it.",
+          "type": "string"
+        }
+      ]
     },
     "IdempotencyKey": {
       "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
