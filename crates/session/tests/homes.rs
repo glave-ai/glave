@@ -7,14 +7,14 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::{LocalComputers, Wake, Waking};
-use glave_event::{ComputerKind, Part, PrincipalId, ThreadId};
+use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
 use glave_harness::Homes;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, Home, Sources, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, DiskSpace, Home, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{Message, OrgId, ProjectId};
 use glave_session::Answering;
@@ -38,6 +38,8 @@ struct Here {
     holds: Arc<AtomicUsize>,
     /// How many held a computer each time one was woken.
     held_when_woken: Arc<Mutex<Vec<usize>>>,
+    /// What each computer's disk of 100 says it has free.
+    free: Arc<AtomicU64>,
     planned: Mutex<BTreeMap<PrincipalId, Home>>,
 }
 
@@ -66,6 +68,7 @@ impl Here {
             woken: Arc::default(),
             holds: Arc::default(),
             held_when_woken: Arc::default(),
+            free: Arc::new(AtomicU64::new(50)),
             planned: Mutex::new(BTreeMap::new()),
         }
     }
@@ -107,7 +110,9 @@ impl Here {
         );
         let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
         let at = folder.clone();
+        let free = Arc::clone(&self.free);
         let wake: Wake = Arc::new(move || {
+            let free = Arc::clone(&free);
             asked.fetch_add(1, Ordering::SeqCst);
             let (woken, holds, held, awake) = (
                 Arc::clone(&woken),
@@ -116,6 +121,7 @@ impl Here {
                 Arc::clone(&awake),
             );
             let (scratch, projects, at) = (scratch.clone(), projects.clone(), at.clone());
+            let free = Arc::clone(&free);
             Box::pin(async move {
                 let mut awake = awake.lock().await;
                 if let Some(home) = awake.as_ref() {
@@ -125,7 +131,12 @@ impl Here {
                 held.lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
+                let free = Arc::clone(&free);
                 let computers = LocalComputers::for_here(std::env::vars_os())
+                    .with_disk_measure(move || DiskSpace {
+                        size: 100,
+                        free: free.load(Ordering::SeqCst),
+                    })
                     .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
                     .with_projects(projects)
@@ -532,5 +543,109 @@ fn a_worktree_on_a_person_s_computer_is_offered_what_its_repository_was_last_rea
         assert_eq!(homes.woken(), woken, "a turn that talks wakes nothing");
         let offered = json(&seen).pop().unwrap();
         assert!(offered.contains("Tidy the garden beds."), "{offered}");
+    });
+}
+
+/// A worktree thread of `project`, as `started` in a worktree of its own: its id and its root.
+async fn in_a_worktree(server: &Tested<Shared>, project: ProjectId) -> (ThreadId, PathBuf) {
+    let start = Request::ThreadStart {
+        project: Some(project),
+        worktree: Some(true),
+        background: false,
+        computer: None,
+        model: None,
+        permissions: None,
+        effort: None,
+    };
+    let reply = server.request(start).await.unwrap();
+    let Reply::Thread { thread } = reply else {
+        panic!("a thread, not {reply:?}")
+    };
+    let root = thread.workspace.unwrap().root;
+    (thread.id, PathBuf::from(root))
+}
+
+/// What `thread` recorded of its worktree being removed, by why.
+async fn removed_because(server: &Tested<Shared>, thread: ThreadId) -> Vec<RemovedReason> {
+    events(server, thread)
+        .await
+        .into_iter()
+        .filter_map(|raw| match decode(raw).unwrap().body {
+            Body::WorkspaceRemoved(removed) => Some(removed.reason),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_they_come_back() {
+    let dir = folder("session-homes-full");
+    block_on!(async {
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
+        let mut setup = Setup::new(vec![
+            answer(Some("Busy, then quiet."), None),
+            answer(None, Some(wrote)),
+            answer(Some("Written."), None),
+            answer(Some("Back."), None),
+        ]);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let clock = setup.clock.clone();
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let person = server.person().unwrap();
+        let (project, folder) = garden_with_a_skill(&homes, &server, person).await;
+        // Everything on a remote, so what's in a worktree can be fetched again.
+        let root = PathBuf::from(&folder.checkout.path);
+        let bare = dir.join("origin.git");
+        for args in [
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "first",
+            ][..],
+            &["clone", "-q", "--bare", ".", bare.to_str().unwrap()][..],
+            &["remote", "add", "origin", bare.to_str().unwrap()][..],
+            &["fetch", "-q", "origin"][..],
+        ] {
+            let done = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(done.status.success(), "{done:?}");
+        }
+        let (archived, archived_root) = in_a_worktree(&server, project.id).await;
+        let (idle, idle_root) = in_a_worktree(&server, project.id).await;
+        turn(&server, idle, "hi").await.unwrap();
+        let (recent, recent_root) = in_a_worktree(&server, project.id).await;
+        server
+            .request(Request::ThreadArchive { thread: archived })
+            .await
+            .unwrap();
+
+        // Eight days on, those let go of, the disk full, and a turn that uses the computer ends.
+        clock.advance_seconds(8 * 24 * 60 * 60);
+        server.tick().await.unwrap();
+        let writing = started(&server, Some(project.id)).await;
+        homes.free.store(10, Ordering::SeqCst);
+        turn(&server, writing.id, "write it down").await.unwrap();
+
+        assert_eq!(
+            removed_because(&server, archived).await,
+            [RemovedReason::Archived]
+        );
+        assert_eq!(removed_because(&server, idle).await, [RemovedReason::Idle]);
+        assert!(!archived_root.exists() && !idle_root.exists());
+        let _ = (recent, recent_root);
+
+        // Back, it opens its worktree again.
+        homes.free.store(50, Ordering::SeqCst);
+        turn(&server, idle, "hello again").await.unwrap();
+        assert!(idle_root.exists(), "{}", idle_root.display());
     });
 }

@@ -157,6 +157,7 @@ where
         };
         home.changed = false;
         let bound = home.bound.clone();
+        // It has just been used, so asking it wakes nothing.
         self.free_room_at_home(thread).await;
         if matches!(bound.opened, Opened::Clone { .. }) {
             return;
@@ -169,7 +170,7 @@ where
         if let Some(kept_for) = kept_for {
             self.keep_read(thread.scope, &kept_for, read.clone(), skills)
                 .await;
-        } else {
+        } else if let Some(home) = thread.home.as_mut() {
             home.skills = Some(skills);
         }
         thread.instructions = crate::instructions::compose(Path::new(&bound.root), &read);
