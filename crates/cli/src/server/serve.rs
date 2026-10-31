@@ -9,6 +9,7 @@
 //! background, it keeps its log under its cap.
 
 use std::pin::pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use glave_harness::Cancel;
@@ -25,7 +26,7 @@ use crate::client::Glave;
 use crate::data::{DataBlobs, DataLog};
 use crate::memory::Running;
 use crate::serving::Reach;
-use glave_ports::{BlobStore as _, OrgId};
+use glave_ports::Leases;
 
 /// How often the server looks at its log's size, and whether the daily work is due.
 const TICK: Duration = Duration::from_secs(30);
@@ -40,9 +41,9 @@ const DAILY: Duration = Duration::from_hours(24);
 pub(crate) struct Daily<'a> {
     /// The store's log, which the worktrees' check records in.
     pub log: DataLog,
-    /// The store's blobs, swept in `org`.
+    /// The store's blobs, swept in every organization on it, each under `leases`.
     pub blobs: DataBlobs,
-    pub org: OrgId,
+    pub leases: Arc<dyn Leases>,
     /// Memory, when it is on.
     pub memory: Option<&'a Running>,
     /// The processes the worktrees' check runs git as.
@@ -67,7 +68,7 @@ impl Daily<'_> {
             crate::worktrees::check_daily(&self.log, self.processes).await;
             if swept.is_none_or(|at| at.elapsed() >= DAILY) {
                 swept = Some(Instant::now());
-                self.sweep().await;
+                super::sweep::every_organization(&self.blobs, self.leases.as_ref()).await;
             }
             if tidied.elapsed() < DAILY {
                 continue;
@@ -77,19 +78,6 @@ impl Daily<'_> {
                 memory.housekeep().await;
                 memory.memory.tidy_soon(Some(memory.person), &memory.scopes);
             }
-        }
-    }
-}
-
-impl Daily<'_> {
-    /// Deletes the blobs no thread refers to, and bytes no record names (`specs/storage.md`,
-    /// "Blobs"). A sweep that fails is tried again the next day; nothing waits on it.
-    async fn sweep(&self) {
-        match self.blobs.sweep(self.org).await {
-            Ok(swept) => {
-                tracing::info!(blobs = swept.blobs, orphans = swept.orphans, "blobs swept");
-            }
-            Err(error) => tracing::warn!(%error, "the blobs could not be swept"),
         }
     }
 }

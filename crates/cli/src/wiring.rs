@@ -62,9 +62,9 @@ pub(crate) struct Wired {
     pub(crate) memory: Option<crate::memory::Running>,
     /// The store's log, for the daily work of the person's server.
     pub(crate) log: crate::data::DataLog,
-    /// The store's blobs and its organization, which the daily work sweeps.
+    /// The store's blobs and leases, which the daily work sweeps under.
     pub(crate) blobs: crate::data::DataBlobs,
-    pub(crate) org: glave_ports::OrgId,
+    pub(crate) leases: Arc<dyn glave_ports::Leases>,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
     pub(crate) projects: Arc<ProjectFolders>,
     /// How people reach the server from elsewhere, and its HTTPS of its own.
@@ -226,7 +226,7 @@ pub(crate) async fn wire(
         memory,
         log: store.log(),
         blobs: store.blobs(),
-        org: scope.org(),
+        leases: store.leases(),
         projects,
         reach,
         _telemetry: telemetry,

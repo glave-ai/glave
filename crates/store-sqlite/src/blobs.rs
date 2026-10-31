@@ -310,6 +310,10 @@ impl BlobStore for SqliteBlobs {
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
         self.sweep_now(org)
     }
+
+    fn organizations(&self) -> impl Future<Output = Result<Vec<OrgId>, BlobError>> + Send {
+        self.organizations_now()
+    }
 }
 
 fn storage(error: &StoreError) -> BlobError {

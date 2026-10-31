@@ -3,6 +3,7 @@
 //! and no one is at the terminal (wired in `wiring.rs`); and serving the session API.
 
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
@@ -145,7 +146,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
         let daily = crate::server::Daily {
             log: wired.log.clone(),
             blobs: wired.blobs.clone(),
-            org: wired.org,
+            leases: Arc::clone(&wired.leases),
             memory: wired.memory.as_ref(),
             processes: wired.servers.processes(),
         };

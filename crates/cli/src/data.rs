@@ -344,6 +344,13 @@ impl BlobStore for DataBlobs {
             Self::Postgres(blobs) => blobs.sweep(org).await,
         }
     }
+
+    async fn organizations(&self) -> Result<Vec<OrgId>, BlobError> {
+        match self {
+            Self::Sqlite(blobs) => blobs.organizations().await,
+            Self::Postgres(blobs) => blobs.organizations().await,
+        }
+    }
 }
 
 #[cfg(test)]

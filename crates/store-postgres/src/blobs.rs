@@ -335,6 +335,14 @@ impl BlobStore for PostgresBlobs {
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
         self.sweep_now(org)
     }
+
+    fn organizations(&self) -> impl Future<Output = Result<Vec<OrgId>, BlobError>> + Send {
+        async {
+            crate::store::organizations(&self.pool)
+                .await
+                .map_err(|e| storage(&e))
+        }
+    }
 }
 
 fn storage(error: &StoreError) -> BlobError {

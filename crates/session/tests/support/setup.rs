@@ -81,6 +81,10 @@ impl BlobStore for SharedBlobs {
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
         self.0.sweep(org)
     }
+
+    fn organizations(&self) -> impl Future<Output = Result<Vec<OrgId>, BlobError>> + Send {
+        self.0.organizations()
+    }
 }
 
 /// A fresh folder for the test called `name`, removed when it drops.

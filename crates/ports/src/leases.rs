@@ -28,15 +28,19 @@ pub enum Leased {
     Scheduler,
     /// A person's own computer: the one server that wakes it, drives it and puts it to sleep.
     Computer(PrincipalId),
+    /// The organization's blobs while they are swept: one server at a time.
+    BlobSweep,
 }
 
 impl Leased {
-    /// The name stores keep it under: `thread:<id>`, `scheduler`, or `computer:<person>`.
+    /// The name stores keep it under: `thread:<id>`, `scheduler`, `computer:<person>`, or
+    /// `blob-sweep`.
     pub fn key(&self) -> String {
         match self {
             Self::Thread(thread) => format!("thread:{thread}"),
             Self::Scheduler => "scheduler".to_owned(),
             Self::Computer(person) => format!("computer:{person}"),
+            Self::BlobSweep => "blob-sweep".to_owned(),
         }
     }
 }

@@ -12,6 +12,26 @@ use super::{SqliteBlobs, storage};
 use crate::store::run;
 
 impl SqliteBlobs {
+    /// Every organization with a key: made the first time anything of it is sealed, so every
+    /// one with a blob, or bytes a crash left without a record.
+    pub(super) async fn organizations_now(&self) -> Result<Vec<OrgId>, BlobError> {
+        let ids: Vec<String> = run(&self.connection, |connection| {
+            connection
+                .prepare("SELECT org FROM org_keys ORDER BY org")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()
+        })
+        .await
+        .map_err(|e| storage(&e))?;
+        ids.iter()
+            .map(|id| {
+                let uuid = Uuid::parse_str(id)
+                    .map_err(|e| BlobError::Storage(format!("organization {id}: {e}")))?;
+                Ok(OrgId::from_uuid(uuid))
+            })
+            .collect()
+    }
+
     pub(super) async fn sweep_now(&self, org: OrgId) -> Result<Swept, BlobError> {
         let before = self
             .clock
