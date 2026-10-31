@@ -6,6 +6,7 @@ use glave_event::{
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
+use glave_ports::computer::DiskUse;
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -170,6 +171,23 @@ pub struct ThreadSummary {
     /// and since it was compacted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<ContextUse>,
+    /// Its person's own computer being short of room, with nothing more glave can free, when
+    /// the server last found it so; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk: Option<Box<DiskShort>>,
+}
+
+/// A person's computer short of room, more than 90% of its disk used and nothing more glave can
+/// free: said in a sentence, with what uses it most, the largest first, for each client to draw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DiskShort {
+    pub told: Told,
+    /// What the disk holds, in bytes.
+    pub size: u64,
+    /// What it has free, in bytes.
+    pub free: u64,
+    /// What uses it most, the largest first, by the path from the person's home.
+    pub largest: Vec<DiskUse>,
 }
 
 /// How full a thread's context is: what its conversation last sent and got back, of the window

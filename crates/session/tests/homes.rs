@@ -10,27 +10,26 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_computer::{LocalComputers, Wake, Waking};
+use glave_computer::{Largest, LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
 use glave_harness::Homes;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, DiskSpace, Home, Sources, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, DiskSpace, DiskUse, Home, Sandbox, SandboxLevel, Sources,
+    WorkspaceId, WorkspaceInfo,
 };
-use glave_ports::{BoxFuture, Message, OrgId, ProjectId};
+use glave_ports::{Message, OrgId, ProjectId};
 use glave_session::Answering;
 
-use glave_session::protocol::{
-    ModelInfo, NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary,
-};
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
 
-use glave_harness::{ProjectFolders, Settled, Skill, SkillSource, Skills};
+use glave_harness::{Skill, SkillSource, Skills};
 
 use crate::support::*;
 
 /// People's computers on this machine: each person's a folder of their own with its scratch
 /// folders, planned until a call needs it, then woken; every wake is counted.
-struct Here {
+pub(crate) struct Here {
     base: PathBuf,
     /// How many times a call asked for a computer, woken or not.
     asked: Arc<AtomicUsize>,
@@ -42,7 +41,11 @@ struct Here {
     held_when_woken: Arc<Mutex<Vec<usize>>>,
     /// While what this names is there, each computer's disk says it is full.
     full_while: Arc<Mutex<Option<PathBuf>>>,
+    /// What each computer says uses its disk.
+    largest: Largest,
     planned: Mutex<BTreeMap<PrincipalId, Home>>,
+    /// The sandbox commands run in there; none, its wall the only one, unless a test sets it.
+    sandbox: Option<Sandbox>,
 }
 
 /// One turn or task holding a computer, counted while it is kept.
@@ -62,7 +65,7 @@ impl Drop for Hold {
 }
 
 impl Here {
-    fn new(base: &Path) -> Self {
+    pub(crate) fn new(base: &Path) -> Self {
         std::fs::create_dir_all(base).unwrap();
         Self {
             base: base.canonicalize().unwrap(),
@@ -71,7 +74,9 @@ impl Here {
             holds: Arc::default(),
             held_when_woken: Arc::default(),
             full_while: Arc::default(),
+            largest: Largest::default(),
             planned: Mutex::new(BTreeMap::new()),
+            sandbox: None,
         }
     }
 
@@ -79,7 +84,7 @@ impl Here {
         self.woken.load(Ordering::SeqCst)
     }
 
-    fn asked(&self) -> usize {
+    pub(crate) fn asked(&self) -> usize {
         self.asked.load(Ordering::SeqCst)
     }
 
@@ -113,8 +118,10 @@ impl Here {
         let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
         let at = folder.clone();
         let full_while = Arc::clone(&self.full_while);
+        let largest = self.largest.clone();
         let wake: Wake = Arc::new(move || {
             let full_while = Arc::clone(&full_while);
+            let largest = largest.clone();
             asked.fetch_add(1, Ordering::SeqCst);
             let (woken, holds, held, awake) = (
                 Arc::clone(&woken),
@@ -134,7 +141,11 @@ impl Here {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(holds.load(Ordering::SeqCst));
                 let full_while = Arc::clone(&full_while);
-                let computers = LocalComputers::for_here(std::env::vars_os())
+                // Its home is its own: nothing here looks at this machine's person's.
+                let environment = std::env::vars_os()
+                    .filter(|(name, _)| name != "HOME")
+                    .chain([("HOME".into(), at.clone().into_os_string())]);
+                let computers = LocalComputers::for_here(environment)
                     .with_disk_measure(move || {
                         let full = full_while
                             .lock()
@@ -143,9 +154,10 @@ impl Here {
                             .is_some_and(|path: &PathBuf| path.exists());
                         DiskSpace {
                             size: 100,
-                            free: if full { 10 } else { 50 },
+                            free: if full { 9 } else { 50 },
                         }
                     })
+                    .with_largest(largest.clone())
                     .with_worktrees(at.join(".glave/worktrees"))
                     .with_scratch(scratch)
                     .with_projects(projects)
@@ -177,6 +189,10 @@ impl Homes for Here {
         Ok(Box::new(Hold::new(&self.holds)))
     }
 
+    fn sandbox(&self) -> Option<Sandbox> {
+        self.sandbox.clone()
+    }
+
     fn home(&self, _org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
         let mut planned = self.planned.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(planned
@@ -196,8 +212,44 @@ async fn served_with_homes(dir: &Path, log: &Shared) -> (Arc<Here>, Tested<Share
     (homes, server, person)
 }
 
+/// What the server tells every client of commands' walls goes by people's computers, not by its
+/// own: a sandbox there says nothing, however this one stands, and none says what that means.
+#[test]
+fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
+    let dir = folder("session-homes-walls");
+    block_on!(async {
+        for (sandbox, says) in [
+            (
+                Some(Sandbox {
+                    level: SandboxLevel::Project,
+                    network: true,
+                    home: None,
+                    glave_home: None,
+                }),
+                json!(null),
+            ),
+            (
+                None,
+                json!(
+                    "Commands here run without glave's sandbox: in Auto they can read and change \
+                     anything in your home, and Ask first asks before every change and command."
+                ),
+            ),
+        ] {
+            let mut homes = Here::new(&dir.join("people"));
+            homes.sandbox = sandbox;
+            let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+            setup.homes = Some(Arc::new(homes) as Arc<dyn Homes>);
+            let (server, _) = setup.build_on(&dir, Shared::default()).await;
+            let told = server.request(Request::Discover {}).await.unwrap();
+            let told = serde_json::to_value(&told).unwrap();
+            assert_eq!(told["unsandboxed"], says);
+        }
+    });
+}
+
 /// A thread `server` started for its person, in `project` or a chat of their own.
-async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
+pub(crate) async fn started(server: &Tested<Shared>, project: Option<ProjectId>) -> ThreadSummary {
     let started = server
         .request(Request::ThreadStart {
             project,
@@ -424,7 +476,7 @@ const SKILL_TEXT: &str =
 
 /// `next` as a server started later on `server`'s store, for the same person, and the computers
 /// it reaches.
-fn later_on(mut next: Setup, dir: &Path, server: &Tested<Shared>) -> (Arc<Here>, Setup) {
+pub(crate) fn later_on(mut next: Setup, dir: &Path, server: &Tested<Shared>) -> (Arc<Here>, Setup) {
     next.seed = 2;
     next.settings.person = server.person();
     next.projects = Some(Arc::clone(server.projects()));
@@ -459,7 +511,7 @@ async fn garden_with_a_skill(
 }
 
 /// A new project with a folder of its own on `server`'s person's computer.
-async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project, ProjectFolder) {
+pub(crate) async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project, ProjectFolder) {
     let made = Request::ProjectCreate {
         name: "Garden".into(),
         folder: Some(NewFolder::Empty),
@@ -685,65 +737,63 @@ fn a_full_computer_frees_the_worktrees_of_old_threads_who_open_them_again_when_t
     });
 }
 
-/// What a host makes of a project's `config.toml` on a person's computer: its text, as the
-/// model its threads go to.
-struct ConfigIsTheModel;
-
-impl ProjectFolders for ConfigIsTheModel {
-    fn for_folder<'a>(
-        &'a self,
-        _root: &'a Path,
-        _project: Option<&'a Path>,
-        _trusting: bool,
-    ) -> BoxFuture<'a, Option<String>> {
-        Box::pin(async { None })
-    }
-
-    fn settled_at_home<'a>(
-        &'a self,
-        _project: &'a Path,
-        config: &'a str,
-    ) -> BoxFuture<'a, Settled> {
-        Box::pin(async move {
-            Settled {
-                model: Some(config.trim().to_owned()),
-                ..Settled::default()
-            }
-        })
-    }
-}
-
+/// Past 90%, with nothing more it can free, the server tells the person what uses their disk, as a
+/// fact on their thread, largest first, and asks nothing more of the computer to say it.
 #[test]
-fn a_project_s_choices_are_read_on_its_person_s_computer_and_kept() {
-    let dir = folder("session-homes-choices");
+fn a_person_is_told_what_uses_their_disk_once_nothing_more_can_go() {
+    let dir = folder("session-homes-disk");
     block_on!(async {
-        let log = Shared::default();
         let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
-        let answers = vec![answer(None, Some(wrote)), answer(Some("Done."), None)];
+        let answers = vec![
+            answer(None, Some(wrote.clone())),
+            answer(Some("Done."), None),
+            answer(None, Some(wrote)),
+            answer(Some("Done."), None),
+        ];
         let homes = Arc::new(Here::new(&dir.join("people")));
-        let first = Setup {
-            homes: Some(Arc::clone(&homes) as Arc<dyn Homes>),
-            ..Setup::new(answers)
-        };
-        let (server, _) = first.build_on(&dir, log.clone()).await;
-        let (project, folder) = new_garden(&server).await;
-        // Choices put there since, read by the end of a turn that changed a file.
-        let glave = PathBuf::from(&folder.checkout.path).join(".glave");
-        std::fs::create_dir_all(&glave).unwrap();
-        std::fs::write(glave.join("config.toml"), "chosen\n").unwrap();
+        let mut setup = Setup::new(answers);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let (project, _) = new_garden(&server).await;
+        homes.largest.set(vec![DiskUse {
+            path: "films/long".to_owned(),
+            bytes: 3_000_000,
+        }]);
+        let marker = dir.join("full");
+        std::fs::write(&marker, "").unwrap();
+        *homes.full_while.lock().unwrap() = Some(marker.clone());
+
         let thread = started(&server, Some(project.id)).await;
+        assert_eq!(thread.disk, None, "nothing looked at yet");
         turn(&server, thread.id, "write it down").await.unwrap();
 
-        // A server started later goes by what was kept, and nothing is asked of the computer.
-        let mut next = Setup::new(vec![answer(Some("Hello."), None)]);
-        next.models = vec![ModelInfo::new("chosen")];
-        next.project_folders = Some(Arc::new(ConfigIsTheModel));
-        let (later, next) = later_on(next, &dir, &server);
-        let (again, seen) = next.build_on(&dir, log).await;
-        let thread = started(&again, Some(project.id)).await;
-        turn(&again, thread.id, "hi").await.unwrap();
-        assert_eq!(later.asked(), 0, "nothing asked of their computer");
-        let sent: serde_json::Value = serde_json::from_str(&json(&seen)[0]).unwrap();
-        assert_eq!(sent["model"], "chosen");
+        let asked = homes.asked();
+        let read = server
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        let Reply::Thread { thread: read } = read else {
+            panic!("a thread, not {read:?}");
+        };
+        assert_eq!(homes.asked(), asked, "saying so reaches nothing");
+        let disk = read.disk.expect("it says so");
+        assert_eq!(
+            disk.told.to_string(),
+            "Your computer's disk is 91% full, and glave has freed all it can."
+        );
+        assert_eq!((disk.size, disk.free), (100, 9));
+        assert_eq!(disk.largest[0].path, "films/long");
+
+        // Room made since: the next turn that used the computer hears it, and it says no more.
+        std::fs::remove_file(&marker).unwrap();
+        turn(&server, thread.id, "write it again").await.unwrap();
+        let read = server
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        let Reply::Thread { thread: read } = read else {
+            panic!("a thread, not {read:?}");
+        };
+        assert_eq!(read.disk, None);
     });
 }

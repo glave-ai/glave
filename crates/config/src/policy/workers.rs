@@ -81,6 +81,10 @@ pub struct ComputersFile {
     pub image: String,
     /// Each person's disk, in GB; [`ComputersFile::DISK_GB`] unless set.
     pub disk_gb: Option<u32>,
+    /// Whether commands there run in glave's sandbox, on unless set to `false`: a cluster's
+    /// runtime where it cannot start (runc) leaves the Pod as their only wall
+    /// (`specs/sandbox.md`, "On a person's computer").
+    pub sandbox: Option<bool>,
 }
 
 impl ComputersFile {

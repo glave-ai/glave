@@ -68,6 +68,7 @@ mod thought;
 mod titles;
 mod tracing;
 mod trust;
+mod trust_at_home;
 mod turn_streams;
 mod watching;
 mod worktrees;

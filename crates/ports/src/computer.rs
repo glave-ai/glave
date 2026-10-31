@@ -29,7 +29,7 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };
 pub use types::{
-    Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, Ending, Entry,
+    Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, DiskUse, Ending, Entry,
     EntryKind, FileWrite, Finished, Freed, KeptWorktree, Listed, Listing, OnTimeout, Save, Saved,
     Sources, State, WorkspaceId, WorkspaceInfo,
 };

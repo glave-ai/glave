@@ -285,6 +285,10 @@ sentences! {
         "{ $mode } isn't allowed here: choose { $left }",
     Unsandboxed = "unsandboxed"
         "This computer can't run the sandbox, so Auto and Ask first both ask before every change and command.",
+    DiskShort { percent: String } = "disk-short"
+        "Your computer's disk is { $percent }% full, and glave has freed all it can.",
+    OwnComputerWall = "own-computer-wall"
+        "Commands here run without glave's sandbox: in Auto they can read and change anything in your home, and Ask first asks before every change and command.",
     OnlyReadOnlySandbox = "only-read-only-sandbox"
         "This computer can only run the sandbox that keeps files as they are, so Auto asks before every change and command.",
 

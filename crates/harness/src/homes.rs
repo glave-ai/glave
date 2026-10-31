@@ -10,17 +10,19 @@
 mod freeing;
 mod kept;
 
+pub use freeing::ShortOfRoom;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{ComputerKind, InstructionsRead, Opened, PrincipalId, WorkspaceBound};
-use glave_ports::computer::{ComputerError, Home};
+use glave_ports::computer::{ComputerError, Home, Sandbox};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 
 use crate::approval::Approver;
 use crate::background::Commands;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::project_folders::{Brought, Settled};
+use crate::project_folders::{Brought, Settled, project_of};
 use crate::removed::owner_label;
 use crate::skills::on_home::skills_on;
 use crate::skills::{Skill, SkillSource, Skills};
@@ -37,6 +39,10 @@ pub trait Homes: Send + Sync {
     /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept:
     /// for a turn or a task, which may run long between its commands. It does not wake it.
     fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError>;
+
+    /// The sandbox commands there run in, at its widest; none where the computer's own wall is
+    /// their only one (`specs/sandbox.md`, "On a person's computer").
+    fn sandbox(&self) -> Option<Sandbox>;
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -71,7 +77,7 @@ where
     ) -> Option<Result<Workspace, HarnessError>> {
         let homes = self.homes.as_ref()?;
         Some(homes.home(org, person).map_err(Into::into).map(|planned| {
-            let home = Workspace::new(planned.computers, planned.home);
+            let home = Workspace::new(planned.computers, planned.home).asleep_at_times();
             // Their git sign-ins reach their computer as they reach this one: asked at each use.
             match self.workspace.credentials() {
                 Some(credentials) => home.with_credentials(Arc::clone(credentials)),
@@ -153,14 +159,18 @@ where
         let Some(host) = &self.project_folders else {
             return Settled::default();
         };
-        match self
-            .last_read(scope, root)
-            .await
-            .and_then(|read| read.config)
-        {
-            Some(config) => host.settled_at_home(root, &config).await,
+        match self.kept_config(scope, root).await {
+            Some(config) => host.settled_at_home(scope, root, &config).await,
             None => Settled::default(),
         }
+    }
+
+    /// The `config.toml` last read for `root` on its person's own computer and kept, which
+    /// reaches nothing: what their project there asks them to trust is read from it.
+    pub async fn kept_config(&self, scope: Scope, root: &Path) -> Option<String> {
+        self.last_read(scope, root)
+            .await
+            .and_then(|read| read.config)
     }
 
     /// Reads again what `thread` opens with on its person's own computer, after a turn that ran
@@ -224,7 +234,8 @@ where
 
     /// What `thread` on its person's own computer brings for its next turn: what was last read
     /// there and kept, never the server's: its project's choices, within the server's
-    /// constraints, and the `skill` tool for what was found there, with glave's own beside them.
+    /// constraints, the hooks they trusted, and the `skill` tool for what was found there, with
+    /// glave's own beside them.
     /// None read yet, or that read failing, only glave's own for this turn. A worktree goes by
     /// what its repository's folder was last read to hold, until a turn of its own reads its own.
     /// Loading a skill reads it there, as any tool call does.
@@ -249,12 +260,14 @@ where
             (None, Opened::Clone { .. }) => None,
         };
         let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
-        let settled = match (&self.project_folders, &config) {
-            (Some(host), Some(config)) => {
-                host.settled_at_home(Path::new(&at.bound.root), config)
-                    .await
-            }
-            _ => Settled::default(),
+        // A worktree goes by its repository's folder, which its project's yes is kept for.
+        let root = project_of(&at.bound.opened).unwrap_or_else(|| PathBuf::from(&at.bound.root));
+        let (settled, hooks) = match (&self.project_folders, &config) {
+            (Some(host), Some(config)) => (
+                host.settled_at_home(scope, &root, config).await,
+                host.hooks_at_home(scope, &root, config).await,
+            ),
+            _ => Default::default(),
         };
         let mut skills: Vec<Skill> = found
             .into_iter()
@@ -273,6 +286,7 @@ where
                 .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
                 .into_iter()
                 .collect(),
+            hooks,
             ..Brought::default()
         }
     }

@@ -55,6 +55,16 @@ const CACHES: &[(&str, &str)] = &[
     ("GRADLE_USER_HOME", "gradle"),
 ];
 
+/// Rust's toolchains and crates, in their own homes outside the sandbox. A computer whose
+/// environment sets [`TOOLCHAINS_IN_SANDBOX`] (glave's computer image does) has its sandboxed
+/// commands keep them in the sandbox cache like the rest, so they build without asking: nothing
+/// planted there reaches a command outside the sandbox. That computer gives up what Cargo's home
+/// outside it holds, which a laptop can't (`CACHES`): its settings, tools and crates.
+const TOOLCHAINS: &[(&str, &str)] = &[("CARGO_HOME", "cargo"), ("RUSTUP_HOME", "rustup")];
+
+/// The variable of the computer's own environment that says so, as `1`.
+const TOOLCHAINS_IN_SANDBOX: &str = "GLAVE_SANDBOX_TOOLCHAINS";
+
 /// Maven has no variable for its repository, only a property, passed through `MAVEN_OPTS`,
 /// which is split at projects: a cache folder with a project in its path is left out.
 fn maven_opts(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsString> {
@@ -273,8 +283,13 @@ fn bash(
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
         .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
         .envs(caches.iter().flat_map(|caches| {
+            let toolchains = opened
+                .environment
+                .iter()
+                .any(|(name, value)| name == TOOLCHAINS_IN_SANDBOX && value == "1");
             CACHES
                 .iter()
+                .chain(toolchains.then_some(TOOLCHAINS).into_iter().flatten())
                 .map(move |(name, folder)| (*name, caches.join(folder)))
         }))
         .envs(

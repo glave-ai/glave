@@ -13,8 +13,8 @@ use std::time::Duration;
 use glave_event::PrincipalId;
 use glave_ports::OrgId;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Sources,
-    State as ComputerState, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Sandbox,
+    SandboxLevel, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -289,6 +289,18 @@ impl People {
     /// its lease, refuses the call in plain words.
     pub fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
         Ok(self.person(org, person)?.planned.clone())
+    }
+}
+
+/// The sandbox commands on a person's computer run in, at its widest (each mode narrows it),
+/// with the network as `network` says: its home's credentials and glave's folder there hidden.
+#[must_use]
+pub fn person_sandbox(network: bool) -> Sandbox {
+    Sandbox {
+        level: SandboxLevel::Project,
+        network,
+        home: Some(PERSON_HOME.into()),
+        glave_home: Some(format!("{PERSON_HOME}/.glave").into()),
     }
 }
 

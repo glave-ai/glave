@@ -37,7 +37,8 @@ pub enum Reserved {
     /// `…0003`: a project's own settings, today its folder (`project.folder.set`).
     Project,
     /// `…0004`: what a person decided about the projects that ask to be trusted
-    /// (`trust.decided`), in their personal project.
+    /// (`trust.decided`): in their personal project; for a project on their own computer in
+    /// the cloud, in that project.
     Trust,
     /// `…0005`: the browser sessions of the person on their own server, in their personal
     /// project.

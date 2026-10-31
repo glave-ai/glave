@@ -17,6 +17,8 @@ use glave_ports::computer::{
 use super::{CACHE_FOLDER, sandbox_available};
 use crate::{CancelSwitch, LocalComputers};
 
+mod toolchains;
+
 fn enforced() -> bool {
     let available = sandbox_available();
     assert!(
@@ -90,11 +92,20 @@ fn committed_repo(dir: &Path, name: &str) -> PathBuf {
 /// This machine's computers, keeping worktrees in glave's folder under `dir/home`, and the
 /// sandbox protecting that home.
 fn computers(dir: &Path) -> (LocalComputers, Sandbox) {
+    computers_saying(dir, &[])
+}
+
+/// The same, with `said` in their own environment too.
+fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandbox) {
     let home = dir.join("home");
     let glave_home = home.join(".glave");
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), home.clone().into_os_string())])
+        .chain(
+            said.iter()
+                .map(|(name, value)| ((*name).into(), (*value).into())),
+        )
         .collect();
     let computers = LocalComputers::new(dir.join("copies"), environment)
         .with_worktrees(glave_home.join("worktrees"));
