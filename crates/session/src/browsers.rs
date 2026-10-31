@@ -14,6 +14,7 @@ use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use jiff::SignedDuration;
 
+use crate::naming::given_name;
 use crate::organizations::with_account;
 use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
@@ -96,12 +97,17 @@ where
         ceremony: &str,
         credential: &serde_json::Value,
         name: Option<&str>,
+        person_name: Option<String>,
     ) -> Result<Reply, ApiError> {
+        // Read first: a name it can't take leaves the passkey's request to answer again.
+        let person_name = person_name.as_deref().map(given_name).transpose()?;
         if let Some(joining) = self.joining(ceremony) {
-            return self.join(joining, credential, name).await;
+            return self.join(joining, credential, name, person_name).await;
         }
         if let Some(signing) = self.signing(ceremony) {
-            return self.finish_link(signing, credential, name).await;
+            return self
+                .finish_link(signing, credential, name, person_name)
+                .await;
         }
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;
@@ -187,9 +193,12 @@ where
             .any(|passkey| passkey.emailed && !passkey.current && lately(&passkey.added))
             .then(|| Sentence::PasskeyEmailedNotice.into());
         let email = self.account_email(caller).await?;
+        let person_name = self.account_name(caller).await?;
         Ok(Reply::Passkeys {
             passkeys,
             email,
+            person_name,
+            nameable: with_account(caller),
             notice,
         })
     }

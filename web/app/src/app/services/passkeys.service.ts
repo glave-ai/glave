@@ -44,6 +44,9 @@ export const PLATFORM_AUTHENTICATOR = new InjectionToken<() => Promise<boolean>>
   },
 );
 
+/** The longest name the server takes, so a field stops there, before a device is asked. */
+export const LONGEST_NAME = 100;
+
 /** What the person is told when their device makes or uses no passkey: the app's own words. */
 export function passkeyRefused(): string {
   return $localize`:@@passkeys.refused:Your device made or used no passkey. Try again, and allow it when your device asks.`;
@@ -65,6 +68,8 @@ export class PasskeysService {
   private readonly listed = signal<readonly PasskeySummary[]>([]);
   private readonly address = signal<string | null>(null);
   private readonly told = signal<string | null>(null);
+  private readonly called = signal<string | null>(null);
+  private readonly mayName = signal(false);
 
   /** The person's passkeys, oldest first, as the server last listed them. */
   readonly passkeys = this.listed.asReadonly();
@@ -72,6 +77,10 @@ export class PasskeysService {
   readonly email = this.address.asReadonly();
   /** What the server tells of a passkey made by email lately, on another device. */
   readonly notice = this.told.asReadonly();
+  /** The name the person goes by, as the server last said. */
+  readonly personName = this.called.asReadonly();
+  /** Whether they may change it, as the server last said: they have a glave account. */
+  readonly nameable = this.mayName.asReadonly();
   /** This computer's own authenticator, as its system names it, where glave knows it. */
   readonly platform: PlatformAuthenticator = platformAuthenticator(inject(PLATFORM));
 
@@ -97,27 +106,29 @@ export class PasskeysService {
   }
 
   /**
-   * Makes the first passkey of a new account on this device with the invite `code`, joining
-   * the organization it is to, and signs the browser in.
+   * Makes the first passkey of a new account on this device with the invite `code`, for the
+   * person who gives the name `personName`, joining the organization it is to, and signs the
+   * browser in.
    */
-  async join(code: string): Promise<string | null> {
-    return this.asking(() => this.makeWithLink(code, 'invite'));
+  async join(code: string, personName: string): Promise<string | null> {
+    return this.asking(() => this.makeWithLink(code, 'invite', personName));
   }
 
   /**
    * Makes a passkey on this device with the emailed link `code` of the kind `link`: a sign-up's,
-   * the first of a new account, which it makes; or one to get back in, a new one for the
-   * account the address has. Either signs the browser in. Says why not, if it did not, and
-   * whether the link opens nothing any more.
+   * the first of a new account, which it makes, for the person named `personName`; or one to
+   * get back in, a new one for the account the address has. Either signs the browser in. Says
+   * why not, if it did not, and whether the link opens nothing any more.
    */
   async withEmailedLink(
     code: string,
     link: 'signup' | 'recovery',
+    personName: string | null,
   ): Promise<{ readonly problem: string | null; readonly spent: boolean }> {
     let spent = false;
     const problem = await this.asking(async () => {
       try {
-        return await this.makeWithLink(code, link);
+        return await this.makeWithLink(code, link, personName);
       } catch (error: unknown) {
         spent = error instanceof ApiError && error.code === ErrorCode.NO_INVITE;
         throw error;
@@ -142,11 +153,22 @@ export class PasskeysService {
   /** Lists the person's passkeys again. */
   async load(): Promise<string | null> {
     return this.asking(async () => {
-      const { passkeys, email, notice } = await this.session.call('passkey/list', {});
+      const listed = await this.session.call('passkey/list', {});
+      const { passkeys, email, notice } = listed;
+      this.called.set(listed.person_name ?? null);
+      this.mayName.set(listed.nameable ?? false);
       this.listed.set(passkeys);
       this.address.set(email ?? null);
       this.told.set(notice ?? null);
       return null;
+    });
+  }
+
+  /** Changes the name the person goes by. */
+  async rename(name: string): Promise<string | null> {
+    return this.asking(async () => {
+      await this.session.call('person/name', { name });
+      return this.load();
     });
   }
 
@@ -174,13 +196,18 @@ export class PasskeysService {
   }
 
   /** Makes a new account's first passkey with a link's `code`, of the kind `link`. */
-  private async makeWithLink(code: string, link: LinkKind): Promise<string | null> {
+  private async makeWithLink(
+    code: string,
+    link: LinkKind,
+    personName: string | null,
+  ): Promise<string | null> {
     const asked = await this.session.call('passkey/create_options', { code, link });
     const credential = await made(this.authenticator, asked.options);
     if (credential === null) {
       return passkeyRefused();
     }
-    const created = { ceremony: asked.ceremony, credential };
+    const named = personName === null ? {} : { person_name: personName };
+    const created = { ceremony: asked.ceremony, credential, ...named };
     return this.begun(await this.session.call('passkey/create', created));
   }
 

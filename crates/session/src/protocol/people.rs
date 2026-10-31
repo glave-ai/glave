@@ -12,7 +12,8 @@ use crate::people::Permit;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PersonInfo {
     pub id: PrincipalId,
-    /// Their name, as the identity provider's token said it, when it did.
+    /// Their name: as the identity provider's token said it, when it did, or as they gave it
+    /// with a glave account.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Their email, as the identity provider's token said it, when it did.

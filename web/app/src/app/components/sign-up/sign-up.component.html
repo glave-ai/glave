@@ -65,6 +65,22 @@
       >
         <p>{{ copy.passkeyText }}</p>
         <p class="hint">{{ copy.then }}</p>
+        @if (asksName) {
+          <form class="name" (submit)="submitted($event)">
+            <glz-form-field [label]="copy.yourName">
+              <input
+                glzInput
+                type="text"
+                dir="auto"
+                autocomplete="name"
+                data-testid="sign-up-name"
+                [attr.maxlength]="longestName"
+                [value]="personName()"
+                (input)="typedName($event)"
+              />
+            </glz-form-field>
+          </form>
+        }
         @if (problem(); as problem) {
           <p class="problem" role="alert" data-testid="sign-up-problem">{{ problem }}</p>
         }

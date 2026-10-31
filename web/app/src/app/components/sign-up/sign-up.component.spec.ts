@@ -93,7 +93,17 @@ describe('SignUpComponent', () => {
     await expectAccessible(root);
     root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
     await settle(fixture);
+    expect(root.querySelector('[data-testid="sign-up-problem"]')?.textContent).toContain(
+      'Give your name first',
+    );
+    expect(fake.paramsOf('passkey/create_options')).toEqual([]);
+    type(root, 'sign-up-name', ' Ada Lovelace ');
+    root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
+    await settle(fixture);
     expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'signup' }]);
+    expect(fake.paramsOf('passkey/create')).toEqual([
+      expect.objectContaining({ person_name: 'Ada Lovelace' }),
+    ]);
     expect(TestBed.inject(SessionService).signedIn()).toBe(true);
     expect(navigate).toHaveBeenCalledWith('/');
   });
@@ -118,6 +128,7 @@ describe('SignUpComponent', () => {
     const opened = await render(fake, '/#recover=c0de', true);
     expect(opened.root.textContent).toContain('Make a new passkey');
     await expectAccessible(opened.root);
+    expect(opened.root.querySelector('[data-testid="sign-up-name"]')).toBeNull();
     opened.root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
     await settle(opened.fixture);
     expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'recovery' }]);
@@ -146,6 +157,7 @@ describe('SignUpComponent', () => {
     });
     const fake = new FakeSession().answer('passkey/create_options', gone);
     const { fixture, root } = await render(fake, '/#signup=spent');
+    type(root, 'sign-up-name', 'Ada');
     root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
     await settle(fixture);
     expect(root.querySelector('[data-testid="sign-up-email"]')).not.toBeNull();

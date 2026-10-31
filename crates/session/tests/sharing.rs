@@ -140,6 +140,7 @@ async fn make_passkey_at(
         ceremony: options["ceremony"].as_str().unwrap().to_owned(),
         credential: device.create(&options["options"]).unwrap(),
         name: Some("Laptop".into()),
+        person_name: None,
     };
     asked(&mut anyone, &made).await
 }

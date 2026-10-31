@@ -630,7 +630,10 @@ export type PersonInfo = {
   readonly joined?: At | null;
   /** Whether they are the person on the server's computer, its organization's owner always. */
   readonly local?: boolean;
-  /** Their name, as the identity provider's token said it, when it did. */
+  /**
+   * Their name: as the identity provider's token said it, when it did, or as they gave it
+   * with a glave account.
+   */
   readonly name?: string | null;
   /** Whether the caller may take them out of the organization. */
   readonly removable?: boolean;
@@ -1814,6 +1817,11 @@ export type PasskeyCreateParams = {
   readonly credential: unknown;
   /** What to call the passkey; when it was added, if nothing. */
   readonly name?: string | null;
+  /**
+   * What to call the person, whose first passkey an invite's or a sign-up's link makes;
+   * any other passkey's person has one, or their sign-in names them.
+   */
+  readonly person_name?: string | null;
 };
 
 /** A browser session, sent once. */
@@ -1889,8 +1897,12 @@ export type PasskeyListParams = Readonly<Record<string, never>>;
  */
 export type PasskeyListResult = {
   readonly email?: string | null;
+  /** Whether they may change it (`person/name`): they have a glave account. */
+  readonly nameable?: boolean;
   readonly notice?: string | null;
   readonly passkeys: readonly (PasskeySummary)[];
+  /** The name a glave account's person goes by, when they gave one. */
+  readonly person_name?: string | null;
 };
 
 export type PasskeyRemoveParams = {
@@ -1908,6 +1920,12 @@ export type PeopleListParams = {
 export type PeopleListResult = {
   readonly people: readonly (PersonInfo)[];
 };
+
+export type PersonNameParams = {
+  readonly name: string;
+};
+
+export type PersonNameResult = Readonly<Record<string, never>>;
 
 export type PersonRemoveParams = {
   readonly person: PrincipalId;
@@ -2487,6 +2505,7 @@ export interface Methods {
   readonly "passkey/list": { readonly params: PasskeyListParams; readonly result: PasskeyListResult };
   readonly "passkey/remove": { readonly params: PasskeyRemoveParams; readonly result: PasskeyRemoveResult };
   readonly "people/list": { readonly params: PeopleListParams; readonly result: PeopleListResult };
+  readonly "person/name": { readonly params: PersonNameParams; readonly result: PersonNameResult };
   readonly "person/remove": { readonly params: PersonRemoveParams; readonly result: PersonRemoveResult };
   readonly "plan/build": { readonly params: PlanBuildParams; readonly result: PlanBuildResult };
   readonly "plan/edit": { readonly params: PlanEditParams; readonly result: PlanEditResult };

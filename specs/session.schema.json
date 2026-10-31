@@ -1716,7 +1716,7 @@
           "type": "boolean"
         },
         "name": {
-          "description": "Their name, as the identity provider's token said it, when it did.",
+          "description": "Their name: as the identity provider's token said it, when it did, or as they gave it\nwith a glave account.",
           "type": [
             "string",
             "null"
@@ -5296,6 +5296,13 @@
               "string",
               "null"
             ]
+          },
+          "person_name": {
+            "description": "What to call the person, whose first passkey an invite's or a sign-up's link makes;\nany other passkey's person has one, or their sign-in names them.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5445,6 +5452,10 @@
               "null"
             ]
           },
+          "nameable": {
+            "description": "Whether they may change it (`person/name`): they have a glave account.",
+            "type": "boolean"
+          },
           "notice": {
             "type": [
               "string",
@@ -5456,6 +5467,13 @@
               "$ref": "#/$defs/PasskeySummary"
             },
             "type": "array"
+          },
+          "person_name": {
+            "description": "The name a glave account's person goes by, when they gave one.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5519,6 +5537,23 @@
         "required": [
           "people"
         ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "person/name": {
+      "params": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
         "type": "object"
       },
       "streams": false

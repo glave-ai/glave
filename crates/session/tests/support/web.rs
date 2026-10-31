@@ -326,6 +326,17 @@ pub(crate) async fn make_passkey(
     link: glave_session::protocol::LinkKind,
     device: &mut glave_identity::testing::Authenticator,
 ) -> Value {
+    make_named_passkey(served, code, link, device, None).await
+}
+
+/// [`make_passkey`], its person giving `person_name`.
+pub(crate) async fn make_named_passkey(
+    served: &Served,
+    code: glave_event::Secret,
+    link: glave_session::protocol::LinkKind,
+    device: &mut glave_identity::testing::Authenticator,
+    person_name: Option<&str>,
+) -> Value {
     let mut anyone = elsewhere(served, None);
     let create = Request::PasskeyCreateOptions { code, link };
     let options = asked(&mut anyone, &create).await;
@@ -336,6 +347,7 @@ pub(crate) async fn make_passkey(
         ceremony: options["ceremony"].as_str().unwrap().to_owned(),
         credential: device.create(&options["options"]).unwrap(),
         name: Some("Phone".into()),
+        person_name: person_name.map(str::to_owned),
     };
     asked(&mut anyone, &made).await
 }

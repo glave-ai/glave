@@ -241,6 +241,7 @@ fn the_person_on_the_computer_signs_in_with_their_passkey_once_others_have_accou
             ceremony: options["ceremony"].as_str().unwrap().to_owned(),
             credential: mac.create(&options["options"]).unwrap(),
             name: Some("Mac".into()),
+            person_name: None,
         };
         let theirs = asked(&mut anyone, &made).await;
         let mut owner = elsewhere(&served, token_of(&theirs));
@@ -316,6 +317,19 @@ fn a_server_no_one_else_reaches_invites_no_one() {
         )
         .await;
         assert_eq!(refused, json!(code::NOT_ALLOWED));
+        served.close().await;
+    });
+}
+
+#[test]
+fn only_a_glave_account_names_itself() {
+    block_on!(async {
+        let dir = folder("accounts-name");
+        let token = LocalToken::new([18; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let named = Request::PersonName { name: "Ada".into() };
+        assert_eq!(asked(&mut here, &named).await, json!(code::NOT_ALLOWED));
         served.close().await;
     });
 }

@@ -10,7 +10,6 @@ use std::sync::Arc;
 use glave_identity::signin::{Browsers, Checked};
 use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider};
 
-use crate::organizations::with_account;
 use crate::protocol::{ApiError, Reply};
 use crate::server::Server;
 use crate::signups::Signing;
@@ -64,12 +63,9 @@ where
     /// the directory says it is this account's, the one a link to get back in opens. None for
     /// anyone else.
     pub(crate) async fn account_email(&self, caller: &Caller) -> Result<Option<String>, ApiError> {
-        let (Some(person), Some(accounts)) = (caller.person, self.inner.accounts.as_deref()) else {
+        let Some((person, accounts)) = self.account_of(caller) else {
             return Ok(None);
         };
-        if !with_account(caller) {
-            return Ok(None);
-        }
         for org in accounts.organizations(person).await? {
             self.catch_up_people(org).await?;
             let email = self.people(org, |people| {

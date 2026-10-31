@@ -4,6 +4,25 @@
     <p class="notice" role="status" data-testid="passkeys-notice">{{ notice }}</p>
   }
   <p class="details">{{ copy.lead }}</p>
+  @if (nameable()) {
+    <form class="name glz-row glz-gap-2" (submit)="rename($event)">
+      <glz-form-field class="field" [label]="copy.yourName">
+        <input
+          glzInput
+          type="text"
+          dir="auto"
+          autocomplete="name"
+          data-testid="passkeys-name"
+          [attr.maxlength]="longestName"
+          [value]="personName()"
+          (input)="typedName($event)"
+        />
+      </glz-form-field>
+      <button glzButton type="submit" data-testid="passkeys-name-save" [disabled]="naming()">
+        {{ copy.save }}
+      </button>
+    </form>
+  }
   @if (email(); as email) {
     <div class="glz-stack glz-gap-1" data-testid="passkeys-email">
       <p class="details">{{ copy.email }}</p>

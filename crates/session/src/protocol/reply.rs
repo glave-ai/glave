@@ -352,6 +352,12 @@ pub enum Reply {
         passkeys: Vec<PasskeySummary>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         email: Option<String>,
+        /// The name a glave account's person goes by, when they gave one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        person_name: Option<String>,
+        /// Whether they may change it (`person/name`): they have a glave account.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        nameable: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         notice: Option<Told>,
     },

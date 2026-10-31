@@ -216,6 +216,11 @@ impl People {
             .unwrap_or_default()
     }
 
+    /// What the ledger holds of `person`, as they joined or were last recorded, when it does.
+    pub(crate) fn joined(&self, person: PrincipalId) -> Option<&PersonJoined> {
+        self.known.get(&person).map(|kept| &kept.joined)
+    }
+
     /// The name the organization knows `person` by, else their email, when it knows either.
     pub(crate) fn known_as(&self, person: PrincipalId) -> Option<String> {
         let info = self.info(person)?;

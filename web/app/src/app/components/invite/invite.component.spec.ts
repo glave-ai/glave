@@ -80,7 +80,22 @@ describe('InviteComponent', () => {
     await expectAccessible(root);
     click(root, 'invite-make-passkey');
     await settle(fixture);
+    expect(root.querySelector('[data-testid="invite-problem"]')?.textContent).toContain(
+      'Give your name first',
+    );
+    expect(fake.paramsOf('passkey/create_options')).toEqual([]);
+    const name = root.querySelector<HTMLInputElement>('[data-testid="invite-name"]');
+    if (name === null) {
+      throw new Error('no name field');
+    }
+    name.value = ' Sam Ortiz ';
+    name.dispatchEvent(new Event('input'));
+    click(root, 'invite-make-passkey');
+    await settle(fixture);
     expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'invite' }]);
+    expect(fake.paramsOf('passkey/create')).toEqual([
+      expect.objectContaining({ person_name: 'Sam Ortiz' }),
+    ]);
     expect(TestBed.inject(SessionService).inviteCode()).toBeNull();
     expect(navigate).toHaveBeenCalledWith('/');
   });

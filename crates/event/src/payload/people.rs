@@ -47,8 +47,9 @@ pub enum OrgRole {
     Owner,
 }
 
-/// What an identity provider's token says of a person besides who they are: what a client
-/// shows for them, and the groups that will add grants.
+/// What an identity provider's token says of a person besides who they are, or what someone
+/// with a glave account gave: what a client shows for them, and the groups that will add
+/// grants.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
