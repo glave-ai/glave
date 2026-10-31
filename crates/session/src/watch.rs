@@ -184,6 +184,11 @@ impl Watch {
         item
     }
 
+    /// Follows on whatever becomes of the caller's access.
+    pub(crate) fn outlast_access(&mut self) {
+        self.access = None;
+    }
+
     /// What is still to be sent now, without waiting for more to be recorded: what a turn's
     /// stream sends once the turn has ended. `None` once there is nothing more.
     pub(crate) async fn rest(&mut self) -> Option<Watched> {

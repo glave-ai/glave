@@ -115,6 +115,14 @@ impl TurnStream {
         self.ending.take().map(TurnItem::Ended)
     }
 
+    /// Follows the turn to its end whatever becomes of the access of whoever started it, as a
+    /// task does, which no one is following.
+    pub(crate) fn outlasting_access(&mut self) {
+        if let Some(watch) = &mut self.watch {
+            watch.outlast_access();
+        }
+    }
+
     /// Follows the turn to its end, ignoring its notifications.
     pub async fn finish(&mut self) -> Result<TurnResult, ApiError> {
         while let Some(item) = self.next().await {

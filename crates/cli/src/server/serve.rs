@@ -128,6 +128,7 @@ pub(crate) async fn run(
         }
         std::future::pending::<()>().await;
     });
+    let mut removals = Box::pin(server.follow_removals());
     let mut daily = Box::pin(daily.run());
     let mut certificates = Box::pin(crate::serving::keep_https(reach));
     let mut clients = JoinSet::new();
@@ -141,6 +142,7 @@ pub(crate) async fn run(
                 Err(error) => break Some(Err(error.into())),
             },
             () = &mut scheduler => {}
+            () = &mut removals => {}
             () = &mut daily => {}
             () = &mut certificates => {}
             _ = tick.tick() => {
@@ -159,7 +161,7 @@ pub(crate) async fn run(
             _ = interrupt.recv() => break None,
         }
     };
-    drop((scheduler, daily, certificates));
+    drop((scheduler, removals, daily, certificates));
     eprintln!("glave: stopping");
     drop(listener);
     let _ = tokio::fs::remove_file(&path).await;

@@ -23,7 +23,7 @@ use crate::words::Sentence;
 /// Threads whose project a server remembers; past this, it forgets them all and asks again.
 const PLACES: usize = 4_096;
 /// The most projects whose tasks and schedules one person sees.
-const MOST_PROJECTS: usize = 1_000;
+pub(crate) const MOST_PROJECTS: usize = 1_000;
 
 /// What a personal project is called until its person renames it.
 pub const PERSONAL_NAME: &str = "Chats";
