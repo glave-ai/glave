@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Locator,
   type Page,
+  type Request,
   test as base,
   expect,
 } from '@playwright/test';
@@ -456,6 +457,13 @@ export interface Problems {
    * session API, said while this leaves the page, is not counted; anything else said then is.
    */
   leave(url: string): Promise<void>;
+  /**
+   * Runs `signOut`, which ends once the page shows it is signed out, and lets pass what the
+   * browser logs of a call of the page's already sent as it ran, which the server answers 401:
+   * the session ended first, and a tab reads its tasks every few seconds whatever else it is
+   * doing, so waiting beforehand can't rule one out. A call sent after is still a problem.
+   */
+  signingOut(signOut: () => Promise<void>): Promise<void>;
 }
 
 /**
@@ -473,6 +481,9 @@ function whole(error: Error): string {
   return error.name === '' ? error.message : `${error.name}: ${error.message}`;
 }
 
+/** What a browser logs of a call the server answered 401, in either engine's words. */
+const NOT_SIGNED_IN = /^Failed to load resource: the server responded with a status of 401\b/u;
+
 /**
  * Collects what the page says went wrong: errors on the console, uncaught errors and CSP
  * violations.
@@ -482,6 +493,24 @@ export function watchForProblems(page: Page): Problems {
   const webkit = page.context().browser()?.browserType().name() === 'webkit';
   // What WebKit says of a fetch of the session API it refuses while this leaves the page.
   let refused: string | null = null;
+  // Where a sign-out has got to, what the page sent once it had, and the 401s of calls before.
+  let signOut: 'not begun' | 'running' | 'over' = 'not begun';
+  const sentSince = new WeakSet<Request>();
+  let excused = 0;
+  page.on('request', (request) => {
+    if (signOut === 'over') {
+      sentSince.add(request);
+    }
+  });
+  page.on('response', (response) => {
+    if (
+      signOut !== 'not begun' &&
+      response.status() === 401 &&
+      !sentSince.has(response.request())
+    ) {
+      excused += 1;
+    }
+  });
   page.on('console', (message) => {
     if (message.type() === 'error') {
       problems.push(message.text());
@@ -505,7 +534,16 @@ export function watchForProblems(page: Page): Problems {
     }
     await page.waitForLoadState();
   };
-  return Object.assign(() => problems, { leave });
+  const signingOut = async (run: () => Promise<void>): Promise<void> => {
+    signOut = 'running';
+    await run();
+    signOut = 'over';
+  };
+  const unexcused = (): readonly string[] => {
+    let left = excused;
+    return problems.filter((problem) => !(NOT_SIGNED_IN.test(problem) && left-- > 0));
+  };
+  return Object.assign(unexcused, { leave, signingOut });
 }
 
 /** The page's window once `withAxe` has put axe in it. */
