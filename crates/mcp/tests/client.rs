@@ -27,8 +27,8 @@ fn folder() -> &'static Path {
 
 /// The test server, started for the project in this crate's folder when `project`, else as a
 /// server that works for every project.
-async fn start(args: &[&str], project: bool, limits: Limits) -> McpServer {
-    let (config, none) = (config(args), BTreeMap::new());
+async fn start(args: &[&str], project: bool) -> McpServer {
+    let (config, none, limits) = (config(args), BTreeMap::new(), Limits::default());
     let processes = glave_process::Processes::unrecorded();
     let server = if project {
         McpServer::start_for_project("tests", &config, &none, folder(), limits, &processes)
@@ -52,7 +52,7 @@ fn a_projects_server_is_told_its_folder_on_either_protocol() {
     block_on!(async {
         let root = url::Url::from_directory_path(folder()).unwrap();
         for args in [&[][..], &["--legacy"][..]] {
-            let server = start(args, true, Limits::default()).await;
+            let server = start(args, true).await;
             let told = roots(&server).await;
             assert!(!told.is_error, "{args:?}: {told:?}");
             assert_eq!(text(&told), root.as_str(), "{args:?}");
@@ -65,7 +65,7 @@ fn a_projects_server_is_told_its_folder_on_either_protocol() {
 fn a_server_for_every_project_is_told_of_no_folder() {
     block_on!(async {
         for args in [&[][..], &["--legacy"][..]] {
-            let server = start(args, false, Limits::default()).await;
+            let server = start(args, false).await;
             let told = roots(&server).await;
             assert_eq!(text(&told), "", "{args:?}: {told:?}");
             server.close().await;

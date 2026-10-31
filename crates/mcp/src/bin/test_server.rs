@@ -22,11 +22,12 @@
 //!
 //! Its tools: `echo` (read-only), `fail`, `slow` (waits until the call is cancelled), `env`
 //! (whether a variable reached it), `header` (what a request header was), `grow` (adds the
-//! tool `extra` and says the tools changed), `listed` (how often its tools were listed) and
-//! `flood` (more output than a model should be given), and `whose` (which `--token` the request
+//! tool `extra` and says the tools changed), `listed` (how often its tools were listed),
+//! `flood` (more output than a model should be given), `whose` (which `--token` the request
 //! came with), and `roots` (the folders the client says it works for: asked of it on the older
-//! protocol, or inside the call on MCP 2026-07-28). Its resources: `test://greeting` (text) and `test://logo` (binary). Its prompt: `review`
-//! (arguments `pr` and `focus`), whose text names both.
+//! protocol, or inside the call on MCP 2026-07-28). Its resources: `test://greeting` (text) and
+//! `test://logo` (binary). Its prompt: `review` (arguments `pr` and `focus`), whose text names
+//! both.
 
 use std::io::Write as _;
 use std::process::ExitCode;

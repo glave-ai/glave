@@ -67,7 +67,7 @@ test-server = [
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
-# A server written by hand on a pipe, on a paused clock (`tests/probe.rs`).
+# Servers written by hand on a pipe, on a paused clock (`tests/probe.rs`, `tests/limits.rs`).
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 
 [lints]
