@@ -27,18 +27,37 @@ const ADMIN_OR_FLAGS = new RegExp(`${ADMIN_WORDS.source}|--`, 'iu');
  */
 async function tunnel(context: BrowserContext): Promise<void> {
   const glave = served(PASSKEYS);
+  // The session a sign-out is ending, and how many calls are on their way.
+  let ending: string | undefined;
+  let onTheirWay = 0;
   await context.route(`${PASSKEYS_ORIGIN}/**`, async (route) => {
+    const { authorization, 'glave-method': method } = route.request().headers();
     // A watch streams for as long as the page lives, which a tunnel of whole answers cannot
     // carry: it is left waiting, as a quiet one would be.
-    if (route.request().headers()['glave-method']?.endsWith('/watch') === true) {
+    if (method?.endsWith('/watch') === true) {
       return;
     }
-    const asked = new URL(route.request().url());
-    const response = await route.fetch({
-      url: `${glave}${asked.pathname}${asked.search}`,
-      headers: { ...route.request().headers(), host: new URL(PASSKEYS_ORIGIN).host },
-    });
-    await route.fulfill({ response });
+    // No call crosses a session's end: its end waits for those on their way, and one sent with
+    // it after that is left waiting too. The server rightly answers such a call 401, and the
+    // browser logs that itself; every tab reads its tasks every few seconds, so one can cross
+    // whenever the machine is busy, whatever the test waits for first.
+    if (method === 'signin/end') {
+      ending = authorization;
+      await expect.poll(() => onTheirWay).toBe(0);
+    } else if (authorization !== undefined && authorization === ending) {
+      return;
+    }
+    onTheirWay += 1;
+    try {
+      const asked = new URL(route.request().url());
+      const response = await route.fetch({
+        url: `${glave}${asked.pathname}${asked.search}`,
+        headers: { ...route.request().headers(), host: new URL(PASSKEYS_ORIGIN).host },
+      });
+      await route.fulfill({ response });
+    } finally {
+      onTheirWay -= 1;
+    }
   });
 }
 
@@ -76,13 +95,11 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   const again = await tab();
   const problemsAgain = watchForProblems(again);
   await again.goto(`${PASSKEYS_ORIGIN}/settings`);
-  await problems.signingOut(() =>
-    problemsAgain.signingOut(async () => {
-      await byTestId(again, 'settings-sign-out').click();
-      await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
-      await expect(byTestId(page, 'sign-in')).toBeVisible();
-    }),
-  );
+  await byTestId(again, 'settings-sign-out').click();
+  await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
+  await expect(byTestId(page, 'sign-in')).toBeVisible();
+  // Afresh, as what the tab was left waiting for would hold up its next read.
+  await problemsAgain.leave(again.url());
   await expectAccessible(again);
   await byTestId(again, 'sign-in-passkey').click();
   await expect(byTestId(again, 'home-composer-input')).toBeVisible();
