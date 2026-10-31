@@ -20,14 +20,13 @@ async function settle(): Promise<void> {
 }
 
 describe('BrandService', () => {
-  it('names the organization, and reads each logo once', async () => {
+  it('reads each logo once', async () => {
     const fake = new FakeSession()
       .answer('appearance/get', look('one'))
       .answer('brand/logo/get', { logo: { sha256: 'one', media_type: 'image/png', data: PNG } });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const brand = TestBed.inject(BrandService);
     await settle();
-    expect(brand.name()).toBe('Acme');
     expect(brand.logoUrl()).toMatch(/^blob:/u);
     expect(fake.paramsOf('brand/logo/get')).toHaveLength(1);
 
@@ -46,7 +45,7 @@ describe('BrandService', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const brand = TestBed.inject(BrandService);
     await settle();
-    expect(brand.name()).toBeNull();
+    expect(brand.logoUrl()).toBeNull();
     expect(fake.paramsOf('brand/logo/get')).toEqual([]);
   });
 });
