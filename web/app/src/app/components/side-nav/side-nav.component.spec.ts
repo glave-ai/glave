@@ -68,6 +68,12 @@ async function render(
 }
 
 /** Lets what the side nav started settle: its calls, and the code it loads late. */
+/**
+ * How long a logo may take to be read and drawn: vi.waitFor's own second is less than it takes
+ * with every other spec running beside it on a busy computer.
+ */
+const READS_WITHIN = { timeout: 10_000 };
+
 async function settle(
   fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>,
 ): Promise<void> {
@@ -100,7 +106,7 @@ describe('SideNavComponent', () => {
       await settle(fixture);
       expect(logo()?.alt).toBe('Acme');
       expect(logo()?.src).toMatch(/^blob:/u);
-    });
+    }, READS_WITHIN);
     expect(heading()).toBeNull();
     const first = logo()?.src;
 
