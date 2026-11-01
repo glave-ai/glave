@@ -173,3 +173,84 @@ fn where_no_router_serves_the_model_filters_leave_its_call_alone() {
         "no router among its targets: nothing to ask"
     );
 }
+
+/// `US` for everyone a server serves.
+fn us_floor() -> Filters {
+    Filters {
+        based_in: vec!["US".into()],
+        ..Filters::default()
+    }
+}
+
+#[test]
+fn a_floor_keeps_a_call_no_person_is_behind_to_a_router_and_the_providers_it_allows() {
+    let (direct, routed) = (Fake::new("deepseek"), Fake::new("openrouter"));
+    let targets = vec![direct.target("big"), routed.target("big").routing(router())];
+    let gateway = Gateway::new(Routes::new(targets).unwrap()).with_floor(Some(us_floor()));
+    let answer = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+    assert_eq!(answer.served.unwrap().target, "openrouter/big");
+    assert!(direct.seen().is_empty(), "it can't check a direct provider");
+    let sent = routed.seen();
+    let only = sent
+        .first()
+        .and_then(|sent| sent.route.clone())
+        .unwrap()
+        .only;
+    assert_eq!(only, Some(vec!["groq".to_owned()]));
+}
+
+#[test]
+fn with_a_floor_a_model_no_router_serves_is_refused_with_a_sentence() {
+    let direct = Fake::new("deepseek");
+    let routes = Routes::new(vec![direct.target("big")]).unwrap();
+    let gateway = Gateway::new(routes).with_floor(Some(us_floor()));
+    let refused = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap_err();
+    assert!(direct.seen().is_empty(), "never sent");
+    assert!(
+        refused
+            .to_string()
+            .contains("this server only uses providers it can check"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_person_s_country_outside_the_floor_is_refused_and_never_reads_as_anywhere() {
+    let (direct, routed) = (Fake::new("deepseek"), Fake::new("openrouter"));
+    let china = Filters {
+        based_in: vec!["CN".into()],
+        ..Filters::default()
+    };
+    let filters = Kept::answering(Ok(Some(china)));
+    let gateway = gateway(&direct, &routed, filters).with_floor(Some(us_floor()));
+    let refused = block_on!(gateway.complete(&theirs(), &mut |_| {})).unwrap_err();
+    assert!(
+        direct.seen().is_empty() && routed.seen().is_empty(),
+        "never sent"
+    );
+    assert!(
+        refused
+            .to_string()
+            .contains("both your filters and what this server allows"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_floor_that_keeps_nothing_is_sent_as_the_router_checks_it() {
+    let routed = Fake::new("openrouter");
+    let targets = vec![routed.target("big").routing(router())];
+    let floor = Filters {
+        keeps_nothing: true,
+        ..Filters::default()
+    };
+    let gateway = Gateway::new(Routes::new(targets).unwrap()).with_floor(Some(floor));
+    block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+    let sent = routed.seen();
+    assert!(
+        sent.first()
+            .and_then(|sent| sent.route.clone())
+            .unwrap()
+            .zdr
+    );
+}

@@ -42,6 +42,13 @@ fn a_field_that_asks_for_a_secret_is_refused() {
         ("contraseña", "x", "x"),
         ("contrasen\u{303}a", "x", "x"),
         ("pass\u{200b}word", "x", "x"),
+        ("openai_key", "x", "x"),
+        ("value", "Stripe key", "x"),
+        ("value", "GitHub key", "x"),
+        ("openaikey", "x", "x"),
+        ("githubtoken", "x", "x"),
+        ("TOKEN1", "x", "x"),
+        ("PIN1", "x", "x"),
     ] {
         assert!(
             form_of(&text_field(name, title, description), "Which?").is_none(),
@@ -59,6 +66,10 @@ fn a_field_that_only_sounds_near_a_secret_is_not() {
         ("tokenizer", "Tokenizer", "Which to use"),
         ("monkey", "Monkey", "x"),
         ("spinner", "Spinner", "x"),
+        ("issueKey", "x", "x"),
+        ("sort_key", "x", "x"),
+        ("value", "Primary key", "x"),
+        ("broken", "Broken", "x"),
         ("compass", "Compass", "x"),
     ] {
         assert!(
@@ -133,6 +144,45 @@ fn what_could_rewrite_a_terminal_or_hide_letters_is_gone_before_anyone_shows_it(
         form_of(&schema, "\u{1b}\u{7}").is_none(),
         "nothing left to show"
     );
+}
+
+#[test]
+fn a_field_name_with_anything_unseen_in_it_is_refused() {
+    let schema = json!({"type": "object", "required": ["a\u{1b}[2Kb"], "properties": {
+        "a\u{1b}[2Kb": {"type": "string", "title": "Fine", "default": "\n"},
+    }});
+    assert!(form_of(&schema, "m").is_none());
+}
+
+#[test]
+fn a_default_with_nothing_left_in_it_is_none() {
+    let schema = json!({"type": "object", "required": ["words"], "properties": {
+        "words": {"type": "string", "default": "\n\u{1b}"},
+    }});
+    let form = form_of(&schema, "m").unwrap();
+    assert_eq!(
+        form.fields.first().map(|field| &field.kind),
+        Some(&ServiceFieldKind::Text { default: None })
+    );
+}
+
+#[test]
+fn a_note_is_told_even_where_the_output_opens_with_no_text() {
+    let asking = Asking {
+        notes: BTreeSet::from([Note::Declined]),
+        ..Asking::default()
+    };
+    let told = asking.told(
+        "github",
+        ToolOutput {
+            parts: Vec::new(),
+            ..ToolOutput::text(false, "")
+        },
+    );
+    let [Part::Text { text }] = told.parts.as_slice() else {
+        panic!("not one text part");
+    };
+    assert!(text.contains("they declined"), "{text}");
 }
 
 #[test]

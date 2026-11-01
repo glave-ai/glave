@@ -5,7 +5,9 @@
 //! serves it, and is left alone where none does. At a router, the providers that fit are worked
 //! out from what its catalog says of them, the target's [`Router`], and sent as what the router
 //! takes (`only`), with the filters it checks itself; a call no provider fits, or one whose
-//! filters need what the catalog does not say, is never sent.
+//! filters need what the catalog does not say, is never sent. A floor a server sets for everyone
+//! it serves (`Keeping`) narrows every call the same way, whoever's it is, and nothing a person
+//! chooses loosens it.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -86,6 +88,61 @@ fn based(home: Option<&str>, datacenters: Option<&[String]>, places: &[String]) 
     places.is_empty()
         || (home.is_some_and(within)
             && datacenters.is_none_or(|datacenters| datacenters.iter().all(|c| within(c))))
+}
+
+/// What a call keeps to: the person's filters within the server's floor.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Keeping {
+    /// The filters that together say who may serve it; none when nothing narrows it.
+    pub(crate) filters: Option<Filters>,
+    /// Whether the server has a floor: only a router can keep to one, whether or not one is
+    /// among the call's targets.
+    pub(crate) floor: bool,
+    /// Whether the person chose anything that narrows who may serve it.
+    pub(crate) own: bool,
+    /// Whether the countries the person chose and the floor's have none in common: no provider
+    /// can fit both. Without this, none in common would read as anywhere.
+    pub(crate) none_fit: bool,
+}
+
+impl Keeping {
+    /// `person`'s filters, if any, within `floor`, if any: countries both allow, and nothing
+    /// kept if either asks. Everything else a floor leaves to the person.
+    pub(crate) fn within(floor: Option<&Filters>, person: Option<Filters>) -> Self {
+        let own = person
+            .as_ref()
+            .is_some_and(|person| person != &Filters::default());
+        let Some(floor) = floor else {
+            return Self {
+                filters: person,
+                own,
+                ..Self::default()
+            };
+        };
+        let mut filters = person.unwrap_or_default();
+        let none_fit = !floor.based_in.is_empty()
+            && !filters.based_in.is_empty()
+            && !filters
+                .based_in
+                .iter()
+                .any(|place| floor.based_in.contains(place));
+        filters.based_in = if filters.based_in.is_empty() {
+            floor.based_in.clone()
+        } else {
+            let places = std::mem::take(&mut filters.based_in);
+            places
+                .into_iter()
+                .filter(|place| floor.based_in.is_empty() || floor.based_in.contains(place))
+                .collect()
+        };
+        filters.keeps_nothing |= floor.keeps_nothing;
+        Self {
+            filters: Some(filters),
+            floor: true,
+            own,
+            none_fit,
+        }
+    }
 }
 
 /// Why filters keep a call from a target.

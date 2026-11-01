@@ -228,6 +228,13 @@ impl Printer {
         flush();
     }
 
+    /// Whether to send what was filled in; the answer is typed next.
+    pub(crate) fn service_confirm(&mut self, service: &str) {
+        print!("  Send to {service}? [y/N] › ");
+        self.speaking = false;
+        flush();
+    }
+
     /// What the person can change to fix the error just shown.
     pub(crate) fn fix(&mut self, text: &str) {
         println!("  {} {text}", paint(self.color, YELLOW, "fix:"));

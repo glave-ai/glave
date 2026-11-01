@@ -187,10 +187,11 @@ fn an_answer_is_refused_unless_it_is_to_what_waits_and_fits_it() {
         let misfit = harness
             .answer_service(scope(), thread.id, &call, first, empty, None)
             .await;
-        assert!(
-            matches!(misfit, Err(HarnessError::Invalid(_))),
-            "{misfit:?}"
-        );
+        // By the label the person was shown.
+        let Err(HarnessError::Invalid(misfit)) = misfit else {
+            panic!("{misfit:?}");
+        };
+        assert!(misfit.to_string().contains("Note"), "{misfit}");
         harness
             .answer_service(scope(), thread.id, &call, first, typed(), None)
             .await

@@ -14,7 +14,7 @@ pub(crate) mod serve;
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use glave_event::Currency;
+use glave_event::{Currency, Filters};
 use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
 use glave_ports::{
     Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
@@ -24,7 +24,7 @@ use crate::config::Endpoint;
 use crate::data::DataLog;
 use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
-use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
+use glave_config::policy::{Constraints, ModelEntry, RouterFloorFile, Source, check_model};
 use glave_session::PersonFilters;
 use glave_session::protocol::ModelInfo;
 
@@ -145,6 +145,17 @@ pub(crate) fn gateway(
     Ok(Gateway::new(routes.with_choices(choices)))
 }
 
+/// What the server's own settings allow among a router's providers for everyone it serves, as
+/// the filters it holds every call to; none when `[router_floor]` asks nothing.
+pub(crate) fn router_floor(floor: Option<&RouterFloorFile>) -> Option<Filters> {
+    let floor = floor?;
+    (!floor.based_in.is_empty() || floor.keeps_nothing).then(|| Filters {
+        based_in: floor.based_in.clone(),
+        keeps_nothing: floor.keeps_nothing,
+        ..Filters::default()
+    })
+}
+
 /// The gateway in use, or none while no model is set up: replaced whole when the person
 /// connects or removes a model account, so each call goes to the models set up when it
 /// starts. Every gateway it is given charges the organizations' credits, where the server
@@ -153,16 +164,23 @@ pub(crate) fn gateway(
 pub(crate) struct GatewaySwitch {
     current: Arc<RwLock<Option<Arc<Gateway>>>>,
     credits: Option<Arc<Credits<DataLog>>>,
+    /// What the server allows among a router's providers for everyone it serves.
+    floor: Option<Filters>,
     /// Each person's filters among a router's providers, which the session server answers
     /// once it is made.
     filters: Arc<PersonFilters>,
 }
 
 impl GatewaySwitch {
-    pub(crate) fn new(gateway: Option<Gateway>, credits: Option<Arc<Credits<DataLog>>>) -> Self {
+    pub(crate) fn new(
+        gateway: Option<Gateway>,
+        credits: Option<Arc<Credits<DataLog>>>,
+        floor: Option<Filters>,
+    ) -> Self {
         let switch = Self {
             current: Arc::default(),
             credits,
+            floor,
             filters: Arc::default(),
         };
         switch.set(gateway);
@@ -172,7 +190,9 @@ impl GatewaySwitch {
     /// Sends calls to `gateway` from now on; calls already sent finish where they are.
     pub(crate) fn set(&self, gateway: Option<Gateway>) {
         let gateway = gateway.map(|gateway| {
-            let gateway = gateway.with_filters(Arc::clone(&self.filters) as Arc<dyn Filtering>);
+            let gateway = gateway
+                .with_filters(Arc::clone(&self.filters) as Arc<dyn Filtering>)
+                .with_floor(self.floor.clone());
             match &self.credits {
                 Some(credits) => gateway.with_credits(Arc::clone(credits)),
                 None => gateway,

@@ -4,7 +4,8 @@ use std::sync::Arc;
 use glave_keys::{InMemoryRoot, KeyFileRoot, KeySettings};
 use glave_ports::testing::TempDir;
 use glave_ports::{
-    EventLog, InMemoryObjects, Objects, Projects as _, Standing, ThreadQuery, block_on, conformance,
+    BlobStore as _, EventLog, InMemoryObjects, Objects, OrgId, Pieces, ProjectId, Projects as _,
+    Scope, Standing, ThreadQuery, block_on, conformance,
 };
 use uuid::Uuid;
 
@@ -52,6 +53,23 @@ fn two_organizations_in_one_file_are_kept_apart() {
         &store.projects()
     ));
     assert_eq!(verdict, Ok(()));
+}
+
+#[test]
+fn every_organization_with_a_blob_is_among_those_the_store_holds() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    let (first, second) = (
+        OrgId::from_uuid(Uuid::from_u128(1)),
+        OrgId::from_uuid(Uuid::from_u128(2)),
+    );
+    assert_eq!(block_on!(store.organizations()).unwrap(), []);
+    let blobs = store.blobs();
+    for org in [second, first] {
+        let scope = Scope::glaves_own(org, ProjectId::from_uuid(Uuid::from_u128(9)));
+        let bytes = Box::new(Pieces::from(b"a logo".to_vec()));
+        block_on!(blobs.put(&scope, None, "image/png", 1024, bytes)).unwrap();
+    }
+    assert_eq!(block_on!(store.organizations()).unwrap(), [first, second]);
 }
 
 #[test]
@@ -109,7 +127,7 @@ fn the_blobs_pass_the_blob_store_conformance_suite() {
 fn record(n: u128, owner: &glave_event::Principal) -> glave_ports::Project {
     let at = glave_event::At::try_from("2026-10-11T09:00:00.000Z".to_owned()).unwrap();
     glave_ports::Project {
-        id: glave_ports::ProjectId::from_uuid(Uuid::from_u128(n)),
+        id: ProjectId::from_uuid(Uuid::from_u128(n)),
         kind: glave_ports::ProjectKind::Project,
         name: "app".into(),
         owner: owner.clone(),
@@ -307,7 +325,7 @@ fn folders_get_their_own_projects_in_one_organization() {
             .await
             .unwrap();
         assert_ne!(a.id, b.id, "each folder is its own project");
-        let scope = glave_ports::Scope::glaves_own(org, a.id);
+        let scope = Scope::glaves_own(org, a.id);
         let query = ThreadQuery {
             standing: Standing::Active,
             limit: 10,
@@ -386,7 +404,7 @@ fn processes_on_one_file_share_its_leases() {
         let second = Store::open(&path, file_keys(&path), objects())
             .await
             .unwrap();
-        let org = glave_ports::OrgId::from_uuid(Uuid::from_u128(1));
+        let org = OrgId::from_uuid(Uuid::from_u128(1));
         let (one, two) = (
             Holder::from_uuid(Uuid::from_u128(2)),
             Holder::from_uuid(Uuid::from_u128(3)),

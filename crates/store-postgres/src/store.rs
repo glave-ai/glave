@@ -142,6 +142,12 @@ impl Store {
     }
 
     /// The leases work in flight runs under, on the database's clock.
+    /// The organizations the store holds: every one with an organization key, so every one with
+    /// a blob. Ids only, for work that runs once per organization, each then in its own scope.
+    pub async fn organizations(&self) -> Result<Vec<OrgId>, StoreError> {
+        organizations(&self.pool).await
+    }
+
     pub fn leases(&self) -> PostgresLeases {
         PostgresLeases::new(self.pool.clone())
     }

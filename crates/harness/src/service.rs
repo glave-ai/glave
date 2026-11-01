@@ -73,6 +73,12 @@ pub(crate) fn round_of(turn: &[Event], call: &CallId) -> Option<Round> {
     })
 }
 
+/// What the person was shown of the field `name` of what was `asked`.
+fn label_of(asked: &ServiceAsked, name: &str) -> String {
+    let field = asked.fields.iter().find(|field| field.name == name);
+    field.map_or(name, |field| field.label.as_str()).to_owned()
+}
+
 /// What a person reads of who asks: so a tool cannot pass as the model.
 fn asks_sentence(service: &str) -> String {
     format!("{service} asks you, not the model")
@@ -264,8 +270,7 @@ where
         let (outcome, answers) = match &answer {
             ServiceAnswer::Answered { values } => {
                 if let Some(field) = misfit(&asked.fields, values) {
-                    let field = field.to_owned();
-                    return Err(Invalid::ServiceAnswer(field).into());
+                    return Err(Invalid::ServiceAnswer(label_of(&asked, field)).into());
                 }
                 let kept = self.keep(&scope, id, values, ANSWERS_LIMIT).await;
                 let blob = kept.map_err(|error| match error {
@@ -273,8 +278,8 @@ where
                         let longest = values
                             .iter()
                             .max_by_key(|(_, value)| value.to_string().len());
-                        let field = longest.map_or("", |(name, _)| name.as_str()).to_owned();
-                        Invalid::ServiceAnswer(field).into()
+                        let field = longest.map_or("", |(name, _)| name.as_str());
+                        Invalid::ServiceAnswer(label_of(&asked, field)).into()
                     }
                     other => other,
                 })?;

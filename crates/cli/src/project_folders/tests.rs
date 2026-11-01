@@ -81,7 +81,7 @@ fn offering(models: &[&str]) -> GatewaySwitch {
     };
     let provider = Model::for_endpoint(&endpoint).unwrap();
     let built = gateway(provider, &endpoint, None, &entries, Vec::new(), &allowed).unwrap();
-    GatewaySwitch::new(Some(built), None)
+    GatewaySwitch::new(Some(built), None, None)
 }
 
 /// The projects of a glave in `home` already running the person's own servers `taken`,
