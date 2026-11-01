@@ -14,16 +14,16 @@ use glave_ports::{
     unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, GetPromptRequestParams,
-    GetPromptResult, JsonObject, MetaObject, Prompt, ProtocolVersion, ReadResourceRequestParams,
-    RequestMetaObject, Resource, ResourceContents, ServerResult, Tool,
+    CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, JsonObject,
+    MetaObject, Prompt, ProtocolVersion, ReadResourceRequestParams, RequestMetaObject, Resource,
+    ResourceContents, Tool,
 };
 use rmcp::service::{ClientLifecycleMode, ClientServiceExt as _, Peer, RoleClient, RunningService};
 use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::call::{Unanswered, Waits, call, send};
+use crate::call::{Unanswered, Waits, call};
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
@@ -252,10 +252,16 @@ impl Connection {
             params = params.with_arguments(arguments);
         }
         params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
-        let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
-        match send(&self.name, &self.peer, request, &NeverCancelled, waits).await {
-            Ok(ServerResult::CallToolResult(result)) => Ok(result),
-            Ok(_) => Err(format!("{} answered something else.", self.name)),
+        let called = call(
+            &self.name,
+            &self.peer,
+            &self.client,
+            params,
+            &NeverCancelled,
+            waits,
+        );
+        match called.await {
+            Ok((result, _)) => Ok(result),
             Err(Unanswered::Refused(why) | Unanswered::Failed(why)) => Err(why),
             Err(Unanswered::Cancelled) => Err(CANCELLED.to_owned()),
         }
@@ -377,7 +383,7 @@ impl Connection {
         let params = CallToolRequestParams::new(tool).with_arguments(arguments.clone());
         let called = call(&self.name, &self.peer, &self.client, params, cancel, waits).await;
         let mut output = match called {
-            Ok(result) => output(&result),
+            Ok((result, asking)) => asking.told(&self.name, output(&result)),
             Err(Unanswered::Refused(why)) => ToolOutput::text(true, why),
             Err(Unanswered::Failed(why)) => return Err(ToolOutput::text(true, why)),
             Err(Unanswered::Cancelled) => return Err(ToolOutput::text(true, CANCELLED)),

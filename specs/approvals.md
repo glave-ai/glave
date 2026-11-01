@@ -152,6 +152,10 @@ command = "cargo fmt --all"
 
 Later: `additionalContext` (a hook adding text for the model), `updatedInput`, hooks at session start and end and around compaction, and hooks an organization provides.
 
+## A service asks
+
+A connected service can need something from the person in the middle of a call (MCP's elicitation). Glave has no way to put it to them yet, so it declines for them, the call goes on, and the model is told. A server on MCP 2026-07-28 asks in input rounds, capped at ten; an older one would ask with the call held open, so its handshake isn't told glave can answer a form, and one that asks anyway is declined at once by rmcp's default, so nothing hangs. A form rmcp cannot read is declined the same way.
+
 ## No one at the keyboard
 
 Whether someone can answer is a fact about the run, not a mode. With a terminal, glave asks there: once, always in this thread, or no. Without one (scripts, CI, piped input), anything that would ask is not run, and:

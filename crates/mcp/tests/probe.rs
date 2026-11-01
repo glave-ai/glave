@@ -26,6 +26,12 @@ async fn slow_server(theirs: DuplexStream, late: Value) {
     assert_eq!(probe["method"], "server/discover", "{probe}");
     let initialize = next().await;
     assert_eq!(initialize["method"], "initialize", "{initialize}");
+    assert!(
+        initialize["params"]["capabilities"]
+            .get("elicitation")
+            .is_none(),
+        "the older protocol is not told it can ask: {initialize}"
+    );
     let mut probed = late;
     probed["jsonrpc"] = json!("2.0");
     probed["id"] = probe["id"].clone();
