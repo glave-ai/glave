@@ -5,11 +5,11 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-use glave_event::{Filters, Opaque, Part};
+use glave_event::{Opaque, Part};
 use glave_ports::{Failure, Message, ModelRequest, ProviderError, Route};
 
 use crate::estimate::Needs;
-use crate::filtering::{self, Kept};
+use crate::filtering::{self, Keeping, Kept};
 use crate::target::Target;
 
 /// Why a target was skipped.
@@ -34,20 +34,21 @@ pub(crate) type Candidate<'t> = (&'t Target, Option<Route>);
 pub(crate) fn candidates<'t>(
     targets: &'t [Target],
     request: &ModelRequest,
-    filters: Option<&Filters>,
+    keeping: &Keeping,
     needs: &Needs<'_>,
 ) -> Result<Vec<Candidate<'t>>, ProviderError> {
     let mut capable = Vec::with_capacity(targets.len());
     let mut skipped = Vec::new();
-    let routed = targets.iter().any(|target| target.router.is_some());
+    // A floor keeps every call to providers a router can vouch for, even with none among them.
+    let routed = keeping.floor || targets.iter().any(|target| target.router.is_some());
     for target in targets {
-        match skip(target, request, (filters, routed), needs) {
+        match skip(target, request, (keeping, routed), needs) {
             Ok(route) => capable.push((target, route)),
             Err(why) => skipped.push((target, why)),
         }
     }
     if capable.is_empty() {
-        return Err(unserved(&skipped, &request.model));
+        return Err(unserved(&skipped, &request.model, keeping));
     }
     if let Some(opaque) = needs.reasoning {
         let sticky: Vec<Candidate<'t>> = capable
@@ -66,7 +67,7 @@ pub(crate) fn candidates<'t>(
 fn skip(
     target: &Target,
     request: &ModelRequest,
-    (filters, routed): (Option<&Filters>, bool),
+    (keeping, routed): (&Keeping, bool),
     needs: &Needs<'_>,
 ) -> Result<Option<Route>, Skip> {
     if needs.tools && !target.can.tools {
@@ -83,7 +84,10 @@ fn skip(
             return Err(Skip::Context { window });
         }
     }
-    let Some(filters) = filters else {
+    if keeping.none_fit {
+        return Err(Skip::Filters(Kept::NoneFits));
+    }
+    let Some(filters) = &keeping.filters else {
         return Ok(None);
     };
     filtering::route(filters, &request.model, target, routed).map_err(Skip::Filters)
@@ -91,7 +95,7 @@ fn skip(
 
 /// The error when every target was skipped, for `model`: too long when every one was too
 /// small, so the harness compacts, as it would after a provider's own refusal.
-fn unserved(skipped: &[(&Target, Skip)], model: &str) -> ProviderError {
+fn unserved(skipped: &[(&Target, Skip)], model: &str, keeping: &Keeping) -> ProviderError {
     let too_long = skipped
         .iter()
         .all(|(_, why)| matches!(why, Skip::Context { .. }));
@@ -106,16 +110,34 @@ fn unserved(skipped: &[(&Target, Skip)], model: &str) -> ProviderError {
                 reason,
                 "{sep}the conversation is longer than {name}'s context window of {window} tokens"
             ),
+            Skip::Filters(Kept::NotARouter) if keeping.floor => write!(
+                reason,
+                "{sep}this server only uses providers it can check, and it can't check {name}"
+            ),
             Skip::Filters(Kept::NotARouter) => {
                 write!(
                     reason,
                     "{sep}{name} can't keep to your filters among providers"
                 )
             }
+            Skip::Filters(Kept::Unknown) if keeping.floor => write!(
+                reason,
+                "{sep}glave can't tell where {name}'s providers are based, so it can't keep to \
+                 the countries this server allows"
+            ),
             Skip::Filters(Kept::Unknown) => write!(
                 reason,
                 "{sep}glave can't tell where {name}'s providers are based, so it can't keep to the \
                  countries you chose"
+            ),
+            Skip::Filters(Kept::NoneFits) if keeping.floor && keeping.own => write!(
+                reason,
+                "{sep}no provider of {model} at {name} fits both your filters and what this \
+                 server allows: change your filters or choose another model"
+            ),
+            Skip::Filters(Kept::NoneFits) if keeping.floor => write!(
+                reason,
+                "{sep}this server allows no provider of {model} at {name}: choose another model"
             ),
             Skip::Filters(Kept::NoneFits) => write!(
                 reason,

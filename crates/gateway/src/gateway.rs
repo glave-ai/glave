@@ -13,11 +13,12 @@ use tracing::Instrument as _;
 use crate::budget::{BudgetKey, Budgets, Charge, Ledger, OverBudget};
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
-use crate::filtering::Filtering;
+use crate::filtering::{Filtering, Keeping};
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
 use crate::target::Target;
 use crate::telemetry;
+use glave_event::Filters;
 
 /// The output a budget reserves when neither the request nor the target sets a limit.
 const DEFAULT_OUTPUT_TOKENS: u32 = 32_768;
@@ -33,6 +34,9 @@ pub struct Gateway {
     /// Where each call with a payer finds its person's filters among a router's providers;
     /// none where the host keeps none.
     filters: Option<Arc<dyn Filtering>>,
+    /// What the server allows for every call, whoever's it is, which nothing a person chooses
+    /// loosens: where providers may be based, and that they keep nothing.
+    floor: Option<Filters>,
 }
 
 impl Gateway {
@@ -43,6 +47,7 @@ impl Gateway {
             ledger: Ledger::default(),
             credits: None,
             filters: None,
+            floor: None,
         }
     }
 
@@ -50,6 +55,13 @@ impl Gateway {
     #[must_use]
     pub fn with_credits<L: EventLog + 'static>(mut self, credits: Arc<Credits<L>>) -> Self {
         self.credits = Some(credits);
+        self
+    }
+
+    /// Sends every call only to providers `floor` allows, a person's filters within it.
+    #[must_use]
+    pub fn with_floor(mut self, floor: Option<Filters>) -> Self {
+        self.floor = floor;
         self
     }
 
@@ -116,7 +128,8 @@ impl Gateway {
             (Some(filters), Some(payer)) if routed => filters.filters(payer).await?,
             _ => None,
         };
-        let targets = candidates(targets, request, filters.as_ref(), &needs)?;
+        let keeping = Keeping::within(self.floor.as_ref(), filters);
+        let targets = candidates(targets, request, &keeping, &needs)?;
         let mut failed: Option<ProviderError> = None;
         let mut over: Option<OverBudget> = None;
         let mut unpaid: Option<ProviderError> = None;

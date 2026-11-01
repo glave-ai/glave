@@ -41,6 +41,35 @@ fn the_projects_pass_the_projects_conformance_suite() {
 /// Two organizations in one database never see each other's (`specs/storage.md`, "Many
 /// organizations in one store").
 #[test]
+fn every_organization_with_a_blob_is_among_those_the_store_holds() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("organizations_held").await else {
+            return;
+        };
+        let store = scratch.store().await.unwrap();
+        let (first, second) = (
+            OrgId::from_uuid(Uuid::from_u128(1)),
+            OrgId::from_uuid(Uuid::from_u128(2)),
+        );
+        let blobs = store.blobs();
+        for org in [second, first] {
+            let project = ProjectId::from_uuid(Uuid::from_u128(9));
+            let scope = Scope::glaves_own(org, project);
+            let bytes = Box::new(Pieces::from(b"a logo".to_vec()));
+            blobs
+                .put(&scope, None, "image/png", 1024, bytes)
+                .await
+                .unwrap();
+        }
+        let held = store.organizations().await.unwrap();
+        drop(blobs);
+        drop(store);
+        scratch.drop_schema().await;
+        assert_eq!(held, [first, second]);
+    });
+}
+
+#[test]
 fn two_organizations_in_one_database_are_kept_apart() {
     block_on!(async {
         let Some(scratch) = Scratch::new("organizations").await else {
