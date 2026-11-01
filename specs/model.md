@@ -10,7 +10,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 | Level | Is | Holds |
 | --- | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy file (its approved connections among it, `policy.md`), company skills, environments, its brand, the budget |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy (its approved connections among it, `policy.md`), company skills, its note about itself, environments, its brand, the budget |
 | Team | A flat group of people, made in glave by its admins ("Identity") | What it is granted on top of its people's roles (#645): models, connections, a budget ("Configuration is files"), and "may add their own" |
 | Person | Someone who signs in, with a role in each organization they belong to ("Identity") | Their Chats and projects, their computer, their own files (`~/.glave`), their own sign-ins (git hosts, connections) |
 | Project | One person's named place for work: one folder. It belongs to the organization and to that person alone | Its folder, whose files are its instructions, skills and setup; its threads; its memory, which is the person's |
@@ -49,22 +49,25 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 ## Configuration is files
 
-Everything that configures glave is a file, read where it lives, and glave holds only what can't be a file. Files are what people and tools already write, review and keep in git (principle 7), and the agent changes them as it changes any other.
+Everything a person or a repository uses to configure glave is a file, read where it lives; an organization's settings are data (below), and glave holds nothing else that could be a file. Files are what people and tools already write, review and keep in git (principle 7), and the agent changes them as it changes any other. Decided with the owner on 2026-10-23 (#633), and the organization's and the person's own on 2026-11-01, matched against what Claude Code, Codex and the Claude and ChatGPT apps do.
 
 - **The repository's**, read in place, as today: AGENTS.md, skills (`.agents/skills`, `.glave/skills`, `.claude/skills`), `.mcp.json` and `.glave/config.toml`. What runs from them asks first (`policy.md`, "Project trust").
-- **The person's own,** in `~/.glave` (AGENTS.md, skills, `mcp.json`, `config.toml`), with `~/.agents/skills` and `~/.claude/skills`.
-- **The organization's:**
-  - its policy file (`policy.md`): its approved connections, the models allowed, the network default, who may add their own connections, and the budget: one dollar budget per person per month, covering all AI use; groups set it, the larger applies (#662);
-  - company skills in one fixed folder, `/etc/glave/skills`, as Codex keeps its own: baked read-only into the images glave runs, and put there on people's own machines by IT or a setup step.
+- **The person's own,** in `~/.glave` (AGENTS.md, skills, `mcp.json`, `config.toml`), with `~/.agents/skills` and `~/.claude/skills`, on their computer: their laptop, or their cloud computer, which every device of theirs reaches. Each computer has its own; nothing copies between them, and git does for whoever wants it.
+  - **The agent adds to them only through glave,** never by writing the folder: the sandbox keeps its commands out of `~/.glave` (`sandbox.md`), so a repository can't plant a skill or a server that follows the person into every project. Asked to ("make that a skill", "connect to …"), the agent calls glave's own tool, which asks the person once and writes the file.
+- **The organization's,** kept as data in its scope, not in files: a server with many organizations has no file for each, and its admins change them from its screens. Each change is an event with its author. They only narrow or add; a person on their own never sees them.
+  - its policy (`policy.md`): its approved connections, the models allowed, the network default, who may add their own connections, and the budget: one dollar budget per person per month, covering all AI use; groups set it, the larger applies (#662);
+  - company skills, which an admin uploads once: every computer of its people gets them, read-only;
+  - a note about the company, a paragraph at most ("You work for Acme, a …; write in our voice"), put in front of every thread for everyone in it, which no person can take out. It is context, not rules: what may happen is the policy's, which code enforces, and a long guide is a skill. The cap keeps it from becoming a way to govern by prompt;
+  - its brand: its name, logo, accent and the switch that makes everyone use it ("The look").
 - **glave's built-in skills** ship with glave.
 - **Skills keep their names apart.** Company skills show as `acme:name` and glave's as `glave:name`; the person's and the repository's have no prefix. So a same-named skill never replaces a company's or glave's, and a policy can turn the person's own skills off.
 - **glave's settings screens never change a repository's files;** they change only the person's own settings (Connect, their preferences, their instructions). A repository's setup is shown read-only: change it like code, or ask the agent. The agent still edits a repository's files when the person asks, as any other change, and shows the diff.
 - **glave holds only what can't be a file:**
   - secret values and sign-ins, which files name (`${NAME}`, or a connection's name) and never hold;
   - people, groups and roles ("Admin");
+  - the organization's settings (above);
   - memory;
   - the record of what happened (the log).
-- **One named exception: an organization's brand** (its name, logo, accent and the switch that makes everyone use it) is kept in a ledger of its own in the organization's scope, not in a file. A screen's save has no file to go to on a server with many organizations. An organization's policy and skills stay files.
 - **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. The machine holds only a placeholder, which the outbound proxy fills in for the hosts a secret is allowed to reach (#643).
 
 ## Models
@@ -77,7 +80,7 @@ Everything that configures glave is a file, read where it lives, and glave holds
 ## Admin
 
 - **Roles** (#645): an Owner can do everything, billing and transferring ownership included; an Admin manages people, policy, the approved connections, models, the budget and audit; a Member uses glave within what is granted. Groups from the identity provider add grants on top (the Team row). A person on their own is silently the owner of their organization of one. How roles are kept and checked is "Roles", below.
-- **The screens:** `/admin` in the same web app, reached from the person's menu and shown only when `server/discover` says the caller is an admin. They come later (#222), and they only edit the organization's files: its policy and its skills ("Configuration is files").
+- **The screens:** `/admin` in the same web app, reached from the person's menu and shown only when `server/discover` says the caller is an admin. They come later (#222), and they edit the organization's settings: its policy, skills, note and brand ("Configuration is files").
 - **The methods:** admin methods are part of the session API, checked against the caller's role on every call. The same methods serve `glave admin` and an admin MCP server.
 - **The log is the single place to see everything:** usage, spend, activity, every tool call and a thread's trace are views over it.
   - Admins see activity and cost, not content.
@@ -112,7 +115,7 @@ Decided with the owner 2026-10-29 (#423, #424). Who the people of an organizatio
 Decided 2026-10-29 (#645).
 
 - **Kept in the data store, one ledger per organization:** the people ledger, a stream of glave's own in the organization's scope rather than any person's project, sealed like every event. It records each person who joins (`person.joined`: through the company login on first sign-in, by an invite, or by signing up; for a company login its issuer and subject, and the name, email and groups the token gives, recorded again when they change), each person removed (`person.removed`) and each role given (`role.set`: whom, which role, by whom). Folded in order, a person's latest `role.set` is their role; one with none is a Member. One stream keeps listing people one read, and every server process on one store reads the same roles. Roles are data, not a file, because they change from the admin screens at run time and name people by the identity provider's ids ("Configuration is files").
-- **The local person is the organization's owner, always,** and is never recorded, so no one can take it away and an organization is never without an owner. The local person is whoever holds the server's computer: its socket, or its local token from there (`session.md`, "Signing in"). They already hold the store's keys and the organization's files, so being owner gives them nothing they lack. On a laptop and a person's own server they are the only person, so they are silently owner and the word never appears. Where people sign in through an identity provider, the one who runs the server gives the first roles from there, to people who have signed in once (`glave admin`, below).
+- **The local person is the organization's owner, always,** and is never recorded, so no one can take it away and an organization is never without an owner. The local person is whoever holds the server's computer: its socket, or its local token from there (`session.md`, "Signing in"). They already hold the store's keys and the server's files, so being owner gives them nothing they lack. On a laptop and a person's own server they are the only person, so they are silently owner and the word never appears. Where people sign in through an identity provider, the one who runs the server gives the first roles from there, to people who have signed in once (`glave admin`, below).
   - *Why not the first person to sign in:* behind a broad issuer (Google, Microsoft's common tenant) the first to sign in could be anyone, and two servers starting at once race for it.
   - *Why not a setting naming the owner:* the identity provider's subject is an opaque id no one knows before signing in, an email in a token is not always verified, and it would be a setting a laptop never needs.
 - **Three fixed roles at launch; custom roles can come later without a rewrite.** A role is data, a name and the set of things it permits, and every admin method checks what the caller's role permits, never its name. Today the three roles' sets are fixed in glave; custom roles, and any screen for them, wait until asked (#645).
@@ -168,6 +171,7 @@ What today's code doesn't do yet, so no one takes it as built.
    - Groups made in glave and their grants, and a broad issuer's allowed domains (#645).
 8. The web app works out what happened in a conversation by itself, and reads an approval's question out of a summary, so the reason glave asks can look like part of the command; the terminal words approvals its own way. The server will send these as separate facts (#311).
 9. There's no Connect page yet: adding a service means editing a file, and it can't sign in as each person (#42).
-10. Skills come from the repository, the person's own folders and glave itself (`glave:spreadsheets`), and a folder's can replace another's of the same name. There are no company skills in `/etc/glave/skills`, no `acme:` names, and no way for a policy to turn personal skills off.
+10. Skills come from the repository, the person's own folders and glave itself (`glave:spreadsheets`), and a folder's can replace another's of the same name. There are no company skills, no `acme:` names, no note about the company, and no way for a policy to turn personal skills off; the agent has no tool of glave's to add a skill or a server to the person's own folder.
+13. An organization's policy is a file (`/etc/glave/policy.toml`), not data in its scope, so a server with many organizations has one policy for all of them (#222). Its brand is data already.
 11. A company's policy file can take the agent's network away (#641), but nothing writes it for one yet: a company starts with the network on until its policy says otherwise, and Glave Cloud's starting policy comes with the admin screens (#222).
 12. Where no sandbox can run (Windows, and a person's cloud computer until it has one inside it, #221), no zones are drawn: Auto and Ask first ask before every change and command instead, and only Full access runs without asking. An organization that caps the modes below Full access gets no glave there at all: it refuses to start.

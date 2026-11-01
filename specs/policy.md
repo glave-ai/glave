@@ -73,7 +73,7 @@ A "requirement" (the sandbox must be on) is a constraint that allows one value. 
 
 **Constraints**, all of which apply at once:
 
-1. the organization's policy: served by the organization's glave server as a signed, versioned bundle, or installed by device management at `/etc/glave/policy.toml` (macOS: managed preferences; Windows: Group Policy);
+1. the organization's policy, kept as data in its scope and edited from its admin screens (`model.md`, "Configuration is files"); and, beside it, a file the server's operator or device management installs at `/etc/glave/policy.toml` (macOS: managed preferences; Windows: Group Policy), which narrows like any other;
 2. a project's own policy, which may only narrow the organization's (a client's sealed project, say);
 3. none at all for a person on their own computer, whose personal organization allows everything.
 
@@ -220,7 +220,7 @@ max_schedules = 10                                # schedules one person may kee
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
 
-The policy file is the source of truth, and an organization's admin console is an editor for it: changes made in the console are written to the same policy and recorded as events, so every change has a history and an author. Admins who prefer configuration as code edit the file; both reach the same result.
+An organization's policy is data in its scope, in the format above, and its admin screens edit it: each change is an event with its author, so every change has a history. A file at `/etc/glave/policy.toml` stays for what has no organization's screens to edit it: a laptop under device management, and a server's operator narrowing every organization on it.
 
 ## Enforcement
 
@@ -236,7 +236,7 @@ Each constraint is enforced where it cannot be bypassed:
 | hooks | the CLI, before the harness is built: forbidden hooks are never handed to it |
 | workers | the worker adapter (`WorkerComputers`), before a worker starts and on every call to it |
 
-A laptop's own config can never loosen a constraint, because the constraint arrives from the organization (a signed bundle or device management), not from a file the person edits.
+A laptop's own config can never loosen a constraint, because the constraint arrives from the organization's server or device management, not from a file the person edits.
 
 ## Explaining
 
@@ -246,7 +246,8 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 
 A connection (`model.md`, "The hierarchy") reaches its service through a tool server started on the person's computer or run remotely. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status"), the gateway's catalog (`gateway.md`, "Remote tools: the catalog"), and signing a person in to a remote server of their own `mcp.json` (`session.md`, "Connections").
 
-- **One list per organization: its approved connections,** kept in its policy file as `[mcp] catalog`.
+- **One list per organization: its approved connections,** kept in its policy as `[mcp] catalog`. Connect offers them to its people, and each signs in once as themselves.
+- **Connections are called from the server,** the person's sign-in sealed in the data store, so using one never wakes a computer and no token is on one. Where glave runs the server, a network rule lets it reach the internet and nothing of ours, as a person's computer's does (`computers.md`); a company's own servers name the internal addresses theirs may reach, and a hosted company lets our outbound address in (#1132).
 - **Services that hold documents** (Google Drive, SharePoint, Confluence) are connections like any other. glave's own knowledge bases are a separate thing, planned in #661: curated documents searched by meaning, each with an owner, granted to groups, and private to whoever made it by default.
 - **Its default follows who the organization is, never the deployment.** A company's is "only from our list": it runs no other tool server, whatever a file says (`[mcp] own = false`). An organization of one's is "anyone can add".
 - **"May add their own" is one grant,** given to groups (#645). It covers servers started on the person's computer and remote ones alike: both reach data with that person's sign-ins, so one answer fits both.
