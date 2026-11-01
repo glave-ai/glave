@@ -189,7 +189,7 @@ fn an_answer_is_refused_unless_it_is_to_what_waits_and_fits_it() {
             .await;
         // By the label the person was shown.
         let Err(HarnessError::Invalid(misfit)) = misfit else {
-            panic!("{misfit:?}");
+            panic!("an empty answer to a required field was not refused as a misfit");
         };
         assert!(misfit.to_string().contains("Note"), "{misfit}");
         harness
