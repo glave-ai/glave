@@ -70,4 +70,5 @@ def main():
                     file.write(padded(path, text))
 
 
-main()
+if __name__ == "__main__":
+    main()

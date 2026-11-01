@@ -31,7 +31,8 @@ pub struct Trace {
     pub compactions: u32,
     /// Tool calls that gave nothing new: the same tool with the same arguments and the same
     /// result as a call before them, as when a file is read again unchanged or a failing
-    /// command is run again. A test rerun after a change gives a new result, so it is not one.
+    /// command is run again. A test rerun after a change that alters its output is not one; one
+    /// that prints the same as before is.
     pub repeated_steps: u32,
 }
 

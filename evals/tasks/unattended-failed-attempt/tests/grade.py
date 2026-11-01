@@ -16,6 +16,11 @@ for name in KEYS:
         problems.append(f"{name} is keyed by the wrong column: {sorted(table)}")
 
 log = open(".import.log").read().splitlines() if os.path.exists(".import.log") else []
+# Each table came from the tool: the log it keeps shows every dataset imported.
+imported = {line.split()[1] for line in log if line.startswith("imported ")}
+missing = sorted(set(KEYS) - imported)
+if missing:
+    problems.append(f"the tool's log shows no import of {missing}")
 states = [line.split()[0] for line in log]
 if "imported" in states and "failed" in states[states.index("imported"):]:
     tried = states[states.index("imported"):].count("failed")

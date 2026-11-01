@@ -14,17 +14,21 @@ HIDDEN = {
     "careers": {"Data Analyst (open)": "data-analyst"},
     "faq": {"Tools & Kits & More": "tools-and-kits-and-more"},
     "home": {"Résumé Tips": "resume-tips", "Münster Guide": "munster-guide"},
-    "legal": {"Acceptable Use of the Service": "acceptable-use-of-th", "Cookie Policy Here Now": "cookie-policy-here-n"},
+    "legal": {"Acceptable Use of the Service": ("acceptable-use-of-th", "acceptable-use-of"),
+              "Cookie Policy Here Now": ("cookie-policy-here-n", "cookie-policy-here")},
     "press": {"Are You Ready?": "are-you-ready", "Launch Day...": "launch-day"},
     "pricing": {"Save 20%!": "save-20", "Only $10?": "only-10"},
 }
 problems = []
 
-# Their code is as it came; pad.py filled the same path the same way, so compare against the
-# code itself, not the filler.
-vendor = open("vendor/textkit.py", encoding="utf-8").read()
-code = open(os.path.join(original, "vendor/textkit.py"), encoding="utf-8").read().split("@@filler@@")[1]
-if not vendor.endswith(code.lstrip("\n")):
+# Their file is as it came: the original, filled as the setup filled it (the same path always
+# gets the same text).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../unattended"))
+sys.argv = sys.argv[:1]
+from pad import padded  # noqa: E402
+
+original_vendor = open(os.path.join(original, "vendor/textkit.py"), encoding="utf-8").read()
+if open("vendor/textkit.py", encoding="utf-8").read() != padded("./vendor/textkit.py", original_vendor):
     problems.append("vendor/textkit.py was changed")
 if not filecmp.cmp("check.py", os.path.join(original, "check.py"), shallow=False):
     problems.append("check.py was changed")
@@ -48,6 +52,8 @@ for name in PAGES:
             problems.append(f"pages/{name}.py imports re")
         if isinstance(node, ast.ImportFrom) and node.module == "re":
             problems.append(f"pages/{name}.py imports from re")
+        if isinstance(node, ast.ImportFrom) and any(a.name == "re" for a in node.names):
+            problems.append(f"pages/{name}.py imports re through {node.module}")
     imported = any(
         (isinstance(node, ast.ImportFrom) and "textkit" in (node.module or "") + " ".join(a.name for a in node.names))
         or (isinstance(node, ast.Import) and any("textkit" in a.name for a in node.names))
@@ -58,7 +64,8 @@ for name in PAGES:
     page = importlib.import_module(f"pages.{name}")
     for raw, wanted in HIDDEN[name].items():
         got = page.title(raw)
-        if got != wanted:
+        # The note allows a cut mid-word or at a word's end: either is "at most 20".
+        if got not in (wanted if isinstance(wanted, tuple) else (wanted,)):
             problems.append(f"{name}: title({raw!r}) is {got!r}, wanted {wanted!r}")
 
 print("\n".join(problems) or "passed")
