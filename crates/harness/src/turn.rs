@@ -22,6 +22,7 @@ use crate::memory::{ConfigMemory, MemoryVerb};
 use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
+use crate::service::Round;
 use crate::telemetry;
 use crate::thought::Thinking;
 use crate::toolset::ToolSet;
@@ -162,6 +163,9 @@ pub(crate) struct Step {
     /// The approval a turn going on from the log stopped at, with its answer once one came:
     /// for its call, the first the turn runs (`going_on.rs`).
     pub(crate) answered: Option<Answered>,
+    /// What the service of that call last asked the person, when it did, with their answer once
+    /// one came: the call goes on from it (`service.rs`).
+    pub(crate) round: Option<Round>,
     /// Whether the model proposed a plan in this turn, in plan mode: the turn ends with it.
     pub(crate) proposed: bool,
 }
@@ -311,6 +315,7 @@ where
             repeats: Repeats::default(),
             summary: TurnResult::begun(),
             answered: None,
+            round: None,
             proposed: false,
         };
         self.steps(thread, step, &[], cancel, live).await

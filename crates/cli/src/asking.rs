@@ -1,9 +1,13 @@
 //! The model's questions in the terminal: each shown with numbered choices, answered with a
-//! number, several numbers, or the person's own words.
+//! number, several numbers, or the person's own words. What a service asks reads the same, a
+//! field at a time, each named as the service's.
 
 use std::fmt::Write as _;
 
+use glave_event::{ServiceAnswer, ServiceAsked, ServiceField, ServiceFieldKind};
 use glave_harness::Question;
+use glave_session::protocol::{ApiError, Reply, code};
+use serde_json::{Number, Value};
 
 use crate::terminal::{DIM, paint};
 
@@ -59,10 +63,200 @@ pub(crate) fn answer(question: &Question, typed: &str) -> String {
     }
 }
 
+/// Who asks and what, as the terminal shows it: the server's line, then the service's words
+/// marked as theirs, then where the answer goes.
+pub(crate) fn service_shown(color: bool, asked: &ServiceAsked) -> String {
+    format!(
+        "\n\n{} {}\n{}: {}\n{} {}\n",
+        paint(color, "\x1b[33m", "question"),
+        asked.ask,
+        asked.service,
+        asked.message,
+        paint(color, DIM, &asked.note),
+        paint(
+            color,
+            DIM,
+            "A required field left empty with nothing to use declines."
+        ),
+    )
+}
+
+/// One field of what a service asks, ending where its answer is typed.
+pub(crate) fn field_shown(color: bool, field: &ServiceField) -> String {
+    let mut text = format!("  {}", field.label);
+    if let Some(description) = &field.description {
+        let _ = write!(text, " {}", paint(color, DIM, &format!("— {description}")));
+    }
+    text.push('\n');
+    let how = match &field.kind {
+        ServiceFieldKind::Choice {
+            options, multiple, ..
+        } => {
+            for (index, option) in options.iter().enumerate() {
+                let number = index.saturating_add(1);
+                let _ = writeln!(text, "    {number}. {}", option.label);
+            }
+            if *multiple {
+                "numbers such as 1,3"
+            } else {
+                "a number"
+            }
+        }
+        ServiceFieldKind::YesNo { .. } => "y or n",
+        ServiceFieldKind::Number { .. } => "a number",
+        ServiceFieldKind::Text { .. } => "your answer",
+    };
+    let how = match (default_shown(field), field.required) {
+        (Some(default), _) => format!("{how}, or Enter for {default}"),
+        (None, true) => how.to_owned(),
+        (None, false) => format!("{how}, or nothing"),
+    };
+    format!("{text}  {} › ", paint(color, DIM, &how))
+}
+
+/// What a line typed for a field comes to.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Field {
+    Value(Value),
+    /// Left out: an optional field, left empty with no default.
+    Skipped,
+    /// A required field left empty: the person declines all of it.
+    Declined,
+}
+
+/// What a line typed for `field` answers, the end of input declining: why it cannot be read, to
+/// ask again, when it does not fit.
+pub(crate) fn field_answer(field: &ServiceField, typed: Option<&str>) -> Result<Field, String> {
+    let Some(typed) = typed else {
+        return Ok(Field::Declined);
+    };
+    let typed = typed.trim();
+    if typed.is_empty() {
+        let none = if field.required {
+            Field::Declined
+        } else {
+            Field::Skipped
+        };
+        return Ok(default_of(field).map_or(none, Field::Value));
+    }
+    let value = match &field.kind {
+        ServiceFieldKind::Text { .. } => Some(Value::String(typed.to_owned())),
+        ServiceFieldKind::Number { integer, .. } => typed
+            .parse::<i64>()
+            .ok()
+            .map(Number::from)
+            .or_else(|| {
+                let parsed = typed.parse::<f64>().ok().filter(|_| !integer);
+                parsed.and_then(Number::from_f64)
+            })
+            .map(Value::Number),
+        ServiceFieldKind::YesNo { .. } => match typed.to_ascii_lowercase().as_str() {
+            "y" | "yes" => Some(Value::Bool(true)),
+            "n" | "no" => Some(Value::Bool(false)),
+            _ => None,
+        },
+        ServiceFieldKind::Choice {
+            options, multiple, ..
+        } => {
+            let picked: Option<Vec<Value>> = typed
+                .split([',', ' '])
+                .filter(|part| !part.is_empty())
+                .map(|part| {
+                    let index = part.parse::<usize>().ok()?.checked_sub(1)?;
+                    let option = options.get(index)?;
+                    Some(Value::String(option.value.clone()))
+                })
+                .collect();
+            match (picked, multiple) {
+                (Some(picked), true) => Some(Value::Array(picked)),
+                (Some(picked), false) if picked.len() == 1 => picked.into_iter().next(),
+                _ => None,
+            }
+        }
+    };
+    value
+        .map(Field::Value)
+        .ok_or_else(|| format!("That doesn't fit {}: try again.", field.label))
+}
+
+/// Whether a line typed at "Send?" says yes: nothing else does, the end of input least of all.
+pub(crate) fn confirmed(typed: Option<&str>) -> bool {
+    typed.is_some_and(|typed| matches!(typed.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+}
+
+/// Sends `answer` with `send`, and what went wrong, for the person to read. One refused as not
+/// fitting what was asked is sent again as declined: nothing here asks again, and the turn would
+/// wait on.
+pub(crate) async fn sent(
+    answer: ServiceAnswer,
+    send: impl AsyncFn(ServiceAnswer) -> Result<Reply, ApiError>,
+) -> Vec<String> {
+    let Err(refused) = send(answer).await else {
+        return Vec::new();
+    };
+    let mut wrong = vec![refused.to_string()];
+    if refused.code == code::INVALID_PARAMS
+        && let Err(again) = send(ServiceAnswer::Declined).await
+    {
+        wrong.push(again.to_string());
+    }
+    wrong
+}
+
+/// The default a field left empty stands for, as the person reads it.
+fn default_shown(field: &ServiceField) -> Option<String> {
+    match (&field.kind, default_of(field)?) {
+        (ServiceFieldKind::YesNo { .. }, Value::Bool(yes)) => {
+            Some(if yes { "yes" } else { "no" }.to_owned())
+        }
+        (
+            ServiceFieldKind::Choice {
+                options, default, ..
+            },
+            _,
+        ) => {
+            let labels: Vec<&str> = default
+                .iter()
+                .map(|value| {
+                    let found = options.iter().find(|option| option.value == *value);
+                    found.map_or(value.as_str(), |option| option.label.as_str())
+                })
+                .collect();
+            Some(labels.join(", "))
+        }
+        (_, Value::String(text)) => Some(text),
+        (_, other) => Some(other.to_string()),
+    }
+}
+
+/// The answer a field left empty stands for, when it has one.
+fn default_of(field: &ServiceField) -> Option<Value> {
+    match &field.kind {
+        ServiceFieldKind::Text { default } => default.clone().map(Value::String),
+        ServiceFieldKind::Number { default, .. } => default.clone().map(Value::Number),
+        ServiceFieldKind::YesNo { default } => default.map(Value::Bool),
+        ServiceFieldKind::Choice {
+            multiple, default, ..
+        } => {
+            let picked = default.iter().cloned().map(Value::String);
+            if *multiple {
+                (!default.is_empty()).then(|| Value::Array(picked.collect()))
+            } else {
+                picked.into_iter().next()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    use glave_event::ServiceOption;
     use glave_harness::Choice;
+    use glave_ports::block_on;
+    use serde_json::json;
 
     fn question(multiple: bool) -> Question {
         let choice = |label: &str| Choice {
@@ -92,5 +286,153 @@ mod tests {
         let shown = shown(false, &question(true));
         assert!(shown.contains("question Which?\n  1. Postgres\n  2. SQLite\n  3. Both\n"));
         assert!(shown.ends_with("numbers such as 1,3, or your own words › "));
+    }
+
+    fn field(required: bool, kind: ServiceFieldKind) -> ServiceField {
+        ServiceField {
+            name: "f".to_owned(),
+            label: "Label".to_owned(),
+            description: None,
+            required,
+            kind,
+        }
+    }
+
+    fn choice(multiple: bool, default: &[&str]) -> ServiceFieldKind {
+        let option = |value: &str| ServiceOption {
+            value: value.to_owned(),
+            label: value.to_uppercase(),
+        };
+        ServiceFieldKind::Choice {
+            options: vec![option("bug"), option("idea")],
+            multiple,
+            default: default.iter().map(|value| (*value).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_field_is_answered_as_its_kind_reads() {
+        let value = |field: &ServiceField, typed: &str| field_answer(field, Some(typed)).unwrap();
+        let text = field(true, ServiceFieldKind::Text { default: None });
+        assert_eq!(value(&text, " hi "), Field::Value(json!("hi")));
+        assert_eq!(
+            value(&text, ""),
+            Field::Declined,
+            "required, so it declines"
+        );
+        let given = field(
+            true,
+            ServiceFieldKind::Text {
+                default: Some("hi".to_owned()),
+            },
+        );
+        assert_eq!(
+            value(&given, ""),
+            Field::Value(json!("hi")),
+            "as the app does"
+        );
+        let number = |integer| {
+            field(
+                false,
+                ServiceFieldKind::Number {
+                    integer,
+                    default: None,
+                },
+            )
+        };
+        assert_eq!(value(&number(true), "3"), Field::Value(json!(3)));
+        assert_eq!(value(&number(false), "1.5"), Field::Value(json!(1.5)));
+        assert!(field_answer(&number(true), Some("1.5")).is_err());
+        assert_eq!(value(&number(true), ""), Field::Skipped);
+        let yes_no = field(
+            false,
+            ServiceFieldKind::YesNo {
+                default: Some(true),
+            },
+        );
+        assert_eq!(value(&yes_no, "n"), Field::Value(json!(false)));
+        assert_eq!(value(&yes_no, ""), Field::Value(json!(true)), "its default");
+        assert!(field_answer(&yes_no, Some("maybe")).is_err());
+        let one = field(true, choice(false, &[]));
+        assert_eq!(value(&one, "2"), Field::Value(json!("idea")));
+        assert!(field_answer(&one, Some("3")).is_err());
+        assert!(field_answer(&one, Some("1,2")).is_err());
+        let many = field(false, choice(true, &["bug"]));
+        assert_eq!(value(&many, "2 1"), Field::Value(json!(["idea", "bug"])));
+        assert_eq!(
+            value(&many, ""),
+            Field::Value(json!(["bug"])),
+            "its default"
+        );
+    }
+
+    #[test]
+    fn the_end_of_input_declines_and_says_no_yes() {
+        // Not as Enter does, which would send this default.
+        let given = field(
+            false,
+            ServiceFieldKind::YesNo {
+                default: Some(true),
+            },
+        );
+        assert_eq!(field_answer(&given, None), Ok(Field::Declined));
+        assert!(!confirmed(None));
+        assert!(!confirmed(Some("")));
+        assert!(!confirmed(Some("n")));
+        assert!(confirmed(Some(" Y ")));
+        assert!(confirmed(Some("yes")));
+    }
+
+    #[test]
+    fn an_answer_refused_as_not_fitting_is_declined_so_the_turn_does_not_wait_on() {
+        block_on!(async {
+            let refused = |code| ApiError::new(code, "the answer does not fit".to_owned());
+            let values = || ServiceAnswer::Answered {
+                values: serde_json::Map::new(),
+            };
+            let tried = Mutex::new(Vec::new());
+            let wrong = sent(values(), async |answer| {
+                tried.lock().unwrap().push(answer.clone());
+                match answer {
+                    ServiceAnswer::Declined => Ok(Reply::Done {}),
+                    ServiceAnswer::Answered { .. } => Err(refused(code::INVALID_PARAMS)),
+                }
+            })
+            .await;
+            assert_eq!(wrong.len(), 1);
+            assert_eq!(*tried.lock().unwrap(), [values(), ServiceAnswer::Declined]);
+
+            // Refused as gone, nothing waits for it.
+            let tried = Mutex::new(Vec::new());
+            let wrong = sent(values(), async |answer| {
+                tried.lock().unwrap().push(answer);
+                Err(refused(code::NO_QUESTION))
+            })
+            .await;
+            assert_eq!(wrong.len(), 1);
+            assert_eq!(*tried.lock().unwrap(), [values()]);
+        });
+    }
+
+    #[test]
+    fn a_field_shows_how_it_is_answered() {
+        let shown = field_shown(false, &field(false, choice(false, &[])));
+        assert!(
+            shown.starts_with("  Label\n    1. BUG\n    2. IDEA\n"),
+            "{shown}"
+        );
+        assert!(shown.ends_with("a number, or nothing › "), "{shown}");
+        let yes = field(
+            false,
+            ServiceFieldKind::YesNo {
+                default: Some(true),
+            },
+        );
+        assert!(field_shown(false, &yes).ends_with("y or n, or Enter for yes › "));
+        let picked = field_shown(false, &field(true, choice(false, &["idea"])));
+        assert!(
+            picked.ends_with("a number, or Enter for IDEA › "),
+            "{picked}"
+        );
     }
 }

@@ -198,6 +198,17 @@ sentences! {
     NoOpenTurn { thread: String } = "no-open-turn" "no turn is open in thread { $thread }",
     NoApproval { approval: String } = "no-approval" "no approval { $approval } is pending",
     NoQuestion { question: String } = "no-question" "no question { $question } is waiting",
+    NoServiceAsk { question: String } = "no-service-ask"
+        "no service's question is waiting at { $question }",
+    ServiceAnswerMisfit { field: String } = "service-answer-misfit"
+        "the answer to { $field } does not fit what was asked",
+    ServiceAsks { service: String } = "service-asks" "{ $service } asks you, not the model",
+    ServiceNote { service: String } = "service-note"
+        "Your answer goes only to { $service }. The model sees that you answered, not what you typed.",
+    ServiceAnswered { service: String } = "service-answered" "You answered { $service }",
+    ServiceDeclined { service: String } = "service-declined" "You declined { $service }'s question",
+    ServiceUnanswered { service: String } = "service-unanswered"
+        "{ $service }'s question went unanswered",
     PromptBlocked { reason: String } = "prompt-blocked" "a hook stopped this prompt: { $reason }",
     PromptFailed { reason: String } = "prompt-failed"
         "the command's text could not be had from its server: { $reason }",

@@ -411,7 +411,7 @@ impl TestServer {
     /// answered, which `answers` gives. On the older protocol it does not ask a client that did
     /// not say it can answer, unless `what` is `anyway`, and then asks at once and waits there; on
     /// MCP 2026-07-28 it asks in a round: `twice` in two, `forever` in every one, `several` two
-    /// forms and the client's roots in one, `password` for a password, `page` to open a page,
+    /// forms and the client's roots in one, `password` for a password, `nothing` for no fields, `page` to open a page,
     /// anything else a form of each kind of field.
     async fn ask(
         &self,
@@ -506,6 +506,12 @@ fn asks(what: &str, state: Option<&str>) -> Result<InputRequests, serde_json::Er
         "password" => {
             let form = json!({"mode": "form", "message": "Sign in", "requestedSchema": {
                 "type": "object", "properties": {"password": {"type": "string"}},
+            }});
+            asks.insert("form".to_owned(), elicit(form)?);
+        }
+        "nothing" => {
+            let form = json!({"mode": "form", "message": "Delete it?", "requestedSchema": {
+                "type": "object", "properties": {},
             }});
             asks.insert("form".to_owned(), elicit(form)?);
         }

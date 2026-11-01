@@ -87,6 +87,15 @@ describe('SideNavComponent', () => {
   });
 
   it('loads what reads a logo once the organization has one, and follows it', async () => {
+    // Its own, each URL new: run in one worker, another spec's stub that gives one URL stays.
+    let made = 0;
+    const urls = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+      made += 1;
+      return `blob:side-nav/${String(made)}`;
+    });
+    onTestFinished(() => {
+      urls.mockRestore();
+    });
     const organization = { name: 'Acme', accent: 'plain', locked: false };
     const { root, fake, fixture } = await render([], { look: { organization } });
     const heading = (): Element | null => root.querySelector('[data-testid="nav-heading"]');

@@ -11,7 +11,8 @@ use glave_event::{Arguments, ToolKind};
 use glave_ports::auth::Auth;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{
-    BoxFuture, Cancellation, ToolError, ToolInfo, ToolOutput, ToolSource, unless_cancelled,
+    BoxFuture, Called, Cancellation, ServiceGiven, ToolError, ToolInfo, ToolOutput, ToolSource,
+    unless_cancelled,
 };
 use glave_process::{Child, ProcessError, Processes, Program};
 use http::{HeaderName, HeaderValue};
@@ -22,7 +23,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::call::Waits;
+use crate::call::{Answerer, Waits};
 use crate::connection::{CANCELLED, Connection, Opening};
 use crate::reachable::Reachable;
 use crate::signed::Signed;
@@ -516,22 +517,25 @@ impl McpServer {
         &self,
         name: &str,
         arguments: &Arguments,
+        answerer: Answerer,
         cancel: &dyn Cancellation,
-    ) -> ToolOutput {
+    ) -> Called {
         match unless_cancelled(cancel, self.connection()).await {
             Some(Ok(connection)) => {
-                match connection.call(name, arguments, cancel, self.waits).await {
+                let called = connection.call(name, arguments, answerer, cancel, self.waits);
+                match called.await {
                     // What the server answered, an error included; a web search's results come
                     // from the open world, whatever its server says.
-                    Ok(mut output) => {
+                    Ok(Called::Done(mut output)) => {
                         output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
-                        output
+                        Called::Done(output)
                     }
-                    Err(glaves) => glaves,
+                    Ok(asks) => asks,
+                    Err(glaves) => Called::Done(glaves),
                 }
             }
-            Some(Err(err)) => ToolOutput::text(true, err.to_string()),
-            None => ToolOutput::text(true, CANCELLED),
+            Some(Err(err)) => Called::Done(ToolOutput::text(true, err.to_string())),
+            None => Called::Done(ToolOutput::text(true, CANCELLED)),
         }
     }
 }
@@ -635,7 +639,25 @@ impl ToolSource for McpServer {
         arguments: &'a Arguments,
         cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, ToolOutput> {
-        Box::pin(self.run(name, arguments, cancel))
+        Box::pin(async move {
+            match self.run(name, arguments, Answerer::NoOne, cancel).await {
+                Called::Done(output) => output,
+                // With no one to answer, it never asks.
+                Called::Asks(asks) => {
+                    ToolOutput::text(true, format!("{} asked for more input.", asks.service))
+                }
+            }
+        })
+    }
+
+    fn call_asking<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Arguments,
+        given: Option<ServiceGiven>,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, Called> {
+        Box::pin(self.run(name, arguments, Answerer::Person(given), cancel))
     }
 }
 

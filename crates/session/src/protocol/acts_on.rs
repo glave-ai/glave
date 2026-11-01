@@ -30,6 +30,7 @@ impl Request {
             | Self::ThreadCompact { thread }
             | Self::ApprovalDecide { thread, .. }
             | Self::QuestionAnswer { thread, .. }
+            | Self::ServiceAnswer { thread, .. }
             | Self::TrustAnswer { thread, .. }
             | Self::GoalStart { thread, .. }
             | Self::GoalStop { thread }

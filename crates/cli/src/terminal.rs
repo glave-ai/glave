@@ -5,7 +5,9 @@ use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox};
+use glave_event::{
+    Currency, GoalReason, Money, Outcome, OutsideSandbox, ServiceAsked, ServiceField,
+};
 use glave_harness::Question;
 use glave_session::protocol::{PlanInfo, TurnResult, Update};
 
@@ -208,6 +210,27 @@ impl Printer {
     /// One of the model's questions; the answer is typed next.
     pub(crate) fn ask_question(&mut self, question: &Question) {
         print!("{}", crate::asking::shown(self.color, question));
+        self.speaking = false;
+        flush();
+    }
+
+    /// What a service asks: who, and what; its fields are typed next.
+    pub(crate) fn service_asks(&mut self, asked: &ServiceAsked) {
+        print!("{}", crate::asking::service_shown(self.color, asked));
+        self.speaking = false;
+        flush();
+    }
+
+    /// One field of what a service asks; its answer is typed next.
+    pub(crate) fn service_field(&mut self, field: &ServiceField) {
+        print!("{}", crate::asking::field_shown(self.color, field));
+        self.speaking = false;
+        flush();
+    }
+
+    /// Whether to send what was filled in; the answer is typed next.
+    pub(crate) fn service_confirm(&mut self, service: &str) {
+        print!("  Send to {service}? [y/N] › ");
         self.speaking = false;
         flush();
     }
