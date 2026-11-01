@@ -1,5 +1,5 @@
 import type { RawEvent, Update } from '@glave/client';
-import type { GlzDecision, GlzQuestion, GlzReceiptStatus } from '@glave/glaze';
+import type { GlzDecision, GlzQuestion, GlzReceiptStatus, GlzServiceField } from '@glave/glaze';
 
 /** What every item of a thread has: its key, and the `seq` of the event that put it there. */
 interface Placed {
@@ -88,8 +88,25 @@ export interface QuestionItem extends Placed {
   readonly answers: readonly string[] | null;
 }
 
+/** What a connected service asks the person in the middle of a call. */
+export interface ServiceItem extends Placed {
+  readonly kind: 'service';
+  readonly call: string;
+  /** The service, by the name the person knows it by. */
+  readonly service: string;
+  /** Who asks, in the server's sentence: "GitHub asks you, not the model". */
+  readonly ask: string;
+  /** Where the answer goes, in the server's sentences. */
+  readonly note: string;
+  /** What it asks, in the service's own words. */
+  readonly message: string;
+  readonly fields: readonly GlzServiceField[];
+  /** What came of it, in the server's line; `null` while it waits. */
+  readonly told: string | null;
+}
+
 /** One thing in a thread, in order. */
-export type ThreadItem = MessageItem | CallItem | ApprovalItem | QuestionItem;
+export type ThreadItem = MessageItem | CallItem | ApprovalItem | QuestionItem | ServiceItem;
 
 /** The reply being written while a turn streams, before its message is recorded. */
 export interface Draft {
@@ -186,6 +203,45 @@ export function questionsOf(argumentsValue: unknown): readonly GlzQuestion[] {
   }));
 }
 
+/** The kind of a field as `service.asked` records it, as the card draws it. */
+function fieldKindOf(kind: Data): GlzServiceField['kind'] {
+  const choices = Array.isArray(kind['options']) ? (kind['options'] as readonly unknown[]) : [];
+  const given = kind['default'];
+  switch (kind['type']) {
+    case 'choice':
+      return {
+        type: 'choice',
+        options: choices
+          .filter(isRecord)
+          .map((option) => ({ value: text(option['value']), label: text(option['label']) })),
+        multiple: kind['multiple'] === true,
+        default: Array.isArray(given) ? given.map(text) : [],
+      };
+    case 'yes_no':
+      return { type: 'yes_no', default: typeof given === 'boolean' ? given : null };
+    case 'number':
+      return {
+        type: 'number',
+        integer: kind['integer'] === true,
+        default: typeof given === 'number' ? given : null,
+      };
+    default:
+      return { type: 'text', default: typeof given === 'string' ? given : null };
+  }
+}
+
+/** The fields a `service.asked` asks for. */
+export function serviceFieldsOf(fields: unknown): readonly GlzServiceField[] {
+  const list = Array.isArray(fields) ? (fields as readonly unknown[]) : [];
+  return list.filter(isRecord).map((field) => ({
+    name: text(field['name']),
+    label: text(field['label']),
+    description: text(field['description']),
+    required: field['required'] === true,
+    kind: fieldKindOf(isRecord(field['kind']) ? field['kind'] : {}),
+  }));
+}
+
 const DECISIONS: readonly string[] = ['allow_once', 'allow_for_thread', 'deny'];
 
 function isDecision(value: unknown): value is GlzDecision {
@@ -200,7 +256,8 @@ export function byGlave(data: Data): boolean {
 
 /**
  * A thread's items from its stored events, in order: messages, tool calls with their
- * results, approvals with their decisions, and questions with their answers. A message of the
+ * results, approvals with their decisions, questions with their answers, and what services ask
+ * with what came of it. A message of the
  * person's after the one that started a turn, before the turn ended, is one they sent while it
  * ran: `steered`.
  */
@@ -213,6 +270,8 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
   // builds it, which their Build it stands for.
   let approved = false;
   const index = new Map<string, number>();
+  // The latest of what each call's service asked, by the call: a call may ask more than once.
+  const asking = new Map<string, string>();
   const put = (item: ThreadItem): void => {
     index.set(item.key, items.length);
     items.push(item);
@@ -350,6 +409,29 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         }
         break;
       }
+      case 'service.asked': {
+        const call = text(data['call_id']);
+        const key = `service-${String(event.seq)}`;
+        put({
+          kind: 'service',
+          key,
+          seq: event.seq,
+          call,
+          service: text(data['service']),
+          ask: text(data['ask']),
+          note: text(data['note']),
+          message: text(data['message']),
+          fields: serviceFieldsOf(data['fields']),
+          told: null,
+        });
+        asking.set(call, key);
+        break;
+      }
+      case 'service.answered':
+        update(asking.get(text(data['call_id'])) ?? '', (item) =>
+          item.kind === 'service' ? { ...item, told: text(data['told']) } : item,
+        );
+        break;
       default:
         break;
     }

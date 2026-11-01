@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { NO_THOUGHT, type ThreadItem } from '../../lib/conversation';
+import { NO_THOUGHT, type ServiceItem, type ThreadItem } from '../../lib/conversation';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ThreadItemComponent } from './thread-item.component';
@@ -266,5 +266,65 @@ describe('ThreadItemComponent', () => {
     expect(fake.paramsOf('question/answer')).toEqual([
       { thread: 'thread-1', question: 'c2', answers: ['Yes'] },
     ]);
+  });
+
+  /** What a service asks, as `thread/events` has it. */
+  const service = (told: string | null): ServiceItem => ({
+    kind: 'service',
+    key: 'service-7',
+    seq: 7,
+    call: 'c3',
+    service: 'GitHub',
+    ask: 'GitHub asks you, not the model',
+    note: 'Your answer goes only to GitHub, as the server says.',
+    message: 'Which label?',
+    fields: [
+      {
+        name: 'label',
+        label: 'Label',
+        required: true,
+        kind: { type: 'choice', options: [{ value: 'bug', label: 'Bug' }] },
+      },
+    ],
+    told,
+  });
+
+  it('says who asks and where the answer goes, and sends it to the service', async () => {
+    const { root, fake } = await render(service(null));
+    const part = (name: string): HTMLElement | null =>
+      root.querySelector(`[data-testid="thread-service-${name}"]`);
+    expect(part('who')?.textContent).toBe('GitHub asks you, not the model');
+    expect(part('note')?.textContent).toBe('Your answer goes only to GitHub, as the server says.');
+    expect(part('send')?.textContent.trim()).toBe('Send to GitHub');
+    await expectAccessible(root);
+    root.querySelector<HTMLInputElement>('[data-testid="thread-service-choice"] input')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    part('send')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('service/answer')).toEqual([
+      {
+        thread: 'thread-1',
+        call: 'c3',
+        asked: 7,
+        answer: { answered: { values: { label: 'bug' } } },
+      },
+    ]);
+  });
+
+  it('declines', async () => {
+    const { root, fake } = await render(service(null));
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-service-decline"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('service/answer')).toEqual([
+      { thread: 'thread-1', call: 'c3', asked: 7, answer: 'declined' },
+    ]);
+  });
+
+  it('rests as the server line once it was answered', async () => {
+    const told = await render(service('You declined GitHub’s question'));
+    expect(told.root.querySelector('[data-testid="thread-service-told"]')?.textContent).toBe(
+      'You declined GitHub’s question',
+    );
+    expect(told.root.querySelector('[data-testid="thread-service-send"]')).toBeNull();
   });
 });

@@ -70,7 +70,10 @@ export function glazeText(): GlzText {
 }
 
 /** The words of the cards that need the person: an approval, questions, a project's trust, a plan. */
-function cards(): Pick<GlzText, 'approvalCard' | 'questionCard' | 'trustCard' | 'planCard'> {
+function cards(): Pick<
+  GlzText,
+  'approvalCard' | 'questionCard' | 'serviceCard' | 'trustCard' | 'planCard'
+> {
   const needsYou = $localize`:@@glaze.needsYou:Needs you`;
   return {
     planCard: {
@@ -105,6 +108,14 @@ function cards(): Pick<GlzText, 'approvalCard' | 'questionCard' | 'trustCard' | 
       label: needsYou,
       ownWordsLabel: $localize`:@@glaze.question.ownWords:In your own words`,
       submitLabel: $localize`:@@glaze.question.answer:Answer`,
+    },
+    serviceCard: {
+      label: needsYou,
+      declineLabel: $localize`:@@glaze.service.decline:Decline`,
+      yesLabel: $localize`:@@glaze.service.yes:Yes`,
+      noLabel: $localize`:@@glaze.service.no:No`,
+      requiredLabel: $localize`:@@glaze.service.required:Required`,
+      missingLabel: $localize`:@@glaze.service.missing:Answer what’s required, and numbers as numbers, to send.`,
     },
     trustCard: {
       label: needsYou,

@@ -6,6 +6,7 @@ import {
   type CallItem,
   type MessageItem,
   type QuestionItem,
+  type ServiceItem,
   type ThreadItem,
 } from './conversation';
 import { type TurnFacts, turnResults } from './results';
@@ -85,6 +86,21 @@ function withNetwork(seq: number, decision: ApprovalItem['decision']): ApprovalI
     summary: 'bash: npm install',
     caution: 'It can reach the internet, which commands here otherwise cannot.',
     withNetwork: true,
+  };
+}
+
+function service(seq: number, told: string | null = null): ServiceItem {
+  return {
+    kind: 'service',
+    key: `service-${String(seq)}`,
+    seq,
+    call: 's',
+    service: 'GitHub',
+    ask: 'GitHub asks you, not the model',
+    note: 'Your answer goes only to GitHub.',
+    message: 'Which?',
+    fields: [],
+    told,
   };
 }
 
@@ -202,7 +218,7 @@ describe('results', () => {
     );
     // A call the server has not told yet joins its run, under the line already told.
     expect(drawn(shown.parts)).toEqual(['m2', 'Ran 1 command: c3 c4']);
-    // Untold, words or a question end a run, as the server reads them; reasoning does not.
+    // Untold, words, a question or a service's end a run, as the server reads them; reasoning does not.
     const untold = turnResults(
       turn([
         ask,
@@ -213,6 +229,8 @@ describe('results', () => {
         call(6),
         { ...question(7), answers: ['Yes'] },
         call(8),
+        service(9, 'You answered GitHub'),
+        call(10),
       ]),
       null,
       null,
@@ -225,10 +243,12 @@ describe('results', () => {
       'untold: c6',
       'q7',
       'untold: c8',
+      'service-9',
+      'untold: c10',
     ]);
     // Keyed as the server will tell them, so nothing is drawn again when it does.
     const keys = untold.parts.filter((part) => part.kind === 'run').map((part) => part.key);
-    expect(keys).toEqual(['run-2', 'run-6', 'run-8']);
+    expect(keys).toEqual(['run-2', 'run-6', 'run-8', 'run-10']);
     expect(NO_STEPS.runs.size).toBe(0);
   });
 
@@ -344,6 +364,10 @@ describe('results', () => {
     expect(status({}, true)).toBe('running');
     expect(status({}, false, [ask, call(2, 'running')])).toBe('running');
     expect(status({}, false, [ask, question(2)])).toBe('waiting');
+    expect(status({}, false, [ask, call(2, 'running'), service(3)])).toBe('waiting');
+    expect(status({ result: ended('completed') }, false, [ask, call(2), service(3, 'told')])).toBe(
+      'done',
+    );
     expect(status({})).toBe('done');
     expect(turnResults(turn([ask, call(2)]), null, null, false, 'en-US').receipt?.steps).toBe(
       '1 step',

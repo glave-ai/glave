@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
-import { LIVE_MODEL, startFakeModel } from './fake-model';
+import { LIVE_MODEL, SERVICE, startFakeModel } from './fake-model';
 import {
   ACCOUNTS,
   APP,
@@ -25,6 +25,7 @@ import {
   SHARED_WEBKIT,
   SHOWCASE,
   type Site,
+  TEST_SERVER,
 } from './support';
 
 /**
@@ -32,7 +33,7 @@ import {
  * touch nothing of the person's: made once, in the run that starts the servers, whose workers
  * read this file again with its variable set.
  */
-function home(site: Site, settings?: string): string {
+function home(site: Site, settings?: string, services?: object): string {
   const kept = process.env[site.home];
   if (kept !== undefined) {
     return kept;
@@ -40,6 +41,9 @@ function home(site: Site, settings?: string): string {
   const made = mkdtempSync(join(tmpdir(), 'glave-e2e-'));
   if (settings !== undefined) {
     writeFileSync(join(made, 'config.toml'), settings);
+  }
+  if (services !== undefined) {
+    writeFileSync(join(made, 'mcp.json'), JSON.stringify({ mcpServers: services }));
   }
   process.env[site.home] = made;
   return made;
@@ -96,8 +100,9 @@ process.env[LIVE_MODEL_URL] = liveModel;
  * for a person's whole journey on their own computer, the app on a real
  * glave with a model, to connect accounts to, the app on a real glave reached from elsewhere
  * at a public origin, to sign in to with passkeys, the app on real glaves reached here alone,
- * to make passkeys on this computer, the app on a real glave whose model is a fake service
- * and which asks before commands run, to follow a thread from two tabs, and the app on real
+ * to make passkeys on this computer, the app on a real glave whose model is a fake service,
+ * with a service of its own that asks the person things, and which asks before commands run, to
+ * follow a thread from two tabs, and the app on real
  * glaves whose person has a service of their own to sign in to.
  */
 const SITES: readonly {
@@ -160,7 +165,7 @@ const SITES: readonly {
     web: 'dist/app/browser',
     env: {
       ...tied,
-      GLAVE_HOME: home(LIVE, 'permissions = "ask"\n'),
+      GLAVE_HOME: home(LIVE, 'permissions = "ask"\n', { [SERVICE]: { command: TEST_SERVER } }),
       GLAVE_BASE_URL: liveModel,
       GLAVE_MODEL: LIVE_MODEL,
     },

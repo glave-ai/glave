@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test';
 
-import { HELLO, LEFT_ALONE, TOUCH, holding, letGo } from './fake-model';
+import { HELLO, LEFT_ALONE, SERVICE, TOUCH, holding, letGo } from './fake-model';
 import {
   LIVE,
   LIVE_MODEL_URL,
@@ -25,6 +25,54 @@ function callsOf(page: Page): readonly string[] {
   });
   return called;
 }
+
+/**
+ * A real glave with a real service, glave's MCP test server: what it asks the person mid-call is
+ * a card saying who asks, answered in place, which collapses to the server's line; the turn goes
+ * on with the same call, and declining goes on too.
+ */
+test('a service asks in a card of its own, answered in place, and the turn goes on', async ({
+  browser,
+}) => {
+  const context = await heldUntilHeard(await browser.newContext());
+  const page = await context.newPage();
+  const problems = watchForProblems(page);
+  await page.goto(`${served(LIVE)}/#code=${await signInCode(LIVE)}`);
+  const ask = async (composer: string): Promise<void> => {
+    const prompt = byTestId(page, composer);
+    await prompt.fill('Please ask me something');
+    await prompt.press('Enter');
+    await byTestId(page, 'thread-approval-allow-once').last().click();
+  };
+  await ask('home-composer-input');
+  const who = byTestId(page, 'thread-service-who');
+  await expect(who).toHaveText(`${SERVICE} asks you, not the model`);
+  await expect(byTestId(page, 'thread-service-message')).toHaveText('Which label?');
+  await expect(byTestId(page, 'thread-service-note')).toContainText(
+    `Your answer goes only to ${SERVICE}.`,
+  );
+  const send = byTestId(page, 'thread-service-send');
+  await expect(send).toHaveText(`Send to ${SERVICE}`);
+  await expect(send).toBeDisabled();
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+  await byTestId(page, 'thread-service-choice').first().locator('label').click();
+  await send.click();
+  await expect(byTestId(page, 'thread-service-told')).toHaveText(`You answered ${SERVICE}`);
+  await expect(send).toBeHidden();
+  await expect(byTestId(page, 'thread-message').last()).toContainText(LEFT_ALONE);
+
+  await ask('thread-composer-input');
+  await byTestId(page, 'thread-service-decline').click();
+  await expect(byTestId(page, 'thread-service-told').last()).toHaveText(
+    `You declined ${SERVICE}'s question`,
+  );
+  await expect(byTestId(page, 'thread-message').last()).toContainText(LEFT_ALONE);
+  expect(problems()).toEqual([]);
+  await context.close();
+});
 
 /**
  * A real glave, its model the fake service of fake-model.ts, in Ask first, asking before

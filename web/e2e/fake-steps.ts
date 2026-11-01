@@ -34,7 +34,10 @@ export function stepsOf(events: readonly RawEvent[]): ThreadSteps {
     } else if (event.type === 'turn.ended') {
       open = false;
       replies.push(...(words === null ? [] : [words]));
-    } else if (event.type === 'tool.call.requested' && event.data['tool'] === 'question') {
+    } else if (
+      event.type === 'service.asked' ||
+      (event.type === 'tool.call.requested' && event.data['tool'] === 'question')
+    ) {
       open = false;
     } else if (event.type === 'tool.call.requested') {
       const id = String(event.data['call_id']);

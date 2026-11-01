@@ -7,6 +7,9 @@ export const LIVE_MODEL = 'fake-live';
 /** What it says to anything but a request to touch a file. */
 export const HELLO = 'Hello from the live model.';
 
+/** The service the live glave has, glave's MCP test server, whose tool it calls when told to ask. */
+export const SERVICE = 'Tracker';
+
 /** What it says once its call to touch a file has a result. */
 export const LEFT_ALONE = 'Left it alone.';
 
@@ -108,6 +111,20 @@ function run(response: ServerResponse): void {
   ]);
 }
 
+/** A reply asking to call `SERVICE`'s tool that asks the person something. */
+function ask(response: ServerResponse): void {
+  const call = {
+    index: 0,
+    id: 'call_ask',
+    type: 'function',
+    function: { name: `mcp__${SERVICE}__ask`, arguments: '{}' },
+  };
+  stream(response, [
+    { id: 'gen-ask', model: LIVE_MODEL, choices: [{ index: 0, delta: { tool_calls: [call] } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: USAGE },
+  ]);
+}
+
 interface Message {
   readonly role?: unknown;
   readonly content?: unknown;
@@ -172,6 +189,8 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
       if (last?.role === 'tool') {
         const ran = before?.tool_calls?.[0]?.function?.name === 'bash';
         say(response, ran ? RAN : LEFT_ALONE);
+      } else if (text.toLowerCase().includes('ask me')) {
+        ask(response);
       } else if (text.toLowerCase().includes('run a command')) {
         run(response);
       } else if (text.toLowerCase().includes('touch')) {

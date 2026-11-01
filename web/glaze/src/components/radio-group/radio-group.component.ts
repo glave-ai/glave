@@ -54,6 +54,8 @@ export class GlzRadioGroupComponent
   readonly label = input<string>('');
   /** Whether each choice is drawn as a card. */
   readonly cards = input(false, { transform: booleanAttribute });
+  /** Whether an answer needs one of them, when no form says. */
+  readonly required = input(false, { transform: booleanAttribute });
   /** Emitted when focus leaves a radio: the group has been touched. */
   readonly touch = output();
 
@@ -76,7 +78,9 @@ export class GlzRadioGroupComponent
   );
   protected readonly describedBy = computed(() => this.field?.describedBy() ?? null);
   protected readonly ariaInvalid = computed(() => (this.showError() ? 'true' : null));
-  protected readonly ariaRequired = computed(() => (this.state.required() ? 'true' : null));
+  protected readonly ariaRequired = computed(() =>
+    this.state.required() || this.required() ? 'true' : null,
+  );
   protected readonly ariaDisabled = computed(() => (this.isDisabled() ? 'true' : null));
 
   constructor() {

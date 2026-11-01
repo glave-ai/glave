@@ -18,8 +18,10 @@ import {
   GlzMessageComponent,
   type GlzMenuOption,
   type GlzQuestion,
+  type GlzServiceField,
   type GlzReceiptStatus,
   GlzQuestionCardComponent,
+  GlzServiceCardComponent,
   GlzReceiptComponent,
   GlzStepsComponent,
   GlzStickToBottomDirective,
@@ -31,6 +33,14 @@ import {
 import { SquareTerminal, TextSearch } from 'lucide';
 
 const COPY = {
+  service: {
+    who: 'GitHub asks you, not the model',
+    message: 'Where should the issue go?',
+    send: 'Send to GitHub',
+    note: 'Your answer goes only to GitHub. The model sees that you answered, not what you typed.',
+    answered: 'You answered GitHub',
+    declined: 'You declined GitHub’s question',
+  },
   heading: 'Conversation',
   thread: 'A thread',
   you: 'You',
@@ -73,6 +83,24 @@ const QUESTIONS: readonly GlzQuestion[] = [
     options: [{ label: 'Lint' }, { label: 'Tests' }],
     multiple: true,
   },
+];
+
+/** What the demo's service asks. */
+const SERVICE_FIELDS: readonly GlzServiceField[] = [
+  {
+    name: 'repository',
+    label: 'Repository',
+    required: true,
+    kind: {
+      type: 'choice',
+      options: [
+        { value: 'glave', label: 'glave' },
+        { value: 'docs', label: 'docs' },
+      ],
+    },
+  },
+  { name: 'title', label: 'Title', description: 'Leave it empty for ours', kind: { type: 'text' } },
+  { name: 'draft', label: 'Open it as a draft', kind: { type: 'yes_no', default: true } },
 ];
 
 /** The demo's tool calls. */
@@ -135,6 +163,7 @@ interface DemoMessage {
     GlzMenuSelectComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,
+    GlzServiceCardComponent,
     GlzReceiptComponent,
     GlzStepsComponent,
     GlzStickToBottomDirective,
@@ -156,6 +185,8 @@ export class ShowcaseAiComponent {
   protected readonly approval = APPROVAL;
   protected readonly decision = signal<GlzDecision | null>(null);
   protected readonly answers = signal<readonly string[] | null>(null);
+  protected readonly serviceFields = SERVICE_FIELDS;
+  protected readonly serviceTold = signal<string | null>(null);
   protected readonly trustItems = TRUST;
   protected readonly trusted = signal<GlzTrustAnswer | null>(null);
   protected readonly draft = signal('');
@@ -172,6 +203,14 @@ export class ShowcaseAiComponent {
     inject(DestroyRef).onDestroy(() => {
       clearInterval(this.timer);
     });
+  }
+
+  protected serviceAnswered(): void {
+    this.serviceTold.set(COPY.service.answered);
+  }
+
+  protected serviceDeclined(): void {
+    this.serviceTold.set(COPY.service.declined);
   }
 
   protected decide(decision: GlzDecision): void {

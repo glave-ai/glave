@@ -15,7 +15,7 @@ const MINIMUM: (u32, u32, u32) = (22, 22, 3);
 
 /// How cargo builds glave-mcp's test server, a service that asks for a sign-in, which the
 /// end-to-end tests start beside glave (`web/e2e/connections.e2e.ts`).
-const TEST_SERVER: [&str; 6] = [
+pub(crate) const TEST_SERVER: [&str; 6] = [
     "build",
     "-p",
     "glave-mcp",
