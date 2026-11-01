@@ -28,7 +28,7 @@ fn repository(dir: &Path, servers: &str, config: Option<&str>) -> Project {
     if let Some(config) = config {
         std::fs::write(dir.join(".glave/config.toml"), config).unwrap();
     }
-    block_on!(Project::read(dir, &BTreeMap::new())).unwrap()
+    block_on!(Project::read(dir)).unwrap()
 }
 
 const DOCS: &str = r#""docs": {"command": "docs-mcp", "args": ["--fast"]}"#;
@@ -400,7 +400,7 @@ fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
 fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     let dir = scratch("mistake");
     std::fs::write(dir.join(MCP_FILE), r#"{"mcpServers": {"a": {}}}"#).unwrap();
-    let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+    let error = block_on!(Project::read(&dir)).unwrap_err();
     let error = error.chain();
     assert!(
         error.contains(".mcp.json") && error.contains("give a command"),
@@ -409,7 +409,7 @@ fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     std::fs::remove_file(dir.join(MCP_FILE)).unwrap();
     std::fs::create_dir_all(dir.join(".glave")).unwrap();
     std::fs::write(dir.join(".glave/config.toml"), "aproval = \"ask\"\n").unwrap();
-    let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+    let error = block_on!(Project::read(&dir)).unwrap_err();
     assert!(error.to_string().contains("aproval"), "{error}");
 }
 
@@ -498,7 +498,7 @@ fn a_hook_written_wrong_stops_glave_naming_the_file() {
         ("[[hooks.BeforeTool]]\ncommand = \"x\"\n", "BeforeTool"),
     ] {
         std::fs::write(dir.join(".glave/config.toml"), text).unwrap();
-        let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+        let error = block_on!(Project::read(&dir)).unwrap_err();
         let error = error.chain();
         assert!(
             error.contains("config.toml") && error.contains(says),

@@ -41,7 +41,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
 # A project's folder as the `file://` root a server is told of; reqwest already uses it.
 url.workspace = true
 # Only for the test server: its HTTP, and what it answers when it asks for a sign-in.

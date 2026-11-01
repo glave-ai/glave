@@ -194,7 +194,7 @@ there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
 A repository may bring its own: .mcp.json at its root (the same format) and .glave/config.toml.
 glave asks once, only when they would run commands, and remembers the answer. With no one
-to ask, those servers stay off.";
+to ask, those servers stay off. A remote server in a repository's file is sent no variables.";
 
 /// What to do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -267,6 +267,12 @@ pub(crate) struct Args {
 }
 
 impl Args {
+    /// Whether people sign in here from elsewhere: it is `reached` at a public origin, or they
+    /// sign in through an identity provider.
+    pub(crate) fn reached_from_elsewhere(&self, reached: bool) -> bool {
+        reached || !self.issuers.is_empty()
+    }
+
     /// Whether `glave serve` runs as the person's server: not a program's own over stdio.
     pub(crate) fn person_s_server(&self) -> bool {
         self.action == Action::Serve && !self.stdio

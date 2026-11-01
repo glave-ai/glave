@@ -92,7 +92,7 @@ pub struct Project {
 impl Project {
     /// Reads the repository at `root`. A file that does not parse stops glave, naming it, so
     /// a mistake never quietly turns a project's settings off.
-    pub async fn read(root: &Path, environment: &BTreeMap<String, String>) -> crate::Result<Self> {
+    pub async fn read(root: &Path) -> crate::Result<Self> {
         let root = tokio::fs::canonicalize(root)
             .await
             .map_err(crate::Error::io("resolve", root))?;
@@ -103,7 +103,7 @@ impl Project {
         };
         let mcp_path = root.join(MCP_FILE);
         let servers = match read(&mcp_path).await? {
-            Some(text) => servers(&text, environment, &mcp_path)?,
+            Some(text) => servers(&text, &mcp_path)?,
             None => BTreeMap::new(),
         };
         let remote = remote(&root).await;
@@ -251,13 +251,10 @@ fn hook_text(hook: &Hook) -> Brings {
     }
 }
 
-/// The servers in `.mcp.json`'s `text`, checked as glave would read them.
-fn servers(
-    text: &str,
-    environment: &BTreeMap<String, String>,
-    path: &Path,
-) -> crate::Result<BTreeMap<String, Item>> {
-    glave_ports::settings::mcp::parse(text, environment)
+/// The servers in `.mcp.json`'s `text`, checked as glave would read them. What is trusted is
+/// each as written, so no value from the environment is read here.
+fn servers(text: &str, path: &Path) -> crate::Result<BTreeMap<String, Item>> {
+    glave_ports::settings::mcp::parse_project(text, &BTreeMap::new())
         .map_err(|error| crate::Error::within(format!("in {}", path.display()), error))?;
     let file: Value = serde_json::from_str(text).map_err(|error| {
         crate::Error::within(format!("{} is not valid JSON", path.display()), error)

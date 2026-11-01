@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
-use glave_mcp::{Limits, McpServer};
+use glave_mcp::{Limits, McpServer, Reachable};
 use glave_ports::ToolSource;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
@@ -110,17 +110,21 @@ pub(crate) struct Servers {
     processes: Processes,
     /// The person's sign-ins to remote servers, where they may sign in here.
     connected: Option<Arc<Connected>>,
+    /// The addresses a remote one may be at.
+    reachable: Reachable,
 }
 
 impl Servers {
     /// Starts `wanted` in `root`, after the catalog of the `remote` gateway, when there is one,
-    /// remote ones signed in with what the person `connected`.
+    /// remote ones signed in with what the person `connected`, each only at an address
+    /// `reachable` allows.
     pub(crate) fn start(
         wanted: Vec<Wanted>,
         root: &Path,
         remote: Option<&Remote>,
         processes: &Processes,
         connected: Option<Arc<Connected>>,
+        reachable: Reachable,
     ) -> Self {
         let servers = Self {
             catalog: remote.map(|remote| Arc::new(remote.catalog())),
@@ -129,6 +133,7 @@ impl Servers {
             reported: AtomicBool::new(false),
             processes: processes.clone(),
             connected,
+            reachable,
         };
         servers.lock().servers = wanted
             .into_iter()
@@ -147,7 +152,11 @@ impl Servers {
     /// `wanted` started, in the person's home folder; a remote one signed in as the person,
     /// and web search's telling the person what each call searched.
     fn started(&self, wanted: &Wanted) -> Arc<McpServer> {
-        let (name, limits) = (&wanted.name, Limits::default());
+        let name = &wanted.name;
+        let limits = Limits {
+            reachable: self.reachable,
+            ..Limits::default()
+        };
         let server = match (&wanted.config, &self.connected) {
             (ServerConfig::Http { url, headers }, Some(connected)) => {
                 let server = McpServer::remote(name, url, headers, connected.signer(url), limits);
@@ -345,7 +354,14 @@ mod tests {
             let root = std::env::temp_dir();
             let unrecorded = Processes::unrecorded();
             let started = vec![server("a", "a"), server("b", "b")];
-            let servers = Servers::start(started.clone(), &root, None, &unrecorded, None);
+            let servers = Servers::start(
+                started.clone(),
+                &root,
+                None,
+                &unrecorded,
+                None,
+                Reachable::default(),
+            );
             let first = |servers: &Servers| Arc::clone(&servers.lock().servers[0].1);
             let a = first(&servers);
             assert!(

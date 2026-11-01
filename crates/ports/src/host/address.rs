@@ -1,17 +1,18 @@
-//! Which addresses web_fetch may reach. Public internet addresses; private ones (this
-//! computer, private networks, link-local, carrier NAT, multicast, reserved and documentation
-//! ranges), where a fetch could read what only the person's own network should see, only
-//! where the policy allows them; and cloud metadata, where this machine's cloud serves its
-//! credentials (glave's one list, [`glave_ports::host::CLOUD_METADATA`]), never.
+//! Which addresses glave's own clients may reach where someone else chose the address, as
+//! `web_fetch` and a remote MCP server: public internet addresses; private ones (this computer,
+//! private networks, link-local, carrier NAT, multicast, reserved and documentation ranges),
+//! where a request could read what only the person's own network should see, only where they
+//! are allowed; and cloud metadata, where this machine's cloud serves its credentials (glave's
+//! one list, [`CLOUD_METADATA`](super::CLOUD_METADATA)), never.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use glave_ports::host::is_cloud_metadata;
+use super::metadata::is_cloud_metadata;
 
-/// Whether web_fetch may connect to `ip`: never to cloud metadata, which no setting lifts,
+/// Whether a client may connect to `ip`: never to cloud metadata, which no setting lifts,
 /// in whatever IPv6 form it is carried; otherwise a public address, or any where private
 /// addresses are allowed (`private_ok`).
-pub(crate) fn reachable(ip: IpAddr, private_ok: bool) -> bool {
+pub fn reachable(ip: IpAddr, private_ok: bool) -> bool {
     let carried = match ip {
         IpAddr::V6(v6) => embedded_v4(v6).map(IpAddr::V4),
         IpAddr::V4(_) => None,
