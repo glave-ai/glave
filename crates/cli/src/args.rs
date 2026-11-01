@@ -194,7 +194,7 @@ there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
 A repository may bring its own: .mcp.json at its root (the same format) and .glave/config.toml.
 glave asks once, only when they would run commands, and remembers the answer. With no one
-to ask, those servers stay off.";
+to ask, those servers stay off. A remote server in a repository's file is sent no variables.";
 
 /// What to do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

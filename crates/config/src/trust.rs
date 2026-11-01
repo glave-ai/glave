@@ -50,7 +50,7 @@ pub fn resolve(
     assessment.apply(answer)
 }
 
-/// The trusted project servers as one `.mcp.json`, ready to read like the person's own.
+/// The trusted project servers as one `.mcp.json`, ready to read as a project's.
 pub fn mcp_json(servers: &BTreeMap<String, String>) -> String {
     let servers: BTreeMap<&str, serde_json::Value> = servers
         .iter()
