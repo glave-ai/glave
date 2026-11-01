@@ -68,7 +68,7 @@ impl FakeHttp {
 
     /// Starts answering each request with the status and JSON body `answer` gives for its
     /// method and path, as a stand-in for a whole API, until its requests are asked for or it
-    /// is dropped.
+    /// is dropped. A redirect's body is where it goes.
     pub fn answering(
         answer: impl Fn(&str, &str) -> (u16, String) + Send + 'static,
     ) -> io::Result<Self> {
@@ -140,9 +140,14 @@ fn answer_with(
     let (mut stream, _) = listener.accept()?;
     let request = read(&stream)?;
     let (status, body) = answer(&request.method, &request.path);
+    let location = if (300..400).contains(&status) {
+        format!("Location: {body}\r\n")
+    } else {
+        String::new()
+    };
     write!(
         stream,
-        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{location}Content-Length: {}\r\n\
          Connection: close\r\n\r\n{body}",
         body.len()
     )?;

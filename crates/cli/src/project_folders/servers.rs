@@ -8,10 +8,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glave_config::policy::Constraints;
 use glave_mcp::McpServer;
 use glave_ports::ToolSource;
-use glave_process::Processes;
 use jiff::{SignedDuration, Timestamp};
 
 /// The projects whose servers run at once for their threads; past this, the one used least
@@ -78,7 +76,7 @@ impl Running {
     }
 
     /// The tool sources of the project at `root` for `servers` at `now`: kept from an earlier
-    /// turn while they are the same, else started now under `constraints`; and what they
+    /// turn while they are the same, else started now with `start`; and what they
     /// replace, and a project's past [`MOST_PROJECTS`], to close, once no thread's turn holds
     /// it any more.
     pub(super) fn sources(
@@ -86,8 +84,7 @@ impl Running {
         root: &Path,
         servers: BTreeMap<String, String>,
         now: Timestamp,
-        constraints: &Constraints,
-        processes: &Processes,
+        start: impl FnOnce(&BTreeMap<String, String>) -> anyhow::Result<Vec<Arc<McpServer>>>,
     ) -> (Vec<Arc<dyn ToolSource>>, Vec<Kept>) {
         let mut closing = Vec::new();
         if let Some(at) = self.kept.iter().position(|kept| kept.root == root) {
@@ -103,7 +100,7 @@ impl Running {
         let sources = if servers.is_empty() {
             Vec::new()
         } else {
-            match crate::mcp::start_project(&servers, root, constraints, processes) {
+            match start(&servers) {
                 Ok(started) => {
                     let sources = crate::mcp::sources(&started);
                     self.kept.push(Kept {

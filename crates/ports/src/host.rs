@@ -1,14 +1,16 @@
 //! Whether a host is this computer: the one check behind every "https, or plain http only
 //! here" rule and every "only from this computer" door. Where clouds serve a machine's
-//! credentials, the one list of those addresses. And origins: where a host is, as its scheme
-//! and name, read one way for every origin glave keeps.
+//! credentials, the one list of those addresses, and which addresses a client may reach. And
+//! origins: where a host is, as its scheme and name, read one way for every origin glave keeps.
 
+mod address;
 mod inside;
 mod metadata;
 
 use std::fmt;
 use std::net::IpAddr;
 
+pub use address::reachable;
 pub use inside::{INSIDE, is_inside};
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 

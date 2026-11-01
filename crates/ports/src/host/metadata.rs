@@ -62,8 +62,8 @@ impl fmt::Display for Network {
 /// Where clouds serve a machine's credentials and setup data to any process on it that asks,
 /// checked on 2026-10-25 against each cloud's documents, the source beside each. Withheld from
 /// the agent where glave decides where its connections go: workers' network policy on
-/// Kubernetes and `web_fetch`; not yet from commands in this machine's sandbox, whose rules
-/// cannot name an address. glave's own process still reaches them, for its own credentials
+/// Kubernetes, `web_fetch` and remote MCP servers; not yet from commands in this machine's
+/// sandbox, whose rules cannot name an address. glave's own process still reaches them, for its own credentials
 /// (`specs/sandbox.md`, "Cloud metadata"). A single address stays single where the block
 /// around it is someone else's.
 pub const CLOUD_METADATA: [Network; 9] = [

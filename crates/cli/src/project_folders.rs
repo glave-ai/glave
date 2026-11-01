@@ -63,6 +63,8 @@ pub(crate) struct Own {
     pub clock: Box<dyn Clock>,
     /// Where a project's servers start, each owned by its project.
     pub processes: Processes,
+    /// The addresses a project's remote server may be at.
+    pub reachable: glave_mcp::Reachable,
     /// What the person decided about each project.
     pub trust: Trust,
 }
@@ -90,6 +92,8 @@ pub(crate) struct ProjectFolders {
     personal: Option<Personal>,
     clock: Box<dyn Clock>,
     processes: Processes,
+    /// The addresses a project's remote server may be at.
+    reachable: glave_mcp::Reachable,
     /// Who answers what a project asks: the person from an app, or no one.
     answer: Answer,
     /// Projects' servers, most recently used last; and those that were replaced or put away
@@ -121,6 +125,7 @@ impl ProjectFolders {
             memory: own.memory,
             clock: own.clock,
             processes: own.processes,
+            reachable: own.reachable,
             answer: if later { Answer::Later } else { Answer::NoOne },
             running: Mutex::new(Running::default()),
             tidying: Mutex::new(None),
@@ -313,10 +318,11 @@ impl ProjectFolders {
         let now = self.clock.now();
         let base = self.base();
         let constraints = &base.loaded.constraints;
-        let processes = &self.processes;
-        let (sources, closing) = self
-            .lock()
-            .sources(root, trusted, now, constraints, processes);
+        let start = |servers: &BTreeMap<String, String>| {
+            let processes = &self.processes;
+            crate::mcp::start_project(servers, root, constraints, processes, self.reachable)
+        };
+        let (sources, closing) = self.lock().sources(root, trusted, now, start);
         servers::close(closing).await;
         sources
     }

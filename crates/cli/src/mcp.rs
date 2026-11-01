@@ -19,8 +19,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use glave_config::policy::{Chosen, Constraints};
-use glave_mcp::{Limits, McpServer, Resources};
+use glave_config::policy::{Choices, Chosen, Constraints};
+use glave_mcp::{Limits, McpServer, Reachable, Resources};
 use glave_ports::ToolSource;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::{Owner, Processes};
@@ -36,6 +36,24 @@ pub(crate) fn environment() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .collect()
+}
+
+/// The addresses remote servers the person or a project names may be at: public ones alone where
+/// people sign in from elsewhere, here at `origin` or through an identity provider, so that no
+/// address reaches this server's own network; else also private ones, the person's own computer
+/// and network. A setting naming ranges a company may reach waits for a server that needs it: a
+/// company's own tool servers go in its gateway's file.
+pub(crate) fn reachable(args: &crate::args::Args, choices: &Choices) -> Reachable {
+    reachable_from(args, choices.origin.is_some())
+}
+
+/// [`reachable`], where the server is `reached` from elsewhere or not.
+fn reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
+    if args.reached_from_elsewhere(reached) {
+        Reachable::OnlyPublic
+    } else {
+        Reachable::AlsoPrivate
+    }
 }
 
 /// `started` as tool sources, in order, then their resources.
@@ -60,12 +78,13 @@ pub(crate) async fn close(started: &[Arc<McpServer>]) {
 
 /// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
 /// folder, for the threads that work in it: each told, when it asks, that the folder is the
-/// one it works for.
+/// one it works for. A remote one only at an address `reachable` allows.
 pub(crate) fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
     constraints: &Constraints,
     processes: &Processes,
+    reachable: Reachable,
 ) -> anyhow::Result<Vec<Arc<McpServer>>> {
     let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
@@ -77,7 +96,10 @@ pub(crate) fn start_project(
         .iter()
         .map(|(name, config)| {
             let untrusted = project_untrusted(name, marks.get(name).copied(), constraints);
-            let limits = Limits::default();
+            let limits = Limits {
+                reachable,
+                ..Limits::default()
+            };
             let server =
                 McpServer::start_for_project(name, config, &environment, root, limits, &processes);
             Arc::new(server.untrusted(untrusted))
@@ -155,6 +177,26 @@ mod tests {
         let rule = rules.mcp_untrusted("search").unwrap().to_string();
         assert!(rule.starts_with("[mcp] untrusted = [\"search\"]"), "{rule}");
         assert!(rules.mcp_untrusted("docs").is_none());
+    }
+
+    #[test]
+    fn only_where_people_sign_in_from_elsewhere_are_remote_servers_kept_to_public_addresses() {
+        let args = |words: &[&str]| {
+            crate::args::parse(words.iter().map(|word| (*word).to_owned())).unwrap()
+        };
+        let here = args(&["serve"]);
+        assert_eq!(reachable_from(&here, false), Reachable::AlsoPrivate);
+        assert_eq!(reachable_from(&here, true), Reachable::OnlyPublic);
+        let signed_in = args(&[
+            "serve",
+            "--http",
+            "127.0.0.1:0",
+            "--issuer",
+            "https://id.example.com",
+            "--audience",
+            "glave",
+        ]);
+        assert_eq!(reachable_from(&signed_in, false), Reachable::OnlyPublic);
     }
 
     #[test]

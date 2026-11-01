@@ -3,7 +3,6 @@
 //! marked untrusted, for the harness to label and to judge risky actions after it knowing it
 //! was read (`specs/approvals.md`). Web search is not built in: it comes from remote tools.
 
-mod address;
 mod cache;
 mod fetch;
 #[cfg(feature = "pages")]

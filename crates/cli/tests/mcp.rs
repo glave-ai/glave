@@ -111,6 +111,25 @@ fn a_server_that_does_not_start_is_named_and_the_turn_goes_on() {
 }
 
 #[test]
+fn a_remote_server_at_a_private_address_is_off_where_people_sign_in_from_elsewhere() {
+    let place = place("mcp-elsewhere");
+    let (_listening, url) = crate::connected::serving(&[]);
+    settings(&place, &json!({ "local": { "url": url } }));
+    let reached = "[serve]\norigin = \"https://glave.example.com\"\n";
+    std::fs::write(place.home.join("config.toml"), reached).unwrap();
+    let model = FakeServer::start(vec![Reply::text("Answered anyway.")]).unwrap();
+    let output = glave(&place, &model, &["--model", "m", "hello"], "");
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    assert!(
+        shown.contains("MCP server \"local\" did not start")
+            && shown.contains("where people sign in from elsewhere"),
+        "{shown}"
+    );
+    assert!(shown.contains("Answered anyway."), "{shown}");
+}
+
+#[test]
 fn bad_settings_stop_glave_before_anything_runs() {
     let place = place("mcp-bad");
     settings(&place, &json!({ "odd": { "comand": "typo" } }));

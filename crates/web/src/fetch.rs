@@ -7,12 +7,12 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use glave_ports::host::reachable;
 use glave_ports::settings::{HostRule, WebPolicy};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
 use reqwest::{Client, Url, redirect};
 use thiserror::Error;
 
-use crate::address::reachable;
 use crate::cache::Cache;
 use crate::resolve::{Guarded, Refused};
 use crate::text::{kind, readable, title};

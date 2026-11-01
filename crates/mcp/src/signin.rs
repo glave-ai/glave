@@ -7,6 +7,9 @@
 //! for a token, and renews it with its refresh token. A server that publishes no metadata
 //! does not sign anyone in this way.
 
+mod http;
+
+use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Secret, SignInClient};
@@ -17,6 +20,8 @@ use rmcp::transport::auth::{
 };
 use serde_json::{Value, json};
 use thiserror::Error;
+
+use crate::reachable::Reachable;
 
 /// Why a sign-in could not start, finish or be renewed, in rmcp's words, for the log. Never
 /// holds a token.
@@ -37,6 +42,10 @@ pub enum SignInError {
     /// again does not help.
     #[error("glave cannot sign in to {url} yet: {message}")]
     Unregistered { url: String, message: String },
+    /// The server is at an address glave does not reach from here ([`Reachable`]). Asking again
+    /// does not help.
+    #[error("glave does not sign in to {url}: {message}")]
+    OutOfReach { url: String, message: String },
 }
 
 impl SignInError {
@@ -83,9 +92,10 @@ impl SignIn {
         name: &str,
         redirect: &str,
         more: &[String],
+        reachable: Reachable,
     ) -> Result<(Self, String), SignInError> {
         let failed = |error: AuthError| SignInError::from_auth(url, &error);
-        let (mut manager, resolution) = offered(url).await?;
+        let (mut manager, resolution) = offered(url, reachable).await?;
         let issuer = resolution.metadata.issuer.clone();
         manager.set_metadata(resolution.metadata);
         let client = format!("glave ({name})");
@@ -147,14 +157,32 @@ impl SignIn {
     }
 }
 
+/// rmcp's sign-in for the MCP server at `url`, every request it makes under `reachable`.
+async fn manager(url: &str, reachable: Reachable) -> Result<AuthorizationManager, SignInError> {
+    if let Some(refused) = reachable.refuses(url) {
+        return Err(SignInError::OutOfReach {
+            url: url.to_owned(),
+            message: refused.to_string(),
+        });
+    }
+    let client = http::Guarded::new(reachable).map_err(|error| SignInError::Unreachable {
+        url: url.to_owned(),
+        message: format!("could not make its client: {error}"),
+    })?;
+    AuthorizationManager::new_with_oauth_http_client(url, Arc::new(client))
+        .await
+        .map_err(|error| SignInError::from_auth(url, &error))
+}
+
 /// The sign-in the MCP server at `url` offers, as MCP's authorization says, when glave can sign
 /// in there: it publishes where its sign-in is, and that authorization server takes glave's
 /// registration. Nothing is registered or asked for yet.
 async fn offered(
     url: &str,
+    reachable: Reachable,
 ) -> Result<(AuthorizationManager, AuthorizationMetadataResolution), SignInError> {
     let failed = |error: AuthError| SignInError::from_auth(url, &error);
-    let manager = AuthorizationManager::new(url).await.map_err(failed)?;
+    let manager = manager(url, reachable).await?;
     let resolution = manager.resolve_metadata().await.map_err(failed)?;
     if !resolution.source.is_discovered() {
         return Err(SignInError::NotOffered {
@@ -173,11 +201,15 @@ async fn offered(
 
 /// Whether the MCP server at `url` asks people to sign in in a way glave can, as
 /// [`SignIn::start`] would find first: false for one that asks no one, or whose sign-in glave
-/// can't use yet.
-pub async fn offers_sign_in(url: &str) -> Result<bool, SignInError> {
-    match offered(url).await {
+/// can't use yet, or that is out of reach.
+pub async fn offers_sign_in(url: &str, reachable: Reachable) -> Result<bool, SignInError> {
+    match offered(url, reachable).await {
         Ok(_) => Ok(true),
-        Err(SignInError::NotOffered { .. } | SignInError::Unregistered { .. }) => Ok(false),
+        Err(
+            SignInError::NotOffered { .. }
+            | SignInError::Unregistered { .. }
+            | SignInError::OutOfReach { .. },
+        ) => Ok(false),
         Err(error) => Err(error),
     }
 }
@@ -191,9 +223,10 @@ pub async fn renew(
     url: &str,
     client: &SignInClient,
     refresh: &Secret,
+    reachable: Reachable,
 ) -> Result<Granted, SignInError> {
     let failed = |error: AuthError| SignInError::from_auth(url, &error);
-    let mut manager = AuthorizationManager::new(url).await.map_err(failed)?;
+    let mut manager = manager(url, reachable).await?;
     let resolution = manager.resolve_metadata().await.map_err(failed)?;
     if !resolution.source.is_discovered() {
         return Err(SignInError::Unreachable {
