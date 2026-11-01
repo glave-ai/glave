@@ -43,7 +43,7 @@ fn the_projects_pass_the_projects_conformance_suite() {
 #[test]
 fn every_organization_with_a_blob_is_among_those_the_store_holds() {
     block_on!(async {
-        let Some(scratch) = Scratch::new("organizations-held").await else {
+        let Some(scratch) = Scratch::new("organizations_held").await else {
             return;
         };
         let store = scratch.store().await.unwrap();
