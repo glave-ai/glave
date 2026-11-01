@@ -83,7 +83,10 @@ export function answerOf(
     const value = values[field.name];
     const given = sent(field.kind, value);
     const typed = typeof value === 'string' && value.trim() !== '';
-    if (given === undefined && (field.required === true || (field.kind.type === 'number' && typed))) {
+    if (
+      given === undefined &&
+      (field.required === true || (field.kind.type === 'number' && typed))
+    ) {
       return null;
     }
     if (given !== undefined) {
