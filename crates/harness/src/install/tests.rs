@@ -23,7 +23,8 @@ fn skill() -> Arguments {
 
 fn server() -> Arguments {
     arguments(json!({"kind": "server", "name": "linear", "server": {
-        "type": "http", "url": "https://mcp.linear.test/mcp", "headers": {"X-Team": "core"}
+        "type": "http", "url": "https://mcp.linear.test/mcp",
+        "headers": {"X-Team": "core", "Authorization": "Bearer ${LINEAR_TOKEN}"}
     }}))
 }
 
@@ -96,8 +97,8 @@ fn what_it_adds_is_read_and_shown_in_one_line() {
     );
     assert_eq!(
         message(&change(&server()).unwrap()),
-        "Connect “linear”, at https://mcp.linear.test/mcp, sending X-Team. Signing in to it \
-         stays yours either way."
+        "Connect “linear”, at https://mcp.linear.test/mcp, sending Authorization from \
+         ${LINEAR_TOKEN}, X-Team. Signing in to it stays yours either way."
     );
     let program = arguments(json!({"kind": "server", "name": "files", "server": {
         "command": "npx", "args": ["-y", "files-server"], "env": {"ROOT": "/srv"}
@@ -140,6 +141,12 @@ fn a_skill_goes_where_the_person_chooses() {
         let file = project.join(".agents/skills/release-notes/SKILL.md");
         assert_eq!(std::fs::read_to_string(file).unwrap(), SKILL);
 
+        // Asked again, it says what it replaces.
+        let asks = asked(&tool, &skill()).await;
+        assert!(
+            asks.message
+                .ends_with("It replaces the one by that name in this project.")
+        );
         let done = chosen(&tool, asks, "everywhere").await;
         assert!(!done.is_error, "{done:?}");
         let file = own.join("skills/release-notes/SKILL.md");
@@ -147,7 +154,17 @@ fn a_skill_goes_where_the_person_chooses() {
 
         // Taking it out asks only where it is, then takes it out there.
         let remove = arguments(json!({"kind": "skill", "name": "release-notes", "remove": true}));
+        let asks = asked(&tool, &remove).await;
+        // The project's copy is the model's own to delete, with the project's other changes.
+        assert_eq!(offered(&asks), ["everywhere"]);
+        std::fs::remove_dir_all(own.join("skills")).unwrap();
+        let theirs = tool
+            .call_asking(INSTALL, &remove, None, &Cancel::new())
+            .await;
+        assert!(matches!(theirs, Called::Done(output) if output.is_error));
         std::fs::remove_dir_all(project.join(".agents")).unwrap();
+        let again = asked(&tool, &skill()).await;
+        assert!(!chosen(&tool, again, "everywhere").await.is_error);
         let asks = asked(&tool, &remove).await;
         assert_eq!(offered(&asks), ["everywhere"]);
         assert!(!chosen(&tool, asks, "everywhere").await.is_error);

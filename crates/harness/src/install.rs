@@ -228,17 +228,10 @@ fn message(change: &Change) -> String {
 /// How a server is reached, as the person is shown it: its address and the headers it sends,
 /// or the program it runs and what is set for it.
 fn reach(server: &Value) -> String {
-    let names = |key: &str| -> Vec<String> {
-        let map = server.get(key).and_then(Value::as_object);
-        map.map(|map| map.keys().cloned().collect())
-            .unwrap_or_default()
-    };
     if let Some(url) = server.get("url").and_then(Value::as_str) {
-        let headers = names("headers");
-        let sends = if headers.is_empty() {
-            String::new()
-        } else {
-            format!(", sending {}", headers.join(", "))
+        let sends = match named(server, "headers") {
+            headers if headers.is_empty() => String::new(),
+            headers => format!(", sending {headers}"),
         };
         return format!("at {url}{sends}. Signing in to it stays yours either way.");
     }
@@ -249,13 +242,36 @@ fn reach(server: &Value) -> String {
         .collect();
     let args = server.get("args").and_then(Value::as_array);
     runs.extend(args.into_iter().flatten().filter_map(Value::as_str));
-    let set = names("env");
-    let with = if set.is_empty() {
-        String::new()
-    } else {
-        format!(", with {} set", set.join(", "))
+    let with = match named(server, "env") {
+        set if set.is_empty() => String::new(),
+        set => format!(", with {set} set"),
     };
     format!("which runs {}{with}.", runs.join(" "))
+}
+
+/// The names in `server`'s `key` (its headers, or what it sets), each with the variables its
+/// value is filled from, so a secret it sends is seen: `Authorization from ${GITHUB_TOKEN}`.
+/// A value written out is never shown.
+fn named(server: &Value, key: &str) -> String {
+    let Some(map) = server.get(key).and_then(Value::as_object) else {
+        return String::new();
+    };
+    let each = map.iter().map(|(name, value)| {
+        let text = value.as_str().unwrap_or_default();
+        let filled: Vec<&str> = text
+            .match_indices("${")
+            .filter_map(|(at, _)| {
+                text.get(at..)
+                    .and_then(|rest| rest.split_inclusive('}').next())
+            })
+            .collect();
+        if filled.is_empty() {
+            name.clone()
+        } else {
+            format!("{name} from {}", filled.join(" "))
+        }
+    });
+    each.collect::<Vec<_>>().join(", ")
 }
 
 impl Install {
@@ -281,6 +297,17 @@ impl Install {
         for place in places {
             if places::holds(&self.workspace, self.own.as_ref(), place, change).await? {
                 there.push(place);
+            }
+        }
+        // A project's skill is a file the model's own tools change, with the project's others.
+        if matches!(change, Change::RemoveSkill { .. }) && there.contains(&Place::Project) {
+            there.retain(|place| *place != Place::Project);
+            if there.is_empty() {
+                return Err(format!(
+                    "The skill “{}” is in this project's files: delete its folder with your own \
+                     tools, so it shows with the project's other changes.",
+                    change.name()
+                ));
             }
         }
         Ok(there)
@@ -323,10 +350,26 @@ impl Install {
                 default: Vec::new(),
             },
         };
+        let mut replaces = Vec::new();
+        if change.adds() {
+            for place in &places {
+                if places::holds(&self.workspace, self.own.as_ref(), *place, change).await? {
+                    replaces.push(place.whose());
+                }
+            }
+        }
+        let message = match replaces.as_slice() {
+            [] => message(change),
+            whose => format!(
+                "{} It replaces the one by that name in {}.",
+                message(change),
+                whose.join(" and in ")
+            ),
+        };
         let state = serde_json::to_value(change).map_err(|err| err.to_string())?;
         Ok(ServiceAsks {
             service: ASKED_BY_GLAVE.to_owned(),
-            message: message(change),
+            message,
             fields: vec![field],
             state,
         })

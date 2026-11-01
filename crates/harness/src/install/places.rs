@@ -51,6 +51,14 @@ impl Place {
         }
     }
 
+    /// Whose it is, as the person reads it after "in".
+    pub(crate) fn whose(self) -> &'static str {
+        match self {
+            Self::Project => "this project",
+            Self::Everywhere => "your own",
+        }
+    }
+
     /// The place a choice's value names.
     pub(crate) fn from_value(value: &str) -> Option<Self> {
         [Self::Project, Self::Everywhere]
@@ -138,10 +146,7 @@ fn told(place: Place, change: &Change, replaced: bool) -> String {
             "Added “{name}” to the person's own tool servers, for all their projects. Its tools \
              come from their next message; if it asks them to sign in, they connect it first."
         ),
-        (Place::Project, Change::RemoveSkill { .. }) => {
-            format!("Removed the skill “{name}” from this project.")
-        }
-        (Place::Everywhere, Change::RemoveSkill { .. }) => {
+        (_, Change::RemoveSkill { .. }) => {
             format!("Removed the skill “{name}” from the person's own skills.")
         }
         (Place::Project, Change::RemoveServer { .. }) => {
@@ -159,19 +164,13 @@ fn told(place: Place, change: &Change, replaced: bool) -> String {
 async fn in_project(workspace: &Workspace, change: &Change) -> Result<(), String> {
     match change {
         Change::AddSkill { name, text, .. } => {
-            let path = project_skill(name);
-            workspace.write_for_glave(&path, text.as_bytes()).await
+            // Not a protected path: written as the model's own tools would write it.
+            workspace.write(&project_skill(name), text.as_bytes()).await
         }
-        Change::RemoveSkill { name } => {
-            let folder = format!("{PROJECT_SKILLS}/{name}");
-            // The name holds only letters, digits and hyphens, so it needs no quoting.
-            let removed = workspace.quietly(&format!("rm -rf -- {folder}")).await;
-            removed.map_err(|error| format!("Could not remove {folder}: {}", error.message()))?;
-            match workspace.stat(&folder).await?.kind {
-                None => Ok(()),
-                Some(_) => Err(format!("Could not remove {folder}.")),
-            }
-        }
+        Change::RemoveSkill { name } => Err(format!(
+            "The skill “{name}” is in this project's files: delete its folder with your own \
+             tools."
+        )),
         Change::AddServer { .. } | Change::RemoveServer { .. } => {
             let text = project_servers(workspace).await?;
             let changed = servers_changed(&text, change)?;
