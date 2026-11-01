@@ -14,6 +14,7 @@ use rmcp::service::{Peer, PeerRequestOptions, RoleClient, ServiceError};
 
 use crate::asks::{Asking, Form, InputRound};
 use crate::client::Client;
+use crate::connection::unanswered;
 use crate::reason::failed;
 
 /// How long one request may take.
@@ -144,10 +145,7 @@ async fn send(
     match unless_cancelled(cancel, handle.await_response()).await {
         Some(Ok(result)) => Ok(result),
         Some(Err(ServiceError::Timeout { timeout })) if timeout == waits.quiet => {
-            Err(Unanswered::Failed(format!(
-                "{server} did not answer within {}.",
-                spoken(timeout)
-            )))
+            Err(Unanswered::Failed(unanswered(server, timeout)))
         }
         Some(Err(ServiceError::Timeout { timeout })) => Err(Unanswered::Failed(format!(
             "{server} was still working after {}, so it was stopped.",

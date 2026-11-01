@@ -302,11 +302,7 @@ impl Connection {
         match unless_cancelled(cancel, listed).await {
             Some(Ok(Ok(prompts))) => Ok(prompts),
             Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
-            Some(Err(_)) => Err(format!(
-                "{} did not answer within {}.",
-                self.name,
-                spoken(limit)
-            )),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -324,11 +320,7 @@ impl Connection {
         match unless_cancelled(cancel, got).await {
             Some(Ok(Ok(result))) => Ok(result),
             Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
-            Some(Err(_)) => Err(format!(
-                "{} did not answer within {}.",
-                self.name,
-                spoken(limit)
-            )),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -343,11 +335,7 @@ impl Connection {
         match unless_cancelled(cancel, listed).await {
             Some(Ok(Ok(resources))) => Ok(resources),
             Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
-            Some(Err(_)) => Err(format!(
-                "{} did not answer within {}.",
-                self.name,
-                spoken(limit)
-            )),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -366,11 +354,7 @@ impl Connection {
         match unless_cancelled(cancel, read).await {
             Some(Ok(Ok(result))) => Ok(result.contents),
             Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
-            Some(Err(_)) => Err(format!(
-                "{} did not answer within {}.",
-                self.name,
-                spoken(limit)
-            )),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -437,4 +421,9 @@ impl Drop for Connection {
     fn drop(&mut self) {
         let _ = self.stop_watching();
     }
+}
+
+/// What a person reads when `server` did not answer within `limit`.
+pub(crate) fn unanswered(server: &str, limit: Duration) -> String {
+    format!("{server} did not answer within {}.", spoken(limit))
 }
