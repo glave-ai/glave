@@ -51,7 +51,11 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
         Body::ServiceAsked(mut asked) => {
             let service = || asked.service.clone();
             let ask = say(language, &Sentence::ServiceAsks { service: service() });
-            let note = say(language, &Sentence::ServiceNote { service: service() });
+            let note = if asked.service == glave_harness::ASKED_BY_GLAVE {
+                say(language, &Sentence::InstallNote)
+            } else {
+                say(language, &Sentence::ServiceNote { service: service() })
+            };
             asked.ask = ask;
             asked.note = note;
             Body::ServiceAsked(asked)

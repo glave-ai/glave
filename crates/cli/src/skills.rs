@@ -45,9 +45,17 @@ fn with_built_in(mut found: Found) -> Found {
     found
 }
 
-/// The `skill` tool for the project at `root`, when there are any skills; nothing otherwise.
+/// The `skill` tool for the project at `root`: the skills found now, found again before each
+/// turn, so one added since (by the person, or the agent's `install`) counts from the next
+/// message.
 pub(crate) async fn offered(root: &Path) -> anyhow::Result<Option<Skills>> {
-    Ok(Skills::offer(find(root).await?.skills))
+    let found = find(root).await?.skills;
+    let built_in = found
+        .iter()
+        .filter(|skill| matches!(skill.source, SkillSource::BuiltIn(_)))
+        .cloned()
+        .collect();
+    Ok(Some(Skills::found_again(folders(root)?, built_in, found)))
 }
 
 /// `glave skills`: every skill the model is offered here, and where each comes from.

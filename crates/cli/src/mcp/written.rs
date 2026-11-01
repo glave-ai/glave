@@ -12,11 +12,8 @@ use std::fmt;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_ports::settings::mcp::ServerConfig;
+use glave_ports::settings::mcp::{Edited, Members, ServerConfig};
 use glave_session::protocol::{ApiError, code};
-use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeMap as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
@@ -54,7 +51,7 @@ impl Writer {
             }
             let written = RawValue::from_string(ours(&url).to_string())
                 .map_err(|error| ApiError::internal(&error))?;
-            servers.0.push((free.clone(), written));
+            servers.set(&free, written);
             Ok((free, true))
         })
         .await
@@ -81,7 +78,7 @@ impl Writer {
             if !there.iter().all(|name| written(name)) {
                 return Ok((Removed::Theirs, false));
             }
-            servers.0.retain(|(name, _)| !there.contains(&name));
+            servers.retain(|name| !there.iter().any(|there| there.as_str() == name));
             Ok((Removed::Gone, true))
         })
         .await
@@ -134,15 +131,7 @@ fn rewrite<T>(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(unreadable(&path, &error)),
     };
-    let mut file: Members = if text.trim().is_empty() {
-        Members::default()
-    } else {
-        serde_json::from_str(&text).map_err(|error| unreadable(&path, &error))?
-    };
-    let mut servers: Members = match file.get("mcpServers") {
-        Some(raw) => serde_json::from_str(raw.get()).map_err(|error| unreadable(&path, &error))?,
-        None => Members::default(),
-    };
+    let mut edited = Edited::read(&text).map_err(|error| unreadable(&path, &error))?;
     let configs = if text.trim().is_empty() {
         Vec::new()
     } else {
@@ -150,19 +139,11 @@ fn rewrite<T>(
             .map_err(|error| unreadable(&path, &error))?;
         configs.into_iter().collect()
     };
-    let (answer, changed) = change(&mut servers, &configs)?;
+    let (answer, changed) = change(&mut edited.servers, &configs)?;
     if !changed {
         return Ok(answer);
     }
-    let internal = |error: serde_json::Error| ApiError::internal(&error);
-    let servers = serde_json::to_string_pretty(&servers).map_err(internal)?;
-    let servers = RawValue::from_string(servers).map_err(internal)?;
-    match file.0.iter_mut().find(|(name, _)| name == "mcpServers") {
-        Some((_, raw)) => *raw = servers,
-        None => file.0.push(("mcpServers".to_owned(), servers)),
-    }
-    let mut written = serde_json::to_string_pretty(&file).map_err(internal)?;
-    written.push('\n');
+    let written = edited.text().map_err(|error| ApiError::internal(&error))?;
     glave_ports::file::replace(&path, written.as_bytes()).map_err(|e| ApiError::internal(&e))?;
     Ok(answer)
 }
@@ -176,49 +157,6 @@ fn unreadable(path: &Path, error: &dyn fmt::Display) -> ApiError {
         "your own connections' settings can't be read, so glave changed nothing: fix them, then \
          try again",
     )
-}
-
-/// A JSON object's members in the order they were written, each value's text as it was.
-#[derive(Default)]
-struct Members(Vec<(String, Box<RawValue>)>);
-
-impl Members {
-    fn get(&self, name: &str) -> Option<&RawValue> {
-        let found = self.0.iter().find(|(each, _)| each == name);
-        found.map(|(_, raw)| raw.as_ref())
-    }
-}
-
-impl<'de> Deserialize<'de> for Members {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct InOrder;
-        impl<'de> Visitor<'de> for InOrder {
-            type Value = Members;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a JSON object")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
-                let mut members = Vec::new();
-                while let Some(member) = map.next_entry::<String, Box<RawValue>>()? {
-                    members.push(member);
-                }
-                Ok(Members(members))
-            }
-        }
-        deserializer.deserialize_map(InOrder)
-    }
-}
-
-impl Serialize for Members {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for (name, value) in &self.0 {
-            map.serialize_entry(name, value)?;
-        }
-        map.end()
-    }
 }
 
 #[cfg(test)]

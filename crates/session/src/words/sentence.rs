@@ -205,6 +205,8 @@ sentences! {
     ServiceAsks { service: String } = "service-asks" "{ $service } asks you, not the model",
     ServiceNote { service: String } = "service-note"
         "Your answer goes only to { $service }. The model sees that you answered, not what you typed.",
+    InstallNote = "install-note"
+        "Nothing changes until you choose. The model is told what you chose.",
     ServiceAnswered { service: String } = "service-answered" "You answered { $service }",
     ServiceDeclined { service: String } = "service-declined" "You declined { $service }'s question",
     ServiceUnanswered { service: String } = "service-unanswered"

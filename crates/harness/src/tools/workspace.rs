@@ -342,6 +342,19 @@ impl Workspace {
         })
     }
 
+    /// Writes `content` to `path` for glave itself, once the person chose where it goes
+    /// (`install`): a protected path too, such as `.mcp.json`, which the model's own tools may
+    /// not change. A failure is a sentence for the model.
+    pub(crate) async fn write_for_glave(&self, path: &str, content: &[u8]) -> Result<(), String> {
+        let file = FileWrite::new(path, Bytes::new(content));
+        let written = self
+            .computers
+            .write(self.info.id, std::slice::from_ref(&file));
+        written
+            .await
+            .map_err(|error| format!("Could not write {path}: {}", error.message()))
+    }
+
     pub(crate) async fn list(&self, listing: &Listing) -> Result<Listed, ComputerError> {
         self.computers.list(self.info.id, listing).await
     }
