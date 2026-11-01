@@ -408,7 +408,8 @@ impl TestServer {
 
 impl TestServer {
     /// Asks the person something, as `what` says, and says what came of it, never what they
-    /// answered, which `answers` gives. On the older protocol it asks at once and waits there; on
+    /// answered, which `answers` gives. On the older protocol it does not ask a client that did
+    /// not say it can answer, unless `what` is `anyway`, and then asks at once and waits there; on
     /// MCP 2026-07-28 it asks in a round: `twice` in two, `forever` in every one, `several` two
     /// forms and the client's roots in one, `password` for a password, `page` to open a page,
     /// anything else a form of each kind of field.
@@ -419,6 +420,14 @@ impl TestServer {
     ) -> Result<CallToolResponse, ErrorData> {
         let failed = |err: String| ErrorData::internal_error(err, None);
         if self.legacy {
+            // As an rmcp server's own `elicit` does, unless told to ask anyway.
+            let told = context
+                .peer
+                .peer_info()
+                .is_some_and(|info| info.capabilities.elicitation.is_some());
+            if !told && argument(request, "what") != "anyway" {
+                return Ok(said("You cannot be asked").into());
+            }
             let params = serde_json::from_value(form_params("Which label?"))
                 .map_err(|err| failed(err.to_string()))?;
             let asked = ServerRequest::ElicitRequest(ElicitRequest::new(params));

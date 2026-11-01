@@ -90,10 +90,12 @@ fn a_gateway_serving_a_tool_on_declines_what_it_asks() {
 }
 
 #[test]
-fn a_server_on_the_older_protocol_is_declined_at_once_so_nothing_hangs() {
+fn a_server_on_the_older_protocol_is_not_told_it_can_ask_and_if_it_does_nothing_hangs() {
     block_on!(async {
         let server = start(&["--legacy"]).await;
         let said = text(&ask(&server, "form").await);
+        assert_eq!(said, "You cannot be asked");
+        let said = text(&ask(&server, "anyway").await);
         assert_eq!(said, "You said: Decline");
         server.close().await;
     });
