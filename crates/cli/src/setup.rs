@@ -10,7 +10,7 @@ use glave_ports::computer::Sandbox;
 use glave_ports::settings::Hook;
 
 use crate::args::Args;
-use crate::{config, home, mcp};
+use crate::{config, home};
 use glave_config::policy::{
     self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile,
 };
@@ -178,7 +178,7 @@ async fn resolve(
 ) -> anyhow::Result<Outcome> {
     let home = home::folder()?;
     let root = Locations::here(&home, folder).root;
-    let project = Project::read(&root, &mcp::environment()).await?;
+    let project = Project::read(&root).await?;
     let record = trust.record().await?;
     let outcome = trust::resolve(&record, project.clone(), constraints, asking);
     if let Some(decisions) = &outcome.decisions {

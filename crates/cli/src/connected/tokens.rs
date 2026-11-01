@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glave_event::{ConnectionConnected, Secret};
-use glave_mcp::{SignInError, address, renew};
+use glave_mcp::{Reachable, SignInError, address, renew};
 use glave_ports::auth::{Auth, AuthError, Header, Outgoing, RequestSigner};
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::AccountsError;
@@ -52,6 +52,7 @@ impl Connected {
                 let job = ConnectionRenewal {
                     ledger: self.ledger.clone(),
                     current: current.clone(),
+                    reachable: self.reachable,
                 };
                 Some(Renewing { job, fresh })
             };
@@ -111,6 +112,7 @@ impl RequestSigner for Signer {
 struct ConnectionRenewal {
     ledger: Ledger,
     current: ConnectionConnected,
+    reachable: Reachable,
 }
 
 impl Renew for ConnectionRenewal {
@@ -142,7 +144,7 @@ impl Renew for ConnectionRenewal {
             tracing::warn!("could not make an id to renew {url}: {error:#}");
             failed()
         })?;
-        match renew(url, &current.client, refresh).await {
+        match renew(url, &current.client, refresh, self.reachable).await {
             Ok(granted) => Ok(ConnectionConnected {
                 connection: id,
                 token: granted.token,

@@ -89,6 +89,7 @@ async fn mcp_servers(
     remote: Option<&Remote>,
     processes: &Processes,
     connected: Option<&Arc<Connected>>,
+    reachable: glave_mcp::Reachable,
 ) -> anyhow::Result<Arc<Servers>> {
     let chosen = setup.choices.mcp.as_ref();
     let constraints = &setup.loaded.constraints;
@@ -103,7 +104,7 @@ async fn mcp_servers(
     let root = home::person()?;
     let connected = connected.map(Arc::clone);
     Ok(Arc::new(Servers::start(
-        wanted, &root, remote, processes, connected,
+        wanted, &root, remote, processes, connected, reachable,
     )))
 }
 
@@ -151,7 +152,14 @@ pub(crate) async fn wire(
         signed(args, &store, identity.person, &setup, workspace).await?;
     let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
-    let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
+    let servers = mcp_servers(
+        &setup,
+        remote.as_ref(),
+        &processes,
+        connected.as_ref(),
+        crate::mcp::own_reachable(args, choices),
+    )
+    .await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
     let (on_workers, workers, homes) = crate::cloud::workers(
@@ -164,7 +172,15 @@ pub(crate) async fn wire(
     )
     .await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
+    let reachable = crate::mcp::reachable(args, &setup.choices);
+    let projects = projects_for(
+        &setup,
+        &servers,
+        &lined.switch,
+        memory.as_ref(),
+        asked,
+        reachable,
+    )?;
     say(&told, &projects, &folder).await;
     // Memory is tidied once the server answers the filters its calls keep to.
     let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
@@ -339,6 +355,7 @@ fn projects_for(
     models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
     asked: Asked,
+    reachable: glave_mcp::Reachable,
 ) -> anyhow::Result<Arc<ProjectFolders>> {
     let own = crate::project_folders::Own {
         loaded: setup.loaded.clone(),
@@ -348,6 +365,7 @@ fn projects_for(
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
         processes: servers.processes().clone(),
+        reachable,
         trust: asked.trust,
     };
     let projects = Arc::new(ProjectFolders::new(home::folder()?, own, asked.later));
@@ -402,7 +420,9 @@ async fn signed(
     let forbidden = setup.loaded.constraints.own_mcp_forbidden().is_some();
     let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
     let home = home::folder()?;
-    let connected = Connected::for_person(store, person, &home, others_sign_in, search).await?;
+    let reachable = crate::mcp::reachable(args, &setup.choices);
+    let connected =
+        Connected::for_person(store, person, &home, others_sign_in, search, reachable).await?;
     Ok(match hosts {
         Some(hosts) => {
             let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;

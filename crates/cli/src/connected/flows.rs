@@ -84,7 +84,7 @@ impl Connected {
         let granted = self.kept_for(&url).await.map(|kept| kept.client.scopes);
         let mut more = granted.unwrap_or_default();
         more.extend(self.more.of(&url).unwrap_or_default());
-        let (signin, page) = SignIn::start(&url, &name, &redirect, &more)
+        let (signin, page) = SignIn::start(&url, &name, &redirect, &more, self.reachable)
             .await
             .map_err(|error| refused(&error, &name))?;
         let id = new_flow().map_err(|e| ApiError::internal(&e))?;
@@ -272,6 +272,9 @@ fn refused(error: &SignInError, name: &str) -> ApiError {
         SignInError::Refused { .. } => format!(
             "the sign-in for {name} refused glave: sign in again, or ask whoever runs {name}"
         ),
+        SignInError::OutOfReach { .. } => {
+            format!("{name} is at an address glave does not reach from here")
+        }
         SignInError::Unregistered { .. } => format!(
             "glave can't sign in to {name} yet: its sign-in doesn't let glave register there"
         ),

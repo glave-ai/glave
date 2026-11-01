@@ -25,6 +25,7 @@ use tokio::task::JoinHandle;
 use crate::McpError;
 use crate::call::{Answerer, Waits};
 use crate::connection::{CANCELLED, Connection, Opening};
+use crate::reachable::Reachable;
 use crate::signed::Signed;
 
 /// Variables a server's process starts with, beyond its own configured ones. Nothing else from
@@ -42,7 +43,7 @@ enum Folder<'a> {
     Project(&'a Path),
 }
 
-/// How long a server may take.
+/// How long a server may take, and where a remote one may be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// To start and answer.
@@ -50,6 +51,8 @@ pub struct Limits {
     /// To answer one call, or to say again how a long one is going (MCP's progress); a call
     /// that keeps saying so is stopped at twelve times this (an hour, by default).
     pub call: Duration,
+    /// The addresses a remote server may be at.
+    pub reachable: Reachable,
 }
 
 /// How many of its quiet limits one call may take in all, however often it says how it is
@@ -61,6 +64,7 @@ impl Default for Limits {
         Self {
             startup: Duration::from_secs(30),
             call: Duration::from_secs(300),
+            reachable: Reachable::default(),
         }
     }
 }
@@ -241,6 +245,9 @@ impl McpServer {
         limits: Limits,
         opening: Opening,
     ) -> Result<Self, McpError> {
+        if let Some(refused) = limits.reachable.refuses(url) {
+            return Err(McpError::start(name, refused.to_string()));
+        }
         let mut sent = HashMap::new();
         for (header, value) in headers {
             let header_name = HeaderName::try_from(header.as_str())
@@ -251,7 +258,7 @@ impl McpServer {
             sent.insert(header_name, header_value);
         }
         let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(sent);
-        let client = Signed::new(auth).map_err(|error| {
+        let client = Signed::new(auth, limits.reachable).map_err(|error| {
             McpError::start(name, format!("could not make its client: {error}"))
         })?;
         let transport = StreamableHttpClientTransport::with_client(client, config);
