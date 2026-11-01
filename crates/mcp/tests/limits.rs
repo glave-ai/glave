@@ -137,7 +137,7 @@ fn a_call_that_never_finishes_is_stopped_at_its_total_limit() {
             call.output,
             ToolOutput::text(
                 true,
-                "tests was still working after 3600s, so it was stopped."
+                "tests was still working after 1 hour, so it was stopped."
             )
         );
         assert_eq!(call.seconds, 3600);
@@ -151,7 +151,7 @@ fn the_quiet_limit_is_counted_from_the_last_word() {
         let call = call(2, false).await;
         assert_eq!(
             call.output,
-            ToolOutput::text(true, "tests did not answer within 300s.")
+            ToolOutput::text(true, "tests did not answer within 5 minutes.")
         );
         assert_eq!(call.seconds, 360);
         assert!(call.told_to_stop);

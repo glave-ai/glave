@@ -11,7 +11,7 @@ use std::time::Duration;
 use glave_event::Arguments;
 use glave_ports::{
     Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ToolError, ToolInfo, ToolOutput,
-    ToolSpec, unless_cancelled,
+    ToolSpec, spoken, unless_cancelled,
 };
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, JsonObject,
@@ -92,7 +92,7 @@ impl Connection {
             Err(_) => {
                 return Err(McpError::start(
                     name,
-                    format!("it did not answer within {limit:?}"),
+                    format!("it did not answer within {}", spoken(limit)),
                 ));
             }
         };
@@ -109,7 +109,7 @@ impl Connection {
                 let _ = service.cancel().await;
                 return Err(McpError::start(
                     name,
-                    format!("it did not answer within {limit:?}"),
+                    format!("it did not answer within {}", spoken(limit)),
                 ));
             };
             subscription
@@ -302,7 +302,7 @@ impl Connection {
         match unless_cancelled(cancel, listed).await {
             Some(Ok(Ok(prompts))) => Ok(prompts),
             Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
-            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -320,7 +320,7 @@ impl Connection {
         match unless_cancelled(cancel, got).await {
             Some(Ok(Ok(result))) => Ok(result),
             Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
-            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -335,7 +335,7 @@ impl Connection {
         match unless_cancelled(cancel, listed).await {
             Some(Ok(Ok(resources))) => Ok(resources),
             Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
-            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -354,7 +354,7 @@ impl Connection {
         match unless_cancelled(cancel, read).await {
             Some(Ok(Ok(result))) => Ok(result.contents),
             Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
-            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            Some(Err(_)) => Err(unanswered(&self.name, limit)),
             None => Err(CANCELLED.to_owned()),
         }
     }
@@ -421,4 +421,9 @@ impl Drop for Connection {
     fn drop(&mut self) {
         let _ = self.stop_watching();
     }
+}
+
+/// What a person reads when `server` did not answer within `limit`.
+pub(crate) fn unanswered(server: &str, limit: Duration) -> String {
+    format!("{server} did not answer within {}.", spoken(limit))
 }
