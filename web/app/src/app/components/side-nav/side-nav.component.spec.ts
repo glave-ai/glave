@@ -68,12 +68,6 @@ async function render(
 }
 
 /** Lets what the side nav started settle: its calls, and the code it loads late. */
-/**
- * How long a logo may take to be read and drawn: vi.waitFor's own second is less than it takes
- * with every other spec running beside it on a busy computer.
- */
-const READS_WITHIN = { timeout: 10_000 };
-
 async function settle(
   fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>,
 ): Promise<void> {
@@ -93,6 +87,15 @@ describe('SideNavComponent', () => {
   });
 
   it('loads what reads a logo once the organization has one, and follows it', async () => {
+    // Its own, each URL new: run in one worker, another spec's stub that gives one URL stays.
+    let made = 0;
+    const urls = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+      made += 1;
+      return `blob:side-nav/${String(made)}`;
+    });
+    onTestFinished(() => {
+      urls.mockRestore();
+    });
     const organization = { name: 'Acme', accent: 'plain', locked: false };
     const { root, fake, fixture } = await render([], { look: { organization } });
     const heading = (): Element | null => root.querySelector('[data-testid="nav-heading"]');
@@ -106,7 +109,7 @@ describe('SideNavComponent', () => {
       await settle(fixture);
       expect(logo()?.alt).toBe('Acme');
       expect(logo()?.src).toMatch(/^blob:/u);
-    }, READS_WITHIN);
+    });
     expect(heading()).toBeNull();
     const first = logo()?.src;
 
