@@ -17,10 +17,10 @@ use glave_ports::{BoxFuture, NeverCancelled, ToolSource as _, block_on, conforma
 
 use crate::http::Served;
 
-/// Where the browser would come back to; never visited here.
 /// Where these servers are: on this computer.
 const HERE: Reachable = Reachable::AlsoPrivate;
 
+/// Where the browser would come back to; never visited here.
 const REDIRECT: &str = "http://127.0.0.1:1/connect/callback";
 
 /// The tokens the fake grants, and their refresh tokens: the sign-in's, then the renewal's.

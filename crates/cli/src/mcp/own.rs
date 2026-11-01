@@ -237,11 +237,6 @@ impl Servers {
         &self.processes
     }
 
-    /// The addresses a remote one may be at: the person's, and each project's.
-    pub(crate) fn reachable(&self) -> Reachable {
-        self.reachable
-    }
-
     /// Every server running, the catalog first.
     fn all(&self) -> Vec<Arc<McpServer>> {
         let running = self.lock();

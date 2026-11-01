@@ -56,6 +56,22 @@ fn reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
     }
 }
 
+/// The addresses the person's own servers may be at: as [`reachable`] says, except that through
+/// an identity provider the settings file is the operator's alone. No one else connects a server
+/// here, and what it names runs only for the person on this computer.
+pub(crate) fn own_reachable(args: &crate::args::Args, choices: &Choices) -> Reachable {
+    own_reachable_from(args, choices.origin.is_some())
+}
+
+/// [`own_reachable`], where the server is `reached` from elsewhere or not.
+fn own_reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
+    if args.issuers.is_empty() {
+        reachable_from(args, reached)
+    } else {
+        Reachable::AlsoPrivate
+    }
+}
+
 /// `started` as tool sources, in order, then their resources.
 pub(crate) fn sources(started: &[Arc<McpServer>]) -> Vec<Arc<dyn ToolSource>> {
     let mut sources: Vec<Arc<dyn ToolSource>> = started
@@ -197,6 +213,13 @@ mod tests {
             "glave",
         ]);
         assert_eq!(reachable_from(&signed_in, false), Reachable::OnlyPublic);
+        assert_eq!(own_reachable_from(&here, false), Reachable::AlsoPrivate);
+        assert_eq!(own_reachable_from(&here, true), Reachable::OnlyPublic);
+        assert_eq!(
+            own_reachable_from(&signed_in, true),
+            Reachable::AlsoPrivate,
+            "only the operator writes it there"
+        );
     }
 
     #[test]

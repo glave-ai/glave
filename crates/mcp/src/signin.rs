@@ -165,6 +165,12 @@ async fn manager(url: &str, reachable: Reachable) -> Result<AuthorizationManager
             message: refused.to_string(),
         });
     }
+    guarded(url, reachable).await
+}
+
+/// rmcp's sign-in for the MCP server at `url`, whatever its address, going out through glave's
+/// client under `reachable`.
+async fn guarded(url: &str, reachable: Reachable) -> Result<AuthorizationManager, SignInError> {
     let client = http::Guarded::new(reachable).map_err(|error| SignInError::Unreachable {
         url: url.to_owned(),
         message: format!("could not make its client: {error}"),
@@ -322,7 +328,25 @@ pub fn address(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::FakeHttp;
+
     use super::*;
+
+    #[test]
+    fn its_requests_go_out_under_the_rule() {
+        let here = FakeHttp::always(404, "{}").unwrap();
+        let port = here.host.rsplit_once(':').unwrap().1;
+        let url = format!("http://localhost:{port}/mcp");
+        glave_ports::block_on!(async {
+            let manager = guarded(&url, Reachable::OnlyPublic).await.unwrap();
+            let said = manager.resolve_metadata().await.unwrap_err().to_string();
+            assert!(
+                said.contains("where people sign in from elsewhere"),
+                "{said}"
+            );
+        });
+        assert!(here.received().is_empty(), "nothing reached it");
+    }
 
     #[test]
     fn an_address_is_an_origin_then_its_path() {

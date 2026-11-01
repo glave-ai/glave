@@ -1,6 +1,7 @@
 //! What sign-in's discovery, registration and tokens go out through: rmcp's OAuth client with
-//! glave's rule on what it reaches ([`Reachable`]), at every request and every redirect, since
-//! a server's metadata and its redirects each name the next address.
+//! glave's rule on what it reaches ([`Reachable`]), at every request, since a server's metadata
+//! names the next address. A redirect it follows stays on the same origin, as rmcp's own
+//! discovery does.
 
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use crate::reachable::Reachable;
 
 /// How long one request may take: rmcp's own limit.
 const WITHIN: Duration = Duration::from_secs(30);
-/// How many redirects one request may follow: reqwest's own limit.
+/// How many redirects one request may follow, on its own origin: reqwest's own limit.
 const REDIRECTS: usize = 10;
 /// The most of an answer that is read: rmcp's own limit.
 const MOST_BYTES: usize = 1024 * 1024;
@@ -23,7 +24,7 @@ const MOST_BYTES: usize = 1024 * 1024;
 /// rmcp's OAuth client, under `reachable`.
 pub(super) struct Guarded {
     reachable: Reachable,
-    /// For what follows redirects, each checked: registering, as rmcp asks.
+    /// For what follows redirects on its own origin: registering, as rmcp asks.
     follows: reqwest::Client,
     /// For the rest.
     stops: reqwest::Client,
@@ -38,13 +39,13 @@ impl Guarded {
                 .redirect(redirect)
                 .build()
         };
-        let follow = Policy::custom(move |attempt| {
-            if let Some(refused) = reachable.refuses(attempt.url().as_str()) {
-                attempt.error(refused)
-            } else if attempt.previous().len() >= REDIRECTS {
-                attempt.stop()
-            } else {
+        let follow = Policy::custom(|attempt| {
+            let from = attempt.previous().last().map(reqwest::Url::origin);
+            let stays = from.is_some_and(|from| from == attempt.url().origin());
+            if stays && attempt.previous().len() < REDIRECTS {
                 attempt.follow()
+            } else {
+                attempt.stop()
             }
         });
         Ok(Self {
@@ -126,25 +127,39 @@ mod tests {
     }
 
     #[test]
-    fn a_redirect_is_followed_only_when_asked_and_only_to_what_may_be_reached() {
+    fn a_redirect_is_followed_only_when_asked_and_only_on_its_own_origin() {
         let there = FakeHttp::always(200, "there").unwrap();
         let to_there = there.url.clone();
         let here = FakeHttp::answering(move |_, path| match path {
-            "/there" => (307, to_there.clone()),
-            _ => (307, "http://169.254.169.254/".to_owned()),
+            "/same" => (307, "/end".to_owned()),
+            "/end" => (200, "end".to_owned()),
+            _ => (307, to_there.clone()),
         })
         .unwrap();
         glave_ports::block_on!(async {
             let guarded = Guarded::new(Reachable::AlsoPrivate).unwrap();
-            let url = format!("{}/there", here.url);
-            let stopped = guarded.send(get(&url), false).await.unwrap();
+            let same = format!("{}/same", here.url);
+            let stopped = guarded.send(get(&same), false).await.unwrap();
             assert_eq!(stopped.status(), 307, "as it came");
-            let followed = guarded.send(get(&url), true).await.unwrap();
-            assert_eq!(followed.body(), b"there");
-            let url = format!("{}/metadata", here.url);
-            let error = guarded.send(get(&url), true).await.err().unwrap();
-            assert!(refused(&error), "{error}");
+            let followed = guarded.send(get(&same), true).await.unwrap();
+            assert_eq!(followed.body(), b"end");
+            let elsewhere = format!("{}/elsewhere", here.url);
+            let stopped = guarded.send(get(&elsewhere), true).await.unwrap();
+            assert_eq!(stopped.status(), 307, "another origin is not followed");
         });
-        assert_eq!(there.received().len(), 1, "followed once of the two asked");
+        assert!(there.received().is_empty(), "never reached");
+    }
+
+    #[test]
+    fn both_its_clients_look_names_up_under_the_rule() {
+        let here = FakeHttp::always(200, "here").unwrap();
+        let port = here.host.rsplit_once(':').unwrap().1;
+        let url = format!("http://localhost:{port}/");
+        glave_ports::block_on!(async {
+            let guarded = Guarded::new(Reachable::OnlyPublic).unwrap();
+            assert!(guarded.follows.get(&url).send().await.is_err());
+            assert!(guarded.stops.get(&url).send().await.is_err());
+        });
+        assert!(here.received().is_empty(), "nothing reached it");
     }
 }

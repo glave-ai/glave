@@ -35,9 +35,10 @@ pub(crate) struct Signed {
 
 impl Signed {
     /// A client that follows no redirect, as rmcp's own, so what proves who is calling never
-    /// reaches another host; looks names up under `reachable`; keeps no idle connection, which rmcp found stalls; and reaches
-    /// the server within [`CONNECTS_WITHIN`]. Each call has its own limit (`connection.rs`):
-    /// a server's stream of notifications has none, since it is quiet until something changes.
+    /// reaches another host; looks names up under `reachable`; keeps no idle connection, which
+    /// rmcp found stalls; and reaches the server within [`CONNECTS_WITHIN`]. Each call has its
+    /// own limit (`connection.rs`): a server's stream of notifications has none, since it is
+    /// quiet until something changes.
     pub(crate) fn new(auth: Auth, reachable: Reachable) -> Result<Self, reqwest::Error> {
         let http = reachable
             .client()
@@ -241,6 +242,18 @@ mod tests {
         }
         let many = vec!["s"; 17].join(" ");
         assert_eq!(asked(challenge, &many), None);
+    }
+
+    #[test]
+    fn its_client_looks_names_up_under_the_rule() {
+        let here = glave_ports::testing::FakeHttp::always(200, "{}").unwrap();
+        let port = here.host.rsplit_once(':').unwrap().1;
+        let url = format!("http://localhost:{port}/mcp");
+        let signed = Signed::new(Auth::None, Reachable::OnlyPublic).unwrap();
+        glave_ports::block_on!(async {
+            assert!(signed.http.get(&url).send().await.is_err());
+        });
+        assert!(here.received().is_empty(), "nothing reached it");
     }
 
     #[test]

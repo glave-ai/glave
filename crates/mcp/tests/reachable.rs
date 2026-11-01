@@ -3,8 +3,9 @@
 //! in sign-in's discovery too, and cloud metadata never is. A server's redirect goes nowhere.
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, OnceLock};
 
-use glave_mcp::{Limits, McpError, McpServer, Reachable, SignIn, offers_sign_in};
+use glave_mcp::{Limits, McpError, McpServer, Reachable, SignIn, SignInError, offers_sign_in};
 use glave_ports::auth::Auth;
 use glave_ports::block_on;
 use glave_ports::testing::FakeHttp;
@@ -114,10 +115,12 @@ fn sign_in_s_discovery_keeps_to_the_same_rule() {
 
 #[test]
 fn sign_in_goes_nowhere_a_server_s_metadata_names_that_may_not_be_reached() {
-    let here = FakeHttp::answering(|_, path| {
+    let address = Arc::new(OnceLock::new());
+    let its: Arc<OnceLock<String>> = Arc::clone(&address);
+    let here = FakeHttp::answering(move |_, path| {
         if path.contains("oauth-protected-resource") {
             let names = json!({
-                "resource": "http://127.0.0.1/mcp",
+                "resource": its.get(),
                 "authorization_servers": ["http://169.254.169.254/"],
             });
             (200, names.to_string())
@@ -126,10 +129,14 @@ fn sign_in_goes_nowhere_a_server_s_metadata_names_that_may_not_be_reached() {
         }
     })
     .unwrap();
+    address.set(format!("{}/mcp", here.url)).unwrap();
     let url = format!("{}/mcp", here.url);
     block_on!(async {
         let asked = offers_sign_in(&url, Reachable::AlsoPrivate).await;
-        assert_ne!(asked, Ok(true), "{asked:?}");
+        assert!(
+            matches!(asked, Err(SignInError::Unreachable { .. })),
+            "{asked:?}"
+        );
     });
     assert!(!here.received().is_empty(), "the server was asked");
 }

@@ -152,13 +152,12 @@ pub(crate) async fn wire(
         signed(args, &store, identity.person, &setup, workspace).await?;
     let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
-    let reachable = crate::mcp::reachable(args, choices);
     let servers = mcp_servers(
         &setup,
         remote.as_ref(),
         &processes,
         connected.as_ref(),
-        reachable,
+        crate::mcp::own_reachable(args, choices),
     )
     .await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
@@ -173,7 +172,15 @@ pub(crate) async fn wire(
     )
     .await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
+    let reachable = crate::mcp::reachable(args, &setup.choices);
+    let projects = projects_for(
+        &setup,
+        &servers,
+        &lined.switch,
+        memory.as_ref(),
+        asked,
+        reachable,
+    )?;
     say(&told, &projects, &folder).await;
     // Memory is tidied once the server answers the filters its calls keep to.
     let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
@@ -348,6 +355,7 @@ fn projects_for(
     models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
     asked: Asked,
+    reachable: glave_mcp::Reachable,
 ) -> anyhow::Result<Arc<ProjectFolders>> {
     let own = crate::project_folders::Own {
         loaded: setup.loaded.clone(),
@@ -357,7 +365,7 @@ fn projects_for(
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
         processes: servers.processes().clone(),
-        reachable: servers.reachable(),
+        reachable,
         trust: asked.trust,
     };
     let projects = Arc::new(ProjectFolders::new(home::folder()?, own, asked.later));
