@@ -59,6 +59,22 @@ cargo xtask eval $only --repeat 3
 cargo xtask eval $only --repeat 3 --python /path/to/venv --baseline <the first run's report.json>
 ```
 
+Beside each attempt's pass or fail the report gives its compactions and its repeated steps: tool
+calls with the same tool, arguments and result as one before them, so nothing new came of them.
+Tasks that compacted get a table of these per attempt, with their tokens and how their goals ended.
+
+## Long unattended work
+
+The `unattended-*` tasks are one piece of work through several compactions with no one answering:
+each has a small `context_window`, long files (`unattended/pad.py` fills them as the task's setup)
+and a hidden grader on the result. They are in the hard tier and run as goals. `--no-goal` runs
+each goal's objective as one plain turn, so the same tasks measure what the goal's loop does:
+
+```sh
+cargo xtask eval --tier hard --only unattended --repeat 3
+cargo xtask eval --tier hard --only unattended --repeat 3 --no-goal
+```
+
 ## A task
 
 Tasks use [Harbor](https://github.com/harbor-framework/harbor)'s layout:

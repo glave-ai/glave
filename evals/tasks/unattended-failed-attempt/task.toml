@@ -1,0 +1,17 @@
+[task]
+name = "glave/unattended-failed-attempt"
+description = "One job through several compactions with no one answering: the documented way of doing each step fails, and once a way through is found the failed way isn't tried again after the summary may have forgotten it."
+
+[agent]
+timeout_sec = 1500
+
+[glave]
+tier = "hard"
+permissions = "auto"
+# Small enough, with notes this long, that the imports compact several times.
+context_window = 12000
+max_steps = 80
+# A long-running goal's own limit; `--no-goal` runs the same instruction as one turn.
+goal = { budget = 500000 }
+setup = ["chmod +x tools/import", "python3 {task}/../../unattended/pad.py 10000"]
+checks = ["one_thread"]

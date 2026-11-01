@@ -1,0 +1,4 @@
+id,invoice_number,currency
+1,invoices-a,x
+2,invoices-b,y
+3,invoices-c,z

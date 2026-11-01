@@ -1,0 +1,4 @@
+#!/bin/sh
+# Closes a ticket and notifies its owner.
+echo "$1" >> closed.log
+echo "Ticket $1 closed; its owner was notified."
