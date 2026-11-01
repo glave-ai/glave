@@ -77,22 +77,20 @@ export function answerOf(
   fields: readonly GlzServiceField[],
   values: GlzServiceValues,
 ): Readonly<Record<string, unknown>> | null {
-  const answer: Record<string, unknown> = {};
+  // By entries, so a field named `__proto__` is a field like any other.
+  const answer: [string, unknown][] = [];
   for (const field of fields) {
     const value = values[field.name];
     const given = sent(field.kind, value);
     const typed = typeof value === 'string' && value.trim() !== '';
-    if (
-      given === undefined &&
-      (field.required === true || (field.kind.type === 'number' && typed))
-    ) {
+    if (given === undefined && (field.required === true || (field.kind.type === 'number' && typed))) {
       return null;
     }
     if (given !== undefined) {
-      answer[field.name] = given;
+      answer.push([field.name, given]);
     }
   }
-  return answer;
+  return Object.fromEntries(answer);
 }
 
 /** Whether `a` and `b` ask the same: the same fields, kinds and starts, in order. */

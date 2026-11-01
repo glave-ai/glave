@@ -49,6 +49,14 @@ describe('service fields', () => {
     expect(answerOf(FIELDS, { words: 'x', part: 'many' })).toBeNull();
   });
 
+  it('answer a field named __proto__ as any other', () => {
+    const named: readonly GlzServiceField[] = [
+      { name: '__proto__', label: 'Odd', required: true, kind: { type: 'text', default: 'hi' } },
+    ];
+    const answer = answerOf(named, startingValues(named));
+    expect(JSON.stringify(answer)).toBe('{"__proto__":"hi"}');
+  });
+
   it('ask the same when their fields are the same', () => {
     expect(sameFields(FIELDS, [...FIELDS])).toBe(true);
     expect(sameFields(FIELDS, FIELDS.slice(1))).toBe(false);

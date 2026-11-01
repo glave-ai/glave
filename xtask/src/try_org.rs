@@ -45,6 +45,9 @@ const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\n";
 /// a month, so both refusals are a few chats away.
 const CREDITS: &str = "[credits]\nmonthly_limit_usd = 1\n";
 
+/// With `--floor`, the server allows only providers based in the US, for everyone it serves.
+const FLOOR: &str = "\n[router_floor]\nbased_in = [\"US\"]\n";
+
 /// How often xtask looks whether the program that started it has ended.
 const PARENT_EVERY: Duration = Duration::from_secs(1);
 
@@ -60,10 +63,11 @@ const READY_EVERY: Duration = Duration::from_millis(200);
 const OPENS_WITHIN: Duration = Duration::from_secs(30);
 
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
-    let credits = match args {
-        [] => false,
-        [flag] if flag == "--credits" => true,
-        _ => return Err("try-org takes --credits, or nothing".into()),
+    let (credits, floor) = match args {
+        [] => (false, false),
+        [flag] if flag == "--credits" => (true, false),
+        [credits, floor] if credits == "--credits" && floor == "--floor" => (true, true),
+        _ => return Err("try-org takes --credits or --credits --floor, or nothing".into()),
     };
     if !std::io::stderr().is_terminal() {
         return Err(
@@ -87,7 +91,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
                 .map_err(std::io::Error::other)
         })
         .map_err(|err| format!("could not hold {}: {err}", folder.display()));
-    let served = lock.and_then(|_held| serve(&root, &folder, credits));
+    let served = lock.and_then(|_held| serve(&root, &folder, credits, floor));
     let removed = std::fs::remove_dir_all(&folder)
         .map_err(|err| format!("could not remove {}: {err}", folder.display()));
     // The folder of runs too, once no other run's is in it.
@@ -98,13 +102,13 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
 /// Serves glave from a folder in `folder` until Ctrl-C, a hang-up, xtask's parent's end or its
 /// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`), its
 /// organizations paying from credits when `credits` says.
-fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
+fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), String> {
     let home = folder.join("home");
-    let settings = if credits {
-        format!("{SETTINGS}{CREDITS}")
-    } else {
-        SETTINGS.to_owned()
-    };
+    let settings = format!(
+        "{SETTINGS}{}{}",
+        if credits { CREDITS } else { "" },
+        if floor { FLOOR } else { "" }
+    );
     // Asked of cargo before the runtime starts: asking blocks.
     let glave = crate::web::debug_glave()?;
     let service = serde_json::json!({"mcpServers": {model::SERVICE: {
@@ -152,6 +156,12 @@ fn serve(root: &Path, folder: &Path, credits: bool) -> Result<(), String> {
             .await
             .map_err(|err| failed(&err))?;
         say_what_it_is(folder, &home, credits);
+        if floor {
+            eprintln!(
+                "xtask: this server allows only providers based in the US: the model picker \
+                 hides the rest, and says why"
+            );
+        }
         let opening = Opening {
             processes: &processes,
             program: glave,

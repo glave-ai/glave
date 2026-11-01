@@ -166,9 +166,10 @@ fn a_person_at_a_terminal_answers_what_a_service_asks_and_the_model_sees_only_th
     settings(&place, &json!({ "tests": { "command": test_server() } }));
     let model = asking_model();
     let mut running = terminal(&place, &model, &["file it"]);
-    // A project here, then the call allowed, then its fields: a choice, words, a yes or no.
+    // A project here, then the call allowed, then its fields: a choice, words, a yes or no, and
+    // then yes, send it.
     let answer = "for the service alone";
-    typed(&mut running, &format!("y\ny\n1\n{answer}\nn\n"));
+    typed(&mut running, &format!("y\ny\n1\n{answer}\nn\ny\n"));
     let ended = running.wait_with_output().unwrap();
     // The terminal echoes what is typed, which a failure here must not print.
     let shown = text(&ended).replace(answer, "[what was typed]");
@@ -201,6 +202,39 @@ fn a_required_field_left_empty_at_a_terminal_declines() {
     let received = model.received();
     let result = said(&received.last().unwrap().body, "tool").concat();
     assert!(result.contains("You said: decline"), "{result}");
+}
+
+#[test]
+fn a_form_with_nothing_to_fill_in_is_still_put_to_the_person() {
+    for (name, answer, told, heard) in [
+        (
+            "mn",
+            "n",
+            "You declined tests's question",
+            "You said: decline",
+        ),
+        ("my", "y", "You answered tests", "You said: accept"),
+    ] {
+        let place = crate::turns::asking(name);
+        let _stopped = Stopped(&place);
+        settings(&place, &json!({ "tests": { "command": test_server() } }));
+        let model = FakeServer::start(vec![
+            Reply::tool_call("call_1", "mcp__tests__ask", &json!({"what": "nothing"})),
+            Reply::text("It heard you."),
+        ])
+        .unwrap();
+        let mut running = terminal(&place, &model, &["delete it"]);
+        // A project here, then the call allowed, then whether to send it.
+        typed(&mut running, &format!("y\ny\n{answer}\n"));
+        let ended = running.wait_with_output().unwrap();
+        let shown = text(&ended);
+        assert!(ended.status.success(), "{shown}");
+        assert!(shown.contains("Send to tests? [y/N]"), "{shown}");
+        assert!(shown.contains(told), "{shown}");
+        let received = model.received();
+        let result = said(&received.last().unwrap().body, "tool").concat();
+        assert!(result.contains(heard), "{result}");
+    }
 }
 
 #[test]

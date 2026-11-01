@@ -111,6 +111,14 @@ impl Data {
         }
     }
 
+    /// The organizations on the store, for work that runs once per organization.
+    pub(crate) async fn organizations(&self) -> anyhow::Result<Vec<OrgId>> {
+        Ok(match self {
+            Self::Sqlite(store) => store.organizations().await?,
+            Self::Postgres(store) => store.organizations().await?,
+        })
+    }
+
     /// The leases work in flight runs under, on the store's own clock.
     pub(crate) fn leases(&self) -> Arc<dyn Leases> {
         match self {

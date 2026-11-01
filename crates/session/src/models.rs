@@ -5,7 +5,7 @@
 
 use std::sync::PoisonError;
 
-use glave_event::{Body, ThreadId};
+use glave_event::{Body, Hides, ThreadId};
 use glave_gateway::{Facts, hidden_by};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
@@ -81,6 +81,10 @@ where
                 keeps_nothing: endpoint.keeps_nothing,
             };
             endpoint.hidden_by = hidden_by(&facts, &filters);
+            let floor = self.inner.router_floor.as_ref();
+            if floor.is_some_and(|floor| !hidden_by(&facts, floor).is_empty()) {
+                endpoint.hidden_by.push(Hides::Server);
+            }
         }
         Ok(Reply::Models { models })
     }

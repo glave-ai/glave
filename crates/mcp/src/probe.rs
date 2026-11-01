@@ -5,7 +5,8 @@
 //! error). So a server slow to answer its first request, such as one whose token is renewed
 //! first or a program still starting, never started. Once `initialize` follows a probe still
 //! unanswered, that probe's answer is dropped, and the server starts within glave's own limit
-//! ([`crate::Limits`]).
+//! ([`crate::Limits`]). That handshake is also told glave answers no form, since only MCP
+//! 2026-07-28's input rounds can wait for a person.
 
 use std::borrow::Cow;
 
@@ -61,12 +62,17 @@ impl<T: Transport<RoleClient>> Transport<RoleClient> for Probed<T> {
 
     fn send(
         &mut self,
-        item: TxJsonRpcMessage<RoleClient>,
+        mut item: TxJsonRpcMessage<RoleClient>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
-        if let JsonRpcMessage::Request(request) = &item {
-            match request.request {
+        if let JsonRpcMessage::Request(request) = &mut item {
+            match &mut request.request {
                 ClientRequest::DiscoverRequest(_) => self.asking = Some(request.id.clone()),
-                ClientRequest::InitializeRequest(_) => self.abandoned = self.asking.take(),
+                ClientRequest::InitializeRequest(initialize) => {
+                    self.abandoned = self.asking.take();
+                    // A server on the older protocol asks with the call held open, which glave
+                    // never lets it: told so here, it can do without rather than be declined.
+                    initialize.params.capabilities.elicitation = None;
+                }
                 _ => {}
             }
         }

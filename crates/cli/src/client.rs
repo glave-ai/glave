@@ -16,9 +16,7 @@ use glave_harness::{Cancel, Goal, Permissions, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{
-    Answer, ApiError, ErrorData, Notification, Reply, Request, Update, code,
-};
+use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
 use glave_session::{Sent, Server, TurnItem, TurnStream};
 
 use crate::asking;
@@ -404,7 +402,7 @@ impl Client<'_> {
                 let Some(line) = interrupt.run(self.input.line()).await else {
                     return true;
                 };
-                match asking::field_answer(field, line.as_deref().unwrap_or_default()) {
+                match asking::field_answer(field, line.as_deref()) {
                     Ok(answer) => break answer,
                     Err(why) => printer.status(&why),
                 }
@@ -420,26 +418,30 @@ impl Client<'_> {
                 }
             }
         }
-        let send = |answer| Request::ServiceAnswer {
-            thread: self.thread,
-            call: asked.call_id.clone(),
-            asked: at,
-            answer,
-        };
+        // Nothing goes unasked: not a form with no fields, nor one of defaults alone.
+        if !declined {
+            printer.service_confirm(&asked.service);
+            let Some(line) = interrupt.run(self.input.line()).await else {
+                return true;
+            };
+            declined = !asking::confirmed(line.as_deref());
+        }
         let answer = if declined {
             ServiceAnswer::Declined
         } else {
             ServiceAnswer::Answered { values }
         };
-        if let Err(error) = self.server.request(send(answer)).await {
-            printer.error(&error.to_string());
-            // Refused, nothing here asks again: declined, so the turn does not wait on.
-            if error.code == code::INVALID_PARAMS {
-                let declined = self.server.request(send(ServiceAnswer::Declined)).await;
-                if let Err(error) = declined {
-                    printer.error(&error.to_string());
-                }
-            }
+        let send = async |answer| {
+            let request = Request::ServiceAnswer {
+                thread: self.thread,
+                call: asked.call_id.clone(),
+                asked: at,
+                answer,
+            };
+            self.server.request(request).await
+        };
+        for error in asking::sent(answer, send).await {
+            printer.error(&error);
         }
         false
     }
