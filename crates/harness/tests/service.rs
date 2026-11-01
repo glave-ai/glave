@@ -388,7 +388,7 @@ fn a_subagents_call_never_reaches_the_person() {
 fn no_reference_an_event_holds_gives_away_the_answer() {
     let dir = folder("service-salted");
     block_on!(async {
-        let (source, harness, mut thread) = asking(&dir, InTheLog, &["First?", "Then?"]).await;
+        let (_, harness, mut thread) = asking(&dir, InTheLog, &["First?", "Then?"]).await;
         stops_at_a_wait(&harness, &mut thread).await;
         for _ in 0..2 {
             let (call, at) = asked_at(&events(harness.log(), thread.id).await);
