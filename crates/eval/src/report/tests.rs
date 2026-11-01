@@ -1,3 +1,5 @@
+use glave_event::GoalReason;
+
 use super::*;
 use crate::memory::MemoryUse;
 use crate::probe::Probes;
@@ -240,4 +242,43 @@ fn numbers_read_easily() {
     assert_eq!(thousands(999), "999");
     assert_eq!(thousands(1_000), "1,000");
     assert_eq!(thousands(1_234_567), "1,234,567");
+}
+
+#[test]
+fn work_through_compaction_shows_its_compactions_tokens_repeats_and_goals() {
+    let compacted = |number: u32, compactions: u32, repeated: u32, goal: GoalReason| {
+        let mut attempt = attempt("long", "a/one", number, number == 1);
+        attempt.compactions = compactions;
+        attempt.repeated_steps = repeated;
+        attempt.goal = Some(goal);
+        attempt
+    };
+    let attempts = vec![
+        compacted(1, 3, 1, GoalReason::Met),
+        compacted(2, 4, 0, GoalReason::Budget),
+        attempt("short", "a/one", 1, true),
+    ];
+    let table = report(attempts).markdown(None);
+    assert!(
+        table.contains("| long | one | 1/2 | 3.5 | 1,234 | 0.5 | Budget 1, Met 1 |"),
+        "{table}"
+    );
+    assert!(!table.contains("| short | one | 1/1 | 0.0"), "{table}");
+}
+
+#[test]
+fn nothing_compacted_shows_no_such_table() {
+    let table = report(vec![attempt("fix", "a/one", 1, true)]).markdown(None);
+    assert!(!table.contains("Through compaction"), "{table}");
+}
+
+#[test]
+fn a_report_written_before_the_counts_still_reads_as_a_baseline() {
+    let attempt = attempt("fix", "a/one", 1, true);
+    let mut json = serde_json::to_value(&attempt).unwrap();
+    let fields = json.as_object_mut().unwrap();
+    fields.remove("compactions");
+    fields.remove("repeated_steps");
+    let read: Attempt = serde_json::from_value(json).unwrap();
+    assert_eq!(read, attempt);
 }

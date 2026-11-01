@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::run::Attempt;
 
+mod compacted;
+
 /// One eval run, as saved to `report.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Report {
@@ -119,6 +121,7 @@ impl Report {
             let _ = writeln!(out, "| {task} | {} |", cells.join(" | "));
         }
         self.totals(&mut out);
+        self.compacted(&mut out);
         self.probed(&mut out);
         let failed: Vec<&Attempt> = self.attempts.iter().filter(|a| !a.passed()).collect();
         if !failed.is_empty() {
@@ -387,6 +390,16 @@ pub(crate) fn line(attempt: &Attempt) -> String {
         dollars(spent(&[attempt])),
         attempt.seconds,
     );
+    if attempt.compactions > 0 {
+        let _ = write!(
+            line,
+            " · {} compactions, {} repeated",
+            attempt.compactions, attempt.repeated_steps
+        );
+    }
+    if let Some(reason) = attempt.goal {
+        let _ = write!(line, " · goal {reason:?}");
+    }
     if let Some(probes) = &attempt.probes {
         let _ = write!(line, " · probes {}/{}", probes.passed, probes.of);
     }
