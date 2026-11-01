@@ -53,4 +53,19 @@
       (answer)="answer(item.call, $event)"
     />
   }
+  @case ('service') {
+    <glz-service-card
+      testId="thread-service"
+      [class.glz-rise]="rises()"
+      [who]="item.ask"
+      [message]="item.message"
+      [fields]="item.fields"
+      [sendLabel]="item.sendLabel"
+      [note]="item.note"
+      [told]="item.told"
+      [busy]="sending()"
+      (answer)="answerService(item.call, item.seq, $event)"
+      (decline)="answerService(item.call, item.seq, null)"
+    />
+  }
 }

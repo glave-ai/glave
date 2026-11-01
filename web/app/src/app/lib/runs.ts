@@ -82,7 +82,7 @@ function thinking(item: ThreadItem): item is MessageItem {
 /**
  * The key of each call's run in `items`, by the call's id, as the server keys it:
  * the calls with nothing said between them, as the server reads them (`thread/steps`). Words of
- * anyone's, or questions, end a run; reasoning alone and approvals do not. So a run shows as its
+ * anyone's, questions, or what a service asks, end a run; reasoning alone and approvals do not. So a run shows as its
  * line from the start, its room kept until the server tells it.
  */
 function ownRuns(items: readonly ThreadItem[]): ReadonlyMap<string, string> {
@@ -92,7 +92,11 @@ function ownRuns(items: readonly ThreadItem[]): ReadonlyMap<string, string> {
     if (item.kind === 'call') {
       open ??= `run-${String(item.seq)}`;
       runs.set(item.call, open);
-    } else if (item.kind === 'question' || (item.kind === 'message' && item.text.trim() !== '')) {
+    } else if (
+      item.kind === 'question' ||
+      item.kind === 'service' ||
+      (item.kind === 'message' && item.text.trim() !== '')
+    ) {
       open = null;
     }
   }

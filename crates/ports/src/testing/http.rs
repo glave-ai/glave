@@ -72,6 +72,15 @@ impl FakeHttp {
     pub fn answering(
         answer: impl Fn(&str, &str) -> (u16, String) + Send + 'static,
     ) -> io::Result<Self> {
+        Self::answering_requests(move |request| answer(&request.method, &request.path))
+    }
+
+    /// Starts answering each request with the status and JSON body `answer` gives for all of it,
+    /// its body too, as a stand-in that reads what it is sent, until its requests are asked for
+    /// or it is dropped.
+    pub fn answering_requests(
+        answer: impl Fn(&Received) -> (u16, String) + Send + 'static,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let host = listener.local_addr()?.to_string();
         let received = Arc::new(Mutex::new(Vec::new()));
@@ -129,17 +138,17 @@ impl Drop for FakeHttp {
 
 /// Takes the next connection, reads its request and answers `status` with `body`.
 fn answer(listener: &TcpListener, status: u16, body: &str) -> io::Result<Received> {
-    answer_with(listener, &|_, _| (status, body.to_owned()))
+    answer_with(listener, &|_| (status, body.to_owned()))
 }
 
 /// Takes the next connection, reads its request and answers what `answer` gives for it.
 fn answer_with(
     listener: &TcpListener,
-    answer: &dyn Fn(&str, &str) -> (u16, String),
+    answer: &dyn Fn(&Received) -> (u16, String),
 ) -> io::Result<Received> {
     let (mut stream, _) = listener.accept()?;
     let request = read(&stream)?;
-    let (status, body) = answer(&request.method, &request.path);
+    let (status, body) = answer(&request);
     let location = if (300..400).contains(&status) {
         format!("Location: {body}\r\n")
     } else {
