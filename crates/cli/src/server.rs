@@ -9,6 +9,7 @@
 mod command;
 mod log;
 mod serve;
+mod sweep;
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::IsTerminal as _;
