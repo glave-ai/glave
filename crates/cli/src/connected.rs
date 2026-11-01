@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use glave_event::{ConnectionConnected, PrincipalId};
-use glave_mcp::address;
+use glave_mcp::{Reachable, address};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
@@ -51,6 +51,8 @@ pub(crate) struct Connected {
     writer: Writer,
     /// What their servers asked for that their sign-ins there do not grant.
     more: MoreAsked,
+    /// The addresses their remote servers may be at.
+    reachable: Reachable,
 }
 
 /// The most scopes kept for what one server asked for.
@@ -96,13 +98,14 @@ impl Connected {
     /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, when
     /// they may sign in to them here: everywhere but a server people sign in to with OIDC
     /// (`others_sign_in`), whose people's own servers it does not run; with `search`, the
-    /// person's to turn on.
+    /// person's to turn on; asking only at addresses `reachable` allows.
     pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         home: &Path,
         others_sign_in: bool,
         search: Option<WebSearch>,
+        reachable: Reachable,
     ) -> anyhow::Result<Option<Arc<Self>>> {
         if others_sign_in {
             return Ok(None);
@@ -116,6 +119,7 @@ impl Connected {
             search,
             writer: Writer::default(),
             more: MoreAsked::default(),
+            reachable,
         })))
     }
 
@@ -226,7 +230,10 @@ fn described(
 /// can, as not signed in to, in the order of their addresses: [`ASKERS`] asked at once, each
 /// for [`ASKING`] at most. One their settings give a key of their own is left out, as is one
 /// that asks no one, or cannot say in time.
-async fn signed_out(remotes: impl Iterator<Item = (String, Remote)>) -> Vec<ConnectionInfo> {
+async fn signed_out(
+    remotes: impl Iterator<Item = (String, Remote)>,
+    reachable: Reachable,
+) -> Vec<ConnectionInfo> {
     let askers = Arc::new(Semaphore::new(ASKERS));
     let mut asking = JoinSet::new();
     for (url, Remote { name, keyed }) in remotes {
@@ -236,7 +243,8 @@ async fn signed_out(remotes: impl Iterator<Item = (String, Remote)>) -> Vec<Conn
         let askers = Arc::clone(&askers);
         asking.spawn(async move {
             let _asker = askers.acquire().await.ok()?;
-            let asks = tokio::time::timeout(ASKING, glave_mcp::offers_sign_in(&url)).await;
+            let asks =
+                tokio::time::timeout(ASKING, glave_mcp::offers_sign_in(&url, reachable)).await;
             if let Ok(Err(error)) = &asks {
                 tracing::debug!("could not tell whether {name} asks for a sign-in: {error}");
             }
@@ -290,7 +298,7 @@ impl Connections for Connected {
             let unkept = remotes
                 .into_iter()
                 .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));
-            listed.extend(signed_out(unkept).await);
+            listed.extend(signed_out(unkept, self.reachable).await);
             Ok(listed)
         })
     }

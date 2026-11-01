@@ -8,12 +8,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
-use glave_mcp::{Limits, McpError, McpServer, SignIn, SignInError, offers_sign_in, renew};
+use glave_mcp::{
+    Limits, McpError, McpServer, Reachable, SignIn, SignInError, offers_sign_in, renew,
+};
 use glave_ports::auth::{Auth, AuthError, Header, Outgoing, RequestSigner};
 use glave_ports::testing::{FAKE_CLIENT, FakeAuthServer, FakeHttp, Grant, fake_secret};
 use glave_ports::{BoxFuture, NeverCancelled, ToolSource as _, block_on, conformance};
 
 use crate::http::Served;
+
+/// Where these servers are: on this computer.
+const HERE: Reachable = Reachable::AlsoPrivate;
 
 /// Where the browser would come back to; never visited here.
 const REDIRECT: &str = "http://127.0.0.1:1/connect/callback";
@@ -141,7 +146,9 @@ async fn approved(page: &str) -> reqwest::Url {
 
 /// What signing in to the server at `url` grants, the person approving glave.
 async fn signed_in(url: &str) -> glave_mcp::Granted {
-    let (signin, page) = SignIn::start(url, "docs", REDIRECT, &[]).await.unwrap();
+    let (signin, page) = SignIn::start(url, "docs", REDIRECT, &[], HERE)
+        .await
+        .unwrap();
     let back = approved(&page).await;
     signin.finish(&field(&back, "code"), None).await.unwrap()
 }
@@ -170,7 +177,7 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
             "it asks you to sign in to it: connect it, then try again"
         );
 
-        let (signin, page) = SignIn::start(&listening.url, "docs", REDIRECT, &[])
+        let (signin, page) = SignIn::start(&listening.url, "docs", REDIRECT, &[], HERE)
             .await
             .unwrap();
         assert!(
@@ -199,7 +206,7 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
         let server = remote(&listening.url, Auth::Changing(Arc::clone(&current) as _));
         assert_eq!(conformance::tool_source(&server).await, Ok(()));
         assert_eq!(whose(&server).await, "signed in with token 1");
-        let renewed = renew(&listening.url, &granted.client, refresh)
+        let renewed = renew(&listening.url, &granted.client, refresh, HERE)
             .await
             .unwrap();
         assert_eq!(renewed.token.expose(), two.as_str());
@@ -211,7 +218,7 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
             "signed in with token 2",
             "asked again for the next request"
         );
-        let spent = renew(&listening.url, &granted.client, refresh).await;
+        let spent = renew(&listening.url, &granted.client, refresh, HERE).await;
         let Err(SignInError::Refused { message, .. }) = spent else {
             panic!("a spent refresh token renewed");
         };
@@ -257,7 +264,7 @@ fn a_server_that_asks_for_more_is_signed_in_to_again_for_all_of_it() {
 
         let mut more = granted.client.scopes.clone();
         more.extend(current.asked());
-        let (again, page) = SignIn::start(&listening.url, "docs", REDIRECT, &more)
+        let (again, page) = SignIn::start(&listening.url, "docs", REDIRECT, &more, HERE)
             .await
             .unwrap();
         let asked = reqwest::Url::parse(&page).unwrap();
@@ -303,7 +310,7 @@ fn a_token_granted_for_the_address_above_the_server_is_renewed_for_it() {
     block_on!(async {
         let granted = signed_in(&above.url).await;
         let refresh = granted.refresh.as_ref().unwrap();
-        let renewed = renew(&above.url, &granted.client, refresh).await;
+        let renewed = renew(&above.url, &granted.client, refresh, HERE).await;
         let renewed = renewed.unwrap_or_else(|error| panic!("for the same resource: {error}"));
         assert_eq!(renewed.token.expose(), two.as_str());
     });
@@ -329,7 +336,7 @@ fn a_server_that_no_longer_says_where_its_sign_in_is_is_sent_no_refresh_token() 
         let refresh = granted.refresh.as_ref().unwrap();
         // As if the server at that address now answers nothing it used to publish.
         let moved = format!("{}/mcp", gone.url);
-        let renewed = renew(&moved, &granted.client, refresh).await;
+        let renewed = renew(&moved, &granted.client, refresh, HERE).await;
         assert!(
             matches!(renewed, Err(SignInError::Unreachable { .. })),
             "asked again later: {renewed:?}"
@@ -353,7 +360,7 @@ fn a_code_the_server_never_gave_is_refused() {
     let auth = FakeAuthServer::start(tokens.grants()).unwrap();
     let served = tokens.served(&auth);
     block_on!(async {
-        let (signin, _) = SignIn::start(&served.url, "docs", REDIRECT, &[])
+        let (signin, _) = SignIn::start(&served.url, "docs", REDIRECT, &[], HERE)
             .await
             .unwrap();
         let refused = signin.finish("not-a-code", None).await;
@@ -372,11 +379,11 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
     let served = tokens.served(&auth);
     block_on!(async {
         assert_eq!(
-            offers_sign_in(&served.url).await,
+            offers_sign_in(&served.url, HERE).await,
             Ok(false),
             "none glave can use"
         );
-        let started = SignIn::start(&served.url, "docs", REDIRECT, &[]).await;
+        let started = SignIn::start(&served.url, "docs", REDIRECT, &[], HERE).await;
         assert!(
             matches!(started, Err(SignInError::Unregistered { .. })),
             "{:?}",
@@ -394,8 +401,8 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
 fn a_server_that_asks_no_one_to_sign_in_offers_no_sign_in() {
     let served = Served::with(&[]);
     block_on!(async {
-        assert_eq!(offers_sign_in(&served.url).await, Ok(false));
-        let offered = SignIn::start(&served.url, "docs", REDIRECT, &[]).await;
+        assert_eq!(offers_sign_in(&served.url, HERE).await, Ok(false));
+        let offered = SignIn::start(&served.url, "docs", REDIRECT, &[], HERE).await;
         assert_eq!(
             offered.err(),
             Some(SignInError::NotOffered {
@@ -411,7 +418,7 @@ fn a_server_that_says_where_its_sign_in_is_asks_for_one_before_anything_is_grant
     let auth = FakeAuthServer::start(tokens.grants()).unwrap();
     let served = tokens.served(&auth);
     block_on!(async {
-        assert_eq!(offers_sign_in(&served.url).await, Ok(true));
+        assert_eq!(offers_sign_in(&served.url, HERE).await, Ok(true));
     });
     let asked = auth.received();
     assert!(

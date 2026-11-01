@@ -109,6 +109,7 @@ async fn timed(
         memory: None,
         clock: Box::new(clock),
         processes: Processes::unrecorded(),
+        reachable: glave_mcp::Reachable::default(),
         trust: Trust::in_memory().await.unwrap().1,
     };
     ProjectFolders::new(home.to_owned(), own, true)

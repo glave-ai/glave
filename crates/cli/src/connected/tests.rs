@@ -37,6 +37,7 @@ fn connected(ledger: &Ledger, home: &Path, search: Option<WebSearch>) -> Connect
         search,
         writer: Writer::default(),
         more: MoreAsked::default(),
+        reachable: Reachable::default(),
     }
 }
 

@@ -267,6 +267,12 @@ pub(crate) struct Args {
 }
 
 impl Args {
+    /// Whether people sign in here from elsewhere: it is `reached` at a public origin, or they
+    /// sign in through an identity provider.
+    pub(crate) fn reached_from_elsewhere(&self, reached: bool) -> bool {
+        reached || !self.issuers.is_empty()
+    }
+
     /// Whether `glave serve` runs as the person's server: not a program's own over stdio.
     pub(crate) fn person_s_server(&self) -> bool {
         self.action == Action::Serve && !self.stdio

@@ -57,7 +57,7 @@ pub(crate) fn for_server(
 /// Whether `args` serve as the person's server on their own computer: not `reached` from
 /// elsewhere, nor signed in to through an identity provider.
 fn keeps(args: &Args, reached: bool) -> bool {
-    args.person_s_server() && !reached && args.issuers.is_empty()
+    args.person_s_server() && !args.reached_from_elsewhere(reached)
 }
 
 /// Starts `holder` in a process group of its own, recorded while it runs.

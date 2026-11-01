@@ -16,6 +16,8 @@ use rmcp::transport::streamable_http_client::{
     InsufficientScopeError, StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
 };
 
+use crate::reachable::Reachable;
+
 type Failed = StreamableHttpError<reqwest::Error>;
 
 /// How long reaching a remote server may take: moments; one that has not answered by then is
@@ -33,11 +35,13 @@ pub(crate) struct Signed {
 
 impl Signed {
     /// A client that follows no redirect, as rmcp's own, so what proves who is calling never
-    /// reaches another host; keeps no idle connection, which rmcp found stalls; and reaches
-    /// the server within [`CONNECTS_WITHIN`]. Each call has its own limit (`connection.rs`):
-    /// a server's stream of notifications has none, since it is quiet until something changes.
-    pub(crate) fn new(auth: Auth) -> Result<Self, reqwest::Error> {
-        let http = reqwest::Client::builder()
+    /// reaches another host; looks names up under `reachable`; keeps no idle connection, which
+    /// rmcp found stalls; and reaches the server within [`CONNECTS_WITHIN`]. Each call has its
+    /// own limit (`connection.rs`): a server's stream of notifications has none, since it is
+    /// quiet until something changes.
+    pub(crate) fn new(auth: Auth, reachable: Reachable) -> Result<Self, reqwest::Error> {
+        let http = reachable
+            .client()
             .connect_timeout(CONNECTS_WITHIN)
             .pool_max_idle_per_host(0)
             .redirect(reqwest::redirect::Policy::none())
@@ -241,11 +245,23 @@ mod tests {
     }
 
     #[test]
+    fn its_client_looks_names_up_under_the_rule() {
+        let here = glave_ports::testing::FakeHttp::always(200, "{}").unwrap();
+        let port = here.host.rsplit_once(':').unwrap().1;
+        let url = format!("http://localhost:{port}/mcp");
+        let signed = Signed::new(Auth::None, Reachable::OnlyPublic).unwrap();
+        glave_ports::block_on!(async {
+            assert!(signed.http.get(&url).send().await.is_err());
+        });
+        assert!(here.received().is_empty(), "nothing reached it");
+    }
+
+    #[test]
     fn a_server_that_never_answers_the_end_of_a_session_is_left_in_seconds() {
         // Listening, never answering: the system takes the connection and nothing reads it.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let uri: Arc<str> = format!("http://{}/mcp", listener.local_addr().unwrap()).into();
-        let signed = Signed::new(Auth::None).unwrap();
+        let signed = Signed::new(Auth::None, Reachable::default()).unwrap();
         let (ended, waited) = glave_ports::block_on!(async {
             // The clock jumps to the limit as soon as nothing else can run.
             tokio::time::pause();
