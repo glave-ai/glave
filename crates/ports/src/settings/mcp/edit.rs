@@ -122,20 +122,14 @@ mod tests {
             .servers
             .set("a", raw(r#"{"type":"http","url":"https://a.test/mcp"}"#));
         let added = edited.text().unwrap();
-        assert!(added.starts_with("{\n  \"note\": \"mine\""), "{added}");
-        assert!(
-            added.contains(r#""b": {"command": "b",  "args": ["x"]}"#),
-            "{added}"
-        );
-        assert!(
-            added.find("\"b\"") < added.find("\"a\""),
-            "added last: {added}"
-        );
+        assert!(added.starts_with("{\n  \"note\": \"mine\""));
+        assert!(added.contains(r#""b": {"command": "b",  "args": ["x"]}"#));
+        assert!(added.find("\"b\"") < added.find("\"a\""));
         let mut edited = Edited::read(&added).unwrap();
         edited.servers.retain(|name| name != "a");
         let back = edited.text().unwrap();
-        assert!(!back.contains("a.test"), "{back}");
-        assert!(back.contains("\"note\""), "{back}");
+        assert!(!back.contains("a.test"));
+        assert!(back.contains("\"note\""));
     }
 
     #[test]

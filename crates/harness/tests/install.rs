@@ -40,7 +40,7 @@ fn the_person_chooses_where_a_skill_goes_and_the_turn_goes_on() {
                 &mut |_| {},
             )
             .await;
-        assert!(matches!(ran, Err(HarnessError::Waits(_))), "{ran:?}");
+        assert!(matches!(ran, Err(HarnessError::Waits(_))));
         let offered = seen.lock().unwrap()[0]
             .tools
             .iter()
@@ -84,7 +84,7 @@ fn the_person_chooses_where_a_skill_goes_and_the_turn_goes_on() {
         assert_eq!(written, SKILL);
         assert!(!dir.join(".agents").exists(), "not in the project");
         let told = format!("{:?}", seen.lock().unwrap().last().unwrap().messages);
-        assert!(told.contains("to the person's own skills"), "{told}");
+        assert!(told.contains("to the person's own skills"));
     });
 }
 

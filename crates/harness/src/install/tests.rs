@@ -13,7 +13,7 @@ const SKILL: &str = "---\nname: release-notes\ndescription: Writes release notes
 fn arguments(value: Value) -> Arguments {
     match value {
         Value::Object(map) => Arguments::Json(map),
-        other => panic!("not an object: {other}"),
+        _ => panic!("not an object"),
     }
 }
 
@@ -46,7 +46,7 @@ async fn asked(tool: &Install, arguments: &Arguments) -> ServiceAsks {
         .await
     {
         Called::Asks(asks) => asks,
-        Called::Done(output) => panic!("it did not ask: {output:?}"),
+        Called::Done(_) => panic!("it did not ask"),
     }
 }
 
@@ -54,7 +54,7 @@ async fn asked(tool: &Install, arguments: &Arguments) -> ServiceAsks {
 fn offered(asks: &ServiceAsks) -> Vec<String> {
     let Some(ServiceFieldKind::Choice { options, .. }) = asks.fields.first().map(|f| &f.kind)
     else {
-        panic!("no choice: {asks:?}");
+        panic!("no choice");
     };
     options.iter().map(|option| option.value.clone()).collect()
 }
@@ -77,7 +77,7 @@ async fn chosen(tool: &Install, asks: ServiceAsks, place: &str) -> ToolOutput {
         .await
     {
         Called::Done(output) => output,
-        Called::Asks(asks) => panic!("it asked again: {asks:?}"),
+        Called::Asks(_) => panic!("it asked again"),
     }
 }
 
@@ -137,7 +137,7 @@ fn a_skill_goes_where_the_person_chooses() {
         assert!(!project.join(".agents").exists() && !own.join("skills").exists());
 
         let done = chosen(&tool, asks.clone(), "project").await;
-        assert!(!done.is_error, "{done:?}");
+        assert!(!done.is_error);
         let file = project.join(".agents/skills/release-notes/SKILL.md");
         assert_eq!(std::fs::read_to_string(file).unwrap(), SKILL);
 
@@ -148,7 +148,7 @@ fn a_skill_goes_where_the_person_chooses() {
                 .ends_with("It replaces the one by that name in this project.")
         );
         let done = chosen(&tool, asks, "everywhere").await;
-        assert!(!done.is_error, "{done:?}");
+        assert!(!done.is_error);
         let file = own.join("skills/release-notes/SKILL.md");
         assert_eq!(std::fs::read_to_string(file).unwrap(), SKILL);
 
@@ -191,20 +191,14 @@ fn a_server_joins_the_others_and_comes_out_again() {
         assert_eq!(offered(&asks), ["project"]);
         assert!(!chosen(&tool, asks, "project").await.is_error);
         let written = std::fs::read_to_string(project.join(".mcp.json")).unwrap();
-        assert!(
-            written.contains(r#""files": {"command": "files",  "args": []}"#),
-            "{written}"
-        );
-        assert!(written.contains("https://mcp.linear.test/mcp"), "{written}");
+        assert!(written.contains(r#""files": {"command": "files",  "args": []}"#));
+        assert!(written.contains("https://mcp.linear.test/mcp"));
 
         let remove = arguments(json!({"kind": "server", "name": "linear", "remove": true}));
         let asks = asked(&tool, &remove).await;
         assert!(!chosen(&tool, asks, "project").await.is_error);
         let written = std::fs::read_to_string(project.join(".mcp.json")).unwrap();
-        assert!(
-            !written.contains("linear") && written.contains("\"files\""),
-            "{written}"
-        );
+        assert!(!written.contains("linear") && written.contains("\"files\""));
     });
 }
 
