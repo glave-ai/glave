@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use glave_ports::{Cancellation, ServiceGiven, unless_cancelled};
+use glave_ports::{Cancellation, ServiceGiven, spoken, unless_cancelled};
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, CallToolResult, CancelledNotificationParam,
     ClientRequest, CustomResult, DEFAULT_MRTR_MAX_ROUNDS, ServerResult,
@@ -143,11 +143,15 @@ async fn send(
     // Bounded by `waits`: rmcp gives up, and tells the server, when either runs out.
     match unless_cancelled(cancel, handle.await_response()).await {
         Some(Ok(result)) => Ok(result),
-        Some(Err(ServiceError::Timeout { timeout })) if timeout == waits.quiet => Err(
-            Unanswered::Failed(format!("{server} did not answer within {timeout:?}.")),
-        ),
+        Some(Err(ServiceError::Timeout { timeout })) if timeout == waits.quiet => {
+            Err(Unanswered::Failed(format!(
+                "{server} did not answer within {}.",
+                spoken(timeout)
+            )))
+        }
         Some(Err(ServiceError::Timeout { timeout })) => Err(Unanswered::Failed(format!(
-            "{server} was still working after {timeout:?}, so it was stopped."
+            "{server} was still working after {}, so it was stopped.",
+            spoken(timeout)
         ))),
         Some(Err(ServiceError::TransportClosed)) => {
             Err(Unanswered::Failed(format!("{server} stopped answering.")))

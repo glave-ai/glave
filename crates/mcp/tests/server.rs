@@ -202,7 +202,7 @@ fn a_call_that_takes_too_long_is_given_up_on() {
             .await;
         assert_eq!(
             late,
-            ToolOutput::text(true, "tests did not answer within 200ms.")
+            ToolOutput::text(true, "tests did not answer within 200 ms.")
         );
         server.close().await;
     });
@@ -311,7 +311,7 @@ fn a_server_that_never_answers_is_given_up_on_and_stopped() {
         };
         let silent = launch("silent", &stdio("sleep", &["60"], &[]), limits);
         let why = start_error(&silent, silent.started().await);
-        assert_eq!(why, "it did not answer within 200ms");
+        assert_eq!(why, "it did not answer within 200 ms");
         silent.close().await;
     });
 }
