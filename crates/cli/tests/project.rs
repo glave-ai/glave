@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use glave_ports::testing::fake_secret;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
@@ -113,6 +114,42 @@ fn a_server_that_changed_since_it_was_trusted_is_off_again() {
             .iter()
             .any(|t| t.contains("mcp__"))
     );
+}
+
+#[test]
+fn a_project_s_remote_server_is_sent_nothing_from_glave_s_environment() {
+    const NAME: &str = "GLAVE_TEST_REMOTE_VALUE";
+    let place = place("project-remote-values");
+    let (_listening, url) = crate::connected::serving(&[]);
+    let file = json!({ "mcpServers": {
+        "tests": { "url": url, "headers": { "x-key": format!("[${{{NAME}:-}}]") } },
+        "needs": { "url": url, "headers": { "x-key": format!("${{{NAME}}}") } },
+    }});
+    std::fs::write(place.project.join(".mcp.json"), file.to_string()).unwrap();
+    let value = fake_secret("value_");
+    let env = [(NAME, value.as_str())];
+    trust_project(&place, &env);
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "mcp__tests__header", &json!({"name": "x-key"})),
+        Reply::text("Done."),
+    ])
+    .unwrap();
+    let args = ["--permissions", "full-access", "--model", "m", "ask it"];
+    let mut running = start_with(&place, &model, &args, &env);
+    drop(running.stdin.take());
+    let output = running.wait_with_output().unwrap();
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    let received = model.received();
+    let results = said(&received[1].body, "tool");
+    assert!(results[0].contains("x-key: []"), "{results:?}");
+    let told = said(&received[0].body, "user").join("\n");
+    assert!(
+        told.contains("MCP server needs is off") && told.contains(NAME),
+        "the model is told which server is off and why: {told}"
+    );
+    let everything = format!("{shown}{}", received[1].body);
+    assert!(!everything.contains(&value), "the value goes nowhere");
 }
 
 #[test]

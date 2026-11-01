@@ -177,9 +177,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
 
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
         let record = projects.trust.record().await.unwrap();
-        let read = Project::read(&project, &crate::mcp::environment())
-            .await
-            .unwrap();
+        let read = Project::read(&project).await.unwrap();
         let items = &record.entry_for(&read).unwrap().items;
         assert_eq!(
             items.keys().collect::<Vec<_>>(),
@@ -319,6 +317,35 @@ fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
         let said = "MCP server docs is off: the person's own server of the same name runs instead";
         assert!(told.contains(said), "the model is told: {told}");
         assert_eq!(projects.set_aside(&project).await, [said], "and the person");
+    });
+}
+
+#[test]
+fn a_project_s_remote_server_that_needs_a_variable_stays_off_and_says_so() {
+    let needs = r#""docs": {"url": "http://127.0.0.1:9/mcp", "headers": {"X-Key": "${HOME}"}}"#;
+    let (_dir, home, project) = place("needs", needs, "");
+    block_on!(async {
+        let projects = projects(&home, Vec::new(), &[]).await;
+        let ask = projects.ask(&project).await.unwrap().unwrap();
+        assert!(projects.trust(&project, &ask.ask).await.unwrap());
+        let brought = projects.brought(&project, project_id()).await;
+        assert!(brought.tools.is_empty(), "never started");
+        let told = projects
+            .for_folder(&project, Some(&project), true)
+            .await
+            .unwrap();
+        let aside = projects.set_aside(&project).await;
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert!(
+            aside[0].starts_with("MCP server docs is off: it needs HOME from this computer"),
+            "{aside:?}"
+        );
+        assert!(told.contains(&aside[0]), "the model is told too: {told}");
+        let value = crate::mcp::environment().remove("HOME").unwrap_or_default();
+        assert!(
+            value.is_empty() || !told.contains(&value),
+            "its name, never its value"
+        );
     });
 }
 

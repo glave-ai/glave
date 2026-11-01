@@ -174,13 +174,14 @@ impl ProjectFolders {
     }
 
     /// What of the project around `folder` glave sets aside, and why, one sentence each, to
-    /// tell the person: settings it cannot use, and servers that give way to the person's own.
+    /// tell the person: settings it cannot use, servers that give way to the person's own, and
+    /// remote ones that need what a project's file can't send.
     pub(crate) async fn set_aside(&self, folder: &Path) -> Vec<String> {
         let root = self.root(folder).await;
         match self.outcome(&root).await {
             Ok(outcome) => [
                 self.settle(&root, &outcome).aside,
-                self.taken_from(&outcome),
+                self.servers_off(&outcome),
             ]
             .concat(),
             Err(_) => Vec::new(),
@@ -239,9 +240,10 @@ impl ProjectFolders {
         taken.iter().any(|taken| taken == name)
     }
 
-    /// Why each of `outcome`'s servers that shares a name with one of the person's own is off.
-    fn taken_from(&self, outcome: &Outcome) -> Vec<String> {
-        outcome
+    /// Why each of `outcome`'s servers stays off though it is trusted: it shares a name with one
+    /// of the person's own, or it is remote and needs what a project's file can't send.
+    fn servers_off(&self, outcome: &Outcome) -> Vec<String> {
+        let taken = outcome
             .servers
             .keys()
             .filter(|name| self.is_taken(name))
@@ -250,8 +252,21 @@ impl ProjectFolders {
                     "MCP server {name} is off: the person's own server of the same name runs \
                      instead"
                 )
-            })
-            .collect()
+            });
+        let needing = needing(outcome);
+        let needs =
+            needing
+                .iter()
+                .filter(|(name, _)| !self.is_taken(name))
+                .map(|(name, variables)| {
+                    format!(
+                        "MCP server {name} is off: it needs {} from this computer, and a project's \
+                     settings can't send those to a server elsewhere; in the person's own \
+                     settings it can have them",
+                        variables.join(", ")
+                    )
+                });
+        taken.chain(needs).collect()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Running> {
@@ -269,7 +284,7 @@ impl ProjectFolders {
 
     /// Where each item of the project at `root` stands now.
     async fn assessed(&self, root: &Path) -> anyhow::Result<trust::Assessment> {
-        let project = Project::read(root, &crate::mcp::environment()).await?;
+        let project = Project::read(root).await?;
         let record = self.trust.record().await?;
         Ok(trust::assess(
             project,
@@ -287,7 +302,7 @@ impl ProjectFolders {
     async fn off(&self, folder: &Path) -> Option<String> {
         match self.outcome(&self.root(folder).await).await {
             Ok(outcome) => {
-                off_note(&[outcome.withheld.clone(), self.taken_from(&outcome)].concat())
+                off_note(&[outcome.withheld.clone(), self.servers_off(&outcome)].concat())
             }
             // A project file that does not parse turns nothing on; say so rather than fail.
             Err(error) => off_note(&[format!("the project's own settings are off: {error}")]),
@@ -329,10 +344,11 @@ impl ProjectFolders {
         let base = self.base();
         let mcp = read.choices.as_ref().unwrap_or(&base.choices).mcp.as_ref();
         let chosen = mcp.map(|chosen| &chosen.value);
+        let needing = needing(&outcome);
         let servers: BTreeMap<String, String> = outcome
             .servers
             .iter()
-            .filter(|(name, _)| !self.is_taken(name))
+            .filter(|(name, _)| !self.is_taken(name) && !needing.contains_key(*name))
             .filter(|(name, _)| chosen.is_none_or(|chosen| chosen.contains(name)))
             .map(|(name, definition)| (name.clone(), definition.clone()))
             .collect();
@@ -411,6 +427,13 @@ fn failed(error: &dyn std::fmt::Display) -> ApiError {
     )
 }
 
+/// The remote servers of `outcome` left off since their URL or headers name variables a
+/// project's file can't read, each with those names.
+fn needing(outcome: &Outcome) -> BTreeMap<String, Vec<String>> {
+    let text = trust::mcp_json(&outcome.servers);
+    glave_ports::settings::mcp::withheld(&text).unwrap_or_default()
+}
+
 impl glave_harness::ProjectFolders for ProjectFolders {
     fn for_folder<'a>(
         &'a self,
@@ -483,7 +506,7 @@ impl ProjectTrust for ProjectFolders {
         Box::pin(async move {
             let root = self.root(folder).await;
             // A project whose files do not read runs nothing, so it has nothing to trust.
-            let Ok(project) = Project::read(&root, &crate::mcp::environment()).await else {
+            let Ok(project) = Project::read(&root).await else {
                 return Ok(None);
             };
             let constraints = &self.base().loaded.constraints;
@@ -541,9 +564,7 @@ impl ProjectTrust for ProjectFolders {
         Box::pin(async move {
             let root = self.root(folder).await;
             let _keeping = self.keeping.lock().await;
-            let project = Project::read(&root, &crate::mcp::environment())
-                .await
-                .map_err(|error| failed(&error))?;
+            let project = Project::read(&root).await.map_err(|error| failed(&error))?;
             let record = self.trust.record().await.map_err(|error| failed(&error))?;
             let constraints = &self.base().loaded.constraints;
             let Some(entry) = trust::trust_asked(&record, project, constraints, ask) else {

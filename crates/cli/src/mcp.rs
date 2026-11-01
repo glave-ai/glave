@@ -31,7 +31,8 @@ pub(crate) use written::{Removed, Writer};
 /// The settings file, in glave's folder.
 pub(crate) const FILE: &str = "mcp.json";
 
-/// The environment servers' `${VAR}` are filled from.
+/// The environment servers' `${VAR}` are filled from: all of it for the person's own, and for a
+/// program a project starts; none of it for a remote server in a project's file.
 pub(crate) fn environment() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
@@ -70,7 +71,7 @@ pub(crate) fn start_project(
     let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
     let environment = environment();
-    let configs = glave_ports::settings::mcp::parse(&text, &environment)
+    let configs = glave_ports::settings::mcp::parse_project(&text, &environment)
         .context("in the project's trusted .mcp.json servers")?;
     let marks = glave_ports::settings::mcp::marks(&text)?;
     Ok(configs
