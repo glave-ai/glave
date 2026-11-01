@@ -37,7 +37,20 @@ async fn asked_once<A: Approver>(
     Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
     Thread,
 ) {
-    let source = AskingTool::asking(&["Which repository?"]);
+    asking(dir, approver, &["Which repository?"]).await
+}
+
+/// A tool that asks each of `asks`, a harness whose model calls it, and a thread there.
+async fn asking<A: Approver>(
+    dir: &Path,
+    approver: A,
+    asks: &[&str],
+) -> (
+    Arc<AskingTool>,
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    Thread,
+) {
+    let source = AskingTool::asking(asks);
     let harness = harness(dir, calling("Filed."), approver).await;
     let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
     let thread = harness.start_thread(scope()).await.unwrap();
@@ -165,10 +178,7 @@ fn a_call_that_asks_waits_in_the_log_and_goes_on_with_the_answer() {
 fn an_answer_is_refused_unless_it_is_to_what_waits_and_fits_it() {
     let dir = folder("service-refused");
     block_on!(async {
-        let source = AskingTool::asking(&["First?", "Then?"]);
-        let harness = harness(&dir, calling("Filed."), InTheLog).await;
-        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (source, harness, mut thread) = asking(&dir, InTheLog, &["First?", "Then?"]).await;
         stops_at_a_wait(&harness, &mut thread).await;
         let (call, first) = asked_at(&events(harness.log(), thread.id).await);
         let empty = ServiceAnswer::Answered {
@@ -378,10 +388,7 @@ fn a_subagents_call_never_reaches_the_person() {
 fn no_reference_an_event_holds_gives_away_the_answer() {
     let dir = folder("service-salted");
     block_on!(async {
-        let source = AskingTool::asking(&["First?", "Then?"]);
-        let harness = harness(&dir, calling("Filed."), InTheLog).await;
-        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (_, harness, mut thread) = asking(&dir, InTheLog, &["First?", "Then?"]).await;
         stops_at_a_wait(&harness, &mut thread).await;
         for _ in 0..2 {
             let (call, at) = asked_at(&events(harness.log(), thread.id).await);
