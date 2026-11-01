@@ -283,6 +283,11 @@ mod tests {
             )]),
             "named once each, and never one with a default or a program's"
         );
+        let in_url = r#"{"mcpServers": {"at": {"url": "https://x/${WHERE}"}}}"#;
+        assert_eq!(
+            withheld(in_url).unwrap(),
+            BTreeMap::from([("at".to_owned(), vec!["WHERE".to_owned()])])
+        );
         let plain = r#"{"mcpServers": {"plain": {"url": "https://x", "headers": {"A": "b"}}}}"#;
         assert!(withheld(plain).unwrap().is_empty());
     }
