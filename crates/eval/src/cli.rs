@@ -63,6 +63,7 @@ struct Options {
     baseline: Option<PathBuf>,
     tasks: PathBuf,
     plans: bool,
+    goals: bool,
     subagents: bool,
     memory: Option<bool>,
     /// The Python environment the tasks get in place of glave's own document tools.
@@ -282,7 +283,8 @@ fn is_run(name: &str) -> bool {
         })
 }
 
-/// The tasks to run: in the tier, matching `--only`, and runnable on this computer.
+/// The tasks to run: in the tier, matching `--only`, and runnable on this computer, without
+/// their goals under `--no-goal`.
 fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
     let sandbox = glave_computer::sandbox_available();
     let mut left_out = 0;
@@ -297,6 +299,12 @@ fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
             let runnable = sandbox || !task.sandboxed;
             left_out += usize::from(!runnable);
             runnable
+        })
+        .map(|mut task| {
+            if !options.goals {
+                task.goal = None;
+            }
+            task
         })
         .collect();
     if left_out > 0 {
@@ -331,6 +339,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         baseline: None,
         tasks: PathBuf::from("evals/tasks"),
         plans: true,
+        goals: true,
         subagents: false,
         memory: None,
         python: None,
@@ -362,6 +371,7 @@ fn options(args: &[String]) -> Result<Options, String> {
             "--baseline" => options.baseline = Some(PathBuf::from(value()?)),
             "--tasks" => options.tasks = PathBuf::from(value()?),
             "--no-plan" => options.plans = false,
+            "--no-goal" => options.goals = false,
             "--subagents" => options.subagents = true,
             "--memory" => {
                 options.memory = match value()?.as_str() {
@@ -441,6 +451,7 @@ mod tests {
             "--tasks",
             "t",
             "--no-plan",
+            "--no-goal",
             "--subagents",
             "--memory",
             "on",
@@ -460,11 +471,25 @@ mod tests {
                 baseline: Some("old.json".into()),
                 tasks: "t".into(),
                 plans: false,
+                goals: false,
                 subagents: true,
                 memory: Some(true),
                 python: Some("venv".into()),
             }
         );
+    }
+
+    #[test]
+    fn no_goal_runs_a_goal_s_objective_as_a_plain_turn() {
+        let dir = glave_ports::testing::TempDir::new("eval-no-goal").unwrap();
+        std::fs::write(dir.join("task.toml"), "[glave]\ngoal = { budget = 1000 }\n").unwrap();
+        std::fs::write(dir.join("instruction.md"), "Do it.").unwrap();
+        let goal_of = |args: &[&str]| {
+            let tasks = chosen(vec![task::load(&dir).unwrap()], &parse(args).unwrap()).unwrap();
+            tasks.first().and_then(|task| task.goal.clone())
+        };
+        assert!(goal_of(&[]).is_some());
+        assert_eq!(goal_of(&["--no-goal"]), None);
     }
 
     #[test]

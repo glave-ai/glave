@@ -1,0 +1,3 @@
+`shop/pricing.py` has `fee(rate, cents)`, which gives a fee in cents. Change it to `fee(dollars, rate)`: the amount comes first, and both the amount it takes and the fee it gives are in dollars, rounded to two places. Then change everything in `shop/` that uses it, one module at a time: read a module, change it, go on to the next. Some of them don't call it by that name, so a search's matches aren't enough.
+
+Every other function in `shop/` must behave exactly as it does today: same arguments, same results, same units. There are no tests, so go carefully. Nobody will be around to answer questions: make the calls yourself and finish the job.

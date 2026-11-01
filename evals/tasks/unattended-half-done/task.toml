@@ -1,0 +1,17 @@
+[task]
+name = "glave/unattended-half-done"
+description = "One change through several compactions with no one answering: a function changes its arguments and its unit, and every caller, however it reaches the function, must be finished correctly while compaction lands with some done and some not."
+
+[agent]
+timeout_sec = 1500
+
+[glave]
+tier = "hard"
+permissions = "auto"
+# Small enough that a few files fill it, so the job compacts several times.
+context_window = 12000
+max_steps = 80
+# A long-running goal's own limit; `--no-goal` runs the same instruction as one turn.
+goal = { budget = 500000 }
+setup = ["python3 {task}/../../unattended/pad.py"]
+checks = ["one_thread"]

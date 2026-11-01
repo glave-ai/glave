@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glave_computer::LocalComputers;
+use glave_event::GoalReason;
 use glave_harness::{
     Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skill,
     Skills, Workspace, agents_md, change_standing, find_skills, skill_folders,
@@ -83,6 +84,15 @@ pub struct Attempt {
     /// Micros of the reported currency; `None` when any call reported no cost.
     pub cost_micros: Option<i64>,
     pub seconds: f64,
+    /// How many times the conversation restarted from a summary.
+    #[serde(default)]
+    pub compactions: u32,
+    /// Tool calls that gave nothing new (`Trace::repeated_steps`).
+    #[serde(default)]
+    pub repeated_steps: u32,
+    /// Why the goal ended, when the attempt ran one and it ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<GoalReason>,
     /// How the task's probes went, when it has them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probes: Option<Probes>,
@@ -120,6 +130,9 @@ impl Attempt {
             cached_tokens: trace.cached_tokens,
             cost_micros: trace.cost_micros,
             seconds,
+            compactions: trace.compactions,
+            repeated_steps: trace.repeated_steps,
+            goal: trace.goal,
             probes: None,
             memory: None,
         }
