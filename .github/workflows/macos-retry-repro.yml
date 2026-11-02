@@ -1,0 +1,36 @@
+# Temporary: what a job no runner takes gives the jobs after it (#952). Removed before merge.
+name: macos-retry-repro
+on:
+  push:
+    branches: [fix/macos-retry]
+permissions: {}
+jobs:
+  never:
+    runs-on: glave-no-such-runner-952
+    outputs:
+      started: ${{ steps.started.outputs.started }}
+    steps:
+      - id: started
+        run: echo started=true >> "$GITHUB_OUTPUT"
+  old-condition:
+    needs: never
+    if: "!cancelled() && needs.never.result == 'cancelled' && needs.never.outputs.started != 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ran
+  new-condition:
+    needs: never
+    if: "always() && needs.never.outputs.started != 'true' && contains(fromJSON('[\"abandoned\", \"failure\"]'), needs.never.result)"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ran
+  report:
+    needs: never
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.never.result }}
+          STARTED: ${{ needs.never.outputs.started }}
+          CANCELLED: ${{ cancelled() }}
+        run: echo "result=$RESULT started=$STARTED cancelled=$CANCELLED"
