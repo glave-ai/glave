@@ -1,9 +1,9 @@
-import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
 import { ApiError, type ConnectorInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectorsComponent } from './connectors.component';
 
 /** A connector of the catalog, `available` unless said. */
@@ -52,37 +52,13 @@ function press(root: ParentNode, id: string): void {
     ?.dispatchEvent(new MouseEvent('click'));
 }
 
-/** A tab the page opens, standing in for the browser's. */
-function fakeTab(): { readonly sentTo: string[]; readonly closed: () => boolean } {
-  const sentTo: string[] = [];
-  let closed = false;
-  const tab = {
-    opener: window,
-    get closed() {
-      return closed;
-    },
-    close: () => {
-      closed = true;
-    },
-    location: { replace: (url: string) => sentTo.push(url) },
-  } as unknown as Window;
-  vi.spyOn(window, 'open').mockReturnValue(tab);
-  return { sentTo, closed: () => closed };
-}
-
 async function page(fake: FakeSession): Promise<{
   readonly fixture: { whenStable(): Promise<unknown>; detectChanges(): void };
   readonly root: HTMLElement;
   readonly said: string[];
 }> {
-  const said: string[] = [];
-  const announce = (text: string): Promise<void> => {
-    said.push(text);
-    return Promise.resolve();
-  };
-  TestBed.configureTestingModule({
-    providers: [...provideFakeSession(fake), { provide: LiveAnnouncer, useValue: { announce } }],
-  });
+  const { said, provider } = announced();
+  TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), provider] });
   const fixture = TestBed.createComponent(ConnectorsComponent);
   await settle(fixture);
   return { fixture, root: fixture.nativeElement as HTMLElement, said };
@@ -151,10 +127,7 @@ describe('ConnectorsComponent', () => {
     const fake = new FakeSession()
       .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
       .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', async () => {
-        await new Promise((resolve) => setTimeout(resolve));
-        return { flow: 'f1' };
-      });
+      .answer('connection/poll', stillWaiting);
     const tab = fakeTab();
     const { fixture, root, said } = await page(fake);
     press(root, 'linear');
@@ -200,10 +173,7 @@ describe('ConnectorsComponent', () => {
     const fake = new FakeSession()
       .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
       .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', async () => {
-        await new Promise((resolve) => setTimeout(resolve));
-        return { flow: 'f1' };
-      });
+      .answer('connection/poll', stillWaiting);
     vi.spyOn(window, 'open').mockReturnValue(null);
     const { fixture, root } = await page(fake);
     press(root, 'linear');
