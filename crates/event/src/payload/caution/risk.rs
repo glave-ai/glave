@@ -1,6 +1,6 @@
 //! What a call would do that needs the person, in one table: the shell's reasons for a command
-//! (`glave-shell`), a read of a file that usually holds secrets, and a save to memory after
-//! untrusted content. Each is a clause the model reads as it is ("it deletes ~/x") and the
+//! (`glave-shell`), a read of a file that usually holds secrets, and a page fetched or a save to
+//! memory after untrusted content. Each is a clause the model reads as it is ("it deletes ~/x") and the
 //! person as a sentence of its own.
 
 worded! {
@@ -131,6 +131,10 @@ worded! {
         ChangesDatabase = "risk-changes-database" "it changes a database",
         WipesRedis = "risk-wipes-redis" "it wipes a Redis database",
         ChangesPayments = "risk-changes-payments" "it changes a payments account",
+
+        // A page fetched after untrusted content.
+        FetchesAfterUntrusted = "risk-fetches-after-untrusted"
+            "this thread has read untrusted content, so the address it fetches could carry what it has read to someone else",
 
         // A save to memory.
         RemembersAfterUntrusted = "risk-remembers-after-untrusted"

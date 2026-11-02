@@ -1,7 +1,11 @@
 //! Untrusted content: tool output from outside that no one vouches for, such as a web page.
 //! The model is shown it inside a label saying it is data, not instructions, and the thread
-//! remembers it read some, so risky actions after it are judged knowing that
-//! (`specs/approvals.md`, "Untrusted content").
+//! remembers it read some, so risky actions after it are judged knowing that, and what it
+//! takes from the rest of the thread (`after.rs`; `specs/approvals.md`, "Untrusted content").
+
+mod after;
+
+pub(crate) use after::{fetch_caution, offline_after};
 
 use glave_event::Part;
 

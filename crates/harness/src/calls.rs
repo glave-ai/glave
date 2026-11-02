@@ -267,6 +267,8 @@ where
         if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
             return Ok(refused);
         }
+        let fetches = crate::untrusted::fetch_caution(thread, name);
+        let (caution, firm) = (caution.or(fetches.clone()), firm || fetches.is_some());
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -709,7 +711,7 @@ where
             thread.unnumbered = thread.unnumbered.saturating_add(1);
             thread.plan.recorded(plan);
         }
-        thread.untrusted |= completed.untrusted;
+        self.took_in(thread, completed.untrusted).await?;
         thread.messages.push(Message::Tool {
             call_id: completed.call_id,
             is_error: completed.is_error,

@@ -23,7 +23,7 @@ const CAUTION: &str = "It can reach the internet, which commands here otherwise 
 
 /// A `bash` call that writes `file` beside the project, then connects to `listener` and says
 /// so, asking for the network when `network`.
-fn connect(
+pub(crate) fn connect(
     base: &Path,
     file: &str,
     listener: &TcpListener,
@@ -43,7 +43,7 @@ fn connect(
 }
 
 /// The model's answers: each of `calls` in turn, then its last word.
-fn making(calls: Vec<(&'static str, serde_json::Value)>) -> Vec<Completion> {
+pub(crate) fn making(calls: Vec<(&'static str, serde_json::Value)>) -> Vec<Completion> {
     let calls = calls
         .into_iter()
         .map(|call| answer(None, vec![call], StopReason::ToolUse));
