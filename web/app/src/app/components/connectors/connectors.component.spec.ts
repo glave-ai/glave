@@ -3,7 +3,7 @@ import { ApiError, type ConnectorInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
+import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectorsComponent } from './connectors.component';
 
 /** A connector of the catalog, `available` unless said. */
@@ -64,6 +64,13 @@ async function page(fake: FakeSession): Promise<{
   return { fixture, root: fixture.nativeElement as HTMLElement, said };
 }
 
+/** A fake tab, which `window.open` gives. */
+function openedTab(): FakeTab {
+  const tab = fakeTab();
+  vi.spyOn(window, 'open').mockReturnValue(tab.tab);
+  return tab;
+}
+
 describe('ConnectorsComponent', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -113,7 +120,7 @@ describe('ConnectorsComponent', () => {
         connected = true;
         return { connector: { ...DEEPWIKI, status: 'connected' } };
       });
-    const tab = fakeTab();
+    const tab = openedTab();
     const { fixture, root, said } = await page(fake);
     press(root, 'deepwiki');
     await settle(fixture);
@@ -128,7 +135,7 @@ describe('ConnectorsComponent', () => {
       .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
       .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', stillWaiting);
-    const tab = fakeTab();
+    const tab = openedTab();
     const { fixture, root, said } = await page(fake);
     press(root, 'linear');
     await settle(fixture);
@@ -196,7 +203,7 @@ describe('ConnectorsComponent', () => {
           message: 'glave could not reach the sign-in for Linear: try again in a while',
         }),
       );
-    const tab = fakeTab();
+    const tab = openedTab();
     const { fixture, root } = await page(fake);
     press(root, 'linear');
     await settle(fixture);

@@ -10,7 +10,7 @@ export interface FakeTab {
   readonly closed: () => boolean;
 }
 
-/** Makes `window.open` give a fake tab, which this hands back. */
+/** A fake tab for a test to have `window.open` give. */
 export function fakeTab(): FakeTab {
   const sentTo: string[] = [];
   let closed = false;
@@ -24,7 +24,6 @@ export function fakeTab(): FakeTab {
     },
     location: { replace: (url: string) => sentTo.push(url) },
   } as unknown as Window;
-  vi.spyOn(window, 'open').mockReturnValue(tab);
   return { tab, sentTo, closed: () => closed };
 }
 

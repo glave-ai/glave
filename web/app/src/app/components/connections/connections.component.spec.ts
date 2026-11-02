@@ -3,7 +3,7 @@ import { ApiError, type ConnectionInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
+import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectionsComponent } from './connections.component';
 
 const DOCS: ConnectionInfo = {
@@ -58,6 +58,13 @@ async function page(fake: FakeSession): Promise<{
   return { fixture, root: fixture.nativeElement as HTMLElement, said };
 }
 
+/** A fake tab, which `window.open` gives. */
+function openedTab(): FakeTab {
+  const tab = fakeTab();
+  vi.spyOn(window, 'open').mockReturnValue(tab.tab);
+  return tab;
+}
+
 describe('ConnectionsComponent', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -98,7 +105,7 @@ describe('ConnectionsComponent', () => {
         await signedInThere;
         return { connection: { ...TRACKER, status: 'signed_in' } };
       });
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root, said } = await page(fake);
 
     click(root, 'connection-action');
@@ -134,7 +141,7 @@ describe('ConnectionsComponent', () => {
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', stillWaiting);
-    fakeTab();
+    openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -163,7 +170,7 @@ describe('ConnectionsComponent', () => {
         await begun;
         return { sign_in: { flow: 'f1', url: PAGE } };
       });
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -180,7 +187,7 @@ describe('ConnectionsComponent', () => {
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', stillWaiting);
-    fakeTab();
+    openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -198,7 +205,7 @@ describe('ConnectionsComponent', () => {
         message: 'glave could not reach the sign-in for Issue Tracker: try again in a while',
       }),
     );
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
