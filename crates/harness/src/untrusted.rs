@@ -5,7 +5,7 @@
 
 mod after;
 
-pub(crate) use after::{fetch_caution, offline_after};
+pub(crate) use after::{allowance, fetch_caution, offline_after};
 
 use glave_event::Part;
 

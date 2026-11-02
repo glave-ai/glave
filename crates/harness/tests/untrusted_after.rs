@@ -7,7 +7,7 @@
 use std::net::TcpListener;
 use std::sync::Arc;
 
-use glave_event::{Body, Event, Lifted, Verdict};
+use glave_event::{Body, Caution, Event, Lifted, Verdict};
 use glave_harness::{Approver, Cancel, Decision, NoOneToAsk, Settings};
 use glave_ports::{Completion, Effect, InMemoryLog, InMemoryTools, ToolInfo, ToolOutput, ToolSpec};
 use serde_json::json;
@@ -172,6 +172,36 @@ fn an_answer_for_the_rest_of_the_thread_covers_the_fetches_after_it() {
         "{said:?}"
     );
     assert_eq!(person.asked().len(), 1, "asked once, for the second");
+}
+
+#[test]
+fn an_answer_for_web_fetch_given_before_untrusted_content_does_not_cover_a_fetch_after_it() {
+    let Some(base) = sandboxed("untrusted-fetch-before") else {
+        return;
+    };
+    let answers = making(vec![fetch(1), fetch(2), fetch(3)]);
+    // Ask first asks before the first fetch, which the person allows for the thread.
+    let person = Person::answering(Decision::AllowForThread);
+    let (said, _, _) = turns(&base, true, vec![answers], (person.clone(), asking()));
+    assert!(
+        said.iter().take(3).all(|said| said.contains(PAGE)),
+        "{said:?}"
+    );
+    let cautions: Vec<_> = (person.asked().iter())
+        .map(|request| request.caution.as_ref().and_then(Caution::sentences))
+        .collect();
+    assert_eq!(
+        cautions.len(),
+        2,
+        "the mode's, then the caution's: {cautions:?}"
+    );
+    assert_eq!(cautions[0], None);
+    assert!(
+        cautions[1]
+            .as_deref()
+            .is_some_and(|c| c.starts_with("This thread has read untrusted content")),
+        "{cautions:?}"
+    );
 }
 
 #[test]

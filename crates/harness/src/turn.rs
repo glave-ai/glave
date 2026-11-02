@@ -336,6 +336,7 @@ where
     ) -> Result<TurnResult, HarnessError> {
         // Open until the turn ends or stops at a wait, whatever fails between.
         thread.opened = Some(Opened::LeftOpen);
+        self.offline_if_untrusted(thread).await?;
         if !pending.is_empty() {
             let ran = self
                 .run_calls(thread, pending, &mut step, cancel, live)

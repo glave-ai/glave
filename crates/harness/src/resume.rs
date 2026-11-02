@@ -4,7 +4,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnResult, Verdict, decode};
+use glave_event::{
+    ApprovalRequested, Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnResult, Verdict,
+    decode,
+};
 use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider, Scope, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
@@ -342,16 +345,16 @@ fn read_secret(events: &[Event]) -> bool {
 
 /// The tools the person allowed for the rest of the thread, from its recorded approvals.
 fn allowed_for_thread(events: &[Event]) -> HashSet<String> {
-    let mut asked: HashMap<&CallId, &str> = HashMap::new();
+    let mut asked: HashMap<&CallId, &ApprovalRequested> = HashMap::new();
     let mut allowed = HashSet::new();
     for event in events {
         match &event.body {
             Body::ApprovalRequested(requested) => {
-                asked.insert(&requested.call_id, requested.tool.as_str());
+                asked.insert(&requested.call_id, requested);
             }
             Body::ApprovalDecided(decided) if decided.decision == Verdict::AllowForThread => {
-                if let Some(tool) = asked.get(&decided.call_id) {
-                    allowed.insert((*tool).to_owned());
+                if let Some(requested) = asked.get(&decided.call_id) {
+                    allowed.insert(crate::untrusted::allowance(requested));
                 }
             }
             _ => {}

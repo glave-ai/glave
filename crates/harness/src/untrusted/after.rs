@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{Risk, WebPage};
+use glave_event::{ApprovalRequested, Risk, WebPage};
 use glave_ports::computer::Sandbox;
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
@@ -23,12 +23,30 @@ pub(crate) fn offline_after(sandbox: Option<Sandbox>, untrusted: bool) -> Option
 }
 
 /// The caution on a call of the tool named `name` in `thread`: `web_fetch` after untrusted
-/// content, unless the person allowed it for the rest of the thread. Known by its name, the
-/// first source offering a tool keeping it, so glave's own unless it offers none. Only the
-/// person clears it: the judge sees the address, never what the thread read.
+/// content, unless the person allowed that for the rest of the thread when asked about it (an
+/// answer for `web_fetch` given before does not count). Known by its name, the first source
+/// offering a tool keeping it, so glave's own unless it offers none. Only the person clears
+/// it: the judge sees the address, never what the thread read.
 pub(crate) fn fetch_caution(thread: &Thread, name: &str) -> Option<Risk> {
-    (name == WebPage::TOOL && thread.untrusted && !thread.allowed.contains(name))
-        .then_some(Risk::FetchesAfterUntrusted)
+    let allowed = thread.allowed.contains(&format!("{name}{AFTER}"));
+    (name == WebPage::TOOL && thread.untrusted && !allowed).then_some(Risk::FetchesAfterUntrusted)
+}
+
+/// What an answer for the rest of the thread to a fetch after untrusted content allows, beside
+/// the tool's name, so it is told from an answer about the tool alone.
+const AFTER: &str = " after untrusted content";
+
+/// What an answer for the rest of the thread to `asked` allows: its tool, or its tool after
+/// untrusted content when that is what it asked about.
+pub(crate) fn allowance(asked: &ApprovalRequested) -> String {
+    let risk = asked
+        .reason
+        .as_ref()
+        .and_then(|reason| reason.risk.as_ref());
+    match risk {
+        Some(Risk::FetchesAfterUntrusted) => format!("{}{AFTER}", asked.tool),
+        _ => asked.tool.clone(),
+    }
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -38,21 +56,19 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Takes in whether a call's result was untrusted: the first such result in `thread`
-    /// takes the network from the commands it runs from now on, in the sandbox otherwise as
-    /// before. A command already running keeps what it started with.
-    pub(crate) async fn took_in(
+    /// Takes the network from the commands `thread` runs from now on, once it has read untrusted
+    /// content and they still have it, in the sandbox otherwise as before; a command already
+    /// running keeps what it started with. Checked wherever its commands may have been given
+    /// a workspace anew (a turn's steps, a resumed subagent, a reopened worktree) and as each
+    /// result comes in. The thread is marked first: if the sandbox then fails to start, the turn
+    /// fails rather than run anything with the network.
+    pub(crate) async fn offline_if_untrusted(
         &self,
         thread: &mut Thread,
-        untrusted: bool,
     ) -> Result<(), HarnessError> {
-        if !untrusted || thread.untrusted {
-            return Ok(());
-        }
-        thread.untrusted = true;
         let workspace = self.workspace_for(thread);
         let sandbox = workspace.sandbox().cloned();
-        let offline = offline_after(sandbox.clone(), true);
+        let offline = offline_after(sandbox.clone(), thread.untrusted);
         if offline != sandbox {
             let within = workspace.within(offline.as_ref()).await?;
             thread.workspace = Some(Arc::new(within));

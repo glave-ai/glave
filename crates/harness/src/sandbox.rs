@@ -5,10 +5,15 @@
 
 use glave_event::{Arguments, Lifted, OutsideSandbox};
 use glave_ports::computer::{Sandbox, SandboxLevel};
+use glave_ports::{BlobStore, EventLog, ModelProvider, ToolOutput};
 use serde::Serialize;
 
+use crate::approval::Approver;
+use crate::calls::NOT_IN_PLAN;
+use crate::harness::{Harness, Thread};
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
+use crate::turn::Live;
 
 /// What the model is told when a command would have the network where commands go without
 /// it, and the organization does not let one ask.
@@ -72,6 +77,53 @@ pub(crate) fn outside(
     let sandbox = workspace.sandbox()?;
     let asked = crate::tools::outside_sandbox(arguments)?;
     (asked.lifted == Lifted::Sandbox || !sandbox.network).then_some(asked)
+}
+
+impl<P, L, B, A> Harness<P, L, B, A>
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    /// The result the model is given instead of running a call that would run without `lifted`
+    /// of the sandbox `thread`'s commands run in, where the person is asked, or was, about
+    /// `asked`: refused when it would leave the sandbox otherwise than they were asked, since
+    /// the sandbox changed while it waited, and when it would leave it at all where its
+    /// commands may not ask to. `None` when it may go on.
+    pub(crate) fn let_out_refused(
+        &self,
+        thread: &Thread,
+        lifted_asked: (Option<Lifted>, Option<Lifted>),
+        summary: &str,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Option<ToolOutput> {
+        let_out_refused(self.workspace_for(thread), lifted_asked, summary, live)
+    }
+}
+
+/// [`Harness::let_out_refused`] for the sandbox `workspace` runs commands in.
+fn let_out_refused(
+    workspace: &Workspace,
+    (lifted, asked): (Option<Lifted>, Option<Lifted>),
+    summary: &str,
+    live: &mut (dyn FnMut(Live) + Send),
+) -> Option<ToolOutput> {
+    let asks = Asks::of(workspace);
+    let (refused, why) = if lifted.is_some() && lifted != asked {
+        (CHANGED, "not run: the sandbox changed")
+    } else if lifted.is_some() && asks == Asks::Never {
+        (PLAN_STAYS, NOT_IN_PLAN)
+    } else if lifted.is_some() && asks == Asks::Nothing {
+        (NOT_ALLOWED, "not allowed here")
+    } else {
+        return None;
+    };
+    live(Live::ToolFinished {
+        summary: format!("{summary} ({why})"),
+        is_error: true,
+    });
+    Some(ToolOutput::text(true, refused))
 }
 
 /// What the thread records about the protections a turn ran under.

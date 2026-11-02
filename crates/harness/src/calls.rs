@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, CallId, Caution, Lifted, Outcome, Principal, Settled,
+    ApprovalDecided, ApprovalRequested, CallId, Caution, Outcome, Principal, Settled,
     ToolCallCompleted, ToolKind, TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
@@ -22,7 +22,7 @@ use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::room::fit;
-use crate::sandbox::{self, Asks};
+use crate::sandbox;
 use crate::service::Round;
 use crate::tools::Tool;
 use crate::toolset::ToolSet;
@@ -33,7 +33,7 @@ use crate::waits::{Answered, verdict_of};
 pub(crate) const NOT_RUN: &str = "Not run: the person cancelled the turn.";
 
 /// What a call refused in plan mode shows, after its summary.
-const NOT_IN_PLAN: &str = "not run in plan mode";
+pub(crate) const NOT_IN_PLAN: &str = "not run in plan mode";
 
 const NO_ANSWER: &str = "No one answered. Choose what seems best, go on, and say what you \
      assumed.";
@@ -241,7 +241,7 @@ where
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
-            if let Some(refused) = self.let_out_refused(thread, lifted, asked, &summary, live) {
+            if let Some(refused) = self.let_out_refused(thread, (lifted, asked), &summary, live) {
                 return Ok(refused);
             }
             if let Some(lifted) = lifted {
@@ -264,11 +264,11 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
-        if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
+        if let Some(refused) = self.let_out_refused(thread, (lifted, lifted), &summary, live) {
             return Ok(refused);
         }
         let fetches = crate::untrusted::fetch_caution(thread, name);
-        let (caution, firm) = (caution.or(fetches.clone()), firm || fetches.is_some());
+        let firm = firm || fetches.is_some();
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -276,7 +276,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: Caution::of(caution, lifted),
+            caution: Caution::of(caution.or(fetches.clone()), lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };
@@ -289,36 +289,6 @@ where
         }
         self.run_call(thread, call, &source, &hooked, summary, None, cancel, live)
             .await
-    }
-
-    /// The result the model is given instead of running a call that would run without
-    /// `lifted` of the sandbox, where the person is asked, or was, about `asked`: refused when
-    /// it would leave the sandbox otherwise than they were asked, since the sandbox changed
-    /// while it waited, and when it would leave it at all where its commands may not ask to.
-    /// `None` when it may go on.
-    fn let_out_refused(
-        &self,
-        thread: &Thread,
-        lifted: Option<Lifted>,
-        asked: Option<Lifted>,
-        summary: &str,
-        live: &mut (dyn FnMut(Live) + Send),
-    ) -> Option<ToolOutput> {
-        let asks = Asks::of(self.workspace_for(thread));
-        let (refused, why) = if lifted.is_some() && lifted != asked {
-            (sandbox::CHANGED, "not run: the sandbox changed")
-        } else if lifted.is_some() && asks == Asks::Never {
-            (sandbox::PLAN_STAYS, NOT_IN_PLAN)
-        } else if lifted.is_some() && asks == Asks::Nothing {
-            (sandbox::NOT_ALLOWED, "not allowed here")
-        } else {
-            return None;
-        };
-        live(Live::ToolFinished {
-            summary: format!("{summary} ({why})"),
-            is_error: true,
-        });
-        Some(ToolOutput::text(true, refused))
     }
 
     /// Runs `call` with its tool's `source`, once nothing stops it, and its `PostToolUse`
@@ -711,7 +681,8 @@ where
             thread.unnumbered = thread.unnumbered.saturating_add(1);
             thread.plan.recorded(plan);
         }
-        self.took_in(thread, completed.untrusted).await?;
+        thread.untrusted |= completed.untrusted;
+        self.offline_if_untrusted(thread).await?;
         thread.messages.push(Message::Tool {
             call_id: completed.call_id,
             is_error: completed.is_error,
@@ -756,7 +727,7 @@ fn settle(
     match verdict {
         Verdict::AllowOnce => None,
         Verdict::AllowForThread => {
-            thread.allowed.insert(asked.tool.clone());
+            thread.allowed.insert(crate::untrusted::allowance(asked));
             None
         }
         Verdict::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
