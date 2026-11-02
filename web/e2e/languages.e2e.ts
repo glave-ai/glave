@@ -98,7 +98,7 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   expect(await skipped(page)).toEqual([]);
   await expectAccessible(page);
 
-  await problems.leave(`/t/${THREAD}`);
+  await page.goto(`/t/${THREAD}`);
   await expect(page).toHaveTitle(PSEUDO['routes.thread'] ?? '');
   await expect(byTestId(page, 'thread-steps-summary')).toContainText('4 šţéþš');
   await expect(byTestId(page, 'turn-changes-count')).toHaveText('[2 ƒîļéš one]');
@@ -115,7 +115,7 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await expectAccessible(page);
   await byTestId(page, 'rename-cancel').click();
 
-  await problems.leave('/settings');
+  await page.goto('/settings');
   await expect(byTestId(page, 'settings-theme')).toBeVisible();
   expect(await skipped(page)).toEqual([]);
   await expectAccessible(page);

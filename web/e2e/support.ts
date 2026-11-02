@@ -446,17 +446,16 @@ export async function expectDialogShown(
   }
 }
 
-/** What a page says went wrong, as `watchForProblems` collects it. */
+/**
+ * What a page says went wrong, as `watchForProblems` collects it. Once a page is being left,
+ * however it is left, WebKit refuses a fetch it starts and says so, in words it uses for an
+ * access-control failure (Chromium lets it through): the app cannot tell it is being left until
+ * it is gone. That line, for the session API, said between the next page's request and its load,
+ * is not counted; anything else said then is.
+ */
 export interface Problems {
   /** Each thing it said, in its own words. */
   (): readonly string[];
-  /**
-   * Leaves the page for `url`, as `page.goto` does. Once a page is being left, WebKit refuses a
-   * fetch it starts and says so, in words it uses for an access-control failure (Chromium lets
-   * it through): the app cannot tell it is being left until it is gone. That line, for the
-   * session API, said while this leaves the page, is not counted; anything else said then is.
-   */
-  leave(url: string): Promise<void>;
   /**
    * Runs `signOut`, which ends once the page shows it is signed out, and lets pass what the
    * browser logs of a call of the page's already sent as it ran, which the server answers 401:
@@ -481,6 +480,13 @@ function whole(error: Error): string {
   return error.name === '' ? error.message : `${error.name}: ${error.message}`;
 }
 
+/** What WebKit says of a call of the session API at `url`'s origin it refuses as a page is left. */
+function refusal(url: string): string {
+  // The address the app's session API is called at (session.service.ts).
+  const api = new URL('/', url).href;
+  return `Fetch API cannot load ${api} due to access control checks.`;
+}
+
 /** What a browser logs of a call the server answered 401, in either engine's words. */
 const NOT_SIGNED_IN = /^Failed to load resource: the server responded with a status of 401\b/u;
 
@@ -491,7 +497,7 @@ const NOT_SIGNED_IN = /^Failed to load resource: the server responded with a sta
 export function watchForProblems(page: Page): Problems {
   const problems: string[] = [];
   const webkit = page.context().browser()?.browserType().name() === 'webkit';
-  // What WebKit says of a fetch of the session API it refuses while this leaves the page.
+  // What WebKit says of a fetch of the session API it refuses while the page is left.
   let refused: string | null = null;
   // Where a sign-out has got to, what the page sent once it had, and the 401s of calls before.
   let signOut: 'not begun' | 'running' | 'over' = 'not begun';
@@ -501,6 +507,14 @@ export function watchForProblems(page: Page): Problems {
     if (signOut === 'over') {
       sentSince.add(request);
     }
+    // However the page is left (a reload, a link, `leave`), WebKit refuses the calls of the
+    // session API still in flight, saying so as an error, until the next page has loaded.
+    if (webkit && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      refused = refusal(request.url());
+    }
+  });
+  page.on('domcontentloaded', () => {
+    refused = null;
   });
   page.on('response', (response) => {
     if (
@@ -522,18 +536,6 @@ export function watchForProblems(page: Page): Problems {
       problems.push(said);
     }
   });
-  const leave = async (url: string): Promise<void> => {
-    // The address the app's session API is called at (session.service.ts).
-    const api = new URL('/', page.url()).href;
-    refused = webkit ? `Fetch API cannot load ${api} due to access control checks.` : null;
-    try {
-      // The page is being left until the next one is committed: nothing of it runs after.
-      await page.goto(url, { waitUntil: 'commit' });
-    } finally {
-      refused = null;
-    }
-    await page.waitForLoadState();
-  };
   const signingOut = async (run: () => Promise<void>): Promise<void> => {
     signOut = 'running';
     await run();
@@ -543,7 +545,7 @@ export function watchForProblems(page: Page): Problems {
     let left = excused;
     return problems.filter((problem) => !(NOT_SIGNED_IN.test(problem) && left-- > 0));
   };
-  return Object.assign(unexcused, { leave, signingOut });
+  return Object.assign(unexcused, { signingOut });
 }
 
 /** The page's window once `withAxe` has put axe in it. */

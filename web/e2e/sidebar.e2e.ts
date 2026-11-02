@@ -482,7 +482,7 @@ test('a page left while the side nav still loads what it shows later reports not
   await page.goto(`/${SIGNED_IN}`);
   await fetched;
   await page.unroute(held);
-  await problems.leave('/settings');
+  await page.goto('/settings');
   await expect(byTestId(page, 'settings-theme')).toBeVisible();
   expect(problems()).toEqual([]);
 });
