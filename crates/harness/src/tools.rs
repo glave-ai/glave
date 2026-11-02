@@ -241,7 +241,10 @@ impl Tool {
                 Err(outcome) => outcome,
             },
             Self::CommandOutput => match parse(self, arguments, Some(workspace)) {
-                Ok(args) => background::command_output(commands, args, room, cancel).await,
+                Ok(args) => {
+                    let secrets = workspace.secrets();
+                    background::command_output(commands, args, (room, secrets), cancel).await
+                }
                 Err(outcome) => outcome,
             },
         }

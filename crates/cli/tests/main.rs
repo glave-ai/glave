@@ -37,6 +37,7 @@ mod projects;
 mod providers;
 mod remote;
 mod search;
+mod secrets;
 mod serve;
 mod server;
 mod sessions;

@@ -1,5 +1,6 @@
 //! What computers and workspaces are called, what is asked of them, and what they answer.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -244,6 +245,11 @@ pub struct Command {
     /// it running in the background.
     #[serde(default, skip_serializing_if = "OnTimeout::is_stop")]
     pub on_timeout: OnTimeout,
+    /// Variables it sees besides its computer's, which win where they share a name: the
+    /// placeholders of the person's secrets ([`KnownSecrets`](crate::secrets::KnownSecrets)),
+    /// never a value.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 impl Command {
@@ -253,6 +259,7 @@ impl Command {
             timeout_secs: None,
             sandbox: None,
             on_timeout: OnTimeout::Stop,
+            env: BTreeMap::new(),
         }
     }
 }

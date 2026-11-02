@@ -16,6 +16,7 @@ use glave_harness::{Homes, Permissions, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
+use glave_ports::secrets::KnownSecrets;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
     Blob, BlobError, BlobStore, Chunks, Completion, Eraser, EventLog, InMemoryBlobs,
@@ -187,11 +188,13 @@ pub(crate) struct Setup {
 type Kept<L> = (Option<Arc<Credits<L>>>, Option<Arc<Secrets<L>>>);
 
 /// Where a test server keeps the person's secrets: their accounts ledger on the server's log,
-/// in their personal project, erased through `eraser`.
+/// in their personal project, erased through `eraser`, and known to its workspace through
+/// `known`.
 pub(crate) struct KeepSecrets {
     pub eraser: Arc<dyn Eraser>,
     pub personal: Scope,
     pub person: PrincipalId,
+    pub known: KnownSecrets,
 }
 
 impl KeepSecrets {
@@ -202,6 +205,7 @@ impl KeepSecrets {
             eraser,
             personal,
             person,
+            known: KnownSecrets::default(),
         }
     }
 }
@@ -316,7 +320,8 @@ impl Setup {
                     Arc::new(self.clock.clone()),
                     Arc::new(CountingEntropy::starting_at((self.seed << 32) | (1 << 30))),
                 );
-                Some(Arc::new(Secrets::new(ledger)))
+                let known = keep.known.clone();
+                Some(Arc::new(Secrets::open(ledger, known).await.unwrap()))
             }
             None => None,
         };
@@ -356,6 +361,10 @@ impl Setup {
         let workspace = Workspace::new(computers, info);
         let workspace = match self.credentials {
             Some(credentials) => workspace.with_credentials(credentials),
+            None => workspace,
+        };
+        let workspace = match self.secrets {
+            Some(keep) => workspace.with_secrets(keep.known),
             None => workspace,
         };
         let projects = self

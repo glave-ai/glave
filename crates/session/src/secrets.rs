@@ -1,11 +1,13 @@
 //! Secrets (`specs/model.md`, "Secrets"): the person on this computer adds one, such as an API
 //! key, from a client, by name and with the hosts its value may reach. glave keeps it sealed in
-//! their accounts ledger under a key of its own. A client lists names and hosts, never a value;
-//! nothing the agent calls reaches these methods.
+//! their accounts ledger under a key of its own; commands see only its placeholder, and its
+//! value is masked wherever output shows it ([`KnownSecrets`]). A client lists names and hosts,
+//! never a value; nothing the agent calls reaches these methods.
 
 use glave_event::Secret;
-use glave_ports::auth::SHORTEST_SECRET;
+use glave_ports::auth::{REDACTED, SHORTEST_SECRET};
 use glave_ports::computer::is_variable_name;
+use glave_ports::secrets::{Known, KnownSecrets};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::accounts::{AccountLedger, AccountsError};
@@ -20,26 +22,42 @@ const LONGEST_HOST: usize = 253;
 const LONGEST_LABEL: usize = 63;
 const LONGEST_VALUE: usize = 16 << 10;
 
-/// What a value is masked with wherever output shows it: no value may be part of it.
-const MASK: &str = "[redacted]";
-
 /// The most hosts one secret may reach.
 const MOST_HOSTS: usize = 32;
 
-/// The person's secrets, kept in their accounts ledger.
+/// The person's secrets: kept in their accounts ledger, and known to their workspaces.
 pub struct Secrets<L> {
     ledger: AccountLedger<L>,
+    known: KnownSecrets,
+    /// Held while the secrets are read and made known, so the last made known is the latest.
+    reading: tokio::sync::Mutex<()>,
 }
 
 impl<L: EventLog> Secrets<L> {
-    /// The secrets `ledger` keeps.
-    pub fn new(ledger: AccountLedger<L>) -> Self {
-        Self { ledger }
+    /// The secrets `ledger` keeps, made known through `known` now and each time they are read.
+    pub async fn open(
+        ledger: AccountLedger<L>,
+        known: KnownSecrets,
+    ) -> Result<Self, AccountsError> {
+        let reading = tokio::sync::Mutex::default();
+        let secrets = Self {
+            ledger,
+            known,
+            reading,
+        };
+        secrets.kept().await?;
+        Ok(secrets)
     }
 
-    /// The secrets kept now, once any removed are erased.
-    async fn kept(&self) -> Result<Vec<SecretInfo>, AccountsError> {
+    /// The secrets kept now, once any removed are erased, made known to the workspaces from
+    /// now on: those another process changed too.
+    pub(crate) async fn kept(&self) -> Result<Vec<SecretInfo>, AccountsError> {
+        let _reading = self.reading.lock().await;
         let secrets = self.ledger.accounts().await?.secrets;
+        let known = secrets
+            .iter()
+            .map(|kept| Known::new(kept.name.clone(), kept.value.clone()));
+        self.known.set(known.collect());
         Ok(secrets
             .into_iter()
             .map(|kept| SecretInfo {
@@ -106,7 +124,7 @@ fn hosted(hosts: &[String]) -> Result<Vec<String>, ApiError> {
 fn valued(value: &Secret) -> Result<Secret, ApiError> {
     let value = value.expose().trim();
     let fits = (SHORTEST_SECRET..=LONGEST_VALUE).contains(&value.len());
-    if !fits || value.chars().any(char::is_control) || MASK.contains(value) {
+    if !fits || value.chars().any(char::is_control) || REDACTED.contains(value) {
         return Err(ApiError::new(code::INVALID_PARAMS, Sentence::SecretValue));
     }
     Ok(Secret::new(value))

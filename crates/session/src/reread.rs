@@ -52,10 +52,16 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Reads the host's settings again, if it has any to read, and runs what changed; and
-    /// refreshes the models' catalogs when they are due.
+    /// Reads the host's settings again, if it has any to read, and runs what changed; reads the
+    /// person's secrets again; and refreshes the models' catalogs when they are due.
     pub(crate) async fn reread(&self) {
         self.refresh_when_due();
+        // Secrets another process changed reach this one's commands and masking too.
+        if let Some(secrets) = &self.inner.secrets
+            && let Err(error) = secrets.kept().await
+        {
+            tracing::warn!(%error, "could not read the person's secrets again");
+        }
         let Some(rereads) = self.inner.rereads.as_deref() else {
             return;
         };
