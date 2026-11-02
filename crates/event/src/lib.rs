@@ -14,6 +14,7 @@ mod id;
 mod money;
 mod payload;
 mod secret;
+mod seen;
 
 pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
@@ -29,6 +30,10 @@ pub use payload::{
     FiltersSet, Grouping, GroupingSet, HeldLogo, Hides, InstructionsFile, InstructionsRead,
     LanguageSet, MailAsked, MaxPrice, MemorySet, Serve, SignupFinished, SignupStarted, SkillFound,
     Sort,
+};
+pub use payload::{
+    AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
+    ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
 pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkPoint,
@@ -64,8 +69,5 @@ pub use payload::{
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{SecretAdded, SecretRemoved};
-pub use payload::{
-    ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
-    ServiceOutcome, misfit,
-};
 pub use secret::{Secret, serialize_exposed, serialize_exposed_values};
+pub use seen::seen;

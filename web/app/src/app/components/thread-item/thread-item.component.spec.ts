@@ -269,7 +269,7 @@ describe('ThreadItemComponent', () => {
   });
 
   /** What a service asks, as `thread/events` has it. */
-  const service = (told: string | null): ServiceItem => ({
+  const service = (told: string | null, detail: ServiceItem['detail'] = null): ServiceItem => ({
     kind: 'service',
     key: 'service-7',
     seq: 7,
@@ -286,7 +286,30 @@ describe('ThreadItemComponent', () => {
         kind: { type: 'choice', options: [{ value: 'bug', label: 'Bug' }] },
       },
     ],
+    detail,
     told,
+  });
+
+  it('folds what glave adds under its question, shut until opened', async () => {
+    const detail = {
+      front: 'name: tidy',
+      text: '# Tidy',
+      textCut: false,
+      files: [{ path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true, cut: false }],
+      cut: null,
+    };
+    const { root } = await render(service(null, detail));
+    const fold = root.querySelector<HTMLElement>('[data-testid="thread-service-detail-summary"]');
+    expect(fold?.textContent.trim()).toBe('What it adds');
+    expect(
+      root.querySelector('[data-testid="thread-service-detail"] details')?.hasAttribute('open'),
+    ).toBe(false);
+    fold?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(root.querySelector('[data-testid="thread-service-detail-runs"]')?.textContent).toBe(
+      'runs code',
+    );
+    await expectAccessible(root);
   });
 
   it('says who asks and where the answer goes, and sends it to the service', async () => {

@@ -35,6 +35,55 @@ pub struct ServiceAsked {
     pub fields: Vec<ServiceField>,
     /// Where the source keeps what it needs to go on, which no client reads.
     pub state: BlobRef,
+    /// What glave's own question adds, shown under it for the person to read before they
+    /// choose: a skill's text and the files it brings. A service's never has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adds: Option<ServiceAdds>,
+}
+
+/// What a skill `install` adds, as the person is shown it: text drawn by each client, never
+/// HTML, each part cut to a size so a large skill can't grow the event without end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceAdds {
+    /// Its frontmatter, the lines between its `---` fences, as written.
+    pub front: String,
+    /// The rest of its SKILL.md, markdown.
+    pub text: String,
+    /// Whether `front` or `text` is only the start of what is added.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub text_cut: bool,
+    /// The files it brings beside its SKILL.md, by path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<AddedFile>,
+    /// What was cut, in a sentence of glave's, when anything was. Recorded in English, written
+    /// again in the reader's language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut: Option<String>,
+}
+
+/// One file a skill brings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AddedFile {
+    /// Where it goes in the skill's folder: `scripts/merged.sh`.
+    pub path: String,
+    /// Its text, as much as is shown.
+    pub text: String,
+    /// Whether it is a program the skill runs: a script, not a reference.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub runs_code: bool,
+    /// Whether `text` is only its start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+}
+
+impl ServiceAdds {
+    /// How many of its parts are shown only in part: its SKILL.md, and each file.
+    pub fn parts_cut(&self) -> u64 {
+        let files = self.files.iter().filter(|file| file.cut).count();
+        u64::from(self.text_cut).saturating_add(u64::try_from(files).unwrap_or(u64::MAX))
+    }
 }
 
 /// One thing a service asks for.

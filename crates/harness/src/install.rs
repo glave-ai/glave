@@ -9,6 +9,7 @@
 //! `user`, and keeps skills in a project's folder or the person's.
 
 mod places;
+mod shown;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -83,6 +84,9 @@ pub(crate) enum Change {
         name: String,
         description: String,
         text: String,
+        /// The files it brings beside its SKILL.md, by their path in its folder.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        files: BTreeMap<String, String>,
     },
     AddServer {
         name: String,
@@ -124,6 +128,8 @@ struct Asked {
     #[serde(default)]
     skill: Option<String>,
     #[serde(default)]
+    files: Option<BTreeMap<String, String>>,
+    #[serde(default)]
     server: Option<Value>,
     #[serde(default)]
     remove: bool,
@@ -149,6 +155,7 @@ pub(crate) fn spec() -> ToolSpec {
             "kind": {"type": "string", "enum": ["skill", "server"]},
             "name": {"type": "string", "description": "The skill's name (lowercase letters, digits and hyphens), or the server's"},
             "skill": {"type": "string", "description": "To add a skill: its whole SKILL.md, frontmatter with name and description first"},
+            "files": {"type": "object", "additionalProperties": {"type": "string"}, "description": "To add a skill: the files it brings beside its SKILL.md, by their path in its folder (scripts/run.sh, references/style.md), each with its whole text"},
             "server": {"type": "object", "description": "To add a server: its entry as .mcp.json has it, such as {\"type\": \"http\", \"url\": \"https://…\"} or {\"command\": \"npx\", \"args\": […]}"},
             "remove": {"type": "boolean", "description": "Take it out instead"}
         }, "required": ["kind", "name"]}),
@@ -176,8 +183,26 @@ pub(crate) fn change(arguments: &Arguments) -> Result<Change, String> {
             let text = asked
                 .skill
                 .ok_or("Give the skill's whole SKILL.md as skill.")?;
-            if text.len() > MOST_SKILL {
-                return Err(format!("The skill is over {} KiB.", MOST_SKILL / 1024));
+            let files = asked.files.unwrap_or_default();
+            if files.len() > shown::MOST_COUNT {
+                return Err(format!(
+                    "A skill brings at most {} files.",
+                    shown::MOST_COUNT
+                ));
+            }
+            for path in files.keys() {
+                shown::check_path(path)?;
+            }
+            shown::check_paths(&files)?;
+            let size = files
+                .values()
+                .map(String::len)
+                .fold(text.len(), usize::saturating_add);
+            if size > MOST_SKILL {
+                return Err(format!(
+                    "The skill and its files are over {} KiB.",
+                    MOST_SKILL / 1024
+                ));
             }
             let file = Path::new(&name).join(crate::skills::SKILL_MD);
             let skill = crate::skills::parsed(&text, &file)
@@ -187,6 +212,7 @@ pub(crate) fn change(arguments: &Arguments) -> Result<Change, String> {
                 name,
                 description: skill.description,
                 text,
+                files,
             })
         }
         (Kind::Server, false) => {
@@ -220,6 +246,7 @@ fn message(change: &Change) -> String {
             name,
             description,
             text,
+            ..
         } => format!(
             "Add the skill “{name}” ({} lines): {description}",
             text.lines().count()
@@ -380,11 +407,16 @@ impl Install {
                 whose.join(" and in ")
             ),
         };
+        let adds = match change {
+            Change::AddSkill { text, files, .. } => Some(shown::adds(text, files)),
+            _ => None,
+        };
         let state = serde_json::to_value(change).map_err(|err| err.to_string())?;
         Ok(ServiceAsks {
             service: ASKED_BY_GLAVE.to_owned(),
             message,
             fields: vec![field],
+            adds,
             state,
         })
     }

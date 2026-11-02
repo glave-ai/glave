@@ -207,6 +207,8 @@ sentences! {
         "Your answer goes only to { $service }. The model sees that you answered, not what you typed.",
     InstallNote = "install-note"
         "Nothing changes until you choose. The model is told what you chose.",
+    AddsCut { parts: u64 } = "adds-cut"
+        "Too long to show in full here: { $parts ->\n    [1] 1 part\n   *[other] { $parts } parts\n } cut short. All of it is added as written.",
     ServiceAnswered { service: String } = "service-answered" "You answered { $service }",
     ServiceDeclined { service: String } = "service-declined" "You declined { $service }'s question",
     ServiceUnanswered { service: String } = "service-unanswered"

@@ -302,33 +302,8 @@ pub(crate) fn clean(text: &str) -> String {
         '\n' | '\r' | '\t' | '\u{2028}' | '\u{2029}' => ' ',
         other => other,
     });
-    let kept: String = spaced.filter(|letter| shown(*letter)).collect();
+    let kept: String = spaced.filter(|letter| glave_event::seen(*letter)).collect();
     kept.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Whether `letter` is one a person sees: not a control or format character.
-fn shown(letter: char) -> bool {
-    !letter.is_control()
-        && !matches!(
-            letter,
-            '\u{ad}'
-                | '\u{600}'..='\u{605}'
-                | '\u{61c}'
-                | '\u{6dd}'
-                | '\u{70f}'
-                | '\u{890}'..='\u{891}'
-                | '\u{8e2}'
-                | '\u{180e}'
-                | '\u{200b}'..='\u{200f}'
-                | '\u{202a}'..='\u{202e}'
-                | '\u{2060}'..='\u{2064}'
-                | '\u{2066}'..='\u{206f}'
-                | '\u{feff}'
-                | '\u{fff9}'..='\u{fffb}'
-                | '\u{1d173}'..='\u{1d17a}'
-                | '\u{e0001}'
-                | '\u{e0020}'..='\u{e007f}'
-        )
 }
 
 /// Names a service may not ask the person under, as it could pass as glave or the model: its
