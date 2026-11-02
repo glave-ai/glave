@@ -10,7 +10,7 @@ use glave_computer::WorkerComputers;
 use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_gateway::Credits;
-use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
+use glave_harness::{AGENTS_MD, Own, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
 use glave_ports::computer::{GitCredentials, Sandbox};
 use glave_ports::secrets::KnownSecrets;
@@ -401,6 +401,14 @@ async fn settings_for(
     settings.titles = choices.titles.value;
     settings.judge = choices.judge.value.clone();
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
+    // What `install` puts in the person's own folder: not where people sign in with an
+    // identity provider, whose own skills and servers this server doesn't keep.
+    if args.issuers.is_empty() {
+        settings.own = Some(Own {
+            folder: home::folder()?,
+            servers: setup.loaded.constraints.own_mcp_forbidden().is_none(),
+        });
+    }
     let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
     settings.compaction.window_tokens = window;
     Ok(settings)

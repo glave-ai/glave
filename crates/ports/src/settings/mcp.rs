@@ -4,10 +4,14 @@
 //! server in a project's file: a repository chose its address, so nothing from the environment
 //! goes there.
 
+mod edit;
+
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use thiserror::Error;
+
+pub use edit::{Edited, Members};
 
 /// Why a `.mcp.json` file's text cannot be read as servers.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

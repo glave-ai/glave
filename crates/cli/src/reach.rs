@@ -34,7 +34,8 @@ impl Reached {
     pub(crate) async fn open() -> anyhow::Result<Self> {
         Ok(match crate::server::connect_or_start().await? {
             Some(server) => Self::Server(server),
-            None => Self::Here(Box::new(crate::wiring::here().await?)),
+            // Boxed: wiring a server here is a large future, kept off every caller's.
+            None => Self::Here(Box::new(Box::pin(crate::wiring::here()).await?)),
         })
     }
 

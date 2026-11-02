@@ -24,6 +24,7 @@ mod files;
 mod goals;
 mod homes;
 mod hooks;
+mod install;
 mod instructions;
 mod judge;
 mod log_failures;

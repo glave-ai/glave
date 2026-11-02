@@ -29,6 +29,7 @@ use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
 use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
+use crate::install::Install;
 use crate::memory::MemoryState;
 use crate::plan::Planning;
 use crate::project_folders::{Brought, ProjectFolders};
@@ -456,6 +457,13 @@ where
         }
         if let (None, Some(skills)) = (&thread.home, &self.skills) {
             sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
+        }
+        // Where someone can choose where it goes, and the thread works on this computer.
+        if thread.home.is_none() && self.someone_answers(thread) {
+            sources.push(Arc::new(Install {
+                workspace: Arc::clone(self.workspace_for(thread)),
+                own: self.settings.own.clone(),
+            }));
         }
         if self.trusting(thread.for_) {
             let own = self.own.read().unwrap_or_else(PoisonError::into_inner);

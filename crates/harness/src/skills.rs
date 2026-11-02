@@ -263,7 +263,7 @@ fn text_field(document: &frontmatter::Document, key: &str) -> Result<Option<Stri
 
 /// A name is 1 to 64 lowercase letters, digits and single hyphens, neither first nor last,
 /// and matches its folder's name.
-fn check_name(name: &str, folder: &str) -> Result<(), String> {
+pub(crate) fn check_name(name: &str, folder: &str) -> Result<(), String> {
     let allowed = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
     if name.is_empty() || name.chars().count() > MAX_NAME {
         return Err(format!("its name must be 1 to {MAX_NAME} characters"));

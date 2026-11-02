@@ -6,6 +6,7 @@ use glave_ports::settings::Judge;
 
 use crate::commands::Command;
 use crate::compaction::Compaction;
+use crate::install::Own;
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 
@@ -54,6 +55,10 @@ pub struct Settings {
     /// Whether a model titles each thread after its first exchange (`title.rs`); off, a
     /// thread's title is the first line of its first message. Off by default.
     pub titles: bool,
+    /// The person's own folder, where `install` puts what they choose for all their projects;
+    /// `None` where they have none here, as on a server people sign in to with an identity
+    /// provider: then only a project takes what it adds.
+    pub own: Option<Own>,
 }
 
 impl Settings {
@@ -79,6 +84,7 @@ impl Settings {
             agent: None,
             commands: Vec::new(),
             titles: false,
+            own: None,
         }
     }
 }

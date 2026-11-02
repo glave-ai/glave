@@ -4,9 +4,8 @@
 //! AGENTS.md, skills come from files, so they guide the model without outranking glave's rules.
 
 use std::fmt::Write as _;
-use std::future::ready;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::Arguments;
 use glave_ports::{
@@ -14,7 +13,7 @@ use glave_ports::{
 };
 use serde_json::json;
 
-use super::{Skill, SkillSource, frontmatter};
+use super::{Skill, SkillSource, find_skills, frontmatter};
 use crate::tools::workspace::Workspace;
 
 /// The tool's name.
@@ -24,91 +23,119 @@ pub const SKILL: &str = "skill";
 const MAX_BODY: usize = 32 * 1024;
 
 /// The skills on offer, as a tool source.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Skills {
-    skills: Vec<Skill>,
+    /// The skills as last found.
+    found: RwLock<Vec<Skill>>,
     /// Where their files are read, when not on this computer: the person's own computer.
     on: Option<Arc<Workspace>>,
+    /// The folders on this computer they are found in again before each turn lists them, and
+    /// glave's own skills after them, so a skill added since counts from the next message.
+    again: Option<(Vec<PathBuf>, Vec<Skill>)>,
 }
 
 impl Skills {
     /// The `skill` tool for `skills`, or `None` when there are none: then the model is offered
     /// no tool and told nothing new.
     pub fn offer(skills: Vec<Skill>) -> Option<Self> {
-        (!skills.is_empty()).then_some(Self { skills, on: None })
+        (!skills.is_empty()).then(|| Self::of(skills, None, None))
+    }
+
+    /// The `skill` tool for the skills in `folders` on this computer, with `built_in`, glave's
+    /// own, after them: `found` now, and found again before each turn lists them. While there
+    /// are none, it offers no tool.
+    pub fn found_again(folders: Vec<PathBuf>, built_in: Vec<Skill>, found: Vec<Skill>) -> Self {
+        Self::of(found, None, Some((folders, built_in)))
     }
 
     /// The `skill` tool for `skills`, whose files are read through `home`, their person's home
     /// on their own computer, which that wakes; or `None` when there are none.
     pub(crate) fn offer_on(skills: Vec<Skill>, home: Arc<Workspace>) -> Option<Self> {
-        (!skills.is_empty()).then_some(Self {
-            skills,
-            on: Some(home),
-        })
+        (!skills.is_empty()).then(|| Self::of(skills, Some(home), None))
+    }
+
+    fn of(
+        skills: Vec<Skill>,
+        on: Option<Arc<Workspace>>,
+        again: Option<(Vec<PathBuf>, Vec<Skill>)>,
+    ) -> Self {
+        Self {
+            found: RwLock::new(skills),
+            on,
+            again,
+        }
+    }
+
+    /// The skills as last found.
+    fn current(&self) -> Vec<Skill> {
+        let skills = self.found.read().unwrap_or_else(PoisonError::into_inner);
+        skills.clone()
     }
 
     /// glave's own skills among these, which come along wherever a thread works.
     pub(crate) fn built_in(&self) -> impl Iterator<Item = Skill> {
-        self.skills
-            .iter()
+        self.current()
+            .into_iter()
             .filter(|skill| matches!(skill.source, SkillSource::BuiltIn(_)))
-            .cloned()
     }
 
-    fn spec(&self) -> ToolSpec {
-        let mut listed = String::new();
-        for skill in &self.skills {
-            let _ = write!(
-                listed,
-                "<skill>\n<name>{}</name>\n<description>{}</description>\n</skill>\n",
-                skill.name,
-                escaped(&skill.description)
-            );
-        }
-        let names: Vec<&str> = self
-            .skills
-            .iter()
-            .map(|skill| skill.name.as_str())
-            .collect();
-        ToolSpec {
-            name: SKILL.to_owned(),
-            description: format!(
-                "Load a skill: instructions for one kind of task, with any scripts and files \
-                 they come with. When a task matches a skill's description, load it before you \
-                 start and follow it. Run any script it names with bash.\n\n\
-                 <available_skills>\n{listed}</available_skills>"
-            ),
-            parameters: json!({"type": "object", "properties": {
-                "name": {"type": "string", "enum": names, "description": "The skill to load"}
-            }, "required": ["name"]}),
-        }
-    }
-
-    /// The skill a call names, forgiving case and stray whitespace.
-    fn named(&self, arguments: &Arguments) -> Result<&Skill, String> {
-        let Arguments::Json(map) = arguments else {
-            return Err("The arguments were not valid JSON.".to_owned());
+    /// Finds the skills again, where they are found again.
+    async fn find_again(&self) {
+        let Some((folders, built_in)) = &self.again else {
+            return;
         };
-        let name = map
-            .get("name")
-            .and_then(|value| value.as_str())
-            .ok_or("Give the name of a skill.")?;
-        let wanted = name.trim().to_ascii_lowercase();
-        self.skills
-            .iter()
-            .find(|skill| skill.name == wanted)
-            .ok_or_else(|| {
-                let names: Vec<&str> = self
-                    .skills
-                    .iter()
-                    .map(|skill| skill.name.as_str())
-                    .collect();
-                format!(
-                    "There is no skill named {name:?}. The skills are: {}.",
-                    names.join(", ")
-                )
-            })
+        let mut found = find_skills(folders).await.skills;
+        found.extend(built_in.iter().cloned());
+        *self.found.write().unwrap_or_else(PoisonError::into_inner) = found;
     }
+}
+
+/// The tool, listing `skills`.
+fn spec(skills: &[Skill]) -> ToolSpec {
+    let mut listed = String::new();
+    for skill in skills {
+        let _ = write!(
+            listed,
+            "<skill>\n<name>{}</name>\n<description>{}</description>\n</skill>\n",
+            skill.name,
+            escaped(&skill.description)
+        );
+    }
+    let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+    ToolSpec {
+        name: SKILL.to_owned(),
+        description: format!(
+            "Load a skill: instructions for one kind of task, with any scripts and files \
+             they come with. When a task matches a skill's description, load it before you \
+             start and follow it. Run any script it names with bash.\n\n\
+             <available_skills>\n{listed}</available_skills>"
+        ),
+        parameters: json!({"type": "object", "properties": {
+            "name": {"type": "string", "enum": names, "description": "The skill to load"}
+        }, "required": ["name"]}),
+    }
+}
+
+/// The skill among `skills` a call names, forgiving case and stray whitespace.
+fn named(skills: Vec<Skill>, arguments: &Arguments) -> Result<Skill, String> {
+    let Arguments::Json(map) = arguments else {
+        return Err("The arguments were not valid JSON.".to_owned());
+    };
+    let name = map
+        .get("name")
+        .and_then(|value| value.as_str())
+        .ok_or("Give the name of a skill.")?;
+    let wanted = name.trim().to_ascii_lowercase();
+    let names: Vec<String> = skills.iter().map(|skill| skill.name.clone()).collect();
+    skills
+        .into_iter()
+        .find(|skill| skill.name == wanted)
+        .ok_or_else(|| {
+            format!(
+                "There is no skill named {name:?}. The skills are: {}.",
+                names.join(", ")
+            )
+        })
 }
 
 /// `text` safe inside the listing's tags.
@@ -169,12 +196,19 @@ async fn load(skill: &Skill, on: Option<&Workspace>) -> Result<String, String> {
 
 impl ToolSource for Skills {
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
-        let info = ToolInfo {
-            spec: self.spec(),
-            effect: Effect::Reads,
-            parallel: true,
-        };
-        Box::pin(ready(Ok(vec![info])))
+        Box::pin(async move {
+            self.find_again().await;
+            let skills = self.current();
+            if skills.is_empty() {
+                return Ok(Vec::new());
+            }
+            let info = ToolInfo {
+                spec: spec(&skills),
+                effect: Effect::Reads,
+                parallel: true,
+            };
+            Ok(vec![info])
+        })
     }
 
     fn call<'a>(
@@ -184,8 +218,8 @@ impl ToolSource for Skills {
         _cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, ToolOutput> {
         Box::pin(async move {
-            let loaded = match self.named(arguments) {
-                Ok(skill) => load(skill, self.on.as_deref()).await,
+            let loaded = match named(self.current(), arguments) {
+                Ok(skill) => load(&skill, self.on.as_deref()).await,
                 Err(why) => Err(why),
             };
             match loaded {

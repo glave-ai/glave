@@ -84,8 +84,11 @@ fn asks_sentence(service: &str) -> String {
     format!("{service} asks you, not the model")
 }
 
-/// Where the answer goes.
+/// Where the answer goes: for glave's own question (`install`), that the model learns it.
 fn note_sentence(service: &str) -> String {
+    if service == crate::install::ASKED_BY_GLAVE {
+        return crate::install::GLAVE_NOTE.to_owned();
+    }
     format!(
         "Your answer goes only to {service}. The model sees that you answered, not what you typed."
     )
