@@ -31,6 +31,10 @@ pub use payload::{
     Sort,
 };
 pub use payload::{
+    AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
+    ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
+};
+pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkPoint,
     GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet, HookPoint, HookRan, HookResult,
     Lifted, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
@@ -64,8 +68,4 @@ pub use payload::{
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{SecretAdded, SecretRemoved};
-pub use payload::{
-    ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
-    ServiceOutcome, misfit,
-};
 pub use secret::{Secret, serialize_exposed};

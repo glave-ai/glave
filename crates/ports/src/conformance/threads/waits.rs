@@ -247,6 +247,7 @@ async fn service_round<L: EventLog>(
             bytes: 2,
             media_type: "application/json".into(),
         },
+        adds: None,
     };
     let asked = writer.next(47, &asks)?;
     let asked_at = asked.seq;

@@ -9,6 +9,7 @@ import {
   partsText,
   promptOf,
   questionsOf,
+  serviceDetailOf,
   stepsAfter,
   threadItems,
   trimBlankLines,
@@ -469,6 +470,7 @@ describe('what a service asks', () => {
         ask: 'GitHub asks you, not the model',
         note: 'Your answer goes only to GitHub.',
         message: 'Which label?',
+        detail: null,
         told: null,
         fields: [
           {
@@ -507,6 +509,29 @@ describe('what a service asks', () => {
         ],
       },
     ]);
+  });
+
+  it('reads what glave adds as the server recorded it', () => {
+    expect(
+      serviceDetailOf({
+        front: 'name: tidy',
+        text: '# Tidy',
+        files: [
+          { path: 'scripts/tidy.sh', text: '#!/bin/sh', runs_code: true, cut: true },
+          { path: 'notes.md', text: 'n' },
+        ],
+        cut: 'Too long to show in full here: 1 part cut short.',
+      }),
+    ).toEqual({
+      front: 'name: tidy',
+      text: '# Tidy',
+      files: [
+        { path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true },
+        { path: 'notes.md', text: 'n', runsCode: false },
+      ],
+      cut: 'Too long to show in full here: 1 part cut short.',
+    });
+    expect(serviceDetailOf(undefined)).toBeNull();
   });
 
   it('keeps each thing a call asks apart, each with what came of it', () => {

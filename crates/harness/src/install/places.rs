@@ -163,9 +163,18 @@ fn told(place: Place, change: &Change, replaced: bool) -> String {
 /// Makes `change` in the project, through its computer.
 async fn in_project(workspace: &Workspace, change: &Change) -> Result<(), String> {
     match change {
-        Change::AddSkill { name, text, .. } => {
+        Change::AddSkill {
+            name, text, files, ..
+        } => {
             // Not a protected path: written as the model's own tools would write it.
-            workspace.write(&project_skill(name), text.as_bytes()).await
+            workspace
+                .write(&project_skill(name), text.as_bytes())
+                .await?;
+            for (path, text) in files {
+                let file = format!("{PROJECT_SKILLS}/{name}/{path}");
+                workspace.write(&file, text.as_bytes()).await?;
+            }
+            Ok(())
         }
         Change::RemoveSkill { name } => Err(format!(
             "The skill “{name}” is in this project's files: delete its folder with your own \
@@ -186,12 +195,27 @@ fn in_own(folder: &Path, change: &Change) -> Result<(), String> {
         format!("Could not change {}: {error}", path.display())
     };
     match change {
-        Change::AddSkill { name, text, .. } => {
-            let file = own_skill(folder, name);
-            if let Some(parent) = file.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| failed(parent, e))?;
+        Change::AddSkill {
+            name, text, files, ..
+        } => {
+            // One it replaces goes whole, so no file of the old one stays behind.
+            let skill = folder.join(OWN_SKILLS).join(name);
+            match std::fs::remove_dir_all(&skill) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(failed(&skill, error));
+                }
+                _ => {}
             }
-            glave_ports::file::replace(&file, text.as_bytes()).map_err(|e| failed(&file, e))
+            let written = std::iter::once((SKILL_MD, text))
+                .chain(files.iter().map(|(path, text)| (path.as_str(), text)));
+            for (path, text) in written {
+                let file = skill.join(path);
+                if let Some(parent) = file.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| failed(parent, e))?;
+                }
+                glave_ports::file::replace(&file, text.as_bytes()).map_err(|e| failed(&file, e))?;
+            }
+            Ok(())
         }
         Change::RemoveSkill { name } => {
             let skill = folder.join(OWN_SKILLS).join(name);

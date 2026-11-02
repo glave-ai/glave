@@ -1,5 +1,11 @@
 import type { RawEvent, Update } from '@glave/client';
-import type { GlzDecision, GlzQuestion, GlzReceiptStatus, GlzServiceField } from '@glave/glaze';
+import type {
+  GlzDecision,
+  GlzQuestion,
+  GlzReceiptStatus,
+  GlzServiceDetail,
+  GlzServiceField,
+} from '@glave/glaze';
 
 /** What every item of a thread has: its key, and the `seq` of the event that put it there. */
 interface Placed {
@@ -101,6 +107,8 @@ export interface ServiceItem extends Placed {
   /** What it asks, in the service's own words. */
   readonly message: string;
   readonly fields: readonly GlzServiceField[];
+  /** What glave's own question adds (a skill's text and files), as the server sent it. */
+  readonly detail: GlzServiceDetail | null;
   /** What came of it, in the server's line; `null` while it waits. */
   readonly told: string | null;
 }
@@ -240,6 +248,25 @@ export function serviceFieldsOf(fields: unknown): readonly GlzServiceField[] {
     required: field['required'] === true,
     kind: fieldKindOf(isRecord(field['kind']) ? field['kind'] : {}),
   }));
+}
+
+/** What a `service.asked` adds, as the server recorded it: `null` for a service's own. */
+export function serviceDetailOf(adds: unknown): GlzServiceDetail | null {
+  if (!isRecord(adds)) {
+    return null;
+  }
+  const files = Array.isArray(adds['files']) ? (adds['files'] as readonly unknown[]) : [];
+  const cut = adds['cut'];
+  return {
+    front: text(adds['front']),
+    text: text(adds['text']),
+    files: files.filter(isRecord).map((file) => ({
+      path: text(file['path']),
+      text: text(file['text']),
+      runsCode: file['runs_code'] === true,
+    })),
+    cut: typeof cut === 'string' ? cut : null,
+  };
 }
 
 const DECISIONS: readonly string[] = ['allow_once', 'allow_for_thread', 'deny'];
@@ -422,6 +449,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           note: text(data['note']),
           message: text(data['message']),
           fields: serviceFieldsOf(data['fields']),
+          detail: serviceDetailOf(data['adds']),
           told: null,
         });
         asking.set(call, key);

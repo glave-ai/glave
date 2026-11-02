@@ -6,7 +6,7 @@ use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
 
-use glave_event::{Arguments, Part, Risk, ServiceAnswer, ServiceField, ToolKind};
+use glave_event::{Arguments, Part, Risk, ServiceAdds, ServiceAnswer, ServiceField, ToolKind};
 use thiserror::Error;
 
 use crate::model::ToolSpec;
@@ -173,6 +173,8 @@ pub struct ServiceAsks {
     /// What it asks, in its own words.
     pub message: String,
     pub fields: Vec<ServiceField>,
+    /// What glave's own question adds, for the person to read first; a service's has none.
+    pub adds: Option<ServiceAdds>,
     /// What the source needs to go on from here, its own, given back with the answer. It may
     /// hold what the person answered earlier in the call, so it is never shown to anyone.
     pub state: serde_json::Value,

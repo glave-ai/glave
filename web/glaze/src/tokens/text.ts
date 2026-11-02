@@ -69,6 +69,12 @@ export interface GlzText {
     readonly requiredLabel: string;
     readonly missingLabel: string;
   };
+  readonly serviceDetail: {
+    readonly label: string;
+    readonly textLabel: string;
+    readonly filesLabel: string;
+    readonly runsCodeLabel: string;
+  };
   readonly receipt: { readonly statusLabels: Readonly<Record<GlzReceiptStatus, string>> };
   readonly sidenavLayout: { readonly label: string; readonly resizeLabel: string };
   readonly steps: { readonly statusLabels: GlzRunStatusLabels };

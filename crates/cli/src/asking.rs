@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use glave_event::{ServiceAnswer, ServiceAsked, ServiceField, ServiceFieldKind};
+use glave_event::{ServiceAdds, ServiceAnswer, ServiceAsked, ServiceField, ServiceFieldKind};
 use glave_harness::Question;
 use glave_session::protocol::{ApiError, Reply, code};
 use serde_json::{Number, Value};
@@ -64,10 +64,15 @@ pub(crate) fn answer(question: &Question, typed: &str) -> String {
 }
 
 /// Who asks and what, as the terminal shows it: the server's line, then the service's words
-/// marked as theirs, then where the answer goes.
+/// marked as theirs, then what it adds, when glave asks, then where the answer goes.
 pub(crate) fn service_shown(color: bool, asked: &ServiceAsked) -> String {
+    let adds = asked
+        .adds
+        .as_ref()
+        .map(|adds| adds_shown(color, adds))
+        .unwrap_or_default();
     format!(
-        "\n\n{} {}\n{}: {}\n{} {}\n",
+        "\n\n{} {}\n{}: {}\n{adds}{} {}\n",
         paint(color, "\x1b[33m", "question"),
         asked.ask,
         asked.service,
@@ -79,6 +84,29 @@ pub(crate) fn service_shown(color: bool, asked: &ServiceAsked) -> String {
             "A required field left empty with nothing to use declines."
         ),
     )
+}
+
+/// What a skill adds, as plain text: its frontmatter and text, then each file it brings under
+/// its path, every line set in behind a bar, then what was cut, as the server says it.
+fn adds_shown(color: bool, adds: &ServiceAdds) -> String {
+    let bar = paint(color, DIM, "│");
+    let lines = |shown: &mut String, text: &str| {
+        for line in text.lines() {
+            let _ = writeln!(shown, "  {bar} {line}");
+        }
+    };
+    let mut shown = String::from("  What it adds:\n");
+    lines(&mut shown, &adds.front);
+    lines(&mut shown, &adds.text);
+    for file in &adds.files {
+        let runs = if file.runs_code { " (runs code)" } else { "" };
+        let _ = writeln!(shown, "  {}{}", file.path, paint(color, DIM, runs));
+        lines(&mut shown, &file.text);
+    }
+    if let Some(cut) = &adds.cut {
+        let _ = writeln!(shown, "  {}", paint(color, DIM, cut));
+    }
+    shown
 }
 
 /// One field of what a service asks, ending where its answer is typed.
@@ -433,6 +461,27 @@ mod tests {
         assert!(
             picked.ends_with("a number, or Enter for IDEA › "),
             "{picked}"
+        );
+    }
+
+    #[test]
+    fn what_a_skill_adds_prints_as_plain_text() {
+        let adds = ServiceAdds {
+            front: "name: tidy".to_owned(),
+            text: "# Tidy\nRun it.".to_owned(),
+            text_cut: true,
+            files: vec![glave_event::AddedFile {
+                path: "scripts/tidy.sh".to_owned(),
+                text: "#!/bin/sh".to_owned(),
+                runs_code: true,
+                cut: false,
+            }],
+            cut: Some("Too long to show in full here: 1 part cut short.".to_owned()),
+        };
+        assert_eq!(
+            adds_shown(false, &adds),
+            "  What it adds:\n  │ name: tidy\n  │ # Tidy\n  │ Run it.\n  scripts/tidy.sh (runs code)\n  \
+             │ #!/bin/sh\n  Too long to show in full here: 1 part cut short.\n"
         );
     }
 }
