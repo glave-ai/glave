@@ -53,12 +53,19 @@ const NO_ONE: &str = "Not done: no one is here to choose where it goes. Tell the
 const PLANNING: &str = "Not done in plan mode: nothing is added while you plan. Put it in the \
      plan instead.";
 
+/// What the model is told when a server would go in the person's own settings, which their
+/// organization forbids.
+const FORBIDDEN: &str = "Not added: the person's organization doesn't allow tool servers of \
+     their own. Add it to a project instead, or ask whoever runs glave there.";
+
 /// The person's own folder, where `install` puts what is for all their projects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Own {
     /// glave's folder, which holds their `skills` and `mcp.json`.
     pub folder: PathBuf,
-    /// Whether they may add tool servers of their own: not where a policy forbids it.
+    /// Whether they may add tool servers of their own: not where the organization's policy
+    /// forbids them (`own_mcp_forbidden`), when it is offered only a project, and refused the
+    /// person's own.
     pub servers: bool,
 }
 
@@ -275,6 +282,12 @@ fn named(server: &Value, key: &str) -> String {
 }
 
 impl Install {
+    /// Whether the organization's policy keeps the person from adding tool servers of their
+    /// own (`[mcp] own = false`, as `check_own_servers` enforces when they are read).
+    fn servers_forbidden(&self) -> bool {
+        self.own.as_ref().is_some_and(|own| !own.servers)
+    }
+
     /// Where `change` may go: this project, unless the thread works in a chat's scratch folder;
     /// the person's own, where they have a folder here (and may add servers, for a server).
     /// Taking one out, only where it is.
@@ -329,6 +342,7 @@ impl Install {
                         "There is no server “{name}” in this project's .mcp.json or the person's own."
                     )
                 }
+                Change::AddServer { .. } if self.servers_forbidden() => FORBIDDEN.to_owned(),
                 _ => "Nothing can be added here: this is a chat, and the person has no folder of \
                       their own on this server."
                     .to_owned(),
@@ -386,6 +400,11 @@ impl Install {
         };
         match self.places(change).await {
             Ok(places) if places.contains(&place) => {}
+            Ok(_)
+                if place == Place::Everywhere && !change.is_skill() && self.servers_forbidden() =>
+            {
+                return ToolOutput::text(true, FORBIDDEN);
+            }
             Ok(_) => {
                 return ToolOutput::text(true, "That place no longer fits, so nothing changed.");
             }

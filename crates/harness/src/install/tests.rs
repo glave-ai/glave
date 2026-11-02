@@ -225,3 +225,25 @@ fn nothing_changes_on_a_no_or_with_no_one_to_ask() {
         assert!(!project.join(".agents").exists() && !own.join("skills").exists());
     });
 }
+
+#[test]
+fn where_the_organization_forbids_own_servers_none_is_added_there() {
+    let (project, own) = (
+        TempDir::new("install-f").unwrap(),
+        TempDir::new("install-g").unwrap(),
+    );
+    glave_ports::block_on!(async {
+        let tool = install(&project, &own, false).await;
+        let asks = asked(&tool, &server()).await;
+        assert_eq!(offered(&asks), ["project"]);
+        // An answer for the person's own, which was never offered, is refused.
+        let done = chosen(&tool, asks, "everywhere").await;
+        assert_eq!(done, ToolOutput::text(true, FORBIDDEN));
+        assert!(!own.join("mcp.json").exists());
+        // Skills are theirs to add still.
+        assert_eq!(
+            offered(&asked(&tool, &skill()).await),
+            ["project", "everywhere"]
+        );
+    });
+}
