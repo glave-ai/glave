@@ -63,6 +63,7 @@ pub use payload::{
 };
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
+pub use payload::{SecretAdded, SecretRemoved};
 pub use payload::{
     ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
     ServiceOutcome, misfit,

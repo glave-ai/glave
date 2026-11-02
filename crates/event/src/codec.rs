@@ -17,14 +17,14 @@ use crate::payload::{
     MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
     ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
     PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
-    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, ServiceAnswered,
-    ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, appearance, approval, awake, browser, catalog, certificate, chosen, command,
-    connection, credential, credits, filters, gateway, goal, grouping, hook, instructions,
-    language, memory, message, model, passkey, people, plan, project, provider, remembering,
-    service, signup, standing, task, thread, tool, trust, turn, workspace,
+    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SecretAdded,
+    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
+    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted,
+    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted,
+    WorkspaceBound, WorkspaceRemoved, appearance, approval, awake, browser, catalog, certificate,
+    chosen, command, connection, credential, credits, filters, gateway, goal, grouping, hook,
+    instructions, language, memory, message, model, passkey, people, plan, project, provider,
+    remembering, secrets, service, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -83,6 +83,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credential::REMOVED, 1),
     (connection::CONNECTED, 1),
     (connection::REMOVED, 1),
+    (secrets::ADDED, 1),
+    (secrets::REMOVED, 1),
     (project::FOLDER_SET, 1),
     (project::REMOVED, 1),
     (instructions::READ, 1),
@@ -172,6 +174,8 @@ pub enum Body {
     CredentialRemoved(CredentialRemoved),
     ConnectionConnected(ConnectionConnected),
     ConnectionRemoved(ConnectionRemoved),
+    SecretAdded(SecretAdded),
+    SecretRemoved(SecretRemoved),
     ProjectFolderSet(ProjectFolderSet),
     ProjectRemoved(ProjectRemoved),
     InstructionsRead(InstructionsRead),
@@ -388,6 +392,8 @@ impl Event {
             Body::CredentialRemoved(payload) => encode(header, payload),
             Body::ConnectionConnected(payload) => encode(header, payload),
             Body::ConnectionRemoved(payload) => encode(header, payload),
+            Body::SecretAdded(payload) => encode(header, payload),
+            Body::SecretRemoved(payload) => encode(header, payload),
             Body::ProjectFolderSet(payload) => encode(header, payload),
             Body::ProjectRemoved(payload) => encode(header, payload),
             Body::InstructionsRead(payload) => encode(header, payload),
@@ -520,10 +526,10 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         filters::SET => filters::decode_set(version, data).map(|r| r.map(Body::FiltersSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => people::decode(kind, version, data)
-            .or_else(|| signup::decode(kind, version, data))
-            .or_else(|| credits::decode(kind, version, data))
-            .or_else(|| appearance::decode(kind, version, data)),
+        _ => [people::decode, signup::decode, credits::decode]
+            .into_iter()
+            .chain([appearance::decode, secrets::decode])
+            .find_map(|decode| decode(kind, version, data)),
     }
 }
 

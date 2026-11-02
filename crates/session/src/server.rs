@@ -40,6 +40,7 @@ use crate::projects::Places;
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
+use crate::secrets::Secrets;
 use crate::standing::Worktrees;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::thought::served;
@@ -141,6 +142,9 @@ pub struct Wiring<P, L, B> {
     /// threads work there, and it is woken by the first tool call that needs it. None: every
     /// thread works on the computer `workspace` is on.
     pub homes: Option<Arc<dyn Homes>>,
+    /// The secrets the person on this computer adds; none where whoever runs the server sets
+    /// up what its threads sign in to.
+    pub secrets: Option<Arc<Secrets<L>>>,
     /// The organizations' credits, where the server's configuration keeps them: the same its
     /// gateway charges each call to (`specs/gateway.md`, "Credits").
     pub credits: Option<Arc<Credits<L>>>,
@@ -202,6 +206,7 @@ impl<P, L, B> Wiring<P, L, B> {
             awake: None,
             worktrees: None,
             homes: None,
+            secrets: None,
             credits: None,
             router_floor: None,
         }
@@ -323,6 +328,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) awake: Option<Awake>,
     /// What lets go of a thread's worktrees once it is put away, where the host keeps them.
     pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
+    /// The secrets the person on this computer adds, where they may.
+    pub(crate) secrets: Option<Arc<Secrets<L>>>,
     /// The organizations' credits, where it keeps them.
     pub(crate) credits: Option<Arc<Credits<L>>>,
     pub(crate) router_floor: Option<glave_event::Filters>,
@@ -420,6 +427,7 @@ where
                 awake: wiring.awake.map(Awake::new),
                 worktrees: wiring.worktrees,
                 homes: wiring.homes,
+                secrets: wiring.secrets,
                 credits: wiring.credits,
                 router_floor: wiring.router_floor,
             }),

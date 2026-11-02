@@ -1,17 +1,18 @@
 //! Where a person's accounts are kept: the accounts ledger in their personal project, glave's
-//! own stream under a reserved id, holding their model accounts, git hosts and sign-ins to
-//! connections. Each `provider.connected`, `credential.connected` and `connection.connected` is
-//! sealed under a key of its own; removing an account records its removal and erases it
-//! ([`Eraser::erase`]), so neither the store nor a backup can read it again. A removed account
-//! whose key still opens, as after a crash between the two, is erased the next time the ledger
-//! is read.
+//! own stream under a reserved id, holding their model accounts, git hosts, sign-ins to
+//! connections and secrets. Each `provider.connected`, `credential.connected`,
+//! `connection.connected` and `secret.added` is sealed under a key of its own; removing an
+//! account records its removal and erases it ([`Eraser::erase`]), so neither the store nor a
+//! backup can read it again. A removed account whose key still opens, as after a crash between
+//! the two, is erased the next time the ledger is read.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
     At, Body, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialId,
     CredentialRemoved, EncodeError, EventId, Header, InvalidValue, Principal, PrincipalId,
-    ProviderConnected, ProviderId, ProviderRemoved, RawEvent, Seq, ThreadId, decode, encode,
+    ProviderConnected, ProviderId, ProviderRemoved, RawEvent, Secret, SecretAdded, SecretRemoved,
+    Seq, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
@@ -71,6 +72,8 @@ pub struct Accounts {
     pub credentials: Vec<CredentialConnected>,
     /// The connections signed in to, one for each server's address.
     pub connections: Vec<ConnectionConnected>,
+    /// The secrets the person added, one for each name.
+    pub secrets: Vec<SecretAdded>,
     /// Credentials renewed, each with the kept one it became, the latest last.
     renamed: Vec<(CredentialId, CredentialId)>,
 }
@@ -317,6 +320,85 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
+    /// Keeps the secret `name`, sent only to `hosts`, under a key of its own. False, keeping
+    /// nothing, when a secret of that name is kept already.
+    pub(crate) async fn add_secret(
+        &self,
+        name: &str,
+        hosts: &[String],
+        value: &Secret,
+    ) -> Result<bool, AccountsError> {
+        let secret = self.new_id()?;
+        let added = self
+            .append(|accounts| {
+                let kept = accounts.secrets.iter().any(|kept| kept.name == name);
+                (!kept).then(|| {
+                    let added = self.secret(secret, name, hosts.to_vec(), value.clone());
+                    (vec![Event::SecretAdded(added)], ())
+                })
+            })
+            .await?;
+        Ok(added.is_some())
+    }
+
+    /// Keeps a new secret in place of the one called `name`, under a key of its own, with
+    /// `value`, and `hosts` where given, else the old one's; the old one is erased when the
+    /// accounts are next read. False when no secret of that name is kept.
+    pub(crate) async fn replace_secret(
+        &self,
+        name: &str,
+        hosts: Option<&[String]>,
+        value: &Secret,
+    ) -> Result<bool, AccountsError> {
+        let secret = self.new_id()?;
+        let replaced = self
+            .append(|accounts| {
+                let old = accounts.secrets.iter().find(|kept| kept.name == name)?;
+                let hosts = hosts.map_or_else(|| old.hosts.clone(), <[String]>::to_vec);
+                let events = vec![
+                    Event::SecretAdded(self.secret(secret, name, hosts, value.clone())),
+                    Event::SecretRemoved(old.secret),
+                ];
+                Some((events, ()))
+            })
+            .await?;
+        Ok(replaced.is_some())
+    }
+
+    /// Removes the secret called `name`; it is erased when the accounts are next read. False
+    /// when none is kept by that name.
+    pub(crate) async fn remove_secret(&self, name: &str) -> Result<bool, AccountsError> {
+        let removed = self
+            .append(|accounts| {
+                let kept = accounts.secrets.iter().find(|kept| kept.name == name)?;
+                Some((vec![Event::SecretRemoved(kept.secret)], ()))
+            })
+            .await?;
+        Ok(removed.is_some())
+    }
+
+    /// A new secret's event, added by the ledger's person.
+    fn secret(
+        &self,
+        secret: CredentialId,
+        name: &str,
+        hosts: Vec<String>,
+        value: Secret,
+    ) -> SecretAdded {
+        SecretAdded {
+            secret,
+            name: name.to_owned(),
+            hosts,
+            value,
+            by: Principal::person(self.person),
+        }
+    }
+
+    /// A new id for something the ledger keeps under a key of its own.
+    fn new_id(&self) -> Result<CredentialId, AccountsError> {
+        Ok(CredentialId::new(self.clock.now(), self.entropy.bytes()?)?)
+    }
+
     /// Appends what `change` makes of the accounts kept, read again and tried again when
     /// another process wrote first; nothing when it makes nothing.
     async fn append<T>(
@@ -406,6 +488,8 @@ impl<L: EventLog> AccountLedger<L> {
             Event::ConnectionRemoved(connection) => {
                 encode(header, &ConnectionRemoved { connection, by })?
             }
+            Event::SecretAdded(added) => encode(header, &added)?,
+            Event::SecretRemoved(secret) => encode(header, &SecretRemoved { secret, by })?,
         })
     }
 }
@@ -461,6 +545,19 @@ impl Read {
                     self.unerased.push(removed.connection.as_uuid());
                 }
             }
+            Body::SecretAdded(added) => {
+                accounts.secrets.retain(|kept| kept.secret != added.secret);
+                accounts.secrets.push(added);
+            }
+            Body::SecretRemoved(removed) => {
+                let before = accounts.secrets.len();
+                accounts
+                    .secrets
+                    .retain(|kept| kept.secret != removed.secret);
+                if accounts.secrets.len() < before {
+                    self.unerased.push(removed.secret.as_uuid());
+                }
+            }
             _ => {}
         }
     }
@@ -475,6 +572,8 @@ enum Event {
     CredentialRemoved(CredentialId, Option<CredentialId>),
     ConnectionConnected(ConnectionConnected),
     ConnectionRemoved(CredentialId),
+    SecretAdded(SecretAdded),
+    SecretRemoved(CredentialId),
 }
 
 #[cfg(test)]

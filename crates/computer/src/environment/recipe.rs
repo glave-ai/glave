@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::computer::{Environment, Image, Network, Size};
+use glave_ports::computer::{Environment, Image, Network, Size, is_variable_name};
 use serde::Deserialize;
 
-use super::{EnvironmentError, is_variable_name};
+use super::EnvironmentError;
 
 /// The file as written. Unknown keys are refused, so a typo is never quietly ignored.
 #[derive(Debug, Deserialize)]

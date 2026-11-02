@@ -178,6 +178,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         setup.providers = Some(Arc::new(Accounts::default()));
         setup.hosts = Some(Arc::new(Hosts::default()));
         setup.connections = Some(Arc::new(InMemory::default()));
+        setup.secrets = Some(KeepSecrets::new(Arc::clone(&parts.eraser), personal, local));
     }
     // Credits kept, so what their methods answer each caller is swept too.
     let limit = Some(Money {
@@ -267,6 +268,9 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
         person.keep(Kind::Credential, credential);
         let flow = call("credential/device/start", json!({})).await["device"]["flow"].clone();
         person.keep(Kind::Flow, flow);
+        let secret =
+            json!({"name": "STRIPE_KEY", "hosts": ["api.stripe.com"], "value": any_secret()});
+        call("secret/add", secret).await;
     }
 }
 

@@ -18,6 +18,8 @@ pub enum Setting {
     Credentials,
     /// Their sign-ins to connections (`connection/list`).
     Connections,
+    /// Their secrets (`secret/list`).
+    Secrets,
     /// Whether their agent may search the web (`search/get`).
     Search,
     /// How their clients group their threads (`grouping/get`).
@@ -39,10 +41,11 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
+        Self::Secrets,
         Self::Search,
         Self::Grouping,
         Self::Filters,
@@ -66,6 +69,9 @@ impl Request {
             | Self::CredentialRemove { .. }
             | Self::CredentialDevicePoll { .. } => Setting::Credentials,
             Self::ConnectionPoll { .. } | Self::ConnectionRemove { .. } => Setting::Connections,
+            Self::SecretAdd { .. } | Self::SecretReplace { .. } | Self::SecretRemove { .. } => {
+                Setting::Secrets
+            }
             Self::SearchSet { .. } => Setting::Search,
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::FiltersSet { .. } => Setting::Filters,

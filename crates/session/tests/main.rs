@@ -54,6 +54,7 @@ mod remembering;
 mod remote;
 mod removing;
 mod schedules;
+mod secrets;
 mod server;
 mod service_asks;
 mod sharing;

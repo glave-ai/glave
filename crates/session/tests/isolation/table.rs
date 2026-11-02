@@ -484,6 +484,18 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             vec![json!({"credential": "@credential"})],
         ),
         ("credential/device/start", vec![json!({})]),
+        (
+            "secret/add",
+            vec![
+                json!({"name": "OTHER_KEY", "hosts": ["example.com"], "value": "a-value-it-keeps"}),
+            ],
+        ),
+        ("secret/list", vec![json!({})]),
+        (
+            "secret/replace",
+            vec![json!({"name": "STRIPE_KEY", "value": "a-value-it-keeps"})],
+        ),
+        ("secret/remove", vec![json!({"name": "STRIPE_KEY"})]),
         ("credential/device/poll", vec![json!({"flow": "@flow"})]),
         (
             "connection/start",

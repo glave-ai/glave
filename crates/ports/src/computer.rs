@@ -20,7 +20,7 @@ use crate::tools::{BoxFuture, Cancellation};
 pub use background::{Background, IDLE, KEPT_OUTPUT, MAX_BACKGROUND, MAX_WAIT, Printed};
 pub use bytes::Bytes;
 pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, GitCredentials};
-pub use environment::{Environment, Image, Network, Size};
+pub use environment::{Environment, Image, Network, Size, is_variable_name};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
 pub use glave_event::Forge;
 pub use limits::{Isolation, Limits};

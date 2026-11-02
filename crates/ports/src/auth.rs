@@ -256,7 +256,7 @@ pub fn signs_in(url: &str) -> bool {
 
 /// The shortest secret redacted: shorter strings are too common to be secrets, and a
 /// scheme's name such as `Bearer` stays readable.
-const SHORTEST_SECRET: usize = 8;
+pub const SHORTEST_SECRET: usize = 8;
 
 /// `text` with each of `secrets` at least 8 characters long replaced by `[redacted]`.
 pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {

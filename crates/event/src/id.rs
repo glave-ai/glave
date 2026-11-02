@@ -195,8 +195,9 @@ impl std::str::FromStr for ProviderId {
 }
 
 v7_id!(
-    /// Identifies one sign-in a person keeps, sealed under a key of its own: a git host
-    /// (`credential.connected`) or a connection (`connection.connected`).
+    /// Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git
+    /// host (`credential.connected`), a connection (`connection.connected`) or a secret
+    /// (`secret.added`).
     CredentialId,
     "credential id"
 );

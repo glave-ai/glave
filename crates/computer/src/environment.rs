@@ -115,14 +115,5 @@ impl EnvironmentError {
     }
 }
 
-/// Whether `name` can be an environment variable's name.
-pub(crate) fn is_variable_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
 #[cfg(test)]
 mod tests;
