@@ -1,12 +1,10 @@
 //! What untrusted content takes from the rest of its thread (`specs/approvals.md`, "Untrusted
 //! content"): its sandboxed commands lose the network, which a command may still ask the
-//! person for, and `web_fetch` asks before each page, since the address it fetches could carry
-//! what the thread has read. Before the thread reads anything untrusted, nothing changes; Full
-//! access, which has no sandbox and asks no one, is left as it is.
+//! person for. Before the thread reads anything untrusted, nothing changes; Full access, which
+//! has no sandbox and asks no one, is left as it is.
 
 use std::sync::Arc;
 
-use glave_event::{ApprovalRequested, Risk, WebPage};
 use glave_ports::computer::Sandbox;
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
@@ -20,33 +18,6 @@ pub(crate) fn offline_after(sandbox: Option<Sandbox>, untrusted: bool) -> Option
         network: sandbox.network && !untrusted,
         ..sandbox
     })
-}
-
-/// The caution on a call of the tool named `name` in `thread`: `web_fetch` after untrusted
-/// content, unless the person allowed that for the rest of the thread when asked about it (an
-/// answer for `web_fetch` given before does not count). Known by its name, the first source
-/// offering a tool keeping it, so glave's own unless it offers none. Only the person clears
-/// it: the judge sees the address, never what the thread read.
-pub(crate) fn fetch_caution(thread: &Thread, name: &str) -> Option<Risk> {
-    let allowed = thread.allowed.contains(&format!("{name}{AFTER}"));
-    (name == WebPage::TOOL && thread.untrusted && !allowed).then_some(Risk::FetchesAfterUntrusted)
-}
-
-/// What an answer for the rest of the thread to a fetch after untrusted content allows, beside
-/// the tool's name, so it is told from an answer about the tool alone.
-const AFTER: &str = " after untrusted content";
-
-/// What an answer for the rest of the thread to `asked` allows: its tool, or its tool after
-/// untrusted content when that is what it asked about.
-pub(crate) fn allowance(asked: &ApprovalRequested) -> String {
-    let risk = asked
-        .reason
-        .as_ref()
-        .and_then(|reason| reason.risk.as_ref());
-    match risk {
-        Some(Risk::FetchesAfterUntrusted) => format!("{}{AFTER}", asked.tool),
-        _ => asked.tool.clone(),
-    }
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>

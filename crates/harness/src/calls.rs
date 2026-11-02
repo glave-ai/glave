@@ -267,8 +267,6 @@ where
         if let Some(refused) = self.let_out_refused(thread, (lifted, lifted), &summary, live) {
             return Ok(refused);
         }
-        let fetches = crate::untrusted::fetch_caution(thread, name);
-        let firm = firm || fetches.is_some();
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -276,7 +274,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: Caution::of(caution.or(fetches.clone()), lifted),
+            caution: Caution::of(caution, lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };
@@ -727,7 +725,7 @@ fn settle(
     match verdict {
         Verdict::AllowOnce => None,
         Verdict::AllowForThread => {
-            thread.allowed.insert(crate::untrusted::allowance(asked));
+            thread.allowed.insert(asked.tool.clone());
             None
         }
         Verdict::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
