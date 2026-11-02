@@ -193,11 +193,13 @@ export class ConnectionsComponent {
   protected readonly gitHosts = this.credentials.listed;
   /** Whether there is nothing at all here: no git hosts kept, no service and no app listed. */
   protected readonly empty = computed(
-    () =>
-      !this.gitHosts() &&
-      this.service.connections()?.length === 0 &&
-      (this.connectors.catalog()?.connectors.length ?? 0) === 0,
+    () => !this.gitHosts() && this.service.connections()?.length === 0 && this.noApps(),
   );
+  /** Whether no app is listed: none offered, or the list refused; not while it loads. */
+  private readonly noApps = computed(() => {
+    const catalog = this.connectors.catalog();
+    return catalog === null ? this.connectors.problem() !== null : catalog.connectors.length === 0;
+  });
 
   constructor() {
     void this.service.load();

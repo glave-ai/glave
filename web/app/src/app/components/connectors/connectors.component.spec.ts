@@ -1,6 +1,6 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
-import type { ConnectorInfo } from '@glave/client';
+import { ApiError, type ConnectorInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -168,6 +168,7 @@ describe('ConnectorsComponent', () => {
     press(root, 'linear');
     await settle(fixture);
     expect(root.querySelector('[data-testid="connector-waiting"]')).toBeNull();
+    expect(tab.closed()).toBe(false);
     expect(root.querySelector('[data-testid="connector-problem"]')).toBeNull();
     expect(rows(root, 'connectors-dev')).toEqual(['L Linear Issues, projects and cycles. Connect']);
   });
@@ -193,5 +194,64 @@ describe('ConnectorsComponent', () => {
     expect(rows(root, 'connectors-productivity')).toEqual([
       'N Notion Pages, databases and search. Connect',
     ]);
+  });
+
+  it('shows the sign-in as a link where no tab opened', async () => {
+    const fake = new FakeSession()
+      .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
+      .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
+      .answer('connection/poll', async () => {
+        await new Promise((resolve) => setTimeout(resolve));
+        return { flow: 'f1' };
+      });
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    const { fixture, root } = await page(fake);
+    press(root, 'linear');
+    await settle(fixture);
+    const waiting = root.querySelector('[data-testid="connector-waiting"]');
+    expect(waiting?.textContent).toContain('To finish, open the sign-in for Linear.');
+    const link = root.querySelector('[data-testid="connector-open"]');
+    expect(link?.getAttribute('href')).toBe(PAGE);
+    expect(link?.textContent).toContain('Open the sign-in');
+    await expectAccessible(root);
+  });
+
+  it("says why connecting failed, in the server's words, and closes the tab it opened", async () => {
+    const fake = new FakeSession()
+      .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
+      .answer(
+        'connector/connect',
+        new ApiError({
+          code: ErrorCode.HOST,
+          message: 'glave could not reach the sign-in for Linear: try again in a while',
+        }),
+      );
+    const tab = fakeTab();
+    const { fixture, root } = await page(fake);
+    press(root, 'linear');
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="connector-problem"]')?.textContent).toBe(
+      'Glave could not reach the sign-in for Linear: try again in a while.',
+    );
+    expect(tab.closed()).toBe(true);
+  });
+
+  it('offers to sign in again, or to disconnect, one whose sign-in stopped working', async () => {
+    const fake = new FakeSession()
+      .answer('connector/list', {
+        categories: CATEGORIES,
+        connectors: [{ ...LINEAR, status: 'sign_in_again' }],
+      })
+      .answer('connector/disconnect', {});
+    const { fixture, root } = await page(fake);
+    expect(rows(root, 'connectors-connected')).toEqual([
+      'L Linear Sign in again to keep using it Sign in again',
+    ]);
+    root.querySelector<HTMLElement>('[data-testid="connector-disconnect"]')?.click();
+    await settle(fixture);
+    document.querySelector<HTMLElement>('[data-testid="connectors-disconnect-ok"]')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('connector/disconnect')).toEqual([{ connector: 'linear' }]);
+    await expectAccessible(root);
   });
 });

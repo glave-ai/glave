@@ -30,9 +30,23 @@
                   problem
                 }}</span>
               } @else if (row.waiting) {
-                <span class="detail waiting" data-testid="connector-waiting">
-                  <glz-icon class="glz-spin" [icon]="icons.waiting" />
-                  {{ row.detail }}
+                <span class="waiting" data-testid="connector-waiting">
+                  <span class="detail">
+                    <glz-icon class="glz-spin" [icon]="icons.waiting" />
+                    {{ row.detail }}
+                  </span>
+                  @if (row.link; as link) {
+                    <a
+                      class="again"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="connector-open"
+                      [href]="link"
+                    >
+                      {{ row.linkText }}
+                      <glz-icon class="glz-mirrored" [icon]="icons.open" [label]="copy.newTab" />
+                    </a>
+                  }
                 </span>
               } @else {
                 <span class="detail" data-testid="connector-detail">
@@ -55,14 +69,27 @@
               >
                 {{ row.action }}
               </button>
+              @if (row.again) {
+                <button
+                  glzButton
+                  appServiceAction
+                  class="action"
+                  size="sm"
+                  variant="ghost"
+                  data-testid="connector-disconnect"
+                  [disabled]="row.busy"
+                  [attr.aria-label]="row.disconnectLabel"
+                  (click)="ask(row)"
+                >
+                  {{ copy.disconnect }}
+                </button>
+              }
             </app-service-row>
           }
         </div>
       </section>
     }
-    @if (nothingFound()) {
-      <p class="detail" role="status" data-testid="connectors-none">{{ copy.noMatch }}</p>
-    }
+    <p class="detail" role="status" data-testid="connectors-none">{{ found() }}</p>
   </section>
 }
 @if (problem(); as problem) {

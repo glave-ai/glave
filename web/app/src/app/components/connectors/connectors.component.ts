@@ -4,6 +4,9 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   inject,
   signal,
@@ -15,11 +18,19 @@ import {
   GlzConfirmDialogComponent,
   GlzIconComponent,
 } from '@glave/glaze';
-import { LoaderCircle, Search } from 'lucide';
+import { ExternalLink, LoaderCircle, Search } from 'lucide';
 
 import { connectionProblem, openedTab, sentTo } from '../../lib/connections';
 import { ConnectorsService } from '../../services/connectors.service';
 import { ServiceRowComponent } from '../service-row/service-row.component';
+
+/** A sign-in waiting for the person in the browser. */
+interface Waiting {
+  /** The vendor's sign-in page, once the server gave it. */
+  readonly link: string | null;
+  /** Whether a new tab is open at it: none where the browser opened none, or it was closed. */
+  readonly opened: boolean;
+}
 
 /** A connector as a row of the page shows it. */
 interface Row {
@@ -27,18 +38,25 @@ interface Row {
   readonly name: string;
   /** Whether it is connected, ready to use. */
   readonly connected: boolean;
+  /** Whether it is connected but to be signed in to again. */
+  readonly again: boolean;
   /** Whether it waits for the person to sign in to it in the browser. */
   readonly waiting: boolean;
   /** Whether it is being connected or disconnected. */
   readonly busy: boolean;
   /** The line under its name. */
   readonly detail: string;
+  /** The sign-in's page, to open while it waits, once the server gave it, and the link's word. */
+  readonly link: string | null;
+  readonly linkText: string;
   /** Why the last thing done with it failed, in the server's words. */
   readonly problem: string | null;
   /** Its button's word, its name for screen readers, and how much it stands out. */
   readonly action: string;
   readonly actionLabel: string;
   readonly variant: GlzButtonVariant;
+  /** Disconnect's name for screen readers, for a row to sign in to again. */
+  readonly disconnectLabel: string;
 }
 
 /** A card of the page: its heading, and its connectors. */
@@ -49,23 +67,12 @@ interface Section {
   readonly rows: readonly Row[];
 }
 
-/** `set` with `key` in it, or out of it. */
-function toggled(set: ReadonlySet<string>, key: string, present: boolean): ReadonlySet<string> {
-  const next = new Set(set);
-  if (present) {
-    next.add(key);
-  } else {
-    next.delete(key);
-  }
-  return next;
-}
-
 /** `map` with `key` set to `value`, or without it when `value` is null. */
-function including(
-  map: ReadonlyMap<string, string>,
+function setTo<T>(
+  map: ReadonlyMap<string, T>,
   key: string,
-  value: string | null,
-): ReadonlyMap<string, string> {
+  value: T | null,
+): ReadonlyMap<string, T> {
   const next = new Map(map);
   if (value === null) {
     next.delete(key);
@@ -79,7 +86,8 @@ function including(
  * glave's connectors, on the Connections page: a search over them, those connected first, each
  * with Disconnect, which asks first; then the rest by category, each with Connect, which
  * connects one that asks no one to sign in at once, and otherwise opens its sign-in in a new tab
- * and waits until the server says it is done. Every word about a connector is the server's.
+ * and waits until the server says it is done. Names, descriptions and categories are the
+ * server's; the page writes only its own labels for a connector's status.
  */
 @Component({
   selector: 'app-connectors',
@@ -96,33 +104,41 @@ export class ConnectorsComponent {
     signInAgain: $localize`:@@connectors.signInAgain:Sign in again to keep using it`,
     connect: $localize`:@@connectors.connect:Connect`,
     connecting: $localize`:@@connectors.connecting:Connecting…`,
+    again: $localize`:@@connectors.again:Sign in again`,
     cancel: $localize`:@@connectors.cancel:Cancel`,
     disconnect: $localize`:@@connectors.disconnect:Disconnect`,
     disconnecting: $localize`:@@connectors.disconnecting:Disconnecting…`,
     disconnected: $localize`:@@connectors.disconnected:Disconnected`,
-    disconnectText: $localize`:@@connectors.disconnectText:glave forgets your sign-in and stops using it for you. You can connect it again at any time.`,
+    openAgain: $localize`:@@connectors.openAgain:Open it again`,
+    openSignIn: $localize`:@@connectors.openSignIn:Open the sign-in`,
+    newTab: $localize`:@@connectors.newTab:in a new tab`,
+    disconnectText: $localize`:@@connectors.disconnectText:glave stops using it for you and forgets any sign-in to it. You can connect it again at any time.`,
     noMatch: $localize`:@@connectors.noMatch:No app matches that search.`,
   } as const;
-  protected readonly icons = { waiting: LoaderCircle, search: Search } as const;
+  protected readonly icons = { waiting: LoaderCircle, search: Search, open: ExternalLink } as const;
   private readonly service = inject(ConnectorsService);
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   /** What the person searches the connectors for. */
   protected readonly query = signal('');
-  /** The connectors waiting for their sign-ins, and what stops each. */
+  /** What stops each sign-in waiting, by the connector's id. */
   private readonly stops = new Map<string, AbortController>();
-  private readonly waiting = signal<ReadonlySet<string>>(new Set());
+  /** The sign-ins waiting, by the connector's id. */
+  private readonly waiting = signal<ReadonlyMap<string, Waiting>>(new Map());
   /** The connectors being connected or disconnected. */
-  private readonly working = signal<ReadonlySet<string>>(new Set());
+  private readonly working = signal<ReadonlyMap<string, true>>(new Map());
   /** Why the last thing done with a connector failed, by its id. */
   private readonly problems = signal<ReadonlyMap<string, string>>(new Map());
   /** The connector Disconnect asks about. */
   private readonly disconnecting = signal<Row | null>(null);
   protected readonly confirming = signal(false);
 
-  protected readonly problem = this.service.problem;
   /** Whether the server lists any connector here. */
   protected readonly offered = computed(() => (this.service.catalog()?.connectors.length ?? 0) > 0);
+  /** Why the list failed, once it had listed some: a refusal before is the page's to say. */
+  protected readonly problem = computed(() => (this.offered() ? this.service.problem() : null));
   /** The cards with connectors in them: those connected first, then each category. */
   protected readonly sections = computed((): readonly Section[] => {
     const catalog = this.service.catalog();
@@ -136,13 +152,12 @@ export class ConnectorsComponent {
         it.name.toLocaleLowerCase().includes(query) ||
         it.description.toLocaleLowerCase().includes(query),
     );
-    const mine = found.filter((it) => it.status !== 'available');
     const sections: Section[] = [
       {
         id: 'connectors-connected-heading',
         testId: 'connectors-connected',
         heading: this.copy.connected,
-        rows: mine.map((it) => this.row(it)),
+        rows: found.filter((it) => it.status !== 'available').map((it) => this.row(it)),
       },
     ];
     for (const category of catalog.categories) {
@@ -157,8 +172,10 @@ export class ConnectorsComponent {
     }
     return sections.filter((section) => section.rows.length > 0);
   });
-  /** Whether a search finds nothing. */
-  protected readonly nothingFound = computed(() => this.offered() && this.sections().length === 0);
+  /** What the search says when it finds nothing; empty otherwise, its live region kept. */
+  protected readonly found = computed(() =>
+    this.offered() && this.sections().length === 0 ? this.copy.noMatch : '',
+  );
   protected readonly disconnectHeading = computed(() => {
     const name = this.disconnecting()?.name ?? '';
     return $localize`:@@connectors.disconnectHeading:Disconnect ${name}:NAME:?`;
@@ -185,13 +202,18 @@ export class ConnectorsComponent {
       return;
     }
     if (row.connected) {
-      this.disconnecting.set(row);
-      this.confirming.set(true);
+      this.ask(row);
     } else if (row.waiting) {
       this.stops.get(row.id)?.abort();
     } else {
       void this.connect(row);
     }
+  }
+
+  /** Asks before disconnecting `row`'s connector. */
+  protected ask(row: Row): void {
+    this.disconnecting.set(row);
+    this.confirming.set(true);
   }
 
   protected async decided(yes: boolean): Promise<void> {
@@ -201,61 +223,95 @@ export class ConnectorsComponent {
     }
     await this.busyWith(row.id, async () => {
       await this.service.disconnect(row.id);
-      void this.announcer.announce(this.said(row.name, this.copy.disconnected));
+      this.moved(row.id, this.said(row.name, this.copy.disconnected));
     });
   }
 
   /**
    * Connects `row`'s connector. A new tab opens at once, while the click is handled, so no
    * browser blocks it: it goes to the sign-in once the server gives one, and closes when the
-   * connector needs none. The row waits until the server says the person signed in there, or
-   * they cancel.
+   * connector needs none, or the connecting failed or was cancelled first. The row waits until
+   * the server says the person signed in there, or they cancel.
    */
   private async connect(row: Row): Promise<void> {
     const { id, name } = row;
+    this.stops.get(id)?.abort();
     const stop = new AbortController();
     this.stops.set(id, stop);
     const tab = openedTab(this.document);
-    await this.busyWith(id, async () => {
-      const link = await this.service.connect(id);
-      if (link === null) {
-        tab?.close();
-        void this.announcer.announce(this.said(name, this.copy.connected));
-        return;
-      }
-      const shown = sentTo(tab, link.url);
-      if (!shown) {
-        tab?.close();
-      }
-      this.waiting.update((waiting) => toggled(waiting, id, true));
-      void this.announcer.announce(this.waitingLine(name));
-      try {
-        if (await this.service.finish(link.flow, stop.signal)) {
-          void this.announcer.announce(this.said(name, this.copy.connected));
+    let shown = false;
+    await this.busyWith(
+      id,
+      async () => {
+        try {
+          const link = await this.service.connect(id);
+          if (link === null || stop.signal.aborted) {
+            if (link === null) {
+              this.moved(id, this.said(name, this.copy.connected));
+            }
+            return;
+          }
+          shown = sentTo(tab, link.url);
+          this.waiting.update((waiting) => setTo(waiting, id, { link: link.url, opened: shown }));
+          void this.announcer.announce(this.waitingLine(name, shown));
+          if (await this.service.finish(link.flow, stop.signal)) {
+            this.moved(id, this.said(name, this.copy.connected));
+          }
+        } finally {
+          if (!shown) {
+            tab?.close();
+          }
+          this.waiting.update((waiting) => setTo(waiting, id, null));
+          if (this.stops.get(id) === stop) {
+            this.stops.delete(id);
+          }
         }
-      } finally {
-        this.waiting.update((waiting) => toggled(waiting, id, false));
-      }
-    }).finally(() => {
-      if (this.stops.get(id) === stop) {
-        this.stops.delete(id);
-      }
-    });
+      },
+      stop.signal,
+    );
   }
 
-  /** Runs `work` on the connector `id`, its row busy meanwhile, and says why it failed. */
-  private async busyWith(id: string, work: () => Promise<void>): Promise<void> {
-    this.problems.update((problems) => including(problems, id, null));
-    this.working.update((working) => toggled(working, id, true));
+  /**
+   * Runs `work` on the connector `id`, its row busy meanwhile, and says why it failed, unless
+   * `cancelled` says the person stopped it.
+   */
+  private async busyWith(
+    id: string,
+    work: () => Promise<void>,
+    cancelled?: AbortSignal,
+  ): Promise<void> {
+    this.problems.update((problems) => setTo(problems, id, null));
+    this.working.update((working) => setTo(working, id, true));
     try {
       await work();
     } catch (error: unknown) {
-      if (!(this.stops.get(id)?.signal.aborted ?? false)) {
-        this.problems.update((problems) => including(problems, id, connectionProblem(error)));
+      if (cancelled?.aborted !== true) {
+        this.problems.update((problems) => setTo(problems, id, connectionProblem(error)));
       }
     } finally {
-      this.working.update((working) => toggled(working, id, false));
+      this.working.update((working) => setTo(working, id, null));
     }
+  }
+
+  /**
+   * Says that the connector `id` moved to another card, as `said`, and, once it is drawn there,
+   * gives its button the focus its old one took with it, unless the person has moved on.
+   */
+  private moved(id: string, said: string): void {
+    void this.announcer.announce(said);
+    afterNextRender(
+      () => {
+        const focused = this.document.activeElement;
+        if (focused !== null && focused !== this.document.body) {
+          return;
+        }
+        const button = this.host.nativeElement.querySelector<HTMLElement>(
+          `[data-connector="${id}"] [data-testid="connector-action"]`,
+        );
+        button?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   /** What is said of the connector `name` now in the state `state`. */
@@ -263,32 +319,49 @@ export class ConnectorsComponent {
     return $localize`:@@connectors.said:${name}:NAME:, ${state}:STATE:`;
   }
 
-  /** What a row waiting for its sign-in says. */
-  private waitingLine(name: string): string {
-    return $localize`:@@connectors.waiting:Finish signing in to ${name}:NAME: in the new tab.`;
+  /** What a row waiting for its sign-in says, as the tab for it opened or not. */
+  private waitingLine(name: string, opened: boolean): string {
+    return opened
+      ? $localize`:@@connectors.waiting:Finish signing in to ${name}:NAME: in the new tab.`
+      : $localize`:@@connectors.openToFinish:To finish, open the sign-in for ${name}:NAME:.`;
   }
 
   /** `connector` as a row: what it is, what it is doing, and what its button does. */
   private row(connector: ConnectorInfo): Row {
     const { id, name, status } = connector;
     const connected = status === 'connected';
-    const waiting = this.waiting().has(id);
-    const busy = this.working().has(id) && !waiting;
+    const again = status === 'sign_in_again';
+    const waited = this.waiting().get(id);
+    const busy = this.working().has(id) && waited === undefined;
     const problem = this.problems().get(id) ?? null;
-    const base = { id, name, connected, waiting, busy, problem };
+    const base = {
+      id,
+      name,
+      connected,
+      again,
+      busy,
+      problem,
+      waiting: false,
+      link: null,
+      linkText: '',
+      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
+    };
     if (connected) {
       return {
         ...base,
         detail: this.copy.connected,
         action: busy ? this.copy.disconnecting : this.copy.disconnect,
-        actionLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
+        actionLabel: base.disconnectLabel,
         variant: 'ghost',
       };
     }
-    if (waiting) {
+    if (waited !== undefined) {
       return {
         ...base,
-        detail: this.waitingLine(name),
+        waiting: true,
+        detail: this.waitingLine(name, waited.opened),
+        link: waited.link,
+        linkText: waited.opened ? this.copy.openAgain : this.copy.openSignIn,
         action: this.copy.cancel,
         actionLabel: $localize`:@@connectors.cancelLabel:Cancel connecting ${name}:NAME:`,
         variant: 'secondary',
@@ -296,8 +369,8 @@ export class ConnectorsComponent {
     }
     return {
       ...base,
-      detail: status === 'sign_in_again' ? this.copy.signInAgain : connector.description,
-      action: busy ? this.copy.connecting : this.copy.connect,
+      detail: again ? this.copy.signInAgain : connector.description,
+      action: busy ? this.copy.connecting : again ? this.copy.again : this.copy.connect,
       actionLabel: $localize`:@@connectors.connectLabel:Connect ${name}:NAME:`,
       variant: 'secondary',
     };
