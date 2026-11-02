@@ -33,7 +33,7 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
                  \n\n{USAGE}"
             ),
         };
-        reach::with(async |server| said(server, request).await).await
+        Box::pin(reach::with(async |server| said(server, request).await)).await
     })
 }
 

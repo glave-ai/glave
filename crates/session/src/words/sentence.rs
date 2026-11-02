@@ -453,6 +453,19 @@ sentences! {
         "connecting accounts is set up by whoever runs this server, not from here",
     AccountsOnItsComputer = "accounts-on-its-computer"
         "accounts are connected on the computer glave runs on, by its person",
+    SecretsNotHere = "secrets-not-here"
+        "secrets are set up by whoever runs this server, not from here",
+    SecretsOnItsComputer = "secrets-on-its-computer"
+        "secrets are added on the computer glave runs on, by its person",
+    NotASecretName = "not-a-secret-name"
+        "a secret's name is a variable's: a letter or _, then letters, digits and _, such as STRIPE_KEY",
+    SecretHosts = "secret-hosts"
+        "give the hosts the secret may be sent to, each a name such as api.stripe.com or *.stripe.com",
+    SecretValue = "secret-value"
+        "a secret's value is one line of 8 characters or more, and at most 16 KB",
+    SecretKept { name: String } = "secret-kept"
+        "a secret called { $name } is kept already: replace it to change its value",
+    NoSuchSecret { name: String } = "no-such-secret" "no secret called { $name } is kept here",
     ConnectionsNotHere = "connections-not-here"
         "signing in to connections is set up by whoever runs this server, not from here",
     ConnectionsOnItsComputer = "connections-on-its-computer"

@@ -41,6 +41,16 @@ impl Environment {
     }
 }
 
+/// Whether `name` can be an environment variable's name: a letter or `_`, then letters,
+/// digits and `_`.
+pub fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// What a computer runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Image {

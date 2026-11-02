@@ -41,7 +41,7 @@ codes! {
     NO_MODEL = -32021, "No such model here, or not one this server may run";
     NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
     NO_PROVIDER = -32023, "No such model account here";
-    NO_CREDENTIAL = -32024, "No such git host, connection or sign-in here";
+    NO_CREDENTIAL = -32024, "No such git host, connection, sign-in or secret here";
     HOST = -32025, "The git host, or a connection's server or its sign-in, refused or could not be reached";
     NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
     NO_COMMAND = -32027, "No such command is running in the background in this thread";

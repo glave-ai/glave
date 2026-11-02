@@ -461,7 +461,7 @@
       "type": "object"
     },
     "CredentialId": {
-      "description": "Identifies one sign-in a person keeps, sealed under a key of its own: a git host\n(`credential.connected`) or a connection (`connection.connected`).",
+      "description": "Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git\nhost (`credential.connected`), a connection (`connection.connected`) or a secret\n(`secret.added`).",
       "format": "uuid",
       "type": "string"
     },
@@ -2590,6 +2590,27 @@
       "description": "A key or token: sent once, never shown again.",
       "type": "string"
     },
+    "SecretInfo": {
+      "description": "A secret the person added.",
+      "properties": {
+        "hosts": {
+          "description": "The hosts its value may be sent to: `api.stripe.com`, or `*.stripe.com` for any host\nunder it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "The variable commands see it as: `STRIPE_KEY`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "hosts"
+      ],
+      "type": "object"
+    },
     "Seq": {
       "description": "An event's position in its thread, starting at 1 and assigned gap-free by the thread's\nsingle writer. This is the order of events; time never is.",
       "format": "uint64",
@@ -2770,6 +2791,11 @@
         {
           "const": "connections",
           "description": "Their sign-ins to connections (`connection/list`).",
+          "type": "string"
+        },
+        {
+          "const": "secrets",
+          "description": "Their secrets (`secret/list`).",
           "type": "string"
         },
         {
@@ -4080,7 +4106,7 @@
     },
     "NO_CREDENTIAL": {
       "code": -32024,
-      "message": "No such git host, connection or sign-in here"
+      "message": "No such git host, connection, sign-in or secret here"
     },
     "NO_FILE": {
       "code": -32030,
@@ -6695,6 +6721,121 @@
         },
         "required": [
           "search"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "secret/add": {
+      "params": {
+        "properties": {
+          "hosts": {
+            "description": "Where its value may be sent: `api.stripe.com`, or `*.stripe.com`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "A variable's name: `STRIPE_KEY`.",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "name",
+          "hosts",
+          "value"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A secret, as it was added: its name and hosts, never its value.",
+        "properties": {
+          "secret": {
+            "$ref": "#/$defs/SecretInfo"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "secret/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/$defs/SecretInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "secrets"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "secret/remove": {
+      "params": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "secret/replace": {
+      "params": {
+        "properties": {
+          "hosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A secret, as it was added: its name and hosts, never its value.",
+        "properties": {
+          "secret": {
+            "$ref": "#/$defs/SecretInfo"
+          }
+        },
+        "required": [
+          "secret"
         ],
         "type": "object"
       },

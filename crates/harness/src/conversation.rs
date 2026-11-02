@@ -80,6 +80,8 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::CredentialRemoved(_)
         | Body::ConnectionConnected(_)
         | Body::ConnectionRemoved(_)
+        | Body::SecretAdded(_)
+        | Body::SecretRemoved(_)
         | Body::ProjectFolderSet(_)
         | Body::ProjectRemoved(_)
         | Body::InstructionsRead(_)

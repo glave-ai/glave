@@ -31,6 +31,7 @@ pub(crate) mod principal;
 pub(crate) mod project;
 pub(crate) mod provider;
 pub(crate) mod remembering;
+pub(crate) mod secrets;
 pub(crate) mod service;
 pub(crate) mod signup;
 pub(crate) mod standing;
@@ -80,6 +81,7 @@ pub use principal::{Principal, PrincipalKind};
 pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
 pub use remembering::MemorySet;
+pub use secrets::{SecretAdded, SecretRemoved};
 pub use service::{
     ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
     ServiceOutcome, misfit,

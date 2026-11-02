@@ -17,7 +17,7 @@ use glave_ports::settings::Hooks;
 use glave_ports::{OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::{
-    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring,
+    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Secrets, Server, Wiring,
 };
 
 use crate::args::Args;
@@ -26,7 +26,7 @@ use crate::client::Glave;
 use crate::config::{self, Endpoint};
 use crate::connected::{Connected, WebSearch};
 use crate::credentials::Hosts;
-use crate::data::Data;
+use crate::data::{Data, DataLog};
 use crate::gateway::GatewaySwitch;
 use crate::gateway::remote::Remote;
 use crate::mcp::Servers;
@@ -61,7 +61,7 @@ pub(crate) struct Wired {
     /// Memory, when it is on.
     pub(crate) memory: Option<crate::memory::Running>,
     /// The store's log, for the daily work of the person's server.
-    pub(crate) log: crate::data::DataLog,
+    pub(crate) log: DataLog,
     /// The store, whose blobs the daily work sweeps.
     pub(crate) store: Data,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
@@ -150,6 +150,7 @@ pub(crate) async fn wire(
     let lined = lined.await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, &setup, workspace).await?;
+    let secrets = kept_secrets(args, &store, identity.person).await?;
     let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     let servers = mcp_servers(
@@ -192,6 +193,7 @@ pub(crate) async fn wire(
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
+        secrets,
         web: crate::project_folders::web_offered(&choices.web.value)?,
         skills: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
@@ -432,6 +434,20 @@ async fn signed(
     })
 }
 
+/// The secrets `person` adds, when they may add them here: everywhere but a server people sign
+/// in to with OIDC, as for git hosts.
+async fn kept_secrets(
+    args: &Args,
+    store: &Data,
+    person: glave_event::PrincipalId,
+) -> anyhow::Result<Option<Arc<Secrets<DataLog>>>> {
+    if !args.issuers.is_empty() {
+        return Ok(None);
+    }
+    let ledger = crate::accounts::open(store, person).await?;
+    Ok(Some(Arc::new(Secrets::new(ledger))))
+}
+
 /// Tidies memory in the background, when it is on: tidy-up asks the gateway too, which sends
 /// it on the `summary` route.
 fn tidy(memory: Option<&crate::memory::Running>, switch: &GatewaySwitch, model: String) {
@@ -454,7 +470,7 @@ struct Lined {
 /// The organizations' credits in `store`, where the server's own settings keep them
 /// (`[credits]`), each organization limited to the monthly limit they name until its Owner
 /// sets another.
-fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<crate::data::DataLog>>> {
+fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<DataLog>>> {
     let chosen = choices.credits.as_ref()?;
     Some(Arc::new(Credits::new(
         store.log(),
@@ -475,7 +491,7 @@ async fn line_up(
     store: &Data,
     person: glave_event::PrincipalId,
     (credits, floor): (
-        Option<&Arc<Credits<crate::data::DataLog>>>,
+        Option<&Arc<Credits<DataLog>>>,
         Option<&policy::RouterFloorFile>,
     ),
     through_gateway: bool,

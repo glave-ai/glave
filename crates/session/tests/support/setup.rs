@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use glave_computer::LocalComputers;
 use glave_event::{
-    At, BlobRef, Checkout, EventId, FolderSource, Header, Money, Principal, ProjectFolderSet,
-    RawEvent, Seq, Sha256, ThreadId, encode,
+    At, BlobRef, Checkout, EventId, FolderSource, Header, Money, Principal, PrincipalId,
+    ProjectFolderSet, RawEvent, Seq, Sha256, ThreadId, encode,
 };
 use glave_gateway::Credits;
 use glave_harness::{Homes, Permissions, ProjectFolders, Settings, Workspace};
@@ -18,15 +18,15 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
-    Blob, BlobError, BlobStore, Chunks, Completion, EventLog, InMemoryBlobs, InMemoryLeases,
-    InMemoryLog, InMemoryProjects, Leases, Located, LogError, OrgId, Project, ProjectId,
-    ProjectKind, Projects, Scope, Swept, ToolSource,
+    Blob, BlobError, BlobStore, Chunks, Completion, Eraser, EventLog, InMemoryBlobs,
+    InMemoryLeases, InMemoryLog, InMemoryProjects, Leases, Located, LogError, OrgId, Project,
+    ProjectId, ProjectKind, Projects, Scope, Swept, ToolSource,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
     Answering, Connections, GitHosts, KeepAwake, OnWorkers, PersonFilters, ProjectTrust, Providers,
-    Server, TaskLimits, Wiring, Worktrees,
+    Secrets, Server, TaskLimits, Wiring, Worktrees,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -178,6 +178,32 @@ pub(crate) struct Setup {
     pub homes: Option<Arc<dyn Homes>>,
     /// What a gateway asks for each person's filters; with none, nothing does.
     pub filters: Option<Arc<PersonFilters>>,
+    /// Where the person's secrets are kept; with none, adding one is refused.
+    pub secrets: Option<KeepSecrets>,
+}
+
+/// What a test server keeps on its log beside threads, where a test asks: organizations' credits
+/// and the person's secrets.
+type Kept<L> = (Option<Arc<Credits<L>>>, Option<Arc<Secrets<L>>>);
+
+/// Where a test server keeps the person's secrets: their accounts ledger on the server's log,
+/// in their personal project, erased through `eraser`.
+pub(crate) struct KeepSecrets {
+    pub eraser: Arc<dyn Eraser>,
+    pub personal: Scope,
+    pub person: PrincipalId,
+}
+
+impl KeepSecrets {
+    /// Secrets kept for `person` in their `personal` project, on a log whose keys `eraser`
+    /// destroys.
+    pub(crate) fn new(eraser: Arc<dyn Eraser>, personal: Scope, person: PrincipalId) -> Self {
+        Self {
+            eraser,
+            personal,
+            person,
+        }
+    }
 }
 
 impl Setup {
@@ -222,6 +248,7 @@ impl Setup {
             identity_provider: false,
             homes: None,
             filters: None,
+            secrets: None,
         }
     }
 
@@ -261,11 +288,12 @@ impl Setup {
         dir: &Path,
         log: L,
     ) -> (Tested<L>, Seen) {
-        self.build_charging(dir, log, None).await
+        self.build_charging(dir, log, (None, None)).await
     }
 
     /// The server of `build_on` on `log`, keeping organizations' credits there, each limited
-    /// to `limit` a month until its Owner sets another.
+    /// to `limit` a month until its Owner sets another, and the person's secrets where
+    /// `secrets` says.
     pub(crate) async fn build_with_credits<L: EventLog + Clone + 'static>(
         self,
         dir: &Path,
@@ -278,14 +306,29 @@ impl Setup {
             Box::new(CountingEntropy::starting_at((self.seed << 32) | (1 << 31))),
             limit,
         );
-        self.build_charging(dir, log, Some(Arc::new(credits))).await
+        let secrets = match &self.secrets {
+            Some(keep) => {
+                let ledger = glave_session::AccountLedger::new(
+                    log.clone(),
+                    Arc::clone(&keep.eraser),
+                    keep.personal,
+                    keep.person,
+                    Arc::new(self.clock.clone()),
+                    Arc::new(CountingEntropy::starting_at((self.seed << 32) | (1 << 30))),
+                );
+                Some(Arc::new(Secrets::new(ledger)))
+            }
+            None => None,
+        };
+        let credits = Some(Arc::new(credits));
+        self.build_charging(dir, log, (credits, secrets)).await
     }
 
     async fn build_charging<L: EventLog + 'static>(
         self,
         dir: &Path,
         log: L,
-        credits: Option<Arc<Credits<L>>>,
+        (credits, secrets): Kept<L>,
     ) -> (Tested<L>, Seen) {
         let provider = self
             .model
@@ -343,6 +386,7 @@ impl Setup {
             workers: self.workers,
             identity_provider: self.identity_provider,
             homes: self.homes,
+            secrets,
             credits,
             ..Wiring::new(provider, log, self.blobs, workspace, projects)
         };

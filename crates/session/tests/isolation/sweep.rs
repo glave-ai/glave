@@ -245,6 +245,7 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
             "tasks/list",
             "provider/list",
             "credential/list",
+            "secret/list",
             "connection/list",
             "search/get",
             "memory/list",

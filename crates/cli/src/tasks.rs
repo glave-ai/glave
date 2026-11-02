@@ -81,11 +81,11 @@ pub(crate) fn schedule_main(words: &[String]) -> ExitCode {
             Some((first, _)) => bail!("unexpected {first:?}"),
             None => Asked::List,
         };
-        reach::with(async |server| match asked {
+        Box::pin(reach::with(async |server| match asked {
             Asked::Add(request) => add_schedule(server, request).await,
             Asked::List => list_schedules(server).await,
             Asked::Remove(schedule) => remove_schedule(server, schedule).await,
-        })
+        }))
         .await
     })
 }

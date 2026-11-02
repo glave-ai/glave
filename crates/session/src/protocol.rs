@@ -21,6 +21,7 @@ mod plans;
 mod projects;
 mod providers;
 mod reply;
+mod secrets;
 mod settings;
 mod sources;
 mod steps;
@@ -59,6 +60,7 @@ pub use reply::{
     AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
     Status, ThreadSummary,
 };
+pub use secrets::SecretInfo;
 pub use settings::Setting;
 pub use sources::ReplySources;
 pub use steps::{CallRun, ThreadSteps};
@@ -665,6 +667,27 @@ methods! {
     /// Waits a little for the sign-in `flow`: the host, connected, once the person approved
     /// it on GitHub; else the flow again, to ask again.
     "credential/device/poll" => CredentialDevicePoll { flow: String } -> [Credential, Waiting],
+    /// Adds a secret, such as an API key, kept sealed and never answered back. A name kept
+    /// already is refused (`secret/replace`). Only the person on this computer; no tool can.
+    "secret/add" => SecretAdd {
+        /// A variable's name: `STRIPE_KEY`.
+        name: String,
+        /// Where its value may be sent: `api.stripe.com`, or `*.stripe.com`.
+        hosts: Vec<String>,
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        value: Secret,
+    } -> [Secret],
+    /// The secrets kept here: names and hosts, never a value.
+    "secret/list" => SecretList {} -> [Secrets],
+    /// Gives the secret `name` a new value, and new hosts when given, destroying the old value.
+    "secret/replace" => SecretReplace {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hosts: Option<Vec<String>>,
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        value: Secret,
+    } -> [Secret],
+    "secret/remove" => SecretRemove { name: String } -> [Done],
     /// Starts signing in to a connection, a remote MCP server of the person's settings, as
     /// MCP's authorization says: the page the person opens in the browser, which comes back to this
     /// server. Only the person on this computer.

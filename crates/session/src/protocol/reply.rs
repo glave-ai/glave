@@ -15,8 +15,8 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, CreditsInfo, DeviceCode, FileInfo,
     GoneFolder, Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
     PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
-    ScheduleInfo, SearchInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
-    ThreadSteps, Told, TrustAsk, WatchEnd,
+    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo,
+    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -319,6 +319,11 @@ pub enum Reply {
     Provider { provider: ProviderInfo },
     #[schemars(title = "Providers")]
     Providers { providers: Vec<ProviderInfo> },
+    /// A secret, as it was added: its name and hosts, never its value.
+    #[schemars(title = "Secret")]
+    Secret { secret: SecretInfo },
+    #[schemars(title = "Secrets")]
+    Secrets { secrets: Vec<SecretInfo> },
     /// A git host, as it was connected.
     #[schemars(title = "Credential")]
     Credential { credential: CredentialInfo },

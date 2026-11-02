@@ -172,8 +172,9 @@ export type ContextUse = {
 };
 
 /**
- * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
- * (`credential.connected`) or a connection (`connection.connected`).
+ * Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git
+ * host (`credential.connected`), a connection (`connection.connected`) or a secret
+ * (`secret.added`).
  */
 export type CredentialId = string;
 
@@ -937,6 +938,17 @@ export type SearchInfo = {
 /** A key or token: sent once, never shown again. */
 export type Secret = string;
 
+/** A secret the person added. */
+export type SecretInfo = {
+  /**
+   * The hosts its value may be sent to: `api.stripe.com`, or `*.stripe.com` for any host
+   * under it.
+   */
+  readonly hosts: readonly (string)[];
+  /** The variable commands see it as: `STRIPE_KEY`. */
+  readonly name: string;
+};
+
 /**
  * An event's position in its thread, starting at 1 and assigned gap-free by the thread's
  * single writer. This is the order of events; time never is.
@@ -1021,7 +1033,7 @@ export type ServiceAnswer = {
 } | "declined";
 
 /** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
+export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
 
 /** The accent as it is drawn, in each of light and dark. */
 export type Shades = {
@@ -2295,6 +2307,42 @@ export type SearchSetResult = {
   readonly search: SearchInfo;
 };
 
+export type SecretAddParams = {
+  /** Where its value may be sent: `api.stripe.com`, or `*.stripe.com`. */
+  readonly hosts: readonly (string)[];
+  /** A variable's name: `STRIPE_KEY`. */
+  readonly name: string;
+  readonly value: Secret;
+};
+
+/** A secret, as it was added: its name and hosts, never its value. */
+export type SecretAddResult = {
+  readonly secret: SecretInfo;
+};
+
+export type SecretListParams = Readonly<Record<string, never>>;
+
+export type SecretListResult = {
+  readonly secrets: readonly (SecretInfo)[];
+};
+
+export type SecretRemoveParams = {
+  readonly name: string;
+};
+
+export type SecretRemoveResult = Readonly<Record<string, never>>;
+
+export type SecretReplaceParams = {
+  readonly hosts?: readonly (string)[] | null;
+  readonly name: string;
+  readonly value: Secret;
+};
+
+/** A secret, as it was added: its name and hosts, never its value. */
+export type SecretReplaceResult = {
+  readonly secret: SecretInfo;
+};
+
 export type ServerDiscoverParams = Readonly<Record<string, never>>;
 
 export type ServerDiscoverResult = ServerInfo;
@@ -2711,6 +2759,10 @@ export interface Methods {
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
+  readonly "secret/add": { readonly params: SecretAddParams; readonly result: SecretAddResult };
+  readonly "secret/list": { readonly params: SecretListParams; readonly result: SecretListResult };
+  readonly "secret/remove": { readonly params: SecretRemoveParams; readonly result: SecretRemoveResult };
+  readonly "secret/replace": { readonly params: SecretReplaceParams; readonly result: SecretReplaceResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
   readonly "service/answer": { readonly params: ServiceAnswerParams; readonly result: ServiceAnswerResult };
   readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
@@ -2810,7 +2862,7 @@ export const ErrorCode = {
   NO_APPROVAL: -32004,
   /** No such command is running in the background in this thread */
   NO_COMMAND: -32027,
-  /** No such git host, connection or sign-in here */
+  /** No such git host, connection, sign-in or secret here */
   NO_CREDENTIAL: -32024,
   /** No such file here: never kept in this project, or no message used it within a day */
   NO_FILE: -32030,
