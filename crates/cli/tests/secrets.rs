@@ -1,8 +1,7 @@
-//! Secrets, through the real binary over stdio with a fresh home: the person adds one by name
-//! with the hosts it may reach; it is kept sealed, never answered back, logged or written in
-//! the clear; the next turn's commands see only its placeholder, and its value, where a
-//! command's output shows it anyway, is masked before the model sees it. Replacing and
-//! removing it destroy the old value.
+//! Secrets, through the real binary over stdio with a fresh home: the person adds one by name;
+//! it is kept sealed, never answered back, logged or written in the clear; the next turn's
+//! commands see its value, and the value, where a command's output shows it, is masked before
+//! the model sees it. Replacing and removing it destroy the old value.
 
 use glave_ports::testing::any_secret;
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -12,14 +11,14 @@ use crate::served::*;
 use crate::support::*;
 
 #[test]
-fn a_secret_is_kept_sealed_commands_see_its_placeholder_and_output_masks_it() {
+fn a_secret_is_kept_sealed_commands_see_its_value_and_output_masks_it() {
     let place = place("secrets");
     let (value, replaced) = (any_secret(), any_secret());
-    // As an API that echoes the key it was sent would.
     let echoed = place.project.join("echoed.txt");
     std::fs::write(&echoed, format!("sent {value}\n")).unwrap();
+    // The value compared where the model can't see it, then printed, as an API would echo it.
     let command = format!(
-        r#"printf 'key=%s\n' "$STRIPE_KEY" && cat '{}'"#,
+        r#"[ "sent $STRIPE_KEY" = "$(cat '{}')" ] && echo same-value; printf 'key=%s\n' "$STRIPE_KEY""#,
         echoed.display()
     );
     let model = FakeServer::start(vec![
@@ -30,9 +29,9 @@ fn a_secret_is_kept_sealed_commands_see_its_placeholder_and_output_masks_it() {
     let args = ["--model", "m", "--permissions", "full-access"];
     let mut served = Served::start(&place, &model, &args);
 
-    let stripe = json!({"name": "STRIPE_KEY", "hosts": ["API.stripe.com"], "value": value});
+    let stripe = json!({"name": "STRIPE_KEY", "value": value});
     let added = served.call("secret/add", &stripe);
-    let shown = json!({"name": "STRIPE_KEY", "hosts": ["api.stripe.com"]});
+    let shown = json!({"name": "STRIPE_KEY"});
     assert_eq!(added["result"]["secret"], shown, "{added}");
     let again = served.call("secret/add", &stripe);
     assert_eq!(
@@ -51,15 +50,15 @@ fn a_secret_is_kept_sealed_commands_see_its_placeholder_and_output_masks_it() {
     let received = model.received();
     let results = said(&received[1].body, "tool").concat();
     assert!(
-        results.contains("key=glave-secret-"),
-        "a placeholder: {results}"
+        results.contains("same-value"),
+        "the command saw the value: {results}"
     );
-    assert!(results.contains("sent [redacted]"), "masked: {results}");
+    assert!(results.contains("key=[redacted]"), "masked: {results}");
     let events = served.call("thread/events", &json!({"thread": thread}));
 
     let renewed = json!({"name": "STRIPE_KEY", "value": replaced});
     let renewed = served.call("secret/replace", &renewed);
-    assert_eq!(renewed["result"]["secret"], shown, "hosts kept: {renewed}");
+    assert_eq!(renewed["result"]["secret"], shown, "{renewed}");
     let removed = served.call("secret/remove", &json!({"name": "STRIPE_KEY"}));
     assert_eq!(removed["result"], json!({}), "{removed}");
     let gone = served.call("secret/remove", &json!({"name": "STRIPE_KEY"}));

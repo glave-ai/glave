@@ -558,13 +558,10 @@ where
             }
             Request::CredentialDeviceStart {} => self.start_device(caller).await,
             Request::CredentialDevicePoll { flow } => self.poll_device(caller, flow).await,
-            Request::SecretAdd { name, hosts, value } => {
-                self.add_secret(caller, &name, &hosts, &value).await
-            }
+            Request::SecretAdd { name, value } => self.add_secret(caller, &name, &value).await,
             Request::SecretList {} => self.list_secrets(caller).await,
-            Request::SecretReplace { name, hosts, value } => {
-                let hosts = hosts.as_deref();
-                self.replace_secret(caller, &name, hosts, &value).await
+            Request::SecretReplace { name, value } => {
+                self.replace_secret(caller, &name, &value).await
             }
             Request::SecretRemove { name } => self.remove_secret(caller, &name).await,
             Request::ConnectionStart { server } => self.start_connection(caller, server).await,

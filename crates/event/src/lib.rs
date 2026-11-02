@@ -68,4 +68,4 @@ pub use payload::{
     ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
     ServiceOutcome, misfit,
 };
-pub use secret::{Secret, serialize_exposed};
+pub use secret::{Secret, serialize_exposed, serialize_exposed_values};

@@ -22,12 +22,12 @@ What protects against what:
 
 | Harm | Protection |
 | --- | --- |
-| Secrets reaching the model | always on: commands get no secret-named variables, and secret files need approval, which Full access declines without asking (shipped) |
+| Secrets reaching the model | always on: commands get no secret-named variables but the secrets the person added (`session.md`, "Secrets"), whose values are masked in all output as they are (a command that prints one changed is not caught), and secret files need approval, which Full access declines without asking (shipped) |
 | Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the sandbox; without it, the person approving each command |
 | Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same |
 | Secrets read by a command | the sandbox's read limits, for common credential stores and secret-named project files; commands that print a credential (`gh auth token`, `security find-generic-password -w`, …) ask, and Full access declines them (`approvals.md`); not tokens stored elsewhere |
 | The machine's cloud credentials (its metadata service, on a cloud machine) | Kubernetes workers' network policy, `web_fetch` and remote MCP servers refuse it; commands in the sandbox with the network on, and Docker workers, do not yet (*Cloud metadata*, #714): `network = false`, or a machine with no role |
-| Secrets or project files sent out over the network | by commands: `--no-network`, or an organization's `[sandbox] network = false`, each command that needs it then asking; with the network on (a person's default), whatever a command can read can be sent. `web_fetch` reads the web either way, so a URL it fetches can carry what the model read; `[web]` narrows its hosts. `evals/tasks/web-exfil` measures how often a planted instruction gets the model to try |
+| Secrets or project files sent out over the network | by commands: `--no-network`, or an organization's `[sandbox] network = false`, each command that needs it then asking; with the network on (a person's default), whatever a command can read can be sent, the secrets the person added included, as in Claude Code and Codex, until the outbound proxy (#643) comes with Glave Cloud's secrets. `web_fetch` reads the web either way, so a URL it fetches can carry what the model read; `[web]` narrows its hosts. `evals/tasks/web-exfil` measures how often a planted instruction gets the model to try |
 | Destruction inside the project (`rm -rf src`, `git checkout .`) | the cautions that ask in Auto and Ask first, and the judge (`approvals.md`) |
 
 ## Using it

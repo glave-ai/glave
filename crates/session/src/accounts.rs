@@ -320,12 +320,11 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
-    /// Keeps the secret `name`, sent only to `hosts`, under a key of its own. False, keeping
+    /// Keeps the secret `name` under a key of its own. False, keeping
     /// nothing, when a secret of that name is kept already.
     pub(crate) async fn add_secret(
         &self,
         name: &str,
-        hosts: &[String],
         value: &Secret,
     ) -> Result<bool, AccountsError> {
         let secret = self.new_id()?;
@@ -333,7 +332,7 @@ impl<L: EventLog> AccountLedger<L> {
             .append(|accounts| {
                 let kept = accounts.secrets.iter().any(|kept| kept.name == name);
                 (!kept).then(|| {
-                    let added = self.secret(secret, name, hosts.to_vec(), value.clone());
+                    let added = self.secret(secret, name, value.clone());
                     (vec![Event::SecretAdded(added)], ())
                 })
             })
@@ -342,21 +341,18 @@ impl<L: EventLog> AccountLedger<L> {
     }
 
     /// Keeps a new secret in place of the one called `name`, under a key of its own, with
-    /// `value`, and `hosts` where given, else the old one's; the old one is erased when the
-    /// accounts are next read. False when no secret of that name is kept.
+    /// `value`; the old one is erased when the accounts are next read. False when no secret of that name is kept.
     pub(crate) async fn replace_secret(
         &self,
         name: &str,
-        hosts: Option<&[String]>,
         value: &Secret,
     ) -> Result<bool, AccountsError> {
         let secret = self.new_id()?;
         let replaced = self
             .append(|accounts| {
                 let old = accounts.secrets.iter().find(|kept| kept.name == name)?;
-                let hosts = hosts.map_or_else(|| old.hosts.clone(), <[String]>::to_vec);
                 let events = vec![
-                    Event::SecretAdded(self.secret(secret, name, hosts, value.clone())),
+                    Event::SecretAdded(self.secret(secret, name, value.clone())),
                     Event::SecretRemoved(old.secret),
                 ];
                 Some((events, ()))
@@ -378,17 +374,10 @@ impl<L: EventLog> AccountLedger<L> {
     }
 
     /// A new secret's event, added by the ledger's person.
-    fn secret(
-        &self,
-        secret: CredentialId,
-        name: &str,
-        hosts: Vec<String>,
-        value: Secret,
-    ) -> SecretAdded {
+    fn secret(&self, secret: CredentialId, name: &str, value: Secret) -> SecretAdded {
         SecretAdded {
             secret,
             name: name.to_owned(),
-            hosts,
             value,
             by: Principal::person(self.person),
         }
