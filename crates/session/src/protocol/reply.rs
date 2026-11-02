@@ -12,11 +12,12 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AcceptedPasskeys, ConnectionInfo, CredentialInfo, CreditsInfo, DeviceCode, FileInfo,
-    GoneFolder, Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
-    PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
-    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo,
-    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorInfo, CredentialInfo,
+    CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping, InviteInfo, Logo, ModelInfo,
+    OrganizationInfo, OrganizationLook, PasskeySummary, Permissions, PersonInfo, PlanInfo,
+    ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades,
+    ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk,
+    WatchEnd,
 };
 
 /// What the server is.
@@ -343,6 +344,15 @@ pub enum Reply {
     Connection { connection: ConnectionInfo },
     #[schemars(title = "Connections")]
     Connections { connections: Vec<ConnectionInfo> },
+    /// glave's connectors the caller may connect, and their categories.
+    #[schemars(title = "Connectors")]
+    Connectors {
+        categories: Vec<ConnectorCategory>,
+        connectors: Vec<ConnectorInfo>,
+    },
+    /// A connector, as it was connected.
+    #[schemars(title = "Connector")]
+    Connector { connector: ConnectorInfo },
     /// Where the person signs in to a remote server.
     #[schemars(title = "SignIn")]
     SignIn { sign_in: SignInLink },

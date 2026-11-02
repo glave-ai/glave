@@ -1,7 +1,8 @@
 //! Where a person's accounts are kept: the accounts ledger in their personal project, glave's
 //! own stream under a reserved id, holding their model accounts, git hosts, sign-ins to
-//! connections and secrets. Each `provider.connected`, `credential.connected`,
-//! `connection.connected` and `secret.added` is sealed under a key of its own; removing an
+//! connections, the connectors of glave's catalog they connected, and secrets. Each
+//! `provider.connected`, `credential.connected`, `connection.connected` and `secret.added` is
+//! sealed under a key of its own; removing an
 //! account records its removal and erases it ([`Eraser::erase`]), so neither the store nor a
 //! backup can read it again. A removed account whose key still opens, as after a crash between
 //! the two, is erased the next time the ledger is read.
@@ -9,10 +10,10 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialId,
-    CredentialRemoved, EncodeError, EventId, Header, InvalidValue, Principal, PrincipalId,
-    ProviderConnected, ProviderId, ProviderRemoved, RawEvent, Secret, SecretAdded, SecretRemoved,
-    Seq, ThreadId, decode, encode,
+    At, Body, ConnectionConnected, ConnectionRemoved, ConnectorConnected, ConnectorDisconnected,
+    CredentialConnected, CredentialId, CredentialRemoved, EncodeError, EventId, Header,
+    InvalidValue, Principal, PrincipalId, ProviderConnected, ProviderId, ProviderRemoved, RawEvent,
+    Secret, SecretAdded, SecretRemoved, Seq, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
@@ -72,6 +73,8 @@ pub struct Accounts {
     pub credentials: Vec<CredentialConnected>,
     /// The connections signed in to, one for each server's address.
     pub connections: Vec<ConnectionConnected>,
+    /// The connectors of glave's catalog connected, by their ids, in the order connected.
+    pub connectors: Vec<String>,
     /// The secrets the person added, one for each name.
     pub secrets: Vec<SecretAdded>,
     /// Credentials renewed, each with the kept one it became, the latest last.
@@ -320,6 +323,62 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
+    /// Records the connector `connector` of glave's catalog as connected, unless it is, and
+    /// keeps `sign_in`, the person's sign-in to its server, when it asks for one, replacing
+    /// any kept for the same server.
+    pub async fn keep_connector(
+        &self,
+        connector: &str,
+        sign_in: Option<&ConnectionConnected>,
+    ) -> Result<(), AccountsError> {
+        self.append(|accounts| {
+            let mut events = Vec::new();
+            if !accounts.connectors.iter().any(|kept| kept == connector) {
+                events.push(Event::ConnectorConnected(connector.to_owned()));
+            }
+            if let Some(sign_in) = sign_in {
+                events.push(Event::ConnectionConnected(sign_in.clone()));
+                events.extend(
+                    accounts
+                        .connections
+                        .iter()
+                        .filter(|kept| kept.url == sign_in.url)
+                        .map(|kept| Event::ConnectionRemoved(kept.connection)),
+                );
+            }
+            (!events.is_empty()).then_some((events, ()))
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Records the connector `connector` as disconnected and removes the sign-in to its server
+    /// at `url`, which is erased when the accounts are next read. False when it was not
+    /// connected.
+    pub async fn remove_connector(
+        &self,
+        connector: &str,
+        url: &str,
+    ) -> Result<bool, AccountsError> {
+        let removed = self
+            .append(|accounts| {
+                if !accounts.connectors.iter().any(|kept| kept == connector) {
+                    return None;
+                }
+                let mut events = vec![Event::ConnectorDisconnected(connector.to_owned())];
+                events.extend(
+                    accounts
+                        .connections
+                        .iter()
+                        .filter(|kept| kept.url == url)
+                        .map(|kept| Event::ConnectionRemoved(kept.connection)),
+                );
+                Some((events, ()))
+            })
+            .await?;
+        Ok(removed.is_some())
+    }
+
     /// Keeps the secret `name` under a key of its own. False, keeping
     /// nothing, when a secret of that name is kept already.
     pub(crate) async fn add_secret(
@@ -477,6 +536,12 @@ impl<L: EventLog> AccountLedger<L> {
             Event::ConnectionRemoved(connection) => {
                 encode(header, &ConnectionRemoved { connection, by })?
             }
+            Event::ConnectorConnected(connector) => {
+                encode(header, &ConnectorConnected { connector, by })?
+            }
+            Event::ConnectorDisconnected(connector) => {
+                encode(header, &ConnectorDisconnected { connector, by })?
+            }
             Event::SecretAdded(added) => encode(header, &added)?,
             Event::SecretRemoved(secret) => encode(header, &SecretRemoved { secret, by })?,
         })
@@ -534,6 +599,17 @@ impl Read {
                     self.unerased.push(removed.connection.as_uuid());
                 }
             }
+            Body::ConnectorConnected(connected) => {
+                accounts
+                    .connectors
+                    .retain(|kept| *kept != connected.connector);
+                accounts.connectors.push(connected.connector);
+            }
+            Body::ConnectorDisconnected(disconnected) => {
+                accounts
+                    .connectors
+                    .retain(|kept| *kept != disconnected.connector);
+            }
             Body::SecretAdded(added) => {
                 accounts.secrets.retain(|kept| kept.secret != added.secret);
                 accounts.secrets.push(added);
@@ -561,6 +637,9 @@ enum Event {
     CredentialRemoved(CredentialId, Option<CredentialId>),
     ConnectionConnected(ConnectionConnected),
     ConnectionRemoved(CredentialId),
+    /// A connector of glave's catalog, by its id.
+    ConnectorConnected(String),
+    ConnectorDisconnected(String),
     SecretAdded(SecretAdded),
     SecretRemoved(CredentialId),
 }

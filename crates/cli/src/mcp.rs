@@ -10,6 +10,10 @@
 //! name. Without a gateway, the servers of `mcp.json` the catalog names are the catalog's, and
 //! only the others are the person's own, which `[mcp] own = false` forbids. glave writes to
 //! `mcp.json` only when the person turns web search on, or off (`written.rs`).
+//!
+//! The connectors of glave's catalog the person connected start beside their own servers,
+//! named by their ids, unless `mcp.json` has a server of that name or at that address. A policy
+//! narrows which are offered (`Offered`).
 
 mod own;
 mod written;
@@ -70,6 +74,35 @@ fn own_reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
         reachable_from(args, reached)
     } else {
         Reachable::AlsoPrivate
+    }
+}
+
+/// Which connectors of glave's catalog the person may connect and use here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Offered {
+    Every,
+    /// Only those with these ids.
+    Only(Vec<String>),
+}
+
+impl Offered {
+    /// As `constraints` say: the connectors `[mcp] catalog` names; without one, every
+    /// connector, unless `[mcp] own = false` leaves people only the organization's list, which
+    /// then names none.
+    pub(crate) fn by(constraints: &Constraints) -> Self {
+        match constraints.mcp_catalog() {
+            Some((names, _)) => Self::Only(names),
+            None if constraints.own_mcp_forbidden().is_some() => Self::Only(Vec::new()),
+            None => Self::Every,
+        }
+    }
+
+    /// Whether the connector `id` is offered.
+    pub(crate) fn allows(&self, id: &str) -> bool {
+        match self {
+            Self::Every => true,
+            Self::Only(ids) => ids.iter().any(|it| it == id),
+        }
     }
 }
 
@@ -156,10 +189,12 @@ fn mine_untrusted(
 }
 
 /// The servers of `configs` that `chosen` names, or all of them when it names none. A name
-/// with no server in the settings file is an error, so a typo never quietly turns one off.
+/// with no server in the settings file, nor among the `connectors` offered, is an error, so a
+/// typo never quietly turns one off.
 fn turned_on(
     mut configs: BTreeMap<String, ServerConfig>,
     chosen: Option<&Chosen<Vec<String>>>,
+    connectors: &[&str],
     path: &Path,
 ) -> anyhow::Result<BTreeMap<String, ServerConfig>> {
     let Some(chosen) = chosen else {
@@ -168,7 +203,7 @@ fn turned_on(
     let missing: Vec<&str> = chosen
         .value
         .iter()
-        .filter(|name| !configs.contains_key(*name))
+        .filter(|name| !configs.contains_key(*name) && !connectors.contains(&name.as_str()))
         .map(String::as_str)
         .collect();
     if !missing.is_empty() {
@@ -187,6 +222,19 @@ fn turned_on(
 mod tests {
     use super::*;
     use crate::gateway::tests::constraints;
+
+    #[test]
+    fn a_policy_narrows_the_connectors_offered() {
+        let offered = |policy: &str| Offered::by(&constraints(policy));
+        assert_eq!(offered("version = 1\n"), Offered::Every);
+        let listed = offered("version = 1\n[mcp]\ncatalog = [\"linear\"]\nown = false\n");
+        assert!(listed.allows("linear") && !listed.allows("notion"));
+        let none = offered("version = 1\n[mcp]\nown = false\n");
+        assert!(
+            !none.allows("linear"),
+            "only the organization's list, which names none"
+        );
+    }
 
     #[test]
     fn a_policy_can_mark_servers_untrusted() {

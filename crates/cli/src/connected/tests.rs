@@ -38,6 +38,7 @@ fn connected(ledger: &Ledger, home: &Path, search: Option<WebSearch>) -> Connect
         writer: Writer::default(),
         more: MoreAsked::default(),
         reachable: Reachable::default(),
+        offered: Mutex::new(Offered::Every),
     }
 }
 
@@ -216,5 +217,78 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
             None,
             "forgotten with its sign-in"
         );
+    });
+}
+
+#[test]
+fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
+    let home = TempDir::new("conn-connectors").unwrap();
+    let runtime = glave_ports::testing::runtime().unwrap();
+    runtime.block_on(async {
+        let ledger = crate::accounts::in_memory().await.unwrap();
+        let connected = connected(&ledger, &home, None);
+        let status = |listed: &[(String, ConnectorStatus)], id: &str| {
+            listed.iter().find(|(it, _)| it == id).map(|(_, it)| *it)
+        };
+        let listed = connected.connectors().await.unwrap();
+        assert_eq!(
+            status(&listed, "deepwiki"),
+            Some(ConnectorStatus::Available)
+        );
+        assert_eq!(status(&listed, "linear"), Some(ConnectorStatus::Available));
+
+        // One that asks no one to sign in is connected at once.
+        let done = connected.connect("deepwiki".into(), None).await.unwrap();
+        assert_eq!(done, Connecting::Connected);
+        // One that asks for a sign-in has nowhere to come back to without a redirect.
+        let nowhere = connected.connect("linear".into(), None).await.unwrap();
+        assert_eq!(nowhere, Connecting::NoWayBack);
+        let unknown = connected.connect("nothing".into(), None).await.unwrap_err();
+        assert_eq!(unknown.code, code::NO_SERVER);
+
+        // A sign-in kept for one, as a finished sign-in keeps it.
+        let url = "https://mcp.linear.app/mcp";
+        let token = fake_secret("lin_");
+        let sign_in = signed_in(url, &token, None);
+        ledger
+            .keep_connector("linear", Some(&sign_in))
+            .await
+            .unwrap();
+        let listed = connected.connectors().await.unwrap();
+        assert_eq!(
+            status(&listed, "deepwiki"),
+            Some(ConnectorStatus::Connected)
+        );
+        assert_eq!(status(&listed, "linear"), Some(ConnectorStatus::Connected));
+        let signed = connected.signed().await;
+        assert_eq!(signed.connectors, ["deepwiki", "linear"]);
+        let connections = connected.list().await.unwrap();
+        assert!(
+            connections.is_empty(),
+            "listed as a connector, not a connection"
+        );
+
+        connected.more.ask(url, "admin");
+        let listed = connected.connectors().await.unwrap();
+        assert_eq!(
+            status(&listed, "linear"),
+            Some(ConnectorStatus::SignInAgain)
+        );
+
+        connected.disconnect("linear".into()).await.unwrap();
+        let again = connected.disconnect("linear".into()).await.unwrap_err();
+        assert_eq!(again.code, code::NO_CREDENTIAL);
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(accounts.connectors, ["deepwiki"]);
+        assert!(accounts.connections.is_empty(), "its sign-in went with it");
+
+        connected.offer(Offered::Only(vec!["linear".into()]));
+        let listed = connected.connectors().await.unwrap();
+        assert_eq!(listed, [("linear".to_owned(), ConnectorStatus::Available)]);
+        let refused = connected
+            .connect("deepwiki".into(), None)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NO_SERVER, "not offered");
     });
 }

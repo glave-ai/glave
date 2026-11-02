@@ -3,9 +3,10 @@
 //! (`specs/one-server.md`, "Its settings"): an added server starts, a removed one stops, and a
 //! changed one starts again. One a turn still uses is closed once no turn does. A remote
 //! server is signed in with the person's sign-in to its address, asked for at each request
-//! (`connected.rs`), and starts again when they sign in to it or remove that sign-in.
+//! (`connected.rs`), and starts again when they sign in to it or remove that sign-in. The
+//! connectors of glave's catalog they connected start beside them, by their ids.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,8 +18,8 @@ use glave_ports::ToolSource;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
 
-use super::{FILE, environment, mine_untrusted, turned_on};
-use crate::connected::Connected;
+use super::{FILE, Offered, environment, mine_untrusted, turned_on};
+use crate::connected::{Connected, Signed};
 use crate::gateway::remote::Remote;
 use crate::terminal::Printer;
 
@@ -35,28 +36,41 @@ pub(crate) struct Wanted {
 
 /// What the person's settings turn on: the servers of `home`'s `mcp.json` that `chosen`
 /// names, or every one, those `constraints` allow, how far each is trusted, and whether the
-/// person is signed in to it, at one of the addresses `signed_in`. With no settings file there
-/// are none. `through_gateway`: the person uses a gateway's catalog.
+/// person is signed in to it, at one of the addresses `signed` holds; then the connectors
+/// `signed` holds that `chosen` names, or every one, that `constraints` offer, in the order of
+/// their ids. `through_gateway`: the person uses a gateway's catalog.
 pub(crate) async fn wanted(
     home: &Path,
     chosen: Option<&Chosen<Vec<String>>>,
     constraints: &Constraints,
     through_gateway: bool,
-    signed_in: &BTreeSet<String>,
+    signed: &Signed,
 ) -> anyhow::Result<Vec<Wanted>> {
     let path = home.join(FILE);
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(err) => return Err(err).with_context(|| format!("could not read {}", path.display())),
     };
-    if text.is_empty() {
-        return Ok(Vec::new());
-    }
-    let own = glave_ports::settings::mcp::parse(&text, &environment())
-        .with_context(|| format!("in {}", path.display()))?;
+    let own = if text.is_empty() {
+        BTreeMap::new()
+    } else {
+        glave_ports::settings::mcp::parse(&text, &environment())
+            .with_context(|| format!("in {}", path.display()))?
+    };
+    let connectors = connectors(&own, signed, constraints);
     let mine: Vec<String> = own.keys().cloned().collect();
-    let configs = turned_on(own, chosen, &path)?;
+    // Every connector offered is a name `chosen` may give, connected now or not.
+    let offered = Offered::by(constraints);
+    let catalog = glave_session::Catalog::built_in().map(|it| it.connectors);
+    let ids: Vec<String> = catalog
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|it| offered.allows(&it.id))
+        .map(|it| it.id)
+        .collect();
+    let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let configs = turned_on(own, chosen, &ids, &path)?;
     // Without a gateway, the catalog's servers are the ones in mcp.json it names.
     let catalog = match constraints.mcp_catalog() {
         Some((names, _)) if !through_gateway => names,
@@ -68,15 +82,22 @@ pub(crate) async fn wanted(
         .map(String::as_str)
         .collect();
     check_own_servers(&on, constraints)?;
-    let marks = glave_ports::settings::mcp::marks(&text)
-        .with_context(|| format!("in {}", path.display()))?;
+    let marks = if text.is_empty() {
+        BTreeMap::new()
+    } else {
+        glave_ports::settings::mcp::marks(&text)
+            .with_context(|| format!("in {}", path.display()))?
+    };
+    let chose = |id: &str| chosen.is_none_or(|chosen| chosen.value.iter().any(|it| it == id));
+    let connectors = connectors.into_iter().filter(|(id, _)| chose(id));
     Ok(configs
         .into_iter()
+        .chain(connectors)
         .map(|(name, config)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
             let signed_in = match &config {
                 ServerConfig::Http { url, .. } => {
-                    glave_mcp::address(url).is_some_and(|url| signed_in.contains(&url))
+                    glave_mcp::address(url).is_some_and(|url| signed.addresses.contains(&url))
                 }
                 ServerConfig::Stdio { .. } => false,
             };
@@ -88,6 +109,43 @@ pub(crate) async fn wanted(
             }
         })
         .collect())
+}
+
+/// The connectors of glave's catalog `signed` holds that `constraints` offer, by their ids, as
+/// remote servers, in the order of their ids: none the person's `own` servers already name, or
+/// are at the address of.
+fn connectors(
+    own: &BTreeMap<String, ServerConfig>,
+    signed: &Signed,
+    constraints: &Constraints,
+) -> Vec<(String, ServerConfig)> {
+    let Ok(catalog) = glave_session::Catalog::built_in() else {
+        return Vec::new();
+    };
+    let offered = Offered::by(constraints);
+    let theirs: BTreeSet<String> = own
+        .values()
+        .filter_map(|config| match config {
+            ServerConfig::Http { url, .. } => glave_mcp::address(url),
+            ServerConfig::Stdio { .. } => None,
+        })
+        .collect();
+    let mut connectors: Vec<(String, ServerConfig)> = catalog
+        .connectors
+        .into_iter()
+        .filter(|it| signed.connectors.contains(&it.id) && offered.allows(&it.id))
+        .filter(|it| !own.contains_key(&it.id))
+        .filter(|it| glave_mcp::address(&it.url).is_some_and(|url| !theirs.contains(&url)))
+        .map(|it| {
+            let config = ServerConfig::Http {
+                url: it.url,
+                headers: BTreeMap::new(),
+            };
+            (it.id, config)
+        })
+        .collect();
+    connectors.sort_by(|one, other| one.0.cmp(&other.0));
+    connectors
 }
 
 /// The servers running for the person, and those replaced while a turn still used them.
@@ -177,11 +235,18 @@ impl Servers {
         Arc::new(server.untrusted(wanted.untrusted))
     }
 
-    /// The addresses the person is signed in to.
-    pub(crate) async fn signed_in(&self) -> BTreeSet<String> {
+    /// Offers the person the connectors `offered` names from now on.
+    pub(crate) fn offer(&self, offered: Offered) {
+        if let Some(connected) = &self.connected {
+            connected.offer(offered);
+        }
+    }
+
+    /// The addresses the person is signed in to, and the connectors they connected.
+    pub(crate) async fn signed(&self) -> Signed {
         match &self.connected {
-            Some(connected) => connected.addresses().await,
-            None => BTreeSet::new(),
+            Some(connected) => connected.signed().await,
+            None => Signed::default(),
         }
     }
 
@@ -305,7 +370,7 @@ mod tests {
             .build()
             .unwrap();
         let start =
-            |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, false, &BTreeSet::new()));
+            |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, false, &Signed::default()));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -318,7 +383,7 @@ mod tests {
         assert_eq!(start(Some(&none)).unwrap(), Vec::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
         let started = runtime
-            .block_on(wanted(&home, None, &offered, false, &BTreeSet::new()))
+            .block_on(wanted(&home, None, &offered, false, &Signed::default()))
             .unwrap();
         assert_eq!(
             started
@@ -330,6 +395,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn connected_connectors_start_beside_the_person_s_servers_unless_theirs_or_not_offered() {
+        let home = glave_ports::testing::TempDir::new("mcp-connectors").unwrap();
+        let servers = r#"{"mcpServers": {
+            "linear": {"command": "/nonexistent/linear"},
+            "mine": {"url": "https://mcp.notion.com/mcp"}
+        }}"#;
+        std::fs::write(home.join(FILE), servers).unwrap();
+        let signed = Signed {
+            addresses: BTreeSet::from(["https://mcp.sentry.dev/mcp".to_owned()]),
+            connectors: ["sentry", "deepwiki", "linear", "notion"]
+                .map(str::to_owned)
+                .into(),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let names = |policy: &str, chosen: Option<&Chosen<Vec<String>>>| {
+            let rules = constraints(policy);
+            let wanted = runtime.block_on(wanted(&home, chosen, &rules, false, &signed));
+            let wanted = wanted.unwrap();
+            let signed_in: Vec<bool> = wanted.iter().map(|it| it.signed_in).collect();
+            let names: Vec<String> = wanted.into_iter().map(|it| it.name).collect();
+            (names, signed_in)
+        };
+        let (all, signed_in) = names("version = 1\n", None);
+        assert_eq!(
+            all,
+            ["linear", "mine", "deepwiki", "sentry"],
+            "a name or an address of mcp.json's is its own"
+        );
+        assert_eq!(signed_in, [false, false, false, true]);
+        let chosen = Chosen {
+            value: vec!["sentry".to_owned()],
+            from: glave_config::policy::Source::Default,
+        };
+        assert_eq!(names("version = 1\n", Some(&chosen)).0, ["sentry"]);
+        let unconnected = Chosen {
+            value: vec!["todoist".to_owned()],
+            from: glave_config::policy::Source::Default,
+        };
+        let none: Vec<String> = Vec::new();
+        assert_eq!(
+            names("version = 1\n", Some(&unconnected)).0,
+            none,
+            "a connector chosen but not connected is no typo"
+        );
+        let narrowed = "version = 1\n[mcp]\ncatalog = [\"linear\", \"mine\", \"deepwiki\"]\n";
+        assert_eq!(names(narrowed, None).0, ["linear", "mine", "deepwiki"]);
+    }
+
     /// A server named `name` running `command`, which does not exist.
     fn server(name: &str, command: &str) -> Wanted {
         Wanted {
@@ -337,7 +453,7 @@ mod tests {
             config: ServerConfig::Stdio {
                 command: format!("/nonexistent/{command}"),
                 args: Vec::new(),
-                env: std::collections::BTreeMap::new(),
+                env: BTreeMap::new(),
             },
             untrusted: false,
             signed_in: false,

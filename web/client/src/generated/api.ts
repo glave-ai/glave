@@ -152,6 +152,39 @@ export type ConnectionInfo = {
 /** Whether the person is signed in, and the sign-in still works. */
 export type ConnectionStatus = "signed_in" | "asks_more" | "expired" | "signed_out";
 
+/** A category of connectors. */
+export type ConnectorCategory = {
+  readonly id: string;
+  /** Its name, in the caller's language. */
+  readonly name: string;
+};
+
+/**
+ * A connector of glave's catalog the caller may connect (`specs/session.md`, "Connectors"):
+ * an official remote MCP server, hosted by its vendor.
+ */
+export type ConnectorInfo = {
+  /** Its category's id, one of the list's `categories`. */
+  readonly category: string;
+  /** What it reaches, in the caller's language. */
+  readonly description: string;
+  /** The vendor's own page about it. */
+  readonly docs: string;
+  /**
+   * Stable: what `connector/connect` and `[mcp] catalog` name it by, and its tools are named
+   * after (`mcp__linear__…`).
+   */
+  readonly id: string;
+  /** The vendor's name for it, never translated: `Linear`. */
+  readonly name: string;
+  readonly status: ConnectorStatus;
+  /** Its server's address. */
+  readonly url: string;
+};
+
+/** Whether a connector is connected. */
+export type ConnectorStatus = "available" | "connected" | "sign_in_again";
+
 /**
  * How full a thread's context is: what its conversation last sent and got back, of the window
  * compaction aims for.
@@ -1582,6 +1615,30 @@ export type ConnectionStartResult = {
   readonly sign_in: SignInLink;
 };
 
+export type ConnectorConnectParams = {
+  readonly connector: string;
+};
+
+export type ConnectorConnectResult = {
+  readonly connector: ConnectorInfo;
+} | {
+  readonly sign_in: SignInLink;
+};
+
+export type ConnectorDisconnectParams = {
+  readonly connector: string;
+};
+
+export type ConnectorDisconnectResult = Readonly<Record<string, never>>;
+
+export type ConnectorListParams = Readonly<Record<string, never>>;
+
+/** glave's connectors the caller may connect, and their categories. */
+export type ConnectorListResult = {
+  readonly categories: readonly (ConnectorCategory)[];
+  readonly connectors: readonly (ConnectorInfo)[];
+};
+
 export type CredentialConnectParams = {
   /** The token, sent once and never answered back. */
   readonly token: Secret;
@@ -2685,6 +2742,9 @@ export interface Methods {
   readonly "connection/poll": { readonly params: ConnectionPollParams; readonly result: ConnectionPollResult };
   readonly "connection/remove": { readonly params: ConnectionRemoveParams; readonly result: ConnectionRemoveResult };
   readonly "connection/start": { readonly params: ConnectionStartParams; readonly result: ConnectionStartResult };
+  readonly "connector/connect": { readonly params: ConnectorConnectParams; readonly result: ConnectorConnectResult };
+  readonly "connector/disconnect": { readonly params: ConnectorDisconnectParams; readonly result: ConnectorDisconnectResult };
+  readonly "connector/list": { readonly params: ConnectorListParams; readonly result: ConnectorListResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };

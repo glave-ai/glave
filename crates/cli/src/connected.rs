@@ -5,8 +5,10 @@
 //! request (`tokens.rs`), never to a file, a command or the model. Their remote servers that
 //! ask them to sign in, and are not signed in to, are listed beside the sign-ins. Web search is
 //! a connection too, under the hood, which the person turns on and off as a setting
-//! (`search.rs`), never listed among them.
+//! (`search.rs`), never listed among them. The connectors of glave's catalog are connected
+//! here too, a record in the accounts ledger beside their sign-ins (`connectors.rs`).
 
+mod connectors;
 mod flows;
 mod search;
 mod tokens;
@@ -20,15 +22,17 @@ use glave_event::{ConnectionConnected, PrincipalId};
 use glave_mcp::{Reachable, address};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
-use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
-use glave_session::{Connections, Returned, Searching};
+use glave_session::protocol::{
+    ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, SignInLink, code,
+};
+use glave_session::{Accounts, Connecting, Connections, Returned, Searching};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::accounts::Ledger;
 use crate::credentials::renewing::Renewals;
 use crate::data::Data;
-use crate::mcp::Writer;
+use crate::mcp::{Offered, Writer};
 use flows::Flows;
 pub(crate) use search::WebSearch;
 
@@ -53,6 +57,17 @@ pub(crate) struct Connected {
     more: MoreAsked,
     /// The addresses their remote servers may be at.
     reachable: Reachable,
+    /// The connectors of glave's catalog they may connect, as the policy last read says.
+    offered: Mutex<Offered>,
+}
+
+/// What the person signed in to and connected: their servers start again when it changes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub(crate) struct Signed {
+    /// The addresses signed in to.
+    pub(crate) addresses: BTreeSet<String>,
+    /// The connectors of glave's catalog connected, by their ids, in the order connected.
+    pub(crate) connectors: Vec<String>,
 }
 
 /// The most scopes kept for what one server asked for.
@@ -95,23 +110,21 @@ impl MoreAsked {
 }
 
 impl Connected {
-    /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, when
-    /// they may sign in to them here: everywhere but a server people sign in to with OIDC
-    /// (`others_sign_in`), whose people's own servers it does not run; with `search`, the
-    /// person's to turn on; asking only at addresses `reachable` allows.
+    /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, where
+    /// they may sign in to them here (everywhere but a server people sign in to with OIDC,
+    /// whose people's own servers it does not run); with `search`, the person's to turn on;
+    /// asking only at addresses `reachable` allows; offering the connectors of glave's catalog
+    /// `offered` names.
     pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         home: &Path,
-        others_sign_in: bool,
         search: Option<WebSearch>,
         reachable: Reachable,
-    ) -> anyhow::Result<Option<Arc<Self>>> {
-        if others_sign_in {
-            return Ok(None);
-        }
+        offered: Offered,
+    ) -> anyhow::Result<Arc<Self>> {
         let ledger = crate::accounts::open(store, person).await?;
-        Ok(Some(Arc::new(Self {
+        Ok(Arc::new(Self {
             ledger,
             home: home.to_owned(),
             flows: Flows::default(),
@@ -120,26 +133,37 @@ impl Connected {
             writer: Writer::default(),
             more: MoreAsked::default(),
             reachable,
-        })))
+            offered: Mutex::new(offered),
+        }))
     }
 
-    /// The sign-ins kept: what the ledger last read, and what was appended to it since, by
-    /// this process or another on the same store. The renewals of any no longer kept go.
-    async fn kept(&self) -> Result<Vec<ConnectionConnected>, ApiError> {
+    /// The accounts kept: what the ledger last read, and what was appended to it since, by
+    /// this process or another on the same store. The renewals of sign-ins no longer kept go.
+    async fn accounts(&self) -> Result<Accounts, ApiError> {
         let read = Instant::now();
-        let kept = self.ledger.accounts().await?.connections;
+        let accounts = self.ledger.accounts().await?;
+        let kept = &accounts.connections;
         let still = |signed_in| kept.iter().any(|kept| kept.connection == signed_in);
         self.renewals.only(read, still);
-        Ok(kept)
+        Ok(accounts)
     }
 
-    /// The addresses signed in to: the person's servers there start again when it changes.
-    pub(crate) async fn addresses(&self) -> BTreeSet<String> {
-        match self.kept().await {
-            Ok(kept) => kept.into_iter().map(|kept| kept.url).collect(),
+    /// The sign-ins kept, as [`Self::accounts`] reads them.
+    async fn kept(&self) -> Result<Vec<ConnectionConnected>, ApiError> {
+        Ok(self.accounts().await?.connections)
+    }
+
+    /// The addresses signed in to and the connectors connected: the person's servers start
+    /// again when it changes.
+    pub(crate) async fn signed(&self) -> Signed {
+        match self.accounts().await {
+            Ok(accounts) => Signed {
+                addresses: accounts.connections.into_iter().map(|it| it.url).collect(),
+                connectors: accounts.connectors,
+            },
             Err(error) => {
                 tracing::warn!("could not read the servers signed in to: {}", error.message);
-                BTreeSet::new()
+                Signed::default()
             }
         }
     }
@@ -291,6 +315,10 @@ impl Connections for Connected {
                 remotes.remove(&url);
                 kept.retain(|kept| kept.url != url);
             }
+            // A connector's sign-in is listed with the connector (`connector/list`), unless the
+            // person's settings name a server of their own at its address.
+            let connectors = self.connector_addresses().await;
+            kept.retain(|kept| remotes.contains_key(&kept.url) || !connectors.contains(&kept.url));
             let mut listed: Vec<_> = kept
                 .iter()
                 .map(|kept| described(kept, &remotes, self.more.of(&kept.url).is_some()))
@@ -327,6 +355,22 @@ impl Connections for Connected {
 
     fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
         Box::pin(self.searching_set(on))
+    }
+
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(String, ConnectorStatus)>, ApiError>> {
+        Box::pin(self.listed_connectors())
+    }
+
+    fn connect(
+        &self,
+        connector: String,
+        redirect: Option<String>,
+    ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
+        Box::pin(self.connecting(connector, redirect))
+    }
+
+    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
+        Box::pin(self.disconnecting(connector))
     }
 }
 

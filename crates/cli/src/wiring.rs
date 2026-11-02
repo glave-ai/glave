@@ -1,7 +1,6 @@
 //! Wiring glave together: the session server on this computer's store and workspace, with
 //! the folder glave runs in as its project's, its models, MCP servers, memory and projects.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -95,13 +94,12 @@ async fn mcp_servers(
     let chosen = setup.choices.mcp.as_ref();
     let constraints = &setup.loaded.constraints;
     let home = home::folder()?;
-    let signed_in = match connected {
-        Some(connected) => connected.addresses().await,
-        None => BTreeSet::new(),
+    let signed = match connected {
+        Some(connected) => connected.signed().await,
+        None => crate::connected::Signed::default(),
     };
     let through_gateway = remote.is_some();
-    let wanted =
-        crate::mcp::wanted(&home, chosen, constraints, through_gateway, &signed_in).await?;
+    let wanted = crate::mcp::wanted(&home, chosen, constraints, through_gateway, &signed).await?;
     let root = home::person()?;
     let connected = connected.map(Arc::clone);
     Ok(Arc::new(Servers::start(
@@ -432,8 +430,13 @@ async fn signed(
     let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
     let home = home::folder()?;
     let reachable = crate::mcp::reachable(args, &setup.choices);
-    let connected =
-        Connected::for_person(store, person, &home, others_sign_in, search, reachable).await?;
+    let offered = crate::mcp::Offered::by(&setup.loaded.constraints);
+    // A server people sign in to with OIDC runs none of their own servers.
+    let connected = if others_sign_in {
+        None
+    } else {
+        Some(Connected::for_person(store, person, &home, search, reachable, offered).await?)
+    };
     Ok(match hosts {
         Some(hosts) => {
             let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;

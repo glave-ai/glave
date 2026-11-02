@@ -10,21 +10,22 @@ use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     AcmeRegistered, AppearanceSet, ApprovalDecided, ApprovalRequested, AwakeSet, BrandSet,
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
-    CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected,
-    CredentialRemoved, CreditsAdded, CreditsCharged, CreditsLimitSet, EffortChosen, FiltersSet,
-    GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan, InstructionsRead,
-    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MailAsked, MemoryEdited,
-    MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
-    ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
-    PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
-    ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SecretAdded,
-    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted,
-    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, appearance, approval, awake, browser, catalog, certificate,
-    chosen, command, connection, credential, credits, filters, gateway, goal, grouping, hook,
-    instructions, language, memory, message, model, passkey, people, plan, project, provider,
-    remembering, secrets, service, signup, standing, task, thread, tool, trust, turn, workspace,
+    CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
+    ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
+    CreditsLimitSet, EffortChosen, FiltersSet, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
+    GroupingSet, HookRan, InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked,
+    LanguageSet, MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet,
+    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
+    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
+    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated,
+    ScheduleDeleted, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished,
+    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
+    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
+    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
+    credits, filters, gateway, goal, grouping, hook, instructions, language, memory, message,
+    model, passkey, people, plan, project, provider, remembering, secrets, service, signup,
+    standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -83,6 +84,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credential::REMOVED, 1),
     (connection::CONNECTED, 1),
     (connection::REMOVED, 1),
+    (connector::CONNECTED, 1),
+    (connector::DISCONNECTED, 1),
     (secrets::ADDED, 1),
     (secrets::REMOVED, 1),
     (project::FOLDER_SET, 1),
@@ -174,6 +177,8 @@ pub enum Body {
     CredentialRemoved(CredentialRemoved),
     ConnectionConnected(ConnectionConnected),
     ConnectionRemoved(ConnectionRemoved),
+    ConnectorConnected(ConnectorConnected),
+    ConnectorDisconnected(ConnectorDisconnected),
     SecretAdded(SecretAdded),
     SecretRemoved(SecretRemoved),
     ProjectFolderSet(ProjectFolderSet),
@@ -392,6 +397,8 @@ impl Event {
             Body::CredentialRemoved(payload) => encode(header, payload),
             Body::ConnectionConnected(payload) => encode(header, payload),
             Body::ConnectionRemoved(payload) => encode(header, payload),
+            Body::ConnectorConnected(payload) => encode(header, payload),
+            Body::ConnectorDisconnected(payload) => encode(header, payload),
             Body::SecretAdded(payload) => encode(header, payload),
             Body::SecretRemoved(payload) => encode(header, payload),
             Body::ProjectFolderSet(payload) => encode(header, payload),
@@ -447,6 +454,27 @@ impl Unknown {
     }
 }
 
+/// A connection's or a connector's event, of the type `kind`.
+fn decode_connection(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    match kind {
+        connection::CONNECTED => {
+            connection::decode_connected(version, data).map(|r| r.map(Body::ConnectionConnected))
+        }
+        connection::REMOVED => {
+            connection::decode_removed(version, data).map(|r| r.map(Body::ConnectionRemoved))
+        }
+        connector::CONNECTED => {
+            connector::decode_connected(version, data).map(|r| r.map(Body::ConnectorConnected))
+        }
+        _ => connector::decode_disconnected(version, data)
+            .map(|r| r.map(Body::ConnectorDisconnected)),
+    }
+}
+
 /// Decodes commands in the background, the choices made for a thread, its plan, and the memory, accounts
 /// and project ledgers' types;
 /// `None` for any type that is not one of them.
@@ -484,12 +512,10 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         credential::REMOVED => {
             credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
         }
-        connection::CONNECTED => {
-            connection::decode_connected(version, data).map(|r| r.map(Body::ConnectionConnected))
-        }
-        connection::REMOVED => {
-            connection::decode_removed(version, data).map(|r| r.map(Body::ConnectionRemoved))
-        }
+        connection::CONNECTED
+        | connection::REMOVED
+        | connector::CONNECTED
+        | connector::DISCONNECTED => decode_connection(kind, version, data),
         project::FOLDER_SET => {
             project::decode_folder_set(version, data).map(|r| r.map(Body::ProjectFolderSet))
         }

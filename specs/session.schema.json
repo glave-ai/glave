@@ -430,6 +430,85 @@
         }
       ]
     },
+    "ConnectorCategory": {
+      "description": "A category of connectors.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name, in the caller's language.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ConnectorInfo": {
+      "description": "A connector of glave's catalog the caller may connect (`specs/session.md`, \"Connectors\"):\nan official remote MCP server, hosted by its vendor.",
+      "properties": {
+        "category": {
+          "description": "Its category's id, one of the list's `categories`.",
+          "type": "string"
+        },
+        "description": {
+          "description": "What it reaches, in the caller's language.",
+          "type": "string"
+        },
+        "docs": {
+          "description": "The vendor's own page about it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable: what `connector/connect` and `[mcp] catalog` name it by, and its tools are named\nafter (`mcp__linear__…`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The vendor's name for it, never translated: `Linear`.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ConnectorStatus"
+        },
+        "url": {
+          "description": "Its server's address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "url",
+        "category",
+        "description",
+        "docs",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ConnectorStatus": {
+      "description": "Whether a connector is connected.",
+      "oneOf": [
+        {
+          "const": "available",
+          "description": "Not connected.",
+          "type": "string"
+        },
+        {
+          "const": "connected",
+          "description": "Connected: the agent may use it.",
+          "type": "string"
+        },
+        {
+          "const": "sign_in_again",
+          "description": "Connected, but its sign-in no longer works or its server asked for more: the person\nconnects it again, or disconnects it.",
+          "type": "string"
+        }
+      ]
+    },
     "ContextUse": {
       "description": "How full a thread's context is: what its conversation last sent and got back, of the window\ncompaction aims for.",
       "properties": {
@@ -4670,6 +4749,93 @@
         },
         "required": [
           "sign_in"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connector/connect": {
+      "params": {
+        "properties": {
+          "connector": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connector"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "description": "A connector, as it was connected.",
+            "properties": {
+              "connector": {
+                "$ref": "#/$defs/ConnectorInfo"
+              }
+            },
+            "required": [
+              "connector"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Where the person signs in to a remote server.",
+            "properties": {
+              "sign_in": {
+                "$ref": "#/$defs/SignInLink"
+              }
+            },
+            "required": [
+              "sign_in"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "streams": false
+    },
+    "connector/disconnect": {
+      "params": {
+        "properties": {
+          "connector": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connector"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connector/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "glave's connectors the caller may connect, and their categories.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/$defs/ConnectorCategory"
+            },
+            "type": "array"
+          },
+          "connectors": {
+            "items": {
+              "$ref": "#/$defs/ConnectorInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "connectors"
         ],
         "type": "object"
       },

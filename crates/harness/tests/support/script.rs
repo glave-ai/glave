@@ -381,6 +381,8 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::CredentialRemoved(_) => "credential.removed",
             Body::ConnectionConnected(_) => "connection.connected",
             Body::ConnectionRemoved(_) => "connection.removed",
+            Body::ConnectorConnected(_) => "connector.connected",
+            Body::ConnectorDisconnected(_) => "connector.disconnected",
             Body::SecretAdded(_) => "secret.added",
             Body::SecretRemoved(_) => "secret.removed",
             Body::ProjectFolderSet(_) => "project.folder.set",

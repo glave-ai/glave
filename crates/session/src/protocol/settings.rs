@@ -68,7 +68,10 @@ impl Request {
             Self::CredentialConnect { .. }
             | Self::CredentialRemove { .. }
             | Self::CredentialDevicePoll { .. } => Setting::Credentials,
-            Self::ConnectionPoll { .. } | Self::ConnectionRemove { .. } => Setting::Connections,
+            Self::ConnectionPoll { .. }
+            | Self::ConnectionRemove { .. }
+            | Self::ConnectorConnect { .. }
+            | Self::ConnectorDisconnect { .. } => Setting::Connections,
             Self::SecretAdd { .. } | Self::SecretReplace { .. } | Self::SecretRemove { .. } => {
                 Setting::Secrets
             }

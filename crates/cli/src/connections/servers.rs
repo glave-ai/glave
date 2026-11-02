@@ -1,7 +1,7 @@
 //! Connections from the terminal: one of the person's MCP servers signed in to in the browser, by
 //! its name or its address, listed with whether the sign-in still works and how often it was
 //! called this month, and removed. An address none of their servers is at is a git host's,
-//! connected with a token.
+//! connected with a token. A name none of their servers has is a connector of glave's catalog.
 
 use anyhow::bail;
 use glave_session::protocol::{
@@ -11,7 +11,8 @@ use glave_session::protocol::{
 use crate::reach::Reached;
 
 /// Signs in to the server `named`, one of the person's MCP servers; else, for an address, to
-/// the git host there with a token read from standard input.
+/// the git host there with a token read from standard input; else connects the connector of
+/// glave's catalog it names.
 pub(super) async fn server_or_host(server: &mut Reached, named: &str) -> anyhow::Result<()> {
     let start = Request::ConnectionStart {
         server: named.to_owned(),
@@ -20,6 +21,17 @@ pub(super) async fn server_or_host(server: &mut Reached, named: &str) -> anyhow:
         Ok(Reply::SignIn { sign_in }) => signed_in(server, &sign_in).await,
         Ok(_) => bail!("glave answered connection/start with something else"),
         Err(error) if answered(&error, code::NO_SERVER) => {
+            // An address is a host's; a connector's id has no dot, colon or slash.
+            if !named.contains(['.', ':', '/']) {
+                return match crate::connectors::connect(server, named).await {
+                    Err(error) if answered(&error, code::NO_SERVER) => bail!(
+                        "{named} is none of your MCP servers nor glave's connectors (glave \
+                         connectors lists them), and not a git host's address: give a host as \
+                         https:// and its host, such as https://gitlab.com"
+                    ),
+                    connected => connected,
+                };
+            }
             let (url, token) = super::asked_token(named).await?;
             super::connect(server, &url, token, None).await
         }
@@ -35,7 +47,7 @@ fn answered(error: &anyhow::Error, code: i64) -> bool {
 }
 
 /// Shows the page to sign in on, and waits until the person has.
-async fn signed_in(server: &mut Reached, sign_in: &SignInLink) -> anyhow::Result<()> {
+pub(crate) async fn signed_in(server: &mut Reached, sign_in: &SignInLink) -> anyhow::Result<()> {
     println!("Open {} to sign in", sign_in.url);
     println!("Waiting while you sign in there (Ctrl-C stops)...");
     loop {

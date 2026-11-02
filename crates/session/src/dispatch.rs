@@ -570,6 +570,13 @@ where
             Request::SearchGet { usage } => self.get_search(caller, usage).await,
             Request::SearchSet { on } => self.set_search(caller, on).await,
             Request::ConnectionRemove { server } => self.remove_connection(caller, server).await,
+            Request::ConnectorList {} => self.list_connectors(caller).await,
+            Request::ConnectorConnect { connector } => {
+                self.connect_connector(caller, connector).await
+            }
+            Request::ConnectorDisconnect { connector } => {
+                self.disconnect_connector(caller, connector).await
+            }
         })
     }
 }

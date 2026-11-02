@@ -2,12 +2,17 @@
 //! remote MCP server in the browser, as MCP's authorization says, and the agent uses it as them
 //! from then on, their token asked for at each request. The host keeps the sign-ins sealed and
 //! hands their tokens to the servers; the server decides who may ask, and is where the browser
-//! comes back to.
+//! comes back to. The connectors of glave's catalog (`connectors.rs`) are connected the same
+//! way, by their ids, and listed with the catalog's words in the caller's language.
 
 use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, ConnectionInfo, Reply, SearchInfo, SignInLink, Told, code};
+use crate::connectors::Catalog;
+use crate::protocol::{
+    ApiError, ConnectionInfo, ConnectorInfo, ConnectorStatus, Reply, SearchInfo, SignInLink, Told,
+    code,
+};
 use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -80,6 +85,32 @@ pub trait Connections: Send + Sync {
 
     /// Turns web search on or off in the person's own settings: how it is then.
     fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
+
+    /// The connectors of glave's catalog the person may connect here, by their ids, in any
+    /// order, each with whether it is connected.
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(String, ConnectorStatus)>, ApiError>>;
+
+    /// Connects the connector `connector` of glave's catalog: at once when it asks no one to
+    /// sign in, else by signing in, the browser to come back to `redirect`.
+    fn connect(
+        &self,
+        connector: String,
+        redirect: Option<String>,
+    ) -> BoxFuture<'_, Result<Connecting, ApiError>>;
+
+    /// Disconnects the connector `connector`, destroying its sign-in.
+    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>>;
+}
+
+/// How connecting a connector went.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Connecting {
+    /// Connected: it asks no one to sign in.
+    Connected,
+    /// The person signs in on this page.
+    SignIn(SignInLink),
+    /// It asks for a sign-in, and the browser has nowhere to come back to.
+    NoWayBack,
 }
 
 /// Whether the person's agent searches the web, as their own settings say.
@@ -103,6 +134,28 @@ where
         theirs(caller, connections, Sentence::ConnectionsNotHere, elsewhere)
     }
 
+    /// Where the browser comes back to from a sign-in: where people reach the server from
+    /// elsewhere when it has such a place, else its address on this computer; none where it
+    /// does not listen over HTTP.
+    fn redirect(&self) -> Option<String> {
+        let origin = self.inner.origin.as_ref();
+        self.inner.reached.get().and_then(|here| {
+            let base = origin.map(|origin| origin.as_str().to_owned());
+            let base = base.or_else(|| here.clone())?;
+            Some(format!("{base}{CALLBACK}"))
+        })
+    }
+
+    /// Why a sign-in cannot start: the server does not listen over HTTP, or listens beyond
+    /// loopback with no address people reach it at.
+    fn no_way_back(&self) -> ApiError {
+        let said = match self.inner.reached.get() {
+            None => Sentence::SignInNeedsServer,
+            Some(_) => Sentence::SignInNoWayBack,
+        };
+        ApiError::new(code::NOT_AVAILABLE, said)
+    }
+
     /// Answers `connection/start`. The browser comes back to where people reach the server
     /// from elsewhere when it has such a place, else to its address on this computer. A server
     /// that does not listen over HTTP has none, nor one that listens beyond loopback with no
@@ -113,23 +166,66 @@ where
         server: String,
     ) -> Result<Reply, ApiError> {
         let connections = self.connections_for(caller)?;
-        let origin = self.inner.origin.as_ref();
-        let redirect = self.inner.reached.get().and_then(|here| {
-            let base = origin.map(|origin| origin.as_str().to_owned());
-            let base = base.or_else(|| here.clone())?;
-            Some(format!("{base}{CALLBACK}"))
-        });
-        match connections.start(server, redirect).await? {
+        match connections.start(server, self.redirect()).await? {
             Some(sign_in) => Ok(Reply::SignIn { sign_in }),
-            None if self.inner.reached.get().is_none() => Err(ApiError::new(
-                code::NOT_AVAILABLE,
-                Sentence::SignInNeedsServer,
-            )),
-            None => Err(ApiError::new(
-                code::NOT_AVAILABLE,
-                Sentence::SignInNoWayBack,
-            )),
+            None => Err(self.no_way_back()),
         }
+    }
+
+    /// Answers `connector/list`: the catalog's connectors the host offers, in its order, and
+    /// the categories they are in.
+    pub(crate) async fn list_connectors(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let offered = self.connections_for(caller)?.connectors().await?;
+        let catalog = built_in()?;
+        let status = |id: &str| offered.iter().find(|(it, _)| it == id).map(|(_, it)| *it);
+        let connectors: Vec<ConnectorInfo> = catalog
+            .connectors
+            .iter()
+            .filter_map(|connector| Some(info(connector, status(&connector.id)?)))
+            .collect();
+        let categories = catalog
+            .categories
+            .iter()
+            .filter(|category| connectors.iter().any(|it| it.category == category.id))
+            .map(|category| crate::protocol::ConnectorCategory {
+                id: category.id.clone(),
+                name: category.told(),
+            })
+            .collect();
+        Ok(Reply::Connectors {
+            categories,
+            connectors,
+        })
+    }
+
+    /// Answers `connector/connect`.
+    pub(crate) async fn connect_connector(
+        &self,
+        caller: &Caller,
+        connector: String,
+    ) -> Result<Reply, ApiError> {
+        let connections = self.connections_for(caller)?;
+        let catalog = built_in()?;
+        let Some(found) = catalog.connector(&connector) else {
+            return Err(no_connector(&connector));
+        };
+        match connections.connect(connector, self.redirect()).await? {
+            Connecting::Connected => Ok(Reply::Connector {
+                connector: info(found, ConnectorStatus::Connected),
+            }),
+            Connecting::SignIn(sign_in) => Ok(Reply::SignIn { sign_in }),
+            Connecting::NoWayBack => Err(self.no_way_back()),
+        }
+    }
+
+    /// Answers `connector/disconnect`.
+    pub(crate) async fn disconnect_connector(
+        &self,
+        caller: &Caller,
+        connector: String,
+    ) -> Result<Reply, ApiError> {
+        self.connections_for(caller)?.disconnect(connector).await?;
+        Ok(Reply::Done {})
     }
 
     /// Answers `connection/poll`.
@@ -216,6 +312,34 @@ where
     pub(crate) fn reached_at(&self, here: Option<String>) {
         let _ = self.inner.reached.set(here);
     }
+}
+
+/// The catalog glave was built with: one that does not read is glave's own fault.
+fn built_in() -> Result<Catalog, ApiError> {
+    Catalog::built_in().map_err(|error| ApiError::internal(&error))
+}
+
+/// The connector `connector` as a client sees it.
+fn info(connector: &crate::connectors::Connector, status: ConnectorStatus) -> ConnectorInfo {
+    ConnectorInfo {
+        id: connector.id.clone(),
+        name: connector.name.clone(),
+        url: connector.url.clone(),
+        category: connector.category.clone(),
+        description: connector.told(),
+        docs: connector.docs.clone(),
+        status,
+    }
+}
+
+/// glave offers no connector called `connector`.
+fn no_connector(connector: &str) -> ApiError {
+    ApiError::new(
+        code::NO_SERVER,
+        Sentence::NoConnector {
+            connector: connector.to_owned(),
+        },
+    )
 }
 
 #[cfg(test)]
