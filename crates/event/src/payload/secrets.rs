@@ -1,8 +1,7 @@
 //! `secret.added` and `secret.removed`: the secrets a person adds for the agent's work, such as
 //! an API key, by name (`specs/model.md`, "Secrets"). Only the person adds one, from a client;
-//! commands only ever see a placeholder for it. They are kept in the person's accounts ledger,
-//! each sealed under a data key of its own, so removing one destroys its key and the value with
-//! it.
+//! commands see its value in its variable. They are kept in the person's accounts ledger, each
+//! sealed under a data key of its own, so removing one destroys its key and the value with it.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -22,9 +21,6 @@ pub struct SecretAdded {
     pub secret: CredentialId,
     /// The variable commands see it as: `STRIPE_KEY`.
     pub name: String,
-    /// The hosts its value may be sent to, in lower case: `api.stripe.com`, or `*.stripe.com`
-    /// for any host under it.
-    pub hosts: Vec<String>,
     #[serde(serialize_with = "crate::secret::serialize_exposed")]
     pub value: Secret,
     /// Who added it.

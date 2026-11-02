@@ -22,7 +22,7 @@ fn known(values: &[(&str, &str)]) -> KnownSecrets {
 }
 
 #[test]
-fn commands_see_placeholders_and_output_never_shows_a_value() {
+fn commands_see_values_and_output_never_shows_one() {
     let stripe = any_secret();
     // A value that holds another is masked whole.
     let longer = format!("{stripe}-and-more");
@@ -32,12 +32,12 @@ fn commands_see_placeholders_and_output_never_shows_a_value() {
         "none kept yet"
     );
     let known = known(&[("STRIPE_KEY", &stripe), ("OTHER_KEY", &longer)]);
-    let placeholders = known.placeholders();
+    let variables = known.variables();
     assert_eq!(
-        placeholders.get("STRIPE_KEY").map(String::as_str),
-        Some("glave-secret-STRIPE_KEY")
+        variables.get("STRIPE_KEY").map(Secret::expose),
+        Some(stripe.as_str())
     );
-    assert!(!format!("{placeholders:?}{known:?}").contains(&stripe));
+    assert!(!format!("{variables:?}{known:?}").contains(&stripe));
     let shown = format!("curl said {stripe} and {longer}\n");
     assert_eq!(known.mask(&shown), "curl said [redacted] and [redacted]\n");
     assert_eq!(known.mask("nothing here"), "nothing here");

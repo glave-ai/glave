@@ -45,8 +45,8 @@ pub struct Workspace {
     planning: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
-    /// The person's secrets: their placeholders in every command's environment, their values
-    /// masked in every tool's output. None kept by default.
+    /// The person's secrets: their values in every command's environment, and masked in every
+    /// tool's output. None kept by default.
     hidden: KnownSecrets,
     temp: Option<PathBuf>,
     /// Whether its computer may be asleep, as a person's may: asking it anything before a call
@@ -138,7 +138,7 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
-    /// Gives every command the placeholders of the `known` secrets and masks their values in
+    /// Gives every command the values of the `known` secrets and masks them in
     /// every tool's output (`specs/model.md`, "Secrets"), as do the worktrees and scratch
     /// folders made from this workspace.
     #[must_use]
@@ -415,7 +415,7 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
             on_timeout,
-            env: self.hidden.placeholders(),
+            env: self.hidden.variables(),
         };
         let span = crate::telemetry::command();
         // Masked as it comes, before any of it is kept or cut.
@@ -458,7 +458,7 @@ impl Workspace {
     pub(crate) async fn start(&self, script: String) -> Result<CommandId, ComputerError> {
         let command = Command {
             sandbox: self.sandbox.clone(),
-            env: self.hidden.placeholders(),
+            env: self.hidden.variables(),
             ..Command::new(script)
         };
         self.computers.start(self.info.id, &command).await

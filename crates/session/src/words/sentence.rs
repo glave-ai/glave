@@ -463,8 +463,6 @@ sentences! {
         "secrets are added on the computer glave runs on, by its person",
     NotASecretName = "not-a-secret-name"
         "a secret's name is a variable's: a letter or _, then letters, digits and _, such as STRIPE_KEY",
-    SecretHosts = "secret-hosts"
-        "give the hosts the secret may be sent to, each a name such as api.stripe.com or *.stripe.com",
     SecretValue = "secret-value"
         "a secret's value is one line of 8 characters or more, and at most 16 KB",
     SecretKept { name: String } = "secret-kept"

@@ -2593,21 +2593,13 @@
     "SecretInfo": {
       "description": "A secret the person added.",
       "properties": {
-        "hosts": {
-          "description": "The hosts its value may be sent to: `api.stripe.com`, or `*.stripe.com` for any host\nunder it.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "name": {
           "description": "The variable commands see it as: `STRIPE_KEY`.",
           "type": "string"
         }
       },
       "required": [
-        "name",
-        "hosts"
+        "name"
       ],
       "type": "object"
     },
@@ -6729,13 +6721,6 @@
     "secret/add": {
       "params": {
         "properties": {
-          "hosts": {
-            "description": "Where its value may be sent: `api.stripe.com`, or `*.stripe.com`.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "name": {
             "description": "A variable's name: `STRIPE_KEY`.",
             "type": "string"
@@ -6746,7 +6731,6 @@
         },
         "required": [
           "name",
-          "hosts",
           "value"
         ],
         "type": "object"
@@ -6805,15 +6789,6 @@
     "secret/replace": {
       "params": {
         "properties": {
-          "hosts": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
           "name": {
             "type": "string"
           },

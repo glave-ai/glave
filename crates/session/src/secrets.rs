@@ -1,8 +1,8 @@
 //! Secrets (`specs/model.md`, "Secrets"): the person on this computer adds one, such as an API
-//! key, from a client, by name and with the hosts its value may reach. glave keeps it sealed in
-//! their accounts ledger under a key of its own; commands see only its placeholder, and its
-//! value is masked wherever output shows it ([`KnownSecrets`]). A client lists names and hosts,
-//! never a value; nothing the agent calls reaches these methods.
+//! key, from a client, by name. glave keeps it sealed in their accounts ledger under a key of
+//! its own; commands see its value in its variable, and the value is masked wherever output
+//! shows it ([`KnownSecrets`]). A client lists names, never a value; nothing the agent calls
+//! reaches these methods.
 
 use glave_event::Secret;
 use glave_ports::auth::{REDACTED, SHORTEST_SECRET};
@@ -16,14 +16,9 @@ use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// The longest name, host, label of a host or value taken, in bytes.
+/// The longest name or value taken, in bytes.
 const LONGEST_NAME: usize = 128;
-const LONGEST_HOST: usize = 253;
-const LONGEST_LABEL: usize = 63;
 const LONGEST_VALUE: usize = 16 << 10;
-
-/// The most hosts one secret may reach.
-const MOST_HOSTS: usize = 32;
 
 /// The person's secrets: kept in their accounts ledger, and known to their workspaces.
 pub struct Secrets<L> {
@@ -60,10 +55,7 @@ impl<L: EventLog> Secrets<L> {
         self.known.set(known.collect());
         Ok(secrets
             .into_iter()
-            .map(|kept| SecretInfo {
-                name: kept.name,
-                hosts: kept.hosts,
-            })
+            .map(|kept| SecretInfo { name: kept.name })
             .collect())
     }
 
@@ -86,36 +78,6 @@ fn named(name: &str) -> Result<&str, ApiError> {
         ));
     }
     Ok(name)
-}
-
-/// `hosts` as a secret keeps them: each a host's name in lower case, or `*.` and a name of two
-/// labels or more (never all of `*.com`), once each; at least one.
-fn hosted(hosts: &[String]) -> Result<Vec<String>, ApiError> {
-    let mut kept: Vec<String> = Vec::with_capacity(hosts.len());
-    for host in hosts {
-        let host = host.trim().to_ascii_lowercase();
-        let (wildcard, name) = match host.strip_prefix("*.") {
-            Some(name) => (true, name),
-            None => (false, host.as_str()),
-        };
-        let labels = name.split('.').all(|label| {
-            (1..=LONGEST_LABEL).contains(&label.len())
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-        });
-        let broad = wildcard && !name.contains('.');
-        if !labels || broad || host.len() > LONGEST_HOST {
-            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::SecretHosts));
-        }
-        if !kept.contains(&host) {
-            kept.push(host);
-        }
-    }
-    if kept.is_empty() || kept.len() > MOST_HOSTS {
-        return Err(ApiError::new(code::INVALID_PARAMS, Sentence::SecretHosts));
-    }
-    Ok(kept)
 }
 
 /// `value` without the space around it, as pasted with a line's end, when it is one a secret
@@ -164,12 +126,11 @@ where
         &self,
         caller: &Caller,
         name: &str,
-        hosts: &[String],
         value: &Secret,
     ) -> Result<Reply, ApiError> {
         let secrets = self.secrets_for(caller)?;
-        let (name, hosts, value) = (named(name)?, hosted(hosts)?, valued(value)?);
-        if !secrets.ledger.add_secret(name, &hosts, &value).await? {
+        let (name, value) = (named(name)?, valued(value)?);
+        if !secrets.ledger.add_secret(name, &value).await? {
             let name = name.to_owned();
             let kept = Sentence::SecretKept { name };
             return Err(ApiError::new(code::INVALID_PARAMS, kept));
@@ -183,17 +144,11 @@ where
         &self,
         caller: &Caller,
         name: &str,
-        hosts: Option<&[String]>,
         value: &Secret,
     ) -> Result<Reply, ApiError> {
         let secrets = self.secrets_for(caller)?;
         let (name, value) = (named(name)?, valued(value)?);
-        let hosts = hosts.map(hosted).transpose()?;
-        let ledger = &secrets.ledger;
-        if !ledger
-            .replace_secret(name, hosts.as_deref(), &value)
-            .await?
-        {
+        if !secrets.ledger.replace_secret(name, &value).await? {
             return Err(missing(name));
         }
         let secret = secrets.shown(name).await?;
@@ -221,29 +176,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_hosts_and_values_are_checked() {
+    fn names_and_values_are_checked() {
         assert_eq!(named(" STRIPE_KEY ").unwrap(), "STRIPE_KEY");
         for wrong in ["", "1KEY", "MY-KEY", "A B", &"K".repeat(129)] {
             assert!(named(wrong).is_err(), "{wrong:?}");
-        }
-        let hosts = [
-            "API.Stripe.com".into(),
-            "*.stripe.com".into(),
-            "api.stripe.com".into(),
-        ];
-        assert_eq!(hosted(&hosts).unwrap(), ["api.stripe.com", "*.stripe.com"]);
-        for wrong in [
-            vec![],
-            vec!["https://api.stripe.com".into()],
-            vec!["api.stripe.com/v1".into()],
-            vec!["*".into()],
-            vec!["a..b".into()],
-            vec!["-a.com".into()],
-            vec!["api.stripe.com:443".into()],
-            vec!["*.com".into()],
-            vec![format!("{}.com", "a".repeat(64))],
-        ] {
-            assert!(hosted(&wrong).is_err(), "{wrong:?}");
         }
         let value = glave_ports::testing::any_secret();
         let pasted = valued(&Secret::new(format!(" {value}\n"))).unwrap();

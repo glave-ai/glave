@@ -69,5 +69,5 @@ pub use payload::{
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{SecretAdded, SecretRemoved};
-pub use secret::{Secret, serialize_exposed};
+pub use secret::{Secret, serialize_exposed, serialize_exposed_values};
 pub use seen::seen;
