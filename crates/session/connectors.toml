@@ -140,7 +140,7 @@ url = "https://mcp.workos.com/mcp"
 category = "dev"
 auth = "dcr"
 docs = "https://workos.com/docs/mcp"
-description = "Users, organizations and sign-in settings."
+description = "Users, sign-ins and directories."
 
 [[connector]]
 id = "clerk"
@@ -149,7 +149,7 @@ url = "https://mcp.clerk.com/mcp"
 category = "dev"
 auth = "dcr"
 docs = "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server"
-description = "Users, sessions and organizations."
+description = "Users, sessions and sign-ins."
 
 [[connector]]
 id = "mintlify"
