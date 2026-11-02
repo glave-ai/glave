@@ -450,7 +450,7 @@ async fn kept_secrets(
     let known = KnownSecrets::default();
     let ledger = crate::accounts::open(store, person).await?;
     let secrets = Secrets::open(ledger, known.clone()).await?;
-    Ok((workspace.with_secrets(known), Some(Arc::new(secrets))))
+    Ok((workspace.hiding(known), Some(Arc::new(secrets))))
 }
 
 /// Tidies memory in the background, when it is on: tidy-up asks the gateway too, which sends

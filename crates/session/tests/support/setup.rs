@@ -364,7 +364,7 @@ impl Setup {
             None => workspace,
         };
         let workspace = match self.secrets {
-            Some(keep) => workspace.with_secrets(keep.known),
+            Some(keep) => workspace.hiding(keep.known),
             None => workspace,
         };
         let projects = self

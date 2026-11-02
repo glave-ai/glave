@@ -124,7 +124,7 @@ where
         match opened.await {
             Ok(info) => {
                 let mut workspace = Workspace::new(Arc::clone(computers), info)
-                    .with_secrets(self.workspace.secrets().clone());
+                    .hiding(self.workspace.hidden().clone());
                 // A worker's commands ask for credentials as the harness's own do.
                 if let Some(credentials) = self.workspace.credentials() {
                     workspace = workspace.with_credentials(Arc::clone(credentials));

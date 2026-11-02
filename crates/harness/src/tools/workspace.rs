@@ -47,7 +47,7 @@ pub struct Workspace {
     credentials: Option<Arc<dyn GitCredentials>>,
     /// The person's secrets: their placeholders in every command's environment, their values
     /// masked in every tool's output. None kept by default.
-    secrets: KnownSecrets,
+    hidden: KnownSecrets,
     temp: Option<PathBuf>,
     /// Whether its computer may be asleep, as a person's may: asking it anything before a call
     /// needs it would wake it.
@@ -82,7 +82,7 @@ impl Workspace {
             asks_network: true,
             planning: false,
             credentials: None,
-            secrets: KnownSecrets::default(),
+            hidden: KnownSecrets::default(),
             asleep_at_times: false,
             reads: Mutex::new(HashMap::new()),
         }
@@ -138,18 +138,18 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
-    /// Gives every command the placeholders of `secrets` and masks their values in every
-    /// tool's output (`specs/model.md`, "Secrets"), as do the worktrees and scratch folders made
-    /// from this workspace.
+    /// Gives every command the placeholders of the `known` secrets and masks their values in
+    /// every tool's output (`specs/model.md`, "Secrets"), as do the worktrees and scratch
+    /// folders made from this workspace.
     #[must_use]
-    pub fn with_secrets(mut self, secrets: KnownSecrets) -> Self {
-        self.secrets = secrets;
+    pub fn hiding(mut self, known: KnownSecrets) -> Self {
+        self.hidden = known;
         self
     }
 
     /// The person's secrets, as commands and output meet them.
-    pub(crate) fn secrets(&self) -> &KnownSecrets {
-        &self.secrets
+    pub(crate) fn hidden(&self) -> &KnownSecrets {
+        &self.hidden
     }
 
     /// The same binding's credentials, and what its commands may ask for, given to `other`,
@@ -159,7 +159,7 @@ impl Workspace {
             asks_network: self.asks_network,
             planning: self.planning,
             asleep_at_times: self.asleep_at_times,
-            secrets: self.secrets.clone(),
+            hidden: self.hidden.clone(),
             ..other
         };
         match &self.credentials {
@@ -395,11 +395,11 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
             on_timeout,
-            env: self.secrets.placeholders(),
+            env: self.hidden.placeholders(),
         };
         let span = crate::telemetry::command();
         // Masked as it comes, before any of it is kept or cut.
-        let masking = self.secrets.masking(output);
+        let masking = self.hidden.masking(output);
         let running = match &self.credentials {
             Some(credentials) => self.computers.run_with_credentials(
                 self.info.id,
@@ -438,7 +438,7 @@ impl Workspace {
     pub(crate) async fn start(&self, script: String) -> Result<CommandId, ComputerError> {
         let command = Command {
             sandbox: self.sandbox.clone(),
-            env: self.secrets.placeholders(),
+            env: self.hidden.placeholders(),
             ..Command::new(script)
         };
         self.computers.start(self.info.id, &command).await

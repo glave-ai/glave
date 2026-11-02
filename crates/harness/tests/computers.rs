@@ -241,7 +241,7 @@ mod secrets {
                 ),
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
-            let workspace = workspace(&dir).await.with_secrets(known);
+            let workspace = workspace(&dir).await.hiding(known);
             let log = InMemoryLog::new();
             let (harness, seen) = harness_with(workspace, answers, AllowAll, log, 1, settings());
             let mut thread = harness.start_thread(scope()).await.unwrap();
