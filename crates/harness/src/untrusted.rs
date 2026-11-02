@@ -28,6 +28,13 @@ pub(crate) fn label(parts: Vec<Part>) -> Vec<Part> {
         .collect()
 }
 
+/// Whether `parts` were labelled untrusted by [`label`].
+pub(crate) fn labelled(parts: &[Part]) -> bool {
+    parts
+        .iter()
+        .any(|part| matches!(part, Part::Text { text } if text.starts_with(LABEL)))
+}
+
 /// `text` with every closing `</tag`, in any case, broken up as `</ tag`, so text shown
 /// between `<tag>` and `</tag>` cannot end the block early. `tag` is lowercase ASCII.
 pub(crate) fn defuse(text: &str, tag: &str) -> String {
@@ -55,6 +62,15 @@ mod tests {
             Some(Part::Text { text }) => text,
             _ => "",
         }
+    }
+
+    #[test]
+    fn labelled_parts_are_recognised() {
+        let parts = vec![Part::Text {
+            text: "a page".into(),
+        }];
+        assert!(!labelled(&parts));
+        assert!(labelled(&label(parts)));
     }
 
     #[test]

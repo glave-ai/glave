@@ -1,5 +1,6 @@
 //! The latest tool results, kept word for word through a compaction, so the conversation that
 //! restarts from a summary still holds the files it was just reading and needn't read them again.
+//! Untrusted output is left to the summary: kept here it would sit in a message of the person's.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -8,7 +9,8 @@ use glave_event::{CallId, Part};
 use glave_ports::{Message, ToolCall};
 
 use super::arguments_text;
-use crate::room::OMITTED;
+use crate::room::omitted;
+use crate::untrusted::labelled;
 
 /// The latest tool calls in `messages` with what they returned, as text, oldest first: as many
 /// of the newest as fit in `room` characters together, each kept whole or not at all. `None`
@@ -26,17 +28,20 @@ pub(crate) fn recent(messages: &[Message], room: usize) -> Option<String> {
     let mut left = room;
     for message in messages.iter().rev() {
         let Message::Tool {
-            call_id, output, ..
+            call_id,
+            is_error,
+            output,
         } = message
         else {
             continue;
         };
+        if omitted(output) || labelled(output) {
+            continue;
+        }
         let Some(call) = calls.get(call_id) else {
             continue;
         };
-        let Some(entry) = entry(call, output) else {
-            continue;
-        };
+        let entry = entry(call, *is_error, output);
         if entry.len() > left {
             break;
         }
@@ -50,8 +55,8 @@ pub(crate) fn recent(messages: &[Message], room: usize) -> Option<String> {
     Some(kept.concat())
 }
 
-/// One call and its output, or `None` when its output was already removed to fit.
-fn entry(call: &ToolCall, output: &[Part]) -> Option<String> {
+/// One call and its output's text.
+fn entry(call: &ToolCall, is_error: bool, output: &[Part]) -> String {
     let text: Vec<&str> = output
         .iter()
         .filter_map(|part| match part {
@@ -59,19 +64,16 @@ fn entry(call: &ToolCall, output: &[Part]) -> Option<String> {
             Part::Reasoning { .. } | Part::File { .. } => None,
         })
         .collect();
-    let text = text.join("\n");
-    if text == OMITTED {
-        return None;
-    }
+    let failed = if is_error { " (failed)" } else { "" };
     let mut entry = String::new();
     let _ = write!(
         entry,
-        "\n\n`{}` {}:\n{}",
+        "\n\n`{}` {}{failed}:\n{}",
         call.tool,
         arguments_text(&call.arguments),
-        text.trim_end()
+        text.join("\n").trim_end()
     );
-    Some(entry)
+    entry
 }
 
 #[cfg(test)]
@@ -79,7 +81,7 @@ mod tests {
     use super::*;
     use glave_event::Arguments;
 
-    fn read(id: &str, path: &str, output: &str) -> [Message; 2] {
+    fn read_with(id: &str, path: &str, is_error: bool, output: Vec<Part>) -> [Message; 2] {
         let mut map = serde_json::Map::new();
         map.insert("path".into(), path.into());
         [
@@ -93,12 +95,18 @@ mod tests {
             },
             Message::Tool {
                 call_id: CallId::new(id).unwrap(),
-                is_error: false,
-                output: vec![Part::Text {
-                    text: output.into(),
-                }],
+                is_error,
+                output,
             },
         ]
+    }
+
+    fn text(text: &str) -> Vec<Part> {
+        vec![Part::Text { text: text.into() }]
+    }
+
+    fn read(id: &str, path: &str, output: &str) -> [Message; 2] {
+        read_with(id, path, false, text(output))
     }
 
     #[test]
@@ -121,8 +129,19 @@ mod tests {
     }
 
     #[test]
-    fn outputs_already_removed_are_not_kept() {
-        let messages: Vec<Message> = read("1", "a.py", OMITTED).into();
+    fn removed_and_untrusted_outputs_are_not_kept() {
+        let messages: Vec<Message> = [
+            read("1", "a.py", crate::room::OMITTED),
+            read_with("2", "b.py", false, crate::untrusted::label(text("a page"))),
+        ]
+        .concat();
         assert!(recent(&messages, 1_000).is_none());
+    }
+
+    #[test]
+    fn a_failed_call_says_so() {
+        let messages: Vec<Message> = read_with("1", "a.py", true, text("no such file")).into();
+        let kept = recent(&messages, 1_000).unwrap();
+        assert!(kept.ends_with("(failed):\nno such file"), "{kept}");
     }
 }

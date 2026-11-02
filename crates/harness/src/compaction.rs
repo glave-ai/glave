@@ -116,7 +116,10 @@ fn parts_chars(parts: &[Part]) -> usize {
 }
 
 fn arguments_chars(arguments: &Arguments) -> usize {
-    arguments_text(arguments).len()
+    match arguments {
+        Arguments::Json(map) => serde_json::to_string(map).map_or(0, |json| json.len()),
+        Arguments::Malformed(raw) => raw.len(),
+    }
 }
 
 /// A tool call's arguments as the model wrote them.
