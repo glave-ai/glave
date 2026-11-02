@@ -98,9 +98,14 @@ fn adds_shown(color: bool, adds: &ServiceAdds) -> String {
     let mut shown = String::from("  What it adds:\n");
     lines(&mut shown, &adds.front);
     lines(&mut shown, &adds.text);
+    let part = |cut: bool| if cut { " (shown in part)" } else { "" };
+    if adds.text_cut {
+        let _ = writeln!(shown, "  {}", paint(color, DIM, part(true).trim_start()));
+    }
     for file in &adds.files {
         let runs = if file.runs_code { " (runs code)" } else { "" };
-        let _ = writeln!(shown, "  {}{}", file.path, paint(color, DIM, runs));
+        let marks = format!("{runs}{}", part(file.cut));
+        let _ = writeln!(shown, "  {}{}", file.path, paint(color, DIM, &marks));
         lines(&mut shown, &file.text);
     }
     if let Some(cut) = &adds.cut {
@@ -480,7 +485,8 @@ mod tests {
         };
         assert_eq!(
             adds_shown(false, &adds),
-            "  What it adds:\n  │ name: tidy\n  │ # Tidy\n  │ Run it.\n  scripts/tidy.sh (runs code)\n  \
+            "  What it adds:\n  │ name: tidy\n  │ # Tidy\n  │ Run it.\n  (shown in part)\n  \
+             scripts/tidy.sh (runs code)\n  \
              │ #!/bin/sh\n  Too long to show in full here: 1 part cut short.\n"
         );
     }

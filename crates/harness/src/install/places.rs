@@ -131,8 +131,14 @@ fn told(place: Place, change: &Change, replaced: bool) -> String {
     let said = match (place, change) {
         (Place::Project, Change::AddSkill { .. }) => format!(
             "Added the skill “{name}” to this project, in {}, beside its other changed files. \
-             It is offered from the person's next message.",
-            project_skill(name)
+             It is offered from the person's next message.{}",
+            project_skill(name),
+            if replaced {
+                " Files the old one had that this one doesn't bring are still there: delete \
+                 them with your own tools if they are no longer wanted."
+            } else {
+                ""
+            }
         ),
         (Place::Everywhere, Change::AddSkill { .. }) => format!(
             "Added the skill “{name}” to the person's own skills, for all their projects. It \
@@ -166,15 +172,22 @@ async fn in_project(workspace: &Workspace, change: &Change) -> Result<(), String
         Change::AddSkill {
             name, text, files, ..
         } => {
-            // Not a protected path: written as the model's own tools would write it.
-            workspace
-                .write(&project_skill(name), text.as_bytes())
-                .await?;
-            for (path, text) in files {
-                let file = format!("{PROJECT_SKILLS}/{name}/{path}");
-                workspace.write(&file, text.as_bytes()).await?;
-            }
-            Ok(())
+            // Not a protected path: written as the model's own tools would write it, all in one
+            // call, which checks every path before it writes any.
+            let folder = format!("{PROJECT_SKILLS}/{name}");
+            let paths: Vec<String> = files
+                .keys()
+                .map(|path| format!("{folder}/{path}"))
+                .collect();
+            let skill = project_skill(name);
+            let mut written: Vec<(&str, &[u8])> = vec![(skill.as_str(), text.as_bytes())];
+            written.extend(
+                paths
+                    .iter()
+                    .map(String::as_str)
+                    .zip(files.values().map(String::as_bytes)),
+            );
+            workspace.write_all(&written).await
         }
         Change::RemoveSkill { name } => Err(format!(
             "The skill “{name}” is in this project's files: delete its folder with your own \
@@ -198,24 +211,26 @@ fn in_own(folder: &Path, change: &Change) -> Result<(), String> {
         Change::AddSkill {
             name, text, files, ..
         } => {
-            // One it replaces goes whole, so no file of the old one stays behind.
-            let skill = folder.join(OWN_SKILLS).join(name);
-            match std::fs::remove_dir_all(&skill) {
-                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(failed(&skill, error));
-                }
-                _ => {}
-            }
-            let written = std::iter::once((SKILL_MD, text))
+            // Written whole beside the one it replaces, then put in its place: no file of the
+            // old one stays behind, and a failure leaves the old one as it was.
+            let skills = folder.join(OWN_SKILLS);
+            let (skill, fresh) = (skills.join(name), skills.join(format!(".{name}.new")));
+            gone(&fresh).map_err(|e| failed(&fresh, e))?;
+            let each = std::iter::once((SKILL_MD, text))
                 .chain(files.iter().map(|(path, text)| (path.as_str(), text)));
-            for (path, text) in written {
-                let file = skill.join(path);
-                if let Some(parent) = file.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| failed(parent, e))?;
+            for (path, text) in each {
+                let file = fresh.join(path);
+                let made = file
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| glave_ports::file::replace(&file, text.as_bytes()));
+                if let Err(error) = made {
+                    let _ = gone(&fresh);
+                    return Err(failed(&file, error));
                 }
-                glave_ports::file::replace(&file, text.as_bytes()).map_err(|e| failed(&file, e))?;
             }
-            Ok(())
+            gone(&skill).map_err(|e| failed(&skill, e))?;
+            std::fs::rename(&fresh, &skill).map_err(|e| failed(&skill, e))
         }
         Change::RemoveSkill { name } => {
             let skill = folder.join(OWN_SKILLS).join(name);
@@ -228,6 +243,15 @@ fn in_own(folder: &Path, change: &Change) -> Result<(), String> {
             let changed = servers_changed(&own_servers(folder)?, change)?;
             glave_ports::file::replace(&path, changed.as_bytes()).map_err(|e| failed(&path, e))
         }
+    }
+}
+
+/// Takes the folder `path` out, with what it holds, when it is there; a link, not what it
+/// points to.
+fn gone(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        done => done,
     }
 }
 

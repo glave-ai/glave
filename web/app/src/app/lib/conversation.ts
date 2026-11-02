@@ -260,10 +260,12 @@ export function serviceDetailOf(adds: unknown): GlzServiceDetail | null {
   return {
     front: text(adds['front']),
     text: text(adds['text']),
+    textCut: adds['text_cut'] === true,
     files: files.filter(isRecord).map((file) => ({
       path: text(file['path']),
       text: text(file['text']),
       runsCode: file['runs_code'] === true,
+      cut: file['cut'] === true,
     })),
     cut: typeof cut === 'string' ? cut : null,
   };

@@ -193,6 +193,7 @@ pub(crate) fn change(arguments: &Arguments) -> Result<Change, String> {
             for path in files.keys() {
                 shown::check_path(path)?;
             }
+            shown::check_paths(&files)?;
             let size = files
                 .values()
                 .map(String::len)

@@ -15,6 +15,8 @@ export interface GlzServiceDetailFile {
   readonly text: string;
   /** Whether it is a program that runs, so it is marked. */
   readonly runsCode: boolean;
+  /** Whether `text` is only its start, so it is marked. */
+  readonly cut: boolean;
 }
 
 /** What a question adds, for the person to read before they answer. */
@@ -23,6 +25,8 @@ export interface GlzServiceDetail {
   readonly front: string;
   /** Its text, markdown. */
   readonly text: string;
+  /** Whether its header lines or `text` are only their start, so it is marked. */
+  readonly textCut: boolean;
   readonly files: readonly GlzServiceDetailFile[];
   /** What was cut to show it, in the server's sentence; `null` when nothing was. */
   readonly cut: string | null;
@@ -35,6 +39,7 @@ const PARTS = {
   text: 'text',
   file: 'file',
   runs: 'runs',
+  part: 'part',
   code: 'code',
   cut: 'cut',
 } as const;
@@ -42,9 +47,10 @@ const PARTS = {
 /**
  * What a card's question adds, folded shut under it: "What it adds", opened, shows its header
  * lines, its text drawn as markdown, and the files with it, a program marked as one, each
- * opening as plain code. However much it holds, it stays at most half the screen tall: the
- * text, the list of files and an opened file each scroll on their own, an opened file both ways,
- * never wrapping, and a fade marks each end with more past it.
+ * opening as plain code; a part shown only in part is marked so, and the server's sentence says
+ * what was cut. However much it holds, it stays at most half the screen tall: the text, the list
+ * of files and an opened file each scroll on their own, an opened file both ways, never
+ * wrapping, and a fade marks each end with more past it.
  *
  * ```html
  * <glz-service-detail [detail]="adds" testId="install-adds" />
@@ -67,6 +73,7 @@ export class GlzServiceDetailComponent {
     textLabel: 'Its text',
     filesLabel: 'Files with it',
     runsCodeLabel: 'runs code',
+    partLabel: 'shown in part',
   });
 
   readonly detail = input.required<GlzServiceDetail>();
@@ -78,10 +85,13 @@ export class GlzServiceDetailComponent {
   readonly filesLabel = input(this.words.filesLabel);
   /** What marks a file that is a program. */
   readonly runsCodeLabel = input(this.words.runsCodeLabel);
+  /** What marks a part shown only in part. */
+  readonly partLabel = input(this.words.partLabel);
 
   protected readonly chevron = ChevronRight;
   protected readonly front = computed(() => this.detail().front);
   protected readonly text = computed(() => this.detail().text);
+  protected readonly textCut = computed(() => this.detail().textCut);
   protected readonly files = computed(() => this.detail().files);
   protected readonly hasFiles = computed(() => this.files().length > 0);
   protected readonly cut = computed(() => this.detail().cut);

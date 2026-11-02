@@ -63,14 +63,14 @@ details[open] > summary > .chevron {
 // the fades once that end is reached, and the fades stay with the box (`scroll`).
 .fades {
   background:
-    linear-gradient(var(--glz-fade-surface) 30%, transparent) center top / 100% 1.5rem no-repeat
-      local,
-    linear-gradient(transparent, var(--glz-fade-surface) 70%) center bottom / 100% 1.5rem no-repeat
-      local,
+    linear-gradient(var(--glz-fade-surface) 30%, transparent) center top / 100% var(--glz-space-5)
+      no-repeat local,
+    linear-gradient(transparent, var(--glz-fade-surface) 70%) center bottom / 100%
+      var(--glz-space-5) no-repeat local,
     linear-gradient(color-mix(in oklch, var(--glz-color-text) 10%, transparent), transparent) center
-      top / 100% 0.6rem no-repeat scroll,
+      top / 100% var(--glz-space-2) no-repeat scroll,
     linear-gradient(transparent, color-mix(in oklch, var(--glz-color-text) 10%, transparent)) center
-      bottom / 100% 0.6rem no-repeat scroll;
+      bottom / 100% var(--glz-space-2) no-repeat scroll;
   background-color: var(--glz-fade-surface);
 }
 
@@ -136,15 +136,21 @@ details[open] > summary > .chevron {
 }
 
 .path {
+  flex: 1;
   overflow: hidden;
   font-family: var(--glz-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.part {
+  flex: none;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}
+
 .runs {
   flex: none;
-  margin-inline-start: auto;
   padding-block: var(--glz-space-half);
   padding-inline: var(--glz-space-2);
   border: var(--glz-border-width) solid var(--glz-color-border-strong);

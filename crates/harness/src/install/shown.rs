@@ -76,14 +76,25 @@ pub(crate) fn cut_sentence(parts: u64) -> String {
     format!("Too long to show in full here: {parts} cut short. All of it is added as written.")
 }
 
+/// What a file's name ends in when it is a program, wherever it is kept.
+const PROGRAMS: [&str; 14] = [
+    "sh", "bash", "zsh", "fish", "py", "js", "mjs", "cjs", "ts", "rb", "pl", "php", "ps1", "lua",
+];
+
 /// Whether the file at `path` is a program the skill runs: in `scripts/`, as the Agent Skills
-/// format keeps them, or starting with `#!`.
+/// format keeps them, named as one, or starting with `#!`.
 fn runs_code(path: &str, text: &str) -> bool {
-    path.starts_with("scripts/") || text.starts_with("#!")
+    let named = Path::new(path)
+        .extension()
+        .and_then(|ending| ending.to_str())
+        .is_some_and(|ending| PROGRAMS.contains(&ending.to_ascii_lowercase().as_str()));
+    path.starts_with("scripts/") || named || text.starts_with("#!")
 }
 
-/// As much of `text` as `most` bytes hold, ending at a line's end where one fits, without
-/// control characters but line ends and tabs; and whether any was left out.
+/// As much of `text` as `most` bytes hold, ending at a line's end where one fits; and whether
+/// any was left out. Line ends and tabs stay, a carriage return goes, and any other letter no
+/// one sees (a control or format character) shows as �, so it can neither move a terminal nor
+/// hide from the eye that it is there.
 fn start(text: &str, most: usize) -> (String, bool) {
     let shown = if text.len() <= most {
         text
@@ -96,32 +107,51 @@ fn start(text: &str, most: usize) -> (String, bool) {
         head.rfind('\n')
             .map_or(head, |at| head.get(..at).unwrap_or(head))
     };
-    let kept = |c: &char| !c.is_control() || matches!(c, '\n' | '\t');
-    (
-        shown.chars().filter(kept).collect(),
-        shown.len() < text.len(),
-    )
+    let marked = shown.chars().filter(|c| *c != '\r').map(|c| match c {
+        '\n' | '\t' => c,
+        c if glave_event::seen(c) => c,
+        _ => '\u{fffd}',
+    });
+    (marked.collect(), shown.len() < text.len())
 }
 
-/// Why `path` can't be a file a skill brings: one within its folder, plain parts only, not its
-/// SKILL.md.
+/// Why `path` can't be a file a skill brings: one within its folder, written plainly (no `.`,
+/// `..` or empty part), of letters a person sees, not its SKILL.md in any case.
 pub(super) fn check_path(path: &str) -> Result<(), String> {
-    let plain = !path.is_empty()
-        && path.len() <= MOST_PATH
+    let parts: Vec<&str> = path.split('/').collect();
+    let plain = path.chars().count() <= MOST_PATH
+        && path.chars().all(glave_event::seen)
         && !path.contains('\\')
-        && !path.ends_with('/')
-        && !path.chars().any(char::is_control)
-        && Path::new(path)
-            .components()
-            .all(|part| matches!(part, Component::Normal(_)));
+        && parts.iter().all(|part| {
+            let mut one = Path::new(part).components();
+            matches!(one.next(), Some(Component::Normal(_))) && one.next().is_none()
+        });
     if !plain {
         return Err(format!(
             "The file {path:?} must be a path within the skill's folder, such as \
              scripts/run.sh, of at most {MOST_PATH} characters."
         ));
     }
-    if path == SKILL_MD {
+    if path.eq_ignore_ascii_case(SKILL_MD) {
         return Err("Give the SKILL.md as skill, not among its files.".to_owned());
+    }
+    Ok(())
+}
+
+/// Why `files` can't all be written as they are shown: two whose paths differ only in case,
+/// which one disk keeps apart and another doesn't, or one that is also a folder of another.
+pub(super) fn check_paths(files: &BTreeMap<String, String>) -> Result<(), String> {
+    let lower: Vec<String> = files.keys().map(|path| path.to_lowercase()).collect();
+    for (at, path) in lower.iter().enumerate() {
+        let clash = lower.iter().enumerate().find(|(other, them)| {
+            *other != at && (*them == path || them.starts_with(&format!("{path}/")))
+        });
+        if let Some((_, them)) = clash {
+            return Err(format!(
+                "The files {path:?} and {them:?} would land on one another: give each its own \
+                 path."
+            ));
+        }
     }
     Ok(())
 }
@@ -144,6 +174,7 @@ mod tests {
             &files(&[
                 ("scripts/tidy.py", "print(1)\n"),
                 ("bin/go", "#!/bin/sh\necho\n"),
+                ("tools/run.JS", "run()\n"),
                 ("references/style.md", "# Style\n"),
             ]),
         );
@@ -161,7 +192,8 @@ mod tests {
             [
                 ("bin/go", true),
                 ("references/style.md", false),
-                ("scripts/tidy.py", true)
+                ("scripts/tidy.py", true),
+                ("tools/run.JS", true)
             ]
         );
     }
@@ -197,7 +229,19 @@ mod tests {
             "---\nname: a\ndescription: A.\n---\nred \u{1b}[31mtext\tok\n",
             &BTreeMap::new(),
         );
-        assert_eq!(shown.text, "red [31mtext\tok\n");
+        assert_eq!(shown.text, "red \u{fffd}[31mtext\tok\n");
+        let hidden = adds(
+            "---\nname: a\ndescription: A.\n---\nab\u{202e}cd\r\n",
+            &BTreeMap::new(),
+        );
+        assert_eq!(hidden.text, "ab\u{fffd}cd\n");
+    }
+
+    #[test]
+    fn files_that_would_land_on_one_another_are_refused() {
+        assert_eq!(check_paths(&files(&[("a.sh", ""), ("b/a.sh", "")])), Ok(()));
+        assert!(check_paths(&files(&[("Run.sh", ""), ("run.sh", "")])).is_err());
+        assert!(check_paths(&files(&[("a", ""), ("a/b", "")])).is_err());
     }
 
     #[test]
@@ -213,7 +257,12 @@ mod tests {
             "./a",
             "a\\b",
             "SKILL.md",
+            "skill.MD",
             "a\nb",
+            "a/./b",
+            "a//b",
+            "a/",
+            "a\u{202e}b",
         ] {
             assert!(check_path(path).is_err(), "{path:?}");
         }

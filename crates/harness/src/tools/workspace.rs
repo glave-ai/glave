@@ -345,19 +345,26 @@ impl Workspace {
     /// for a link since then cannot slip one in. A failure is a sentence for the model: that
     /// refusal as the stat check words it, or what went wrong.
     pub(crate) async fn write(&self, path: &str, content: &[u8]) -> Result<(), String> {
-        let file = FileWrite {
-            protect: self.sandbox.is_some(),
-            ..FileWrite::new(path, Bytes::new(content))
-        };
-        let written = self
-            .computers
-            .write(self.info.id, std::slice::from_ref(&file))
-            .await;
+        self.write_all(&[(path, content)]).await
+    }
+
+    /// Writes each of `files`, its path and its content, as [`Self::write`] writes one, in one
+    /// call: the computer checks every path before it writes any.
+    pub(crate) async fn write_all(&self, files: &[(&str, &[u8])]) -> Result<(), String> {
+        let writes: Vec<FileWrite> = files
+            .iter()
+            .map(|(path, content)| FileWrite {
+                protect: self.sandbox.is_some(),
+                ..FileWrite::new(*path, Bytes::new(*content))
+            })
+            .collect();
+        let written = self.computers.write(self.info.id, &writes).await;
         written.map_err(|error| {
             if is_protected_refusal(&error) {
                 error.message().to_owned()
             } else {
-                format!("Could not write {path}: {}", error.message())
+                let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
+                format!("Could not write {}: {}", paths.join(", "), error.message())
             }
         })
     }

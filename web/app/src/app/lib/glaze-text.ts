@@ -122,6 +122,7 @@ function cards(): Pick<
       textLabel: $localize`:@@glaze.service.addsText:Its text`,
       filesLabel: $localize`:@@glaze.service.addsFiles:Files with it`,
       runsCodeLabel: $localize`:@@glaze.service.runsCode:runs code`,
+      partLabel: $localize`:@@glaze.service.inPart:shown in part`,
     },
     trustCard: {
       label: needsYou,

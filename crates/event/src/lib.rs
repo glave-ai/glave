@@ -14,6 +14,7 @@ mod id;
 mod money;
 mod payload;
 mod secret;
+mod seen;
 
 pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
@@ -69,3 +70,4 @@ pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{SecretAdded, SecretRemoved};
 pub use secret::{Secret, serialize_exposed};
+pub use seen::seen;

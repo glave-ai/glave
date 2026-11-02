@@ -7,9 +7,10 @@ import { type GlzServiceDetail, GlzServiceDetailComponent } from './service-deta
 const DETAIL: GlzServiceDetail = {
   front: 'name: release-notes\ndescription: Writes release notes.',
   text: '# Release notes\n\nRun `scripts/merged.sh`.',
+  textCut: false,
   files: [
-    { path: 'scripts/merged.sh', text: '#!/bin/sh\ngit log --merges', runsCode: true },
-    { path: 'templates/release.md', text: '## {{version}}', runsCode: false },
+    { path: 'scripts/merged.sh', text: '#!/bin/sh\ngit log --merges', runsCode: true, cut: false },
+    { path: 'templates/release.md', text: '## {{version}}', runsCode: false, cut: true },
   ],
   cut: null,
 };
@@ -51,6 +52,9 @@ describe('GlzServiceDetailComponent', () => {
     expect(code[0]?.textContent).toBe('#!/bin/sh\ngit log --merges');
     expect(code[0]?.querySelector('*:not(code)')).toBeNull();
     expect(part('cut')).toBeNull();
+    // Only the file shown in part is marked so.
+    expect(root.querySelectorAll('[data-testid="adds-part"]').length).toBe(1);
+    expect(files[1]?.querySelector('[data-testid="adds-part"]')?.textContent).toBe('shown in part');
     await expectAccessible(root);
   });
 
@@ -59,6 +63,7 @@ describe('GlzServiceDetailComponent', () => {
     fixture.componentInstance.detail.set({
       front: '',
       text: 'Short.',
+      textCut: true,
       files: [],
       cut: 'Too long to show in full here: 1 part cut short.',
     });
@@ -70,6 +75,7 @@ describe('GlzServiceDetailComponent', () => {
       'Too long to show in full here: 1 part cut short.',
     );
     expect(root.querySelector('[data-testid="adds-front"]')).toBeNull();
+    expect(root.querySelector('[data-testid="adds-part"]')?.textContent).toBe('shown in part');
     expect(root.querySelector('.files')).toBeNull();
     await expectAccessible(root);
   });

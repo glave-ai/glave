@@ -294,7 +294,8 @@ describe('ThreadItemComponent', () => {
     const detail = {
       front: 'name: tidy',
       text: '# Tidy',
-      files: [{ path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true }],
+      textCut: false,
+      files: [{ path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true, cut: false }],
       cut: null,
     };
     const { root } = await render(service(null, detail));

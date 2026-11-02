@@ -525,9 +525,10 @@ describe('what a service asks', () => {
     ).toEqual({
       front: 'name: tidy',
       text: '# Tidy',
+      textCut: false,
       files: [
-        { path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true },
-        { path: 'notes.md', text: 'n', runsCode: false },
+        { path: 'scripts/tidy.sh', text: '#!/bin/sh', runsCode: true, cut: true },
+        { path: 'notes.md', text: 'n', runsCode: false, cut: false },
       ],
       cut: 'Too long to show in full here: 1 part cut short.',
     });

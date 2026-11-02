@@ -211,6 +211,7 @@
     "glaze.service.addsFiles": "Files with it",
     "glaze.service.addsText": "Its text",
     "glaze.service.decline": "Decline",
+    "glaze.service.inPart": "shown in part",
     "glaze.service.missing": "Answer what’s required, and numbers as numbers, to send.",
     "glaze.service.no": "No",
     "glaze.service.required": "Required",

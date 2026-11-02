@@ -15,16 +15,22 @@
       [glzMarkdown]="text()"
       [testId]="ids().text"
     ></div>
+    @if (textCut()) {
+      <p class="part" [attr.data-testid]="ids().part">{{ partLabel() }}</p>
+    }
     @if (hasFiles()) {
       <div class="files">
         <p class="files-label">{{ filesLabel() }}</p>
-        <ul class="list fades">
+        <ul class="list fades" role="list">
           @for (file of files(); track file.path) {
             <li>
               <details class="file">
                 <summary class="file-line" [attr.data-testid]="ids().file">
                   <glz-icon class="chevron glz-mirrored" [icon]="chevron" />
                   <span class="path">{{ file.path }}</span>
+                  @if (file.cut) {
+                    <span class="part" [attr.data-testid]="ids().part">{{ partLabel() }}</span>
+                  }
                   @if (file.runsCode) {
                     <span class="runs" [attr.data-testid]="ids().runs">{{ runsCodeLabel() }}</span>
                   }
