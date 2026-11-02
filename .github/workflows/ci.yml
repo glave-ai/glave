@@ -660,10 +660,14 @@ jobs:
           tool: cargo-nextest,cargo-deny,cargo-machete
       - run: cargo xtask ci --all
 
-  # Only when no runner took the first try; not when the whole run was cancelled.
+  # Only when no runner took the first try. Such a job's result is `abandoned` to the jobs that
+  # need it, though the job itself shows as cancelled (run 41484180695, #952), so the retry runs on
+  # any result but success, skipped and cancelled, when the first try never started. A run someone
+  # cancelled leaves the first try `cancelled`, and no retry. `always()` lets it run after a
+  # first try that did not succeed, as no other status function does.
   macos-retry:
     needs: macos-run
-    if: "!cancelled() && needs.macos-run.result == 'cancelled' && needs.macos-run.outputs.started != 'true'"
+    if: "always() && needs.macos-run.outputs.started != 'true' && !contains(fromJSON('[\"success\", \"skipped\", \"cancelled\"]'), needs.macos-run.result)"
     runs-on: macos-latest
     timeout-minutes: 45
     env: *macos-env
