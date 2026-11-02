@@ -21,10 +21,18 @@ import {
 } from '@glave/glaze';
 import { ExternalLink, LoaderCircle, Plug } from 'lucide';
 
-import { connectionProblem, serviceHost, serviceName } from '../../lib/connections';
+import {
+  connectionProblem,
+  openedTab,
+  sentTo,
+  serviceHost,
+  serviceName,
+} from '../../lib/connections';
 import { ConnectionsService } from '../../services/connections.service';
+import { ConnectorsService } from '../../services/connectors.service';
 import { CredentialsService } from '../../services/credentials.service';
 import { AnotherServiceComponent } from '../another-service/another-service.component';
+import { ConnectorsComponent } from '../connectors/connectors.component';
 import { GithubRowComponent } from '../github-row/github-row.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { ServiceRowComponent } from '../service-row/service-row.component';
@@ -83,16 +91,6 @@ function including<T>(map: ReadonlyMap<string, T>, key: string, value: T): Reado
   return new Map(map).set(key, value);
 }
 
-/** Sends `tab` to `url`; whether it is open there, as one the person closed is not. */
-function sent(tab: Window | null, url: string): boolean {
-  try {
-    tab?.location.replace(url);
-    return tab !== null && !tab.closed;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Connections: the services glave can use for the person, as the server lists them. GitHub
  * first, one row signed in on GitHub, beside the person's other git hosts; then those signed in
@@ -105,6 +103,7 @@ function sent(tab: Window | null, url: string): boolean {
   selector: 'app-connections',
   imports: [
     AnotherServiceComponent,
+    ConnectorsComponent,
     GithubRowComponent,
     PageHeaderComponent,
     ServiceRowComponent,
@@ -141,6 +140,7 @@ export class ConnectionsComponent {
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink, empty: Plug } as const;
   private readonly service = inject(ConnectionsService);
   private readonly credentials = inject(CredentialsService);
+  private readonly connectors = inject(ConnectorsService);
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -191,10 +191,15 @@ export class ConnectionsComponent {
 
   /** Whether the server keeps git hosts for this person: it listed them. */
   protected readonly gitHosts = this.credentials.listed;
-  /** Whether there is nothing at all here: no git hosts kept, and no service listed. */
+  /** Whether there is nothing at all here: no git hosts kept, no service and no app listed. */
   protected readonly empty = computed(
-    () => !this.gitHosts() && this.service.connections()?.length === 0,
+    () => !this.gitHosts() && this.service.connections()?.length === 0 && this.noApps(),
   );
+  /** Whether no app is listed: none offered, or the list refused; not while it loads. */
+  private readonly noApps = computed(() => {
+    const catalog = this.connectors.catalog();
+    return catalog === null ? this.connectors.problem() !== null : catalog.connectors.length === 0;
+  });
 
   constructor() {
     void this.service.load();
@@ -254,7 +259,7 @@ export class ConnectionsComponent {
     const stop = new AbortController();
     this.stops.set(url, stop);
     this.problems.update((problems) => without(problems, url));
-    const tab = this.opened();
+    const tab = openedTab(this.document);
     this.waiting.update((waiting) => including(waiting, url, { link: null, opened: tab !== null }));
     let shown = false;
     try {
@@ -263,7 +268,7 @@ export class ConnectionsComponent {
         tab?.close();
         return;
       }
-      shown = sent(tab, link.url);
+      shown = sentTo(tab, link.url);
       this.waiting.update((waiting) => including(waiting, url, { link: link.url, opened: shown }));
       void this.announcer.announce(this.waitingLine(name, shown));
       if ((await this.service.finish(link.flow, stop.signal)) !== null) {
@@ -288,19 +293,6 @@ export class ConnectionsComponent {
     this.stops.get(url)?.abort();
     this.stops.delete(url);
     this.waiting.update((waiting) => without(waiting, url));
-  }
-
-  /**
-   * A new tab, which cannot reach this page; none where the browser opens none. Once it reaches
-   * the sign-in, on another origin, glave's opener policy cuts it off from this page too, and
-   * this page from it.
-   */
-  private opened(): Window | null {
-    const tab = this.document.defaultView?.open('', '_blank') ?? null;
-    if (tab !== null) {
-      tab.opener = null;
-    }
-    return tab;
   }
 
   /**

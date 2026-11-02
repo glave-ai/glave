@@ -65,7 +65,7 @@ ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/b
 ad3bf6956bad8629 9 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
 afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
 afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
-b325f097cdf0befa 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
+2e2e396f5b1d8803 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
 bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs
 c12ac87a932d4b74 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs

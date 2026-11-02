@@ -1,9 +1,9 @@
-import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
 import { ApiError, type ConnectionInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectionsComponent } from './connections.component';
 
 const DOCS: ConnectionInfo = {
@@ -45,47 +45,24 @@ function rows(root: ParentNode, testId: string): readonly string[] {
   );
 }
 
-/** A tab the page opens, standing in for the browser's. */
-function fakeTab(): { readonly tab: Window; readonly sentTo: string[]; closed: () => boolean } {
-  const sentTo: string[] = [];
-  let closed = false;
-  const tab = {
-    opener: window,
-    get closed() {
-      return closed;
-    },
-    close: () => {
-      closed = true;
-    },
-    location: { replace: (url: string) => sentTo.push(url) },
-  } as unknown as Window;
-  vi.spyOn(window, 'open').mockReturnValue(tab);
-  return { tab, sentTo, closed: () => closed };
-}
-
 /** The page on `fake`, and what it says to screen readers. */
 async function page(fake: FakeSession): Promise<{
   readonly fixture: { whenStable(): Promise<unknown>; destroy(): void };
   readonly root: HTMLElement;
   readonly said: string[];
 }> {
-  const said: string[] = [];
-  const announce = (text: string): Promise<void> => {
-    said.push(text);
-    return Promise.resolve();
-  };
-  TestBed.configureTestingModule({
-    providers: [...provideFakeSession(fake), { provide: LiveAnnouncer, useValue: { announce } }],
-  });
+  const { said, provider } = announced();
+  TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), provider] });
   const fixture = TestBed.createComponent(ConnectionsComponent);
   await settle(fixture);
   return { fixture, root: fixture.nativeElement as HTMLElement, said };
 }
 
-/** Polls the fake answers while waiting: a tick each, the flow again. */
-async function stillWaiting(): Promise<object> {
-  await new Promise((resolve) => setTimeout(resolve));
-  return { flow: 'f1' };
+/** A fake tab, which `window.open` gives. */
+function openedTab(): FakeTab {
+  const tab = fakeTab();
+  vi.spyOn(window, 'open').mockReturnValue(tab.tab);
+  return tab;
 }
 
 describe('ConnectionsComponent', () => {
@@ -128,7 +105,7 @@ describe('ConnectionsComponent', () => {
         await signedInThere;
         return { connection: { ...TRACKER, status: 'signed_in' } };
       });
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root, said } = await page(fake);
 
     click(root, 'connection-action');
@@ -164,7 +141,7 @@ describe('ConnectionsComponent', () => {
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', stillWaiting);
-    fakeTab();
+    openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -193,7 +170,7 @@ describe('ConnectionsComponent', () => {
         await begun;
         return { sign_in: { flow: 'f1', url: PAGE } };
       });
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -210,7 +187,7 @@ describe('ConnectionsComponent', () => {
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', stillWaiting);
-    fakeTab();
+    openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
@@ -228,7 +205,7 @@ describe('ConnectionsComponent', () => {
         message: 'glave could not reach the sign-in for Issue Tracker: try again in a while',
       }),
     );
-    const opened = fakeTab();
+    const opened = openedTab();
     const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);

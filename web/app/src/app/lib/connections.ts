@@ -5,6 +5,29 @@ import { sentence, somethingWrong, unreached } from './text';
 /** Failures that are glave's own, whose words are not for the person. */
 const OWN: readonly number[] = [ErrorCode.INTERNAL, ErrorCode.PARSE, ErrorCode.INVALID_REQUEST];
 
+/**
+ * A new tab, which cannot reach this page; none where the browser opens none. Opened while a
+ * click is handled, so no browser blocks it; once it reaches a sign-in on another origin,
+ * glave's opener policy cuts it off from this page too, and this page from it.
+ */
+export function openedTab(document: Document): Window | null {
+  const tab = document.defaultView?.open('', '_blank') ?? null;
+  if (tab !== null) {
+    tab.opener = null;
+  }
+  return tab;
+}
+
+/** Sends `tab` to `url`; whether it is open there, as one the person closed is not. */
+export function sentTo(tab: Window | null, url: string): boolean {
+  try {
+    tab?.location.replace(url);
+    return tab !== null && !tab.closed;
+  } catch {
+    return false;
+  }
+}
+
 /** Where a service is: its address's host, or the whole address when it has none. */
 export function serviceHost(connection: ConnectionInfo): string {
   try {

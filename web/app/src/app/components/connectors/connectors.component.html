@@ -1,0 +1,106 @@
+@if (offered()) {
+  <section class="glz-stack glz-gap-4" aria-labelledby="connectors-heading">
+    <h2 id="connectors-heading" class="heading">{{ copy.heading }}</h2>
+    <label class="search">
+      <glz-icon [icon]="icons.search" />
+      <input
+        type="search"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-testid="connectors-search"
+        [attr.aria-label]="copy.search"
+        [placeholder]="copy.search"
+        [value]="query()"
+        (input)="search($event)"
+      />
+    </label>
+    @for (section of sections(); track section.id) {
+      <section class="card" [attr.data-testid]="section.testId" [attr.aria-labelledby]="section.id">
+        <h3 class="head" [id]="section.id">{{ section.heading }}</h3>
+        <div class="rows" role="list">
+          @for (row of section.rows; track row.id) {
+            <app-service-row
+              data-testid="connector"
+              [name]="row.name"
+              [attr.data-connector]="row.id"
+            >
+              @if (row.problem; as problem) {
+                <span class="detail problem" role="alert" data-testid="connector-problem">{{
+                  problem
+                }}</span>
+              } @else if (row.waiting) {
+                <span class="waiting" data-testid="connector-waiting">
+                  <span class="detail">
+                    <glz-icon class="glz-spin" [icon]="icons.waiting" />
+                    {{ row.detail }}
+                  </span>
+                  @if (row.link; as link) {
+                    <a
+                      class="again"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="connector-open"
+                      [href]="link"
+                    >
+                      {{ row.linkText }}
+                      <glz-icon class="glz-mirrored" [icon]="icons.open" [label]="copy.newTab" />
+                    </a>
+                  }
+                </span>
+              } @else {
+                <span class="detail" data-testid="connector-detail">
+                  @if (row.connected) {
+                    <span class="dot" aria-hidden="true"></span>
+                  }
+                  <span dir="auto">{{ row.detail }}</span>
+                </span>
+              }
+              <button
+                glzButton
+                appServiceAction
+                class="action"
+                size="sm"
+                data-testid="connector-action"
+                [variant]="row.variant"
+                [disabled]="row.busy"
+                [attr.aria-label]="row.actionLabel"
+                (click)="act(row)"
+              >
+                {{ row.action }}
+              </button>
+              @if (row.again) {
+                <button
+                  glzButton
+                  appServiceAction
+                  class="action"
+                  size="sm"
+                  variant="ghost"
+                  data-testid="connector-disconnect"
+                  [disabled]="row.busy"
+                  [attr.aria-label]="row.disconnectLabel"
+                  (click)="ask(row)"
+                >
+                  {{ copy.disconnect }}
+                </button>
+              }
+            </app-service-row>
+          }
+        </div>
+      </section>
+    }
+    <p class="detail" role="status" data-testid="connectors-none">{{ found() }}</p>
+  </section>
+}
+@if (problem(); as problem) {
+  <p class="detail problem" role="alert" data-testid="connectors-problem">{{ problem }}</p>
+}
+<glz-confirm-dialog
+  testId="connectors-disconnect"
+  danger
+  [heading]="disconnectHeading()"
+  [message]="copy.disconnectText"
+  [confirmLabel]="copy.disconnect"
+  [(open)]="confirming"
+  (decided)="decided($event)"
+/>
