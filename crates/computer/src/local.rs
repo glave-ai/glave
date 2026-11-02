@@ -420,8 +420,7 @@ impl LocalComputers {
         self.background.room(workspace)?;
         let id = CommandId::from_uuid(new_id()?);
         let helper = self.sandbox_helper.as_deref();
-        let sandbox = command.sandbox.as_ref();
-        let spawned = command::spawn(&opened, &command.script, sandbox, helper, None).await?;
+        let spawned = command::spawn(&opened, command, helper, None).await?;
         let limit = command.timeout_secs.map(Duration::from_secs);
         let named = (id, command.script.clone());
         let at = (opened.computer, workspace);

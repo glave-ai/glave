@@ -453,6 +453,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "held while the models offered are set again, from settings already read",
     ),
     (
+        "crates/session/src/secrets.rs",
+        "let _reading = self.reading.lock().await;",
+        1,
+        "held for one read of the person's accounts ledger and the erasure of what it removed, \
+         each a call to the store within the store's own limits",
+    ),
+    (
         "crates/cli/src/connected.rs",
         "let _asker = askers.acquire().await.ok()?;",
         1,

@@ -13,6 +13,7 @@ use glave_gateway::Credits;
 use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
 use glave_ports::computer::{GitCredentials, Sandbox};
+use glave_ports::secrets::KnownSecrets;
 use glave_ports::settings::Hooks;
 use glave_ports::{OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
@@ -150,7 +151,7 @@ pub(crate) async fn wire(
     let lined = lined.await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, &setup, workspace).await?;
-    let secrets = kept_secrets(args, &store, identity.person).await?;
+    let (workspace, secrets) = kept_secrets(args, &store, identity.person, workspace).await?;
     let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     let servers = mcp_servers(
@@ -435,17 +436,21 @@ async fn signed(
 }
 
 /// The secrets `person` adds, when they may add them here: everywhere but a server people sign
-/// in to with OIDC, as for git hosts.
+/// in to with OIDC, as for git hosts; and `workspace` with every command seeing their
+/// placeholders and every tool's output masking their values.
 async fn kept_secrets(
     args: &Args,
     store: &Data,
     person: glave_event::PrincipalId,
-) -> anyhow::Result<Option<Arc<Secrets<DataLog>>>> {
+    workspace: Workspace,
+) -> anyhow::Result<(Workspace, Option<Arc<Secrets<DataLog>>>)> {
     if !args.issuers.is_empty() {
-        return Ok(None);
+        return Ok((workspace, None));
     }
+    let known = KnownSecrets::default();
     let ledger = crate::accounts::open(store, person).await?;
-    Ok(Some(Arc::new(Secrets::new(ledger))))
+    let secrets = Secrets::open(ledger, known.clone()).await?;
+    Ok((workspace.hiding(known), Some(Arc::new(secrets))))
 }
 
 /// Tidies memory in the background, when it is on: tidy-up asks the gateway too, which sends

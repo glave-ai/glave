@@ -11,7 +11,7 @@ use std::time::Duration;
 use glave_ports::Cancellation;
 use glave_ports::computer::{
     Command, CommandId, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
-    Refusal, Sandbox, WorkspaceId,
+    Refusal, WorkspaceId,
 };
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
@@ -102,20 +102,19 @@ pub(crate) struct Held {
     _sandbox: Option<Arc<Prepared>>,
 }
 
-/// Starts `script` by bash in `opened`, in `sandbox` when there is one, its git asking
+/// Starts `command` by bash in `opened`, in its sandbox when it has one, its git asking
 /// `offered`'s helper when given. `helper` runs the Linux sandbox's helper, if this machine
 /// has one.
 pub(crate) async fn spawn(
     opened: &Opened,
-    script: &str,
-    sandbox: Option<&Sandbox>,
+    command: &Command,
     helper: Option<&Path>,
     offered: Option<&Offered>,
 ) -> Result<Spawned, ComputerError> {
-    if script.trim().is_empty() {
+    if command.script.trim().is_empty() {
         return Err(ComputerError::Refused(Refusal::EmptyCommand.into()));
     }
-    let prepared = match sandbox {
+    let prepared = match &command.sandbox {
         Some(sandbox) => Some(opened.sandbox(sandbox, helper).await?),
         None => None,
     };
@@ -124,7 +123,7 @@ pub(crate) async fn spawn(
         None => None,
     };
     let confined = launch.as_ref().zip(prepared.as_deref());
-    let mut bash = bash(opened, script, confined, offered);
+    let mut bash = bash(opened, command, confined, offered);
     let mut child = (opened.processes.spawn(&mut bash).await)
         .map_err(|error| ComputerError::Failed(error.to_string()))?;
     let input = launch.as_ref().and_then(|launch| launch.input.as_deref());
@@ -187,9 +186,8 @@ pub(crate) async fn run(
     let keeps = (command.on_timeout == OnTimeout::Background)
         .then(|| new_id().map(CommandId::from_uuid))
         .transpose()?;
-    let sandbox = command.sandbox.as_ref();
     let before = super::pressure::throttled(keep.cgroup).await;
-    let mut spawned = spawn(opened, &command.script, sandbox, helper, offered.as_ref()).await?;
+    let mut spawned = spawn(opened, command, helper, offered.as_ref()).await?;
     let waited = {
         let pump = spawned.stream.pump(output);
         let waiting = answering(
@@ -253,15 +251,16 @@ async fn answering<T>(
     }
 }
 
-/// `script` run by bash at the workspace root, in the sandbox if there is one, with the
-/// workspace's environment, the credential helper's settings if it has one, and output that
-/// reads well as text.
+/// `command` run by bash at the workspace root, in the sandbox if there is one, with its own
+/// variables and the workspace's environment, whose win, the credential helper's settings if it
+/// has one, and output that reads well as text.
 fn bash(
     opened: &Opened,
-    script: &str,
+    command: &Command,
     sandbox: Option<(&Launch, &Prepared)>,
     offered: Option<&Offered>,
 ) -> Program {
+    let (script, own) = (&command.script, &command.env);
     let mut command = match sandbox {
         Some((launch, _)) => {
             let mut command = Program::new(&launch.program);
@@ -280,6 +279,7 @@ fn bash(
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
+        .envs(own)
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
         .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
         .envs(caches.iter().flat_map(|caches| {

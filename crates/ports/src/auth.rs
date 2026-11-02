@@ -258,12 +258,15 @@ pub fn signs_in(url: &str) -> bool {
 /// scheme's name such as `Bearer` stays readable.
 pub const SHORTEST_SECRET: usize = 8;
 
-/// `text` with each of `secrets` at least 8 characters long replaced by `[redacted]`.
+/// What [`redact`] puts in a secret's place.
+pub const REDACTED: &str = "[redacted]";
+
+/// `text` with each of `secrets` at least 8 characters long replaced by [`REDACTED`].
 pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
     let mut text = text.to_owned();
     for secret in secrets {
         if secret.len() >= SHORTEST_SECRET && text.contains(secret) {
-            text = text.replace(secret, "[redacted]");
+            text = text.replace(secret, REDACTED);
         }
     }
     text

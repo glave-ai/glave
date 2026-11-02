@@ -209,3 +209,57 @@ mod credentials {
         });
     }
 }
+
+mod secrets {
+    use glave_event::{Body, Secret, StopReason};
+    use glave_harness::AllowAll;
+    use glave_ports::InMemoryLog;
+    use glave_ports::secrets::{Known, KnownSecrets};
+    use glave_ports::testing::any_secret;
+    use serde_json::json;
+
+    use crate::support::*;
+
+    /// Commands see a secret's placeholder in its variable, and its value, where output shows
+    /// it anyway, is masked before it is recorded or the model is shown it.
+    #[test]
+    fn commands_see_placeholders_and_a_value_in_output_is_masked() {
+        let dir = folder("secrets");
+        let value = any_secret();
+        std::fs::write(dir.join("echoed.txt"), format!("the api said {value}\n")).unwrap();
+        let known = KnownSecrets::default();
+        let secret = Known::new("STRIPE_KEY".into(), Secret::new(value.clone()));
+        let placeholder = secret.placeholder.clone();
+        known.set(vec![secret]);
+        let command = r#"printf 'key=%s\n' "$STRIPE_KEY" && cat echoed.txt"#;
+        block_on!(async {
+            let answers = vec![
+                answer(
+                    None,
+                    vec![("bash", json!({"command": command}))],
+                    StopReason::ToolUse,
+                ),
+                answer(Some("Done."), vec![], StopReason::EndTurn),
+            ];
+            let workspace = workspace(&dir).await.hiding(known);
+            let log = InMemoryLog::new();
+            let (harness, seen) = harness_with(workspace, answers, AllowAll, log, 1, settings());
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            turn(&harness, &mut thread, "call the api").await;
+            let result = events(harness.log(), thread.id)
+                .await
+                .into_iter()
+                .find_map(|event| match event.body {
+                    Body::ToolCallCompleted(done) => Some(format!("{done:?}")),
+                    _ => None,
+                })
+                .unwrap();
+            assert!(result.contains(&format!("key={placeholder}")), "{result}");
+            assert!(result.contains("the api said [redacted]"), "{result}");
+            let all = format!("{:?}", events(harness.log(), thread.id).await);
+            assert!(!all.contains(&value), "a value reached the log: {all}");
+            let shown = format!("{:?}", seen.lock().unwrap());
+            assert!(!shown.contains(&value), "the model saw a value: {shown}");
+        });
+    }
+}

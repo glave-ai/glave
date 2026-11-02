@@ -20,6 +20,7 @@ use glave_ports::computer::{
     GitCredentials, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
     Sources, Stat, WorkspaceInfo, is_protected, is_protected_refusal, refuse_protected,
 };
+use glave_ports::secrets::KnownSecrets;
 use glave_ports::{Cancellation, digest};
 
 use crate::cancel::Cancel;
@@ -44,6 +45,9 @@ pub struct Workspace {
     planning: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
+    /// The person's secrets: their placeholders in every command's environment, their values
+    /// masked in every tool's output. None kept by default.
+    hidden: KnownSecrets,
     temp: Option<PathBuf>,
     /// Whether its computer may be asleep, as a person's may: asking it anything before a call
     /// needs it would wake it.
@@ -78,6 +82,7 @@ impl Workspace {
             asks_network: true,
             planning: false,
             credentials: None,
+            hidden: KnownSecrets::default(),
             asleep_at_times: false,
             reads: Mutex::new(HashMap::new()),
         }
@@ -133,6 +138,20 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
+    /// Gives every command the placeholders of the `known` secrets and masks their values in
+    /// every tool's output (`specs/model.md`, "Secrets"), as do the worktrees and scratch
+    /// folders made from this workspace.
+    #[must_use]
+    pub fn hiding(mut self, known: KnownSecrets) -> Self {
+        self.hidden = known;
+        self
+    }
+
+    /// The person's secrets, as commands and output meet them.
+    pub(crate) fn hidden(&self) -> &KnownSecrets {
+        &self.hidden
+    }
+
     /// The same binding's credentials, and what its commands may ask for, given to `other`,
     /// made from it.
     fn sharing(&self, other: Self) -> Self {
@@ -140,6 +159,7 @@ impl Workspace {
             asks_network: self.asks_network,
             planning: self.planning,
             asleep_at_times: self.asleep_at_times,
+            hidden: self.hidden.clone(),
             ..other
         };
         match &self.credentials {
@@ -361,7 +381,8 @@ impl Workspace {
     }
 
     /// Runs `command` in this workspace, in its sandbox if it has one, with its credentials if
-    /// it has them, doing at its timeout what `on_timeout` says.
+    /// it has them, doing at its timeout what `on_timeout` says; its output reaches `output`
+    /// with the person's secrets masked.
     pub(crate) async fn run(
         &self,
         script: String,
@@ -374,19 +395,23 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
             on_timeout,
+            env: self.hidden.placeholders(),
         };
         let span = crate::telemetry::command();
+        // Masked as it comes, before any of it is kept or cut.
+        let masking = self.hidden.masking(output);
         let running = match &self.credentials {
             Some(credentials) => self.computers.run_with_credentials(
                 self.info.id,
                 &command,
-                output,
+                &masking,
                 cancel,
                 credentials.as_ref(),
             ),
-            None => self.computers.run(self.info.id, &command, output, cancel),
+            None => self.computers.run(self.info.id, &command, &masking, cancel),
         };
         let finished = tracing::Instrument::instrument(running, span.clone()).await;
+        masking.flush().await;
         let ended = finished.as_ref().ok();
         crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
         finished.map_err(|error| self.said_plainly(error))
@@ -413,6 +438,7 @@ impl Workspace {
     pub(crate) async fn start(&self, script: String) -> Result<CommandId, ComputerError> {
         let command = Command {
             sandbox: self.sandbox.clone(),
+            env: self.hidden.placeholders(),
             ..Command::new(script)
         };
         self.computers.start(self.info.id, &command).await

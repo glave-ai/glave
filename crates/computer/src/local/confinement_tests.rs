@@ -441,3 +441,46 @@ fn commands_never_see_secret_variables() {
         assert!(!seen.contains(name), "{name} reached a command");
     }
 }
+
+#[test]
+fn a_command_sees_the_placeholders_it_is_given_and_its_computer_s_own_variables_win() {
+    let mut environment = plain_environment();
+    let secret = glave_ports::testing::any_secret();
+    environment.push(("STRIPE_KEY".into(), secret.clone().into()));
+    environment.push(("SETTING".into(), "the computer's".into()));
+    let (_dir, work, copies) = scratch("placeholders");
+    let computers = LocalComputers::new(&copies, environment);
+    let mut command = Command::new("env");
+    for name in ["STRIPE_KEY", "SETTING", "PATH"] {
+        let placeholder = format!("glave-secret-{name}");
+        command.env.insert(name.into(), placeholder);
+    }
+    let seen = runtime().block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        let here = computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let text = Text(Mutex::default());
+        let never = crate::CancelSwitch::default();
+        computers
+            .run(here.id, &command, &text, &never)
+            .await
+            .unwrap();
+        std::mem::take(&mut *text.0.lock().unwrap())
+    });
+    assert!(
+        seen.contains("STRIPE_KEY=glave-secret-STRIPE_KEY"),
+        "{seen}"
+    );
+    assert!(
+        !seen.contains(&secret),
+        "a secret reached a command: {seen}"
+    );
+    assert!(
+        seen.contains("SETTING=the computer's"),
+        "its own wins: {seen}"
+    );
+    assert!(!seen.contains("PATH=glave-secret-PATH"), "{seen}");
+}

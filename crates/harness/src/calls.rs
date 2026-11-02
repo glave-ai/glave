@@ -688,6 +688,8 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
+        // The harness's own secrets, however the thread's workspace was made.
+        let outcome = self.workspace.hidden().masked(outcome);
         let outcome = fit(outcome, self.tool_room(thread));
         let outcome = self.keep_files(thread, outcome).await;
         let completed = completed(call_id, outcome);
