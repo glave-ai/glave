@@ -90,6 +90,12 @@ pub struct Attempt {
     /// Tool calls that gave nothing new (`Trace::repeated_steps`).
     #[serde(default)]
     pub repeated_steps: u32,
+    /// Approvals put to the person, or to no one there (`Trace::asks`).
+    #[serde(default)]
+    pub asks: u32,
+    /// Commands the sandbox may have blocked (`Trace::blocked`).
+    #[serde(default)]
+    pub blocked: u32,
     /// Why the goal ended, when the attempt ran one and it ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<GoalReason>,
@@ -132,6 +138,8 @@ impl Attempt {
             seconds,
             compactions: trace.compactions,
             repeated_steps: trace.repeated_steps,
+            asks: trace.asks,
+            blocked: trace.blocked,
             goal: trace.goal,
             probes: None,
             memory: None,

@@ -13,6 +13,7 @@ fn attempt(task: &str, model: &str, number: u32, passed: bool) -> Attempt {
     attempt.input_tokens = 1_200;
     attempt.output_tokens = 34;
     attempt.tool_calls = 2;
+    attempt.asks = 1;
     attempt.seconds = f64::from(number);
     attempt
 }
@@ -119,6 +120,8 @@ Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost re
 | cost | $0.0040 | $0.0020 | - | $0.0040 |
 | tokens | 2,468 | 2,468 | 2,468 | 2,468 |
 | tool calls | 4 | 4 | 4 | 4 |
+| asks | 2 | 2 | 2 | 2 |
+| blocked commands | 0 | 0 | 0 | 0 |
 | median time | 2.0 s | 2.0 s | 2.0 s | 2.0 s |
 
 Not passed:

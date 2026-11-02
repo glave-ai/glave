@@ -34,6 +34,12 @@ pub struct Trace {
     /// command is run again. A test rerun after a change that alters its output is not one; one
     /// that prints the same as before is.
     pub repeated_steps: u32,
+    /// Approvals put to the person, or to no one where no one was there: every
+    /// `approval.requested` but those glave settled itself (the judge cleared it, or Full access
+    /// declined it). Each is an interruption, or a refusal with no one there.
+    pub asks: u32,
+    /// Commands whose output carries the sandbox's note that it may have blocked them.
+    pub blocked: u32,
 }
 
 impl Default for Trace {
@@ -54,6 +60,8 @@ impl Default for Trace {
             goal: None,
             compactions: 0,
             repeated_steps: 0,
+            asks: 0,
+            blocked: 0,
         }
     }
 }
@@ -116,6 +124,11 @@ impl Trace {
             Body::TurnEnded(ended) => self.outcomes.push(ended.outcome),
             Body::GoalEnded(ended) => self.goal = Some(ended.reason),
             Body::ThreadCompacted(_) => self.compactions = self.compactions.saturating_add(1),
+            Body::ApprovalRequested(asked)
+                if (asked.reason.as_ref()).is_none_or(|reason| reason.settled.is_none()) =>
+            {
+                self.asks = self.asks.saturating_add(1);
+            }
             _ => {}
         }
     }
@@ -130,6 +143,9 @@ impl Trace {
         };
         let result = text_of(&done.output);
         if tool == "bash" {
+            if result.contains(BLOCKED) {
+                self.blocked = self.blocked.saturating_add(1);
+            }
             self.printed.push_str(&result);
             self.printed.push('\n');
         }
@@ -138,6 +154,9 @@ impl Trace {
         }
     }
 }
+
+/// How the note the harness adds to a command the sandbox may have blocked begins.
+const BLOCKED: &str = "[This command may have been blocked by the sandbox";
 
 fn text_of(parts: &[Part]) -> String {
     let texts: Vec<&str> = parts
@@ -178,6 +197,8 @@ mod tests {
                 goal: None,
                 compactions: 0,
                 repeated_steps: 0,
+                asks: 0,
+                blocked: 0,
             }
         );
     }
@@ -228,6 +249,29 @@ mod tests {
         };
         let events = format!("{}\n{}\n", compacted(3), compacted(4));
         assert_eq!(parse(&events).unwrap().compactions, 2);
+    }
+
+    #[test]
+    fn approvals_put_to_someone_and_blocked_commands_are_counted() {
+        let asked = |seq: u32, reason: serde_json::Value| {
+            serde_json::json!({"glave": 1, "id": format!("0192f5c2-7000-7000-8000-{seq:012}"),
+                "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": seq,
+                "at": "2026-10-07T21:14:00.001Z", "type": "approval.requested", "v": 1,
+                "data": {"call_id": format!("c{seq}"), "tool": "bash", "summary": "bash: x",
+                    "secret": false, "reason": reason}})
+            .to_string()
+        };
+        let events = [
+            asked(3, serde_json::json!({"lifted": "network"})),
+            asked(4, serde_json::json!({"settled": "declined"})),
+            asked(5, serde_json::json!({"settled": {"cleared": {}}})),
+            step("a", "curl x", &format!("{BLOCKED}: …]")),
+            step("b", "ls", "fine"),
+        ]
+        .join("\n");
+        let trace = parse(&events).unwrap();
+        assert_eq!(trace.asks, 1, "glave settled the other two itself");
+        assert_eq!(trace.blocked, 1);
     }
 
     #[test]
