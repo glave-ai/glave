@@ -1,0 +1,92 @@
+// glave's connectors on the Connections page: a search, then a card for those connected and
+// one for each category, laid out as the page's own cards are.
+.heading {
+  font-size: var(--glz-text-lg);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-height: var(--glz-control-height-touch);
+  padding-inline: var(--glz-space-3);
+  border: var(--glz-border-width) solid var(--glz-color-border-strong);
+  border-radius: var(--glz-radius-control);
+  background: var(--glz-surface-card);
+  color: var(--glz-color-text-muted);
+  cursor: text;
+}
+
+.search:focus-within {
+  box-shadow: var(--glz-focus-ring);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--glz-color-text);
+  font: inherit;
+  font-size: var(--glz-text-input);
+}
+
+.search input:focus {
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--glz-color-text-muted);
+  opacity: 1;
+}
+
+.card {
+  overflow: hidden;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-card);
+}
+
+.head {
+  padding: var(--glz-inset-card-head);
+  font-size: var(--glz-text-md);
+}
+
+.rows > app-service-row:first-child {
+  border-block-start-color: var(--glz-color-border);
+}
+
+.detail {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+}
+
+.waiting {
+  color: var(--glz-color-text-secondary);
+}
+
+.dot {
+  flex: none;
+  width: var(--glz-dot-size);
+  height: var(--glz-dot-size);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-success);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}
+
+// On a phone, a row's button is a finger's size.
+@media (width <= 48rem) {
+  .rows .action {
+    min-height: var(--glz-control-height-touch);
+  }
+}

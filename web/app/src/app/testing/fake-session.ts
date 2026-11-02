@@ -258,6 +258,9 @@ function unanswered(method: Method, params: unknown): Answer {
   if (method === 'command/list') {
     return { commands: [] };
   }
+  if (method === 'connector/list') {
+    return { categories: [], connectors: [] };
+  }
   if (method === 'credential/list') {
     return { credentials: [], github: 'https://github.com' };
   }
