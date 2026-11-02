@@ -32,5 +32,10 @@ jobs:
       - env:
           RESULT: ${{ needs.never.result }}
           STARTED: ${{ needs.never.outputs.started }}
-          CANCELLED: ${{ cancelled() }}
-        run: echo "result=$RESULT started=$STARTED cancelled=$CANCELLED"
+        run: echo "result=$RESULT started=$STARTED"
+  run-cancelled:
+    needs: never
+    if: cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "cancelled() was true"
