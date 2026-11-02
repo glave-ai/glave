@@ -62,7 +62,8 @@ pub(crate) fn trim_oldest(messages: &mut [Message]) -> bool {
     true
 }
 
-fn omitted(output: &[Part]) -> bool {
+/// Whether `output` is a removed tool output's note.
+pub(crate) fn omitted(output: &[Part]) -> bool {
     matches!(output, [Part::Text { text }] if text == OMITTED)
 }
 

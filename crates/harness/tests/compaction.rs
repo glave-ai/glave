@@ -102,6 +102,46 @@ fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
 }
 
 #[test]
+fn a_restart_keeps_the_latest_results_that_fit_as_they_were() {
+    let dir = folder("compact-recent");
+    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(3_000)).unwrap();
+    std::fs::write(dir.join("small.txt"), "the key is amber\n").unwrap();
+    block_on!(async {
+        let answers = vec![
+            answer(
+                None,
+                vec![
+                    ("read", serde_json::json!({ "path": "big.txt" })),
+                    ("read", serde_json::json!({ "path": "small.txt" })),
+                ],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Read both files."), vec![], StopReason::EndTurn),
+            answer(Some("The key is amber."), vec![], StopReason::EndTurn),
+        ];
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "what is the key?").await;
+
+        let sent = requests(&seen);
+        assert_eq!(sent.len(), 3, "the reads, the summary, the answer");
+        let restart = text_of(&sent[2].messages[0]);
+        assert!(restart.contains("the key is amber"), "{restart}");
+        assert!(
+            !restart.contains("marigold"),
+            "a result too big for the room is left to the summary"
+        );
+        let resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        assert_eq!(
+            resumed.messages(),
+            thread.messages(),
+            "the log alone rebuilds it"
+        );
+    });
+}
+
+#[test]
 fn a_thread_that_fits_is_left_alone() {
     let dir = folder("fits");
     std::fs::write(dir.join("small.txt"), "hello\n").unwrap();
