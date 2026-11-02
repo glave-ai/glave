@@ -34,6 +34,7 @@ export * from './components/plan-card/plan-card.component';
 export * from './components/popover/popover.component';
 export * from './components/question-card/question-card.component';
 export * from './components/service-card/service-card.component';
+export * from './components/service-detail/service-detail.component';
 export * from './components/radio-group/radio-group.component';
 export * from './components/radio/radio.component';
 export * from './components/receipt/receipt.component';

@@ -71,6 +71,9 @@
       }
     </div>
   }
+  @if (detail(); as adds) {
+    <glz-service-detail [detail]="adds" [testId]="ids().detail" />
+  }
   <p class="note" [attr.data-testid]="ids().note">{{ note() }}</p>
   @if (incomplete()) {
     <p class="note" [attr.data-testid]="ids().missing">{{ missingLabel() }}</p>

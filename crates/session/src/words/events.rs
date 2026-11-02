@@ -58,6 +58,10 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
             };
             asked.ask = ask;
             asked.note = note;
+            if let Some(adds) = asked.adds.as_mut().filter(|adds| adds.cut.is_some()) {
+                let parts = adds.parts_cut();
+                adds.cut = Some(say(language, &Sentence::AddsCut { parts }));
+            }
             Body::ServiceAsked(asked)
         }
         Body::ServiceAnswered(mut answered) => {

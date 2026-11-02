@@ -1,0 +1,55 @@
+<details class="adds">
+  <summary class="line" [attr.data-testid]="ids().summary">
+    <glz-icon class="chevron glz-mirrored" [icon]="chevron" />{{ label() }}
+  </summary>
+  <div class="body fades">
+    @if (front(); as lines) {
+      <pre class="front" [attr.data-testid]="ids().front">{{ lines }}</pre>
+    }
+    <div
+      class="text fades"
+      dir="auto"
+      tabindex="0"
+      role="region"
+      [attr.aria-label]="textLabel()"
+      [glzMarkdown]="text()"
+      [testId]="ids().text"
+    ></div>
+    @if (textCut()) {
+      <p class="part" [attr.data-testid]="ids().part">{{ partLabel() }}</p>
+    }
+    @if (hasFiles()) {
+      <div class="files">
+        <p class="files-label">{{ filesLabel() }}</p>
+        <ul class="list fades" role="list">
+          @for (file of files(); track file.path) {
+            <li>
+              <details class="file">
+                <summary class="file-line" [attr.data-testid]="ids().file">
+                  <glz-icon class="chevron glz-mirrored" [icon]="chevron" />
+                  <span class="path">{{ file.path }}</span>
+                  @if (file.cut) {
+                    <span class="part" [attr.data-testid]="ids().part">{{ partLabel() }}</span>
+                  }
+                  @if (file.runsCode) {
+                    <span class="runs" [attr.data-testid]="ids().runs">{{ runsCodeLabel() }}</span>
+                  }
+                </summary>
+                <pre
+                  class="code fades"
+                  tabindex="0"
+                  role="region"
+                  [attr.aria-label]="file.path"
+                  [attr.data-testid]="ids().code"
+                ><code>{{ file.text }}</code></pre>
+              </details>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+    @if (cut(); as line) {
+      <p class="cut" [attr.data-testid]="ids().cut">{{ line }}</p>
+    }
+  </div>
+</details>

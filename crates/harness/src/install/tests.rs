@@ -247,3 +247,56 @@ fn where_the_organization_forbids_own_servers_none_is_added_there() {
         );
     });
 }
+
+#[test]
+fn a_skill_brings_its_files_and_the_person_sees_them_first() {
+    let (project, own) = (
+        TempDir::new("install-fp").unwrap(),
+        TempDir::new("install-fo").unwrap(),
+    );
+    let with = |files: Value| {
+        arguments(json!({"kind": "skill", "name": "release-notes", "skill": SKILL, "files": files}))
+    };
+    let escaping = with(json!({"../outside.sh": "echo"}));
+    assert!(
+        change(&escaping)
+            .unwrap_err()
+            .contains("within the skill's folder")
+    );
+    glave_ports::block_on!(async {
+        let tool = install(&project, &own, true).await;
+        let first = with(json!({"scripts/merged.sh": "#!/bin/sh\ngit log\n", "old.md": "old"}));
+        let asks = asked(&tool, &first).await;
+        let adds = asks.adds.clone().unwrap();
+        assert_eq!(
+            adds.front,
+            "name: release-notes\ndescription: Writes release notes from merged pull requests."
+        );
+        assert!(adds.text.starts_with("Read the merged pull requests"));
+        let files: Vec<(&str, bool)> = adds
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file.runs_code))
+            .collect();
+        assert_eq!(files, [("old.md", false), ("scripts/merged.sh", true)]);
+        assert_eq!(adds.cut, None);
+        assert!(!chosen(&tool, asks, "everywhere").await.is_error);
+        let folder = own.join("skills/release-notes");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("scripts/merged.sh")).unwrap(),
+            "#!/bin/sh\ngit log\n"
+        );
+
+        // Replaced, the old one goes whole: no file of it stays behind.
+        let second = with(json!({"scripts/merged.sh": "#!/bin/sh\n"}));
+        let asks = asked(&tool, &second).await;
+        assert!(!chosen(&tool, asks, "everywhere").await.is_error);
+        assert!(!folder.join("old.md").exists());
+        assert!(folder.join("SKILL.md").exists());
+
+        let asks = asked(&tool, &second).await;
+        assert!(!chosen(&tool, asks, "project").await.is_error);
+        let script = project.join(".agents/skills/release-notes/scripts/merged.sh");
+        assert_eq!(std::fs::read_to_string(script).unwrap(), "#!/bin/sh\n");
+    });
+}

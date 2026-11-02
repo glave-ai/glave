@@ -83,8 +83,8 @@ pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_unde
 pub use remembering::MemorySet;
 pub use secrets::{SecretAdded, SecretRemoved};
 pub use service::{
-    ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField, ServiceFieldKind, ServiceOption,
-    ServiceOutcome, misfit,
+    AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
+    ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};

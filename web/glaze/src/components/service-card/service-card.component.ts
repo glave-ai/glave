@@ -26,6 +26,10 @@ import { GlzButtonComponent } from '../button/button.component';
 import { GlzCheckboxComponent } from '../checkbox/checkbox.component';
 import { GlzRadioComponent } from '../radio/radio.component';
 import { GlzRadioGroupComponent } from '../radio-group/radio-group.component';
+import {
+  type GlzServiceDetail,
+  GlzServiceDetailComponent,
+} from '../service-detail/service-detail.component';
 
 /** The values of a yes or no's two radios. */
 const YES = 'yes';
@@ -37,6 +41,7 @@ const PARTS = {
   message: 'message',
   field: 'field',
   choice: 'choice',
+  detail: 'detail',
   note: 'note',
   missing: 'missing',
   required: 'required',
@@ -84,7 +89,8 @@ interface ShownField {
  * What a connected service asks the person in the middle of a call, as a card that needs them:
  * the "Needs you" label with a dot, who asks in the server's sentence (`who`), so a tool can't
  * pass as the model, what it asks in the service's own words (`message`), only the fields it
- * asks for, where the answer goes (`note`), then send and decline. `answer` carries each field's
+ * asks for, what it adds when it says (`detail`, folded shut), where the answer goes (`note`),
+ * then send and decline. `answer` carries each field's
  * value by its name; `decline` that they said no. Once `told` is set, the card rests as that
  * one line.
  *
@@ -103,7 +109,13 @@ interface ShownField {
  */
 @Component({
   selector: 'glz-service-card',
-  imports: [GlzButtonComponent, GlzCheckboxComponent, GlzRadioGroupComponent, GlzRadioComponent],
+  imports: [
+    GlzButtonComponent,
+    GlzCheckboxComponent,
+    GlzRadioGroupComponent,
+    GlzRadioComponent,
+    GlzServiceDetailComponent,
+  ],
   templateUrl: './service-card.component.html',
   styleUrl: './service-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -132,6 +144,8 @@ export class GlzServiceCardComponent {
   /** What it asks, in the service's own words. */
   readonly message = input.required<string>();
   readonly fields = input.required<readonly GlzServiceField[]>();
+  /** What it adds, for the person to read first, folded shut under the fields; `null` for none. */
+  readonly detail = input<GlzServiceDetail | null>(null);
   /** What the send button says, naming who it goes to. */
   readonly sendLabel = input.required<string>();
   /** Where the answer goes. */
