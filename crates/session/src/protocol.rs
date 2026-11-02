@@ -42,6 +42,7 @@ pub use changes::{
     ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
+pub use connections::{ConnectorCategory, ConnectorInfo, ConnectorStatus};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
@@ -703,6 +704,12 @@ methods! {
         /// What the person's `mcp.json` calls the server, or its address.
         server: String,
     } -> [Done],
+    /// glave's connectors the caller may connect here and their categories, in order.
+    "connector/list" => ConnectorList {} -> [Connectors],
+    /// Connects a connector: at once, or the sign-in page, then `connection/poll`.
+    "connector/connect" => ConnectorConnect { connector: String } -> [Connector, SignIn],
+    /// Disconnects a connector, destroying its sign-in.
+    "connector/disconnect" => ConnectorDisconnect { connector: String } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for

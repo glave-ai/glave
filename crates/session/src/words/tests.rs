@@ -696,3 +696,41 @@ fn what_a_skill_has_cut_is_said_in_the_readers_language() {
     assert_ne!(cut, asked["adds"]["cut"].as_str().unwrap());
     assert_eq!(data["adds"]["text"], "# Tidy", "the skill's own words");
 }
+
+#[test]
+fn every_message_of_the_catalog_of_connectors_is_one_fluent_message_with_no_values() {
+    let mut ids: BTreeSet<String> = Sentence::ALL
+        .iter()
+        .map(|(id, _, _)| (*id).to_owned())
+        .collect();
+    let catalog = crate::connectors::Catalog::built_in().unwrap();
+    let told = catalog.categories.iter().map(|it| (it.told(), &it.name));
+    let told = told.chain(
+        catalog
+            .connectors
+            .iter()
+            .map(|it| (it.told(), &it.description)),
+    );
+    for (mut told, english) in told {
+        assert!(told.translatable());
+        assert_eq!(&*told, english.as_str());
+        told.translate(Language::English);
+        assert_eq!(&*told, english.as_str(), "written by Fluent as it reads");
+        assert!(!english.contains(['{', '}']), "{english} names no value");
+        told.translate(Language::Accented);
+        assert!(told.starts_with('['), "{english} is written again: {told}");
+    }
+    let messages = catalog
+        .categories
+        .iter()
+        .map(|it| format!("connector-category-{}", it.id));
+    let messages = messages.chain(
+        catalog
+            .connectors
+            .iter()
+            .map(|it| format!("connector-{}", it.id)),
+    );
+    for id in messages {
+        assert!(ids.insert(id.clone()), "{id} is in a table twice");
+    }
+}

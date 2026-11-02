@@ -297,3 +297,33 @@ fn one_person_s_connections_are_never_another_s() {
         assert_eq!(mine.len(), 1, "removing theirs left mine");
     });
 }
+
+#[test]
+fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.example.com/mcp";
+        ledger.keep_connector("docs", None).await.unwrap();
+        ledger.keep_connector("docs", None).await.unwrap();
+        let token = fake_secret("mcp_");
+        let sign_in = connection(1, url, &token);
+        ledger
+            .keep_connector("tracker", Some(&sign_in))
+            .await
+            .unwrap();
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(accounts.connectors, ["docs", "tracker"], "each kept once");
+        assert_eq!(accounts.connections, [sign_in]);
+
+        assert!(ledger.remove_connector("tracker", url).await.unwrap());
+        assert!(!ledger.remove_connector("tracker", url).await.unwrap());
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(
+            (accounts.connectors, accounts.connections),
+            (vec!["docs".to_owned()], vec![])
+        );
+        let data = stored(&kit).await;
+        assert_eq!(holding(&data, &token), 0, "its key is destroyed: {data:?}");
+    });
+}

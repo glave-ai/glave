@@ -11,11 +11,14 @@ mod sentence;
 
 pub(crate) use self::events::note_in;
 pub(crate) use self::language::Language;
-pub(crate) use self::say::{caution_in, say, word};
+pub(crate) use self::say::{catalogued, caution_in, say, word};
 pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
-use crate::protocol::{ApiError, AwakeInfo, Reply, SearchInfo, ThreadSummary, Told, Usage};
+use crate::protocol::{
+    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, Reply, SearchInfo, ThreadSummary, Told,
+    Usage,
+};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
@@ -27,6 +30,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
         Ok(Reply::Connections { connections }) => connections.iter().any(|it| used(&it.usage)),
         Ok(Reply::Connection { connection }) => used(&connection.usage),
+        Ok(Reply::Connectors { .. } | Reply::Connector { .. }) => true,
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
@@ -80,6 +84,11 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Connection { connection }) => used(&mut connection.usage),
+        Ok(Reply::Connectors {
+            categories,
+            connectors,
+        }) => connectors_in(categories, connectors, language),
+        Ok(Reply::Connector { connector }) => connector.description.translate(language),
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, usage, .. },
         }) => {
@@ -129,6 +138,20 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(_) => {}
+    }
+}
+
+/// Writes the catalog's words for `categories` and `connectors` in `language`.
+fn connectors_in(
+    categories: &mut [ConnectorCategory],
+    connectors: &mut [ConnectorInfo],
+    language: Language,
+) {
+    for category in categories {
+        category.name.translate(language);
+    }
+    for connector in connectors {
+        connector.description.translate(language);
     }
 }
 

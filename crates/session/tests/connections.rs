@@ -12,10 +12,11 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
 use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, Reply, Request, SearchInfo, SignInLink, code,
+    ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, Reply, Request, SearchInfo,
+    SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, Connections, Returned, Searching};
+use glave_session::{Answering, Connecting, Connections, Returned, Searching};
 use serde_json::json;
 
 use crate::conformance::{Client, OverHttp};
@@ -36,7 +37,12 @@ pub(crate) struct InMemory {
     kept: Mutex<Vec<ConnectionInfo>>,
     /// Web search, the person's to turn on or off once it is set; none, not theirs.
     searching: Mutex<Option<Searching>>,
+    /// The connectors connected, by their ids.
+    connectors: Mutex<Vec<String>>,
 }
+
+/// The connectors the fake offers: one that asks no one to sign in, and one that asks.
+const OFFERED: [&str; 2] = ["deepwiki", "linear"];
 
 impl Connections for InMemory {
     fn start(
@@ -110,6 +116,55 @@ impl Connections for InMemory {
                 searching.on = on;
             }
             Ok(searching.clone())
+        })
+    }
+
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(String, ConnectorStatus)>, ApiError>> {
+        Box::pin(async move {
+            let connected = self.connectors.lock().unwrap();
+            Ok(OFFERED
+                .iter()
+                .map(|id| {
+                    let status = if connected.iter().any(|it| it == id) {
+                        ConnectorStatus::Connected
+                    } else {
+                        ConnectorStatus::Available
+                    };
+                    ((*id).to_owned(), status)
+                })
+                .collect())
+        })
+    }
+
+    fn connect(
+        &self,
+        connector: String,
+        redirect: Option<String>,
+    ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
+        Box::pin(async move {
+            if connector == "linear" {
+                return Ok(match redirect {
+                    Some(_) => Connecting::SignIn(SignInLink {
+                        flow: "flow-2".into(),
+                        url: "https://auth.example.com/authorize?state=s2".into(),
+                    }),
+                    None => Connecting::NoWayBack,
+                });
+            }
+            self.connectors.lock().unwrap().push(connector);
+            Ok(Connecting::Connected)
+        })
+    }
+
+    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
+        Box::pin(async move {
+            let mut connected = self.connectors.lock().unwrap();
+            let before = connected.len();
+            connected.retain(|it| *it != connector);
+            if connected.len() == before {
+                return Err(ApiError::new(code::NO_CREDENTIAL, "not connected"));
+            }
+            Ok(())
         })
     }
 }
@@ -410,5 +465,72 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
         let off = search(&tested, Request::SearchSet { on: false }).await;
         assert_eq!(on_and_counted(&off), (false, None));
         tested.shutdown().await;
+    });
+}
+
+#[test]
+fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_disconnected() {
+    block_on!(async {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let (tested, _) = fresh(&folder("conn-connectors")).await;
+        let served = serve_with(tested, signin, None).await;
+        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
+
+        let listed = web.call(&Request::ConnectorList {}).await;
+        let connectors = listed["result"]["connectors"].as_array().unwrap();
+        let ids: Vec<&str> = connectors
+            .iter()
+            .map(|it| it["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            ["linear", "deepwiki"],
+            "the catalog's order, only those offered"
+        );
+        assert_eq!(connectors[0]["name"], "Linear");
+        assert_eq!(connectors[0]["description"], "Issues, projects and cycles.");
+        assert_eq!(connectors[0]["status"], "available");
+        let categories = &listed["result"]["categories"];
+        assert_eq!(
+            categories,
+            &json!([{"id": "dev", "name": "Developer tools"}])
+        );
+
+        let connect = |id: &str| Request::ConnectorConnect {
+            connector: id.into(),
+        };
+        let connected = web.call(&connect("deepwiki")).await;
+        assert_eq!(
+            connected["result"]["connector"]["status"], "connected",
+            "{connected}"
+        );
+        let signing = web.call(&connect("linear")).await;
+        assert_eq!(signing["result"]["sign_in"]["flow"], "flow-2", "{signing}");
+        let unknown = web.call(&connect("nothing")).await;
+        assert_eq!(unknown["error"]["code"], code::NO_SERVER, "{unknown}");
+
+        let mut reading = Web::new(&served, Some(token.reveal().to_owned())).reading("en-XA");
+        let accented = reading.call(&Request::ConnectorList {}).await;
+        let deepwiki = &accented["result"]["connectors"][1];
+        assert_eq!(
+            deepwiki["name"], "DeepWiki",
+            "a vendor's name is never translated"
+        );
+        assert_eq!(deepwiki["status"], "connected");
+        let description = deepwiki["description"].as_str().unwrap();
+        assert!(description.starts_with("[Åñšŵéŕš"), "{description}");
+        let category = accented["result"]["categories"][0]["name"]
+            .as_str()
+            .unwrap();
+        assert!(category.starts_with("[Ðéṽéļöþéŕ"), "{category}");
+
+        let disconnect = Request::ConnectorDisconnect {
+            connector: "deepwiki".into(),
+        };
+        assert_eq!(web.call(&disconnect).await["result"], json!({}));
+        let again = web.call(&disconnect).await;
+        assert_eq!(again["error"]["code"], code::NO_CREDENTIAL, "{again}");
+        served.close().await;
     });
 }

@@ -51,6 +51,8 @@ thiserror.workspace = true
 # The scheduler waits for the next due run with a timer.
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-rustls.workspace = true
+# glave's catalog of connectors, a TOML file built in (connectors.rs).
+toml.workspace = true
 # A content-free span for each request.
 tracing.workspace = true
 tracing-opentelemetry = { workspace = true, optional = true }

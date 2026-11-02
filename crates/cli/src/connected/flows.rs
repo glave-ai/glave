@@ -37,6 +37,8 @@ struct Flow {
     url: String,
     /// What the person calls the server.
     name: String,
+    /// The connector of glave's catalog it connects, when it is one.
+    connector: Option<String>,
     state: String,
     /// Until the browser comes back.
     signin: Option<SignIn>,
@@ -79,6 +81,19 @@ impl Connected {
         let Some(redirect) = redirect else {
             return Ok(None);
         };
+        self.sign_in(url, name, redirect, None).await.map(Some)
+    }
+
+    /// Starts signing in to the server at `url`, which the person calls `name`, the browser to
+    /// come back to `redirect`; for the connector `connector` of glave's catalog, connecting it
+    /// once signed in.
+    pub(super) async fn sign_in(
+        &self,
+        url: String,
+        name: String,
+        redirect: String,
+        connector: Option<String>,
+    ) -> Result<SignInLink, ApiError> {
         // As MCP's step-up authorization says: what the sign-in it replaces grants, and what
         // the server asked for since, so nothing granted before is lost.
         let granted = self.kept_for(&url).await.map(|kept| kept.client.scopes);
@@ -96,15 +111,16 @@ impl Connected {
             id: id.clone(),
             url,
             name,
+            connector,
             state: signin.state().to_owned(),
             signin: Some(signin),
             started: Instant::now(),
             ended: Arc::new(watch::channel(None).0),
         });
-        Ok(Some(SignInLink {
+        Ok(SignInLink {
             flow: id,
             url: page,
-        }))
+        })
     }
 
     /// Waits a little for the sign-in `flow`: the connection once signed in to, none while it
@@ -139,10 +155,10 @@ impl Connected {
             .iter_mut()
             .find(|flow| flow.state == returned.state)
             .map(|flow| {
-                let named = (flow.url.clone(), flow.name.clone());
+                let named = (flow.url.clone(), flow.name.clone(), flow.connector.clone());
                 (named, flow.signin.take(), Arc::clone(&flow.ended))
             });
-        let Some(((url, name), signin, ended)) = found else {
+        let Some(((url, name, connector), signin, ended)) = found else {
             return "glave is no longer waiting for this sign-in. Sign in again.".to_owned();
         };
         // The page loaded again: the browser came back already.
@@ -166,6 +182,7 @@ impl Connected {
             more: self.more.clone(),
             url,
             name: name.clone(),
+            connector,
         };
         let issuer = returned.issuer;
         let traded = async move {
@@ -218,6 +235,8 @@ struct Trade {
     more: MoreAsked,
     url: String,
     name: String,
+    /// The connector of glave's catalog it connects, when it is one.
+    connector: Option<String>,
 }
 
 impl Trade {
@@ -241,7 +260,14 @@ impl Trade {
             client: granted.client,
             by: Principal::person(self.ledger.person()),
         };
-        self.ledger.keep_connection(&connection).await?;
+        match &self.connector {
+            Some(connector) => {
+                self.ledger
+                    .keep_connector(connector, Some(&connection))
+                    .await?;
+            }
+            None => self.ledger.keep_connection(&connection).await?,
+        }
         self.more.forget(&connection.url);
         Ok(ConnectionInfo {
             url: connection.url,

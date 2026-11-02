@@ -505,6 +505,9 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "connection/remove",
             vec![json!({"server": "https://mcp.example.com/mcp"})],
         ),
+        ("connector/list", vec![json!({})]),
+        ("connector/connect", vec![json!({"connector": "linear"})]),
+        ("connector/disconnect", vec![json!({"connector": "linear"})]),
         ("search/get", vec![json!({}), json!({"usage": true})]),
         ("search/set", vec![json!({"on": true})]),
     ]

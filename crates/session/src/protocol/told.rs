@@ -10,7 +10,7 @@ use glave_ports::memories::MemoryRefusal;
 use glave_ports::settings::Brings;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::words::{Language, Sentence, caution_in, say, word};
+use crate::words::{Language, Sentence, catalogued, caution_in, say, word};
 
 /// A sentence for a person: as they read it, and, when it is the server's own, what it says, so
 /// a transport writes it again in the caller's language (`specs/session.md`, "Languages"). The
@@ -34,6 +34,8 @@ enum Said {
     Caution(Caution),
     /// Words of another crate's table.
     Theirs(Theirs),
+    /// A message of glave's catalog of connectors: its id, and its English.
+    Catalogued { id: String, english: String },
 }
 
 /// Words of another crate's table that the server passes on.
@@ -78,6 +80,14 @@ impl Told {
         })
     }
 
+    /// A message of glave's catalog of connectors, `id`, whose English is `english`.
+    pub(crate) fn catalogued(id: String, english: String) -> Self {
+        Self {
+            text: english.clone(),
+            said: Some(Box::new(Said::Catalogued { id, english })),
+        }
+    }
+
     /// Whether a transport writes it again in the caller's language: it is the server's own.
     pub(crate) fn translatable(&self) -> bool {
         self.said.is_some()
@@ -89,6 +99,7 @@ impl Told {
             Some(Said::Sentences(said)) => Some(said_in(language, said)),
             Some(Said::Caution(caution)) => caution_in(language, caution),
             Some(Said::Theirs(theirs)) => Some(word(language, theirs.words())),
+            Some(Said::Catalogued { id, english }) => Some(catalogued(language, id, english)),
             None => None,
         };
         if let Some(written) = written {

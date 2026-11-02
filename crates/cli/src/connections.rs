@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use crate::reach::{self, Reached};
 use crate::tasks::run_with;
+pub(crate) use servers::signed_in;
 use servers::{remove as remove_server, server_or_host};
 
 pub(crate) const CONNECT_USAGE: &str = "\
@@ -29,6 +30,8 @@ Usage:
   glave connect <name>          sign in to one of your MCP servers in the browser, by its name
                                 or its address (one called github by its address): glave
                                 shows the page to open, and waits while you approve glave there
+  glave connect <id>            connect one of glave's connectors (glave connectors lists
+                                them), signing in to it in the browser when it asks
   glave connect github          sign in to GitHub in the browser: glave shows a code and the
                                 page to enter it on, and waits while you approve glave there.
                                 Where that is not set up, connect GitHub with a token instead

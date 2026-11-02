@@ -476,6 +476,8 @@ sentences! {
         "signing in to a connection needs glave running in the background, for your browser to come back to: open glave, then try again",
     SignInNoWayBack = "sign-in-no-way-back"
         "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
+    NoConnector { connector: String } = "no-connector"
+        "glave offers no connector called { $connector } here",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",
     SearchNotHere = "search-not-here"
         "web search is set up by whoever runs this server, not from here",

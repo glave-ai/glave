@@ -23,6 +23,7 @@ mod computer;
 mod config;
 mod connected;
 mod connections;
+mod connectors;
 mod credentials;
 mod credits;
 

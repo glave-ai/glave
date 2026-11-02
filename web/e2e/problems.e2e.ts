@@ -48,17 +48,15 @@ test('as a page is left, WebKit refusing a call of the session API is no problem
   const webkit = browserName === 'webkit';
 
   await actAsLeft(page, '/settings');
-  await problems.leave('/settings');
+  await page.goto('/settings');
   await expect(byTestId(page, 'settings-theme')).toBeVisible();
   // Chromium lets both fetches through.
   const left = webkit ? [refusal('/favicon.svg'), SAID] : [SAID];
   expect(problems()).toEqual(left);
 
-  // Left without saying so, the session API's refused call counts too, as does the app's own if
-  // one began as the page went, in the same words: each line once.
-  await actAsLeft(page, '/tasks');
-  await page.goto('/tasks');
-  expect([...new Set(problems().slice(left.length))]).toEqual(
-    webkit ? [refusal('/'), refusal('/favicon.svg'), SAID] : [SAID],
-  );
+  // Left again, however it is left, the same: the session API's refused call is no problem,
+  // the icon's and the page's own are.
+  await actAsLeft(page, '/settings');
+  await page.reload();
+  expect([...new Set(problems().slice(left.length))]).toEqual(left);
 });

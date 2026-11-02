@@ -42,6 +42,12 @@ pub(crate) fn word(language: Language, words: &dyn Worded) -> String {
     write(language, words.id(), words.pattern(), &args)
 }
 
+/// The message `id` of glave's catalog of connectors, whose English is `english`, written in
+/// `language`.
+pub(crate) fn catalogued(language: Language, id: &str, english: &str) -> String {
+    write(language, id, english, &FluentArgs::new())
+}
+
 /// Why a call needs the person, as `approval.requested` records it, written in `language`
 /// from its parts.
 pub(crate) fn caution_in(language: Language, caution: &Caution) -> Option<String> {

@@ -9,7 +9,6 @@
 //! person's file says. What only a start applies stays as the start set it until glave
 //! restarts, and the log says so. Settings that no longer read leave the last that did.
 
-use std::collections::BTreeSet;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
@@ -23,6 +22,7 @@ use glave_ports::{BoxFuture, ToolSource};
 use glave_session::{Apply, Changed, Models, Rereads, Runs};
 
 use crate::args::Args;
+use crate::connected::Signed;
 use crate::gateway::GatewaySwitch;
 use crate::mcp::{self, Servers};
 use crate::project_folders::ProjectFolders;
@@ -77,7 +77,7 @@ impl Rereading {
             .chain(locations.policies.iter().cloned())
             .chain([parts.home.join(mcp::FILE)])
             .collect::<Vec<_>>();
-        let seen = digest(&files, &parts.servers.signed_in().await).await;
+        let seen = digest(&files, &parts.servers.signed().await).await;
         Self {
             args: parts.args,
             locations,
@@ -132,8 +132,9 @@ impl Rereading {
         let constraints = &setup.loaded.constraints;
         let through_gateway = self.start.gateway.is_some();
         let mcp = setup.choices.mcp.as_ref();
-        let signed_in = self.servers.signed_in().await;
-        let wanted = mcp::wanted(&self.home, mcp, constraints, through_gateway, &signed_in);
+        self.servers.offer(mcp::Offered::by(constraints));
+        let signed = self.servers.signed().await;
+        let wanted = mcp::wanted(&self.home, mcp, constraints, through_gateway, &signed);
         let wanted = match wanted.await {
             Ok(wanted) => wanted,
             Err(error) if constraints.own_mcp_forbidden().is_some() => {
@@ -261,7 +262,7 @@ impl Rereads for Rereading {
         Box::pin(async move {
             {
                 let mut seen = self.seen.lock().await;
-                let now = digest(&self.files, &self.servers.signed_in().await).await;
+                let now = digest(&self.files, &self.servers.signed().await).await;
                 if now != *seen {
                     *seen = now;
                     match self.read().await {
@@ -279,14 +280,14 @@ impl Rereads for Rereading {
 }
 
 /// The hash of `files`' names and content now, one missing or unreadable counting as such,
-/// and of the addresses the person is `signed_in` to, which their servers follow too.
-async fn digest(files: &[PathBuf], signed_in: &BTreeSet<String>) -> u64 {
+/// and of what the person `signed` in to and connected, which their servers follow too.
+async fn digest(files: &[PathBuf], signed: &Signed) -> u64 {
     let mut hasher = DefaultHasher::new();
     for file in files {
         file.hash(&mut hasher);
         content(file).await.hash(&mut hasher);
     }
-    signed_in.hash(&mut hasher);
+    signed.hash(&mut hasher);
     hasher.finish()
 }
 
