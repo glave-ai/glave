@@ -486,9 +486,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("credential/device/start", vec![json!({})]),
         (
             "secret/add",
-            vec![
-                json!({"name": "OTHER_KEY", "hosts": ["example.com"], "value": "a-value-it-keeps"}),
-            ],
+            vec![json!({"name": "OTHER_KEY", "value": "a-value-it-keeps"})],
         ),
         ("secret/list", vec![json!({})]),
         (

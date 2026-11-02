@@ -1,7 +1,6 @@
 //! The secrets a person added, as the agent's work meets them (`specs/model.md`, "Secrets"):
-//! commands see each one's placeholder in its variable, never its value, which only the
-//! outbound proxy puts in, for the hosts it may reach; and a value that shows in a command's or
-//! a tool's output anyway is masked before it is recorded or sent to the model.
+//! commands see each one's value in its variable, and a value that shows in a command's or a
+//! tool's output is masked before it is recorded or sent to the model.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
@@ -14,28 +13,18 @@ use crate::auth::redact;
 use crate::computer::Output;
 use crate::tools::BoxFuture;
 
-/// What a placeholder starts with, so the proxy knows one when a request carries it.
-const PLACEHOLDER: &str = "glave-secret-";
-
 /// One secret, as commands and their output meet it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Known {
     /// The variable commands see it as: `STRIPE_KEY`.
     pub name: String,
-    /// What commands see in place of its value: the same for as long as the name is kept, so
-    /// replacing the value changes nothing a command or a file holds.
-    pub placeholder: String,
     pub value: Secret,
 }
 
 impl Known {
     /// The secret seen as `name`, with its `value`.
     pub fn new(name: String, value: Secret) -> Self {
-        Self {
-            placeholder: format!("{PLACEHOLDER}{name}"),
-            name,
-            value,
-        }
+        Self { name, value }
     }
 }
 
@@ -52,12 +41,12 @@ impl KnownSecrets {
         *self.0.write().unwrap_or_else(PoisonError::into_inner) = known;
     }
 
-    /// Each secret's variable and its placeholder, for a command's environment.
-    pub fn placeholders(&self) -> BTreeMap<String, String> {
+    /// Each secret's variable and its value, for a command's environment.
+    pub fn variables(&self) -> BTreeMap<String, Secret> {
         let known = self.0.read().unwrap_or_else(PoisonError::into_inner);
         known
             .iter()
-            .map(|known| (known.name.clone(), known.placeholder.clone()))
+            .map(|known| (known.name.clone(), known.value.clone()))
             .collect()
     }
 

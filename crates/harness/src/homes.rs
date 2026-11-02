@@ -78,7 +78,7 @@ where
         let homes = self.homes.as_ref()?;
         Some(homes.home(org, person).map_err(Into::into).map(|planned| {
             let home = Workspace::new(planned.computers, planned.home).asleep_at_times();
-            // Their secrets' placeholders and masking, as on this one.
+            // Their secrets and their masking, as on this one.
             let home = home.hiding(self.workspace.hidden().clone());
             // Their git sign-ins reach their computer as they reach this one: asked at each use.
             match self.workspace.credentials() {
