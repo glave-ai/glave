@@ -444,8 +444,8 @@ async fn signed(
 }
 
 /// The secrets `person` adds, when they may add them here: everywhere but a server people sign
-/// in to with OIDC, as for git hosts; and `workspace` with every command seeing their
-/// placeholders and every tool's output masking their values.
+/// in to with OIDC, as for git hosts; and `workspace` with every command seeing their values
+/// and every tool's output masking them.
 async fn kept_secrets(
     args: &Args,
     store: &Data,

@@ -279,7 +279,7 @@ fn bash(
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
-        .envs(own)
+        .envs(own.iter().map(|(name, value)| (name, value.expose())))
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
         .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
         .envs(caches.iter().flat_map(|caches| {

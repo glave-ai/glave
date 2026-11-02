@@ -940,11 +940,6 @@ export type Secret = string;
 
 /** A secret the person added. */
 export type SecretInfo = {
-  /**
-   * The hosts its value may be sent to: `api.stripe.com`, or `*.stripe.com` for any host
-   * under it.
-   */
-  readonly hosts: readonly (string)[];
   /** The variable commands see it as: `STRIPE_KEY`. */
   readonly name: string;
 };
@@ -2308,8 +2303,6 @@ export type SearchSetResult = {
 };
 
 export type SecretAddParams = {
-  /** Where its value may be sent: `api.stripe.com`, or `*.stripe.com`. */
-  readonly hosts: readonly (string)[];
   /** A variable's name: `STRIPE_KEY`. */
   readonly name: string;
   readonly value: Secret;
@@ -2333,7 +2326,6 @@ export type SecretRemoveParams = {
 export type SecretRemoveResult = Readonly<Record<string, never>>;
 
 export type SecretReplaceParams = {
-  readonly hosts?: readonly (string)[] | null;
   readonly name: string;
   readonly value: Secret;
 };

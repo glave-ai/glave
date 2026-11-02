@@ -2,6 +2,7 @@
 //! `Debug`, has no `Display`, and is not `Serialize`: a field that must carry it, to the server
 //! it is for or into a payload sealed at rest, says so with [`serialize_exposed`].
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serializer};
@@ -31,6 +32,15 @@ impl fmt::Debug for Secret {
 /// carry it: a request to the server it is for, or a payload sealed at rest.
 pub fn serialize_exposed<S: Serializer>(secret: &Secret, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&secret.0)
+}
+
+/// [`serialize_exposed`] for a map of them by name, each value in the clear: the variables a
+/// command is sent to the computer that runs it with.
+pub fn serialize_exposed_values<S: Serializer>(
+    secrets: &BTreeMap<String, Secret>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_map(secrets.iter().map(|(name, secret)| (name, &secret.0)))
 }
 
 /// [`serialize_exposed`] for a field that may hold none, skipped when it does

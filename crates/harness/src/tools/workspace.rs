@@ -45,8 +45,8 @@ pub struct Workspace {
     planning: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
-    /// The person's secrets: their placeholders in every command's environment, their values
-    /// masked in every tool's output. None kept by default.
+    /// The person's secrets: their values in every command's environment, and masked in every
+    /// tool's output. None kept by default.
     hidden: KnownSecrets,
     temp: Option<PathBuf>,
     /// Whether its computer may be asleep, as a person's may: asking it anything before a call
@@ -138,7 +138,7 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
-    /// Gives every command the placeholders of the `known` secrets and masks their values in
+    /// Gives every command the values of the `known` secrets and masks them in
     /// every tool's output (`specs/model.md`, "Secrets"), as do the worktrees and scratch
     /// folders made from this workspace.
     #[must_use]
@@ -345,19 +345,26 @@ impl Workspace {
     /// for a link since then cannot slip one in. A failure is a sentence for the model: that
     /// refusal as the stat check words it, or what went wrong.
     pub(crate) async fn write(&self, path: &str, content: &[u8]) -> Result<(), String> {
-        let file = FileWrite {
-            protect: self.sandbox.is_some(),
-            ..FileWrite::new(path, Bytes::new(content))
-        };
-        let written = self
-            .computers
-            .write(self.info.id, std::slice::from_ref(&file))
-            .await;
+        self.write_all(&[(path, content)]).await
+    }
+
+    /// Writes each of `files`, its path and its content, as [`Self::write`] writes one, in one
+    /// call: the computer checks every path before it writes any.
+    pub(crate) async fn write_all(&self, files: &[(&str, &[u8])]) -> Result<(), String> {
+        let writes: Vec<FileWrite> = files
+            .iter()
+            .map(|(path, content)| FileWrite {
+                protect: self.sandbox.is_some(),
+                ..FileWrite::new(*path, Bytes::new(*content))
+            })
+            .collect();
+        let written = self.computers.write(self.info.id, &writes).await;
         written.map_err(|error| {
             if is_protected_refusal(&error) {
                 error.message().to_owned()
             } else {
-                format!("Could not write {path}: {}", error.message())
+                let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
+                format!("Could not write {}: {}", paths.join(", "), error.message())
             }
         })
     }
@@ -408,7 +415,7 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
             on_timeout,
-            env: self.hidden.placeholders(),
+            env: self.hidden.variables(),
         };
         let span = crate::telemetry::command();
         // Masked as it comes, before any of it is kept or cut.
@@ -451,7 +458,7 @@ impl Workspace {
     pub(crate) async fn start(&self, script: String) -> Result<CommandId, ComputerError> {
         let command = Command {
             sandbox: self.sandbox.clone(),
-            env: self.hidden.placeholders(),
+            env: self.hidden.variables(),
             ..Command::new(script)
         };
         self.computers.start(self.info.id, &command).await

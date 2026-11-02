@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use glave_event::Secret;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -246,10 +247,14 @@ pub struct Command {
     #[serde(default, skip_serializing_if = "OnTimeout::is_stop")]
     pub on_timeout: OnTimeout,
     /// Variables it sees besides its computer's, which win where they share a name: the
-    /// placeholders of the person's secrets ([`KnownSecrets`](crate::secrets::KnownSecrets)),
-    /// never a value.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, String>,
+    /// person's secrets ([`KnownSecrets`](crate::secrets::KnownSecrets)), their values sent to
+    /// the computer that runs it and never shown in `Debug`.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        serialize_with = "glave_event::serialize_exposed_values"
+    )]
+    pub env: BTreeMap<String, Secret>,
 }
 
 impl Command {

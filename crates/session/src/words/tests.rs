@@ -657,3 +657,42 @@ fn what_a_service_asks_and_what_came_of_it_are_written_in_the_readers_language()
         "the service's own words"
     );
 }
+
+#[test]
+fn what_a_skill_has_cut_is_said_in_the_readers_language() {
+    // The harness records these words (`install::shown::cut_sentence`).
+    assert_eq!(
+        say(Language::English, &Sentence::AddsCut { parts: 1 }),
+        "Too long to show in full here: 1 part cut short. All of it is added as written."
+    );
+    assert_eq!(
+        say(Language::English, &Sentence::AddsCut { parts: 3 }),
+        "Too long to show in full here: 3 parts cut short. All of it is added as written."
+    );
+    let asked = serde_json::json!({
+        "call_id": "call_1", "service": "glave", "ask": "glave asks you, not the model",
+        "note": "Nothing changes until you choose. The model is told what you chose.",
+        "message": "Add the skill “tidy”", "fields": [],
+        "state": {
+            "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "bytes": 1, "media_type": "application/json"
+        },
+        "adds": {
+            "front": "name: tidy", "text": "# Tidy", "text_cut": true,
+            "files": [{"path": "scripts/a.sh", "text": "#!", "runs_code": true, "cut": true}],
+            "cut": "Too long to show in full here: 2 parts cut short. All of it is added as written."
+        }
+    });
+    let event = serde_json::json!({
+        "glave": 1, "id": "0192f5c2-7000-7000-8000-00000000000e",
+        "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c12", "seq": 14,
+        "at": "2026-10-10T09:02:06.000Z", "type": "service.asked", "v": 1, "data": asked
+    });
+    let event = glave_event::RawEvent::from_json(&event.to_string()).unwrap();
+    let written = event_in(&event, Language::Accented).unwrap();
+    let data = serde_json::to_value(&written.data).unwrap();
+    let cut = data["adds"]["cut"].as_str().unwrap();
+    assert!(cut.contains('2'), "{cut}");
+    assert_ne!(cut, asked["adds"]["cut"].as_str().unwrap());
+    assert_eq!(data["adds"]["text"], "# Tidy", "the skill's own words");
+}

@@ -190,6 +190,7 @@ where
             message: asks.message,
             fields: asks.fields,
             state,
+            adds: asks.adds,
         };
         self.record(thread, &asked).await?;
         Err(HarnessError::Waits(thread.id))

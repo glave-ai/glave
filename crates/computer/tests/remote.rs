@@ -13,7 +13,8 @@ use glave_computer::{
     Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, bridge, connect_tls,
     listen_socket, serve, serve_socket, serve_tcp, serve_tls,
 };
-use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment, Freed};
+use glave_ports::auth::Secret;
+use glave_ports::computer::{Command, ComputerError, ComputerId, Computers, Environment, Freed};
 use glave_ports::testing::any_secret;
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
@@ -178,7 +179,12 @@ fn across_a_pipe(
 
 /// What `script` printed, run on a new computer of `remote` in `work`.
 async fn printed<C: Computers>(remote: &C, work: &std::path::Path, script: &str) -> String {
-    use glave_ports::computer::{Command, Sources};
+    printed_by(remote, work, &Command::new(script)).await
+}
+
+/// What `command` prints on `remote` in `work`.
+async fn printed_by<C: Computers>(remote: &C, work: &std::path::Path, command: &Command) -> String {
+    use glave_ports::computer::Sources;
     let made = remote.create(&Environment::host()).await.unwrap();
     let path = work.to_string_lossy().into_owned();
     let here = remote
@@ -187,17 +193,22 @@ async fn printed<C: Computers>(remote: &C, work: &std::path::Path, script: &str)
         .unwrap();
     let output = glave_ports::testing::Captured::default();
     let never = glave_computer::CancelSwitch::default();
-    remote
-        .run(here.id, &Command::new(script), &output, &never)
-        .await
-        .unwrap();
+    remote.run(here.id, command, &output, &never).await.unwrap();
     output.text()
 }
 
-/// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
+/// Runs `env` on `remote` in `work`: ordinary settings come through, the computer's secrets
+/// never do, and a secret the person added, sent with the command, does.
 async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path, secret: &str) {
-    let seen = printed(remote, work, "env").await;
+    let added = any_secret();
+    let mut command = Command::new("env");
+    command.env.insert("STRIPE_KEY".into(), Secret::new(&added));
+    let seen = printed_by(remote, work, &command).await;
     assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
+    assert!(
+        seen.contains(&format!("STRIPE_KEY={added}\n")),
+        "the person's secret, sent with the command"
+    );
     assert!(!seen.contains(secret), "a secret reached a command: {seen}");
     for name in SECRETS {
         assert!(!seen.contains(name), "{name} reached a command");

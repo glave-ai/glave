@@ -109,6 +109,7 @@ impl ToolSource for AskingTool {
                     required: true,
                     kind: ServiceFieldKind::Text { default: None },
                 }],
+                adds: None,
                 state: if self.state.is_null() {
                     json!({"round": "kept"})
                 } else {

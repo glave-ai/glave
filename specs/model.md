@@ -68,7 +68,7 @@ Everything a person or a repository uses to configure glave is a file, read wher
   - the organization's settings (above);
   - memory;
   - the record of what happened (the log).
-- **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. Only the person adds one, in glave's own screen; the agent never sets one and never sees a value, and may say a task needs one by name. The machine holds only a placeholder, which the outbound proxy fills in for the hosts a secret is allowed to reach (#643), and a value that shows in a tool's output is masked before the log or the model has it (`session.md`, "Secrets").
+- **Secrets** (#267): their scopes are the person's and the organization's, the organization's granted to groups, and no project shares one. Only the person adds one, in glave's own screen; the agent never sets one and never sees a value, and may say a task needs one by name. Commands get the value in its variable, as in Claude Code and Codex, and a value that shows in a tool's output is masked before the log or the model has it (`session.md`, "Secrets"). A command with the network can send it anywhere; the outbound proxy that holds values and puts them in only for the hosts a secret may reach (#643) comes with Glave Cloud's secrets.
 
 ## Models
 
@@ -175,4 +175,4 @@ What today's code doesn't do yet, so no one takes it as built.
 13. An organization's policy is a file (`/etc/glave/policy.toml`), not data in its scope, so a server with many organizations has one policy for all of them (#222). Its brand is data already.
 11. A company's policy file can take the agent's network away (#641), but nothing writes it for one yet: a company starts with the network on until its policy says otherwise, and Glave Cloud's starting policy comes with the admin screens (#222).
 12. Where no sandbox can run (Windows, and a person's cloud computer until it has one inside it, #221), no zones are drawn: Auto and Ask first ask before every change and command instead, and only Full access runs without asking. An organization that caps the modes below Full access gets no glave there at all: it refuses to start.
-14. Secrets are the person's own, on their own computer or server only, as git hosts are: no organization's secrets granted to groups, no limiting one to a project, nothing on a server people sign in to elsewhere (#267). Commands see each secret's placeholder, but nothing fills one in until the outbound proxy does (#643), so a command sending one is refused by its host.
+14. Secrets are the person's own, on their own computer or server only, as git hosts are: no organization's secrets granted to groups, no limiting one to a project, nothing on a server people sign in to elsewhere (#267). Commands see each secret's value, and a command with the network can send it anywhere until the outbound proxy (#643) comes with Glave Cloud's secrets.

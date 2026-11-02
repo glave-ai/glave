@@ -17,10 +17,9 @@ use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::support::*;
 
-fn add(name: &str, hosts: &[&str], value: &str) -> Request {
+fn add(name: &str, value: &str) -> Request {
     Request::SecretAdd {
         name: name.into(),
-        hosts: hosts.iter().map(|host| (*host).to_owned()).collect(),
         value: Secret::new(value),
     }
 }
@@ -41,7 +40,7 @@ async fn keeping(dir: &Path) -> (Tested<SqliteLog>, Store, Scope) {
 #[test]
 fn a_value_never_shows_in_a_request_s_debug() {
     let value = any_secret();
-    let shown = format!("{:?}", add("STRIPE_KEY", &["api.stripe.com"], &value));
+    let shown = format!("{:?}", add("STRIPE_KEY", &value));
     assert!(!shown.contains(&value), "{shown}");
 }
 
@@ -52,33 +51,23 @@ fn the_person_here_keeps_secrets_sealed_and_never_sees_a_value_again() {
         let (server, store, personal) = keeping(&dir).await;
         let (first, second) = (any_secret(), any_secret());
 
-        let refused = [
-            add("1KEY", &["api.stripe.com"], &first),
-            add("STRIPE_KEY", &["https://api.stripe.com"], &first),
-            add("STRIPE_KEY", &[], &first),
-            add("STRIPE_KEY", &["api.stripe.com"], "short"),
-        ];
+        let refused = [add("1KEY", &first), add("STRIPE_KEY", "short")];
         for request in refused {
             let error = server.request(request).await.unwrap_err();
             assert_eq!(error.code, code::INVALID_PARAMS, "{error}");
         }
         let mut answers = Vec::new();
-        answers.push(
-            server
-                .request(add("STRIPE_KEY", &["api.stripe.com"], &first))
-                .await,
-        );
-        let again = server.request(add("STRIPE_KEY", &["x.com"], &second)).await;
+        answers.push(server.request(add("STRIPE_KEY", &first)).await);
+        let again = server.request(add("STRIPE_KEY", &second)).await;
         assert_eq!(again.as_ref().unwrap_err().code, code::INVALID_PARAMS);
         let replace = Request::SecretReplace {
             name: "STRIPE_KEY".into(),
-            hosts: Some(vec!["*.stripe.com".into()]),
             value: Secret::new(second.clone()),
         };
         answers.push(server.request(replace).await);
         answers.push(server.request(Request::SecretList {}).await);
         let shown = serde_json::to_value(answers.last().unwrap().as_ref().unwrap()).unwrap();
-        let listed = serde_json::json!([{"name": "STRIPE_KEY", "hosts": ["*.stripe.com"]}]);
+        let listed = serde_json::json!([{"name": "STRIPE_KEY"}]);
         assert_eq!(shown["secrets"], listed);
 
         // The replaced value no longer opens in the store; the one kept does, sealed.
@@ -131,10 +120,7 @@ fn no_one_else_reaches_secrets_and_a_server_without_them_refuses_everyone() {
                 }),
                 ..Caller::default()
             };
-            for request in [
-                add("STRIPE_KEY", &["api.stripe.com"], &any_secret()),
-                Request::SecretList {},
-            ] {
+            for request in [add("STRIPE_KEY", &any_secret()), Request::SecretList {}] {
                 let refused = server.request_as(&elsewhere, request).await.unwrap_err();
                 assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
             }

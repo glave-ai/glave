@@ -100,6 +100,7 @@ function service(seq: number, told: string | null = null): ServiceItem {
     note: 'Your answer goes only to GitHub.',
     message: 'Which?',
     fields: [],
+    detail: null,
     told,
   };
 }

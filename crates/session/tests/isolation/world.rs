@@ -268,8 +268,7 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
         person.keep(Kind::Credential, credential);
         let flow = call("credential/device/start", json!({})).await["device"]["flow"].clone();
         person.keep(Kind::Flow, flow);
-        let secret =
-            json!({"name": "STRIPE_KEY", "hosts": ["api.stripe.com"], "value": any_secret()});
+        let secret = json!({"name": "STRIPE_KEY", "value": any_secret()});
         call("secret/add", secret).await;
     }
 }

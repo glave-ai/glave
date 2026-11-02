@@ -405,6 +405,7 @@ impl Connection {
                     service: self.name.clone(),
                     message: form.message,
                     fields: form.fields,
+                    adds: None,
                     state,
                 }));
             }

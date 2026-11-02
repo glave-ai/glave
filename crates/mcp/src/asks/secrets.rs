@@ -4,7 +4,7 @@
 
 use glave_event::{ServiceField, ServiceFieldKind};
 
-use super::shown;
+use glave_event::seen as shown;
 
 /// Whether `field` takes what a person types: a choice or a yes or no gives nothing away.
 pub(super) fn can_be_typed(field: &ServiceField) -> bool {

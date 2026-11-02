@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
+use glave_ports::auth::Secret;
 use glave_ports::computer::{
     Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing, Output, Search,
     Sources, WorkspaceId, refuse_protected,
@@ -14,6 +15,7 @@ use glave_ports::computer::{
 use glave_ports::conformance::{
     Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
 };
+use glave_ports::testing::any_secret;
 use proptest::prelude::*;
 
 use super::LocalComputers;
@@ -415,7 +417,7 @@ fn commands_never_see_secret_variables() {
         "SOME_KEY_FILE",
     ];
     let mut environment = plain_environment();
-    let secret = glave_ports::testing::any_secret();
+    let secret = any_secret();
     for name in hidden {
         environment.push((name.into(), secret.clone().into()));
     }
@@ -443,17 +445,17 @@ fn commands_never_see_secret_variables() {
 }
 
 #[test]
-fn a_command_sees_the_placeholders_it_is_given_and_its_computer_s_own_variables_win() {
+fn a_command_sees_the_secrets_it_is_given_and_its_computer_s_own_variables_win() {
     let mut environment = plain_environment();
-    let secret = glave_ports::testing::any_secret();
-    environment.push(("STRIPE_KEY".into(), secret.clone().into()));
+    let (hidden, given, lost) = (any_secret(), any_secret(), any_secret());
+    environment.push(("STRIPE_KEY".into(), hidden.clone().into()));
     environment.push(("SETTING".into(), "the computer's".into()));
-    let (_dir, work, copies) = scratch("placeholders");
+    let (_dir, work, copies) = scratch("secrets");
     let computers = LocalComputers::new(&copies, environment);
     let mut command = Command::new("env");
-    for name in ["STRIPE_KEY", "SETTING", "PATH"] {
-        let placeholder = format!("glave-secret-{name}");
-        command.env.insert(name.into(), placeholder);
+    command.env.insert("STRIPE_KEY".into(), Secret::new(&given));
+    for name in ["SETTING", "PATH"] {
+        command.env.insert(name.into(), Secret::new(&lost));
     }
     let seen = runtime().block_on(async {
         let made = computers.create(&Environment::host()).await.unwrap();
@@ -471,16 +473,16 @@ fn a_command_sees_the_placeholders_it_is_given_and_its_computer_s_own_variables_
         std::mem::take(&mut *text.0.lock().unwrap())
     });
     assert!(
-        seen.contains("STRIPE_KEY=glave-secret-STRIPE_KEY"),
-        "{seen}"
+        seen.contains(&format!("STRIPE_KEY={given}\n")),
+        "the value it is given"
     );
     assert!(
-        !seen.contains(&secret),
-        "a secret reached a command: {seen}"
+        !seen.contains(&hidden),
+        "the computer's own secret reached it"
     );
     assert!(
         seen.contains("SETTING=the computer's"),
         "its own wins: {seen}"
     );
-    assert!(!seen.contains("PATH=glave-secret-PATH"), "{seen}");
+    assert!(!seen.contains(&lost), "its own SETTING and PATH win");
 }

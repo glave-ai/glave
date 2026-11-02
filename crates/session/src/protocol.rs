@@ -672,18 +672,14 @@ methods! {
     "secret/add" => SecretAdd {
         /// A variable's name: `STRIPE_KEY`.
         name: String,
-        /// Where its value may be sent: `api.stripe.com`, or `*.stripe.com`.
-        hosts: Vec<String>,
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         value: Secret,
     } -> [Secret],
-    /// The secrets kept here: names and hosts, never a value.
+    /// The secrets kept here: their names, never a value.
     "secret/list" => SecretList {} -> [Secrets],
-    /// Gives the secret `name` a new value, and new hosts when given, destroying the old value.
+    /// Gives the secret `name` a new value, destroying the old one.
     "secret/replace" => SecretReplace {
         name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        hosts: Option<Vec<String>>,
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         value: Secret,
     } -> [Secret],

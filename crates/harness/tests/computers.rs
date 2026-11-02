@@ -220,18 +220,18 @@ mod secrets {
 
     use crate::support::*;
 
-    /// Commands see a secret's placeholder in its variable, and its value, where output shows
-    /// it anyway, is masked before it is recorded or the model is shown it.
+    /// Commands see a secret's value in its variable, and the value, where output shows it, is
+    /// masked before it is recorded or the model is shown it.
     #[test]
-    fn commands_see_placeholders_and_a_value_in_output_is_masked() {
+    fn commands_see_a_secret_s_value_and_output_masks_it() {
         let dir = folder("secrets");
         let value = any_secret();
         std::fs::write(dir.join("echoed.txt"), format!("the api said {value}\n")).unwrap();
         let known = KnownSecrets::default();
         let secret = Known::new("STRIPE_KEY".into(), Secret::new(value.clone()));
-        let placeholder = secret.placeholder.clone();
         known.set(vec![secret]);
-        let command = r#"printf 'key=%s\n' "$STRIPE_KEY" && cat echoed.txt"#;
+        // The value compared where the model can't see it, then printed, as an API would echo it.
+        let command = r#"[ "the api said $STRIPE_KEY" = "$(cat echoed.txt)" ] && echo same-value; printf 'key=%s\n' "$STRIPE_KEY""#;
         block_on!(async {
             let answers = vec![
                 answer(
@@ -254,8 +254,11 @@ mod secrets {
                     _ => None,
                 })
                 .unwrap();
-            assert!(result.contains(&format!("key={placeholder}")), "{result}");
-            assert!(result.contains("the api said [redacted]"), "{result}");
+            assert!(
+                result.contains("same-value"),
+                "the command saw the value: {result}"
+            );
+            assert!(result.contains("key=[redacted]"), "{result}");
             let all = format!("{:?}", events(harness.log(), thread.id).await);
             assert!(!all.contains(&value), "a value reached the log: {all}");
             let shown = format!("{:?}", seen.lock().unwrap());
