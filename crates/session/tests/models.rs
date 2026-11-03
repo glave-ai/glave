@@ -162,7 +162,7 @@ fn the_list_names_the_default_first_and_describes_each_model() {
             serde_json::json!({
                 "id": "hope-12b", "name": "Hope", "maker": "Glave", "default": false,
                 "providers": ["OpenRouter"], "context": 131_072,
-                "price": {"input": 100_000, "output": 400_000},
+                "price": {"input": 100_000_000, "output": 400_000_000},
                 "reasoning": {"efforts": ["high", "low", "none"], "default": "low"},
             })
         );
