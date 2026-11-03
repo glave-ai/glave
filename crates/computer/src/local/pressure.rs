@@ -29,7 +29,7 @@ pub(crate) fn cgroup() -> Option<PathBuf> {
 /// The CPU a cgroup has used so far, and its limit at that moment, in microseconds.
 pub(crate) struct Counted {
     used: u64,
-    quota: u64,
+    quota: NonZeroU64,
     period: NonZeroU64,
 }
 
@@ -47,7 +47,7 @@ impl Counted {
 
     /// The microseconds of CPU this limit allows over `millis` of a run.
     fn allowed_usec(&self, millis: u64) -> u128 {
-        u128::from(self.quota) * u128::from(millis) * 1_000 / NonZeroU128::from(self.period)
+        u128::from(self.quota.get()) * u128::from(millis) * 1_000 / NonZeroU128::from(self.period)
     }
 }
 
@@ -175,7 +175,8 @@ mod tests {
     }
 
     #[test]
-    fn a_period_of_nothing_counts_nothing() {
+    fn a_quota_or_period_of_nothing_counts_nothing() {
         assert!(count(0, "25000 0\n").is_none());
+        assert!(count(0, "0 100000\n").is_none());
     }
 }

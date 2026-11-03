@@ -294,7 +294,8 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
         let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
         // Three loops at once want far more than a quarter of a CPU, so the computer uses all it
         // is allowed for the whole run.
-        let busy = "for _ in 1 2 3; do timeout 12 sh -c 'while :; do :; done' & done; wait; \
+        let busy = "grep usage_usec /sys/fs/cgroup/cpu.stat; \
+            for _ in 1 2 3; do timeout 12 sh -c 'while :; do :; done' & done; wait; \
             grep usage_usec /sys/fs/cgroup/cpu.stat; echo busy";
         let mut seen = Vec::new();
         let mut at = Vec::new();
