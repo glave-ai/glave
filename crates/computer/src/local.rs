@@ -92,8 +92,8 @@ pub struct LocalComputers {
     background: Backgrounds,
     /// Where its commands are recorded while they run, each owned by its workspace.
     processes: Processes,
-    /// The cgroup it runs in, where Linux counts the time its commands are held at its CPU
-    /// limit.
+    /// The cgroup it runs in, where Linux counts the CPU its commands use and sets the limit on
+    /// it.
     cgroup: Option<PathBuf>,
 }
 
