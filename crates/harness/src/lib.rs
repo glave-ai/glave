@@ -16,6 +16,7 @@ mod compaction;
 mod conversation;
 mod defaults;
 mod files;
+mod gate;
 mod goal;
 mod going_on;
 mod harness;

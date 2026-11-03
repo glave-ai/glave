@@ -321,6 +321,7 @@ where
         };
         let questions = crate::question::questions(&asked.arguments).map_err(|_| refused())?;
         let answered = crate::question::answered(&questions, answers);
+        let answered = self.gated(&scope, id, answered).await;
         let completed = ToolCallCompleted {
             call_id: call.clone(),
             is_error: answered.is_error,

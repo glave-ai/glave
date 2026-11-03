@@ -145,9 +145,41 @@ pub fn digest(bytes: &[u8]) -> Sha256 {
     Sha256::from_digest(sha2::Sha256::digest(bytes).into())
 }
 
+/// The short line the history holds for `bytes` kept as a blob, `what` saying what they are:
+/// `[image, 1.2 MB, saved as blob:<SHA-256>]`.
+pub fn saved_line(what: &str, bytes: &[u8]) -> String {
+    let size = spoken_size(bytes.len() as u64);
+    format!("[{what}, {size}, saved as blob:{}]", digest(bytes).as_str())
+}
+
+/// `bytes` as a person reads a size, to a tenth of its unit.
+fn spoken_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    let (unit, name) = match bytes {
+        0..KB => return format!("{bytes} bytes"),
+        KB..MB => (KB, "KB"),
+        _ => (MB, "MB"),
+    };
+    let tenths = bytes.saturating_mul(10) / unit;
+    format!("{}.{} {name}", tenths / 10, tenths % 10)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_line_says_what_how_large_and_where() {
+        let line = saved_line("binary data", b"test");
+        assert_eq!(
+            line,
+            "[binary data, 4 bytes, saved as \
+             blob:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08]"
+        );
+        assert_eq!(spoken_size(1024), "1.0 KB");
+        assert_eq!(spoken_size(1_300_000), "1.2 MB");
+    }
 
     #[test]
     fn digest_matches_the_known_sha256_of_test() {

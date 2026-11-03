@@ -26,19 +26,20 @@ pub struct Limits {
     pub timeout: Duration,
     /// The most redirects followed.
     pub(crate) max_redirects: u8,
-    /// The most characters of text the model is given.
-    pub(crate) max_chars: usize,
+    /// The most bytes of text the model is given, in any language within the history's limit
+    /// on one piece of text (`specs/invariants.md`, 26).
+    pub(crate) max_text: usize,
 }
 
 impl Default for Limits {
-    /// 5 MB, 30 seconds and 5 redirects, as OpenCode and Gemini CLI fetch; 50,000 characters,
-    /// about 12,000 tokens.
+    /// 5 MB, 30 seconds and 5 redirects, as OpenCode and Gemini CLI fetch; 50,000 bytes of
+    /// text, about 12,000 tokens.
     fn default() -> Self {
         Self {
             max_bytes: 5 * 1024 * 1024,
             timeout: Duration::from_secs(30),
             max_redirects: 5,
-            max_chars: 50_000,
+            max_text: 50_000,
         }
     }
 }

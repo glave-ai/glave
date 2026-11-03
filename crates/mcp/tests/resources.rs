@@ -95,14 +95,19 @@ fn resources_are_listed_with_their_server_uri_and_type() {
 }
 
 #[test]
-fn text_is_read_and_anything_else_is_named() {
+fn text_is_read_and_bytes_are_handed_over_named_by_a_line() {
     block_on!(async {
         let resources = served();
         let read = |uri: &str| json!({"server": "tests", "uri": uri});
         let greeting = call(&resources, "read_mcp_resource", read("test://greeting")).await;
         assert_eq!(greeting, ToolOutput::text(false, "hello from a resource"));
         let logo = call(&resources, "read_mcp_resource", read("test://logo")).await;
-        assert_eq!(text(&logo), "[binary resource: test://logo, image/png]");
+        let png = b"\x89PNG\r\n\x1a\n".to_vec();
+        assert_eq!(
+            text(&logo),
+            glave_ports::saved_line("resource test://logo", &png)
+        );
+        assert_eq!(logo.saved, [png]);
         let missing = call(&resources, "read_mcp_resource", read("test://nothing")).await;
         assert!(missing.is_error);
         assert!(

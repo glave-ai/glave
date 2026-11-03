@@ -21,6 +21,8 @@ path = "src/bin/test_server.rs"
 required-features = ["test-server"]
 
 [dependencies]
+# An image's, audio's or resource's bytes, which MCP sends in base64.
+base64.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
 # A stdio server's process: owned, in a group of its own, recorded while it runs.
@@ -68,7 +70,11 @@ test-server = [
 ]
 
 [dev-dependencies]
+# The history test: the harness, on this machine, calling the test server.
+glave-computer.workspace = true
+glave-harness.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
+uuid.workspace = true
 # Servers written by hand on a pipe, on a paused clock (`tests/probe.rs`, `tests/limits.rs`).
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 

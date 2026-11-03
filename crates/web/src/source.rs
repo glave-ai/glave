@@ -60,7 +60,7 @@ impl Web {
                     }
                     .structured(),
                 ),
-                ..ToolOutput::untrusted(page_text(&page, fetcher.limits().max_chars))
+                ..ToolOutput::untrusted(page_text(&page, fetcher.limits().max_text))
             },
             Err(err) => ToolOutput::text(true, format!("Not fetched: {err}.")),
         }
@@ -70,17 +70,21 @@ impl Web {
 /// A page as the model reads it: where it was found and its title, then its text, cut to
 /// `most` characters.
 fn page_text(page: &Page, most: usize) -> String {
-    let total = page.text.chars().count();
+    let total = page.text.len();
     let mut text = format!("URL: {}\n", page.url);
     if let Some(title) = &page.title {
         let _ = writeln!(text, "Title: {title}");
     }
     text.push('\n');
-    text.extend(page.text.chars().take(most));
+    let mut end = most.min(total);
+    while !page.text.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    text.push_str(page.text.get(..end).unwrap_or_default());
     if total > most {
         let _ = write!(
             text,
-            "\n\n[Cut short: the page has {total} characters; only the first {most} are shown.]"
+            "\n\n[Cut short: the page has {total} bytes; only the first {most} are shown.]"
         );
     } else if page.cut {
         text.push_str("\n\n[Cut short: the page was too large to read whole.]");

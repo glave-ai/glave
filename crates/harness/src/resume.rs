@@ -160,6 +160,7 @@ where
                 }
                 _ => ToolOutput::text(true, INTERRUPTED),
             };
+            let output = self.gated(&scope, id, output).await;
             let completed = crate::calls::completed(call.call_id, output);
             self.stage_next(id, next, &mut staged, &completed)?;
         }

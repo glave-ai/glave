@@ -2177,8 +2177,11 @@ dependencies = [
 name = "glave-mcp"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "bytes",
+ "glave-computer",
  "glave-event",
+ "glave-harness",
  "glave-ports",
  "glave-process",
  "http",
@@ -2192,6 +2195,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]

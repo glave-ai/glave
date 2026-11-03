@@ -5,6 +5,7 @@
 mod asks;
 mod changes;
 mod client;
+mod history;
 mod http;
 mod limits;
 mod probe;
