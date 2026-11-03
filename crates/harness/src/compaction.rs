@@ -145,6 +145,16 @@ fn next_request_tokens(thread: &Thread, offer: &ToolSet) -> u64 {
     }
 }
 
+/// About how many tokens the definitions of `tools` take in a request.
+pub(crate) fn tools_tokens(tools: &[ToolSpec]) -> u64 {
+    base_chars("", tools).div_ceil(CHARS_PER_TOKEN)
+}
+
+/// About how many characters `tokens` tokens hold.
+pub(crate) fn chars_of_tokens(tokens: u64) -> u64 {
+    tokens.saturating_mul(CHARS_PER_TOKEN)
+}
+
 fn base_chars(system: &str, tools: &[ToolSpec]) -> u64 {
     let tools = serde_json::to_string(tools).map_or(0, |json| json.len());
     u64::try_from(system.len().saturating_add(tools)).unwrap_or(u64::MAX)

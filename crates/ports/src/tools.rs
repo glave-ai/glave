@@ -197,6 +197,13 @@ pub trait ToolSource: Send + Sync {
     /// The tools on offer now.
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>>;
 
+    /// Whether these tools come from a service someone connected, not from glave itself: past
+    /// a share of the window, the harness holds connected tools back until the model searches
+    /// for them.
+    fn connected(&self) -> bool {
+        false
+    }
+
     /// How to use these tools, in their maker's words, for the model; asked after `tools`.
     fn instructions(&self) -> Option<String> {
         None

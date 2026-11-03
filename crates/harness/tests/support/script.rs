@@ -360,6 +360,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::GoalResumed(_) => "goal.resumed",
             Body::PlanUpdated(_) => "plan.updated",
             Body::PlanApproved(_) => "plan.approved",
+            Body::ToolsLoaded(_) => "tools.loaded",
             Body::WorkspaceBound(_) => "workspace.bound",
             Body::WorkspaceRemoved(_) => "workspace.removed",
             Body::CommandStarted(_) => "command.started",

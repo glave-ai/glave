@@ -353,6 +353,7 @@ async fn wire(
     // The person's own servers follow glave's tools, as the CLI offers them.
     let searching = crate::search::connection(task, pages, root, &setup.processes).await?;
     tools.extend(searching.map(|server| Arc::new(server) as Arc<dyn ToolSource>));
+    tools.extend(crate::connected::connection(task).await?);
     // The project's skills, as the CLI finds them, then glave's own; the person's own are not
     // part of a task.
     let mut skills = find_skills(&skill_folders(root, &[])).await;

@@ -39,6 +39,7 @@ pub(crate) mod standing;
 pub(crate) mod task;
 pub(crate) mod thread;
 pub(crate) mod tool;
+pub(crate) mod tools;
 pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
@@ -95,6 +96,7 @@ pub use thread::{
     ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,
 };
 pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested, ToolKind, WebPage};
+pub use tools::ToolsLoaded;
 pub use trust::{Decision, TrustDecided};
 pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{

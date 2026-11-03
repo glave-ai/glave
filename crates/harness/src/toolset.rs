@@ -8,6 +8,7 @@ use std::sync::Arc;
 use glave_ports::{Effect, ToolInfo, ToolSource, ToolSpec};
 
 use crate::subagent::SubagentType;
+use crate::tool_search::{self, TOOL_SEARCH};
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
@@ -34,6 +35,8 @@ enum Own {
     Goal,
     /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
+    /// `tool_search`: while connected tools are held back.
+    ToolSearch,
 }
 
 impl Own {
@@ -44,6 +47,7 @@ impl Own {
             Self::Agent => crate::subagent::AGENT,
             Self::Goal => crate::goal::UPDATE_GOAL,
             Self::Plan => crate::plan::UPDATE_PLAN,
+            Self::ToolSearch => TOOL_SEARCH,
         }
     }
 }
@@ -61,6 +65,15 @@ pub(crate) struct ToolSet {
     own: Vec<Own>,
     /// The memory tools on offer, by name: only where the thread reads memory.
     pub(crate) memory: Vec<String>,
+    /// The tools of connected sources, by name, in the order they were given.
+    connected: Vec<String>,
+    /// The connected tools kept out of `specs` until the model finds them, when they crowd its
+    /// window: in the order they were given, loaded or not.
+    deferred: Vec<String>,
+    /// Those the model has loaded, in that order: the last of `specs`.
+    loaded: Vec<String>,
+    /// How many characters `tool_search` may list them in.
+    listing_room: usize,
 }
 
 impl ToolSet {
@@ -72,6 +85,10 @@ impl ToolSet {
             missing: Vec::new(),
             own: Vec::new(),
             memory: Vec::new(),
+            connected: Vec::new(),
+            deferred: Vec::new(),
+            loaded: Vec::new(),
+            listing_room: 0,
         };
         for (index, source) in sources.iter().enumerate() {
             match source.tools().await {
@@ -82,6 +99,9 @@ impl ToolSet {
                             continue;
                         }
                         set.specs.push(info.spec.clone());
+                        if source.connected() {
+                            set.connected.push(info.spec.name.clone());
+                        }
                         set.by_name.insert(info.spec.name.clone(), (index, info));
                     }
                 }
@@ -98,10 +118,12 @@ impl ToolSet {
         set
     }
 
-    /// Offers `own`, told as `spec`, after the tools before it.
+    /// Offers `own`, told as `spec`, after the tools before it and before any the model
+    /// loaded, which stay last whatever a turn adds.
     fn offer(&mut self, own: Own, spec: ToolSpec) {
         self.own.push(own);
-        self.specs.push(spec);
+        let at = self.specs.len().saturating_sub(self.loaded.len());
+        self.specs.insert(at, spec);
     }
 
     /// Whether `name` is `own`'s, while it is on offer.
@@ -171,6 +193,80 @@ impl ToolSet {
         self.offers(Own::Plan, name)
     }
 
+    /// Holds connected tools back behind `tool_search` when they crowd a window of
+    /// `window_tokens`, with `loaded` on the end of the list as the thread loaded them. Loaded
+    /// or not they count, so loading one never tips the choice; and a thread that has loaded
+    /// any stays this way, as in Claude Code, so a server slow to come back never reorders its
+    /// list.
+    pub(crate) fn defer_if_crowded(&mut self, window_tokens: u64, loaded: &[String]) {
+        let connected: Vec<ToolSpec> = self
+            .specs
+            .iter()
+            .filter(|spec| self.connected.contains(&spec.name))
+            .cloned()
+            .collect();
+        let holding = !loaded.is_empty() && !connected.is_empty();
+        if holding || tool_search::crowds(&connected, window_tokens) {
+            self.listing_room = tool_search::listing_room(window_tokens);
+            self.deferred = connected.into_iter().map(|spec| spec.name).collect();
+            self.specs
+                .retain(|spec| !self.deferred.contains(&spec.name));
+            self.offer_tool_search();
+            self.load(loaded);
+        }
+    }
+
+    /// Offers `tool_search`, listing every tool held back.
+    fn offer_tool_search(&mut self) {
+        let spec = tool_search::spec(&self.deferred_specs(), self.listing_room);
+        self.offer(Own::ToolSearch, spec);
+    }
+
+    fn deferred_specs(&self) -> Vec<&ToolSpec> {
+        self.deferred
+            .iter()
+            .filter_map(|name| self.by_name.get(name))
+            .map(|(_, info)| &info.spec)
+            .collect()
+    }
+
+    /// Whether `name` is `tool_search`, while it is on offer.
+    pub(crate) fn is_tool_search(&self, name: &str) -> bool {
+        self.offers(Own::ToolSearch, name)
+    }
+
+    /// Whether the tool called `name` is held back: connected, not loaded yet.
+    pub(crate) fn is_held_back(&self, name: &str) -> bool {
+        self.deferred.iter().any(|held| held == name) && !self.loaded.iter().any(|l| l == name)
+    }
+
+    /// The tools held back or loaded that `query` finds (`tool_search::matching`), cloned, so
+    /// loading them can follow.
+    pub(crate) fn deferred_matching(&self, query: &str) -> Vec<ToolSpec> {
+        tool_search::matching(&self.deferred_specs(), query)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Puts those of `names` held back on the end of the list, in that order, and answers
+    /// which that was. Anything else is left alone: a tool loaded before, or one no longer
+    /// offered, as when its server went.
+    pub(crate) fn load(&mut self, names: &[String]) -> Vec<String> {
+        let mut new = Vec::new();
+        for name in names {
+            if !self.is_held_back(name) {
+                continue;
+            }
+            if let Some((_, info)) = self.by_name.get(name) {
+                self.specs.push(info.spec.clone());
+                self.loaded.push(name.clone());
+                new.push(name.clone());
+            }
+        }
+        new
+    }
+
     /// The tools a subagent has: these, less glave's own (`agent`, `question`, `update_goal`,
     /// `update_plan` and memory's), and for an explorer only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
@@ -181,11 +277,14 @@ impl ToolSet {
             .filter(|(_, (_, info))| keeps(info))
             .map(|(name, found)| (name.clone(), found.clone()))
             .collect();
-        Self {
+        // A thread of its own loads for itself, and an explorer finds only what it may use.
+        let kept = |name: &String| by_name.contains_key(name);
+        let deferred: Vec<String> = self.deferred.iter().filter(|n| kept(n)).cloned().collect();
+        let mut child = Self {
             specs: self
                 .specs
                 .iter()
-                .filter(|spec| by_name.contains_key(&spec.name))
+                .filter(|spec| kept(&spec.name) && !self.deferred.contains(&spec.name))
                 .cloned()
                 .collect(),
             // A child neither reads nor writes memory, and proposes no plan: in plan mode its
@@ -196,11 +295,19 @@ impl ToolSet {
                     system.strip_suffix(rule).unwrap_or(system)
                 })
                 .to_owned(),
+            connected: self.connected.iter().filter(|n| kept(n)).cloned().collect(),
+            deferred,
+            loaded: Vec::new(),
+            listing_room: self.listing_room,
             by_name,
             missing: self.missing.clone(),
             own: Vec::new(),
             memory: Vec::new(),
+        };
+        if !child.deferred.is_empty() {
+            child.offer_tool_search();
         }
+        child
     }
 
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.

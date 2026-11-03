@@ -161,6 +161,10 @@ fn a_hosted_search_offers_only_its_search_whose_calls_say_what_was_searched_and_
         let tools = server.tools().await.unwrap();
         let names: Vec<&str> = tools.iter().map(|tool| tool.spec.name.as_str()).collect();
         assert_eq!(names, ["mcp__search__web_search_exa"]);
+        assert!(
+            !server.connected(),
+            "glave's way to the web always stays in the list"
+        );
         let told = server.instructions().unwrap();
         assert!(told.starts_with("## search\n\nOnly use tools"), "{told}");
         assert!(

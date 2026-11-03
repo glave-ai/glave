@@ -9,6 +9,8 @@
 //!   web/             optional, glave's own: pages served on 127.0.0.1 at `{web}` (`web.rs`)
 //!   search.md        optional, glave's own: web search, on, answering every
 //!                    query with this text (`search.rs`)
+//!   connected.md     optional, glave's own: a crowd of connected tools, one of which answers
+//!                    with this text (`connected.rs`)
 //! ```
 //!
 //! The agent never sees `tests/`, so it cannot read or weaken the grader.
@@ -201,6 +203,12 @@ impl Task {
     /// (`search.rs`).
     pub(crate) fn search_results(&self) -> Option<PathBuf> {
         Some(self.dir.join("search.md")).filter(|path| path.is_file())
+    }
+
+    /// What the one useful tool of a crowd of connected tools answers, when the task has them
+    /// (`connected.rs`).
+    pub(crate) fn connected_answer(&self) -> Option<PathBuf> {
+        Some(self.dir.join("connected.md")).filter(|path| path.is_file())
     }
 
     /// The grader, if the task has one.

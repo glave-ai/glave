@@ -54,7 +54,7 @@ pub fn branch_for(thread: ThreadId) -> String {
 
 /// How many of `events` are glave's own record of where the thread works (bindings and
 /// removals), of whether the thread is shown, of the choices made for it, of its commands in
-/// the background, and of its plan, which call ids do not count.
+/// the background, of its plan, and of the tools it loaded, which call ids do not count.
 pub(crate) fn own_records(events: &[Event]) -> u64 {
     let count = events
         .iter()
@@ -74,6 +74,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::CommandEnded(_)
                     | Body::PlanUpdated(_)
                     | Body::PlanApproved(_)
+                    | Body::ToolsLoaded(_)
             )
         })
         .count();

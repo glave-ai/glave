@@ -586,6 +586,11 @@ impl ToolSource for McpServer {
         Box::pin(self.list())
     }
 
+    /// Every server but web search, which is one tool and how glave reaches the web.
+    fn connected(&self) -> bool {
+        self.search.is_none()
+    }
+
     fn instructions(&self) -> Option<String> {
         let State::Ready(connection) = &*self.state.borrow() else {
             return None;

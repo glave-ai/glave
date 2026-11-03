@@ -1,0 +1,14 @@
+[task]
+name = "glave/tool-search"
+description = "Too many connected tools for the model's list: it finds the one it needs with tool_search, loads it, and answers from what that tool returns."
+
+[glave]
+permissions = "auto"
+# The name is only in what the tool returns, and the tool only gets loaded by a search: a load is
+# recorded only when connected tools were held back, and a guess at the name is refused.
+checks = [
+    { sent = "\"tool\":\"tool_search\"" },
+    { sent = "\"type\":\"tools.loaded\"" },
+    { sent = "\"tool\":\"mcp__workplace__lookup_on_call_engineer\"" },
+    { answer_contains = "Odalys Brandvold" },
+]

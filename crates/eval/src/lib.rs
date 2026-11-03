@@ -9,6 +9,7 @@
 mod calendar;
 mod check;
 pub mod cli;
+mod connected;
 mod error;
 mod judging;
 mod memory;

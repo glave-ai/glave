@@ -82,6 +82,8 @@ where
                     self.bring(thread).await?;
                     self.tools(thread).await
                 };
+                // A child's come from its parent's, without what it loaded for itself.
+                toolset.load(&thread.loaded);
                 let goal = crate::goal::of_turn(thread, &events, open.started);
                 let summary = self.tallies(&thread.scope, thread.id, turn).await?;
                 if goal {

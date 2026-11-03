@@ -21,11 +21,11 @@ use crate::payload::{
     ScheduleDeleted, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished,
     SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
     ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
-    credits, filters, gateway, goal, grouping, hook, instructions, language, memory, message,
-    model, passkey, people, plan, project, provider, remembering, secrets, service, signup,
-    standing, task, thread, tool, trust, turn, workspace,
+    ToolsLoaded, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    connector, credential, credits, filters, gateway, goal, grouping, hook, instructions, language,
+    memory, message, model, passkey, people, plan, project, provider, remembering, secrets,
+    service, signup, standing, task, thread, tool, tools, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -63,6 +63,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (goal::RESUMED, 1),
     (plan::UPDATED, 1),
     (plan::APPROVED, 1),
+    (tools::LOADED, 1),
     (workspace::BOUND, 1),
     (workspace::REMOVED, 1),
     (command::STARTED, 1),
@@ -156,6 +157,7 @@ pub enum Body {
     GoalResumed(GoalResumed),
     PlanUpdated(PlanUpdated),
     PlanApproved(PlanApproved),
+    ToolsLoaded(ToolsLoaded),
     WorkspaceBound(WorkspaceBound),
     WorkspaceRemoved(WorkspaceRemoved),
     CommandStarted(CommandStarted),
@@ -376,6 +378,7 @@ impl Event {
             Body::GoalResumed(payload) => encode(header, payload),
             Body::PlanUpdated(payload) => encode(header, payload),
             Body::PlanApproved(payload) => encode(header, payload),
+            Body::ToolsLoaded(payload) => encode(header, payload),
             Body::WorkspaceBound(payload) => encode(header, payload),
             Body::WorkspaceRemoved(payload) => encode(header, payload),
             Body::CommandStarted(payload) => encode(header, payload),
@@ -491,6 +494,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         plan::UPDATED => plan::decode_updated(version, data).map(|r| r.map(Body::PlanUpdated)),
         plan::APPROVED => plan::decode_approved(version, data).map(|r| r.map(Body::PlanApproved)),
+        tools::LOADED => tools::decode(version, data).map(|r| r.map(Body::ToolsLoaded)),
         memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
         memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),
         memory::FORGOTTEN => {

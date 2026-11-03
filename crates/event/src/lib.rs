@@ -25,6 +25,7 @@ pub use id::{
     ThreadId,
 };
 pub use money::{Currency, Decimal, Money};
+pub use payload::ToolsLoaded;
 pub use payload::{
     Accent, AcmeRegistered, AppearanceSet, AwakeSet, BrandSet, CertificateIssued, Color, Filters,
     FiltersSet, Grouping, GroupingSet, HeldLogo, Hides, InstructionsFile, InstructionsRead,

@@ -7,6 +7,7 @@ use std::sync::Mutex;
 pub struct InMemoryTools {
     tools: Vec<(crate::tools::ToolInfo, crate::tools::ToolOutput)>,
     calls: Mutex<Vec<(String, glave_event::Arguments)>>,
+    connected: bool,
 }
 
 impl InMemoryTools {
@@ -14,7 +15,15 @@ impl InMemoryTools {
         Self {
             tools,
             calls: Mutex::new(Vec::new()),
+            connected: false,
         }
+    }
+
+    /// These tools, as a service someone connected offers them.
+    #[must_use]
+    pub fn as_connected(mut self) -> Self {
+        self.connected = true;
+        self
     }
 
     /// Every call so far, in order: the tool's name and its arguments.
@@ -33,6 +42,10 @@ impl crate::tools::ToolSource for InMemoryTools {
     {
         let tools = self.tools.iter().map(|(info, _)| info.clone()).collect();
         Box::pin(std::future::ready(Ok(tools)))
+    }
+
+    fn connected(&self) -> bool {
+        self.connected
     }
 
     fn call<'a>(

@@ -81,6 +81,7 @@ where
                 .await?
                 .map(crate::goal::Pursuit::of),
             plan: crate::plan::Planning::of(&events),
+            loaded: crate::tool_search::loaded_in(&events),
             workspace,
             unnumbered: crate::bind::own_records(&events),
             note: None,

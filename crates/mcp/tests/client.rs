@@ -53,6 +53,7 @@ fn a_projects_server_is_told_its_folder_on_either_protocol() {
         let root = url::Url::from_directory_path(folder()).unwrap();
         for args in [&[][..], &["--legacy"][..]] {
             let server = start(args, true).await;
+            assert!(server.connected());
             let told = roots(&server).await;
             assert!(!told.is_error, "{args:?}: {told:?}");
             assert_eq!(text(&told), root.as_str(), "{args:?}");

@@ -150,6 +150,8 @@ where
         let (name, arguments) = (call.tool.as_str(), &call.arguments);
         if tools.is_plan(name) {
             return crate::plan::describe(arguments);
+        } else if tools.is_tool_search(name) {
+            return crate::tool_search::describe(arguments);
         } else if tools.is_memory(name) {
             return crate::memory::described(name, arguments);
         } else if tools.is_agent(name) {
@@ -193,6 +195,8 @@ where
             return Ok(self.update_plan(thread, call, step, cancel, live));
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
+        } else if step.toolset.is_tool_search(&call.tool) {
+            return self.search_tools(thread, call, &mut step.toolset).await;
         }
         self.call_offered(thread, call, step, cancel, live).await
     }
@@ -217,6 +221,9 @@ where
             let text = format!("There is no tool named {tool:?}. The tools are {names}.");
             return Ok(ToolOutput::text(true, text));
         };
+        if tools.is_held_back(&info.spec.name) {
+            return Ok(crate::tool_search::not_loaded(&info.spec.name));
+        }
         let Some(source) = self.source_for(thread, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };

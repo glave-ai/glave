@@ -142,6 +142,9 @@ pub struct Thread {
     pub(crate) goal: Option<Pursuit>,
     /// The thread's plan (`plan.rs`). A subagent's thread keeps none.
     pub(crate) plan: Planning,
+    /// The connected tools its model has loaded, oldest first (`tool_search.rs`). A subagent's
+    /// thread loads its own.
+    pub(crate) loaded: Vec<String>,
     /// The workspace the thread's tools act on when it is not the harness's own, such as its
     /// worktree. A subagent's thread shares its parent's.
     pub(crate) workspace: Option<Arc<Workspace>>,
@@ -503,6 +506,7 @@ where
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }
+        set.defer_if_crowded(self.context_window(&self.model_for(thread)), &thread.loaded);
         set
     }
 
@@ -596,6 +600,7 @@ where
             above: parent.iter().map(|call| call.thread).collect(),
             goal: None,
             plan: Planning::default(),
+            loaded: Vec::new(),
             note: bound.as_ref().and_then(crate::worker::note),
             workspace,
             unnumbered: u64::from(bound.is_some()),

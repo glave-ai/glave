@@ -46,6 +46,7 @@ mod subagent;
 mod telemetry;
 mod thought;
 mod title;
+mod tool_search;
 mod tools;
 mod toolset;
 mod turn;
