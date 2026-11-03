@@ -197,7 +197,7 @@ impl ToolSet {
     /// `window_tokens`, with `loaded` on the end of the list as the thread loaded them. Loaded
     /// or not they count, so loading one never tips the choice; and a thread that has loaded
     /// any stays this way, as in Claude Code, so a server slow to come back never reorders its
-    /// list.
+    /// list. Until then it is chosen anew each turn, a change costing one miss of the cache.
     pub(crate) fn defer_if_crowded(&mut self, window_tokens: u64, loaded: &[String]) {
         let connected: Vec<ToolSpec> = self
             .specs
@@ -240,13 +240,22 @@ impl ToolSet {
         self.deferred.iter().any(|held| held == name) && !self.loaded.iter().any(|l| l == name)
     }
 
-    /// The tools held back or loaded that `query` finds (`tool_search::matching`), cloned, so
-    /// loading them can follow.
+    /// What `query` finds (`tool_search::matching`): among the tools held back, or if none, those
+    /// loaded already, so what was found once is found again. Cloned, so loading them can follow.
     pub(crate) fn deferred_matching(&self, query: &str) -> Vec<ToolSpec> {
-        tool_search::matching(&self.deferred_specs(), query)
-            .into_iter()
-            .cloned()
-            .collect()
+        let all = self.deferred_specs();
+        let held: Vec<&ToolSpec> = all
+            .iter()
+            .copied()
+            .filter(|spec| self.is_held_back(&spec.name))
+            .collect();
+        let found = tool_search::matching(&held, query);
+        let found = if found.is_empty() {
+            tool_search::matching(&all, query)
+        } else {
+            found
+        };
+        found.into_iter().cloned().collect()
     }
 
     /// Puts those of `names` held back on the end of the list, in that order, and answers
@@ -295,7 +304,7 @@ impl ToolSet {
                     system.strip_suffix(rule).unwrap_or(system)
                 })
                 .to_owned(),
-            connected: self.connected.iter().filter(|n| kept(n)).cloned().collect(),
+            connected: Vec::new(),
             deferred,
             loaded: Vec::new(),
             listing_room: self.listing_room,

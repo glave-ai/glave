@@ -4,11 +4,13 @@ description = "Too many connected tools for the model's list: it finds the one i
 
 [glave]
 permissions = "auto"
+# As glave's default: the crowd is past a tenth of it.
+context_window = 128000
 # The name is only in what the tool returns, and the tool only gets loaded by a search: a load is
 # recorded only when connected tools were held back, and a guess at the name is refused.
 checks = [
     { sent = "\"tool\":\"tool_search\"" },
-    { sent = "\"type\":\"tools.loaded\"" },
+    { recorded = "tools.loaded" },
     { sent = "\"tool\":\"mcp__workplace__lookup_on_call_engineer\"" },
     { answer_contains = "Odalys Brandvold" },
 ]

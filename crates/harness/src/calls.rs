@@ -221,7 +221,8 @@ where
             let text = format!("There is no tool named {tool:?}. The tools are {names}.");
             return Ok(ToolOutput::text(true, text));
         };
-        if tools.is_held_back(&info.spec.name) {
+        // One that asked before was on offer then: the person's answer still decides it.
+        if round.is_none() && waited.is_none() && tools.is_held_back(&info.spec.name) {
             return Ok(crate::tool_search::not_loaded(&info.spec.name));
         }
         let Some(source) = self.source_for(thread, index) else {

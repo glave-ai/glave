@@ -3,15 +3,19 @@
 //! loaded tool asks and runs as any other.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use glave_event::{Body, StopReason};
-use glave_harness::{Harness, NoOneToAsk, Settings, Thread};
+use glave_event::{Arguments, Body, CallId, StopReason, ThreadId};
+use glave_harness::{
+    Approver, Cancel, Decision, Harness, HarnessError, Live, NoOneToAsk, Settings, Thread,
+};
 use glave_ports::{
-    Completion, Effect, InMemoryBlobs, InMemoryLog, InMemoryTools, Message, ModelRequest, ToolInfo,
-    ToolOutput, ToolSpec,
+    BoxFuture, Caller, Cancellation, Completion, Effect, EventLog, InMemoryBlobs, InMemoryLog,
+    InMemoryTools, Message, ModelRequest, ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
 };
 use serde_json::json;
 
+use crate::network::InTheLog;
 use crate::support::*;
 
 const SEARCH: &str = "mcp__docs__search";
@@ -55,22 +59,23 @@ fn narrow(mut settings: Settings) -> Settings {
 }
 
 /// A thread where the model answers `answers`, offered `source`.
-struct Running {
-    harness: Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, NoOneToAsk>,
+struct Running<A: Approver = NoOneToAsk> {
+    harness: Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
     seen: Seen,
     source: Arc<InMemoryTools>,
     thread: Thread,
 }
 
-async fn running(
+async fn running_with<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     settings: Settings,
     source: InMemoryTools,
-) -> Running {
+    approver: A,
+) -> Running<A> {
     let source = Arc::new(source);
     let log = InMemoryLog::new();
-    let (harness, seen) = harness_seeing(dir, answers, NoOneToAsk, log, 1, settings).await;
+    let (harness, seen) = harness_seeing(dir, answers, approver, log, 1, settings).await;
     let harness = harness.with_tools(vec![Arc::<InMemoryTools>::clone(&source)]);
     let thread = harness.start_thread(scope()).await.unwrap();
     Running {
@@ -79,6 +84,15 @@ async fn running(
         source,
         thread,
     }
+}
+
+async fn running(
+    dir: &std::path::Path,
+    answers: Vec<Completion>,
+    settings: Settings,
+    source: InMemoryTools,
+) -> Running {
+    running_with(dir, answers, settings, source, NoOneToAsk).await
 }
 
 /// A thread whose connected tools crowd its window.
@@ -143,7 +157,7 @@ fn past_a_tenth_they_are_listed_found_loaded_on_the_end_and_called() {
         let mut on = crowded(&dir, answers, settings()).await;
         turn(&on.harness, &mut on.thread, "how do I set up?").await;
 
-        let seen = on.seen.lock().unwrap();
+        let seen = on.seen.lock().unwrap().clone();
         let first = names(&seen[0]);
         assert!(
             first.contains(&"bash".to_owned()),
@@ -207,7 +221,7 @@ fn what_was_loaded_stays_through_turns_and_a_resume_and_more_goes_after_it() {
             .unwrap();
         turn(&on.harness, &mut resumed, "three").await;
 
-        let seen = on.seen.lock().unwrap();
+        let seen = on.seen.lock().unwrap().clone();
         let before_any = seen[0].tools.len();
         for later in seen.iter().skip(1) {
             assert_eq!(later.tools[..before_any], seen[0].tools[..]);
@@ -288,7 +302,7 @@ fn a_search_that_finds_nothing_loads_nothing() {
     block_on!(async {
         let mut on = crowded(&dir, vec![searching("kubernetes"), done()], settings()).await;
         turn(&on.harness, &mut on.thread, "find it").await;
-        let seen = on.seen.lock().unwrap();
+        let seen = on.seen.lock().unwrap().clone();
         assert_eq!(seen[1].tools, seen[0].tools);
         let said = results(on.thread.messages());
         assert!(said[0].contains("No connected tool matches"), "{said:?}");
@@ -332,7 +346,7 @@ fn an_explorer_searches_only_what_it_may_use_and_loads_for_itself() {
         let mut on = crowded(&dir, answers, settings).await;
         turn(&on.harness, &mut on.thread, "find out").await;
 
-        let seen = on.seen.lock().unwrap();
+        let seen = on.seen.lock().unwrap().clone();
         let listed = listing(&seen[1]);
         assert!(listed.contains(SEARCH), "{listed}");
         assert!(!listed.contains(CREATE), "an explorer only reads: {listed}");
@@ -343,5 +357,163 @@ fn an_explorer_searches_only_what_it_may_use_and_loads_for_itself() {
             "what a child loaded is its own: {:?}",
             names(&seen[4])
         );
+    });
+}
+
+/// The call `thread`'s log asks the person about.
+async fn asked<L: EventLog>(log: &L, thread: ThreadId) -> CallId {
+    let recorded = events(log, thread).await;
+    let asked = recorded.iter().find_map(|event| match &event.body {
+        Body::ApprovalRequested(asked) => Some(asked.call_id.clone()),
+        _ => None,
+    });
+    asked.unwrap()
+}
+
+/// Runs a turn that stops at a question for the person, answers yes, and goes on.
+async fn stops_then_goes_on(on: &mut Running<InTheLog>, prompt: &str) {
+    let cancel = Cancel::new();
+    let mut started = None;
+    let mut live = |update: Live| {
+        if let Live::SubagentStarted { thread, .. } = update {
+            started = Some(thread);
+        }
+    };
+    let stopped = on
+        .harness
+        .run_turn(&mut on.thread, prompt, &cancel, &mut live)
+        .await;
+    assert!(
+        matches!(stopped, Err(HarnessError::Waits(_))),
+        "{stopped:?}"
+    );
+    let asking = started.unwrap_or(on.thread.id);
+    let call = asked(on.harness.log(), asking).await;
+    on.harness
+        .decide(scope(), asking, &call, Decision::AllowOnce, None)
+        .await
+        .unwrap();
+    on.thread = on
+        .harness
+        .resume_thread(scope(), on.thread.id)
+        .await
+        .unwrap();
+    on.harness
+        .go_on(&mut on.thread, &Caller::default(), &cancel, &mut |_| {})
+        .await
+        .unwrap();
+}
+
+#[test]
+fn a_loaded_tool_waiting_on_the_person_goes_on_after_a_resume() {
+    let dir = folder("tool-search-waits");
+    block_on!(async {
+        let answers = vec![searching(CREATE), calling(CREATE), done()];
+        let source = InMemoryTools::new(tools()).as_connected();
+        let mut on = running_with(&dir, answers, narrow(asking()), source, InTheLog).await;
+        stops_then_goes_on(&mut on, "file it").await;
+        assert_eq!(on.source.calls().len(), 1);
+        let seen = on.seen.lock().unwrap().clone();
+        assert_eq!(names(&seen[2]).last().map(String::as_str), Some(CREATE));
+    });
+}
+
+#[test]
+fn a_child_that_loaded_a_tool_has_it_still_when_it_goes_on_from_a_wait() {
+    let dir = folder("tool-search-child-waits");
+    block_on!(async {
+        let agent =
+            json!({"description": "file", "prompt": "File it.", "subagent_type": "general"});
+        let answers = vec![
+            answer(None, vec![("agent", agent)], StopReason::ToolUse),
+            searching(CREATE),
+            calling(CREATE),
+            answer(Some("Filed."), vec![], StopReason::EndTurn),
+            done(),
+        ];
+        let mut settings = narrow(asking());
+        settings.subagents = true;
+        let source = InMemoryTools::new(tools()).as_connected();
+        let mut on = running_with(&dir, answers, settings, source, InTheLog).await;
+        stops_then_goes_on(&mut on, "file it").await;
+        assert_eq!(on.source.calls().len(), 1);
+        let seen = on.seen.lock().unwrap().clone();
+        assert_eq!(
+            names(&seen[3]).last().map(String::as_str),
+            Some(CREATE),
+            "the child's next call, after the wait"
+        );
+    });
+}
+
+/// Connected tools that grow while a thread waits: only `create_issue` until `grown`.
+struct Grows {
+    tools: InMemoryTools,
+    grown: AtomicBool,
+}
+
+impl ToolSource for Grows {
+    fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
+        let grown = self.grown.load(Ordering::SeqCst);
+        Box::pin(async move {
+            let mut tools = self.tools.tools().await?;
+            tools.retain(|tool| grown || tool.spec.name == CREATE);
+            Ok(tools)
+        })
+    }
+
+    fn connected(&self) -> bool {
+        true
+    }
+
+    fn call<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Arguments,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, ToolOutput> {
+        self.tools.call(name, arguments, cancel)
+    }
+}
+
+#[test]
+fn an_answer_still_decides_a_call_whose_tool_was_held_back_while_it_waited() {
+    let dir = folder("tool-search-grew");
+    block_on!(async {
+        let answers = vec![calling(CREATE), done()];
+        let mut settings = asking();
+        // Room for one of these tools, not for both.
+        settings.compaction.window_tokens = 30_000;
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, InTheLog, log, 1, settings).await;
+        let source = Arc::new(Grows {
+            tools: InMemoryTools::new(tools()),
+            grown: AtomicBool::new(false),
+        });
+        let harness = harness.with_tools(vec![Arc::<Grows>::clone(&source)]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let cancel = Cancel::new();
+        let stopped = harness
+            .run_turn(&mut thread, "file it", &cancel, &mut |_| {})
+            .await;
+        assert!(
+            matches!(stopped, Err(HarnessError::Waits(_))),
+            "{stopped:?}"
+        );
+        assert!(names(&seen.lock().unwrap().clone()[0]).contains(&CREATE.to_owned()));
+        source.grown.store(true, Ordering::SeqCst);
+        let call = asked(harness.log(), thread.id).await;
+        harness
+            .decide(scope(), thread.id, &call, Decision::AllowOnce, None)
+            .await
+            .unwrap();
+        harness
+            .go_on(&mut thread, &Caller::default(), &cancel, &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(source.tools.calls().len(), 1);
+        assert_eq!(results(thread.messages())[0], "Issue 7.");
+        let after = names(&seen.lock().unwrap().clone()[1]);
+        assert!(after.contains(&"tool_search".to_owned()), "{after:?}");
     });
 }

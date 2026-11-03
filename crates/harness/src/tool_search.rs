@@ -2,10 +2,11 @@
 //! of the window, their definitions wait behind `tool_search`, which lists each by name and a
 //! line and loads the ones the model finds, for the rest of the thread (`tools.loaded`).
 //!
-//! The list stays a stable prefix for the prompt cache: a loaded tool only ever goes on its end,
-//! in the order it was loaded, so each load costs one miss and every other request a hit. Codex
-//! and Claude Code keep it stabler still with their providers' own deferred tools, which the one
-//! seam every model shares, an OpenAI-compatible API, doesn't have.
+//! The list stays stable for the prompt cache: a loaded tool only ever goes on its end, in the
+//! order it was loaded. Tools come first in a provider's prefix, so a load misses the cache once,
+//! for the whole conversation after them, and every request between loads can hit. Codex and
+//! Claude Code avoid even that with their providers' own deferred tools, which the one seam
+//! every model shares, an OpenAI-compatible API, doesn't have.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -14,7 +15,7 @@ use glave_event::{Arguments, Body, Event, ToolsLoaded};
 use glave_ports::{
     BlobStore, EventLog, ModelProvider, ToolCall, ToolOutput, ToolSpec, describe_call,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::approval::Approver;
 use crate::compaction::tools_tokens;
@@ -25,7 +26,7 @@ use crate::toolset::ToolSet;
 pub(crate) const TOOL_SEARCH: &str = "tool_search";
 
 /// The share of the window connected tools may take before they wait behind the search: one
-/// part in this many, where Claude Code starts too.
+/// part in this many, as Claude Code's `auto` mode has it.
 const SHARE: u64 = 10;
 
 /// The most tools one search loads, since every one stays in each request after it.
@@ -82,7 +83,9 @@ pub(crate) fn spec(specs: &[&ToolSpec], room: usize) -> ToolSpec {
     }
 }
 
-/// What a call of a tool that is not loaded gets instead of running: its arguments are a guess.
+/// What a call of a tool that is not loaded gets instead of running, since the model has not
+/// been sent its parameters. A call in the same response as the search that loads it does run,
+/// asking as any other call does.
 pub(crate) fn not_loaded(tool: &str) -> ToolOutput {
     ToolOutput::text(
         true,
@@ -176,7 +179,7 @@ pub(crate) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolS
         })
         .collect();
     if named.len() == asked.len() {
-        return named;
+        return named.into_iter().take(MOST_FOUND).collect();
     }
     ranked(tools, query)
         .into_iter()
@@ -185,18 +188,42 @@ pub(crate) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolS
         .collect()
 }
 
-/// The indexes of `tools` that share a word with `query`, best first, by BM25 over each tool's
-/// name, which counts twice, its description and its parameters; a tie stays in `tools`' order.
+/// The words of a tool's parameters: their names and descriptions, not the schema's own.
+fn schema_text(schema: &Value, text: &mut String) {
+    match schema {
+        Value::Object(map) => {
+            for (key, value) in map {
+                match (key.as_str(), value) {
+                    ("description", Value::String(said)) => {
+                        text.push_str(said);
+                        text.push(' ');
+                    }
+                    ("properties", Value::Object(properties)) => {
+                        for (name, property) in properties {
+                            text.push_str(name);
+                            text.push(' ');
+                            schema_text(property, text);
+                        }
+                    }
+                    _ => schema_text(value, text),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| schema_text(item, text)),
+        _ => {}
+    }
+}
+
+/// The indexes of `tools` that `query` is about, best first, by BM25 over each tool's name, which
+/// counts twice, its description and its parameters; a tie stays in `tools`' order. Sentences
+/// are full of words every tool has, so those only count when the query has no others, and what
+/// scores under half the best is left out: each tool found stays in every request after.
 fn ranked(tools: &[&ToolSpec], query: &str) -> Vec<usize> {
     let documents: Vec<HashMap<String, u32>> = tools
         .iter()
         .map(|tool| {
-            let text = format!(
-                "{name} {name} {} {}",
-                tool.description,
-                tool.parameters,
-                name = tool.name
-            );
+            let mut text = format!("{name} {name} {} ", tool.description, name = tool.name);
+            schema_text(&tool.parameters, &mut text);
             counted(&text)
         })
         .collect();
@@ -206,20 +233,29 @@ fn ranked(tools: &[&ToolSpec], query: &str) -> Vec<usize> {
         .collect();
     let count = f64::from(u32::try_from(tools.len()).unwrap_or(u32::MAX));
     let average = (lengths.iter().sum::<f64>() / count).max(1.0);
+    let having = |word: &String| {
+        let found = documents.iter().filter(|d| d.contains_key(word)).count();
+        f64::from(u32::try_from(found).unwrap_or(u32::MAX))
+    };
     let mut asked = words(query);
     asked.sort_unstable();
     asked.dedup();
+    let rarer: Vec<&String> = asked.iter().filter(|w| having(w) * 2.0 <= count).collect();
+    let counting = if rarer.is_empty() {
+        asked.iter().collect()
+    } else {
+        rarer
+    };
     let mut scored: Vec<(usize, f64)> = documents
         .iter()
         .zip(&lengths)
         .enumerate()
         .map(|(index, (document, length))| {
-            let score = asked
+            let score = counting
                 .iter()
-                .filter_map(|word| Some((word, f64::from(*document.get(word)?))))
+                .filter_map(|word| Some((*word, f64::from(*document.get(*word)?))))
                 .map(|(word, times)| {
-                    let having = documents.iter().filter(|d| d.contains_key(word)).count();
-                    let having = f64::from(u32::try_from(having).unwrap_or(u32::MAX));
+                    let having = having(word);
                     let rarity = (1.0 + (count - having + 0.5) / (having + 0.5)).ln();
                     let fill = times + K1 * (1.0 - B + B * length / average);
                     rarity * times * (K1 + 1.0) / fill
@@ -230,7 +266,12 @@ fn ranked(tools: &[&ToolSpec], query: &str) -> Vec<usize> {
         .filter(|(_, score)| *score > 0.0)
         .collect();
     scored.sort_by(|a, b| b.1.total_cmp(&a.1));
-    scored.into_iter().map(|(index, _)| index).collect()
+    let best = scored.first().map_or(0.0, |(_, score)| *score);
+    scored
+        .into_iter()
+        .filter(|(_, score)| *score >= best / 2.0)
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// How many times each of `text`'s words is in it.
@@ -332,10 +373,35 @@ mod tests {
     #[test]
     fn a_name_counts_for_more_than_a_passing_mention() {
         let tools = catalog();
+        assert_eq!(found(&tools, "issues")[0], "mcp__github__list_issues");
+    }
+
+    #[test]
+    fn a_sentence_finds_what_its_rare_words_find_and_nothing_for_its_common_ones() {
+        let mut tools: Vec<ToolSpec> = (0..8)
+            .map(|n| {
+                tool(
+                    &format!("mcp__a__report_{n}"),
+                    "It is for a team, on a page.",
+                )
+            })
+            .collect();
+        tools.push(tool(
+            "mcp__pager__whoIsOnCall",
+            "Find who is on call for a service.",
+        ));
         assert_eq!(
-            found(&tools, "issues"),
-            ["mcp__github__list_issues", "mcp__wiki__search"]
+            found(&tools, "who is on call for payments"),
+            ["mcp__pager__whoIsOnCall"]
         );
+        assert_eq!(found(&tools, "kubernetes for a team"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_schema_s_own_words_find_nothing_but_its_parameters_names_do() {
+        let tools = catalog();
+        assert_eq!(found(&tools, "object"), Vec::<String>::new());
+        assert_eq!(found(&tools, "text").len(), MOST_FOUND);
     }
 
     #[test]
