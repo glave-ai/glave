@@ -325,7 +325,7 @@ pub enum Ending {
 pub struct Finished {
     pub ending: Ending,
     pub millis: u64,
-    /// It spent at least half of a run of 10 seconds or more held at its computer's CPU limit,
+    /// It used about all the CPU its computer's limit allows over a run of 10 seconds or more,
     /// as a computer with a limit of its own (a Pod's) counts it (`specs/computers.md`,
     /// decision 8).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

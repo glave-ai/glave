@@ -149,8 +149,7 @@ pub(crate) async fn spawn(
 pub(crate) struct Keep<'a> {
     pub(crate) background: &'a Backgrounds,
     pub(crate) workspace: WorkspaceId,
-    /// The cgroup counting the time the command is held at its CPU limit, where Linux counts
-    /// it.
+    /// The cgroup counting the CPU the command uses against its limit, where Linux counts it.
     pub(crate) cgroup: Option<&'a Path>,
 }
 
@@ -186,7 +185,7 @@ pub(crate) async fn run(
     let keeps = (command.on_timeout == OnTimeout::Background)
         .then(|| new_id().map(CommandId::from_uuid))
         .transpose()?;
-    let before = super::pressure::throttled(keep.cgroup).await;
+    let before = super::pressure::counted(keep.cgroup).await;
     let mut spawned = spawn(opened, command, helper, offered.as_ref()).await?;
     let waited = {
         let pump = spawned.stream.pump(output);
@@ -224,7 +223,7 @@ pub(crate) async fn run(
             }
         }
     };
-    let after = super::pressure::throttled(keep.cgroup).await;
+    let after = super::pressure::counted(keep.cgroup).await;
     Ok(Finished {
         ending,
         millis,
