@@ -7,6 +7,7 @@
 //! (`max`), nothing is counted. Memory is not counted here: a container killed for memory goes
 //! whole, glave with it, which its server sees instead (`specs/computers.md`, decision 8).
 
+use std::num::{NonZeroU64, NonZeroU128};
 use std::path::{Path, PathBuf};
 
 /// The shortest run whose time at the CPU limit counts: a command that runs for seconds is not
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 const CPU_RUN_MILLIS: u64 = 10_000;
 
 /// The percentage of what the limit allows that a run must use to count as held there: short of
-/// all of it, since the run's clock starts before its command does and stops after it ends.
+/// all of it, since a run's clock also covers its waits before its work starts and after it ends.
 const HELD_PERCENT: u128 = 90;
 
 /// The cgroup glave runs in, where its CPU time is counted.
@@ -25,11 +26,11 @@ pub(crate) fn cgroup() -> Option<PathBuf> {
     folder.join("cpu.stat").is_file().then_some(folder)
 }
 
-/// The CPU a cgroup has used so far, and its limit at that moment.
+/// The CPU a cgroup has used so far, and its limit at that moment, in microseconds.
 pub(crate) struct Counted {
-    used_usec: u64,
-    quota_usec: u64,
-    period_usec: u64,
+    used: u64,
+    quota: u64,
+    period: NonZeroU64,
 }
 
 impl Counted {
@@ -37,19 +38,16 @@ impl Counted {
     fn read(stat: &str, max: &str) -> Option<Self> {
         let mut limit = max.split_whitespace();
         Some(Self {
-            used_usec: field(stat, "usage_usec")?,
+            used: field(stat, "usage_usec")?,
             // `max` is no quota: it does not parse, so nothing is counted.
-            quota_usec: limit.next()?.parse().ok()?,
-            period_usec: limit.next()?.parse().ok()?,
+            quota: limit.next()?.parse().ok()?,
+            period: limit.next()?.parse().ok()?,
         })
     }
 
     /// The microseconds of CPU this limit allows over `millis` of a run.
     fn allowed_usec(&self, millis: u64) -> u128 {
-        let run_usec = u128::from(millis) * 1_000;
-        (u128::from(self.quota_usec) * run_usec)
-            .checked_div(u128::from(self.period_usec))
-            .unwrap_or(0)
+        u128::from(self.quota) * u128::from(millis) * 1_000 / NonZeroU128::from(self.period)
     }
 }
 
@@ -75,15 +73,14 @@ fn field(text: &str, name: &str) -> Option<u64> {
 
 /// Whether a command whose run took `millis`, the cgroup counted `before` and `after` it, used
 /// about all its limit allows over a run of 10 seconds or more. A limit that changed during the
-/// run is judged by the larger of the two: when it changed can't be known, and a run that used
-/// only what the old limit allowed has no need of another growth.
+/// run is judged at the run's end, the larger, since a computer only grows while it is awake: a
+/// run that used only what the old limit allowed has no need of another growth.
 pub(crate) fn held(before: Option<Counted>, after: Option<Counted>, millis: u64) -> bool {
     let (Some(before), Some(after)) = (before, after) else {
         return false;
     };
-    let used = after.used_usec.saturating_sub(before.used_usec);
-    let allowed = before.allowed_usec(millis).max(after.allowed_usec(millis));
-    millis >= CPU_RUN_MILLIS && u128::from(used) * 100 >= allowed * HELD_PERCENT
+    let used = after.used.saturating_sub(before.used);
+    millis >= CPU_RUN_MILLIS && u128::from(used) * 100 >= after.allowed_usec(millis) * HELD_PERCENT
 }
 
 #[cfg(test)]
@@ -126,7 +123,7 @@ mod tests {
         );
     }
 
-    /// The numbers #1170's probe read at a quarter of a CPU over 12 seconds, whichever cgroup
+    /// Numbers of the sizes #1170 saw at a quarter of a CPU over 12 seconds, whichever cgroup
     /// took the time spent held: time held says nothing, and CPU used says it every time.
     #[test]
     fn time_spent_held_neither_makes_nor_breaks_a_run() {
@@ -136,7 +133,7 @@ mod tests {
         };
         assert!(
             held(at(0, 0), at(3_030_000, 3_521_786), 12_000),
-            "the run that failed on CI, its time held mostly in the Pod's cgroup"
+            "the time held counted on the run that failed on CI, too little for the old rule"
         );
         assert!(held(at(0, 0), at(3_054_000, 33_272_000), 12_000));
         assert!(
@@ -146,15 +143,11 @@ mod tests {
     }
 
     #[test]
-    fn a_limit_that_changes_during_a_run_is_judged_by_the_larger() {
+    fn a_limit_that_grows_during_a_run_is_judged_at_its_end() {
         // Half a CPU allows 6 seconds in 12, of which 90% is 5.4.
         let grew = |used| held(count(0, QUARTER), count(used, HALF), 12_000);
         assert!(!grew(3_000_000), "all the old limit allows, and no more");
         assert!(grew(5_400_000), "held at the new limit too");
-        assert!(
-            !held(count(0, HALF), count(3_000_000, QUARTER), 12_000),
-            "the same whichever way it changed"
-        );
     }
 
     #[test]
@@ -182,8 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn a_period_of_nothing_allows_nothing_and_does_not_divide_by_it() {
-        let zero = count(0, "25000 0\n");
-        assert!(zero.is_some_and(|counted| counted.allowed_usec(12_000) == 0));
+    fn a_period_of_nothing_counts_nothing() {
+        assert!(count(0, "25000 0\n").is_none());
     }
 }

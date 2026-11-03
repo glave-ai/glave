@@ -263,6 +263,7 @@ async fn outcome(
         )
         .await
         .map_err(|error| format!("{script}: {error:?}"))?;
+    eprintln!("{script}: {} ms", finished.millis);
     Ok((finished.ending, output.text(2_000)))
 }
 
