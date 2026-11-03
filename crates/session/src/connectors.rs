@@ -232,7 +232,7 @@ mod tests {
             ..Narrowed::default()
         };
         assert_eq!(listed(doc("cloudflare")), ["cloudflare-docs"]);
-        assert!(listed(doc("nobody")).is_empty());
+        assert_eq!(listed(doc("nobody")), Vec::<String>::new());
         let second = Narrowed {
             category: Some(ConnectorCategoryId::Everyday),
             tag: Some(ConnectorTagId::Notes),

@@ -469,14 +469,13 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
 }
 
 #[test]
-fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_disconnected() {
+fn the_catalog_s_connectors_say_their_company_categories_and_tags_and_are_listed_by_them() {
     block_on!(async {
         let token = LocalToken::new([7; 32]);
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let (tested, _) = fresh(&folder("conn-connectors")).await;
+        let (tested, _) = fresh(&folder("conn-connector-index")).await;
         let served = serve_with(tested, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
-
         let all = Request::ConnectorList {
             company: None,
             category: None,
@@ -484,18 +483,6 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
         };
         let listed = web.call(&all).await;
         let connectors = listed["result"]["connectors"].as_array().unwrap();
-        let ids: Vec<&str> = connectors
-            .iter()
-            .map(|it| it["id"].as_str().unwrap())
-            .collect();
-        assert_eq!(
-            ids,
-            ["linear", "deepwiki"],
-            "the catalog's order, only those offered"
-        );
-        assert_eq!(connectors[0]["name"], "Linear");
-        assert_eq!(connectors[0]["description"], "Issues, projects and cycles.");
-        assert_eq!(connectors[0]["status"], "available");
         assert_eq!(connectors[0]["company"], "linear");
         assert_eq!(connectors[0]["categories"], json!(["dev", "productivity"]));
         assert_eq!(
@@ -526,53 +513,67 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
             ])
         );
 
-        let company = Request::ConnectorList {
-            company: Some("cognition".into()),
+        let list = |company: Option<&str>, category, tag| Request::ConnectorList {
+            company: company.map(str::to_owned),
+            category,
+            tag,
+        };
+        let doc = Some(ConnectorTagId::Documentation);
+        let by_company = web.call(&list(Some("cognition"), None, None)).await;
+        assert_eq!(ids_of(&by_company), ["deepwiki"]);
+        let companies = by_company["result"]["companies"].as_array().unwrap();
+        assert_eq!(companies.len(), 1);
+        let productivity = Some(ConnectorCategoryId::Productivity);
+        let by_category = web.call(&list(None, productivity, None)).await;
+        assert_eq!(ids_of(&by_category), ["linear"]);
+        let by_tag = web.call(&list(None, None, doc)).await;
+        assert_eq!(ids_of(&by_tag), ["deepwiki"]);
+        let both = web.call(&list(Some("linear"), None, doc)).await;
+        assert_eq!(ids_of(&both), Vec::<&str>::new(), "all that are given");
+        served.close().await;
+    });
+}
+
+/// The ids of the connectors `listed` answers.
+fn ids_of(listed: &serde_json::Value) -> Vec<&str> {
+    let connectors = listed["result"]["connectors"].as_array().unwrap();
+    connectors
+        .iter()
+        .map(|it| it["id"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_disconnected() {
+    block_on!(async {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let (tested, _) = fresh(&folder("conn-connectors")).await;
+        let served = serve_with(tested, signin, None).await;
+        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
+
+        let all = Request::ConnectorList {
+            company: None,
             category: None,
             tag: None,
         };
-        let by_company = web.call(&company).await;
-        assert_eq!(by_company["result"]["connectors"][0]["id"], "deepwiki");
+        let listed = web.call(&all).await;
+        let connectors = listed["result"]["connectors"].as_array().unwrap();
+        let ids: Vec<&str> = connectors
+            .iter()
+            .map(|it| it["id"].as_str().unwrap())
+            .collect();
         assert_eq!(
-            by_company["result"]["connectors"].as_array().unwrap().len(),
-            1
+            ids,
+            ["linear", "deepwiki"],
+            "the catalog's order, only those offered"
         );
+        assert_eq!(connectors[0]["name"], "Linear");
+        assert_eq!(connectors[0]["description"], "Issues, projects and cycles.");
+        assert_eq!(connectors[0]["status"], "available");
         assert_eq!(
-            by_company["result"]["companies"].as_array().unwrap().len(),
-            1
-        );
-        let category = Request::ConnectorList {
-            company: None,
-            category: Some(ConnectorCategoryId::Productivity),
-            tag: None,
-        };
-        let by_category = web.call(&category).await;
-        assert_eq!(by_category["result"]["connectors"][0]["id"], "linear");
-        assert_eq!(
-            by_category["result"]["connectors"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
-        );
-        let tag = Request::ConnectorList {
-            company: None,
-            category: None,
-            tag: Some(ConnectorTagId::Documentation),
-        };
-        let by_tag = web.call(&tag).await;
-        assert_eq!(by_tag["result"]["connectors"][0]["id"], "deepwiki");
-        assert_eq!(by_tag["result"]["connectors"].as_array().unwrap().len(), 1);
-        let no_tag = Request::ConnectorList {
-            company: Some("linear".into()),
-            category: None,
-            tag: Some(ConnectorTagId::Documentation),
-        };
-        let none = web.call(&no_tag).await;
-        assert_eq!(
-            none["result"]["connectors"],
-            json!([]),
-            "all that are given"
+            listed["result"]["categories"][0],
+            json!({"id": "dev", "name": "Developer tools"})
         );
 
         let connect = |id: &str| Request::ConnectorConnect {
