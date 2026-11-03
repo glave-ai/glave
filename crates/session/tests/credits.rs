@@ -87,13 +87,13 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
         };
         assert!(info.exists.credits);
         let local = Caller::default();
-        let added = credits(&server, &local, add(1_000_000, "order-1"))
+        let added = credits(&server, &local, add(1_000_000_000, "order-1"))
             .await
             .unwrap();
         let account = added.account.unwrap();
         assert_eq!(account.balance, dollars(1_000_000_000));
         assert_eq!(account.limit, limit);
-        let again = credits(&server, &local, add(1_000_000, "order-1"))
+        let again = credits(&server, &local, add(1_000_000_000, "order-1"))
             .await
             .unwrap();
         assert_eq!(
@@ -109,7 +109,7 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
         assert_eq!(mine.people.len(), 1);
         assert!(mine.people[0].you && mine.people[0].spent == dollars(0));
         assert!(!mine.can_set_limit);
-        let refused = credits(&server, &ada, add(5, "order-2")).await.unwrap_err();
+        let refused = credits(&server, &ada, add(5_000, "order-2")).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert!(
             refused
@@ -151,8 +151,8 @@ fn credits_are_dollars_for_a_payment_named_into_an_organization_the_server_serve
         let local = Caller::default();
         for (wrong, expected) in [
             (add(0, "order-1"), code::INVALID_PARAMS),
-            (add(5, " "), code::INVALID_PARAMS),
-            (add(5, &"x".repeat(257)), code::INVALID_PARAMS),
+            (add(5_000, " "), code::INVALID_PARAMS),
+            (add(5_000, &"x".repeat(257)), code::INVALID_PARAMS),
             (
                 Request::CreditsAdd {
                     amount: dollars(5_000),
@@ -194,7 +194,7 @@ fn an_owner_of_another_organization_neither_sees_nor_adds_to_these_credits() {
         );
         let (theirs, _) = theirs.build_with_credits(&dir, log, limit).await;
         let local = Caller::default();
-        credits(&ours, &local, add(1_000_000, "order-1"))
+        credits(&ours, &local, add(1_000_000_000, "order-1"))
             .await
             .unwrap();
         let olga = signed_in("olga");
