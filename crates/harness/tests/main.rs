@@ -44,5 +44,6 @@ mod subagents;
 mod too_long;
 mod turn;
 mod untrusted;
+mod untrusted_after;
 mod workers;
 mod worktrees;

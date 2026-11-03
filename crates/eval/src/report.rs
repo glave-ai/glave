@@ -50,6 +50,15 @@ impl PerPassedTask {
     }
 }
 
+/// The sum over `attempts` of what `of` counts in each.
+fn total(attempts: &[&Attempt], of: fn(&Attempt) -> u32) -> String {
+    attempts
+        .iter()
+        .map(|a| u64::from(of(a)))
+        .sum::<u64>()
+        .to_string()
+}
+
 /// Passed and run attempts of one task on one model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Rate {
@@ -167,8 +176,8 @@ impl Report {
         line
     }
 
-    /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls,
-    /// median time.
+    /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls, asks,
+    /// blocked commands, median time.
     fn totals(&self, out: &mut String) {
         let per_model = |row: &Row| -> String {
             self.models
@@ -177,7 +186,7 @@ impl Report {
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 6] = [
+        let rows: [(&str, &Row); 8] = [
             ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
             ("per passed task", &|a| per_task(PerPassedTask::of(a))),
             ("cost", &|a| dollars(spent(a))),
@@ -188,6 +197,8 @@ impl Report {
                     .sum::<u64>()
                     .to_string()
             }),
+            ("asks", &|a| total(a, |a| a.asks)),
+            ("blocked commands", &|a| total(a, |a| a.blocked)),
             ("median time", &|a| median_seconds(a)),
         ];
         for (name, row) in rows {
