@@ -81,7 +81,7 @@ pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
 pub use awake::{KeepAwake, Unawake};
 pub use connections::{Connecting, Connections, Returned, Searching};
-pub use connectors::{Auth, Catalog, CatalogError, Category, Connector};
+pub use connectors::{Catalog, CatalogError, Connector};
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use filters::PersonFilters;

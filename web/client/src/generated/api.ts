@@ -154,8 +154,21 @@ export type ConnectionStatus = "signed_in" | "asks_more" | "expired" | "signed_o
 
 /** A category of connectors. */
 export type ConnectorCategory = {
-  readonly id: string;
+  readonly id: ConnectorCategoryId;
   /** Its name, in the caller's language. */
+  readonly name: string;
+};
+
+/** What kind of thing a connector is for. A connector has one or more. */
+export type ConnectorCategoryId = "dev" | "cloud" | "data" | "productivity" | "business" | "design" | "everyday";
+
+/** A company that runs connectors: one vendor can run several. */
+export type ConnectorCompany = {
+  /** Its website. */
+  readonly homepage: string;
+  /** Stable: what `connector/list` narrows by. */
+  readonly id: string;
+  /** Its name, never translated: `Cloudflare`. */
   readonly name: string;
 };
 
@@ -164,8 +177,13 @@ export type ConnectorCategory = {
  * an official remote MCP server, hosted by its vendor.
  */
 export type ConnectorInfo = {
-  /** Its category's id, one of the list's `categories`. */
-  readonly category: string;
+  /**
+   * Its categories, each one of the list's `categories`. The first is its home, where a
+   * client that shows it once puts it.
+   */
+  readonly categories: readonly (ConnectorCategoryId)[];
+  /** Its company's id, one of the list's `companies`. */
+  readonly company: string;
   /** What it reaches, in the caller's language. */
   readonly description: string;
   /** The vendor's own page about it. */
@@ -177,13 +195,33 @@ export type ConnectorInfo = {
   readonly id: string;
   /** The vendor's name for it, never translated: `Linear`. */
   readonly name: string;
+  readonly returns: ConnectorReturns;
+  readonly sign_in: ConnectorSignIn;
   readonly status: ConnectorStatus;
+  /** Its tags, each one of the list's `tags`. */
+  readonly tags: readonly (ConnectorTagId)[];
   /** Its server's address. */
   readonly url: string;
 };
 
+/** What a connector's tools hand back, as its vendor's docs say. */
+export type ConnectorReturns = "text" | "files" | "unknown";
+
+/** How a connector is signed in to. */
+export type ConnectorSignIn = "none" | "dcr";
+
 /** Whether a connector is connected. */
 export type ConnectorStatus = "available" | "connected" | "sign_in_again";
+
+/** A tag of connectors. */
+export type ConnectorTag = {
+  readonly id: ConnectorTagId;
+  /** Its name, in the caller's language. */
+  readonly name: string;
+};
+
+/** What a connector works with, finer than its categories. A connector has one or more. */
+export type ConnectorTagId = "ai-media" | "ai-models" | "analytics" | "api-testing" | "automation" | "ci-cd" | "code-hosting" | "company-formation" | "compliance" | "content-management" | "crm" | "customer-support" | "databases" | "design" | "documentation" | "domains" | "email" | "feature-flags" | "files" | "finance" | "forms" | "hosting" | "identity" | "issues" | "knowledge" | "marketing" | "media-library" | "meetings" | "monitoring" | "notes" | "payments" | "presentations" | "project-management" | "scheduling" | "security" | "site-search" | "to-do-lists" | "web-scraping" | "web-search" | "websites" | "whiteboards";
 
 /**
  * How full a thread's context is: what its conversation last sent and got back, of the window
@@ -1631,12 +1669,21 @@ export type ConnectorDisconnectParams = {
 
 export type ConnectorDisconnectResult = Readonly<Record<string, never>>;
 
-export type ConnectorListParams = Readonly<Record<string, never>>;
+export type ConnectorListParams = {
+  readonly category?: ConnectorCategoryId | null;
+  readonly company?: string | null;
+  readonly tag?: ConnectorTagId | null;
+};
 
-/** glave's connectors the caller may connect, and their categories. */
+/**
+ * glave's connectors the caller may connect, and the companies, categories and tags they
+ * have.
+ */
 export type ConnectorListResult = {
   readonly categories: readonly (ConnectorCategory)[];
+  readonly companies: readonly (ConnectorCompany)[];
   readonly connectors: readonly (ConnectorInfo)[];
+  readonly tags: readonly (ConnectorTag)[];
 };
 
 export type CredentialConnectParams = {

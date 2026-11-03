@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
 use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, Reply, Request, SearchInfo,
-    SignInLink, code,
+    ApiError, ConnectionInfo, ConnectionStatus, ConnectorCategoryId, ConnectorStatus,
+    ConnectorTagId, Reply, Request, SearchInfo, SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, Connecting, Connections, Returned, Searching};
@@ -469,6 +469,85 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
 }
 
 #[test]
+fn the_catalog_s_connectors_say_their_company_categories_and_tags_and_are_listed_by_them() {
+    block_on!(async {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let (tested, _) = fresh(&folder("conn-connector-index")).await;
+        let served = serve_with(tested, signin, None).await;
+        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
+        let listed = web.call(&all_connectors()).await;
+        let connectors = listed["result"]["connectors"].as_array().unwrap();
+        assert_eq!(connectors[0]["company"], "linear");
+        assert_eq!(connectors[0]["categories"], json!(["dev", "productivity"]));
+        assert_eq!(
+            connectors[0]["tags"],
+            json!(["issues", "project-management"])
+        );
+        assert_eq!(connectors[0]["returns"], "text");
+        assert_eq!(connectors[0]["sign_in"], "dcr");
+        assert_eq!(connectors[1]["sign_in"], "none");
+        assert_eq!(connectors[1]["company"], "cognition");
+        assert_eq!(
+            listed["result"]["companies"][0],
+            json!({"id": "cognition", "name": "Cognition", "homepage": "https://cognition.ai"})
+        );
+        assert_eq!(
+            listed["result"]["categories"],
+            json!([
+                {"id": "dev", "name": "Developer tools"},
+                {"id": "productivity", "name": "Productivity"},
+            ])
+        );
+        assert_eq!(
+            listed["result"]["tags"],
+            json!([
+                {"id": "documentation", "name": "Documentation"},
+                {"id": "issues", "name": "Issues and bugs"},
+                {"id": "project-management", "name": "Project management"},
+            ])
+        );
+
+        let list = |company: Option<&str>, category, tag| Request::ConnectorList {
+            company: company.map(str::to_owned),
+            category,
+            tag,
+        };
+        let doc = Some(ConnectorTagId::Documentation);
+        let by_company = web.call(&list(Some("cognition"), None, None)).await;
+        assert_eq!(ids_of(&by_company), ["deepwiki"]);
+        let companies = by_company["result"]["companies"].as_array().unwrap();
+        assert_eq!(companies.len(), 1);
+        let productivity = Some(ConnectorCategoryId::Productivity);
+        let by_category = web.call(&list(None, productivity, None)).await;
+        assert_eq!(ids_of(&by_category), ["linear"]);
+        let by_tag = web.call(&list(None, None, doc)).await;
+        assert_eq!(ids_of(&by_tag), ["deepwiki"]);
+        let both = web.call(&list(Some("linear"), None, doc)).await;
+        assert_eq!(ids_of(&both), Vec::<&str>::new(), "all that are given");
+        served.close().await;
+    });
+}
+
+/// A request for every connector offered.
+fn all_connectors() -> Request {
+    Request::ConnectorList {
+        company: None,
+        category: None,
+        tag: None,
+    }
+}
+
+/// The ids of the connectors `listed` answers.
+fn ids_of(listed: &serde_json::Value) -> Vec<&str> {
+    let connectors = listed["result"]["connectors"].as_array().unwrap();
+    connectors
+        .iter()
+        .map(|it| it["id"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
 fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_disconnected() {
     block_on!(async {
         let token = LocalToken::new([7; 32]);
@@ -477,24 +556,19 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
         let served = serve_with(tested, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
 
-        let listed = web.call(&Request::ConnectorList {}).await;
+        let listed = web.call(&all_connectors()).await;
         let connectors = listed["result"]["connectors"].as_array().unwrap();
-        let ids: Vec<&str> = connectors
-            .iter()
-            .map(|it| it["id"].as_str().unwrap())
-            .collect();
         assert_eq!(
-            ids,
+            ids_of(&listed),
             ["linear", "deepwiki"],
             "the catalog's order, only those offered"
         );
         assert_eq!(connectors[0]["name"], "Linear");
         assert_eq!(connectors[0]["description"], "Issues, projects and cycles.");
         assert_eq!(connectors[0]["status"], "available");
-        let categories = &listed["result"]["categories"];
         assert_eq!(
-            categories,
-            &json!([{"id": "dev", "name": "Developer tools"}])
+            listed["result"]["categories"][0],
+            json!({"id": "dev", "name": "Developer tools"})
         );
 
         let connect = |id: &str| Request::ConnectorConnect {
@@ -511,7 +585,7 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
         assert_eq!(unknown["error"]["code"], code::NO_SERVER, "{unknown}");
 
         let mut reading = Web::new(&served, Some(token.reveal().to_owned())).reading("en-XA");
-        let accented = reading.call(&Request::ConnectorList {}).await;
+        let accented = reading.call(&all_connectors()).await;
         let deepwiki = &accented["result"]["connectors"][1];
         assert_eq!(
             deepwiki["name"], "DeepWiki",
@@ -524,6 +598,10 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
             .as_str()
             .unwrap();
         assert!(category.starts_with("[Ðéṽéļöþéŕ"), "{category}");
+        let tag = accented["result"]["tags"][0]["name"].as_str().unwrap();
+        assert!(tag.starts_with("[Ðöçûɱéñţåţîöñ"), "{tag}");
+        let company = &accented["result"]["companies"][0];
+        assert_eq!(company["name"], "Cognition", "nor is a company's");
 
         let disconnect = Request::ConnectorDisconnect {
             connector: "deepwiki".into(),

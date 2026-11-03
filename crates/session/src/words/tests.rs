@@ -697,40 +697,71 @@ fn what_a_skill_has_cut_is_said_in_the_readers_language() {
     assert_eq!(data["adds"]["text"], "# Tidy", "the skill's own words");
 }
 
+/// The catalog's messages, each with its id and its English: each connector's description and
+/// each category's and tag's name. A vendor's name has none.
+fn catalog_messages() -> Vec<(String, Told, String)> {
+    let catalog = crate::connectors::Catalog::built_in().unwrap();
+    let mut messages = Vec::new();
+    for connector in &catalog.connectors {
+        let id = format!("connector-{}", connector.id);
+        messages.push((id, connector.told(), connector.description.clone()));
+    }
+    let categories = crate::protocol::ConnectorCategoryId::ALL.iter();
+    let tags = crate::protocol::ConnectorTagId::ALL.iter();
+    let names = categories
+        .map(|it| it.told())
+        .chain(tags.map(|it| it.told()));
+    for name in names {
+        let english = name.to_string();
+        let id = name.message_id().unwrap().to_owned();
+        messages.push((id, name, english));
+    }
+    messages
+}
+
+/// Why `told`, whose English is `english`, is not one message translated: `None` when it is.
+fn untranslated(mut told: Told, english: &str) -> Option<String> {
+    if !told.translatable() {
+        return Some("it is no message".to_owned());
+    }
+    if &*told != english {
+        return Some(format!("it reads {told}"));
+    }
+    if english.trim().is_empty() {
+        return Some("it has no words".to_owned());
+    }
+    if english.contains(['{', '}']) {
+        return Some("it names a value".to_owned());
+    }
+    told.translate(Language::English);
+    if &*told != english {
+        return Some(format!("Fluent writes it as {told}"));
+    }
+    told.translate(Language::Accented);
+    (!told.starts_with('[')).then(|| format!("it is not written again: {told}"))
+}
+
 #[test]
-fn every_message_of_the_catalog_of_connectors_is_one_fluent_message_with_no_values() {
+fn every_entry_of_the_catalog_of_connectors_has_a_message_translated_with_no_values() {
     let mut ids: BTreeSet<String> = Sentence::ALL
         .iter()
         .map(|(id, _, _)| (*id).to_owned())
         .collect();
-    let catalog = crate::connectors::Catalog::built_in().unwrap();
-    let told = catalog.categories.iter().map(|it| (it.told(), &it.name));
-    let told = told.chain(
-        catalog
-            .connectors
-            .iter()
-            .map(|it| (it.told(), &it.description)),
-    );
-    for (mut told, english) in told {
-        assert!(told.translatable());
-        assert_eq!(&*told, english.as_str());
-        told.translate(Language::English);
-        assert_eq!(&*told, english.as_str(), "written by Fluent as it reads");
-        assert!(!english.contains(['{', '}']), "{english} names no value");
-        told.translate(Language::Accented);
-        assert!(told.starts_with('['), "{english} is written again: {told}");
-    }
-    let messages = catalog
-        .categories
-        .iter()
-        .map(|it| format!("connector-category-{}", it.id));
-    let messages = messages.chain(
-        catalog
-            .connectors
-            .iter()
-            .map(|it| format!("connector-{}", it.id)),
-    );
-    for id in messages {
+    for (id, told, english) in catalog_messages() {
+        let why = untranslated(told, &english);
+        assert!(why.is_none(), "{id} lacks a translation: {why:?}");
         assert!(ids.insert(id.clone()), "{id} is in a table twice");
     }
+}
+
+#[test]
+fn an_entry_of_the_catalog_with_no_message_is_caught() {
+    let ok = Told::catalogued("connector-x".into(), "X.".into());
+    assert_eq!(untranslated(ok, "X."), None);
+    let plain = Told::from("X.".to_owned());
+    assert!(untranslated(plain, "X.").is_some(), "not a message");
+    let empty = Told::catalogued("connector-x".into(), String::new());
+    assert!(untranslated(empty, "").is_some(), "no words");
+    let value = Told::catalogued("connector-x".into(), "{ $x }".into());
+    assert!(untranslated(value, "{ $x }").is_some(), "a value");
 }

@@ -8,10 +8,10 @@
 use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::connectors::Catalog;
+use crate::connectors::{Catalog, Narrowed};
 use crate::protocol::{
-    ApiError, ConnectionInfo, ConnectorInfo, ConnectorStatus, Reply, SearchInfo, SignInLink, Told,
-    code,
+    ApiError, ConnectionInfo, ConnectorCategory, ConnectorCategoryId, ConnectorInfo,
+    ConnectorStatus, ConnectorTag, ConnectorTagId, Reply, SearchInfo, SignInLink, Told, code,
 };
 use crate::providers::theirs;
 use crate::server::Server;
@@ -172,28 +172,48 @@ where
         }
     }
 
-    /// Answers `connector/list`: the catalog's connectors the host offers, in its order, and
-    /// the categories they are in.
-    pub(crate) async fn list_connectors(&self, caller: &Caller) -> Result<Reply, ApiError> {
+    /// Answers `connector/list`: the catalog's connectors the host offers that have what the
+    /// caller narrowed by, in its order, and the companies, categories and tags they have.
+    pub(crate) async fn list_connectors(
+        &self,
+        caller: &Caller,
+        narrowed: &Narrowed,
+    ) -> Result<Reply, ApiError> {
         let offered = self.connections_for(caller)?.connectors().await?;
         let catalog = built_in()?;
         let status = |id: &str| offered.iter().find(|(it, _)| it == id).map(|(_, it)| *it);
         let connectors: Vec<ConnectorInfo> = catalog
             .connectors
             .iter()
+            .filter(|connector| narrowed.has(connector))
             .filter_map(|connector| Some(info(connector, status(&connector.id)?)))
             .collect();
-        let categories = catalog
-            .categories
+        let companies = catalog
+            .companies
             .iter()
-            .filter(|category| connectors.iter().any(|it| it.category == category.id))
-            .map(|category| crate::protocol::ConnectorCategory {
-                id: category.id.clone(),
-                name: category.told(),
+            .filter(|company| connectors.iter().any(|it| it.company == company.id))
+            .cloned()
+            .collect();
+        let categories = ConnectorCategoryId::ALL
+            .iter()
+            .filter(|id| connectors.iter().any(|it| it.categories.contains(id)))
+            .map(|id| ConnectorCategory {
+                id: *id,
+                name: id.told(),
+            })
+            .collect();
+        let tags = ConnectorTagId::ALL
+            .iter()
+            .filter(|id| connectors.iter().any(|it| it.tags.contains(id)))
+            .map(|id| ConnectorTag {
+                id: *id,
+                name: id.told(),
             })
             .collect();
         Ok(Reply::Connectors {
+            companies,
             categories,
+            tags,
             connectors,
         })
     }
@@ -324,8 +344,12 @@ fn info(connector: &crate::connectors::Connector, status: ConnectorStatus) -> Co
     ConnectorInfo {
         id: connector.id.clone(),
         name: connector.name.clone(),
+        company: connector.company.clone(),
         url: connector.url.clone(),
-        category: connector.category.clone(),
+        categories: connector.categories.clone(),
+        tags: connector.tags.clone(),
+        returns: connector.returns,
+        sign_in: connector.sign_in,
         description: connector.told(),
         docs: connector.docs.clone(),
         status,

@@ -10,12 +10,24 @@ import { ConnectorsComponent } from './connectors.component';
 function connector(
   id: string,
   name: string,
-  category: string,
+  home: ConnectorInfo['categories'][number],
   description: string,
   status: ConnectorInfo['status'] = 'available',
 ): ConnectorInfo {
   const url = `https://mcp.${id}.example.com/mcp`;
-  return { id, name, url, category, description, docs: url, status };
+  return {
+    id,
+    name,
+    company: id,
+    url,
+    categories: [home],
+    tags: ['issues'],
+    returns: 'text',
+    sign_in: 'dcr',
+    description,
+    docs: url,
+    status,
+  };
 }
 
 const CATEGORIES = [

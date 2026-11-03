@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::PoisonError;
 
 use glave_mcp::address;
-use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorStatus, code};
-use glave_session::{Auth, Catalog, Connecting, Connector};
+use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorSignIn, ConnectorStatus, code};
+use glave_session::{Catalog, Connecting, Connector};
 
 use super::{Connected, Remote, described};
 use crate::mcp::Offered;
@@ -39,17 +39,17 @@ impl Connected {
                 let connected = accounts.connectors.contains(&connector.id);
                 let url = address(&connector.url).unwrap_or_default();
                 let sign_in = accounts.connections.iter().find(|it| it.url == url);
-                let status = match (connected, connector.auth, sign_in) {
+                let status = match (connected, connector.sign_in, sign_in) {
                     (false, _, _) => ConnectorStatus::Available,
-                    (true, Auth::None, _) => ConnectorStatus::Connected,
-                    (true, Auth::Dcr, Some(sign_in)) => {
+                    (true, ConnectorSignIn::None, _) => ConnectorStatus::Connected,
+                    (true, ConnectorSignIn::Dcr, Some(sign_in)) => {
                         let more = self.more.of(&url).is_some();
                         match described(sign_in, &none, more).status {
                             ConnectionStatus::SignedIn => ConnectorStatus::Connected,
                             _ => ConnectorStatus::SignInAgain,
                         }
                     }
-                    (true, Auth::Dcr, None) => ConnectorStatus::SignInAgain,
+                    (true, ConnectorSignIn::Dcr, None) => ConnectorStatus::SignInAgain,
                 };
                 (connector.id.clone(), status)
             })
@@ -68,12 +68,12 @@ impl Connected {
             .connector(&id)
             .filter(|_| self.offers(&id))
             .ok_or_else(|| unknown(&id))?;
-        match connector.auth {
-            Auth::None => {
+        match connector.sign_in {
+            ConnectorSignIn::None => {
                 self.ledger.keep_connector(&id, None).await?;
                 Ok(Connecting::Connected)
             }
-            Auth::Dcr => {
+            ConnectorSignIn::Dcr => {
                 let Some(redirect) = redirect else {
                     return Ok(Connecting::NoWayBack);
                 };
