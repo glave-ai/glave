@@ -402,4 +402,33 @@ mod tests {
         assert_eq!(argument("Q1 sales"), "'Q1 sales'");
         assert_eq!(argument("it's"), "'it'\\''s'");
     }
+
+    /// An old-style workbook's container (OLE2) whose chain of sectors leads back to itself, the
+    /// kind of file RUSTSEC-2026-0436 describes.
+    fn endless_container() -> Vec<u8> {
+        let mut bytes = vec![0xFF; 1024];
+        let put = |bytes: &mut [u8], at: usize, value: &[u8]| {
+            for (to, from) in bytes.iter_mut().skip(at).zip(value) {
+                *to = *from;
+            }
+        };
+        put(&mut bytes, 0, b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
+        put(&mut bytes, 8, &[0; 16]);
+        put(&mut bytes, 24, &[0x3E, 0, 3, 0, 0xFE, 0xFF, 9, 0, 6, 0]);
+        put(&mut bytes, 34, &[0; 10]);
+        put(&mut bytes, 44, &1_u32.to_le_bytes());
+        put(&mut bytes, 48, &0_u32.to_le_bytes());
+        put(&mut bytes, 52, &0_u32.to_le_bytes());
+        put(&mut bytes, 56, &4096_u32.to_le_bytes());
+        put(&mut bytes, 68, &0_u32.to_le_bytes());
+        put(&mut bytes, 72, &1_u32.to_le_bytes());
+        put(&mut bytes, 1020, &0_u32.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn a_malformed_old_workbook_is_refused_not_a_crash() {
+        let refused = open(endless_container());
+        assert!(matches!(refused, Err(OfficeError::NotAWorkbook(_))));
+    }
 }
