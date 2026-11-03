@@ -476,12 +476,7 @@ fn the_catalog_s_connectors_say_their_company_categories_and_tags_and_are_listed
         let (tested, _) = fresh(&folder("conn-connector-index")).await;
         let served = serve_with(tested, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
-        let all = Request::ConnectorList {
-            company: None,
-            category: None,
-            tag: None,
-        };
-        let listed = web.call(&all).await;
+        let listed = web.call(&all_connectors()).await;
         let connectors = listed["result"]["connectors"].as_array().unwrap();
         assert_eq!(connectors[0]["company"], "linear");
         assert_eq!(connectors[0]["categories"], json!(["dev", "productivity"]));
@@ -534,6 +529,15 @@ fn the_catalog_s_connectors_say_their_company_categories_and_tags_and_are_listed
     });
 }
 
+/// A request for every connector offered.
+fn all_connectors() -> Request {
+    Request::ConnectorList {
+        company: None,
+        category: None,
+        tag: None,
+    }
+}
+
 /// The ids of the connectors `listed` answers.
 fn ids_of(listed: &serde_json::Value) -> Vec<&str> {
     let connectors = listed["result"]["connectors"].as_array().unwrap();
@@ -552,19 +556,10 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
         let served = serve_with(tested, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
 
-        let all = Request::ConnectorList {
-            company: None,
-            category: None,
-            tag: None,
-        };
-        let listed = web.call(&all).await;
+        let listed = web.call(&all_connectors()).await;
         let connectors = listed["result"]["connectors"].as_array().unwrap();
-        let ids: Vec<&str> = connectors
-            .iter()
-            .map(|it| it["id"].as_str().unwrap())
-            .collect();
         assert_eq!(
-            ids,
+            ids_of(&listed),
             ["linear", "deepwiki"],
             "the catalog's order, only those offered"
         );
@@ -590,7 +585,7 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
         assert_eq!(unknown["error"]["code"], code::NO_SERVER, "{unknown}");
 
         let mut reading = Web::new(&served, Some(token.reveal().to_owned())).reading("en-XA");
-        let accented = reading.call(&all).await;
+        let accented = reading.call(&all_connectors()).await;
         let deepwiki = &accented["result"]["connectors"][1];
         assert_eq!(
             deepwiki["name"], "DeepWiki",
