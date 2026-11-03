@@ -1,4 +1,4 @@
-use glave_event::{MaxPrice, Sort};
+use glave_event::{MaxPrice, Nanos, Sort};
 
 use super::*;
 
@@ -22,8 +22,8 @@ fn endpoint(slug: &str, quantization: &str, zdr: bool) -> CatalogEndpoint {
         context: None,
         max_output: None,
         price: Some(TokenPrice {
-            input: 100_000,
-            output: 400_000,
+            input: Nanos::new(100_000_000),
+            output: Nanos::new(400_000_000),
             cache_read: None,
         }),
         zdr,
@@ -206,7 +206,7 @@ fn precision_keeping_nothing_price_and_avoiding_go_as_the_router_takes_them() {
         precision: Some(Precision::EightBit),
         keeps_nothing: true,
         max_price: Some(MaxPrice {
-            input: Some(100_000),
+            input: Some(Nanos::new(100_000_000)),
             output: None,
         }),
         avoid: vec!["nebius".into()],
@@ -224,7 +224,7 @@ fn precision_keeping_nothing_price_and_avoiding_go_as_the_router_takes_them() {
     assert!(asked.zdr);
     let dearer = Filters {
         max_price: Some(MaxPrice {
-            input: Some(99_999),
+            input: Some(Nanos::new(99_999_000)),
             output: None,
         }),
         ..Filters::default()
@@ -284,7 +284,7 @@ fn each_filter_that_hides_a_provider_is_named() {
         keeps_nothing: true,
         max_price: Some(MaxPrice {
             input: None,
-            output: Some(1),
+            output: Some(Nanos::new(1_000)),
         }),
         avoid: vec!["deepseek".into()],
         ..Filters::default()

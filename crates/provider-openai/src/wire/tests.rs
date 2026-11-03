@@ -1,7 +1,7 @@
 //! The wire format's shape, checked as JSON.
 
 use super::*;
-use glave_event::{CallId, MaxPrice};
+use glave_event::{CallId, MaxPrice, Nanos};
 use glave_ports::ToolCall;
 use serde_json::json;
 
@@ -277,8 +277,8 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         sort: Some(Sort::Speed),
         zdr: true,
         max_price: Some(MaxPrice {
-            input: Some(150_000),
-            output: Some(2_000_000),
+            input: Some(Nanos::new(150_000_000)),
+            output: Some(Nanos::new(2_000_000_000)),
         }),
     };
     let request = ModelRequest {

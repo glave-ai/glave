@@ -4,7 +4,7 @@
 //! spending, anyone else their own; only an Owner sets the monthly limit; and an Owner of
 //! another organization neither sees nor adds to these credits.
 
-use glave_event::{Auth, AuthMethod, Currency, Money, OrgRole, PrincipalId};
+use glave_event::{Auth, AuthMethod, Currency, Money, Nanos, OrgRole, PrincipalId};
 use glave_ports::{Caller, OrgId};
 use glave_session::protocol::{ApiError, CreditsInfo, Reply, Request, code};
 use glave_session::signin::person;
@@ -13,9 +13,9 @@ use crate::support::*;
 
 const ISSUER: &str = "https://id.example.com";
 
-fn dollars(micros: i64) -> Money {
+fn dollars(nanos: i64) -> Money {
     Money {
-        micros,
+        nanos: Nanos::new(nanos),
         currency: Currency::USD,
     }
 }
@@ -49,9 +49,9 @@ async fn credits(
     }
 }
 
-fn add(micros: i64, reference: &str) -> Request {
+fn add(nanos: i64, reference: &str) -> Request {
     Request::CreditsAdd {
-        amount: dollars(micros),
+        amount: dollars(nanos),
         reference: reference.into(),
         organization: None,
     }
@@ -78,7 +78,7 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
     block_on!(async {
         let mut setup = Setup::new(Vec::new());
         setup.identity_provider = true;
-        let limit = Some(dollars(10_000_000));
+        let limit = Some(dollars(10_000_000_000));
         let (server, _) = setup
             .build_with_credits(&dir, Shared::default(), limit)
             .await;
@@ -91,14 +91,14 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
             .await
             .unwrap();
         let account = added.account.unwrap();
-        assert_eq!(account.balance, dollars(1_000_000));
+        assert_eq!(account.balance, dollars(1_000_000_000));
         assert_eq!(account.limit, limit);
         let again = credits(&server, &local, add(1_000_000, "order-1"))
             .await
             .unwrap();
         assert_eq!(
             again.account.unwrap().balance,
-            dollars(1_000_000),
+            dollars(1_000_000_000),
             "once a payment"
         );
         let (ada, alan) = (signed_in("ada"), signed_in("alan"));
@@ -128,16 +128,16 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
         let admin = credits(&server, &alan, Request::CreditsGet {})
             .await
             .unwrap();
-        assert_eq!(admin.account.unwrap().balance, dollars(1_000_000));
+        assert_eq!(admin.account.unwrap().balance, dollars(1_000_000_000));
         assert!(!admin.can_set_limit);
         let raise = Request::CreditsLimit {
-            limit: dollars(25_000_000),
+            limit: dollars(25_000_000_000),
         };
         let refused = credits(&server, &alan, raise.clone()).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert!(refused.message.to_string().contains("only an owner"));
         let raised = credits(&server, &local, raise).await.unwrap();
-        assert_eq!(raised.account.unwrap().limit, Some(dollars(25_000_000)));
+        assert_eq!(raised.account.unwrap().limit, Some(dollars(25_000_000_000)));
     });
 }
 
@@ -155,7 +155,7 @@ fn credits_are_dollars_for_a_payment_named_into_an_organization_the_server_serve
             (add(5, &"x".repeat(257)), code::INVALID_PARAMS),
             (
                 Request::CreditsAdd {
-                    amount: dollars(5),
+                    amount: dollars(5_000),
                     reference: "order-1".into(),
                     organization: Some(OrgId::from_uuid(uuid::Uuid::from_u128(99))),
                 },
@@ -167,7 +167,7 @@ fn credits_are_dollars_for_a_payment_named_into_an_organization_the_server_serve
         }
         let euros = Request::CreditsLimit {
             limit: Money {
-                micros: 5,
+                nanos: Nanos::new(5_000),
                 currency: Currency::new("EUR").unwrap(),
             },
         };
@@ -181,7 +181,7 @@ fn an_owner_of_another_organization_neither_sees_nor_adds_to_these_credits() {
     let dir = folder("credits-orgs");
     block_on!(async {
         let log = Shared::default();
-        let limit = Some(dollars(10_000_000));
+        let limit = Some(dollars(10_000_000_000));
         let mut ours = Setup::new(Vec::new());
         ours.identity_provider = true;
         let (ours, _) = ours.build_with_credits(&dir, log.clone(), limit).await;
@@ -211,7 +211,7 @@ fn an_owner_of_another_organization_neither_sees_nor_adds_to_these_credits() {
             .unwrap();
         assert_eq!(seen.account.unwrap().balance, dollars(0), "their own alone");
         let into_ours = Request::CreditsAdd {
-            amount: dollars(5),
+            amount: dollars(5_000),
             reference: "order-2".into(),
             organization: Some(scope().org()),
         };
@@ -219,21 +219,21 @@ fn an_owner_of_another_organization_neither_sees_nor_adds_to_these_credits() {
         assert_eq!(refused.code, code::NOT_ALLOWED);
         // Whoever runs the server adds to the other organization by its id.
         let into_theirs = Request::CreditsAdd {
-            amount: dollars(5_000_000),
+            amount: dollars(5_000_000_000),
             reference: "order-3".into(),
             organization: Some(theirs_org()),
         };
         let added = credits(&ours, &local, into_theirs).await.unwrap();
-        assert_eq!(added.account.unwrap().balance, dollars(5_000_000));
+        assert_eq!(added.account.unwrap().balance, dollars(5_000_000_000));
         assert!(!added.can_set_limit, "its limit is its Owner's to set");
         let seen = credits(&theirs, &olga, Request::CreditsGet {})
             .await
             .unwrap();
-        assert_eq!(seen.account.unwrap().balance, dollars(5_000_000));
+        assert_eq!(seen.account.unwrap().balance, dollars(5_000_000_000));
         let ours_now = credits(&ours, &local, Request::CreditsGet {})
             .await
             .unwrap();
-        assert_eq!(ours_now.account.unwrap().balance, dollars(1_000_000));
+        assert_eq!(ours_now.account.unwrap().balance, dollars(1_000_000_000));
     });
 }
 

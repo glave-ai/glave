@@ -2,9 +2,10 @@ import { formatDuration, formatMoney, formatTokens, initials } from './format';
 
 describe('format', () => {
   it('shows money exactly enough', () => {
-    expect(formatMoney({ micros: 4200, currency: 'USD' }, 'en-US')).toBe('$0.0042');
-    expect(formatMoney({ micros: 1_250_000, currency: 'USD' }, 'en-US')).toBe('$1.25');
-    expect(formatMoney({ micros: 0, currency: 'EUR' }, 'en-US')).toBe('€0.00');
+    expect(formatMoney({ nanos: 4_200_000, currency: 'USD' }, 'en-US')).toBe('$0.0042');
+    expect(formatMoney({ nanos: 1_250_000_000, currency: 'USD' }, 'en-US')).toBe('$1.25');
+    expect(formatMoney({ nanos: 0, currency: 'EUR' }, 'en-US')).toBe('€0.00');
+    expect(formatMoney({ nanos: 400, currency: 'USD' }, 'en-US')).toBe('$0.0000004');
   });
 
   it('shortens token counts', () => {

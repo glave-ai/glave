@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{Filters, Hides, MaxPrice, Precision, RawEvent, Serve, Sort, TokenPrice};
+use glave_event::{Filters, Hides, MaxPrice, Nanos, Precision, RawEvent, Serve, Sort, TokenPrice};
 use glave_gateway::Filtering;
 use glave_ports::{Caller, EventLog, Failure, Payer, ProjectKind, ProviderError, Scope};
 use glave_session::PersonFilters;
@@ -36,8 +36,8 @@ fn endpoint(slug: &str, home: &str) -> EndpointInfo {
         context: None,
         max_output: None,
         price: Some(TokenPrice {
-            input: 100_000,
-            output: 400_000,
+            input: Nanos::new(100_000_000),
+            output: Nanos::new(400_000_000),
             cache_read: None,
         }),
         keeps_nothing: false,
@@ -135,6 +135,16 @@ fn a_place_that_is_not_a_country_a_provider_that_is_not_a_slug_or_no_price_is_re
                     ..Filters::default()
                 },
                 "a price limit says what input, output or both may cost at most",
+            ),
+            (
+                Filters {
+                    max_price: Some(MaxPrice {
+                        input: Some(Nanos::new(-1)),
+                        output: None,
+                    }),
+                    ..Filters::default()
+                },
+                "a price limit is nothing or more",
             ),
         ] {
             let Err(refused) = server

@@ -4,7 +4,7 @@
 //! and budget are their own; every call is recorded in the caller's stream; and the gateway's
 //! key never reaches a caller.
 
-use glave_event::{Body, Currency, Money, StopReason};
+use glave_event::{Body, Currency, Money, Nanos, StopReason};
 use glave_gateway::Budgets;
 use glave_ports::testing::any_secret;
 use glave_ports::{Delta, Failure, Message, ModelProvider, ModelRequest, ProviderError};
@@ -244,7 +244,7 @@ fn each_caller_has_their_own_budget_and_a_restart_does_not_reset_it() {
         // At the main target's price, a millionth of a dollar a token.
         let budgets = Budgets {
             person: Some(Money {
-                micros: 120,
+                nanos: Nanos::new(120_000),
                 currency: Currency::USD,
             }),
         };

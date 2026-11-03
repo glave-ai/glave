@@ -1,11 +1,13 @@
 //! What one organization's credits ledger says, as far as it was read; the charges this server
 //! made that the store does not have yet, counted already; and what calls running hold against
-//! it now. Amounts are millionths of a US dollar; anything in another currency is no part of
-//! it.
+//! it now. Amounts are billionths of a US dollar, kept exact: rounding to cents is for showing
+//! them, never here. Anything in another currency is no part of it.
 
 use std::collections::BTreeMap;
 
-use glave_event::{At, Body, CreditsCharged, Currency, EventId, Money, PrincipalId, RawEvent};
+use glave_event::{
+    At, Body, CreditsCharged, Currency, EventId, Money, Nanos, PrincipalId, RawEvent,
+};
 use glave_ports::Unpaid;
 use glave_ports::stream::in_order;
 use jiff::Timestamp;
@@ -45,30 +47,30 @@ fn month_start(at: Timestamp) -> Timestamp {
         .map_or(at, |start| start.timestamp())
 }
 
-/// `micros` millionths of a dollar.
-pub(super) fn dollars(micros: i64) -> Money {
+/// `nanos` billionths of a dollar.
+pub(super) fn dollars(nanos: Nanos) -> Money {
     Money {
-        micros,
+        nanos,
         currency: Currency::USD,
     }
 }
 
-/// `money` in millionths of a dollar, when it is in dollars.
-pub(super) fn micros(money: Money) -> Option<i64> {
-    (money.currency == Currency::USD).then_some(money.micros)
+/// `money` in billionths of a dollar, when it is in dollars.
+pub(super) fn in_dollars(money: Money) -> Option<Nanos> {
+    (money.currency == Currency::USD).then_some(money.nanos)
 }
 
 /// One month's spending: everyone's, and each person's part.
 #[derive(Debug, Default, Clone)]
 struct Spending {
     month: Month,
-    all: i64,
-    people: BTreeMap<PrincipalId, i64>,
+    all: Nanos,
+    people: BTreeMap<PrincipalId, Nanos>,
 }
 
 impl Spending {
     /// Counts `amount` spent `at` for `person`'s work, a new month starting from nothing.
-    fn add(&mut self, at: At, amount: i64, person: Option<PrincipalId>) {
+    fn add(&mut self, at: At, amount: Nanos, person: Option<PrincipalId>) {
         let month = month_of(at.timestamp());
         if month < self.month {
             return;
@@ -102,7 +104,7 @@ pub(super) struct Book {
     /// The `seq` the next event will take.
     next: u64,
     /// What the ledger says is left.
-    balance: i64,
+    balance: Nanos,
     /// The latest limit its Owner set, if any.
     limit: Option<Money>,
     /// The payments added, by reference, with how much each added.
@@ -112,7 +114,7 @@ pub(super) struct Book {
     /// This server's charges the store does not have yet, oldest first.
     pub(super) unwritten: Vec<Unwritten>,
     /// Held for calls running.
-    pub(super) held: i64,
+    pub(super) held: Nanos,
     /// When it was last used, by the books' own count: the least recent goes first.
     pub(super) used: u64,
 }
@@ -132,14 +134,14 @@ impl Book {
         self.unwritten.retain(|unwritten| unwritten.id != Some(id));
         match body {
             Body::CreditsAdded(added) => {
-                if let Some(amount) = micros(added.amount) {
+                if let Some(amount) = in_dollars(added.amount) {
                     self.balance = self.balance.saturating_add(amount);
                 }
                 self.references.insert(added.reference, added.amount);
             }
             Body::CreditsLimitSet(set) => self.limit = Some(set.limit),
             Body::CreditsCharged(charged) => {
-                if let Some(amount) = micros(charged.amount) {
+                if let Some(amount) = in_dollars(charged.amount) {
                     self.balance = self.balance.saturating_sub(amount);
                     self.spending.add(at, amount, charged.person);
                 }
@@ -159,11 +161,11 @@ impl Book {
     }
 
     /// What is left, and the spending, with this server's charges not yet written counted in.
-    fn counted(&self) -> (i64, Spending) {
+    fn counted(&self) -> (Nanos, Spending) {
         let mut balance = self.balance;
         let mut spending = self.spending.clone();
         for unwritten in &self.unwritten {
-            if let Some(amount) = micros(unwritten.charged.amount) {
+            if let Some(amount) = in_dollars(unwritten.charged.amount) {
                 balance = balance.saturating_sub(amount);
                 spending.add(unwritten.at, amount, unwritten.charged.person);
             }
@@ -176,32 +178,34 @@ impl Book {
     /// either.
     pub(super) fn hold(
         &mut self,
-        worst: i64,
+        worst: Nanos,
         month: Month,
         default: Option<Money>,
     ) -> Result<(), Unpaid> {
         let (balance, spending) = self.counted();
-        if balance <= 0 {
+        if balance <= Nanos::ZERO {
             return Err(Unpaid::Spent);
         }
         let free = balance.saturating_sub(self.held);
         if worst > free {
-            let (free, needs) = (dollars(free.max(0)), dollars(worst));
+            let (free, needs) = (dollars(free.max(Nanos::ZERO)), dollars(worst));
             return Err(Unpaid::Short { free, needs });
         }
         if let Some(limit) = self.limit(default) {
             let spent = if spending.month == month {
                 spending.all
             } else {
-                0
+                Nanos::ZERO
             };
-            let room = micros(limit).unwrap_or(0).saturating_sub(spent);
-            if room <= 0 {
+            let room = in_dollars(limit)
+                .unwrap_or(Nanos::ZERO)
+                .saturating_sub(spent);
+            if room <= Nanos::ZERO {
                 return Err(Unpaid::MonthLimit { limit });
             }
             let free = room.saturating_sub(self.held);
             if worst > free {
-                let (free, needs) = (dollars(free.max(0)), dollars(worst));
+                let (free, needs) = (dollars(free.max(Nanos::ZERO)), dollars(worst));
                 return Err(Unpaid::MonthShort { limit, free, needs });
             }
         }
@@ -210,7 +214,7 @@ impl Book {
     }
 
     /// Lets go of `held`, and counts `charged` in its place, at once, to be written after.
-    pub(super) fn settle(&mut self, held: i64, charged: Option<Unwritten>) {
+    pub(super) fn settle(&mut self, held: Nanos, charged: Option<Unwritten>) {
         self.held = self.held.saturating_sub(held);
         self.unwritten.extend(charged);
     }
@@ -227,7 +231,7 @@ impl Book {
                 .collect();
             (spending.all, people)
         } else {
-            (0, BTreeMap::new())
+            (Nanos::ZERO, BTreeMap::new())
         };
         Account {
             balance: dollars(balance),
@@ -240,7 +244,7 @@ impl Book {
 
     /// Whether it may be forgotten: no call holds anything of it, and it has nothing to write.
     pub(super) fn idle(&self) -> bool {
-        self.held == 0 && self.unwritten.is_empty()
+        self.held == Nanos::ZERO && self.unwritten.is_empty()
     }
 }
 

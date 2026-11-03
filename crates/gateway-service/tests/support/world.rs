@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Body, Currency, RawEvent, Seq, ThreadId, decode};
+use glave_event::{Body, Currency, Nanos, RawEvent, Seq, ThreadId, decode};
 use glave_gateway::{Budgets, Gateway, Model, Price, Routes, Target};
 use glave_gateway_service::{Policy, Service, Wiring, serve, stream_id};
 use glave_identity::signin::{SignIn, Trust, person};
@@ -199,9 +199,9 @@ impl World {
         let price = Price {
             list: "test".into(),
             currency: Currency::USD,
-            input_per_mtok: 1_000_000,
-            cache_read_per_mtok: 0,
-            output_per_mtok: 1_000_000,
+            input_per_mtok: Nanos::new(1_000_000_000),
+            cache_read_per_mtok: Nanos::ZERO,
+            output_per_mtok: Nanos::new(1_000_000_000),
         };
         let main = vec![Target::new(Arc::clone(&handle), "acme", "big").with_price(price)];
         let judge = vec![Target::new(handle, "acme", "small")];

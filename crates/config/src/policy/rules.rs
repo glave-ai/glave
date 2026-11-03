@@ -309,7 +309,7 @@ impl Constraints {
                 Kind::PersonPerDayUsd(usd) => Some((usd, rule)),
                 _ => None,
             })
-            .min_by_key(|(usd, _)| usd.micros)
+            .min_by_key(|(usd, _)| usd.nanos)
             .map(|(_, rule)| rule)
     }
 

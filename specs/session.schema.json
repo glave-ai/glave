@@ -1763,22 +1763,26 @@
     },
     "MaxPrice": {
       "additionalProperties": false,
-      "description": "The most a provider's tokens may cost, in millionths of a US dollar per million tokens.",
+      "description": "The most a provider's tokens may cost, in billionths of a US dollar per million tokens.",
       "properties": {
         "input": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Nanos"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "output": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Nanos"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -1938,21 +1942,25 @@
     },
     "Money": {
       "additionalProperties": false,
-      "description": "An exact amount: `micros` millionths of one unit of `currency`. `{\"micros\": 4200,\n\"currency\": \"USD\"}` is $0.0042.",
+      "description": "An exact amount: `nanos` billionths of one unit of `currency`. `{\"nanos\": 4200000,\n\"currency\": \"USD\"}` is $0.0042.",
       "properties": {
         "currency": {
           "$ref": "#/$defs/Currency"
         },
-        "micros": {
-          "format": "int64",
-          "type": "integer"
+        "nanos": {
+          "$ref": "#/$defs/Nanos"
         }
       },
       "required": [
-        "micros",
+        "nanos",
         "currency"
       ],
       "type": "object"
+    },
+    "Nanos": {
+      "description": "An exact count of billionths of one unit of a currency, the unit Google's billing uses: in\n64 bits it holds about nine billion dollars. The one way glave counts money, and, as what a\nmillion tokens cost, prices.",
+      "format": "int64",
+      "type": "integer"
     },
     "NewFolder": {
       "description": "A new project's folder, on the computer glave runs on.",
@@ -3791,26 +3799,24 @@
     },
     "TokenPrice": {
       "additionalProperties": false,
-      "description": "What a model's tokens cost, in millionths of a US dollar per million tokens.",
+      "description": "What a model's tokens cost, in billionths of a US dollar per million tokens.",
       "properties": {
         "cache_read": {
-          "description": "Input read from the service's cache, when it prices that apart.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Nanos"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Input read from the service's cache, when it prices that apart."
         },
         "input": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
+          "$ref": "#/$defs/Nanos"
         },
         "output": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
+          "$ref": "#/$defs/Nanos"
         }
       },
       "required": [

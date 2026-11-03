@@ -12,8 +12,8 @@ use std::fmt::Write as _;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, Currency, EventId, Header, Money, Payload, PrincipalId, RawEvent, Seq, ThreadId,
-    decode, encode,
+    At, Body, Currency, EventId, Header, Money, Nanos, Payload, PrincipalId, RawEvent, Seq,
+    ThreadId, decode, encode,
 };
 use glave_gateway::{BudgetKey, Gateway};
 use glave_ports::stream::{StreamError, append_retrying, catch_up};
@@ -35,8 +35,8 @@ struct Stream {
     next: u64,
     /// The day the totals below are for.
     day: u32,
-    /// Money spent that day, by currency, in millionths.
-    money: BTreeMap<Currency, u64>,
+    /// Money spent that day, by currency.
+    money: BTreeMap<Currency, Nanos>,
     /// The day their budget account was given what the log says they spent before.
     seeded: Option<u32>,
 }
@@ -65,19 +65,18 @@ impl Stream {
                 self.money.clear();
             }
             if let Some(cost) = responded.cost {
-                let micros = u64::try_from(cost.amount.micros).unwrap_or(0);
                 let spent = self.money.entry(cost.amount.currency).or_default();
-                *spent = spent.saturating_add(micros);
+                *spent = spent.saturating_add(cost.amount.nanos.max(Nanos::ZERO));
             }
         }
     }
 
-    /// What the stream says was spent on `day`, in millionths of `limit`'s currency.
-    fn spent(&self, day: u32, limit: Money) -> u64 {
+    /// What the stream says was spent on `day`, in `limit`'s currency.
+    fn spent(&self, day: u32, limit: Money) -> Nanos {
         if day != self.day {
-            return 0;
+            return Nanos::ZERO;
         }
-        self.money.get(&limit.currency).copied().unwrap_or(0)
+        self.money.get(&limit.currency).copied().unwrap_or_default()
     }
 }
 

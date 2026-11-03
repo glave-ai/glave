@@ -16,7 +16,7 @@ const SERVING: readonly EndpointInfo[] = [
     datacenters: ['CN'],
     precision: 'eight_bit',
     keeps_nothing: false,
-    price: { input: 100_000, output: 400_000 },
+    price: { input: 100_000_000, output: 400_000_000 },
     speed: 90,
   },
   {
@@ -26,7 +26,7 @@ const SERVING: readonly EndpointInfo[] = [
     datacenters: ['US'],
     precision: 'four_bit',
     keeps_nothing: true,
-    price: { input: 120_000, output: 500_000 },
+    price: { input: 120_000_000, output: 500_000_000 },
     speed: 210,
   },
   {
@@ -35,7 +35,7 @@ const SERVING: readonly EndpointInfo[] = [
     based_in: 'NL',
     precision: 'full',
     keeps_nothing: false,
-    price: { input: 200_000, output: 800_000 },
+    price: { input: 200_000_000, output: 800_000_000 },
     speed: 80,
   },
 ];

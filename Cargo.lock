@@ -2047,6 +2047,7 @@ dependencies = [
  "glave-event",
  "glave-ports",
  "jiff",
+ "proptest",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",

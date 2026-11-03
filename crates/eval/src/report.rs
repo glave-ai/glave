@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::num::NonZeroU64;
 
-use glave_event::{Currency, Money};
+use glave_event::{Currency, Money, Nanos};
 use glave_memory::BUDGET_TOKENS;
 use serde::{Deserialize, Serialize};
 
@@ -32,8 +32,8 @@ pub struct Report {
 /// too, over the attempts that passed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct PerPassedTask {
-    /// Micros of the reported currency; `None` when no cost was reported (see `spent`).
-    cost_micros: Option<i64>,
+    /// In the reported currency; `None` when no cost was reported (see `spent`).
+    cost_nanos: Option<Nanos>,
     /// Input and output tokens.
     tokens: u64,
 }
@@ -44,7 +44,7 @@ impl PerPassedTask {
         let passed = NonZeroU64::new(as_u64(passes(attempts)))?;
         let divisor = i64::try_from(passed.get()).ok()?;
         Some(Self {
-            cost_micros: spent(attempts).map(|micros| micros / divisor),
+            cost_nanos: spent(attempts).map(|spent| Nanos::new(spent.get() / divisor)),
             tokens: tokens(attempts) / passed,
         })
     }
@@ -157,8 +157,8 @@ impl Report {
                 let ran = ran(&self.attempts, model);
                 Some((short(model), PerPassedTask::of(&ran)?, ran))
             })
-            .partition(|(_, per, _)| per.cost_micros.is_some());
-        let mut line = match priced.iter().min_by_key(|(_, per, _)| per.cost_micros) {
+            .partition(|(_, per, _)| per.cost_nanos.is_some());
+        let mut line = match priced.iter().min_by_key(|(_, per, _)| per.cost_nanos) {
             Some((model, per, ran)) => format!(
                 "Cheapest per passed task: {model}, {}, {}/{} passed.",
                 per_task(Some(*per)),
@@ -272,13 +272,13 @@ fn passes(attempts: &[&Attempt]) -> usize {
     attempts.iter().filter(|a| a.passed()).count()
 }
 
-/// What `attempts` cost in micros; `None` when a call reported no cost, or when all they
+/// What `attempts` cost; `None` when a call reported no cost, or when all they
 /// reported is $0, as a free route reports it: that says nothing of what the model costs,
 /// so it never makes a model the cheapest.
-fn spent(attempts: &[&Attempt]) -> Option<i64> {
+fn spent(attempts: &[&Attempt]) -> Option<Nanos> {
     (attempts.iter())
-        .try_fold(0_i64, |sum, a| sum.checked_add(a.cost_micros?))
-        .filter(|&micros| micros != 0)
+        .try_fold(Nanos::ZERO, |sum, a| sum.checked_add(a.cost_nanos?))
+        .filter(|&spent| spent != Nanos::ZERO)
 }
 
 /// The input and output tokens `attempts` used.
@@ -293,10 +293,9 @@ fn per_task(per: Option<PerPassedTask>) -> String {
     per.map_or_else(
         || "-".to_owned(),
         |per| {
-            let cost = per.cost_micros.map_or_else(
-                || "no cost reported".to_owned(),
-                |micros| dollars(Some(micros)),
-            );
+            let cost = per
+                .cost_nanos
+                .map_or_else(|| "no cost reported".to_owned(), |cost| dollars(Some(cost)));
             format!("{cost} · {} tokens", thousands(per.tokens))
         },
     )
@@ -321,14 +320,14 @@ fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
     }
 }
 
-/// Micros as dollars to the nearest hundredth of a cent, or a dash when a cost was not
+/// An amount as dollars to the nearest hundredth of a cent, or a dash when a cost was not
 /// reported.
-pub(crate) fn dollars(micros: Option<i64>) -> String {
-    micros.map_or_else(
+pub(crate) fn dollars(nanos: Option<Nanos>) -> String {
+    nanos.map_or_else(
         || "-".to_owned(),
-        |micros| {
+        |nanos| {
             let cost = Money {
-                micros,
+                nanos,
                 currency: Currency::USD,
             };
             format!("{cost:.4}")

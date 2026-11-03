@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use glave_event::PrincipalId;
+use glave_event::{Nanos, PrincipalId};
 use glave_gateway::{BudgetKey, Budgets, Gateway, Routes, Target};
 use glave_ports::{Failure, ModelProvider, ModelRequest, ProviderError, Purpose};
 use jiff::Timestamp;
@@ -15,9 +15,9 @@ use tokio::task::JoinSet;
 
 use crate::support::{Fake, block_on, dollars, price, request};
 
-/// The most the test request could cost at a millionth of a dollar a token: 14 bytes of
+/// The most the test request could cost at a billionth of a dollar a token: 14 bytes of
 /// input at 3 bytes a token, rounded up, and its 100 tokens of answer.
-const WORST: u64 = 5 + 100;
+const WORST: i64 = 5 + 100;
 
 fn caller(n: u8) -> BudgetKey {
     BudgetKey {
@@ -46,16 +46,16 @@ fn a_call_that_could_exceed_its_caller_s_budget_is_refused_before_it_is_sent() {
     let fake = Fake::new("p");
     let gateway = gateway(vec![fake.target("m").with_price(price(1_000_000))], 200);
     let (alice, bob) = (caller(1), caller(2));
-    // The fake reports 100 tokens in and 10 out: 110 millionths.
+    // The fake reports 100 tokens in and 10 out: 110 billionths.
     complete_for(&gateway, alice, &request(Purpose::Main)).unwrap();
-    assert_eq!(gateway.spent(alice), 110);
+    assert_eq!(gateway.spent(alice), Nanos::new(110));
     let refused = complete_for(&gateway, alice, &request(Purpose::Main)).unwrap_err();
     assert_eq!(refused.failure(), Failure::OverBudget);
     let ProviderError::OverBudget { budget, detail } = &refused else {
         panic!("{refused}")
     };
     assert_eq!(budget, &format!("person {}", alice.person));
-    assert!(detail.contains("110 of 200 millionths of USD"), "{detail}");
+    assert!(detail.contains("110 of 200 billionths of USD"), "{detail}");
     assert!(detail.contains(&format!("{WORST} more")), "{detail}");
     assert_eq!(
         fake.calls.load(Ordering::SeqCst),
@@ -79,7 +79,7 @@ fn a_failed_call_spends_nothing_and_releases_its_hold() {
     let gateway = gateway(vec![target], i64::try_from(WORST).unwrap());
     let alice = caller(1);
     assert!(complete_for(&gateway, alice, &request(Purpose::Main)).is_err());
-    assert_eq!(gateway.spent(alice), 0);
+    assert_eq!(gateway.spent(alice), Nanos::ZERO);
     assert!(
         complete_for(&gateway, alice, &request(Purpose::Main)).is_ok(),
         "the whole budget is free again"
@@ -89,7 +89,8 @@ fn a_failed_call_spends_nothing_and_releases_its_hold() {
 #[test]
 fn a_budget_skips_a_target_it_cannot_afford() {
     let fake = Fake::new("p");
-    // At $10 a million tokens the worst case is 1,050 millionths; at $1, 105.
+    // At a hundredth of a dollar a million tokens the worst case is 1,050 billionths; at a
+    // tenth of that, 105.
     let targets = vec![
         fake.target("dear").with_price(price(10_000_000)),
         fake.target("cheap").with_price(price(1_000_000)),
@@ -98,7 +99,7 @@ fn a_budget_skips_a_target_it_cannot_afford() {
     let alice = caller(1);
     let answer = complete_for(&gateway, alice, &request(Purpose::Main)).unwrap();
     assert_eq!(answer.served.unwrap().target, "p/cheap");
-    assert_eq!(gateway.spent(alice), 110);
+    assert_eq!(gateway.spent(alice), Nanos::new(110));
 }
 
 #[test]
@@ -107,7 +108,7 @@ fn calls_side_by_side_never_overshoot() {
     let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
     let limit = 3 * WORST + WORST / 2;
     let target = fake.target("m").with_price(price(1_000_000));
-    let gateway = Arc::new(gateway(vec![target], i64::try_from(limit).unwrap()));
+    let gateway = Arc::new(gateway(vec![target], limit));
     let alice = caller(1);
     block_on!(async {
         let mut calls = JoinSet::new();
@@ -134,6 +135,6 @@ fn calls_side_by_side_never_overshoot() {
             assert!(done.unwrap().is_ok());
         }
     });
-    assert_eq!(gateway.spent(alice), 3 * 55);
-    assert!(gateway.spent(alice) <= limit);
+    assert_eq!(gateway.spent(alice), Nanos::new(3 * 55));
+    assert!(gateway.spent(alice) <= Nanos::new(limit));
 }

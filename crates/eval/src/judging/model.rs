@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
+use glave_event::Nanos;
 use glave_harness::{JudgeCase, Ruling, judge};
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 use tokio::sync::Semaphore;
@@ -17,20 +18,20 @@ use super::case::{Case, Label};
 /// A provider that adds up what its calls cost, as the provider reports it.
 pub(crate) struct Metered<P> {
     inner: P,
-    micros: AtomicI64,
+    spent: AtomicI64,
 }
 
 impl<P> Metered<P> {
     pub(crate) fn new(inner: P) -> Self {
         Self {
             inner,
-            micros: AtomicI64::new(0),
+            spent: AtomicI64::new(0),
         }
     }
 
-    /// The total cost so far, in millionths of a dollar.
-    pub(crate) fn micros(&self) -> i64 {
-        self.micros.load(Ordering::Relaxed)
+    /// The total cost so far, in dollars.
+    pub(crate) fn spent(&self) -> Nanos {
+        Nanos::new(self.spent.load(Ordering::Relaxed))
     }
 }
 
@@ -42,7 +43,11 @@ impl<P: ModelProvider> ModelProvider for Metered<P> {
     ) -> Result<Completion, ProviderError> {
         let completion = self.inner.complete(request, on_delta).await?;
         if let Some(cost) = &completion.cost {
-            self.micros.fetch_add(cost.amount.micros, Ordering::Relaxed);
+            let nanos = cost.amount.nanos.get();
+            self.spent
+                .update(Ordering::Relaxed, Ordering::Relaxed, |sum| {
+                    sum.saturating_add(nanos)
+                });
         }
         Ok(completion)
     }

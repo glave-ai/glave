@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{Currency, Money};
+use glave_event::{Currency, Money, Nanos};
 use glave_ports::{
     Completion, Delta, EventLog, Failure, ModelProvider, ModelRequest, ProviderError, Route,
     Served, Unpaid,
@@ -83,15 +83,15 @@ impl Gateway {
         &self.routes
     }
 
-    /// What `caller` has spent so far in this process, in millionths of their budget's
+    /// What `caller` has spent so far in this process, in billionths of their budget's
     /// currency.
-    pub fn spent(&self, caller: BudgetKey) -> u64 {
+    pub fn spent(&self, caller: BudgetKey) -> Nanos {
         self.ledger.spent(caller)
     }
 
-    /// Counts `amount`, in millionths of the budget's currency, as spent by `caller` already:
+    /// Counts `amount`, in billionths of the budget's currency, as spent by `caller` already:
     /// what a gateway serving many reads back from its log when a caller first returns.
-    pub fn add_spent(&self, caller: BudgetKey, amount: u64) {
+    pub fn add_spent(&self, caller: BudgetKey, amount: Nanos) {
         self.ledger.add_spent(caller, amount);
     }
 
@@ -253,9 +253,7 @@ impl Gateway {
             return Err(ProviderError::Unpaid(Unpaid::Unpriced { model }));
         };
         let worst = Money {
-            micros: worst
-                .0
-                .map_or(0, |(micros, _)| i64::try_from(micros).unwrap_or(i64::MAX)),
+            nanos: worst.0.map_or(Nanos::ZERO, |(nanos, _)| nanos),
             currency: Currency::USD,
         };
         let input = needs.fit_tokens();
@@ -292,16 +290,16 @@ fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>) -> Charge {
         target
             .price
             .as_ref()
-            .map(|price| (price.micros(&counts), price.currency)),
+            .map(|price| (price.nanos(&counts), price.currency)),
     )
 }
 
 /// What a finished call cost, when known.
 fn actual(completion: &Completion) -> Charge {
-    Charge(completion.cost.as_ref().map(|cost| {
-        (
-            u64::try_from(cost.amount.micros).unwrap_or(0),
-            cost.amount.currency,
-        )
-    }))
+    Charge(
+        completion
+            .cost
+            .as_ref()
+            .map(|cost| (cost.amount.nanos, cost.amount.currency)),
+    )
 }

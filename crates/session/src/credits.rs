@@ -7,7 +7,7 @@
 
 use std::cmp::Reverse;
 
-use glave_event::{At, Currency, Money, OrgRole, Principal, PrincipalId};
+use glave_event::{At, Currency, Money, Nanos, OrgRole, Principal, PrincipalId};
 use glave_gateway::{Account, Credits};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 
@@ -53,12 +53,12 @@ fn shown(
         .collect();
     if let Some(you) = you.filter(|_| spent.is_empty() && !seen.whole) {
         let nothing = Money {
-            micros: 0,
+            nanos: Nanos::ZERO,
             currency: Currency::USD,
         };
         spent.push((you, nothing));
     }
-    spent.sort_by_key(|(_, spent)| Reverse(spent.micros));
+    spent.sort_by_key(|(_, spent)| Reverse(spent.nanos));
     let people = spent
         .into_iter()
         .map(|(person, spent)| PersonSpent {
@@ -210,9 +210,9 @@ mod tests {
 
     use super::*;
 
-    fn money(micros: i64) -> Money {
+    fn money(nanos: i64) -> Money {
         Money {
-            micros,
+            nanos: Nanos::new(nanos),
             currency: Currency::USD,
         }
     }
@@ -223,10 +223,13 @@ mod tests {
 
     fn account() -> Account {
         Account {
-            balance: money(4_000_000),
-            limit: Some(money(10_000_000)),
-            spent: money(6_000_000),
-            people: BTreeMap::from([(person(1), money(1_000_000)), (person(2), money(5_000_000))]),
+            balance: money(4_000_000_000),
+            limit: Some(money(10_000_000_000)),
+            spent: money(6_000_000_000),
+            people: BTreeMap::from([
+                (person(1), money(1_000_000_000)),
+                (person(2), money(5_000_000_000)),
+            ]),
             since: Timestamp::from_second(1_790_812_800).unwrap(),
         }
     }
@@ -236,8 +239,8 @@ mod tests {
         let named = |person| (person == self::person(2)).then(|| "Bo".to_owned());
         let admin = shown(&account(), Seen::by(OrgRole::Admin), Some(person(1)), named);
         let whole = admin.account.unwrap();
-        assert_eq!(whole.balance, money(4_000_000));
-        assert_eq!(whole.limit, Some(money(10_000_000)));
+        assert_eq!(whole.balance, money(4_000_000_000));
+        assert_eq!(whole.limit, Some(money(10_000_000_000)));
         let spent: Vec<(PrincipalId, bool, Option<&str>)> = admin
             .people
             .iter()
@@ -257,7 +260,7 @@ mod tests {
         );
         assert_eq!(member.account, None);
         assert_eq!(member.people.len(), 1);
-        assert_eq!(member.people[0].spent, money(1_000_000));
+        assert_eq!(member.people[0].spent, money(1_000_000_000));
         let newcomer = shown(
             &account(),
             Seen::by(OrgRole::Member),

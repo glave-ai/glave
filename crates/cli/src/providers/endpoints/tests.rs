@@ -1,3 +1,4 @@
+use glave_event::Nanos;
 use glave_ports::testing::FakeHttp;
 use serde_json::json;
 
@@ -71,7 +72,7 @@ fn a_model_s_endpoints_say_their_provider_precision_price_speed_and_whether_they
     );
     assert_eq!(
         infra.price.map(|p| (p.input, p.output)),
-        Some((256_000, 712_000))
+        Some((Nanos::new(256_000_000), Nanos::new(712_000_000)))
     );
     assert!(infra.zdr, "listed as keeping nothing");
     assert_eq!(infra.speed, Some(85), "the median, rounded");

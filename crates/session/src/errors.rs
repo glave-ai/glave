@@ -425,9 +425,9 @@ mod tests {
         }
     }
 
-    fn dollars(micros: i64) -> glave_event::Money {
+    fn dollars(nanos: i64) -> glave_event::Money {
         glave_event::Money {
-            micros,
+            nanos: glave_event::Nanos::new(nanos),
             currency: glave_event::Currency::USD,
         }
     }
@@ -458,16 +458,16 @@ mod tests {
             },
             ProviderError::Unpaid(Unpaid::Spent),
             ProviderError::Unpaid(Unpaid::Short {
-                free: dollars(1_509_999),
-                needs: dollars(2_400_001),
+                free: dollars(1_509_999_000),
+                needs: dollars(2_400_001_000),
             }),
             ProviderError::Unpaid(Unpaid::MonthLimit {
-                limit: dollars(10_000_000),
+                limit: dollars(10_000_000_000),
             }),
             ProviderError::Unpaid(Unpaid::MonthShort {
-                limit: dollars(10_000_000),
-                free: dollars(1_500_000),
-                needs: dollars(4_200),
+                limit: dollars(10_000_000_000),
+                free: dollars(1_500_000_000),
+                needs: dollars(4_200_000),
             }),
             ProviderError::Unpaid(Unpaid::Unpriced {
                 model: "acme/big".into(),

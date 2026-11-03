@@ -251,11 +251,13 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("credits/get", vec![json!({})]),
         (
             "credits/limit",
-            vec![json!({"limit": {"micros": 1_000_000, "currency": "USD"}})],
+            vec![json!({"limit": {"nanos": 1_000_000_000, "currency": "USD"}})],
         ),
         (
             "credits/add",
-            vec![json!({"amount": {"micros": 1_000_000, "currency": "USD"}, "reference": "o-1"})],
+            vec![
+                json!({"amount": {"nanos": 1_000_000_000, "currency": "USD"}, "reference": "o-1"}),
+            ],
         ),
         // The caller's own filters among providers, naming no one's.
         ("filters/get", vec![json!({})]),
