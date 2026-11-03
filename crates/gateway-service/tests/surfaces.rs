@@ -135,6 +135,8 @@ fn both_surfaces_answer_whole_when_no_stream_is_asked_for() {
             .unwrap();
         assert_eq!(chat["choices"][0]["message"]["content"], "One.");
         assert_eq!(chat["usage"]["prompt_tokens"], 100);
+        // 110 tokens at a millionth of a dollar a token, as an exact decimal.
+        assert_eq!(chat["usage"]["cost"].to_string(), "0.00011");
         let message: Value = http
             .post(format!("{}/v1/messages", world.url))
             .header("x-api-key", &token)

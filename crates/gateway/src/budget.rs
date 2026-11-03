@@ -49,13 +49,18 @@ pub struct OverBudget {
 impl OverBudget {
     fn detail(&self) -> String {
         format!(
-            "{} of {} billionths of {} committed, and this call could need {} more",
-            self.committed.get(),
-            allowed(self.limit).get(),
+            "{} of {} millionths of {} committed, and this call could need {} more",
+            shown(self.committed),
+            shown(allowed(self.limit)),
             self.limit.currency,
-            self.needed.get()
+            shown(self.needed)
         )
     }
+}
+
+/// `nanos` as a caller reads them in a refusal, in millionths: for showing, never for counting.
+const fn shown(nanos: Nanos) -> i64 {
+    nanos.get() / 1_000
 }
 
 impl From<OverBudget> for ProviderError {
@@ -157,7 +162,7 @@ impl Ledger {
     pub(crate) fn add_spent(&self, caller: BudgetKey, amount: Nanos) {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
         let account = entry(&mut accounts, caller);
-        account.spent = account.spent.saturating_add(amount);
+        account.spent = account.spent.saturating_add(amount.max(Nanos::ZERO));
     }
 
     fn release(&self, caller: BudgetKey, held: Nanos, spent: Nanos) {
@@ -282,10 +287,28 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_reads_as_it_always_has() {
+        let over = OverBudget {
+            caller: caller(),
+            limit: Money {
+                nanos: Nanos::new(200_000),
+                currency: Currency::USD,
+            },
+            committed: Nanos::new(110_000),
+            needed: Nanos::new(105_000),
+        };
+        assert_eq!(
+            over.detail(),
+            "110 of 200 millionths of USD committed, and this call could need 105 more"
+        );
+    }
+
+    #[test]
     fn a_charge_below_nothing_counts_as_none() {
         let ledger = ledger(Nanos::new(1));
         let hold = ledger.reserve(Some(caller()), charge(-5)).unwrap();
         hold.settle(charge(-5));
+        ledger.add_spent(caller(), Nanos::new(-5));
         assert_eq!(ledger.spent(caller()), Nanos::ZERO);
     }
 }

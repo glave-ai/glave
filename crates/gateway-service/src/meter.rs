@@ -248,7 +248,55 @@ pub fn stream_id(person: PrincipalId) -> Result<ThreadId, String> {
 
 #[cfg(test)]
 mod tests {
+    use glave_event::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
+
     use super::*;
+
+    #[test]
+    fn a_reported_cost_below_nothing_takes_nothing_off_a_day_s_spending() {
+        let raw = |seq: u64, nanos: i64| {
+            let at = jiff::Timestamp::from_second(86_400).unwrap();
+            let header = Header {
+                id: EventId::new(at, [u8::try_from(seq).unwrap(); 10]).unwrap(),
+                thread: ThreadId::reserved(99),
+                seq: Seq::new(seq).unwrap(),
+                at: At::from(at),
+            };
+            let counts = TokenCounts::default();
+            let responded = ModelResponded {
+                model: ModelRef {
+                    provider: "p".into(),
+                    name: "m".into(),
+                },
+                response_id: None,
+                stop: StopReason::EndTurn,
+                provider_stop: None,
+                usage: Usage::new(counts, false, None).unwrap(),
+                cost: Some(Cost {
+                    amount: limit(nanos),
+                    price_list: "list".into(),
+                }),
+                route: None,
+                target: None,
+                service: None,
+                upstream: None,
+                effort: None,
+                reasoning_stripped: false,
+            };
+            encode(header, &responded).unwrap()
+        };
+        let mut stream = Stream::default();
+        stream.apply(raw(1, 7));
+        stream.apply(raw(2, -5));
+        assert_eq!(stream.spent(1, limit(100)), Nanos::new(7));
+    }
+
+    fn limit(nanos: i64) -> Money {
+        Money {
+            nanos: Nanos::new(nanos),
+            currency: Currency::USD,
+        }
+    }
 
     #[test]
     fn days_are_utc_days_since_1970() {

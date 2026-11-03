@@ -38,12 +38,6 @@ fn dollars_parse_exactly_and_past_the_ninth_place_round_away_from_zero() {
         ("-0.0000000001", -1),
         ("12.3456789012", 12_345_678_902),
         ("0.0000000000", 0),
-        ("1e3", 1_000_000_000_000),
-        ("4e-7", 400),
-        ("4E-07", 400),
-        ("1.5e+2", 150_000_000_000),
-        ("1e-300", 1),
-        ("0e2000000000", 0),
         ("9223372036.854775807", i64::MAX),
         ("-9223372036.854775808", i64::MIN),
     ] {
@@ -55,18 +49,34 @@ fn dollars_parse_exactly_and_past_the_ninth_place_round_away_from_zero() {
         ".5",
         "2.",
         "+2",
-        "1e",
-        "e3",
-        "1e3.5",
+        "1e3",
+        "4e-7",
         "1.2.3",
         "$2",
         " 2",
         "two",
         "9223372037",
         "9223372036.854775808",
-        "1e2000000000",
     ] {
         assert!(Money::parse_dollars(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn a_provider_may_write_dollars_with_an_exponent() {
+    for (text, nanos) in [
+        ("0.0042", 4_200_000),
+        ("1e3", 1_000_000_000_000),
+        ("4e-7", 400),
+        ("4E-07", 400),
+        ("1.5e+2", 150_000_000_000),
+        ("1e-300", 1),
+        ("0e2000000000", 0),
+    ] {
+        assert_eq!(Money::reported_dollars(text), Some(usd(nanos)), "{text}");
+    }
+    for bad in ["1e", "e3", "1e3.5", "1e2000000000", "+2", "two"] {
+        assert_eq!(Money::reported_dollars(bad), None, "{bad:?}");
     }
 }
 

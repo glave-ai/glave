@@ -151,18 +151,27 @@ pub struct Money {
 }
 
 impl Money {
-    /// US dollars written as a number, as a person or a provider writes one: `2`, `0.50`,
-    /// `-0.0042` or `4e-7`. Past the ninth decimal place it rounds away from zero, so an amount
-    /// is never nothing by rounding; a leading `+`, a bare point and anything else are refused.
+    /// US dollars as a person writes them, a plain decimal such as `2`, `0.50` or `-0.0042`.
+    /// Past the ninth decimal place it rounds away from zero, so an amount is never nothing by
+    /// rounding; exponents, a leading `+` and a bare point are refused.
     pub fn parse_dollars(text: &str) -> Result<Self, InvalidValue> {
-        let nanos = scaled(text, PLACES).ok_or_else(|| {
-            InvalidValue::new(
-                "amount",
-                format!("{text:?} is not dollars, such as 2 or 0.50"),
-            )
-        })?;
-        Ok(Self {
-            nanos: Nanos(nanos),
+        Some(text)
+            .filter(|text| !text.contains(['e', 'E']))
+            .and_then(Self::reported_dollars)
+            .ok_or_else(|| {
+                InvalidValue::new(
+                    "amount",
+                    format!("{text:?} is not dollars, such as 2 or 0.50"),
+                )
+            })
+    }
+
+    /// US dollars as a provider reports them, a JSON number, so with an exponent if it likes:
+    /// JavaScript and Python write a very cheap call as `4e-7`. Rounded as
+    /// [`parse_dollars`](Self::parse_dollars) is; `None` unless it is a number that fits.
+    pub fn reported_dollars(text: &str) -> Option<Self> {
+        Some(Self {
+            nanos: Nanos(scaled(text, PLACES)?),
             currency: Currency::USD,
         })
     }

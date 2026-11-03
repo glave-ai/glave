@@ -83,7 +83,9 @@ describe('serving', () => {
     const dear: ModelInfo = {
       ...FLASH,
       id: 'dear',
-      endpoints: [endpoint('a', 'US', { price: { input: 900_000_000, output: 900_000_000 }, speed: 300 })],
+      endpoints: [
+        endpoint('a', 'US', { price: { input: 900_000_000, output: 900_000_000 }, speed: 300 }),
+      ],
     };
     expect(sortedModels([dear, DIRECT, FLASH], 'price').map((each) => each.id)).toEqual([
       FLASH.id,
@@ -118,7 +120,9 @@ describe('serving', () => {
   });
 
   it('writes prices, counts and what the filters hide for the reader', () => {
-    expect(priceLine({ input: 120_000_000, output: 500_000_000 }, 'en')).toBe('$0.12 in · $0.50 out');
+    expect(priceLine({ input: 120_000_000, output: 500_000_000 }, 'en')).toBe(
+      '$0.12 in · $0.50 out',
+    );
     expect(providersText(1, 'en')).toBe('1 provider');
     expect(providersText(3, 'en')).toBe('3 providers');
     const hidden = [

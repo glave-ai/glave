@@ -44,7 +44,11 @@ impl PerPassedTask {
         let passed = NonZeroU64::new(as_u64(passes(attempts)))?;
         let divisor = i64::try_from(passed.get()).ok()?;
         Some(Self {
-            cost_nanos: spent(attempts).map(|spent| Nanos::new(spent.get() / divisor)),
+            // Rounded up, so a cost never reads as none, which would make its model the cheapest.
+            cost_nanos: spent(attempts).map(|spent| {
+                let spent = spent.get();
+                Nanos::new(spent / divisor + i64::from(spent % divisor != 0))
+            }),
             tokens: tokens(attempts) / passed,
         })
     }

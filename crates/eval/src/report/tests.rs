@@ -83,6 +83,12 @@ fn a_passed_task_costs_all_that_was_spent_over_the_passes() {
         costing("a/one", 3, true, Some(1_000_000)),
     ];
     assert_eq!(of(&attempts), per(Some(1_500_000), 1_851));
+    // The least there can be, over two passes, is still something.
+    let least = [
+        costing("a/one", 1, true, Some(1)),
+        costing("a/one", 2, true, Some(0)),
+    ];
+    assert_eq!(of(&least), per(Some(1), 1_234));
     // A call that reported no cost, and a free route's $0, are no cost reported.
     assert_eq!(of(&[costing("a/one", 1, true, None)]), per(None, 1_234));
     assert_eq!(of(&[costing("a/one", 1, true, Some(0))]), per(None, 1_234));
