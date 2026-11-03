@@ -7,8 +7,12 @@ import { ConnectorsService } from './connectors.service';
 const LINEAR: ConnectorInfo = {
   id: 'linear',
   name: 'Linear',
+  company: 'linear',
   url: 'https://mcp.linear.app/mcp',
-  category: 'dev',
+  categories: ['dev'],
+  tags: ['issues'],
+  returns: 'text',
+  sign_in: 'dcr',
   description: 'Issues, projects and cycles.',
   docs: 'https://linear.app/docs/mcp',
   status: 'available',

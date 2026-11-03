@@ -7,6 +7,7 @@ mod appearance;
 mod changes;
 pub mod code;
 mod connections;
+mod connectors;
 mod credentials;
 mod credits;
 mod error;
@@ -42,7 +43,10 @@ pub use changes::{
     ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
-pub use connections::{ConnectorCategory, ConnectorInfo, ConnectorStatus};
+pub use connectors::{
+    ConnectorCategory, ConnectorCategoryId, ConnectorCompany, ConnectorInfo, ConnectorReturns,
+    ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
+};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use error::{ApiError, ErrorData};
@@ -704,8 +708,17 @@ methods! {
         /// What the person's `mcp.json` calls the server, or its address.
         server: String,
     } -> [Done],
-    /// glave's connectors the caller may connect here and their categories, in order.
-    "connector/list" => ConnectorList {} -> [Connectors],
+    /// glave's connectors the caller may connect here, in order, with the companies, categories
+    /// and tags they have. Given a company, a category or a tag, only those that have it, and
+    /// only those that have all that are given.
+    "connector/list" => ConnectorList {
+        #[serde(default)]
+        company: Option<String>,
+        #[serde(default)]
+        category: Option<ConnectorCategoryId>,
+        #[serde(default)]
+        tag: Option<ConnectorTagId>,
+    } -> [Connectors],
     /// Connects a connector: at once, or the sign-in page, then `connection/poll`.
     "connector/connect" => ConnectorConnect { connector: String } -> [Connector, SignIn],
     /// Disconnects a connector, destroying its sign-in.

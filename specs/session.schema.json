@@ -434,7 +434,7 @@
       "description": "A category of connectors.",
       "properties": {
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/ConnectorCategoryId"
         },
         "name": {
           "description": "Its name, in the caller's language.",
@@ -447,11 +447,82 @@
       ],
       "type": "object"
     },
+    "ConnectorCategoryId": {
+      "description": "What kind of thing a connector is for. A connector has one or more.",
+      "oneOf": [
+        {
+          "const": "dev",
+          "description": "Developer tools",
+          "type": "string"
+        },
+        {
+          "const": "cloud",
+          "description": "Cloud and infrastructure",
+          "type": "string"
+        },
+        {
+          "const": "data",
+          "description": "Data and analytics",
+          "type": "string"
+        },
+        {
+          "const": "productivity",
+          "description": "Productivity",
+          "type": "string"
+        },
+        {
+          "const": "business",
+          "description": "Business",
+          "type": "string"
+        },
+        {
+          "const": "design",
+          "description": "Design and media",
+          "type": "string"
+        },
+        {
+          "const": "everyday",
+          "description": "Everyday",
+          "type": "string"
+        }
+      ]
+    },
+    "ConnectorCompany": {
+      "additionalProperties": false,
+      "description": "A company that runs connectors: one vendor can run several.",
+      "properties": {
+        "homepage": {
+          "description": "Its website.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable: what `connector/list` narrows by.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name, never translated: `Cloudflare`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "homepage"
+      ],
+      "type": "object"
+    },
     "ConnectorInfo": {
       "description": "A connector of glave's catalog the caller may connect (`specs/session.md`, \"Connectors\"):\nan official remote MCP server, hosted by its vendor.",
       "properties": {
-        "category": {
-          "description": "Its category's id, one of the list's `categories`.",
+        "categories": {
+          "description": "Its categories, each one of the list's `categories`. The first is its home, where a\nclient that shows it once puts it.",
+          "items": {
+            "$ref": "#/$defs/ConnectorCategoryId"
+          },
+          "type": "array"
+        },
+        "company": {
+          "description": "Its company's id, one of the list's `companies`.",
           "type": "string"
         },
         "description": {
@@ -470,8 +541,21 @@
           "description": "The vendor's name for it, never translated: `Linear`.",
           "type": "string"
         },
+        "returns": {
+          "$ref": "#/$defs/ConnectorReturns"
+        },
+        "sign_in": {
+          "$ref": "#/$defs/ConnectorSignIn"
+        },
         "status": {
           "$ref": "#/$defs/ConnectorStatus"
+        },
+        "tags": {
+          "description": "Its tags, each one of the list's `tags`.",
+          "items": {
+            "$ref": "#/$defs/ConnectorTagId"
+          },
+          "type": "array"
         },
         "url": {
           "description": "Its server's address.",
@@ -481,13 +565,52 @@
       "required": [
         "id",
         "name",
+        "company",
         "url",
-        "category",
+        "categories",
+        "tags",
+        "returns",
+        "sign_in",
         "description",
         "docs",
         "status"
       ],
       "type": "object"
+    },
+    "ConnectorReturns": {
+      "description": "What a connector's tools hand back, as its vendor's docs say.",
+      "oneOf": [
+        {
+          "const": "text",
+          "description": "Text and data only: the docs list its tools, and none hands back a file.",
+          "type": "string"
+        },
+        {
+          "const": "files",
+          "description": "A tool hands back a file or media too.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Its vendor's docs don't say.",
+          "type": "string"
+        }
+      ]
+    },
+    "ConnectorSignIn": {
+      "description": "How a connector is signed in to.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "It asks no one to sign in.",
+          "type": "string"
+        },
+        {
+          "const": "dcr",
+          "description": "The person signs in, glave registering there as a client (dynamic client registration).",
+          "type": "string"
+        }
+      ]
     },
     "ConnectorStatus": {
       "description": "Whether a connector is connected.",
@@ -505,6 +628,233 @@
         {
           "const": "sign_in_again",
           "description": "Connected, but its sign-in no longer works or its server asked for more: the person\nconnects it again, or disconnects it.",
+          "type": "string"
+        }
+      ]
+    },
+    "ConnectorTag": {
+      "description": "A tag of connectors.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ConnectorTagId"
+        },
+        "name": {
+          "description": "Its name, in the caller's language.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ConnectorTagId": {
+      "description": "What a connector works with, finer than its categories. A connector has one or more.",
+      "oneOf": [
+        {
+          "const": "ai-media",
+          "description": "AI images and video",
+          "type": "string"
+        },
+        {
+          "const": "ai-models",
+          "description": "AI models",
+          "type": "string"
+        },
+        {
+          "const": "analytics",
+          "description": "Analytics",
+          "type": "string"
+        },
+        {
+          "const": "api-testing",
+          "description": "API testing",
+          "type": "string"
+        },
+        {
+          "const": "automation",
+          "description": "Automation",
+          "type": "string"
+        },
+        {
+          "const": "ci-cd",
+          "description": "Builds and deployments",
+          "type": "string"
+        },
+        {
+          "const": "code-hosting",
+          "description": "Code hosting",
+          "type": "string"
+        },
+        {
+          "const": "company-formation",
+          "description": "Company formation",
+          "type": "string"
+        },
+        {
+          "const": "compliance",
+          "description": "Compliance",
+          "type": "string"
+        },
+        {
+          "const": "content-management",
+          "description": "Content management",
+          "type": "string"
+        },
+        {
+          "const": "crm",
+          "description": "Sales and CRM",
+          "type": "string"
+        },
+        {
+          "const": "customer-support",
+          "description": "Customer support",
+          "type": "string"
+        },
+        {
+          "const": "databases",
+          "description": "Databases",
+          "type": "string"
+        },
+        {
+          "const": "design",
+          "description": "Design",
+          "type": "string"
+        },
+        {
+          "const": "documentation",
+          "description": "Documentation",
+          "type": "string"
+        },
+        {
+          "const": "domains",
+          "description": "Domains",
+          "type": "string"
+        },
+        {
+          "const": "email",
+          "description": "Email",
+          "type": "string"
+        },
+        {
+          "const": "feature-flags",
+          "description": "Feature flags",
+          "type": "string"
+        },
+        {
+          "const": "files",
+          "description": "Files",
+          "type": "string"
+        },
+        {
+          "const": "finance",
+          "description": "Finance",
+          "type": "string"
+        },
+        {
+          "const": "forms",
+          "description": "Forms",
+          "type": "string"
+        },
+        {
+          "const": "hosting",
+          "description": "Hosting",
+          "type": "string"
+        },
+        {
+          "const": "identity",
+          "description": "Users and sign-in",
+          "type": "string"
+        },
+        {
+          "const": "issues",
+          "description": "Issues and bugs",
+          "type": "string"
+        },
+        {
+          "const": "knowledge",
+          "description": "Team knowledge",
+          "type": "string"
+        },
+        {
+          "const": "marketing",
+          "description": "Marketing",
+          "type": "string"
+        },
+        {
+          "const": "media-library",
+          "description": "Media libraries",
+          "type": "string"
+        },
+        {
+          "const": "meetings",
+          "description": "Meetings",
+          "type": "string"
+        },
+        {
+          "const": "monitoring",
+          "description": "Monitoring",
+          "type": "string"
+        },
+        {
+          "const": "notes",
+          "description": "Notes",
+          "type": "string"
+        },
+        {
+          "const": "payments",
+          "description": "Payments",
+          "type": "string"
+        },
+        {
+          "const": "presentations",
+          "description": "Presentations",
+          "type": "string"
+        },
+        {
+          "const": "project-management",
+          "description": "Project management",
+          "type": "string"
+        },
+        {
+          "const": "scheduling",
+          "description": "Scheduling",
+          "type": "string"
+        },
+        {
+          "const": "security",
+          "description": "Security",
+          "type": "string"
+        },
+        {
+          "const": "site-search",
+          "description": "Search for your site",
+          "type": "string"
+        },
+        {
+          "const": "to-do-lists",
+          "description": "To-do lists",
+          "type": "string"
+        },
+        {
+          "const": "web-scraping",
+          "description": "Reading websites",
+          "type": "string"
+        },
+        {
+          "const": "web-search",
+          "description": "Web search",
+          "type": "string"
+        },
+        {
+          "const": "websites",
+          "description": "Websites",
+          "type": "string"
+        },
+        {
+          "const": "whiteboards",
+          "description": "Whiteboards and diagrams",
           "type": "string"
         }
       ]
@@ -4815,14 +5165,51 @@
     },
     "connector/list": {
       "params": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectorCategoryId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "company": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ConnectorTagId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
         "type": "object"
       },
       "result": {
-        "description": "glave's connectors the caller may connect, and their categories.",
+        "description": "glave's connectors the caller may connect, and the companies, categories and tags they\nhave.",
         "properties": {
           "categories": {
             "items": {
               "$ref": "#/$defs/ConnectorCategory"
+            },
+            "type": "array"
+          },
+          "companies": {
+            "items": {
+              "$ref": "#/$defs/ConnectorCompany"
             },
             "type": "array"
           },
@@ -4831,10 +5218,18 @@
               "$ref": "#/$defs/ConnectorInfo"
             },
             "type": "array"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/$defs/ConnectorTag"
+            },
+            "type": "array"
           }
         },
         "required": [
+          "companies",
           "categories",
+          "tags",
           "connectors"
         ],
         "type": "object"

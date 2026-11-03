@@ -259,7 +259,7 @@ function unanswered(method: Method, params: unknown): Answer {
     return { commands: [] };
   }
   if (method === 'connector/list') {
-    return { categories: [], connectors: [] };
+    return { companies: [], categories: [], tags: [], connectors: [] };
   }
   if (method === 'credential/list') {
     return { credentials: [], github: 'https://github.com' };

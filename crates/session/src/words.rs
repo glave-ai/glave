@@ -16,8 +16,8 @@ pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
 use crate::protocol::{
-    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, Reply, SearchInfo, ThreadSummary, Told,
-    Usage,
+    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, Reply, SearchInfo,
+    ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -86,8 +86,10 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
         Ok(Reply::Connection { connection }) => used(&mut connection.usage),
         Ok(Reply::Connectors {
             categories,
+            tags,
             connectors,
-        }) => connectors_in(categories, connectors, language),
+            ..
+        }) => connectors_in(categories, tags, connectors, language),
         Ok(Reply::Connector { connector }) => connector.description.translate(language),
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, usage, .. },
@@ -141,14 +143,18 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
     }
 }
 
-/// Writes the catalog's words for `categories` and `connectors` in `language`.
+/// Writes the catalog's words for `categories`, `tags` and `connectors` in `language`.
 fn connectors_in(
     categories: &mut [ConnectorCategory],
+    tags: &mut [ConnectorTag],
     connectors: &mut [ConnectorInfo],
     language: Language,
 ) {
     for category in categories {
         category.name.translate(language);
+    }
+    for tag in tags {
+        tag.name.translate(language);
     }
     for connector in connectors {
         connector.description.translate(language);

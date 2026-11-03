@@ -12,12 +12,12 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorInfo, CredentialInfo,
-    CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping, InviteInfo, Logo, ModelInfo,
-    OrganizationInfo, OrganizationLook, PasskeySummary, Permissions, PersonInfo, PlanInfo,
-    ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades,
-    ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk,
-    WatchEnd,
+    AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
+    ConnectorTag, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
+    InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
+    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
+    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
+    Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -344,10 +344,13 @@ pub enum Reply {
     Connection { connection: ConnectionInfo },
     #[schemars(title = "Connections")]
     Connections { connections: Vec<ConnectionInfo> },
-    /// glave's connectors the caller may connect, and their categories.
+    /// glave's connectors the caller may connect, and the companies, categories and tags they
+    /// have.
     #[schemars(title = "Connectors")]
     Connectors {
+        companies: Vec<ConnectorCompany>,
         categories: Vec<ConnectorCategory>,
+        tags: Vec<ConnectorTag>,
         connectors: Vec<ConnectorInfo>,
     },
     /// A connector, as it was connected.

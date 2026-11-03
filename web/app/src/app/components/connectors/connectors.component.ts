@@ -166,7 +166,7 @@ export class ConnectorsComponent {
         testId: `connectors-${category.id}`,
         heading: category.name,
         rows: found
-          .filter((it) => it.category === category.id && it.status === 'available')
+          .filter((it) => it.categories[0] === category.id && it.status === 'available')
           .map((it) => this.row(it)),
       });
     }

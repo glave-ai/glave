@@ -38,7 +38,14 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
     let Reply::Connectors {
         categories,
         connectors,
-    } = server.request(Request::ConnectorList {}).await?
+        ..
+    } = server
+        .request(Request::ConnectorList {
+            company: None,
+            category: None,
+            tag: None,
+        })
+        .await?
     else {
         bail!("glave answered connector/list with something else");
     };
@@ -57,7 +64,10 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
     for category in &categories {
         let rest: Vec<&ConnectorInfo> = connectors
             .iter()
-            .filter(|it| it.category == category.id && it.status == ConnectorStatus::Available)
+            .filter(|it| {
+                it.categories.first() == Some(&category.id)
+                    && it.status == ConnectorStatus::Available
+            })
             .collect();
         if rest.is_empty() {
             continue;

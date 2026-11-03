@@ -7,6 +7,7 @@ use glave_ports::memories::Control;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::choice::Choice;
+use crate::connectors::Narrowed;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
 use crate::protocol::{ApiError, LinkKind, Reply, Request, ServerInfo, code};
@@ -570,7 +571,18 @@ where
             Request::SearchGet { usage } => self.get_search(caller, usage).await,
             Request::SearchSet { on } => self.set_search(caller, on).await,
             Request::ConnectionRemove { server } => self.remove_connection(caller, server).await,
-            Request::ConnectorList {} => self.list_connectors(caller).await,
+            Request::ConnectorList {
+                company,
+                category,
+                tag,
+            } => {
+                let narrowed = Narrowed {
+                    company,
+                    category,
+                    tag,
+                };
+                self.list_connectors(caller, &narrowed).await
+            }
             Request::ConnectorConnect { connector } => {
                 self.connect_connector(caller, connector).await
             }

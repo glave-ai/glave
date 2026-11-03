@@ -88,6 +88,15 @@ impl Told {
         }
     }
 
+    /// Its id, when it is a message of glave's catalog of connectors.
+    #[cfg(test)]
+    pub(crate) fn message_id(&self) -> Option<&str> {
+        match self.said.as_deref() {
+            Some(Said::Catalogued { id, .. }) => Some(id),
+            _ => None,
+        }
+    }
+
     /// Whether a transport writes it again in the caller's language: it is the server's own.
     pub(crate) fn translatable(&self) -> bool {
         self.said.is_some()

@@ -1,971 +1,1756 @@
 # The connectors glave offers (`specs/session.md`, "Connectors"): official remote MCP servers,
 # each hosted by the vendor whose service it reaches and confirmed on that vendor's own docs
 # page (`docs`). Built into glave and versioned with it, never fetched. Each works with any
-# client today: `auth` is `dcr` (the person signs in, glave registering as a client) or `none`.
-# `id` is stable: it names the connector to `[mcp] catalog`, to its tools (`mcp__<id>__<tool>`)
-# and to the accounts ledger. `name` is the vendor's, never translated; `description` and each
-# category's `name` are Fluent messages in English (`connector-<id>`, `connector-category-<id>`).
+# client today: `sign_in` is `dcr` (the person signs in, glave registering as a client) or
+# `none`. A connector's `id` is stable: it names the connector to `[mcp] catalog`, to its tools
+# (`mcp__<id>__<tool>`) and to the accounts ledger. A company's `id` is stable too. `name` is
+# the vendor's, never translated; `description` is a Fluent message in English (`connector-<id>`).
+# `categories` and `tags` are the ids of `protocol/connectors.rs`, which holds their messages;
+# the first category is the connector's home, where a client that shows it once puts it.
+# `returns` is `files` when the vendor's docs show a tool that hands back a file or media,
+# `text` when they list the tools and none does, and `unknown` when they don't say.
 
-[[category]]
-id = "dev"
-name = "Developer tools"
+[[company]]
+id = "airtable"
+name = "Airtable"
+homepage = "https://www.airtable.com"
 
-[[category]]
-id = "cloud"
-name = "Cloud and infrastructure"
+[[company]]
+id = "algolia"
+name = "Algolia"
+homepage = "https://www.algolia.com"
 
-[[category]]
-id = "data"
-name = "Data and analytics"
+[[company]]
+id = "amplitude"
+name = "Amplitude"
+homepage = "https://amplitude.com"
 
-[[category]]
-id = "productivity"
-name = "Productivity"
+[[company]]
+id = "apify"
+name = "Apify"
+homepage = "https://apify.com"
 
-[[category]]
-id = "business"
-name = "Business"
+[[company]]
+id = "apollo"
+name = "Apollo.io"
+homepage = "https://www.apollo.io"
 
-[[category]]
-id = "design"
-name = "Design and media"
+[[company]]
+id = "atlassian"
+name = "Atlassian"
+homepage = "https://www.atlassian.com"
 
-[[category]]
-id = "everyday"
-name = "Everyday"
+[[company]]
+id = "attio"
+name = "Attio"
+homepage = "https://attio.com"
+
+[[company]]
+id = "aws"
+name = "Amazon Web Services"
+homepage = "https://aws.amazon.com"
+
+[[company]]
+id = "axiom"
+name = "Axiom"
+homepage = "https://axiom.co"
+
+[[company]]
+id = "basecamp"
+name = "Basecamp"
+homepage = "https://basecamp.com"
+
+[[company]]
+id = "bitly"
+name = "Bitly"
+homepage = "https://bitly.com"
+
+[[company]]
+id = "buildkite"
+name = "Buildkite"
+homepage = "https://buildkite.com"
+
+[[company]]
+id = "calendly"
+name = "Calendly"
+homepage = "https://calendly.com"
+
+[[company]]
+id = "canva"
+name = "Canva"
+homepage = "https://www.canva.com"
+
+[[company]]
+id = "circleci"
+name = "CircleCI"
+homepage = "https://circleci.com"
+
+[[company]]
+id = "clerk"
+name = "Clerk"
+homepage = "https://clerk.com"
+
+[[company]]
+id = "clickhouse"
+name = "ClickHouse"
+homepage = "https://clickhouse.com"
+
+[[company]]
+id = "clickup"
+name = "ClickUp"
+homepage = "https://clickup.com"
+
+[[company]]
+id = "close"
+name = "Close"
+homepage = "https://www.close.com"
+
+[[company]]
+id = "cloudflare"
+name = "Cloudflare"
+homepage = "https://www.cloudflare.com"
+
+[[company]]
+id = "cloudinary"
+name = "Cloudinary"
+homepage = "https://cloudinary.com"
+
+[[company]]
+id = "cognition"
+name = "Cognition"
+homepage = "https://cognition.ai"
+
+[[company]]
+id = "contentful"
+name = "Contentful"
+homepage = "https://www.contentful.com"
+
+[[company]]
+id = "daloopa"
+name = "Daloopa"
+homepage = "https://daloopa.com"
+
+[[company]]
+id = "datadog"
+name = "Datadog"
+homepage = "https://www.datadoghq.com"
+
+[[company]]
+id = "digitalocean"
+name = "DigitalOcean"
+homepage = "https://www.digitalocean.com"
+
+[[company]]
+id = "doola"
+name = "doola"
+homepage = "https://www.doola.com"
+
+[[company]]
+id = "egnyte"
+name = "Egnyte"
+homepage = "https://www.egnyte.com"
+
+[[company]]
+id = "evernote"
+name = "Evernote"
+homepage = "https://evernote.com"
+
+[[company]]
+id = "exa"
+name = "Exa"
+homepage = "https://exa.ai"
+
+[[company]]
+id = "fireflies"
+name = "Fireflies.ai"
+homepage = "https://fireflies.ai"
+
+[[company]]
+id = "framer"
+name = "Framer"
+homepage = "https://www.framer.com"
+
+[[company]]
+id = "gamma"
+name = "Gamma"
+homepage = "https://gamma.app"
+
+[[company]]
+id = "gitlab"
+name = "GitLab"
+homepage = "https://about.gitlab.com"
+
+[[company]]
+id = "gong"
+name = "Gong"
+homepage = "https://www.gong.io"
+
+[[company]]
+id = "gorgias"
+name = "Gorgias"
+homepage = "https://www.gorgias.com"
+
+[[company]]
+id = "grafana"
+name = "Grafana Labs"
+homepage = "https://grafana.com"
+
+[[company]]
+id = "granola"
+name = "Granola"
+homepage = "https://www.granola.ai"
+
+[[company]]
+id = "guru"
+name = "Guru"
+homepage = "https://www.getguru.com"
+
+[[company]]
+id = "harness"
+name = "Harness"
+homepage = "https://www.harness.io"
+
+[[company]]
+id = "heroku"
+name = "Heroku"
+homepage = "https://www.heroku.com"
+
+[[company]]
+id = "hex"
+name = "Hex"
+homepage = "https://hex.tech"
+
+[[company]]
+id = "heygen"
+name = "HeyGen"
+homepage = "https://www.heygen.com"
+
+[[company]]
+id = "higgsfield"
+name = "Higgsfield"
+homepage = "https://higgsfield.ai"
+
+[[company]]
+id = "honeycomb"
+name = "Honeycomb"
+homepage = "https://www.honeycomb.io"
+
+[[company]]
+id = "hugging-face"
+name = "Hugging Face"
+homepage = "https://huggingface.co"
+
+[[company]]
+id = "imagekit"
+name = "ImageKit"
+homepage = "https://imagekit.io"
+
+[[company]]
+id = "incident-io"
+name = "incident.io"
+homepage = "https://incident.io"
+
+[[company]]
+id = "intercom"
+name = "Intercom"
+homepage = "https://www.intercom.com"
+
+[[company]]
+id = "jam"
+name = "Jam"
+homepage = "https://jam.dev"
+
+[[company]]
+id = "jotform"
+name = "Jotform"
+homepage = "https://www.jotform.com"
+
+[[company]]
+id = "klaviyo"
+name = "Klaviyo"
+homepage = "https://www.klaviyo.com"
+
+[[company]]
+id = "launchdarkly"
+name = "LaunchDarkly"
+homepage = "https://launchdarkly.com"
+
+[[company]]
+id = "linear"
+name = "Linear"
+homepage = "https://linear.app"
+
+[[company]]
+id = "lucid"
+name = "Lucid"
+homepage = "https://lucid.co"
+
+[[company]]
+id = "make"
+name = "Make"
+homepage = "https://www.make.com"
+
+[[company]]
+id = "mercury"
+name = "Mercury"
+homepage = "https://mercury.com"
+
+[[company]]
+id = "microsoft"
+name = "Microsoft"
+homepage = "https://www.microsoft.com"
+
+[[company]]
+id = "mintlify"
+name = "Mintlify"
+homepage = "https://www.mintlify.com"
+
+[[company]]
+id = "miro"
+name = "Miro"
+homepage = "https://miro.com"
+
+[[company]]
+id = "mixpanel"
+name = "Mixpanel"
+homepage = "https://mixpanel.com"
+
+[[company]]
+id = "monday"
+name = "monday.com"
+homepage = "https://monday.com"
+
+[[company]]
+id = "motherduck"
+name = "MotherDuck"
+homepage = "https://motherduck.com"
+
+[[company]]
+id = "mux"
+name = "Mux"
+homepage = "https://www.mux.com"
+
+[[company]]
+id = "neon"
+name = "Neon"
+homepage = "https://neon.com"
+
+[[company]]
+id = "netlify"
+name = "Netlify"
+homepage = "https://www.netlify.com"
+
+[[company]]
+id = "new-relic"
+name = "New Relic"
+homepage = "https://newrelic.com"
+
+[[company]]
+id = "notion"
+name = "Notion"
+homepage = "https://www.notion.com"
+
+[[company]]
+id = "paddle"
+name = "Paddle"
+homepage = "https://www.paddle.com"
+
+[[company]]
+id = "paypal"
+name = "PayPal"
+homepage = "https://www.paypal.com"
+
+[[company]]
+id = "planetscale"
+name = "PlanetScale"
+homepage = "https://planetscale.com"
+
+[[company]]
+id = "porkbun"
+name = "Porkbun"
+homepage = "https://porkbun.com"
+
+[[company]]
+id = "posthog"
+name = "PostHog"
+homepage = "https://posthog.com"
+
+[[company]]
+id = "postman"
+name = "Postman"
+homepage = "https://www.postman.com"
+
+[[company]]
+id = "prisma"
+name = "Prisma"
+homepage = "https://www.prisma.io"
+
+[[company]]
+id = "productboard"
+name = "Productboard"
+homepage = "https://www.productboard.com"
+
+[[company]]
+id = "railway"
+name = "Railway"
+homepage = "https://railway.com"
+
+[[company]]
+id = "resend"
+name = "Resend"
+homepage = "https://resend.com"
+
+[[company]]
+id = "sanity"
+name = "Sanity"
+homepage = "https://www.sanity.io"
+
+[[company]]
+id = "semrush"
+name = "Semrush"
+homepage = "https://www.semrush.com"
+
+[[company]]
+id = "sentry"
+name = "Sentry"
+homepage = "https://sentry.io"
+
+[[company]]
+id = "socket"
+name = "Socket"
+homepage = "https://socket.dev"
+
+[[company]]
+id = "square"
+name = "Square"
+homepage = "https://squareup.com"
+
+[[company]]
+id = "statsig"
+name = "Statsig"
+homepage = "https://www.statsig.com"
+
+[[company]]
+id = "stripe"
+name = "Stripe"
+homepage = "https://stripe.com"
+
+[[company]]
+id = "supabase"
+name = "Supabase"
+homepage = "https://supabase.com"
+
+[[company]]
+id = "tavily"
+name = "Tavily"
+homepage = "https://www.tavily.com"
+
+[[company]]
+id = "teamwork"
+name = "Teamwork.com"
+homepage = "https://www.teamwork.com"
+
+[[company]]
+id = "thoughtspot"
+name = "ThoughtSpot"
+homepage = "https://www.thoughtspot.com"
+
+[[company]]
+id = "todoist"
+name = "Todoist"
+homepage = "https://www.todoist.com"
+
+[[company]]
+id = "typeform"
+name = "Typeform"
+homepage = "https://www.typeform.com"
+
+[[company]]
+id = "upstash"
+name = "Upstash"
+homepage = "https://upstash.com"
+
+[[company]]
+id = "vanta"
+name = "Vanta"
+homepage = "https://www.vanta.com"
+
+[[company]]
+id = "webflow"
+name = "Webflow"
+homepage = "https://webflow.com"
+
+[[company]]
+id = "wix"
+name = "Wix"
+homepage = "https://www.wix.com"
+
+[[company]]
+id = "workos"
+name = "WorkOS"
+homepage = "https://workos.com"
+
+[[company]]
+id = "zapier"
+name = "Zapier"
+homepage = "https://zapier.com"
 
 [[connector]]
 id = "gitlab"
 name = "GitLab"
+company = "gitlab"
 url = "https://gitlab.com/api/v4/mcp"
-category = "dev"
-auth = "dcr"
-docs = "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server/"
+categories = ["dev"]
+tags = ["code-hosting", "issues", "ci-cd"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://docs.gitlab.com/user/model_context_protocol/mcp_server/"
 description = "Merge requests, issues and pipelines."
 
 [[connector]]
 id = "atlassian"
 name = "Atlassian"
+company = "atlassian"
 url = "https://mcp.atlassian.com/v2/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "productivity"]
+tags = ["issues", "project-management", "knowledge"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/"
 description = "Jira issues and Confluence pages."
 
 [[connector]]
 id = "linear"
 name = "Linear"
+company = "linear"
 url = "https://mcp.linear.app/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "productivity"]
+tags = ["issues", "project-management"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://linear.app/docs/mcp"
 description = "Issues, projects and cycles."
 
 [[connector]]
 id = "sentry"
 name = "Sentry"
+company = "sentry"
 url = "https://mcp.sentry.dev/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "data"]
+tags = ["monitoring"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.sentry.io/product/sentry-mcp/"
 description = "Errors and the traces behind them."
 
 [[connector]]
 id = "postman"
 name = "Postman"
+company = "postman"
 url = "https://mcp.postman.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["api-testing"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://learning.postman.com/docs/developer/postman-api/postman-mcp-server/"
 description = "Collections, requests and environments."
 
 [[connector]]
 id = "huggingface"
 name = "Hugging Face"
+company = "hugging-face"
 url = "https://huggingface.co/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "data"]
+tags = ["ai-models"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://huggingface.co/docs/hub/hf-mcp-server"
 description = "Models, datasets and Spaces."
 
 [[connector]]
 id = "jam"
 name = "Jam"
+company = "jam"
 url = "https://mcp.jam.dev/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["issues"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://jam.dev/docs/debug-a-jam/mcp"
 description = "Bug reports with their recordings and logs."
 
 [[connector]]
 id = "socket"
 name = "Socket"
+company = "socket"
 url = "https://mcp.socket.dev/"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["security"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.socket.dev/docs/remote-socket-mcp"
 description = "Supply-chain risks in your dependencies."
 
 [[connector]]
 id = "circleci"
 name = "CircleCI"
+company = "circleci"
 url = "https://mcp.circleci.com/v1/mcp"
-category = "dev"
-auth = "dcr"
-docs = "https://circleci.com/docs/guides/toolkit/using-the-circleci-mcp-server/"
+categories = ["dev", "cloud"]
+tags = ["ci-cd"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://circleci.com/docs/guides/toolkit/circleci-mcp-overview/"
 description = "Builds, failures and flaky tests."
 
 [[connector]]
 id = "buildkite"
 name = "Buildkite"
+company = "buildkite"
 url = "https://mcp.buildkite.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "cloud"]
+tags = ["ci-cd"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://buildkite.com/docs/apis/mcp-server"
 description = "Pipelines, builds and their logs."
 
 [[connector]]
 id = "harness"
 name = "Harness"
+company = "harness"
 url = "https://mcp.harness.io/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "cloud"]
+tags = ["ci-cd"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://developer.harness.io/docs/platform/harness-ai/harness-mcp-server/"
 description = "Pipelines, deployments and their runs."
 
 [[connector]]
 id = "workos"
 name = "WorkOS"
+company = "workos"
 url = "https://mcp.workos.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["identity"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://workos.com/docs/mcp"
 description = "Users, sign-ins and directories."
 
 [[connector]]
 id = "clerk"
 name = "Clerk"
+company = "clerk"
 url = "https://mcp.clerk.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["identity"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server"
 description = "Users, sessions and sign-ins."
 
 [[connector]]
 id = "mintlify"
 name = "Mintlify"
+company = "mintlify"
 url = "https://mcp.mintlify.com"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.mintlify.com/docs/ai/model-context-protocol"
 description = "Your documentation site."
 
 [[connector]]
 id = "statsig"
 name = "Statsig"
+company = "statsig"
 url = "https://api.statsig.com/v1/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "data"]
+tags = ["feature-flags", "analytics"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.statsig.com/integrations/mcp"
 description = "Feature gates, experiments and metrics."
 
 [[connector]]
 id = "launchdarkly"
 name = "LaunchDarkly"
+company = "launchdarkly"
 url = "https://mcp.launchdarkly.com/mcp/launchdarkly"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["feature-flags"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://launchdarkly.com/docs/home/getting-started/mcp-hosted"
 description = "Feature flags and their targeting."
 
 [[connector]]
 id = "algolia"
 name = "Algolia"
+company = "algolia"
 url = "https://mcp.algolia.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev", "data"]
+tags = ["site-search"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.algolia.com/doc/guides/model-context-protocol/productivity-mcp"
 description = "Search indices, records and analytics."
 
 [[connector]]
 id = "context7"
 name = "Context7"
+company = "upstash"
 url = "https://mcp.context7.com/mcp"
-category = "dev"
-auth = "dcr"
+categories = ["dev"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://context7.com/docs"
 description = "Current docs for libraries and frameworks."
 
 [[connector]]
 id = "deepwiki"
 name = "DeepWiki"
+company = "cognition"
 url = "https://mcp.deepwiki.com/mcp"
-category = "dev"
-auth = "none"
+categories = ["dev"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "none"
 docs = "https://docs.devin.ai/work-with-devin/deepwiki-mcp"
 description = "Answers about public repositories."
 
 [[connector]]
 id = "microsoft-learn"
 name = "Microsoft Learn"
+company = "microsoft"
 url = "https://learn.microsoft.com/api/mcp"
-category = "dev"
-auth = "none"
+categories = ["dev"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "none"
 docs = "https://learn.microsoft.com/training/support/mcp"
 description = "Microsoft's documentation."
 
 [[connector]]
 id = "aws-knowledge"
 name = "AWS Knowledge"
+company = "aws"
 url = "https://knowledge-mcp.global.api.aws"
-category = "dev"
-auth = "none"
+categories = ["dev", "cloud"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "none"
 docs = "https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server"
 description = "AWS documentation and guidance."
 
 [[connector]]
 id = "cloudflare-docs"
 name = "Cloudflare Docs"
+company = "cloudflare"
 url = "https://docs.mcp.cloudflare.com/mcp"
-category = "dev"
-auth = "none"
+categories = ["dev", "cloud"]
+tags = ["documentation"]
+returns = "text"
+sign_in = "none"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Cloudflare's documentation."
 
 [[connector]]
 id = "cloudflare"
 name = "Cloudflare"
+company = "cloudflare"
 url = "https://mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Your whole Cloudflare account."
 
 [[connector]]
 id = "cloudflare-bindings"
 name = "Cloudflare Workers Bindings"
+company = "cloudflare"
 url = "https://bindings.mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting", "databases"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Storage, databases and queues for Workers."
 
 [[connector]]
 id = "cloudflare-builds"
 name = "Cloudflare Builds"
+company = "cloudflare"
 url = "https://builds.mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["ci-cd"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Workers builds and their logs."
 
 [[connector]]
 id = "cloudflare-observability"
 name = "Cloudflare Observability"
+company = "cloudflare"
 url = "https://observability.mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "data"]
+tags = ["monitoring"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Logs and analytics for Workers."
 
 [[connector]]
 id = "cloudflare-radar"
 name = "Cloudflare Radar"
+company = "cloudflare"
 url = "https://radar.mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "data"]
+tags = ["analytics", "security"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Internet traffic, trends and attacks."
 
 [[connector]]
 id = "cloudflare-browser"
 name = "Cloudflare Browser Rendering"
+company = "cloudflare"
 url = "https://browser.mcp.cloudflare.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["web-scraping"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
 description = "Web pages fetched and rendered."
 
 [[connector]]
 id = "supabase"
 name = "Supabase"
+company = "supabase"
 url = "https://mcp.supabase.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev", "data"]
+tags = ["databases", "hosting"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://supabase.com/docs/guides/getting-started/mcp"
 description = "Projects, tables and SQL."
 
 [[connector]]
 id = "neon"
 name = "Neon"
+company = "neon"
 url = "https://mcp.neon.tech/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev", "data"]
+tags = ["databases"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://neon.com/docs/ai/neon-mcp-server"
 description = "Serverless Postgres branches and queries."
 
 [[connector]]
 id = "prisma"
 name = "Prisma Postgres"
+company = "prisma"
 url = "https://mcp.prisma.io/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["databases"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.prisma.io/docs/postgres/integrations/mcp-server"
 description = "Databases, schemas and migrations."
 
 [[connector]]
 id = "planetscale"
 name = "PlanetScale"
+company = "planetscale"
 url = "https://mcp.pscale.dev/mcp/planetscale"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["databases"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://planetscale.com/docs/mcp-server"
 description = "Databases, branches and queries."
 
 [[connector]]
 id = "netlify"
 name = "Netlify"
+company = "netlify"
 url = "https://netlify-mcp.netlify.app/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting", "websites"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.netlify.com/build/build-with-ai/netlify-mcp-server/"
 description = "Sites, deploys and forms."
 
 [[connector]]
 id = "heroku"
 name = "Heroku"
+company = "heroku"
 url = "https://mcp.heroku.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://devcenter.heroku.com/articles/heroku-remote-mcp-server"
 description = "Apps, dynos and add-ons."
 
 [[connector]]
 id = "railway"
 name = "Railway"
+company = "railway"
 url = "https://mcp.railway.com"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.railway.com/ai/mcp-server"
 description = "Projects, services and deployments."
 
 [[connector]]
 id = "digitalocean"
 name = "DigitalOcean App Platform"
+company = "digitalocean"
 url = "https://apps.mcp.digitalocean.com/mcp"
-category = "cloud"
-auth = "dcr"
+categories = ["cloud", "dev"]
+tags = ["hosting"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.digitalocean.com/reference/mcp/configure-mcp/"
 description = "Apps, deployments and their logs."
 
 [[connector]]
 id = "aws"
 name = "AWS"
+company = "aws"
 url = "https://aws-mcp.us-east-1.api.aws/mcp"
-category = "cloud"
-auth = "dcr"
-docs = "https://docs.aws.amazon.com/aws-mcp/"
+categories = ["cloud", "dev"]
+tags = ["hosting"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html"
 description = "The services in your AWS account."
 
 [[connector]]
 id = "upstash"
 name = "Upstash"
+company = "upstash"
 url = "https://mcp.upstash.com/mcp"
-category = "cloud"
-auth = "dcr"
-docs = "https://upstash.com/docs/devops/mcp"
+categories = ["cloud", "dev"]
+tags = ["databases"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://upstash.com/docs/agent-resources/mcp"
 description = "Redis databases, queues and workflows."
 
 [[connector]]
 id = "datadog"
 name = "Datadog"
+company = "datadog"
 url = "https://mcp.datadoghq.com/v1/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev", "cloud"]
+tags = ["monitoring"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://docs.datadoghq.com/bits_ai/mcp_server/"
 description = "Logs, metrics, traces and monitors."
 
 [[connector]]
 id = "newrelic"
 name = "New Relic"
+company = "new-relic"
 url = "https://mcp.newrelic.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["monitoring"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.newrelic.com/docs/agentic-ai/mcp/overview/"
 description = "Telemetry, alerts and entities."
 
 [[connector]]
 id = "honeycomb"
 name = "Honeycomb"
+company = "honeycomb"
 url = "https://mcp.honeycomb.io/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["monitoring"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.honeycomb.io/integrations/mcp/"
 description = "Queries over your traces."
 
 [[connector]]
 id = "axiom"
 name = "Axiom"
+company = "axiom"
 url = "https://mcp.axiom.co/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["monitoring"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://axiom.co/docs/console/intelligence/mcp-server"
 description = "Queries over your events and logs."
 
 [[connector]]
 id = "incident-io"
 name = "incident.io"
+company = "incident-io"
 url = "https://mcp.incident.io/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["monitoring"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://docs.incident.io/ai/remote-mcp"
 description = "Incidents, alerts and on-call."
 
 [[connector]]
 id = "grafana"
 name = "Grafana Cloud"
+company = "grafana"
 url = "https://mcp.grafana.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["monitoring"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/"
 description = "Dashboards, metrics and logs."
 
 [[connector]]
 id = "posthog"
 name = "PostHog"
+company = "posthog"
 url = "https://mcp.posthog.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "dev"]
+tags = ["analytics", "feature-flags"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://posthog.com/docs/model-context-protocol"
 description = "Product analytics, flags and replays."
 
 [[connector]]
 id = "mixpanel"
 name = "Mixpanel"
+company = "mixpanel"
 url = "https://mcp.mixpanel.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["analytics"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.mixpanel.com/docs/mcp"
 description = "Events, funnels and reports."
 
 [[connector]]
 id = "amplitude"
 name = "Amplitude"
+company = "amplitude"
 url = "https://mcp.amplitude.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["analytics"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://amplitude.com/docs/amplitude-ai/amplitude-mcp"
 description = "Charts, cohorts and experiments."
 
 [[connector]]
 id = "hex"
 name = "Hex"
+company = "hex"
 url = "https://app.hex.tech/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["analytics"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://learn.hex.tech/docs/api-integrations/mcp-server"
 description = "Notebooks, projects and their data."
 
 [[connector]]
 id = "thoughtspot"
 name = "ThoughtSpot"
+company = "thoughtspot"
 url = "https://agent.thoughtspot.app/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["analytics"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.thoughtspot.com/docs/mcp-integration"
 description = "Questions answered from your data."
 
 [[connector]]
 id = "motherduck"
 name = "MotherDuck"
+company = "motherduck"
 url = "https://api.motherduck.com/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "cloud"]
+tags = ["databases", "analytics"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://motherduck.com/docs/sql-reference/mcp/"
 description = "DuckDB databases and SQL."
 
 [[connector]]
 id = "clickhouse"
 name = "ClickHouse Cloud"
+company = "clickhouse"
 url = "https://mcp.clickhouse.cloud/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "cloud"]
+tags = ["databases"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://clickhouse.com/docs/use-cases/AI/MCP/remote_mcp"
 description = "Services, databases and queries."
 
 [[connector]]
 id = "exa"
 name = "Exa"
+company = "exa"
 url = "https://mcp.exa.ai/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["web-search"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.exa.ai/reference/exa-mcp"
 description = "Search the web."
 
 [[connector]]
 id = "tavily"
 name = "Tavily"
+company = "tavily"
 url = "https://mcp.tavily.com/mcp/"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["web-search", "web-scraping"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.tavily.com/documentation/mcp"
 description = "Search and read the web."
 
 [[connector]]
 id = "apify"
 name = "Apify"
+company = "apify"
 url = "https://mcp.apify.com"
-category = "data"
-auth = "dcr"
+categories = ["data"]
+tags = ["web-scraping", "automation"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.apify.com/platform/integrations/mcp"
 description = "Scrapers and automations from Apify Store."
 
 [[connector]]
 id = "semrush"
 name = "Semrush"
+company = "semrush"
 url = "https://mcp.semrush.com/v2/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "business"]
+tags = ["marketing", "analytics"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developer.semrush.com/api/v3/introduction/semrush-mcp/"
 description = "Search traffic, keywords and backlinks."
 
 [[connector]]
 id = "daloopa"
 name = "Daloopa"
+company = "daloopa"
 url = "https://mcp.daloopa.com/server/mcp"
-category = "data"
-auth = "dcr"
+categories = ["data", "business"]
+tags = ["finance"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.daloopa.com/docs/daloopa-mcp"
 description = "Company financials, each with its source."
 
 [[connector]]
 id = "notion"
 name = "Notion"
+company = "notion"
 url = "https://mcp.notion.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity", "everyday"]
+tags = ["notes", "project-management", "knowledge"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.notion.com/docs/mcp"
 description = "Pages, databases and search."
 
 [[connector]]
 id = "monday"
 name = "monday.com"
+company = "monday"
 url = "https://mcp.monday.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["project-management"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developer.monday.com/apps/docs/mondaycom-mcp-integration"
 description = "Boards, items and updates."
 
 [[connector]]
 id = "clickup"
 name = "ClickUp"
+company = "clickup"
 url = "https://mcp.clickup.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["project-management"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
 description = "Tasks, docs and spaces."
 
 [[connector]]
 id = "airtable"
 name = "Airtable"
+company = "airtable"
 url = "https://mcp.airtable.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity", "data"]
+tags = ["databases", "project-management"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://support.airtable.com/docs/using-the-airtable-mcp-server"
 description = "Bases, tables and records."
 
 [[connector]]
 id = "egnyte"
 name = "Egnyte"
+company = "egnyte"
 url = "https://mcp-server.egnyte.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["files"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://developers.egnyte.com/"
 description = "Files and folders."
 
 [[connector]]
 id = "basecamp"
 name = "Basecamp"
+company = "basecamp"
 url = "https://mcp.basecamp.com/mcp"
-category = "productivity"
-auth = "dcr"
-docs = "https://basecamp.com/"
+categories = ["productivity"]
+tags = ["project-management"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://basecamp.com/ai"
 description = "Projects, to-dos and messages."
 
 [[connector]]
 id = "teamwork"
 name = "Teamwork.com"
+company = "teamwork"
 url = "https://mcp.ai.teamwork.com"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["project-management"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://www.teamwork.com/"
 description = "Projects, tasks and time."
 
 [[connector]]
 id = "miro"
 name = "Miro"
+company = "miro"
 url = "https://mcp.miro.com/"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity", "design"]
+tags = ["whiteboards"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.miro.com/docs/connecting-miro-mcp-to-ai-coding-tools"
 description = "Boards and what is on them."
 
 [[connector]]
 id = "lucid"
 name = "Lucid"
+company = "lucid"
 url = "https://mcp.lucid.app/mcp"
-category = "productivity"
-auth = "dcr"
-docs = "https://help.lucid.co/"
+categories = ["productivity", "design"]
+tags = ["whiteboards"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://help.lucid.co/hc/en-us/articles/42578801807508-Integrate-Lucid-with-AI-tools-using-the-Lucid-MCP-server"
 description = "Diagrams and documents."
 
 [[connector]]
 id = "granola"
 name = "Granola"
+company = "granola"
 url = "https://mcp.granola.ai/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["meetings", "notes"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://docs.granola.ai/help-center/sharing/integrations/mcp"
 description = "Your meeting notes."
 
 [[connector]]
 id = "fireflies"
 name = "Fireflies"
+company = "fireflies"
 url = "https://api.fireflies.ai/mcp"
-category = "productivity"
-auth = "dcr"
-docs = "https://docs.fireflies.ai/"
+categories = ["productivity"]
+tags = ["meetings"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://docs.fireflies.ai/mcp-tools/overview"
 description = "Meeting transcripts and summaries."
 
 [[connector]]
 id = "guru"
 name = "Guru"
+company = "guru"
 url = "https://mcp.api.getguru.com/mcp"
-category = "productivity"
-auth = "dcr"
-docs = "https://help.getguru.com/"
+categories = ["productivity"]
+tags = ["knowledge"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://help.getguru.com/docs/connecting-gurus-mcp-server"
 description = "Your team's knowledge cards."
 
 [[connector]]
 id = "calendly"
 name = "Calendly"
+company = "calendly"
 url = "https://mcp.calendly.com"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity", "everyday"]
+tags = ["scheduling"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developer.calendly.com/docs/mcp/calendly-mcp-server"
 description = "Events, availability and scheduling links."
 
 [[connector]]
 id = "jotform"
 name = "Jotform"
+company = "jotform"
 url = "https://mcp.jotform.com/"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["forms"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.jotform.com/developers/mcp/"
 description = "Forms and their submissions."
 
 [[connector]]
 id = "typeform"
 name = "Typeform"
+company = "typeform"
 url = "https://api.typeform.com/mcp"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["forms"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.typeform.com/developers/mcp/"
 description = "Forms and their responses."
 
 [[connector]]
 id = "productboard"
 name = "Productboard"
+company = "productboard"
 url = "https://mcp.productboard.com"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["project-management"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developer.productboard.com/reference/mcp-install"
 description = "Features, insights and roadmaps."
 
 [[connector]]
 id = "zapier"
 name = "Zapier"
+company = "zapier"
 url = "https://mcp.zapier.com/api/v1/connect"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["automation"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://docs.zapier.com/mcp/home"
 description = "Actions across thousands of apps."
 
 [[connector]]
 id = "make"
 name = "Make"
+company = "make"
 url = "https://mcp.make.com/v2"
-category = "productivity"
-auth = "dcr"
+categories = ["productivity"]
+tags = ["automation"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.make.com/mcp-server"
 description = "Your scenarios, run when you ask."
 
 [[connector]]
 id = "stripe"
 name = "Stripe"
+company = "stripe"
 url = "https://mcp.stripe.com"
-category = "business"
-auth = "dcr"
+categories = ["business", "dev"]
+tags = ["payments"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.stripe.com/mcp"
 description = "Customers, payments and invoices."
 
 [[connector]]
 id = "paypal"
 name = "PayPal"
+company = "paypal"
 url = "https://mcp.paypal.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["payments"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://developer.paypal.com/tools/mcp-server/"
 description = "Orders, invoices and disputes."
 
 [[connector]]
 id = "square"
 name = "Square"
+company = "square"
 url = "https://mcp.squareup.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["payments"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developer.squareup.com/docs/mcp"
 description = "Payments, orders and the catalog."
 
 [[connector]]
 id = "paddle"
 name = "Paddle"
+company = "paddle"
 url = "https://mcp.paddle.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business", "dev"]
+tags = ["payments"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://developer.paddle.com/"
 description = "Subscriptions, customers and transactions."
 
 [[connector]]
 id = "mercury"
 name = "Mercury"
+company = "mercury"
 url = "https://mcp.mercury.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["finance"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://docs.mercury.com/docs/connecting-mercury-mcp"
 description = "Your business accounts and transactions."
 
 [[connector]]
 id = "klaviyo"
 name = "Klaviyo"
+company = "klaviyo"
 url = "https://mcp.klaviyo.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["marketing", "email"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.klaviyo.com/en/docs/connect_to_the_klaviyo_mcp_server"
 description = "Campaigns, flows and audiences."
 
 [[connector]]
 id = "attio"
 name = "Attio"
+company = "attio"
 url = "https://mcp.attio.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["crm"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.attio.com/mcp/overview"
 description = "Your CRM records and lists."
 
 [[connector]]
 id = "close"
 name = "Close"
+company = "close"
 url = "https://mcp.close.com/mcp"
-category = "business"
-auth = "dcr"
-docs = "https://developer.close.com/"
+categories = ["business"]
+tags = ["crm"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://developer.close.com/mcp"
 description = "Leads, opportunities and calls."
 
 [[connector]]
 id = "intercom"
 name = "Intercom"
+company = "intercom"
 url = "https://mcp.intercom.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["customer-support"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://developers.intercom.com/docs/guides/mcp"
 description = "Conversations and contacts."
 
 [[connector]]
 id = "gong"
 name = "Gong"
+company = "gong"
 url = "https://mcp.gong.io/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["crm", "meetings"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://help.gong.io/docs/create-an-integration-to-connect-to-the-mcp-server"
 description = "Calls, deals and what was said."
 
 [[connector]]
 id = "apollo"
 name = "Apollo"
+company = "apollo"
 url = "https://mcp.apollo.io/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["crm"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.apollo.io/docs/apollo-mcp"
 description = "Prospects, companies and sequences."
 
 [[connector]]
 id = "gorgias"
 name = "Gorgias"
+company = "gorgias"
 url = "https://mcp.gorgias.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["customer-support"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://docs.gorgias.com/en-US/connect-your-ai-assistant-to-the-gorgias-mcp-6310546"
 description = "Support tickets and customers."
 
 [[connector]]
 id = "vanta"
 name = "Vanta"
+company = "vanta"
 url = "https://mcp.vanta.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business"]
+tags = ["compliance", "security"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developer.vanta.com/docs/vanta-mcp"
 description = "Compliance tests, controls and evidence."
 
 [[connector]]
 id = "bitly"
 name = "Bitly"
+company = "bitly"
 url = "https://api-ssl.bitly.com/v4/mcp"
-category = "business"
-auth = "dcr"
-docs = "https://dev.bitly.com/"
+categories = ["business"]
+tags = ["marketing"]
+returns = "unknown"
+sign_in = "dcr"
+docs = "https://dev.bitly.com/bitly-mcp/"
 description = "Short links and their clicks."
 
 [[connector]]
 id = "porkbun"
 name = "Porkbun"
+company = "porkbun"
 url = "https://mcp.porkbun.com/mcp"
-category = "business"
-auth = "dcr"
-docs = "https://porkbun.com/"
+categories = ["business", "cloud"]
+tags = ["domains"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://porkbun.com/mcp"
 description = "Domains and DNS records."
 
 [[connector]]
 id = "wix"
 name = "Wix"
+company = "wix"
 url = "https://mcp.wix.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business", "design"]
+tags = ["websites"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://dev.wix.com/docs/sdk/articles/use-the-wix-mcp/about-the-wix-mcp"
 description = "Sites, stores and bookings."
 
 [[connector]]
 id = "resend"
 name = "Resend"
+company = "resend"
 url = "https://mcp.resend.com/mcp"
-category = "business"
-auth = "dcr"
+categories = ["business", "dev"]
+tags = ["email"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://resend.com/docs/mcp-server"
 description = "Emails, domains and audiences."
 
 [[connector]]
+id = "doola"
+name = "doola"
+company = "doola"
+url = "https://mcp.doola.com"
+categories = ["business"]
+tags = ["company-formation"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://docs.doola.com/mcp/connect"
+description = "Form a US company and follow its progress."
+
+[[connector]]
 id = "canva"
 name = "Canva"
+company = "canva"
 url = "https://mcp.canva.com/mcp"
-category = "design"
-auth = "dcr"
-docs = "https://www.canva.dev/docs/connect/canva-mcp-server-setup/"
+categories = ["design", "everyday"]
+tags = ["design", "presentations"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://www.canva.dev/docs/apps/mcp/"
 description = "Designs, templates and exports."
 
 [[connector]]
 id = "framer"
 name = "Framer"
+company = "framer"
 url = "https://mcp.framer.com/mcp"
-category = "design"
-auth = "dcr"
+categories = ["design"]
+tags = ["websites", "design"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.framer.com/help/articles/getting-started-with-framer-mcp/"
 description = "Sites, pages and components."
 
 [[connector]]
 id = "webflow"
 name = "Webflow"
+company = "webflow"
 url = "https://mcp.webflow.com/mcp"
-category = "design"
-auth = "dcr"
+categories = ["design", "business"]
+tags = ["websites", "content-management"]
+returns = "unknown"
+sign_in = "dcr"
 docs = "https://developers.webflow.com/mcp/reference/overview"
 description = "Sites, pages and CMS items."
 
 [[connector]]
 id = "gamma"
 name = "Gamma"
+company = "gamma"
 url = "https://mcp.gamma.app/mcp"
-category = "design"
-auth = "dcr"
-docs = "https://developers.gamma.app/"
+categories = ["design", "productivity"]
+tags = ["presentations"]
+returns = "files"
+sign_in = "dcr"
+docs = "https://developers.gamma.app/mcp/gamma-mcp-server"
 description = "Presentations, documents and sites."
 
 [[connector]]
 id = "cloudinary"
 name = "Cloudinary"
+company = "cloudinary"
 url = "https://asset-management.mcp.cloudinary.com/mcp"
-category = "design"
-auth = "dcr"
+categories = ["design", "dev"]
+tags = ["media-library"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://cloudinary.com/documentation/cloudinary_llm_mcp"
 description = "Images, videos and their folders."
 
 [[connector]]
 id = "imagekit"
 name = "ImageKit"
+company = "imagekit"
 url = "https://imagekit.io/mcp/dam"
-category = "design"
-auth = "dcr"
-docs = "https://imagekit.io/docs/"
+categories = ["design", "dev"]
+tags = ["media-library"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://imagekit.io/docs/build-with-ai"
 description = "Your media library."
 
 [[connector]]
 id = "mux"
 name = "Mux"
+company = "mux"
 url = "https://mcp.mux.com"
-category = "design"
-auth = "dcr"
+categories = ["design", "dev"]
+tags = ["media-library"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.mux.com/docs/integrations/mcp-server"
 description = "Videos, live streams and their analytics."
 
 [[connector]]
 id = "sanity"
 name = "Sanity"
+company = "sanity"
 url = "https://mcp.sanity.io"
-category = "design"
-auth = "dcr"
+categories = ["design", "dev"]
+tags = ["content-management"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://www.sanity.io/docs/compute-and-ai/mcp-server"
 description = "Content and schemas."
 
 [[connector]]
 id = "contentful"
 name = "Contentful"
+company = "contentful"
 url = "https://mcp.contentful.com/mcp"
-category = "design"
-auth = "dcr"
+categories = ["design", "dev"]
+tags = ["content-management"]
+returns = "text"
+sign_in = "dcr"
 docs = "https://www.contentful.com/developers/docs/tools/mcp-server/"
 description = "Entries, assets and content types."
 
 [[connector]]
 id = "heygen"
 name = "HeyGen"
+company = "heygen"
 url = "https://mcp.heygen.com/mcp/v1/"
-category = "design"
-auth = "dcr"
+categories = ["design"]
+tags = ["ai-media"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://developers.heygen.com/mcp/claude-code"
 description = "Videos made with AI avatars."
 
 [[connector]]
 id = "higgsfield"
 name = "Higgsfield"
+company = "higgsfield"
 url = "https://mcp.higgsfield.ai/mcp"
-category = "design"
-auth = "dcr"
+categories = ["design"]
+tags = ["ai-media"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://higgsfield.ai/mcp"
 description = "Images and videos made with AI."
 
 [[connector]]
 id = "todoist"
 name = "Todoist"
+company = "todoist"
 url = "https://ai.todoist.net/mcp"
-category = "everyday"
-auth = "dcr"
-docs = "https://www.todoist.com/help/articles/use-todoist-with-ai-tools"
+categories = ["everyday", "productivity"]
+tags = ["to-do-lists"]
+returns = "text"
+sign_in = "dcr"
+docs = "https://github.com/Doist/todoist-mcp"
 description = "Tasks and projects."
 
 [[connector]]
 id = "evernote"
 name = "Evernote"
+company = "evernote"
 url = "https://mcp.evernote.com/mcp"
-category = "everyday"
-auth = "dcr"
+categories = ["everyday", "productivity"]
+tags = ["notes"]
+returns = "files"
+sign_in = "dcr"
 docs = "https://dev.evernote.com/mcp/clients/any"
 description = "Notes and notebooks."
