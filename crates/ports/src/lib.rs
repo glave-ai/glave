@@ -43,6 +43,7 @@ mod view;
 
 pub use blob::{
     Blob, BlobError, BlobStore, Chunks, Pieces, Swept, UNREFERENCED_FOR_MS, digest, read_all,
+    saved_line,
 };
 pub use caller::Caller;
 pub use directory::{Directory, DirectoryError, IdentityKey};

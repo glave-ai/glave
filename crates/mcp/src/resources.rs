@@ -13,7 +13,7 @@ use rmcp::model::ResourceContents;
 use serde_json::json;
 
 use crate::connection::Connection;
-use crate::output::cut;
+use crate::output::resource;
 use crate::server::McpServer;
 
 const LIST: &str = "list_mcp_resources";
@@ -122,9 +122,16 @@ impl Resources {
                     .await
                 {
                     Ok(contents) => {
-                        let mut output = ToolOutput::text(false, cut(contents_text(&contents)));
-                        output.untrusted = server.is_untrusted();
-                        output
+                        let mut saved = Vec::new();
+                        let texts: Vec<String> = contents
+                            .iter()
+                            .map(|content| resource(content, &mut saved))
+                            .collect();
+                        ToolOutput {
+                            untrusted: server.is_untrusted(),
+                            saved,
+                            ..ToolOutput::text(false, or_empty(&texts))
+                        }
                     }
                     Err(err) => ToolOutput::text(true, err),
                 }
@@ -163,7 +170,7 @@ async fn list(
     if text.is_empty() {
         text.push_str("(no resources)");
     }
-    ToolOutput::text(false, cut(text))
+    ToolOutput::text(false, text)
 }
 
 /// A resource's contents as text: text as it is, anything else named.
@@ -179,6 +186,11 @@ pub(crate) fn contents_text(contents: &[ResourceContents]) -> String {
             _ => "[a resource glave cannot show]".to_owned(),
         })
         .collect();
+    or_empty(&texts)
+}
+
+/// What a resource's contents say together.
+fn or_empty(texts: &[String]) -> String {
     if texts.is_empty() {
         "(empty)".to_owned()
     } else {

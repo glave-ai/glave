@@ -123,6 +123,7 @@ On Postgres, the database itself keeps each organization's rows apart as well, a
   2. blobs whose last reference went (a deleted thread);
   3. bytes with no record that are a day old (a crash between writing the bytes and the record).
 - **The store orders a reference and a sweep, not the clock.** A reference is taken only on a record still there (SQLite's one writer; on Postgres the reference's update locks the record, and the sweep locks its candidates, then deletes each in a statement of its own that checks the references again). So a blob referred to while the sweep runs is never deleted, and a reference after the sweep deleted it finds nothing and says so.
+- **What a tool result gives goes here, never in the history** (`invariants.md`, 26): each blob is kept under the thread the result is in, its media type told by its first bytes, whatever the tool called it. The history names it `blob:<SHA-256>`.
 - **Every write names its limit:** more bytes than it is refused and nothing of it is kept. A turn's configuration may be 16 MiB.
 
 ## Search index

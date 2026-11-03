@@ -36,6 +36,8 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use bytes::Bytes;
 use glave_ports::testing::{FakeAuthServer, Grant};
 use http_body_util::combinators::BoxBody;
@@ -94,6 +96,51 @@ fn web_search() -> Tool {
     search
 }
 
+/// `size` bytes no one would call words: the same each run, as a test needs.
+fn noise(size: usize) -> Vec<u8> {
+    let mut state = 0x2545_f491_u32;
+    (0..size)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            state.to_be_bytes().first().copied().unwrap_or(0)
+        })
+        .collect()
+}
+
+/// A result for the history's gate to judge: `image`, `audio` or `resource` blocks with bytes,
+/// `base64` in text, or `structured` JSON holding it, its label saying nothing, or `flood`,
+/// words too long for one piece of text.
+fn blocks(what: &str) -> CallToolResult {
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend(noise(20_000));
+    let encoded = STANDARD.encode(&png);
+    match what {
+        "image" => CallToolResult::success(vec![
+            ContentBlock::text("Here is the chart."),
+            ContentBlock::image(encoded, "text/plain"),
+        ]),
+        "audio" => {
+            let mut wave = b"RIFF\0\0\0\0WAVE".to_vec();
+            wave.extend(noise(20_000));
+            CallToolResult::success(vec![ContentBlock::audio(
+                STANDARD.encode(&wave),
+                "audio/wav",
+            )])
+        }
+        "resource" => {
+            let contents = ResourceContents::blob(encoded, "test://chart");
+            CallToolResult::success(vec![ContentBlock::resource(contents)])
+        }
+        "base64" => said(format!("The file: {encoded} and that is all.")),
+        "structured" => {
+            let mut result = CallToolResult::success(Vec::new());
+            result.structured_content = Some(json!({"note": "plain", "data": encoded}));
+            result
+        }
+        _ => said("All work and no play. ".repeat(4_000)),
+    }
+}
+
 impl TestServer {
     fn tools(&self) -> Vec<Tool> {
         if self.results.is_some() {
@@ -110,6 +157,7 @@ impl TestServer {
         lookup.annotations = Some(ToolAnnotations::new().read_only(true).open_world(true));
         let mut tools = vec![
             echo,
+            Tool::new("blocks", "Return a kind of result.", schema(&what)),
             Tool::new("fail", "Always fails.", schema(&none)),
             Tool::new("slow", "Waits until cancelled.", schema(&none)),
             Tool::new("env", "Whether a variable is set.", schema(&name)),
@@ -316,6 +364,7 @@ impl ServerHandler for TestServer {
         }
         let result = match request.name.as_ref() {
             "echo" => said(argument(&request, "text")),
+            "blocks" => blocks(&argument(&request, "what")),
             "fail" => {
                 CallToolResult::error(vec![ContentBlock::text("it failed, as it always does")])
             }

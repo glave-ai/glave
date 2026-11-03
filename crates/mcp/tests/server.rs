@@ -87,6 +87,7 @@ fn tools_are_named_for_their_server_and_marked_by_what_they_do() {
             named,
             [
                 ("mcp__tests__echo", Effect::Reads, true),
+                ("mcp__tests__blocks", Effect::Runs, false),
                 ("mcp__tests__fail", Effect::Runs, false),
                 ("mcp__tests__slow", Effect::Runs, false),
                 ("mcp__tests__env", Effect::Runs, false),
@@ -133,8 +134,11 @@ fn calls_reach_the_server_and_its_answers_come_back() {
             .call("mcp__tests__flood", &arguments(json!({})), &NeverCancelled)
             .await;
         let flood = text(&flood);
-        assert!(flood.starts_with("xxxx"), "{flood:.20}");
-        assert!(flood.ends_with("[cut short: 250000 characters, only the first 100000 shown]"));
+        assert_eq!(
+            flood.len(),
+            250_000,
+            "how much stays is the harness's gate's to say"
+        );
         server.close().await;
     });
 }
@@ -229,7 +233,7 @@ fn a_server_starts_in_the_background_and_its_first_listing_waits_for_it() {
     block_on!(async {
         let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
         let tools = server.tools().await.unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
         server.close().await;
     });
 }
