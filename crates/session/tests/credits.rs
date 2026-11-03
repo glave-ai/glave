@@ -109,7 +109,9 @@ fn whoever_runs_the_server_adds_credits_and_each_role_sees_what_it_may() {
         assert_eq!(mine.people.len(), 1);
         assert!(mine.people[0].you && mine.people[0].spent == dollars(0));
         assert!(!mine.can_set_limit);
-        let refused = credits(&server, &ada, add(5_000, "order-2")).await.unwrap_err();
+        let refused = credits(&server, &ada, add(5_000, "order-2"))
+            .await
+            .unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert!(
             refused
