@@ -212,8 +212,8 @@ fn without_notes_the_system_prompt_is_glaves_own() {
     });
 }
 
-/// A source that cannot say what tools it has, as a server that did not start.
-struct Gone;
+/// A source that cannot say what tools it has, as a server that did not start, and why.
+struct Gone(String);
 
 /// Why `Gone` has no tools, in the words of a server that ran out its limit to start.
 const WHY_GONE: &str = "MCP server \"docs\" did not start: it did not answer within 30 seconds";
@@ -222,7 +222,7 @@ impl ToolSource for Gone {
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
         Box::pin(ready(Err(ToolError {
             source_name: "docs".to_owned(),
-            message: WHY_GONE.to_owned(),
+            message: self.0.clone(),
         })))
     }
     fn call<'a>(
@@ -246,7 +246,7 @@ fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
         )];
         let (harness, seen) =
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
-        let harness = harness.with_tools(vec![Arc::new(Gone), extra()]);
+        let harness = harness.with_tools(vec![Arc::new(Gone(WHY_GONE.to_owned())), extra()]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "search the docs").await;
 
@@ -264,7 +264,7 @@ fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
         assert_eq!(
             seen[0].system,
             format!(
-                "{plain}\n\nThe tool server docs is not available, so its tools are missing from \
+                "{plain}\n\nThe tool server \"docs\" is not available, so its tools are missing from \
                  this turn. If the person asks for something that needs them, tell them it is \
                  not available, rather than that you have no such tool."
             )
@@ -276,6 +276,28 @@ fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
                 .iter()
                 .any(|spec| spec.name == "mcp__docs__search")
         );
+    });
+}
+
+#[test]
+fn why_a_source_is_missing_is_recorded_on_one_line_and_cut_short() {
+    let dir = folder("sources-gone-long");
+    block_on!(async {
+        let answers = vec![answer(Some("Sorry."), vec![], StopReason::EndTurn)];
+        let harness = harness(&dir, answers, NoOneToAsk).await;
+        let said = format!("a\n\x1b[31mb{}", "c".repeat(10_000));
+        let harness = harness.with_tools(vec![Arc::new(Gone(said))]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "go").await;
+        let events = events(harness.log(), thread.id).await;
+        let started = events.iter().find_map(|event| match &event.body {
+            Body::TurnStarted(started) => Some(started),
+            _ => None,
+        });
+        let recorded = serde_json::to_value(started.unwrap()).unwrap();
+        let message = recorded["missing"][0]["message"].as_str().unwrap();
+        assert!(message.starts_with("a[31mbc"), "{message}");
+        assert_eq!(message.chars().count(), 500);
     });
 }
 

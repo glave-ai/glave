@@ -284,7 +284,7 @@ impl Client<'_> {
                 match decoded.body {
                     Body::TurnStarted(started) if *thread == self.thread => {
                         for gone in &started.missing {
-                            printer.warning(&gone.message);
+                            printer.warning_once(&gone.message);
                         }
                     }
                     // A subagent's never asks: no one is there for it.
