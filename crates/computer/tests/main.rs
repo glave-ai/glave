@@ -7,5 +7,6 @@ mod faulty;
 #[path = "support/ledger.rs"]
 mod ledger;
 
+mod credentials;
 mod faults;
 mod remote;
