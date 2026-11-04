@@ -3,7 +3,8 @@
 //! up to what a whole run makes; a server started on the same store finds each turn waiting or
 //! closes it `interrupted`, and answering what waits then takes every turn to its end. A turn
 //! whose start never landed has nothing to repair: its request failed. Alone and with two
-//! subagents side by side, no call ever runs twice.
+//! subagents side by side, no call ever runs twice. A call goes ahead from its answer once, on
+//! the record: however its result is lost, and whoever goes on after, it is never run again.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,8 +18,13 @@ use glave_ports::{
 use glave_session::protocol::{Reply, Request, Status};
 use serde_json::json;
 
-use super::{Memory, Opened, Store, answering, calling, calling_all, server_on, subagent, waiting};
+use super::{
+    Memory, Opened, Pending, Store, answering, calling, calling_all, server_on, subagent, waiting,
+};
 use crate::support::*;
+
+/// A turn's stream, kept while it runs.
+type Followed = Result<glave_session::TurnStream, glave_session::protocol::ApiError>;
 
 /// More appends than a whole run of either script makes.
 const BOUNDARIES: usize = 100;
@@ -98,6 +104,19 @@ fn with_children() -> Vec<(&'static str, Vec<Completion>)> {
             vec![deploy("b"), answer(Some("Deployed b."), None)],
         ),
     ]
+}
+
+/// The request for a thread in the project.
+fn new_thread() -> Request {
+    Request::ThreadStart {
+        project: Some(scope().project()),
+        background: false,
+        worktree: None,
+        computer: None,
+        model: None,
+        permissions: None,
+        effort: None,
+    }
 }
 
 /// How many times each deploy ran, by what it deployed.
@@ -199,17 +218,7 @@ async fn stopped_after(
         1,
     )
     .await;
-    let started = first
-        .request(Request::ThreadStart {
-            project: Some(scope().project()),
-            background: false,
-            worktree: None,
-            computer: None,
-            model: None,
-            permissions: None,
-            effort: None,
-        })
-        .await;
+    let started = first.request(new_thread()).await;
     let Ok(Reply::Thread { thread }) = started else {
         // Stopped before its thread was kept: nothing ran.
         first.stop(Duration::ZERO).await;
@@ -292,4 +301,184 @@ fn subagents_stopped_at_any_boundary_never_run_a_call_twice() {
         with_children,
         &["a", "b", "p"]
     ));
+}
+
+/// A turn with two subagents side by side on `server`, each stopped at its approval: the root,
+/// what `a` and what `b` wait for, each with its thread, and the turn's stream, kept while it
+/// runs.
+async fn both_waiting<L: EventLog + 'static>(
+    server: &Tested<L>,
+) -> (ThreadId, (ThreadId, Pending), (ThreadId, Pending), Followed) {
+    let started = server.request(new_thread()).await.unwrap();
+    let Reply::Thread { thread } = started else {
+        panic!("a thread, not {started:?}");
+    };
+    let stream = stream_turn(server, thread.id, "PARENT: go", None).await;
+    for _ in 0..100_000 {
+        let (mut a, mut b) = (None, None);
+        for child in super::children_of(server, thread.id).await {
+            let events = events(server, child).await;
+            let Some(pending) = super::pending_in(&events) else {
+                continue;
+            };
+            let deploys = |what: &str| {
+                let says = format!("\"what\":\"{what}\"");
+                events.iter().any(|event| {
+                    event.kind.as_str() == "tool.call.requested" && event.data.get().contains(&says)
+                })
+            };
+            if deploys("a") {
+                a = Some((child, pending));
+            } else if deploys("b") {
+                b = Some((child, pending));
+            }
+        }
+        if let (Some(a), Some(b)) = (a, b) {
+            return (thread.id, a, b, stream);
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the subagents never both waited");
+}
+
+/// A server that stops on `shared`, with `tools`, for the tests that force what `stopped_after`
+/// finds at random; its log's faults are told by the test.
+async fn doomed_on(
+    dir: &std::path::Path,
+    shared: &Memory,
+    tools: &Arc<InMemoryTools>,
+) -> (Tested<FaultyLog>, FaultyLog) {
+    let (_, own_leases) = shared_leases();
+    let log = FaultyLog::over(Arc::clone(&shared.log.0));
+    let doomed = Doomed {
+        log: log.clone(),
+        projects: Arc::clone(&shared.projects),
+        leases: own_leases,
+    };
+    let server = server_on(
+        dir,
+        &doomed,
+        ScriptedModel::keyed(with_children()),
+        vec![Arc::clone(tools) as Arc<dyn ToolSource>],
+        1,
+    )
+    .await;
+    (server, log)
+}
+
+/// That each of `parts` was deployed once.
+fn each_once(tools: &InMemoryTools, parts: &[&str]) {
+    let mut ran = runs(tools);
+    ran.sort();
+    let once: Vec<(String, usize)> = parts.iter().map(|part| ((*part).to_owned(), 1)).collect();
+    assert_eq!(ran, once, "each part deployed once");
+}
+
+/// #1174, forced: `b`'s answer lands while `a` is going ahead, and `a`'s result is then lost. The
+/// work `b`'s answer leaves for once `a`'s ends must take `a` as interrupted, not run it again.
+#[test]
+fn a_sibling_answered_while_a_call_runs_and_loses_its_result_never_runs_it_again() {
+    block_on!(async {
+        let dir = folder("crashes-sibling-answered");
+        let tools = deploys();
+        let shared = Memory::new();
+        let (server, log) = doomed_on(&dir, &shared, &tools).await;
+        let (root, a, b, _followed) = both_waiting(&server).await;
+        log.hold("tool.call.started");
+        log.fail_with("tool.call.completed");
+        server.request(answering(a.0, a.1, false)).await.unwrap();
+        log.held().await;
+        server.request(answering(b.0, b.1, false)).await.unwrap();
+        log.release();
+        answer_until_done(&server, root, || false).await;
+        server.stop(Duration::from_secs(3_600)).await;
+        each_once(&tools, &["a", "b", "p"]);
+    });
+}
+
+/// A server stopped with `b` answered and `a`'s result lost: `b`'s answer is closed as a crash's
+/// leftover by the next start, and neither call runs again.
+#[test]
+fn a_result_lost_as_a_server_stops_leaves_each_call_run_at_most_once() {
+    block_on!(async {
+        let dir = folder("crashes-stopped-answered");
+        let tools = deploys();
+        let shared = Memory::new();
+        let (first, log) = doomed_on(&dir, &shared, &tools).await;
+        let (root, a, b, _followed) = both_waiting(&first).await;
+        log.hold("tool.call.completed");
+        first.request(answering(a.0, a.1, false)).await.unwrap();
+        log.held().await;
+        first.request(answering(b.0, b.1, false)).await.unwrap();
+        log.stop_after(0);
+        log.release();
+        first.stop(Duration::from_secs(3_600)).await;
+        assert!(log.stopped(), "the result of a was refused");
+        drop(first);
+
+        let sources: Vec<Arc<dyn ToolSource>> = vec![Arc::clone(&tools) as Arc<dyn ToolSource>];
+        let script = ScriptedModel::keyed(with_children());
+        let second = server_on(&dir, &shared, script, sources, 2).await;
+        second.repair_left_open().await.unwrap();
+        answer_until_done(&second, root, || false).await;
+        second.stop(Duration::from_secs(3_600)).await;
+        each_once(&tools, &["a"]);
+    });
+}
+
+/// No crash and no race: one write of `a`'s result fails, and `b` is answered later.
+#[test]
+fn one_lost_result_then_a_siblings_answer_never_runs_the_call_again() {
+    block_on!(async {
+        let dir = folder("crashes-one-lost-result");
+        let tools = deploys();
+        let shared = Memory::new();
+        let (server, log) = doomed_on(&dir, &shared, &tools).await;
+        let (root, a, b, _followed) = both_waiting(&server).await;
+        log.fail_with("tool.call.completed");
+        server.request(answering(a.0, a.1, false)).await.unwrap();
+        // `a`'s work ends at `b`'s wait, once the turn no longer runs.
+        for _ in 0..100_000 {
+            if runs(&tools).len() == 1 && waiting(&server, root).await.is_some() {
+                let got = server.request(Request::ThreadGet { thread: root }).await;
+                if matches!(got, Ok(Reply::Thread { thread }) if thread.status == Status::Waiting) {
+                    break;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+        each_once(&tools, &["a"]);
+        server.request(answering(b.0, b.1, false)).await.unwrap();
+        answer_until_done(&server, root, || false).await;
+        server.stop(Duration::from_secs(3_600)).await;
+        each_once(&tools, &["a", "b", "p"]);
+    });
+}
+
+/// A real crash: `a` ran and its server died before its result landed. Another server on the
+/// store, which started before that and so repairs nothing, is answered for `b`.
+#[test]
+fn a_call_a_crash_left_unreported_is_not_run_by_another_running_server() {
+    block_on!(async {
+        let dir = folder("crashes-another-server");
+        let tools = deploys();
+        let shared = Memory::new();
+        let (first, log) = doomed_on(&dir, &shared, &tools).await;
+        let (root, a, b, _followed) = both_waiting(&first).await;
+        // Its answer lands, and nothing after it but that the call goes ahead.
+        log.stop_after(2);
+        first.request(answering(a.0, a.1, false)).await.unwrap();
+        answer_until_done(&first, root, || log.stopped()).await;
+        first.stop(Duration::from_secs(3_600)).await;
+        each_once(&tools, &["a"]);
+        drop(first);
+
+        let sources: Vec<Arc<dyn ToolSource>> = vec![Arc::clone(&tools) as Arc<dyn ToolSource>];
+        let script = ScriptedModel::keyed(with_children());
+        let second = server_on(&dir, &shared, script, sources, 2).await;
+        second.request(answering(b.0, b.1, false)).await.unwrap();
+        answer_until_done(&second, root, || false).await;
+        second.stop(Duration::from_secs(3_600)).await;
+        each_once(&tools, &["a", "b", "p"]);
+    });
 }

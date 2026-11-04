@@ -4,10 +4,12 @@
 //! could not go on leaves the thread to its next prompt; a stop that could not leaves the turn
 //! waiting, and a prompt meanwhile records nothing.
 
-use glave_event::{Body, CallId, CommandEnding, Event, Outcome, StopReason};
+use std::sync::Arc;
+
+use glave_event::{Body, CallId, CommandEnding, Event, Outcome, ServiceAnswer, StopReason};
 use glave_harness::{Cancel, Decision, HarnessError, NoOneToAsk};
 use glave_ports::testing::FaultyLog;
-use glave_ports::{Caller, Message};
+use glave_ports::{Caller, Message, ToolSource};
 use serde_json::json;
 
 use crate::network::InTheLog;
@@ -149,22 +151,38 @@ fn a_turn_that_failed_between_a_call_and_its_result_is_closed_by_the_next() {
     });
 }
 
+/// `asked` allowed, and the turn gone on with until the write or read of `kind` fails.
+async fn allowed_and_lost(
+    harness: &glave_harness::Harness<
+        ScriptedModel,
+        FaultyLog,
+        glave_ports::InMemoryBlobs,
+        InTheLog,
+    >,
+    thread: &mut glave_harness::Thread,
+    asked: &CallId,
+    log: &FaultyLog,
+    kind: &'static str,
+) {
+    harness
+        .decide(scope(), thread.id, asked, Decision::AllowOnce, None)
+        .await
+        .unwrap();
+    log.fail_with(kind);
+    let failed = harness
+        .go_on(thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+        .await;
+    assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
+}
+
 #[test]
 fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
     let dir = folder("log-fails-going-on");
     block_on!(async {
         let log = FaultyLog::default();
         let (harness, mut thread, asked) = waiting(&dir, &log).await;
-        harness
-            .decide(scope(), thread.id, &asked, Decision::AllowOnce, None)
-            .await
-            .unwrap();
         // Going on reads the answer first, and that read fails.
-        log.fail_with("approval.decided");
-        let failed = harness
-            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
-            .await;
-        assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
+        allowed_and_lost(&harness, &mut thread, &asked, &log, "approval.decided").await;
         assert!(!thread.waits(), "its answer is in the log: nothing waits");
 
         turn(&harness, &mut thread, "go on").await;
@@ -176,6 +194,102 @@ fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
         let (requested, completed) = calls(&events);
         assert_eq!(requested, completed);
         assert!(!dir.join("a.txt").exists(), "the answered call never ran");
+    });
+}
+
+#[test]
+fn an_answered_call_whose_result_never_landed_is_closed_and_never_run_again() {
+    let dir = folder("log-fails-after-running");
+    block_on!(async {
+        let log = FaultyLog::default();
+        let (harness, mut thread, asked) = waiting(&dir, &log).await;
+        allowed_and_lost(&harness, &mut thread, &asked, &log, "tool.call.completed").await;
+        let ran = dir.join("a.txt");
+        assert!(ran.exists(), "it ran, and only its result was lost");
+        std::fs::remove_file(&ran).unwrap();
+
+        let again = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(again.outcome, Outcome::Interrupted);
+        assert!(!ran.exists(), "going on again must not run it again");
+        let (requested, completed) = calls(&events(harness.log(), thread.id).await);
+        assert_eq!(requested, completed, "it has the interrupted result");
+    });
+}
+
+#[test]
+fn a_call_that_could_not_record_going_ahead_never_runs() {
+    let dir = folder("log-fails-going-ahead");
+    block_on!(async {
+        let log = FaultyLog::default();
+        let (harness, mut thread, asked) = waiting(&dir, &log).await;
+        allowed_and_lost(&harness, &mut thread, &asked, &log, "tool.call.started").await;
+        assert!(!dir.join("a.txt").exists(), "nothing says it may have run");
+
+        // Still only answered: going on runs it, for the first time.
+        let ended = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(ended.outcome, Outcome::Completed);
+        assert!(dir.join("a.txt").exists());
+    });
+}
+
+#[test]
+fn a_services_answer_whose_result_never_landed_is_not_given_again() {
+    let dir = folder("log-fails-after-answering");
+    block_on!(async {
+        let log = FaultyLog::default();
+        let source = AskingTool::asking(&["Which repository?"]);
+        let answers = vec![
+            answer(None, vec![(ASKING_TOOL, json!({}))], StopReason::ToolUse),
+            answer(Some("Filed."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_with(
+            workspace(&dir).await,
+            answers,
+            InTheLog,
+            log.clone(),
+            1,
+            settings(),
+        );
+        let harness = harness.with_tools(vec![Arc::clone(&source) as Arc<dyn ToolSource>]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let stopped = harness
+            .run_turn(&mut thread, "file it", &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(
+            matches!(stopped, Err(HarnessError::Waits(_))),
+            "{stopped:?}"
+        );
+        let (call, at) = events(harness.log(), thread.id)
+            .await
+            .iter()
+            .find_map(|event| match &event.body {
+                Body::ServiceAsked(asked) => Some((asked.call_id.clone(), event.header.seq)),
+                _ => None,
+            })
+            .unwrap();
+        harness
+            .answer_service(scope(), thread.id, &call, at, ServiceAnswer::Declined, None)
+            .await
+            .unwrap();
+        log.fail_with("tool.call.completed");
+        let failed = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
+        assert_eq!(source.given().len(), 2, "asked, then given its answer");
+
+        let again = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(again.outcome, Outcome::Interrupted);
+        assert_eq!(source.given().len(), 2, "never given it a second time");
     });
 }
 

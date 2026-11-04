@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, CallId, Caution, Outcome, Principal, Settled,
-    ToolCallCompleted, ToolKind, TurnResult, Verdict,
+    ToolCallCompleted, ToolCallStarted, ToolKind, TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
@@ -528,11 +528,18 @@ where
             decision: Verdict::AllowOnce,
             by: Some(Principal::glave()),
         };
-        // Written together, so that no stop between them can leave it waiting for anyone.
+        // Written together, so that no stop between them can leave it waiting for anyone, or
+        // going on from an answer after it may have run.
+        let started = ToolCallStarted {
+            call_id: request.call_id.clone(),
+        };
         let mut events = Vec::new();
         self.stage(thread, &mut events, &asked)?;
         self.stage(thread, &mut events, &decided)?;
+        self.stage(thread, &mut events, &started)?;
         self.commit(thread, events).await?;
+        // Glave's own record: call ids do not count it, so the model is sent the same.
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
         Ok(Judged::Cleared)
     }
 
@@ -594,7 +601,11 @@ where
         };
         self.record(thread, &decided).await?;
         let no_one = (verdict == Verdict::NoOneThere).then(|| no_one_there(request));
-        Ok(settle(thread, &asked, verdict, no_one, live))
+        let settled = settle(thread, &asked, verdict, no_one, live);
+        if settled.is_none() {
+            self.record_started(thread, &request.call_id).await?;
+        }
+        Ok(settled)
     }
 
     /// What Full access does where another mode would ask about `request`: nothing, so the call
@@ -649,7 +660,11 @@ where
             }
             None => return Err(HarnessError::Waits(thread.id)),
         };
-        Ok(settle(thread, &answered.asked, verdict, None, live))
+        let settled = settle(thread, &answered.asked, verdict, None, live);
+        if settled.is_none() {
+            self.record_started(thread, &answered.asked.call_id).await?;
+        }
+        Ok(settled)
     }
 
     pub(crate) async fn record_result(

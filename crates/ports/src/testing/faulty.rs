@@ -65,7 +65,8 @@ impl FaultyLog {
     }
 
     /// Holds the next append that holds an event of `kind` before it lands, until
-    /// [`FaultyLog::release`]; [`FaultyLog::held`] says when one is.
+    /// [`FaultyLog::release`], unless appends stop meanwhile; [`FaultyLog::held`] says when one
+    /// is.
     pub fn hold(&self, kind: &'static str) {
         *lock(&self.faults.hold) = Some(kind);
     }
@@ -75,7 +76,7 @@ impl FaultyLog {
         self.faults.held.notified().await;
     }
 
-    /// Lets the held append go on and land.
+    /// Lets the held append go on and land, unless appends stopped meanwhile.
     pub fn release(&self) {
         self.faults.released.notify_one();
     }
@@ -149,6 +150,9 @@ impl EventLog for FaultyLog {
             }
             self.faults.held.notify_one();
             self.faults.released.notified().await;
+            if let Some(refused) = stops(&self.faults.stop) {
+                return Err(refused);
+            }
             self.log.append(scope, events).await
         }
     }
@@ -256,6 +260,15 @@ mod tests {
         vec![encode(header, &ended).unwrap()]
     }
 
+    /// An append held on its way, on a task of its own.
+    async fn holding(log: &FaultyLog) -> tokio::task::JoinHandle<Result<(), LogError>> {
+        log.hold("turn.ended");
+        let held = log.clone();
+        let appending = tokio::spawn(async move { held.append(&scope(), &ended(1)).await });
+        log.held().await;
+        appending
+    }
+
     async fn kept(log: &FaultyLog) -> usize {
         log.read(&scope(), thread(), None, 10).await.unwrap().len()
     }
@@ -286,14 +299,24 @@ mod tests {
     fn a_held_append_lands_once_it_is_released() {
         let log = FaultyLog::default();
         block_on!(async {
-            log.hold("turn.ended");
-            let held = log.clone();
-            let appending = tokio::spawn(async move { held.append(&scope(), &ended(1)).await });
-            log.held().await;
+            let appending = holding(&log).await;
             assert_eq!(kept(&log).await, 0, "held, not landed");
             log.release();
             appending.await.unwrap().unwrap();
             assert_eq!(kept(&log).await, 1);
+        });
+    }
+
+    #[test]
+    fn an_append_held_while_it_stopped_is_refused_when_released() {
+        let log = FaultyLog::default();
+        block_on!(async {
+            let appending = holding(&log).await;
+            log.stop_after(0);
+            log.release();
+            assert!(appending.await.unwrap().is_err());
+            assert!(log.stopped());
+            assert_eq!(kept(&log).await, 0);
         });
     }
 
