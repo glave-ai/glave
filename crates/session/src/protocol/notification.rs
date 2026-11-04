@@ -34,8 +34,8 @@ pub enum Notification {
         thread: ThreadId,
         summary: Box<ThreadSummary>,
     },
-    /// The watching caller's own settings or connections changed through this server: read
-    /// `setting` again. Sent on their list watches.
+    /// The watching caller's own settings or connections, or their organization's brand, changed
+    /// through this server: read `setting` again. Sent on their list watches.
     #[serde(rename = "settings/changed")]
     SettingsChanged { setting: Setting },
 }

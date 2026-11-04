@@ -3,11 +3,12 @@
 //! `after`, what changed since comes first and nothing older; a watcher far behind still hears
 //! the latest; a subagent's wait is its parent's; a removed project's threads are heard
 //! archived; nobody hears of threads in another person's projects; and a person's change of a
-//! setting is heard in the organization it was made in.
+//! setting is heard in the organization it was made in, and an organization's brand by everyone
+//! in it.
 
 use std::sync::Arc;
 
-use glave_event::{At, Body, OrgRole, Secret, ThreadId, decode};
+use glave_event::{Accent, At, Body, OrgRole, Secret, ThreadId, decode};
 use glave_ports::testing::{HUNG, ManualClock, Outbox};
 use glave_ports::{Caller, ProjectId, Standing};
 use glave_session::protocol::{
@@ -321,13 +322,22 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
 /// Ada, signed up, and the session and ids of her two organizations: the first her own, the
 /// second one she joined by Carol's invite.
 async fn ada_in_two_organizations(served: &Served, outbox: &Outbox) -> (String, String, String) {
-    let mut ada = signed_up(served, outbox, "ada@example.com").await;
     let mut carol = signed_up(served, outbox, "carol@example.com").await;
+    ada_invited_by(&mut carol, served, outbox).await
+}
+
+/// [`ada_in_two_organizations`], the second the organization of `carol`, its admin.
+async fn ada_invited_by(
+    carol: &mut Web,
+    served: &Served,
+    outbox: &Outbox,
+) -> (String, String, String) {
+    let mut ada = signed_up(served, outbox, "ada@example.com").await;
     let invite = Request::InviteCreate {
         role: OrgRole::Member,
         email: None,
     };
-    let invited = asked(&mut carol, &invite).await;
+    let invited = asked(carol, &invite).await;
     let accept = Request::InviteAccept {
         code: Secret::new(invited["code"].as_str().unwrap()),
     };
@@ -437,6 +447,66 @@ fn a_name_changed_in_one_organization_is_heard_in_all_of_them() {
             settings_until(&mut watcher, Setting::Language).await,
             [Setting::Passkeys, Setting::Language],
             "her name and passkeys are hers wherever she works"
+        );
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_brand_changed_is_heard_by_everyone_in_its_organization_and_nobody_else() {
+    block_on!(async {
+        let dir = folder("list-brand-organization");
+        let outbox = Arc::new(Outbox::default());
+        let served = serve(&dir, true, &outbox).await;
+        let mut carol = signed_up(&served, &outbox, "carol@example.com").await;
+        let (session, own, carols) = ada_invited_by(&mut carol, &served, &outbox).await;
+        let dave = signed_up(&served, &outbox, "dave@example.com").await;
+        let of = |person: &Web| elsewhere(&served, person.token.clone());
+        let ada = |org: &str| working_in(&served, &session, org);
+        let mut admin = watching(of(&carol)).await;
+        let mut member = watching(ada(&carols)).await;
+        let mut elsewhere_too = watching(ada(&own)).await;
+        let mut outsider = watching(of(&dave)).await;
+
+        let branded = Request::BrandSet {
+            name: Some("Carol's".into()),
+            logo: None,
+            accent: Accent::Plain,
+            locked: false,
+        };
+        changed(&mut carol, &branded).await;
+        for (mut client, watcher, told, who) in [
+            (of(&carol), &mut admin, true, "another tab of the admin"),
+            (ada(&carols), &mut member, true, "a member"),
+            (ada(&own), &mut elsewhere_too, false, "the member elsewhere"),
+            (of(&dave), &mut outsider, false, "someone in another"),
+        ] {
+            changed(&mut client, &language_chosen()).await;
+            let expected: &[Setting] = if told {
+                &[Setting::Brand, Setting::Language]
+            } else {
+                &[Setting::Language]
+            };
+            assert_eq!(
+                settings_until(watcher, Setting::Language).await,
+                expected,
+                "{who}"
+            );
+        }
+        // What the member reads again is what the admin kept.
+        let read = asked(&mut ada(&carols), &Request::AppearanceGet {}).await;
+        assert_eq!(read["organization"]["name"], "Carol's");
+
+        // A person's own accent stays theirs, in the same organization.
+        let accent = Request::AppearanceSet {
+            accent: Some(Accent::Plain),
+        };
+        changed(&mut ada(&carols), &accent).await;
+        changed(&mut of(&carol), &language_chosen()).await;
+        assert_eq!(
+            settings_until(&mut admin, Setting::Language).await,
+            [Setting::Language],
+            "a member's accent is not told to anyone else"
         );
         served.close().await;
     });

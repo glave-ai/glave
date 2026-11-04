@@ -71,6 +71,16 @@ describe('AppearanceService', () => {
     expect(root('--glz-accent-light')).toBe(SHADES.light);
   });
 
+  it('reads again when the server says the organization’s brand changed', async () => {
+    const fake = new FakeSession().answer('appearance/get', { chosen: PLAIN });
+    await service(fake);
+    fake.answer('appearance/get', { shades: SHADES });
+    TestBed.inject(ChangesService).tell('brand');
+    TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(root('--glz-accent-light')).toBe(SHADES.light);
+  });
+
   it('shows the last of quick choices, and puts back what was kept, with why, when refused', async () => {
     const waiting: ((answer: object) => void)[] = [];
     const fake = new FakeSession().answer('appearance/get', { chosen: PLAIN }).answer(

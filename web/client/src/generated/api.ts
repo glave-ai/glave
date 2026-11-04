@@ -690,8 +690,8 @@ export type OrganizationInfo = {
   /** Its id, which a request names in `Glave-Organization` to work in it. */
   readonly id: string;
   /**
-   * What it is called: "Personal" for the caller's own; another, while organizations have
-   * no names of their own, by an Owner of it ("Dana Lee's team"), else "A team".
+   * What it is called: the name its brand gives it; with none, "Personal" for the caller's
+   * own, and another by an Owner of it ("Dana Lee's team"), else "A team".
    */
   readonly name: string;
   /**
@@ -1105,8 +1105,11 @@ export type ServiceAnswer = {
   };
 } | "declined";
 
-/** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
+/**
+ * A person's own settings or connections, and their organization's brand, by what a client
+ * reads to show them.
+ */
+export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "brand" | "awake" | "memory" | "passkeys" | "language";
 
 /** The accent as it is drawn, in each of light and dark. */
 export type Shades = {

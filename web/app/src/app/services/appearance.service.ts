@@ -75,6 +75,7 @@ export class AppearanceService {
     const remembered = readStored(this.storage, KEY);
     this.draw(isShades(remembered) ? remembered : null);
     onChange('appearance', () => void this.read());
+    onChange('brand', () => void this.read());
     // Signed out only when it was signed in: as the app starts it is not yet, until the server
     // has answered, and what this browser remembers stays drawn till then.
     effect(() => {
