@@ -5,6 +5,7 @@ use serde_json::value::RawValue;
 
 use super::approval::Lifted;
 use super::model::{ModelRef, ModelResponded, TokenCounts};
+use super::tool::ToolError;
 use crate::blob::BlobRef;
 use crate::codec::{Payload, parse};
 use crate::error::InvalidValue;
@@ -27,6 +28,10 @@ pub struct TurnStarted {
     /// How the caller who started the turn signed in. Never a token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<Auth>,
+    /// The sources of tools the turn went without, and why: a server that did not start, or
+    /// that could not say what tools it has.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<ToolError>,
 }
 
 /// A W3C trace id: 32 lowercase hex digits, not all zero.

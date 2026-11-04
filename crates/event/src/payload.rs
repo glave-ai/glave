@@ -95,7 +95,7 @@ pub use thread::{
     ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,
 };
 pub use tool::{
-    Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolKind, WebPage,
+    Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolError, ToolKind, WebPage,
 };
 pub use trust::{Decision, TrustDecided};
 pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
