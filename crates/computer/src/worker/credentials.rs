@@ -40,13 +40,16 @@ impl WorkerCredentials {
     }
 }
 
-/// Asks the person's git for the credential for `https://<rest>`.
+/// Asks the person's git for the credential for `https://<rest>`, from no repository: the server
+/// may have started in one, whose config a sandboxed command could have written, and git would
+/// run a helper it names. What answers is what the person set for their whole account.
 async fn fill(processes: &Processes, rest: &str) -> Result<Option<GitCredential>, ComputerError> {
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
     let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
     let asked = format!("protocol=https\nhost={host}\npath={path}\n\n");
     let mut git = glave_process::Program::new("git");
     git.args(["credential", "fill"])
+        .current_dir("/")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .stdout(Stdio::piped())
@@ -97,7 +100,90 @@ pub fn https_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::path::Path;
+
+    use glave_ports::testing::TempDir;
+
     use super::*;
+
+    /// Set on the server the first test starts, so the second does nothing when run by anything else.
+    const AS_THE_SERVER: &str = "GLAVE_TEST_AS_THE_SERVER";
+
+    #[test]
+    fn a_helper_named_by_the_repository_the_server_started_in_never_runs() {
+        let dir = TempDir::new("credential-from-no-repository").unwrap();
+        let (home, repo) = (dir.join("home"), dir.join("repo"));
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::create_dir_all(repo.join(".git/objects")).unwrap();
+        std::fs::create_dir_all(repo.join(".git/refs")).unwrap();
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let script = |name: &str, text: &str| {
+            let path = home.join("bin").join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{text}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let ran = dir.join("ran");
+        let planted = script("planted", &format!(": > '{}'", ran.display()));
+        let theirs = script(
+            "theirs",
+            "test \"$1\" = get || exit 0\nprintf 'username=someone\\npassword=%s\\n' \"$ANSWER\"",
+        );
+        let config = |helper: &Path| {
+            format!(
+                "[credential]\n\thelper =\n\thelper = !{}\n",
+                helper.display()
+            )
+        };
+        std::fs::write(home.join(".gitconfig"), config(&theirs)).unwrap();
+        std::fs::write(
+            repo.join(".git/config"),
+            format!(
+                "[core]\n\trepositoryformatversion = 0\n{}",
+                config(&planted)
+            ),
+        )
+        .unwrap();
+        let mut server = glave_process::Program::new(std::env::current_exe().unwrap());
+        server
+            .args([
+                "--exact",
+                "worker::credentials::tests::the_server_asks_for_a_credential",
+                "--ignored",
+            ])
+            .current_dir(&repo)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", &home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("ANSWER", glave_ports::testing::any_secret())
+            .env(AS_THE_SERVER, "1");
+        let done = glave_ports::block_on!(
+            Processes::unrecorded().output(&mut server, Duration::from_secs(60))
+        )
+        .unwrap();
+        assert!(
+            done.status.success(),
+            "{}",
+            String::from_utf8_lossy(&done.stdout)
+        );
+        assert!(!ran.exists(), "the repository's helper ran");
+    }
+
+    /// The server's side of the test above: its git asks, and the person's helper answers.
+    #[test]
+    #[ignore = "run by the test above, as a server started in the repository it makes"]
+    fn the_server_asks_for_a_credential() {
+        if std::env::var_os(AS_THE_SERVER).is_none() {
+            return;
+        }
+        let git = WorkerCredentials::HostGit(Processes::unrecorded());
+        let credential = glave_ports::block_on!(git.for_url("https://git.invalid/acme/app.git"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(credential.username, "someone");
+    }
 
     #[test]
     fn ssh_remotes_become_https_and_others_stay() {

@@ -256,6 +256,7 @@ pub async fn remove(
         at: &kept.repository,
         options: vec![git_dir],
         credential: None,
+        network: false,
     };
     let path = kept.path.to_string_lossy();
     git.work(&["worktree", "remove", "--force", &path]).await?;
