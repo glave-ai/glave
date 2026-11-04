@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use glave_event::{At, Body, OrgRole, Secret, ThreadId, decode};
-use glave_ports::testing::{ManualClock, Outbox};
+use glave_ports::testing::{HUNG, ManualClock, Outbox};
 use glave_ports::{Caller, ProjectId, Standing};
 use glave_session::protocol::{
     Answer, Grouping, Notification, Reply, Request, Setting, Status, ThreadSummary, Update, code,
@@ -360,18 +360,33 @@ async fn watching(web: Web) -> Watcher {
 /// come in the order of [`Setting`], so one told before `last` that sorts after it would go
 /// unread: `last` is the latest of what a test tells.
 async fn settings_until(watcher: &mut Watcher, last: Setting) -> Vec<Setting> {
-    let mut settings = Vec::new();
-    loop {
-        match watcher.next().await {
-            Said::Note(Notification::SettingsChanged { setting }) => {
-                settings.push(setting);
-                if setting == last {
-                    return settings;
+    let heard = tokio::time::timeout(HUNG, async {
+        let mut settings = Vec::new();
+        loop {
+            match watcher.next().await {
+                Said::Note(Notification::SettingsChanged { setting }) => {
+                    settings.push(setting);
+                    if setting == last {
+                        return settings;
+                    }
                 }
+                Said::Note(other) => panic!("only settings changed, not {other:?}"),
+                Said::Answer(answer) => panic!("the watch ended: {answer}"),
             }
-            Said::Note(other) => panic!("only settings changed, not {other:?}"),
-            Said::Answer(answer) => panic!("the watch ended: {answer}"),
         }
+    });
+    heard.await.unwrap()
+}
+
+/// A client of `session` that names `org` as the one it works in.
+fn working_in(served: &Served, session: &str, org: &str) -> Web {
+    elsewhere(served, Some(session.to_owned())).working_in(org)
+}
+
+/// The change of a setting a test tells last: see [`settings_until`].
+fn language_chosen() -> Request {
+    Request::LanguageSet {
+        language: Some("en-XA".into()),
     }
 }
 
@@ -382,17 +397,20 @@ fn a_setting_changed_in_one_organization_is_heard_only_in_that_one() {
         let outbox = Arc::new(Outbox::default());
         let served = serve(&dir, true, &outbox).await;
         let (session, own, joined) = ada_in_two_organizations(&served, &outbox).await;
-        let working_in = |org: &str| elsewhere(&served, Some(session.clone())).working_in(org);
         let grouped = Request::GroupingSet {
             grouping: Grouping::Status,
         };
-        let chosen = Request::LanguageSet {
-            language: Some("en-XA".into()),
-        };
-        for (here, there) in [(&own, &joined), (&joined, &own)] {
-            let mut watcher = watching(working_in(here)).await;
-            changed(&mut working_in(there), &grouped).await;
-            changed(&mut working_in(here), &chosen).await;
+        let naming_none = || elsewhere(&served, Some(session.clone()));
+        let client = |org: &str| working_in(&served, &session, org);
+        for (watch, here, there) in [
+            (client(&own), &own, &joined),
+            (client(&joined), &joined, &own),
+            // Naming none, she works in the first she joined.
+            (naming_none(), &own, &joined),
+        ] {
+            let mut watcher = watching(watch).await;
+            changed(&mut client(there), &grouped).await;
+            changed(&mut client(here), &language_chosen()).await;
             assert_eq!(
                 settings_until(&mut watcher, Setting::Language).await,
                 [Setting::Language],
@@ -410,13 +428,14 @@ fn a_name_changed_in_one_organization_is_heard_in_all_of_them() {
         let outbox = Arc::new(Outbox::default());
         let served = serve(&dir, true, &outbox).await;
         let (session, own, joined) = ada_in_two_organizations(&served, &outbox).await;
-        let working_in = |org: &str| elsewhere(&served, Some(session.clone())).working_in(org);
-        let mut watcher = watching(working_in(&own)).await;
+        let client = |org: &str| working_in(&served, &session, org);
+        let mut watcher = watching(client(&own)).await;
         let named = Request::PersonName { name: "Ada".into() };
-        changed(&mut working_in(&joined), &named).await;
+        changed(&mut client(&joined), &named).await;
+        changed(&mut client(&own), &language_chosen()).await;
         assert_eq!(
-            settings_until(&mut watcher, Setting::Passkeys).await,
-            [Setting::Passkeys],
+            settings_until(&mut watcher, Setting::Language).await,
+            [Setting::Passkeys, Setting::Language],
             "her name and passkeys are hers wherever she works"
         );
         served.close().await;
