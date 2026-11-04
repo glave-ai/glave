@@ -460,9 +460,12 @@ where
         }
         // Where someone can choose where it goes, and the thread works on this computer.
         if thread.home.is_none() && self.someone_answers(thread) {
+            // The person's own folder is theirs alone: what its `mcp.json` names runs as them,
+            // with the server's whole environment.
+            let own = self.settings.own.clone();
             sources.push(Arc::new(Install {
                 workspace: Arc::clone(self.workspace_for(thread)),
-                own: self.settings.own.clone(),
+                own: own.filter(|_| self.trusting(thread.for_)),
             }));
         }
         if self.trusting(thread.for_) {
