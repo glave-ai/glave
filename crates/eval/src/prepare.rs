@@ -2,7 +2,7 @@
 //! commands; and running the task's scripts there.
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::hash::{Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -37,7 +37,7 @@ pub(crate) struct Prepared {
     pub workspace: PathBuf,
     pub environment: Environment,
     /// What its commands may not read: this machine's crate downloads, which a fresh computer
-    /// would not have.
+    /// would not have, and this repository's tasks and history, which hold the answers.
     pub hidden: Vec<PathBuf>,
 }
 
@@ -60,7 +60,11 @@ pub(crate) async fn prepare(
             .replace("{task}", &task.dir.display().to_string())
             .replace("{path}", &path)
     };
-    let mut environment: Environment = base.iter().cloned().collect();
+    // Without what `cargo run` says of the eval, which names this repository and where it is.
+    let mut environment: Environment = (base.iter())
+        .filter(|(name, _)| !from_cargo(name))
+        .cloned()
+        .collect();
     // Each run has a temp folder of its own, made empty, for what runs outside the sandbox,
     // its setup and its grader (the sandbox gives each command one): runs at once would
     // otherwise share the machine's, and leave there what they wrote. Removed once graded.
@@ -95,10 +99,12 @@ pub(crate) async fn prepare(
             )));
         }
     }
+    let mut hidden = cargo_downloads(base);
+    hidden.extend(repository(processes, task, &environment).await);
     Ok(Prepared {
         workspace,
         environment,
-        hidden: cargo_downloads(base),
+        hidden,
     })
 }
 
@@ -117,6 +123,31 @@ fn cargo_downloads(environment: &[(OsString, OsString)]) -> Vec<PathBuf> {
         .or_else(|| variable(environment, "HOME").map(|home| Path::new(home).join(".cargo")));
     (home.iter())
         .flat_map(|home| CARGO_DOWNLOADS.iter().map(|folder| home.join(folder)))
+        .collect()
+}
+
+/// Whether `name` is one of the variables `cargo run` sets about the program it runs.
+fn from_cargo(name: &OsStr) -> bool {
+    let name = name.to_string_lossy();
+    name.starts_with("CARGO_PKG_") || name.starts_with("CARGO_MANIFEST_")
+}
+
+/// What holds the answers in every checkout of the repository `task` is in: its tasks and its
+/// history. The rest stays readable, as a build folder there must, with the `glave` commands run.
+/// Nothing when the task is in no repository.
+async fn repository(processes: &Processes, task: &Task, environment: &Environment) -> Vec<PathBuf> {
+    let args = ["worktree", "list", "--porcelain"];
+    match script(processes, "git", &args, &task.dir, environment).await {
+        Ok(listed) if listed.success => answers_in(&listed.text),
+        _ => Vec::new(),
+    }
+}
+
+/// The places holding the answers in the checkouts `git worktree list --porcelain` lists.
+fn answers_in(listed: &str) -> Vec<PathBuf> {
+    (listed.lines())
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .flat_map(|checkout| ["evals", ".git"].map(|place| Path::new(checkout).join(place)))
         .collect()
 }
 
@@ -274,5 +305,12 @@ mod tests {
             ]
         );
         assert_eq!(cargo_downloads(&environment(&[])), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn every_checkout_s_answers_are_hidden() {
+        let listed = "worktree /r\nHEAD 1\nbranch refs/heads/main\n\nworktree /r/w\nHEAD 2\n";
+        let hidden = ["/r/evals", "/r/.git", "/r/w/evals", "/r/w/.git"].map(PathBuf::from);
+        assert_eq!(answers_in(listed), hidden);
     }
 }

@@ -88,12 +88,14 @@ tasks/<name>/
   solution/solve.sh   the reference solution, required with tests/test.sh
 ```
 
-The agent never sees `tests/` or `solution/`. Every grader is checked in CI against its
+The agent never sees `tests/` or `solution/`, or any of `evals/` or `.git` in this repository's
+checkouts here; `web_fetch` reaches a task's own pages and nothing else, and an attempt that names
+this repository fails. Every grader is checked in CI against its
 solution: it must fail on the untouched task and pass on the solved one.
 
 `[glave]` takes `tier` (`fast` or `hard`), `permissions` (the mode: `auto` when absent, as glave
 runs by default, in the sandbox where it can run; `ask` or `full-access`), `sandboxed` (a task that
-tests the sandbox itself, left out where none runs), `network` (on when absent), `context_window`, `setup` (shell commands run first),
+tests the sandbox itself, left out where none runs), `network` (on when absent: commands with it could reach anything, this repository too, and only a failed attempt says so), `context_window`, `setup` (shell commands run first),
 `env`, `turns` (messages after the instruction; each resumes the thread from its log),
 `goal` (run the instruction as a goal: `{ budget = 600000 }`, the budget optional; how to
 verify the goal is the instruction's to say, in words, and the model ends it; a goal's turns may end at the step limit and go on, so the check `goal_ended`
