@@ -179,7 +179,7 @@ async fn approval<L: EventLog>(
     let first = first_unfinished(log, here, parent).await?;
     ensure(
         first.is_some_and(|call| call.decided && call.asked.is_none()),
-        "a decided approval's call must say so until it goes ahead",
+        "a decided approval's call must say so until it begins",
     )?;
     log.append(here, &settled[1..2])
         .await
@@ -187,7 +187,7 @@ async fn approval<L: EventLog>(
     let first = first_unfinished(log, here, parent).await?;
     ensure(
         first.is_some_and(|call| !call.decided && call.asked.is_none()),
-        "a call gone ahead must no longer say it was answered",
+        "a call begun must no longer say it was answered",
     )?;
     log.append(here, &settled[2..])
         .await

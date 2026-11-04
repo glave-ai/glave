@@ -33,8 +33,8 @@ pub(crate) struct Open {
     /// What the service of the first of them last asked the person, with their answer when one
     /// came. It asked once any approval was answered, so it is what the call waits at.
     pub(crate) round: Option<Round>,
-    /// Whether the first of them went ahead from its answer and never reported: it may have
-    /// run, so it is closed as one left open, never run from the log.
+    /// Whether the first of them began and never reported: it may have run, so it is closed as
+    /// one left open, never run from the log.
     pub(crate) began: bool,
 }
 
@@ -65,7 +65,7 @@ impl Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Opened {
     Waits,
-    /// Its wait was answered, its call not yet gone ahead: the work that goes on with it runs it.
+    /// Its wait was answered, its call not yet begun: the work that goes on with it runs it.
     /// As a server starts, one is a crash's leftover, and is closed as one left open is.
     Answered,
     /// Its log ends in a turn no one ended, as it was read, or may since work on the turn here
@@ -122,7 +122,8 @@ pub(crate) fn open_turn(events: &[Event]) -> Option<Open> {
     })
 }
 
-/// Whether `call` in `turn` last went ahead, rather than a service asking since.
+/// Whether `call` in `turn` last began, rather than a service asking since, which it goes on
+/// from.
 fn began(turn: &[Event], call: &CallId) -> bool {
     turn.iter().rev().find_map(|event| match &event.body {
         Body::ToolCallStarted(started) if started.call_id == *call => Some(true),
@@ -197,8 +198,8 @@ where
         })
     }
 
-    /// Records that `call` goes ahead from what answered it, before it runs, so that a run
-    /// whose result never lands is never run again from that answer.
+    /// Records that `call` begins, just before its tool runs, so that a run whose result never
+    /// lands is never run again from the log.
     pub(crate) async fn record_started(
         &self,
         thread: &mut Thread,

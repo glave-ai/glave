@@ -133,7 +133,7 @@ impl OpenTurn {
                 service: None,
                 decided: false,
             }),
-            // Answered no longer: it went ahead, so nothing goes on from its answer.
+            // Answered no longer: it began, so nothing goes on from its answer.
             Body::ToolCallStarted(started) => self.went_ahead(&started.call_id),
             Body::ToolCallCompleted(done) => {
                 self.unfinished.retain(|call| call.call != done.call_id);

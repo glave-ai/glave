@@ -221,25 +221,30 @@ fn an_answered_call_whose_result_never_landed_is_closed_and_never_run_again() {
     });
 }
 
+/// A tool that needs no one, and counts its runs.
+fn counting() -> Arc<InMemoryTools> {
+    let info = ToolInfo {
+        spec: ToolSpec {
+            name: "count".into(),
+            description: "Counts.".into(),
+            parameters: json!({"type": "object"}),
+        },
+        effect: Effect::Reads,
+        parallel: false,
+    };
+    Arc::new(InMemoryTools::new(vec![(
+        info,
+        ToolOutput::text(false, "counted"),
+    )]))
+}
+
 /// A call that asked nothing, whose result was lost, is not run by work left over from an answer.
 #[test]
 fn a_call_that_asked_nothing_and_lost_its_result_is_not_run_by_going_on() {
     let dir = folder("log-fails-unasked");
     block_on!(async {
         let log = FaultyLog::default();
-        let info = ToolInfo {
-            spec: ToolSpec {
-                name: "count".into(),
-                description: "Counts.".into(),
-                parameters: json!({"type": "object"}),
-            },
-            effect: Effect::Reads,
-            parallel: false,
-        };
-        let tools = Arc::new(InMemoryTools::new(vec![(
-            info,
-            ToolOutput::text(false, "counted"),
-        )]));
+        let tools = counting();
         let answers = vec![answer(
             None,
             vec![("count", json!({}))],
@@ -271,8 +276,66 @@ fn a_call_that_asked_nothing_and_lost_its_result_is_not_run_by_going_on() {
     });
 }
 
+/// A call behind a question in one response never began when the question is answered: going on
+/// runs it, and the turn goes on to the model.
 #[test]
-fn a_call_that_could_not_record_going_ahead_never_runs() {
+fn a_plain_call_after_an_answered_question_runs_once() {
+    let dir = folder("log-question-then-call");
+    block_on!(async {
+        let log = FaultyLog::default();
+        let tools = counting();
+        let asks = json!({"questions": [{"question": "Which database?"}]});
+        let answers = vec![
+            answer(
+                None,
+                vec![("question", asks), ("count", json!({}))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_with(
+            workspace(&dir).await,
+            answers,
+            InTheLog,
+            log.clone(),
+            1,
+            settings(),
+        );
+        let harness = harness.with_tools(vec![Arc::clone(&tools) as Arc<dyn ToolSource>]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let stopped = harness
+            .run_turn(&mut thread, "ask", &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(
+            matches!(stopped, Err(HarnessError::Waits(_))),
+            "{stopped:?}"
+        );
+        assert_eq!(tools.calls().len(), 0);
+        let question = events(harness.log(), thread.id)
+            .await
+            .iter()
+            .find_map(|event| match &event.body {
+                Body::ToolCallRequested(call) if call.tool == "question" => {
+                    Some(call.call_id.clone())
+                }
+                _ => None,
+            })
+            .unwrap();
+        harness
+            .answer(scope(), thread.id, &question, &["Postgres".to_owned()])
+            .await
+            .unwrap();
+        let ended = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(ended.outcome, Outcome::Completed);
+        assert_eq!(tools.calls().len(), 1);
+    });
+}
+
+#[test]
+fn a_call_that_could_not_record_beginning_never_runs() {
     let dir = folder("log-fails-going-ahead");
     block_on!(async {
         let log = FaultyLog::default();

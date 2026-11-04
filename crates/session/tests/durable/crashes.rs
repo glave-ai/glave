@@ -3,8 +3,8 @@
 //! up to what a whole run makes; a server started on the same store finds each turn waiting or
 //! closes it `interrupted`, and answering what waits then takes every turn to its end. A turn
 //! whose start never landed has nothing to repair: its request failed. Alone and with two
-//! subagents side by side, no call ever runs twice. A call goes ahead from its answer once, on
-//! the record: however its result is lost, and whoever goes on after, it is never run again.
+//! subagents side by side, no call ever runs twice. A call begins once, on the record: however
+//! its result is lost, and whoever goes on after, it is never run again.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -374,7 +374,7 @@ fn each_once(tools: &InMemoryTools, parts: &[&str]) {
     assert_eq!(ran, once, "each part deployed once");
 }
 
-/// #1174, forced: `b`'s answer lands while `a` is going ahead, and `a`'s result is then lost. The
+/// #1174, forced: `b`'s answer lands as `a` begins, and `a`'s result is then lost. The
 /// work `b`'s answer leaves for once `a`'s ends must take `a` as interrupted, not run it again.
 #[test]
 fn a_sibling_answered_while_a_call_runs_and_loses_its_result_never_runs_it_again() {
@@ -436,7 +436,7 @@ fn a_call_a_crash_left_unreported_is_not_run_by_another_running_server() {
         let shared = Memory::new();
         let (first, log) = doomed_on(&dir, &shared, &tools).await;
         let (root, a, b, _followed) = both_waiting(&first).await;
-        // Its answer lands, and nothing after it but that the call goes ahead.
+        // Its answer lands, and nothing after it but that the call begins.
         log.stop_after(2);
         first.request(answering(a.0, a.1, false)).await.unwrap();
         answer_until_done(&first, root, || log.stopped()).await;

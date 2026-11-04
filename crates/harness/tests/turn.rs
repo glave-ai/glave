@@ -73,6 +73,7 @@ fn a_turn_writes_a_file_and_records_every_step() {
                 "message.added",
                 "tool.call.requested",
                 "model.responded",
+                "tool.call.started",
                 "tool.call.completed",
                 "message.added",
                 "model.responded",
@@ -80,10 +81,10 @@ fn a_turn_writes_a_file_and_records_every_step() {
             ]
         );
         let seqs: Vec<u64> = events.iter().map(|e| e.header.seq.get()).collect();
-        assert_eq!(seqs, (1..=9).collect::<Vec<_>>());
+        assert_eq!(seqs, (1..=10).collect::<Vec<_>>());
         assert_eq!(conversation(&events), thread.messages());
         assert!(
-            matches!(&events[8].body, Body::TurnEnded(ended) if *ended == summary),
+            matches!(&events[9].body, Body::TurnEnded(ended) if *ended == summary),
             "the turn's end records what it answered with"
         );
     });

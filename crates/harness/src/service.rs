@@ -215,7 +215,7 @@ where
         let answer = match answered {
             None => {
                 let settled = ServiceAnswered {
-                    call_id: asked.call_id.clone(),
+                    call_id: asked.call_id,
                     told: told(&asked.service, ServiceOutcome::Cancelled),
                     service: asked.service,
                     outcome: ServiceOutcome::Cancelled,
@@ -244,7 +244,6 @@ where
         let state = self
             .kept_back(&thread.scope, &asked.state, STATE_LIMIT)
             .await?;
-        self.record_started(thread, &asked.call_id).await?;
         Ok(Ok(ServiceGiven { state, answer }))
     }
 

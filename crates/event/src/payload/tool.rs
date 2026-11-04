@@ -79,9 +79,8 @@ pub(crate) fn decode_requested(
     }
 }
 
-/// A call that waited for an answer goes ahead, recorded before it runs: from here on it may
-/// have run, so it is never run again from the log (`specs/one-server.md`, "A turn that dies
-/// mid-call").
+/// A call's tool is about to run: from here on it may have run, so it is never run again from
+/// the log (`specs/one-server.md`, "A turn that dies mid-call").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCallStarted {

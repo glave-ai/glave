@@ -125,6 +125,7 @@ fn a_tool_call_changes_the_project() {
             "message.added",
             "tool.call.requested",
             "model.responded",
+            "tool.call.started",
             "tool.call.completed",
             "message.added",
             "model.responded",
