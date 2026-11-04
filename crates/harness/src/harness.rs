@@ -561,6 +561,34 @@ where
         self.start_thread_from(scope, None, caller, None).await
     }
 
+    /// What a new thread's `thread.started` says, started by `parent`'s call if one did, for
+    /// `caller`.
+    fn started(
+        &self,
+        thread: &Thread,
+        parent: Option<ParentCall>,
+        caller: &Caller,
+    ) -> ThreadStarted {
+        let mut origin = Origin::of(if parent.is_some() {
+            OriginKind::Subagent
+        } else {
+            OriginKind::Prompt
+        });
+        origin.by = Self::other_than_for(thread, caller.person);
+        let producer = Producer {
+            name: "glave".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        };
+        ThreadStarted {
+            origin,
+            producer,
+            fork: None,
+            parent,
+            for_: thread.for_.map(Principal::person),
+            agent: self.actors.agent.map(Principal::agent),
+        }
+    }
+
     /// Starts a thread, recording the call in another thread that started it, if one did, and
     /// where it works, when `place` is given.
     pub(crate) async fn start_thread_from(
@@ -624,28 +652,8 @@ where
             home: crate::homes::at_home(bound.as_ref()),
         };
         let mut events = Vec::new();
-        let mut origin = Origin::of(if parent.is_some() {
-            OriginKind::Subagent
-        } else {
-            OriginKind::Prompt
-        });
-        origin.by = Self::other_than_for(&thread, caller.person);
-        let producer = Producer {
-            name: "glave".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-        };
-        self.stage(
-            &thread,
-            &mut events,
-            &ThreadStarted {
-                origin,
-                producer,
-                fork: None,
-                parent,
-                for_: thread.for_.map(Principal::person),
-                agent: self.actors.agent.map(Principal::agent),
-            },
-        )?;
+        let started = self.started(&thread, parent, caller);
+        self.stage(&thread, &mut events, &started)?;
         if let Some(bound) = &bound {
             self.stage(&thread, &mut events, bound)?;
         }

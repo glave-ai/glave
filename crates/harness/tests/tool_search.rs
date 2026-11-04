@@ -287,7 +287,7 @@ fn a_tool_not_loaded_yet_is_never_run_on_a_guess() {
     block_on!(async {
         let mut on = crowded(&dir, vec![calling(SEARCH), done()], settings()).await;
         turn(&on.harness, &mut on.thread, "guess").await;
-        assert!(on.source.calls().is_empty());
+        assert_eq!(on.source.calls().len(), 0);
         let said = results(on.thread.messages());
         assert!(
             said[0].contains("Call tool_search with its name"),
@@ -316,8 +316,9 @@ fn a_loaded_tool_asks_as_it_would_have_in_the_list() {
         let answers = vec![searching(CREATE), calling(CREATE), done()];
         let mut on = crowded(&dir, answers, asking()).await;
         turn(&on.harness, &mut on.thread, "file it").await;
-        assert!(
-            on.source.calls().is_empty(),
+        assert_eq!(
+            on.source.calls().len(),
+            0,
             "with no one to ask, it never ran"
         );
         let said = results(on.thread.messages());

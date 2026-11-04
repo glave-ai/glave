@@ -115,7 +115,7 @@ pub(crate) async fn connection(task: &Task) -> Result<Option<Arc<dyn ToolSource>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glave_ports::testing::NeverCancelled;
+    use glave_ports::NeverCancelled;
 
     #[test]
     fn the_crowd_is_past_a_tenth_of_the_usual_window_and_one_tool_answers() {

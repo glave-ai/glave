@@ -198,6 +198,10 @@ where
         } else if step.toolset.is_tool_search(&call.tool) {
             return self.search_tools(thread, call, &mut step.toolset).await;
         }
+        // One that asked before was on offer then: the person's answer still decides it.
+        if step.toolset.is_held_back(&call.tool) && !step.waits_on(&call.call_id) {
+            return Ok(crate::tool_search::not_loaded(&call.tool));
+        }
         self.call_offered(thread, call, step, cancel, live).await
     }
 
@@ -221,10 +225,6 @@ where
             let text = format!("There is no tool named {tool:?}. The tools are {names}.");
             return Ok(ToolOutput::text(true, text));
         };
-        // One that asked before was on offer then: the person's answer still decides it.
-        if round.is_none() && waited.is_none() && tools.is_held_back(&info.spec.name) {
-            return Ok(crate::tool_search::not_loaded(&info.spec.name));
-        }
         let Some(source) = self.source_for(thread, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };

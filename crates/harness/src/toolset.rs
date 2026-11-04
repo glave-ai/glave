@@ -237,7 +237,10 @@ impl ToolSet {
 
     /// Whether the tool called `name` is held back: connected, not loaded yet.
     pub(crate) fn is_held_back(&self, name: &str) -> bool {
-        self.deferred.iter().any(|held| held == name) && !self.loaded.iter().any(|l| l == name)
+        self.get(name).is_some_and(|(_, info)| {
+            let name = &info.spec.name;
+            self.deferred.contains(name) && !self.loaded.contains(name)
+        })
     }
 
     /// What `query` finds (`tool_search::matching`): among the tools held back, or if none, those
