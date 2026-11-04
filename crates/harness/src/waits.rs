@@ -8,7 +8,8 @@ use std::collections::{HashMap, HashSet};
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Body, CallId, Event, Lifted, Outcome, ParentCall, Payload,
-    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, TurnResult, Verdict, decode,
+    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, ToolCallStarted, TurnResult, Verdict,
+    decode,
 };
 use glave_ports::{
     BlobStore, CallKind, EventLog, LogError, ModelProvider, Scope, Standing, ThreadQuery,
@@ -16,7 +17,7 @@ use glave_ports::{
 };
 
 use crate::approval::{Approver, Decision};
-use crate::harness::{Harness, HarnessError};
+use crate::harness::{Harness, HarnessError, Thread};
 use crate::service::{Round, round_of};
 use crate::tools::Tool;
 use crate::turn::Step;
@@ -32,6 +33,9 @@ pub(crate) struct Open {
     /// What the service of the first of them last asked the person, with their answer when one
     /// came. It asked once any approval was answered, so it is what the call waits at.
     pub(crate) round: Option<Round>,
+    /// Whether the first of them began and never reported: it may have run, so it is closed as
+    /// one left open, never run from the log.
+    pub(crate) began: bool,
 }
 
 /// The approval a turn stopped at, and its answer once one is recorded.
@@ -61,8 +65,8 @@ impl Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Opened {
     Waits,
-    /// Its wait was answered, its call not yet run: the work that goes on with it runs it. As
-    /// a server starts, one is a crash's leftover, and is closed as one left open is.
+    /// Its wait was answered, its call not yet begun: the work that goes on with it runs it.
+    /// As a server starts, one is a crash's leftover, and is closed as one left open is.
     Answered,
     /// Its log ends in a turn no one ended, as it was read, or may since work on the turn here
     /// failed: the next work on the thread closes it first.
@@ -106,12 +110,26 @@ pub(crate) fn open_turn(events: &[Event]) -> Option<Open> {
         .first()
         .filter(|_| round.is_none())
         .and_then(|first| answered(turn, &first.call_id));
+    let began = calls
+        .first()
+        .is_some_and(|first| began(turn, &first.call_id));
     Some(Open {
         started,
         calls,
         asked,
         round,
+        began,
     })
+}
+
+/// Whether `call` in `turn` last began, rather than a service asking since, which it goes on
+/// from.
+fn began(turn: &[Event], call: &CallId) -> bool {
+    turn.iter().rev().find_map(|event| match &event.body {
+        Body::ToolCallStarted(started) if started.call_id == *call => Some(true),
+        Body::ServiceAsked(asked) if asked.call_id == *call => Some(false),
+        _ => None,
+    }) == Some(true)
 }
 
 /// The approval asked for `call` in `turn`, with its decision when one came.
@@ -160,6 +178,9 @@ where
         let Some(first) = open.calls.first() else {
             return Ok(left);
         };
+        if open.began {
+            return Ok(left);
+        }
         if let Some(round) = &open.round {
             return Ok(Some(if round.answered.is_some() {
                 Opened::Answered
@@ -175,6 +196,22 @@ where
             }
             (None, CallKind::Agent | CallKind::Tool) => left,
         })
+    }
+
+    /// Records that `call` begins, just before its tool runs, so that a run whose result never
+    /// lands is never run again from the log.
+    pub(crate) async fn record_started(
+        &self,
+        thread: &mut Thread,
+        call: &CallId,
+    ) -> Result<(), HarnessError> {
+        let started = ToolCallStarted {
+            call_id: call.clone(),
+        };
+        self.record(thread, &started).await?;
+        // Glave's own record: call ids do not count it, so the model is sent the same.
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
+        Ok(())
     }
 
     /// Whether a subagent of the calls side by side that `calls` start with waits, or was

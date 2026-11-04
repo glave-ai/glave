@@ -198,6 +198,7 @@ where
             .next()
             .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
         thread.messages = conversation(&events);
+        thread.unnumbered = crate::bind::own_records(&events);
         thread.opened = self.opened(&thread.scope, thread.id, &events).await?;
         if thread.waits() {
             return Err(HarnessError::Waits(thread.id));

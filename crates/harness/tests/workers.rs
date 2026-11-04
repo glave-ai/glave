@@ -199,8 +199,8 @@ fn a_released_worker_does_not_shift_the_call_ids_the_model_sees() {
         let (harness, mut thread) = on_a_worker(harness, &dir, &origin).await;
         harness.release_worker(&mut thread).await.unwrap().unwrap();
         // The next tool call after the release is numbered by the in-memory thread. A
-        // fresh resume numbers from the log, where each binding and removal is a record
-        // of glave's own that call ids skip; a released worker cannot be resumed, so the
+        // fresh resume numbers from the log, where each binding, removal and call's start is a
+        // record of glave's own that call ids skip; a released worker cannot be resumed, so the
         // expected id is worked out from the log the same way.
         let _ = harness
             .run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
@@ -210,7 +210,9 @@ fn a_released_worker_does_not_shift_the_call_ids_the_model_sees() {
         let mut expected = Vec::new();
         for event in &recorded {
             match &event.body {
-                Body::WorkspaceBound(_) | Body::WorkspaceRemoved(_) => own += 1,
+                Body::WorkspaceBound(_) | Body::WorkspaceRemoved(_) | Body::ToolCallStarted(_) => {
+                    own += 1;
+                }
                 Body::ToolCallRequested(call) => {
                     let seq = event.header.seq.get();
                     expected.push((call.call_id.as_str().to_owned(), seq - own));
