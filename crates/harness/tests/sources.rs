@@ -239,7 +239,11 @@ impl ToolSource for Gone {
 fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
     let dir = folder("sources-gone");
     block_on!(async {
-        let answers = vec![answer(Some("It is not there."), vec![], StopReason::EndTurn)];
+        let answers = vec![answer(
+            Some("It is not there."),
+            vec![],
+            StopReason::EndTurn,
+        )];
         let (harness, seen) =
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
         let harness = harness.with_tools(vec![Arc::new(Gone), extra()]);
