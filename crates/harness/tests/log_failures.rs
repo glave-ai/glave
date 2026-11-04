@@ -238,6 +238,29 @@ fn counting() -> Arc<InMemoryTools> {
     )]))
 }
 
+/// A harness on `log` answering with `answers`, offering `tools`, and a thread there.
+async fn counted(
+    dir: &std::path::Path,
+    log: &FaultyLog,
+    tools: &Arc<InMemoryTools>,
+    answers: Vec<glave_ports::Completion>,
+) -> (
+    glave_harness::Harness<ScriptedModel, FaultyLog, glave_ports::InMemoryBlobs, InTheLog>,
+    glave_harness::Thread,
+) {
+    let (harness, _) = harness_with(
+        workspace(dir).await,
+        answers,
+        InTheLog,
+        log.clone(),
+        1,
+        settings(),
+    );
+    let harness = harness.with_tools(vec![Arc::clone(tools) as Arc<dyn ToolSource>]);
+    let thread = harness.start_thread(scope()).await.unwrap();
+    (harness, thread)
+}
+
 /// A call that asked nothing, whose result was lost, is not run by work left over from an answer.
 #[test]
 fn a_call_that_asked_nothing_and_lost_its_result_is_not_run_by_going_on() {
@@ -250,16 +273,7 @@ fn a_call_that_asked_nothing_and_lost_its_result_is_not_run_by_going_on() {
             vec![("count", json!({}))],
             StopReason::ToolUse,
         )];
-        let (harness, _) = harness_with(
-            workspace(&dir).await,
-            answers,
-            InTheLog,
-            log.clone(),
-            1,
-            settings(),
-        );
-        let harness = harness.with_tools(vec![Arc::clone(&tools) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (harness, mut thread) = counted(&dir, &log, &tools, answers).await;
         log.fail_with("tool.call.completed");
         let failed = harness
             .run_turn(&mut thread, "count", &Cancel::new(), &mut |_| {})
@@ -293,16 +307,7 @@ fn a_plain_call_after_an_answered_question_runs_once() {
             ),
             answer(Some("Done."), vec![], StopReason::EndTurn),
         ];
-        let (harness, _) = harness_with(
-            workspace(&dir).await,
-            answers,
-            InTheLog,
-            log.clone(),
-            1,
-            settings(),
-        );
-        let harness = harness.with_tools(vec![Arc::clone(&tools) as Arc<dyn ToolSource>]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (harness, mut thread) = counted(&dir, &log, &tools, answers).await;
         let stopped = harness
             .run_turn(&mut thread, "ask", &Cancel::new(), &mut |_| {})
             .await;
