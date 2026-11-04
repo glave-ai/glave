@@ -3,7 +3,7 @@ import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { ChangesService } from '../../services/changes.service';
-import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
+import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { AdminBrandComponent } from './admin-brand.component';
 
 const SHADES = { light: '#0f766e', dark: '#59c5b8' };
@@ -35,6 +35,7 @@ function typeName(root: HTMLElement, name: string): void {
 }
 
 const TEAL = { color: { color: '#0f766e', adjust: true } };
+const ACME = { name: 'Acme', logo: 'abc', accent: 'plain', locked: false };
 
 describe('AdminBrandComponent', () => {
   it('shows what is kept, and the server’s values for it in light and dark', async () => {
@@ -153,21 +154,6 @@ describe('AdminBrandComponent', () => {
       expect(fake.paramsOf('brand/set')).toEqual([THEIRS]);
     });
 
-    it('hears it on a page opened right here, with no chats open before it', async () => {
-      const watch = new FakeTurn();
-      const fake = kept().listWatch(watch);
-      const { root, settle } = await render(fake);
-      await vi.waitFor(() => {
-        expect(fake.paramsOf('thread/list/watch')).toHaveLength(1);
-      });
-      fake.answer('brand/get', { brand: THEIRS });
-      watch.send({ jsonrpc: '2.0', method: 'settings/changed', params: { setting: 'brand' } });
-      await settle();
-      await vi.waitFor(() => {
-        expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Theirs');
-      });
-    });
-
     it('keeps what is edited here, though they changed it too, and takes the rest from them', async () => {
       const fake = kept();
       const { root, settle } = await render(fake);
@@ -202,29 +188,63 @@ describe('AdminBrandComponent', () => {
     it('draws their logo, not a file picked here and saved, once they keep another', async () => {
       const fake = withLogo(kept(), 'abc').answer('brand/logo/upload', { sha256: 'ghi' });
       const { root, settle } = await render(fake);
+      await vi.waitFor(() => {
+        expect(byId(root, 'brand-logo')).not.toBeNull();
+      });
+      const first = (byId(root, 'brand-logo') as HTMLImageElement).src;
       const file = byId(root, 'brand-logo-file') as HTMLInputElement;
       Object.defineProperty(file, 'files', { value: [new File(['x'], 'logo.png')] });
       file.dispatchEvent(new Event('change'));
       await vi.waitFor(() => {
-        expect(fake.paramsOf('brand/logo/upload')).toHaveLength(1);
+        expect((byId(root, 'brand-logo') as HTMLImageElement).src).not.toBe(first);
       });
       await settle();
-      await vi.waitFor(() => {
-        expect((byId(root, 'brand-save') as HTMLButtonElement).disabled).toBe(false);
-      });
       const picked = (byId(root, 'brand-logo') as HTMLImageElement).src;
       byId(root, 'brand-save')?.click();
       await settle();
-      expect(fake.paramsOf('brand/set')).toEqual([
-        { name: 'Acme', logo: 'ghi', accent: 'plain', locked: false },
-      ]);
+      expect(fake.paramsOf('brand/set')).toEqual([{ ...ACME, logo: 'ghi' }]);
       expect((byId(root, 'brand-logo') as HTMLImageElement).src).toBe(picked);
-      fake.answer('brand/get', { brand: THEIRS });
+      withLogo(fake, 'def').answer('brand/get', { brand: THEIRS });
+      heard();
+      await vi.waitFor(() => {
+        expect(fake.paramsOf('brand/logo/get')).toHaveLength(2);
+      });
+      await settle();
+      const shown = (byId(root, 'brand-logo') as HTMLImageElement).src;
+      expect([first, picked]).not.toContain(shown);
+    });
+
+    it('keeps a color and how it is tuned together, when either is edited here', async () => {
+      const fake = kept().answer('brand/get', { brand: { ...ACME, accent: TEAL } });
+      const { root, settle } = await render(fake);
+      byId(root, 'brand-adjust-input')?.click();
+      await settle();
+      fake.answer('brand/get', {
+        brand: { ...ACME, accent: { color: { color: '#b4235a', adjust: true } } },
+      });
       heard();
       await settle();
-      await vi.waitFor(() => {
-        expect((byId(root, 'brand-logo') as HTMLImageElement).src).not.toBe(picked);
-      });
+      byId(root, 'brand-save')?.click();
+      await settle();
+      expect(fake.paramsOf('brand/set')).toEqual([
+        { ...ACME, accent: { color: { color: '#0f766e', adjust: false } } },
+      ]);
+    });
+
+    it('says nothing when a read on hearing a change fails, and Save reads again', async () => {
+      const fake = kept();
+      const { root, settle } = await render(fake);
+      fake.answer(
+        'brand/get',
+        new ApiError({ code: ErrorCode.INTERNAL, message: 'The store is not answering.' }),
+      );
+      heard();
+      await settle();
+      expect(byId(root, 'brand-problem')).toBeNull();
+      fake.answer('brand/get', { brand: THEIRS });
+      byId(root, 'brand-save')?.click();
+      await settle();
+      expect(fake.paramsOf('brand/set')).toEqual([THEIRS]);
     });
 
     it('reads again before Save, so a change it never heard is not overwritten', async () => {
@@ -260,40 +280,75 @@ describe('AdminBrandComponent', () => {
       byId(root, 'brand-save')?.click();
       await settle();
       expect(byId(root, 'brand-saved')?.textContent).toContain('Saved');
-      fake.answer('brand/get', {
-        brand: { name: 'Mine', logo: 'abc', accent: 'plain', locked: false },
-      });
+      fake.answer('brand/get', { brand: { ...ACME, name: 'Mine' } });
       heard();
       await settle();
       expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Mine');
       expect(byId(root, 'brand-saved')?.textContent).toContain('Saved');
-      fake.answer('brand/get', { brand: { ...THEIRS, name: 'Theirs' } });
+      fake.answer('brand/get', { brand: THEIRS });
       heard();
       await settle();
       expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Theirs');
     });
 
-    it('does not let a read answered after a save take back what it saved', async () => {
+    it('shows the name as the server kept it, trimmed', async () => {
+      const fake = kept().answer('brand/set', { brand: { ...ACME, name: 'Mine' } });
+      const { root, settle } = await render(fake);
+      typeName(root, 'Mine ');
+      byId(root, 'brand-save')?.click();
+      await settle();
+      expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Mine');
+      expect(byId(root, 'brand-saved')?.textContent).toContain('Saved');
+    });
+
+    it('does not say Saved over what was typed while the save was on its way', async () => {
+      const fake = kept();
+      const answerSave = fake.held('brand/set');
+      const { root, settle } = await render(fake);
+      byId(root, 'brand-save')?.click();
+      await settle();
+      typeName(root, 'Mine');
+      answerSave({ brand: ACME });
+      await settle();
+      expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Mine');
+      expect(byId(root, 'brand-saved')?.textContent).not.toContain('Saved');
+    });
+
+    it('sends reads and saves one at a time, so an older answer can’t undo a newer', async () => {
       const fake = kept();
       const { root, settle } = await render(fake);
-      const answerRead = fake.held('brand/get');
+      const reads: ((answer: object) => void)[] = [];
+      fake.answer(
+        'brand/get',
+        () =>
+          new Promise((resolve) => {
+            reads.push(resolve);
+          }),
+      );
+      const answerSave = fake.held('brand/set');
       heard();
       await settle();
       typeName(root, 'Mine');
       byId(root, 'brand-save')?.click();
       await settle();
+      // The save waits for the read begun before it, which says something else is kept.
+      expect(reads).toHaveLength(1);
+      reads[0]?.({ brand: { ...ACME, locked: true } });
+      await settle();
+      expect(reads).toHaveLength(2);
       expect(fake.paramsOf('brand/set')).toEqual([]);
-      // The read began before the save, and the save waits for it, then reads for itself.
-      const next = {
-        brand: { name: 'Acme', logo: 'abc', accent: 'plain', locked: false },
-      };
-      answerRead(next);
+      reads[1]?.({ brand: { ...ACME, locked: true } });
       await settle();
-      answerRead(next);
+      expect(fake.paramsOf('brand/set')).toEqual([{ ...ACME, name: 'Mine', locked: true }]);
+      // A read heard now waits for the save's answer.
+      heard();
       await settle();
-      expect(fake.paramsOf('brand/set')).toEqual([
-        { name: 'Mine', logo: 'abc', accent: 'plain', locked: false },
-      ]);
+      expect(reads).toHaveLength(2);
+      answerSave({ brand: { ...ACME, name: 'Mine', locked: true } });
+      await settle();
+      expect(reads).toHaveLength(3);
+      reads[2]?.({ brand: { ...ACME, name: 'Mine', locked: true } });
+      await settle();
       expect((byId(root, 'brand-name') as HTMLInputElement).value).toBe('Mine');
     });
 

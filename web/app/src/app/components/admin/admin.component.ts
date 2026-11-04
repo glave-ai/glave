@@ -11,6 +11,7 @@ import Palette from 'lucide/dist/esm/icons/palette.mjs';
 import Users from 'lucide/dist/esm/icons/users.mjs';
 
 import { NavService } from '../../services/nav.service';
+import { ProjectsService } from '../../services/projects.service';
 import { SessionService } from '../../services/session.service';
 
 /**
@@ -67,6 +68,11 @@ export class AdminComponent {
       void this.router.navigateByUrl('/sign-in');
     }
   });
+
+  constructor() {
+    // A tab opened here, not from the chats, hears what changes as the chats' does.
+    inject(ProjectsService).follow();
+  }
 
   protected keydown(event: KeyboardEvent): void {
     this.nav.keydown(event);

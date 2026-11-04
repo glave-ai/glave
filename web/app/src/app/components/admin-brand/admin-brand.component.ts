@@ -31,7 +31,6 @@ import { sentence, unreached } from '../../lib/text';
 import { PLAIN } from '../../services/appearance.service';
 import { BrandService } from '../../services/brand.service';
 import { onChange } from '../../services/changes.service';
-import { ProjectsService } from '../../services/projects.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
 /** What the form says, field by field. */
@@ -121,11 +120,11 @@ export class AdminBrandComponent {
   protected readonly problem = signal<string | null>(null);
   /** Whether the form holds what the server keeps, so Save can't overwrite what it never read. */
   protected readonly ready = signal(false);
-  /** Whether a logo or a save is on its way, so what is saved is what shows. */
-  protected readonly busy = signal(false);
+  /** How many logos and saves are on their way, so what is saved is what shows. */
+  private readonly busy = signal(0);
   protected readonly saved = signal(false);
   protected readonly savedLine = computed(() => (this.saved() ? this.copy.saved : ''));
-  protected readonly unsaveable = computed(() => !this.ready() || this.busy());
+  protected readonly unsaveable = computed(() => !this.ready() || this.busy() > 0);
   /** What the server last said it keeps, which the form differs from where it is edited. */
   private kept: Fields = this.fields();
   /** The reads and saves on their way, each sent once the one before it is answered. */
@@ -147,9 +146,7 @@ export class AdminBrandComponent {
 
   constructor() {
     void this.load();
-    // A page opened here, not from the chats, has no watch to hear it on yet.
-    inject(ProjectsService).follow();
-    onChange('brand', () => void this.load());
+    onChange('brand', () => void this.reread());
     inject(DestroyRef).onDestroy(() => {
       this.showPicked(null);
     });
@@ -187,14 +184,14 @@ export class AdminBrandComponent {
     if (file === undefined) {
       return;
     }
-    this.busy.set(true);
+    this.busy.update((busy) => busy + 1);
     this.saved.set(false);
     await this.guarded(async () => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       this.logo.set(await this.service.upload(base64Of(bytes)));
       this.showPicked(URL.createObjectURL(file));
     });
-    this.busy.set(false);
+    this.busy.update((busy) => busy - 1);
   }
 
   protected removeLogo(): void {
@@ -216,7 +213,7 @@ export class AdminBrandComponent {
   }
 
   protected async save(): Promise<void> {
-    this.busy.set(true);
+    this.busy.update((busy) => busy + 1);
     this.saved.set(false);
     await this.guarded(() =>
       this.inTurn(async () => {
@@ -227,10 +224,11 @@ export class AdminBrandComponent {
         const brand = await this.service.keep(sent.name, sent.logo, accent, sent.locked);
         this.kept = sent;
         this.take(brand);
-        this.saved.set(true);
+        // What was typed while it was on its way is not saved yet.
+        this.saved.set(JSON.stringify(this.fields()) === JSON.stringify(this.kept));
       }),
     );
-    this.busy.set(false);
+    this.busy.update((busy) => busy - 1);
   }
 
   private showPicked(url: string | null): void {
@@ -241,16 +239,24 @@ export class AdminBrandComponent {
     this.picked.set(url);
   }
 
-  /** Reads what is kept; a problem it clears is only one from reading it the first time. */
   private async load(): Promise<void> {
-    await this.guarded(
-      () =>
-        this.inTurn(async () => {
-          this.take(await this.service.read());
-          this.ready.set(true);
-        }),
-      !this.ready(),
-    );
+    await this.guarded(() => this.read());
+  }
+
+  /** Reads again on hearing a change; failing is no news, since Save reads for itself. */
+  private async reread(): Promise<void> {
+    if (!this.ready()) {
+      await this.load();
+      return;
+    }
+    await this.read().catch(() => undefined);
+  }
+
+  private read(): Promise<void> {
+    return this.inTurn(async () => {
+      this.take(await this.service.read());
+      this.ready.set(true);
+    });
   }
 
   /** Runs `work` once what is on its way is answered, so an older answer can't undo a newer. */
@@ -287,9 +293,12 @@ export class AdminBrandComponent {
     }
     follow(this.name, was.name, now.name);
     follow(this.logo, was.logo, now.logo);
-    follow(this.accent, was.accent, now.accent);
-    follow(this.adjust, was.adjust, now.adjust);
     follow(this.locked, was.locked, now.locked);
+    // One choice to the server: a color and how it is tuned go together, or neither does.
+    if (this.accent() === was.accent && this.adjust() === was.adjust) {
+      this.accent.set(now.accent);
+      this.adjust.set(now.adjust);
+    }
   }
 
   private async preview(value: string, adjust: boolean): Promise<void> {
