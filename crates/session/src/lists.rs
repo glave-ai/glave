@@ -272,10 +272,17 @@ where
                     self.push(project, thread, MOST_GENERATIONS);
                 }
             }
-            Change::Setting { person, setting } => {
+            Change::Setting {
+                org,
+                person,
+                setting,
+            } => {
                 // Whose it is, the local person named or not.
                 let local = self.server.person();
-                if person.or(local) == self.caller.person.or(local) {
+                let theirs = person.or(local) == self.caller.person.or(local);
+                // A watch stays in the organization it began in.
+                let here = org == self.server.org_of(&self.caller);
+                if theirs && (here || setting.follows_the_person()) {
                     self.settings.insert(setting);
                 }
             }
