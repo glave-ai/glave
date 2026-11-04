@@ -1,6 +1,12 @@
 //! Work moves between computers only through git: a repository is cloned into a workspace,
 //! and a save commits everything to a branch and pushes it back. A plain folder lives on one
 //! computer and is worked in place; glave saves nothing in it.
+//!
+//! On the person's machine it runs outside the sandbox, and a sandboxed command can write the
+//! config and hooks of any repository in a folder it may write: only a workspace's own root is
+//! protected, and a repository can be made, or swapped in, at any time. So what is in a repository
+//! is not trusted to name a program (`specs/sandbox.md`, "Repositories inside the project"). A
+//! clone and a save happen only on a worker, inside its own wall, and may cross the network.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -16,12 +22,49 @@ use super::registry::Opened;
 const READS_WITHIN: Duration = Duration::from_mins(2);
 
 /// How long git has for work that changes files or crosses the network (a clone, a checkout, a
-/// worktree, staging and committing everything, a push), which hooks and large files can make
-/// long: as long as glave waits for a computer elsewhere to open or save a workspace.
+/// worktree, staging and committing everything, a push), which large files can make long: as
+/// long as glave waits for a computer elsewhere to open or save a workspace.
 const WORKS_WITHIN: Duration = Duration::from_mins(30);
 
 /// What git said: its output when it succeeded, what it said when it failed.
 pub(crate) type Said = Result<String, String>;
+
+/// What every git of glave's runs with: no hooks, the repository's or the person's, and no
+/// file-system monitor, which a repository's config can name a program for.
+const RUNS_NOTHING: [(&str, &str); 2] = [("core.hooksPath", "/dev/null"), ("core.fsmonitor", "")];
+
+/// What a repository's own config may name a program under, in ways no fixed setting reaches:
+/// filter drivers, by a name it chooses, and what git-lfs runs when the person's own filter
+/// fetches a file. Blanked where the repository set them, so the person's own keep running.
+const NAMES_A_PROGRAM: [&str; 6] = [
+    "filter.",
+    "lfs.customtransfer.",
+    "lfs.extension.",
+    "core.sshcommand",
+    "core.askpass",
+    "credential.",
+];
+
+/// The commands of git's that read no file through a filter, so need no reading of the config
+/// first: every other does, and starting a program is the slow part of asking git.
+const RUNS_NO_FILTER: [&str; 11] = [
+    "branch",
+    "check-ignore",
+    "check-ref-format",
+    "clone",
+    "config",
+    "ls-files",
+    "push",
+    "remote",
+    "rev-list",
+    "rev-parse",
+    "symbolic-ref",
+];
+
+/// The transports git may use when a command should cross no network, none being called this:
+/// a repository's config can make any read fetch a missing object through a remote it names,
+/// and with that run a helper, an ssh command or a remote helper.
+const NO_TRANSPORT: &str = "none";
 
 /// One git invocation: the processes it runs as, the environment it runs with, the folder,
 /// and any leading options.
@@ -33,6 +76,8 @@ pub(crate) struct Git<'a> {
     /// Handed to git by a credential helper that reads it from this one process's
     /// environment, so it never reaches a file, the repository's config, or commands.
     pub(crate) credential: Option<&'a GitCredential>,
+    /// Whether this git may cross the network: only to clone or push.
+    pub(crate) network: bool,
 }
 
 /// The helper git runs for a credential: it answers `get` from two variables set only on
@@ -53,6 +98,7 @@ impl<'a> Git<'a> {
             at,
             options: Vec::new(),
             credential: None,
+            network: false,
         }
     }
 
@@ -87,6 +133,53 @@ impl<'a> Git<'a> {
     /// What git said to `args` within `limit`, or why it said nothing: git still running then
     /// is stopped, and the error says how long it had.
     async fn said(&self, args: &[&str], limit: Duration) -> Result<Said, String> {
+        let unanswered = |error| format!("git {}: {error}", args.first().unwrap_or(&""));
+        let blanked = if args
+            .first()
+            .is_some_and(|command| RUNS_NO_FILTER.contains(command))
+        {
+            Vec::new()
+        } else {
+            let mut listing =
+                self.program(&["config", "--show-scope", "--null", "--name-only", "--list"]);
+            let listed = self
+                .processes
+                .output(&mut listing, READS_WITHIN)
+                .await
+                .map_err(unanswered)?;
+            if !listed.status.success() {
+                return Ok(Err(failure(args, &listed)));
+            }
+            let Some(named) = named_by_repository(&listed.stdout) else {
+                return Ok(Err(format!(
+                    "git {}: this repository's settings have a name git can't be told to skip",
+                    args.join(" ")
+                )));
+            };
+            named
+        };
+        let mut command = self.program(args);
+        command.envs(config_settings(
+            self.environment,
+            RUNS_NOTHING
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .chain(blanked.iter().flat_map(|key| blanking(key))),
+        ));
+        let output = self
+            .processes
+            .output(&mut command, limit)
+            .await
+            .map_err(unanswered)?;
+        Ok(if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        } else {
+            Err(failure(args, &output))
+        })
+    }
+
+    /// git with `args`, in this folder and environment.
+    fn program(&self, args: &[&str]) -> glave_process::Program {
         let mut command = glave_process::Program::new("git");
         if self.credential.is_some() {
             command
@@ -107,18 +200,79 @@ impl<'a> Git<'a> {
             }))
             .env("GIT_TERMINAL_PROMPT", "0")
             .no_input();
-        let output = self
-            .processes
-            .output(&mut command, limit)
-            .await
-            .map_err(|error| format!("git {}: {error}", args.first().unwrap_or(&"")))?;
-        Ok(if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-        } else {
-            let said = String::from_utf8_lossy(&output.stderr);
-            Err(format!("git {}: {}", args.join(" "), said.trim()))
-        })
+        if !self.network {
+            command.env("GIT_ALLOW_PROTOCOL", NO_TRANSPORT);
+        }
+        command
     }
+}
+
+/// The settings that blank `key`. A filter blanked is also required, so a file it would have
+/// changed fails loudly rather than pass unencrypted or unconverted, as with git-crypt's.
+fn blanking(key: &str) -> Vec<(String, String)> {
+    let mut settings = vec![(key.to_owned(), String::new())];
+    if let (true, Some((driver, _))) = (key.starts_with("filter."), key.rsplit_once('.')) {
+        settings.push((format!("{driver}.required"), "true".to_owned()));
+    }
+    settings
+}
+
+/// What git said when it failed at `args`.
+fn failure(args: &[&str], output: &std::process::Output) -> String {
+    let said = String::from_utf8_lossy(&output.stderr);
+    format!("git {}: {}", args.join(" "), said.trim())
+}
+
+/// In `git config --show-scope --null --name-only --list`'s output, the keys the repository's own
+/// config sets under [`NAMES_A_PROGRAM`]; `None` for a key that isn't text, which could not be
+/// named back to git to blank it.
+fn named_by_repository(listed: &[u8]) -> Option<Vec<String>> {
+    let mut parts = listed.split(|byte| *byte == 0);
+    let mut named = Vec::new();
+    while let (Some(scope), Some(key)) = (parts.next(), parts.next()) {
+        if !matches!(scope, b"local" | b"worktree") {
+            continue;
+        }
+        if NAMES_A_PROGRAM
+            .iter()
+            .any(|name| key.starts_with(name.as_bytes()))
+        {
+            named.push(String::from_utf8(key.to_vec()).ok()?);
+        }
+    }
+    Some(named)
+}
+
+/// `settings` for git, through `GIT_CONFIG_*` after any `environment` has already: they outrank
+/// every config file, and unlike `git -c` take any key, whatever a repository named it.
+pub(crate) fn config_settings(
+    environment: &[(OsString, OsString)],
+    settings: impl Iterator<Item = (String, String)>,
+) -> Vec<(OsString, OsString)> {
+    let mut n = environment
+        .iter()
+        .find(|(name, _)| name == "GIT_CONFIG_COUNT")
+        .and_then(|(_, count)| count.to_str()?.parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut variables = Vec::new();
+    for (key, value) in settings {
+        variables.push((format!("GIT_CONFIG_KEY_{n}").into(), key.into()));
+        variables.push((format!("GIT_CONFIG_VALUE_{n}").into(), value.into()));
+        n = n.saturating_add(1);
+    }
+    variables.push(("GIT_CONFIG_COUNT".into(), n.to_string().into()));
+    variables
+}
+
+/// git's answer to `args`, a question about the repository around `folder`, asked as the server
+/// itself: for a program that reads a repository before any computer holds it.
+pub async fn ask_repository(
+    processes: &Processes,
+    folder: &Path,
+    args: &[&str],
+) -> Result<String, ComputerError> {
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    Git::at(processes, &environment, folder).must(args).await
 }
 
 /// Refuses text git would read as an option.
@@ -155,6 +309,7 @@ pub(crate) async fn clone(
         at: parent,
         options: Vec::new(),
         credential,
+        network: true,
     };
     let dest_text = dest.to_string_lossy();
     git.work(&["clone", "--quiet", "--", url, &dest_text])
@@ -166,6 +321,7 @@ pub(crate) async fn clone(
             at: dest,
             options: Vec::new(),
             credential,
+            network: false,
         };
         let failed = match inside
             .said(&["checkout", "--quiet", at, "--"], WORKS_WITHIN)
@@ -261,44 +417,9 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         at: &opened.root,
         options: Vec::new(),
         credential: opened.credential.as_ref(),
+        network: true,
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    use super::*;
-
-    #[test]
-    fn git_that_never_finishes_is_stopped_at_its_limit_saying_so() {
-        let dir = glave_ports::testing::TempDir::new("git-hangs").unwrap();
-        let git = dir.join("git");
-        std::fs::write(&git, "#!/bin/sh\nexec sleep 300\n").unwrap();
-        std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
-        // This git first, and the system's own folders after it, where `sleep` is.
-        let mut path = dir.as_os_str().to_owned();
-        path.push(":/usr/bin:/bin");
-        let environment = [(OsString::from("PATH"), path)];
-        let processes = Processes::unrecorded();
-        let (asked, worked) = glave_ports::block_on!(async {
-            tokio::time::pause();
-            let asked = Git::at(&processes, &environment, &dir)
-                .ask(&["status"])
-                .await;
-            let worked = Git::at(&processes, &environment, &dir)
-                .work(&["push"])
-                .await;
-            (asked, worked)
-        });
-        // No answer is never a no: a question's caller gets the error, not git's failure.
-        assert_eq!(
-            asked.err().map(|error| error.to_string()).as_deref(),
-            Some("failed: git status: git did not finish within 2 minutes")
-        );
-        assert_eq!(
-            worked.err().map(|error| error.to_string()).as_deref(),
-            Some("failed: git push: git did not finish within 30 minutes")
-        );
-    }
-}
+mod tests;
