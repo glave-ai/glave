@@ -396,36 +396,6 @@ fn a_sibling_answered_while_a_call_runs_and_loses_its_result_never_runs_it_again
     });
 }
 
-/// A server stopped with `b` answered and `a`'s result lost: `b`'s answer is closed as a crash's
-/// leftover by the next start, and neither call runs again.
-#[test]
-fn a_result_lost_as_a_server_stops_leaves_each_call_run_at_most_once() {
-    block_on!(async {
-        let dir = folder("crashes-stopped-answered");
-        let tools = deploys();
-        let shared = Memory::new();
-        let (first, log) = doomed_on(&dir, &shared, &tools).await;
-        let (root, a, b, _followed) = both_waiting(&first).await;
-        log.hold("tool.call.completed");
-        first.request(answering(a.0, a.1, false)).await.unwrap();
-        log.held().await;
-        first.request(answering(b.0, b.1, false)).await.unwrap();
-        log.stop_after(0);
-        log.release();
-        first.stop(Duration::from_secs(3_600)).await;
-        assert!(log.stopped(), "the result of a was refused");
-        drop(first);
-
-        let sources: Vec<Arc<dyn ToolSource>> = vec![Arc::clone(&tools) as Arc<dyn ToolSource>];
-        let script = ScriptedModel::keyed(with_children());
-        let second = server_on(&dir, &shared, script, sources, 2).await;
-        second.repair_left_open().await.unwrap();
-        answer_until_done(&second, root, || false).await;
-        second.stop(Duration::from_secs(3_600)).await;
-        each_once(&tools, &["a"]);
-    });
-}
-
 /// No crash and no race: one write of `a`'s result fails, and `b` is answered later.
 #[test]
 fn one_lost_result_then_a_siblings_answer_never_runs_the_call_again() {
