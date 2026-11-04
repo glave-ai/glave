@@ -227,6 +227,27 @@ fn nothing_changes_on_a_no_or_with_no_one_to_ask() {
 }
 
 #[test]
+fn with_no_folder_of_their_own_an_answer_already_waiting_changes_nothing_there() {
+    let (project, own) = (
+        TempDir::new("install-w").unwrap(),
+        TempDir::new("install-x").unwrap(),
+    );
+    glave_ports::block_on!(async {
+        // Asked while the tool held the folder, answered by one that holds none.
+        let holding = install(&project, &own, true).await;
+        let asks = asked(&holding, &server()).await;
+        let tool = Install {
+            workspace: Arc::clone(&holding.workspace),
+            own: None,
+        };
+        let done = chosen(&tool, asks, "everywhere").await;
+        let fits = "That place no longer fits, so nothing changed.";
+        assert_eq!(done, ToolOutput::text(true, fits));
+        assert!(!own.join("mcp.json").exists());
+    });
+}
+
+#[test]
 fn where_the_organization_forbids_own_servers_none_is_added_there() {
     let (project, own) = (
         TempDir::new("install-f").unwrap(),
