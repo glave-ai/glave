@@ -52,7 +52,8 @@ where
         if let (Some(setting), Answered::Reply(Ok(reply))) = (changes, &answered)
             && !matches!(reply, Reply::Waiting { .. })
         {
-            self.inner.hub.setting_changed(caller.person, setting);
+            let org = self.org_of(caller);
+            self.inner.hub.setting_changed(org, caller.person, setting);
         }
         answered
     }

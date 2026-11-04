@@ -59,8 +59,10 @@ pub(crate) struct Changed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Change {
     Thread(Changed),
-    /// `setting` changed through this server for `person`, `None` for the local person.
+    /// `setting` changed through this server for `person`, `None` for the local person, by a
+    /// request working in `org`.
     Setting {
+        org: OrgId,
         person: Option<PrincipalId>,
         setting: Setting,
     },
@@ -115,10 +117,19 @@ impl Hub {
     }
 
     /// Tells the watches of lists that `person`'s `setting` changed (`None`: the local
-    /// person's).
-    pub(crate) fn setting_changed(&self, person: Option<PrincipalId>, setting: Setting) {
+    /// person's), by a request working in `org`.
+    pub(crate) fn setting_changed(
+        &self,
+        org: OrgId,
+        person: Option<PrincipalId>,
+        setting: Setting,
+    ) {
         // Only fails when no list is watched, which is fine.
-        let _ = self.changes.send(Change::Setting { person, setting });
+        let _ = self.changes.send(Change::Setting {
+            org,
+            person,
+            setting,
+        });
     }
 
     /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams
