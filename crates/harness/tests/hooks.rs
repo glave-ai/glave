@@ -2,11 +2,14 @@
 //! it with a reason the model reads, a hook never skips an approval, a slow hook is stopped,
 //! and hooks that pass leave what the model is sent exactly as it was.
 
+use std::ffi::OsString;
 use std::path::Path;
 
+use glave_computer::LocalComputers;
 use glave_event::{Body, Event, HookPoint, HookRan, HookResult, Part, StopReason};
-use glave_harness::{Cancel, Harness, HarnessError, NoOneToAsk};
+use glave_harness::{Cancel, Harness, HarnessError, NoOneToAsk, Workspace};
 use glave_ports::settings::{Hook, Hooks};
+use glave_ports::testing::any_secret;
 use glave_ports::{InMemoryBlobs, InMemoryLog, Message, ModelRequest};
 use serde_json::{Value, json};
 
@@ -208,6 +211,32 @@ fn a_stop_hook_runs_once_the_turn_has_ended_and_cannot_keep_it_going() {
 }
 
 /// A harness under `hooks` whose model says "Hi.", and what the model is sent.
+#[test]
+fn a_hook_never_sees_the_store_s_address_or_its_password() {
+    let dir = folder("hooks-store");
+    let password = any_secret();
+    let store = format!("postgres://glave:{password}@db.example.com/glave");
+    let mut environment: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    environment.push(("GLAVE_STORE_URL".into(), store.into()));
+    let hooks = vec![hook(HookPoint::UserPromptSubmit, None, "env > seen")];
+    block_on!(async {
+        let (computers, info) = LocalComputers::here(&dir, environment).await.unwrap();
+        let workspace = Workspace::new(computers, info);
+        let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
+        let log = InMemoryLog::new();
+        let (harness, _) = harness_with(workspace, answers, NoOneToAsk, log, 1, settings());
+        let harness = harness.with_hooks(Hooks::new(hooks).unwrap());
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "hello").await;
+    });
+    let seen = std::fs::read_to_string(dir.join("seen")).unwrap();
+    assert!(seen.contains("PATH="), "the hook wrote what it saw");
+    assert!(
+        !seen.contains("GLAVE_STORE_URL") && !seen.contains(&password),
+        "the store's address reached a hook"
+    );
+}
+
 async fn greeting(
     dir: &Path,
     hooks: Hooks,

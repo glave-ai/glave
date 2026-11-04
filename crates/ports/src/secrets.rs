@@ -16,10 +16,14 @@ pub use known::{Known, KnownSecrets, Masking};
 /// `OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `DB_PASSWORD`.
 const SECRET_WORDS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];
 
+/// glave's own variables that hold a secret under a name with none of those words: the store's
+/// address carries its password (`specs/storage.md`, "Which stores").
+const SECRET_VARIABLES: &[&str] = &["GLAVE_STORE_URL"];
+
 /// Whether an environment variable's name marks it as a secret.
 pub fn is_secret_variable(name: &OsStr) -> bool {
     let name = name.to_string_lossy().to_ascii_uppercase();
-    SECRET_WORDS.iter().any(|word| name.contains(word))
+    SECRET_VARIABLES.contains(&name.as_str()) || SECRET_WORDS.iter().any(|word| name.contains(word))
 }
 
 /// `vars` without the secrets, for the commands the model runs.
@@ -105,6 +109,7 @@ mod tests {
             "AWS_SECRET_ACCESS_KEY",
             "DB_PASSWORD",
             "GOOGLE_APPLICATION_CREDENTIALS",
+            "GLAVE_STORE_URL",
         ] {
             assert!(is_secret_variable(OsStr::new(name)), "{name}");
         }
