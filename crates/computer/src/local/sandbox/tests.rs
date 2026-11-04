@@ -19,6 +19,8 @@ use crate::{CancelSwitch, LocalComputers};
 
 mod toolchains;
 
+mod nested_repository;
+
 fn enforced() -> bool {
     let available = sandbox_available();
     assert!(
