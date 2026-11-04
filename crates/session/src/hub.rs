@@ -58,8 +58,8 @@ pub(crate) struct Changed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Change {
     Thread(Changed),
-    /// `setting` changed through this server for `person`, `None` for the local person, by a
-    /// request working in `org`.
+    /// `setting` changed through this server by a request of `person`, `None` for the local
+    /// person, working in `org`.
     Setting {
         org: OrgId,
         person: Option<PrincipalId>,
@@ -115,8 +115,8 @@ impl Hub {
         self.sign_ins.send_replace(());
     }
 
-    /// Tells the watches of lists that `person`'s `setting` changed (`None`: the local
-    /// person's), by a request working in `org`.
+    /// Tells the watches of lists that `setting` changed by a request of `person` (`None`: the
+    /// local person) working in `org`.
     pub(crate) fn setting_changed(
         &self,
         org: OrgId,

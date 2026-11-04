@@ -690,8 +690,8 @@ export type OrganizationInfo = {
   /** Its id, which a request names in `Glave-Organization` to work in it. */
   readonly id: string;
   /**
-   * What it is called: "Personal" for the caller's own; another, while organizations have
-   * no names of their own, by an Owner of it ("Dana Lee's team"), else "A team".
+   * What it is called: the name its brand gives it; with none, "Personal" for the caller's
+   * own, and another by an Owner of it ("Dana Lee's team"), else "A team".
    */
   readonly name: string;
   /**

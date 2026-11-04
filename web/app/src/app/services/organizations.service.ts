@@ -16,8 +16,10 @@ export class OrganizationsService {
   private readonly session = inject(SessionService);
   private readonly listed = signal<readonly OrganizationInfo[]>([]);
   private pending: Promise<void> | null = null;
-  /** How many reads were asked for: only the latest one's answer is kept. */
+  /** How many reads were asked for. */
   private reads = 0;
+  /** The latest read whose answer is kept: an earlier one's, coming after it, is not. */
+  private kept = 0;
 
   /** The person's organizations, their own first, as the server last listed them. */
   readonly organizations = this.listed.asReadonly();
@@ -31,14 +33,16 @@ export class OrganizationsService {
 
   constructor() {
     onChange('brand', () => {
-      this.pending = this.read();
+      if (this.session.signedIn()) {
+        this.pending = this.read();
+      }
     });
     // Signed out, it forgets them, so whoever signs in next reads their own.
     effect(() => {
       if (!this.session.signedIn()) {
         this.listed.set([]);
         this.pending = null;
-        this.reads += 1;
+        this.kept = this.reads;
       }
     });
   }
@@ -62,7 +66,8 @@ export class OrganizationsService {
     const read = this.reads;
     return this.session.call('organization/list', {}).then(
       ({ organizations }) => {
-        if (read === this.reads) {
+        if (read > this.kept) {
+          this.kept = read;
           this.listed.set(organizations);
         }
       },

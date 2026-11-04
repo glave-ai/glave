@@ -2133,7 +2133,7 @@
           "type": "string"
         },
         "name": {
-          "description": "What it is called: \"Personal\" for the caller's own; another, while organizations have\nno names of their own, by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
+          "description": "What it is called: the name its brand gives it; with none, \"Personal\" for the caller's\nown, and another by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
           "type": "string"
         },
         "own": {

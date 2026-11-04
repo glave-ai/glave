@@ -74,6 +74,28 @@ describe('OrganizationsService', () => {
     expect(organizations.organizations()).toEqual([{ ...OWN, name: 'Acme' }]);
   });
 
+  it('keeps an earlier answer when a later read fails', async () => {
+    const waiting: { resolve: (answer: object) => void; reject: (why: unknown) => void }[] = [];
+    const fake = new FakeSession().answer(
+      'organization/list',
+      () =>
+        new Promise((resolve, reject) => {
+          waiting.push({ resolve, reject });
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const organizations = TestBed.inject(OrganizationsService);
+    const first = organizations.load();
+    TestBed.tick();
+    TestBed.inject(ChangesService).tell('brand');
+    TestBed.tick();
+    expect(waiting).toHaveLength(2);
+    waiting[1]?.reject(new Error('cut off'));
+    waiting[0]?.resolve({ organizations: [OWN] });
+    await first;
+    expect(organizations.organizations()).toEqual([OWN]);
+  });
+
   it('reads nothing signed out, and forgets what it read once signed out', async () => {
     const fake = new FakeSession().answer('organization/list', { organizations: [OWN, ACME] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
