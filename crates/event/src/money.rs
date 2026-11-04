@@ -1,4 +1,4 @@
-//! Money as an exact integer count of millionths plus a currency, never a float.
+//! Money as an exact integer count of billionths plus a currency, never a float.
 
 use std::fmt;
 
@@ -64,34 +64,114 @@ impl fmt::Display for Currency {
     }
 }
 
-/// An exact amount: `micros` millionths of one unit of `currency`. `{"micros": 4200,
+/// An exact count of billionths of one unit of a currency, the unit Google's billing uses: in
+/// 64 bits it holds about nine billion dollars. The one way glave counts money, and, as what a
+/// million tokens cost, prices.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct Nanos(i64);
+
+/// Billionths in one unit.
+const UNIT: u64 = 1_000_000_000;
+
+/// Decimal places a count of [`Nanos`] keeps.
+const PLACES: u32 = 9;
+
+/// Decimal places of a price per token held per million tokens: [`PLACES`] and six more.
+const PER_TOKEN_PLACES: u32 = 15;
+
+/// Billionths in one hundredth of a unit: a cent of a dollar.
+const CENT: i64 = 10_000_000;
+
+impl Nanos {
+    pub const ZERO: Self = Self(0);
+    pub const MAX: Self = Self(i64::MAX);
+
+    pub const fn new(nanos: i64) -> Self {
+        Self(nanos)
+    }
+
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    /// The price of a million tokens from what a service lists for one, in dollars as decimal
+    /// text such as `0.000003` or `3e-6`: exact, with no float on the way, and past the last
+    /// place kept rounded up, so a price is never free by rounding. `None` unless it is a
+    /// number at or above zero that fits.
+    pub fn per_million_tokens(dollars_per_token: &str) -> Option<Self> {
+        scaled(dollars_per_token, PER_TOKEN_PLACES)
+            .map(Self)
+            .filter(|price| *price >= Self::ZERO)
+    }
+
+    /// The sum, or `None` when it would not fit.
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        self.0.checked_add(other.0).map(Self)
+    }
+
+    /// The sum, or the most or least there can be.
+    #[must_use]
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self(self.0.saturating_add(other.0))
+    }
+
+    /// The difference, or the most or least there can be.
+    #[must_use]
+    pub const fn saturating_sub(self, other: Self) -> Self {
+        Self(self.0.saturating_sub(other.0))
+    }
+
+    /// The amount alone as a plain decimal such as `0.0042`, formatted as [`Money`] is.
+    pub const fn decimal(self) -> Decimal {
+        Decimal(self)
+    }
+}
+
+/// An exact amount: `nanos` billionths of one unit of `currency`. `{"nanos": 4200000,
 /// "currency": "USD"}` is $0.0042.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Money {
-    pub micros: i64,
+    pub nanos: Nanos,
     pub currency: Currency,
 }
 
-/// Millionths in one unit.
-const MICROS: u64 = 1_000_000;
-
-/// Millionths in one hundredth of a unit: a cent of a dollar.
-const CENT: i64 = 10_000;
-
 impl Money {
-    /// US dollars written as a plain decimal, such as `2`, `0.50` or `-0.0042`: digits, then
-    /// a point and more digits if any. Past the sixth decimal place it rounds half away from
-    /// zero; exponents, a leading `+` and a bare point are refused.
+    /// US dollars as a person writes them, a plain decimal such as `2`, `0.50` or `-0.0042`.
+    /// Past the ninth decimal place it rounds away from zero, so an amount is never nothing by
+    /// rounding; exponents, a leading `+` and a bare point are refused.
     pub fn parse_dollars(text: &str) -> Result<Self, InvalidValue> {
-        let micros = micros_of(text).ok_or_else(|| {
-            InvalidValue::new(
-                "amount",
-                format!("{text:?} is not dollars, such as 2 or 0.50"),
-            )
-        })?;
-        Ok(Self {
-            micros,
+        Some(text)
+            .filter(|text| !text.contains(['e', 'E']))
+            .and_then(Self::reported_dollars)
+            .ok_or_else(|| {
+                InvalidValue::new(
+                    "amount",
+                    format!("{text:?} is not dollars, such as 2 or 0.50"),
+                )
+            })
+    }
+
+    /// US dollars as a provider reports them, a JSON number, so with an exponent if it likes:
+    /// JavaScript and Python write a very cheap call as `4e-7`. Rounded as
+    /// [`parse_dollars`](Self::parse_dollars) is; `None` unless it is a number that fits.
+    pub fn reported_dollars(text: &str) -> Option<Self> {
+        Some(Self {
+            nanos: Nanos(scaled(text, PLACES)?),
             currency: Currency::USD,
         })
     }
@@ -103,36 +183,40 @@ impl Money {
             return None;
         }
         Some(Self {
-            micros: self.micros.checked_add(other.micros)?,
+            nanos: self.nanos.checked_add(other.nanos)?,
             currency: self.currency,
         })
     }
 
-    /// The amount rounded up to the next cent, as what something could cost is said.
+    /// The amount rounded up to the next cent, as what something could cost is said: for
+    /// showing, never for counting.
     #[must_use]
     pub fn cents_up(self) -> Self {
+        let nanos = self.nanos.get();
         Self {
-            micros: self
-                .micros
-                .div_euclid(CENT)
-                .saturating_add(i64::from(self.micros.rem_euclid(CENT) != 0))
-                .saturating_mul(CENT),
+            nanos: Nanos(
+                nanos
+                    .div_euclid(CENT)
+                    .saturating_add(i64::from(nanos.rem_euclid(CENT) != 0))
+                    .saturating_mul(CENT),
+            ),
             ..self
         }
     }
 
-    /// The amount rounded down to the cent, as what is left is said.
+    /// The amount rounded down to the cent, as what is left is said: for showing, never for
+    /// counting.
     #[must_use]
     pub fn cents_down(self) -> Self {
         Self {
-            micros: self.micros.div_euclid(CENT).saturating_mul(CENT),
+            nanos: Nanos(self.nanos.get().div_euclid(CENT).saturating_mul(CENT)),
             ..self
         }
     }
 
     /// The amount alone, without its currency, as a plain decimal such as `0.0042`.
-    pub fn decimal(self) -> Decimal {
-        Decimal(self.micros)
+    pub const fn decimal(self) -> Decimal {
+        self.nanos.decimal()
     }
 }
 
@@ -140,7 +224,7 @@ impl Money {
 /// is exact and as short as it can be; `{:.2}` rounds half away from zero to two places.
 impl fmt::Display for Money {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let amount = decimal(self.micros, f.precision());
+        let amount = decimal(self.nanos.get(), f.precision());
         if self.currency != Currency::USD {
             return write!(f, "{amount} {}", self.currency);
         }
@@ -152,37 +236,37 @@ impl fmt::Display for Money {
 }
 
 /// An amount of money without its currency, formatted as [`Money`] is: `0.0042`, or with
-/// `{:.6}`, `0.004200`.
+/// `{:.9}`, `0.004200000`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Decimal(i64);
+pub struct Decimal(Nanos);
 
 impl fmt::Display for Decimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&decimal(self.0, f.precision()))
+        f.write_str(&decimal(self.0.get(), f.precision()))
     }
 }
 
-/// `micros` as a decimal: exact and shortest without `places`, else rounded half away from
+/// `nanos` as a decimal: exact and shortest without `places`, else rounded half away from
 /// zero to that many places.
-fn decimal(micros: i64, places: Option<usize>) -> String {
-    let magnitude = micros.unsigned_abs();
+fn decimal(nanos: i64, places: Option<usize>) -> String {
+    let magnitude = nanos.unsigned_abs();
     let Some(places) = places else {
-        let sign = if micros < 0 { "-" } else { "" };
-        let (whole, fraction) = (magnitude / MICROS, magnitude % MICROS);
+        let sign = if nanos < 0 { "-" } else { "" };
+        let (whole, fraction) = (magnitude / UNIT, magnitude % UNIT);
         if fraction == 0 {
             return format!("{sign}{whole}");
         }
-        let fraction = format!("{fraction:06}");
+        let fraction = format!("{fraction:09}");
         return format!("{sign}{whole}.{}", fraction.trim_end_matches('0'));
     };
-    let kept = places.min(6);
-    // A power of ten from 1 (all six places kept) to a million (none kept).
-    let step = (kept..6).fold(1_u64, |step, _| step.saturating_mul(10));
+    let kept = places.min(PLACES as usize);
+    // A power of ten from 1 (all nine places kept) to a billion (none kept).
+    let step = (kept..PLACES as usize).fold(1_u64, |step, _| step.saturating_mul(10));
     let half_or_more = (magnitude % step).saturating_mul(2) >= step && step > 1;
     let rounded = (magnitude / step).saturating_add(u64::from(half_or_more));
-    let scale = MICROS / step;
+    let scale = UNIT / step;
     let (whole, fraction) = (rounded / scale, rounded % scale);
-    let sign = if micros < 0 && rounded > 0 { "-" } else { "" };
+    let sign = if nanos < 0 && rounded > 0 { "-" } else { "" };
     if places == 0 {
         return format!("{sign}{whole}");
     }
@@ -190,34 +274,47 @@ fn decimal(micros: i64, places: Option<usize>) -> String {
     format!("{sign}{whole}.{fraction:0kept$}{:0<pad$}", "")
 }
 
-/// The millionths `text` names, rounded half away from zero past the sixth place; `None`
-/// unless it is a plain decimal that fits.
-fn micros_of(text: &str) -> Option<i64> {
-    let (negative, digits) = match text.strip_prefix('-') {
+/// The number `text` writes, in units of ten to the minus `places`, worked out digit by digit
+/// with no float on the way. Past the last place it rounds away from zero, so nothing but zero
+/// becomes zero. `None` unless it is a decimal, with an exponent if any, that fits.
+fn scaled(text: &str, places: u32) -> Option<i64> {
+    let (negative, number) = match text.strip_prefix('-') {
         Some(rest) => (true, rest),
         None => (false, text),
     };
-    let (whole, fraction) = match digits.split_once('.') {
+    let (mantissa, exponent) = match number.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().ok()?),
+        None => (number, 0),
+    };
+    let (whole, fraction) = match mantissa.split_once('.') {
         Some((_, "")) => return None,
         Some(parts) => parts,
-        None => (digits, ""),
+        None => (mantissa, ""),
     };
     let all_digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
     if whole.is_empty() || !all_digits(whole) || !all_digits(fraction) {
         return None;
     }
-    let mut micros = whole.parse::<i64>().ok()?.checked_mul(1_000_000)?;
-    let mut fraction = fraction.bytes().map(|b| i64::from(b - b'0'));
-    let mut scale = 100_000;
-    for _ in 0..6 {
-        let digit = fraction.next().unwrap_or(0);
-        micros = micros.checked_add(digit.checked_mul(scale)?)?;
-        scale /= 10;
+    let mut digits = whole
+        .bytes()
+        .chain(fraction.bytes())
+        .map(|b| u128::from(b - b'0'));
+    let kept = i128::try_from(whole.len()).ok()? + i128::from(exponent) + i128::from(places);
+    let mut magnitude = 0_u128;
+    for _ in 0..kept {
+        let digit = digits.next();
+        // Zeros after zero, however many an exponent asks for, stay zero; any other number
+        // runs out of room within forty.
+        if digit.is_none() && magnitude == 0 {
+            break;
+        }
+        magnitude = magnitude.checked_mul(10)?.checked_add(digit.unwrap_or(0))?;
     }
-    if fraction.next().is_some_and(|digit| digit >= 5) {
-        micros = micros.checked_add(1)?;
+    if digits.any(|digit| digit != 0) {
+        magnitude = magnitude.checked_add(1)?;
     }
-    Some(if negative { -micros } else { micros })
+    let magnitude = i128::try_from(magnitude).ok()?;
+    i64::try_from(if negative { -magnitude } else { magnitude }).ok()
 }
 
 #[cfg(test)]

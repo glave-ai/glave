@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Currency, ModelRef, Money, Opaque, Part, StopReason, TokenCounts, Usage};
+use glave_event::{Currency, ModelRef, Money, Nanos, Opaque, Part, StopReason, TokenCounts, Usage};
 use glave_gateway::{Model, Price, Target};
 pub(crate) use glave_ports::block_on;
 use glave_ports::{
@@ -106,22 +106,22 @@ impl Model for Fake {
     }
 }
 
-/// A dollar a million tokens per `per_mtok` millionths, in and out: at 1,000,000, a
-/// millionth of a dollar a token.
-pub(crate) fn price(per_mtok: u64) -> Price {
+/// `per_mtok` billionths of a dollar a million tokens, in and out: at 1,000,000, a billionth
+/// of a dollar a token.
+pub(crate) fn price(per_mtok: i64) -> Price {
     Price {
         list: "test".into(),
         currency: Currency::USD,
-        input_per_mtok: per_mtok,
-        cache_read_per_mtok: 0,
-        output_per_mtok: per_mtok,
+        input_per_mtok: Nanos::new(per_mtok),
+        cache_read_per_mtok: Nanos::ZERO,
+        output_per_mtok: Nanos::new(per_mtok),
     }
 }
 
-/// `micros` millionths of a dollar.
-pub(crate) fn dollars(micros: i64) -> Money {
+/// `nanos` billionths of a dollar.
+pub(crate) fn dollars(nanos: i64) -> Money {
     Money {
-        micros,
+        nanos: Nanos::new(nanos),
         currency: Currency::USD,
     }
 }

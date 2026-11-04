@@ -137,7 +137,7 @@ fn said(credits: &CreditsInfo) -> String {
 
 #[cfg(test)]
 mod tests {
-    use glave_event::{At, Currency};
+    use glave_event::{At, Currency, Nanos};
     use glave_session::protocol::{CreditsAccount, PersonSpent};
 
     use super::*;
@@ -146,9 +146,9 @@ mod tests {
         text.iter().map(|word| (*word).to_owned()).collect()
     }
 
-    fn dollars(micros: i64) -> Money {
+    fn dollars(nanos: i64) -> Money {
         Money {
-            micros,
+            nanos: Nanos::new(nanos),
             currency: Currency::USD,
         }
     }
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(parse(&words(&[])).unwrap(), Command::Show);
         assert_eq!(
             parse(&words(&["limit", "25"])).unwrap(),
-            Command::Limit(dollars(25_000_000))
+            Command::Limit(dollars(25_000_000_000))
         );
         let id = "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13";
         let asked = parse(&words(&[
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(
             asked.unwrap(),
             Command::Add {
-                amount: dollars(1_500_000),
+                amount: dollars(1_500_000_000),
                 organization: Some(OrgId::from_uuid(Uuid::try_parse(id).unwrap())),
                 reference: Some("o-1".into()),
             }
@@ -193,21 +193,21 @@ mod tests {
         let you = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
         let credits = CreditsInfo {
             account: Some(CreditsAccount {
-                balance: dollars(4_200_000),
-                limit: Some(dollars(10_000_000)),
-                spent: dollars(5_800_000),
+                balance: dollars(4_200_000_000),
+                limit: Some(dollars(10_000_000_000)),
+                spent: dollars(5_800_000_000),
             }),
             people: vec![
                 PersonSpent {
                     person: you,
                     name: None,
-                    spent: dollars(5_000_000),
+                    spent: dollars(5_000_000_000),
                     you: true,
                 },
                 PersonSpent {
                     person: you,
                     name: Some("Bo".into()),
-                    spent: dollars(800_000),
+                    spent: dollars(800_000_000),
                     you: false,
                 },
             ],

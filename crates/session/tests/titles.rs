@@ -93,7 +93,7 @@ fn a_title_is_recorded_after_the_first_reply_and_its_call_counts() {
         let shown = summary(&server, thread).await;
         assert_eq!(shown.title.as_deref(), Some("Postgres setup on macOS"));
         assert_eq!((shown.tokens.input, shown.tokens.output), (140, 15));
-        assert_eq!(shown.cost.map(|cost| cost.micros), Some(57));
+        assert_eq!(shown.cost.map(|cost| cost.nanos.get()), Some(57));
     });
 }
 
@@ -247,7 +247,7 @@ fn a_turn_started_while_the_title_is_recorded_runs() {
         );
         let shown = summary(&server, thread).await;
         assert_eq!((shown.tokens.input, shown.tokens.output), (160, 18));
-        assert_eq!(shown.cost.map(|cost| cost.micros), Some(66));
+        assert_eq!(shown.cost.map(|cost| cost.nanos.get()), Some(66));
     });
 }
 

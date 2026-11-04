@@ -96,12 +96,10 @@ fn run(options: &Options) -> Result<(), String> {
         for (case, (label, took)) in cases.iter().zip(decided) {
             score.record(case, label, took);
         }
-        let micros = provider.micros();
         println!(
-            "{}cost: ${}.{:06}\n",
+            "{}cost: ${:.6}\n",
             score.markdown(&format!("checks + {name} judging soft cautions")),
-            micros / 1_000_000,
-            micros % 1_000_000
+            provider.spent().decimal()
         );
         if options.wrong {
             println!("{}", score.wrong());

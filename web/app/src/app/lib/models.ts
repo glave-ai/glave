@@ -24,8 +24,8 @@ export function priceText(price: TokenPrice, locale: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 3,
   });
-  const input = dollars.format(price.input / 1_000_000);
-  const output = dollars.format(price.output / 1_000_000);
+  const input = dollars.format(price.input / 1_000_000_000);
+  const output = dollars.format(price.output / 1_000_000_000);
   return $localize`:@@models.price:${input}:INPUT: in, ${output}:OUTPUT: out per 1M tokens`;
 }
 

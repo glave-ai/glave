@@ -6,7 +6,7 @@ use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
 use glave_event::{
-    Currency, GoalReason, Money, Outcome, OutsideSandbox, ServiceAsked, ServiceField,
+    Currency, GoalReason, Money, Nanos, Outcome, OutsideSandbox, ServiceAsked, ServiceField,
 };
 use glave_harness::Question;
 use glave_session::protocol::{PlanInfo, TurnResult, Update};
@@ -386,16 +386,16 @@ fn thousands(n: u64) -> String {
     out
 }
 
-/// Money from exact micros: four decimals under a cent, two above.
+/// Money as it is shown from exact billionths: four decimals under a cent, two above.
 fn format_money(money: Money) -> String {
-    let sign = if money.micros < 0 { "-" } else { "" };
-    let micros = money.micros.unsigned_abs();
-    let whole = micros / 1_000_000;
-    let fraction = micros % 1_000_000;
-    let amount = if micros < 10_000 && micros > 0 {
-        format!("{whole}.{:04}", fraction / 100)
+    let sign = if money.nanos < Nanos::ZERO { "-" } else { "" };
+    let nanos = money.nanos.get().unsigned_abs();
+    let whole = nanos / 1_000_000_000;
+    let fraction = nanos % 1_000_000_000;
+    let amount = if nanos < 10_000_000 && nanos > 0 {
+        format!("{whole}.{:04}", fraction / 100_000)
     } else {
-        format!("{whole}.{:02}", fraction / 10_000)
+        format!("{whole}.{:02}", fraction / 10_000_000)
     };
     if money.currency == Currency::USD {
         format!("{sign}${amount}")
@@ -470,7 +470,7 @@ mod tests {
                 reasoning: 0,
             },
             cost: Some(Money {
-                micros: 0,
+                nanos: Nanos::ZERO,
                 currency: Currency::USD,
             }),
             estimated: false,
@@ -522,15 +522,15 @@ mod tests {
         assert_eq!(thousands(0), "0");
         assert_eq!(thousands(1_204), "1,204");
         assert_eq!(thousands(1_234_567), "1,234,567");
-        let usd = |micros| Money {
-            micros,
+        let usd = |nanos| Money {
+            nanos: Nanos::new(nanos),
             currency: Currency::USD,
         };
-        assert_eq!(format_money(usd(4_200)), "$0.0042");
-        assert_eq!(format_money(usd(1_230_000)), "$1.23");
+        assert_eq!(format_money(usd(4_200_000)), "$0.0042");
+        assert_eq!(format_money(usd(1_230_000_000)), "$1.23");
         assert_eq!(format_money(usd(0)), "$0.00");
         let eur = Money {
-            micros: 2_500_000,
+            nanos: Nanos::new(2_500_000_000),
             currency: Currency::new("EUR").unwrap(),
         };
         assert_eq!(format_money(eur), "2.50 EUR");

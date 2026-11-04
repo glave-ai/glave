@@ -107,7 +107,7 @@ describe('ThreadPanelService', () => {
     const fake = new FakeSession().answer('thread/get', {
       thread: thread('thread-1', 'Dinner ideas', {
         workspace: workspace({ kind: 'scratch', path: '/s' }, 'local'),
-        cost: { micros: 4200, currency: 'USD' },
+        cost: { nanos: 4_200_000, currency: 'USD' },
         context: { percent: 3, tokens: 3840, window: 128000 },
       }),
     });

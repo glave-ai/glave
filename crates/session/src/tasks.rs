@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 
 use glave_event::{
-    At, Body, Currency, Fired, Money, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
-    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
+    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
@@ -177,7 +177,7 @@ where
             by: caller.person,
             tokens: TokenCounts::default(),
             cost: Some(Money {
-                micros: 0,
+                nanos: Nanos::ZERO,
                 currency: Currency::USD,
             }),
             stopped: false,

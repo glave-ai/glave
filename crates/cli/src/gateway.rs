@@ -14,7 +14,7 @@ pub(crate) mod serve;
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use glave_event::{Currency, Filters};
+use glave_event::{Currency, Filters, Nanos};
 use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
 use glave_ports::{
     Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
@@ -34,9 +34,9 @@ fn free_here() -> Price {
     Price {
         list: "this computer".to_owned(),
         currency: Currency::USD,
-        input_per_mtok: 0,
-        cache_read_per_mtok: 0,
-        output_per_mtok: 0,
+        input_per_mtok: Nanos::ZERO,
+        cache_read_per_mtok: Nanos::ZERO,
+        output_per_mtok: Nanos::ZERO,
     }
 }
 

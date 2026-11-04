@@ -111,7 +111,7 @@ fn a_summary_says_where_its_thread_works_how_full_its_context_is_and_what_was_es
         assert_eq!((context.tokens, context.window), (12_800, 128_000));
         assert_eq!(context.percent, 10, "as compaction measures it");
         assert!(worked.estimated, "its one call's usage was estimated");
-        assert_eq!(worked.cost.map(|cost| cost.micros), Some(5));
+        assert_eq!(worked.cost.map(|cost| cost.nanos.get()), Some(5));
         let json = serde_json::to_value(&worked).unwrap();
         assert_eq!(
             json["context"],

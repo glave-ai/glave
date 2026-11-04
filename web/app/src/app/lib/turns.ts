@@ -48,7 +48,7 @@ function isOutcome(value: unknown): value is Outcome {
 
 function isMoney(value: unknown): value is Money {
   return (
-    isRecord(value) && typeof value['micros'] === 'number' && typeof value['currency'] === 'string'
+    isRecord(value) && typeof value['nanos'] === 'number' && typeof value['currency'] === 'string'
   );
 }
 

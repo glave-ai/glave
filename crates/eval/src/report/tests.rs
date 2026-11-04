@@ -1,4 +1,4 @@
-use glave_event::GoalReason;
+use glave_event::{GoalReason, Nanos};
 
 use super::*;
 use crate::memory::MemoryUse;
@@ -9,7 +9,7 @@ fn attempt(task: &str, model: &str, number: u32, passed: bool) -> Attempt {
     if passed {
         attempt.failures.clear();
     }
-    attempt.cost_micros = Some(1_000);
+    attempt.cost_nanos = Some(Nanos::new(1_000_000));
     attempt.input_tokens = 1_200;
     attempt.output_tokens = 34;
     attempt.tool_calls = 2;
@@ -31,10 +31,10 @@ fn run(models: &[&str], attempts: Vec<Attempt>) -> Report {
     )
 }
 
-/// An attempt that cost `micros`, or reported no cost.
-fn costing(model: &str, number: u32, passed: bool, micros: Option<i64>) -> Attempt {
+/// An attempt that cost `nanos`, or reported no cost.
+fn costing(model: &str, number: u32, passed: bool, nanos: Option<i64>) -> Attempt {
     let mut attempt = attempt("fix", model, number, passed);
-    attempt.cost_micros = micros;
+    attempt.cost_nanos = nanos.map(Nanos::new);
     attempt
 }
 
@@ -70,24 +70,30 @@ fn the_table_shows_rates_totals_changes_and_failures() {
 #[test]
 fn a_passed_task_costs_all_that_was_spent_over_the_passes() {
     let of = |attempts: &[Attempt]| PerPassedTask::of(&attempts.iter().collect::<Vec<_>>());
-    let per = |cost_micros, tokens| {
+    let per = |cost_nanos: Option<i64>, tokens| {
         Some(PerPassedTask {
-            cost_micros,
+            cost_nanos: cost_nanos.map(Nanos::new),
             tokens,
         })
     };
     // Two of three passed: what the failed one spent counts too.
     let attempts = [
-        costing("a/one", 1, true, Some(1_000)),
-        costing("a/one", 2, false, Some(1_000)),
-        costing("a/one", 3, true, Some(1_000)),
+        costing("a/one", 1, true, Some(1_000_000)),
+        costing("a/one", 2, false, Some(1_000_000)),
+        costing("a/one", 3, true, Some(1_000_000)),
     ];
-    assert_eq!(of(&attempts), per(Some(1_500), 1_851));
+    assert_eq!(of(&attempts), per(Some(1_500_000), 1_851));
+    // The least there can be, over two passes, is still something.
+    let least = [
+        costing("a/one", 1, true, Some(1)),
+        costing("a/one", 2, true, Some(0)),
+    ];
+    assert_eq!(of(&least), per(Some(1), 1_234));
     // A call that reported no cost, and a free route's $0, are no cost reported.
     assert_eq!(of(&[costing("a/one", 1, true, None)]), per(None, 1_234));
     assert_eq!(of(&[costing("a/one", 1, true, Some(0))]), per(None, 1_234));
     // None passed: nothing to divide by.
-    assert_eq!(of(&[costing("a/one", 1, false, Some(1_000))]), None);
+    assert_eq!(of(&[costing("a/one", 1, false, Some(1_000_000))]), None);
     assert_eq!(of(&[]), None);
 }
 
@@ -96,14 +102,14 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
     let table = run(
         &["lab/dear", "lab/cheap", "lab/free", "lab/failing"],
         vec![
-            costing("lab/dear", 1, true, Some(3_000)),
-            costing("lab/dear", 2, false, Some(1_000)),
-            costing("lab/cheap", 1, true, Some(1_000)),
-            costing("lab/cheap", 2, true, Some(1_000)),
+            costing("lab/dear", 1, true, Some(3_000_000)),
+            costing("lab/dear", 2, false, Some(1_000_000)),
+            costing("lab/cheap", 1, true, Some(1_000_000)),
+            costing("lab/cheap", 2, true, Some(1_000_000)),
             costing("lab/free", 1, true, Some(0)),
             costing("lab/free", 2, true, Some(0)),
-            costing("lab/failing", 1, false, Some(2_000)),
-            costing("lab/failing", 2, false, Some(2_000)),
+            costing("lab/failing", 1, false, Some(2_000_000)),
+            costing("lab/failing", 2, false, Some(2_000_000)),
         ],
     )
     .markdown(None);
@@ -145,8 +151,8 @@ Not passed:
     );
     // A tie goes to the model listed first.
     let tied = headline(vec![
-        costing("lab/one", 1, true, Some(1_000)),
-        costing("lab/two", 1, true, Some(1_000)),
+        costing("lab/one", 1, true, Some(1_000_000)),
+        costing("lab/two", 1, true, Some(1_000_000)),
     ]);
     assert!(
         tied.starts_with("Cheapest per passed task: one, $0.0010"),
@@ -188,7 +194,7 @@ fn reports_round_trip_through_json() {
     assert_eq!(serde_json::from_str::<Report>(&json).unwrap(), now);
     assert!(
         json.contains(
-            r#""per_passed_task":{"a/one":{"cost_micros":1000,"tokens":1234},"b/two":null}"#
+            r#""per_passed_task":{"a/one":{"cost_nanos":1000000,"tokens":1234},"b/two":null}"#
         ),
         "{json}"
     );
@@ -238,8 +244,8 @@ fn probes_and_memory_get_a_row_per_attempt_and_their_details() {
 
 #[test]
 fn numbers_read_easily() {
-    assert_eq!(dollars(Some(7_731)), "$0.0077");
-    assert_eq!(dollars(Some(1_234_500)), "$1.2345");
+    assert_eq!(dollars(Some(Nanos::new(7_731_000))), "$0.0077");
+    assert_eq!(dollars(Some(Nanos::new(1_234_500_000))), "$1.2345");
     assert_eq!(dollars(None), "-");
     assert_eq!(thousands(0), "0");
     assert_eq!(thousands(999), "999");

@@ -59,7 +59,7 @@ describe('models', () => {
       default: false,
       providers: ['OpenRouter', 'Anthropic'],
       context: 1_000_000,
-      price: { input: 100_000, output: 500_000 },
+      price: { input: 100_000_000, output: 500_000_000 },
     };
     expect(modelHint(haiku, 'en-US')).toBe(
       'OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens',
@@ -73,10 +73,10 @@ describe('models', () => {
     expect(contextText(200_000, 'en-US')).toBe('200K context');
     expect(contextText(1_048_576, 'en-US')).toBe('1M context');
     expect(contextText(131_072, 'en-US')).toBe('131K context');
-    expect(priceText({ input: 3_000_000, output: 15_000_000 }, 'en-US')).toBe(
+    expect(priceText({ input: 3_000_000_000, output: 15_000_000_000 }, 'en-US')).toBe(
       '$3.00 in, $15.00 out per 1M tokens',
     );
-    expect(priceText({ input: 37_500, output: 150_000 }, 'en-US')).toBe(
+    expect(priceText({ input: 37_500_000, output: 150_000_000 }, 'en-US')).toBe(
       '$0.038 in, $0.15 out per 1M tokens',
     );
     expect(priceText({ input: 0, output: 0 }, 'en-US')).toBe('Free');

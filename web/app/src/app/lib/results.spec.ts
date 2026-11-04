@@ -130,7 +130,7 @@ function ended(outcome: Outcome, more: Partial<TurnResult> = {}): TurnResult {
     tool_calls: 1,
     outside_sandbox: 0,
     with_network: 0,
-    cost: { micros: 0, currency: 'USD' },
+    cost: { nanos: 0, currency: 'USD' },
     estimated: false,
     via: [],
     ...more,
@@ -181,7 +181,7 @@ describe('results', () => {
           took: 242_000,
           model: 'anthropic/claude-haiku-5-5',
           result: ended('completed', {
-            cost: { micros: 42_000, currency: 'USD' },
+            cost: { nanos: 42_000_000, currency: 'USD' },
             via: ['OpenRouter (Anthropic)'],
           }),
         },
@@ -317,7 +317,7 @@ describe('results', () => {
     const facts = (result: TurnResult): unknown =>
       turnResults(turn([ask, call(2)], { result }), null, null, false, 'en-US').receipt?.facts;
     expect(facts(ended('completed', { cost: null }))).toEqual(['cost not reported']);
-    const guessed = ended('completed', { cost: { micros: 1_230_000, currency: 'USD' } });
+    const guessed = ended('completed', { cost: { nanos: 1_230_000_000, currency: 'USD' } });
     expect(facts({ ...guessed, estimated: true })).toEqual(['$1.23 (estimated)']);
     const via = ended('completed', { via: ['Ollama', 'OpenRouter (Anthropic)'] });
     expect(facts(via)).toEqual(['$0.00']);

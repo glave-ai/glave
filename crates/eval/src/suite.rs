@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
+use glave_event::Nanos;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -20,9 +21,9 @@ pub struct Plan {
     pub repeat: u32,
     /// Attempts running at once.
     pub concurrency: usize,
-    /// No new attempt starts once this much has been spent, in micros. Attempts already
+    /// No new attempt starts once this much has been spent. Attempts already
     /// running finish, so the total can pass it by a little.
-    pub max_cost_micros: i64,
+    pub max_cost: Nanos,
     /// Each attempt keeps its files in `<dir>/<task>/<model>-<number>`.
     pub dir: PathBuf,
 }
@@ -36,7 +37,7 @@ pub async fn run(
 ) -> Vec<Attempt> {
     let permits = Arc::new(Semaphore::new(plan.concurrency.max(1)));
     let spent = Arc::new(AtomicI64::new(0));
-    let cap = plan.max_cost_micros;
+    let cap = plan.max_cost.get();
     let mut running = JoinSet::new();
     let mut started = HashMap::new();
     for task in plan.tasks.into_iter().map(Arc::new) {
@@ -79,7 +80,10 @@ pub async fn run(
                                 format!("could not run: {err}"),
                             )
                         });
-                    spent.fetch_add(attempt.cost_micros.unwrap_or(0), Ordering::SeqCst);
+                    let cost = attempt.cost_nanos.unwrap_or_default().get();
+                    spent.update(Ordering::SeqCst, Ordering::SeqCst, |sum| {
+                        sum.saturating_add(cost)
+                    });
                     attempt
                 });
                 started.insert(handle.id(), label);

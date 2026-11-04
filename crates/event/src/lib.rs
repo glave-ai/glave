@@ -24,7 +24,7 @@ pub use id::{
     CallId, CredentialId, EventId, InviteId, MemoryId, PrincipalId, ProviderId, ScheduleId,
     ThreadId,
 };
-pub use money::{Currency, Decimal, Money};
+pub use money::{Currency, Decimal, Money, Nanos};
 pub use payload::ToolsLoaded;
 pub use payload::{
     Accent, AcmeRegistered, AppearanceSet, AwakeSet, BrandSet, CertificateIssued, Color, Filters,

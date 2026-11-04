@@ -611,8 +611,8 @@ fn credits_are_the_server_s_own_choice_with_its_monthly_limit() {
     std::fs::write(home.join("config.toml"), text).unwrap();
     let loaded = load_all(&locations, None).unwrap();
     let chosen = loaded.choices.credits.as_ref().unwrap();
-    let limit = chosen.value.monthly_limit_usd.map(|usd| usd.micros);
-    assert_eq!(limit, Some(10_000_000));
+    let limit = chosen.value.monthly_limit_usd.map(|usd| usd.nanos.get());
+    assert_eq!(limit, Some(10_000_000_000));
     let on = files::config("[credits]\n", &locations.person).unwrap();
     assert_eq!(
         on.credits.unwrap().monthly_limit_usd,

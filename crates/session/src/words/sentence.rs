@@ -294,6 +294,8 @@ sentences! {
         "\"{ $provider }\" is not a provider: name each as the router does, such as deepinfra",
     NoMostPrice = "no-most-price"
         "a price limit says what input, output or both may cost at most",
+    MostPriceBelowNothing = "most-price-below-nothing"
+        "a price limit is nothing or more",
     FiltersUnreadable = "filters-unreadable"
         "glave can't read your filters among providers: choose them again",
     PermissionsNotAllowed { mode: String, left: String } = "permissions-not-allowed"

@@ -200,6 +200,34 @@ fn reasoning_that_came_only_as_details_is_a_part_of_its_own() {
 }
 
 #[test]
+fn a_very_cheap_reported_cost_is_kept_however_it_is_written() {
+    for (written, nanos) in [
+        ("0.0000004", 400),
+        // How JavaScript and Python write numbers this small.
+        ("4e-7", 400),
+        ("4e-07", 400),
+        ("1.5E-8", 15),
+        // Under a billionth, still not nothing.
+        ("0.0000000004", 1),
+        ("4e-10", 1),
+        ("0", 0),
+    ] {
+        let usage = format!(
+            r#"{{"choices":[],"usage":{{"prompt_tokens":1,"completion_tokens":1,"cost":{written}}}}}"#
+        );
+        let (completion, _) = run(
+            "openrouter",
+            &[
+                r#"{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}"#,
+                &usage,
+            ],
+        );
+        let cost = completion.unwrap().cost.unwrap();
+        assert_eq!(cost.amount.nanos.get(), nanos, "{written}");
+    }
+}
+
+#[test]
 fn usage_normalizes_and_reported_cost_is_exact() {
     let (completion, _) = run(
         "openrouter",
@@ -221,7 +249,7 @@ fn usage_normalizes_and_reported_cost_is_exact() {
         (43_003, 40_000, 3_000, 120, 20)
     );
     let cost = completion.cost.unwrap();
-    assert_eq!(cost.amount.micros, 4_200);
+    assert_eq!(cost.amount.nanos.get(), 4_200_000);
     assert_eq!(cost.price_list, "openrouter:reported");
     assert!(completion.usage.raw().is_some());
 }

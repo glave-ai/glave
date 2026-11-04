@@ -222,7 +222,7 @@ fn usage(completion: &Completion) -> Usage {
         .cost
         .as_ref()
         .filter(|cost| cost.amount.currency == Currency::USD)
-        .and_then(|cost| RawValue::from_string(format!("{:.6}", cost.amount.decimal())).ok());
+        .and_then(|cost| RawValue::from_string(cost.amount.decimal().to_string()).ok());
     Usage {
         prompt_tokens: input,
         completion_tokens: output,
