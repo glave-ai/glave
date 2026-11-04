@@ -210,7 +210,6 @@ fn a_stop_hook_runs_once_the_turn_has_ended_and_cannot_keep_it_going() {
     });
 }
 
-/// A harness under `hooks` whose model says "Hi.", and what the model is sent.
 #[test]
 fn a_hook_never_sees_the_store_s_address_or_its_password() {
     let dir = folder("hooks-store");
@@ -237,6 +236,7 @@ fn a_hook_never_sees_the_store_s_address_or_its_password() {
     );
 }
 
+/// A harness under `hooks` whose model says "Hi.", and what the model is sent.
 async fn greeting(
     dir: &Path,
     hooks: Hooks,
