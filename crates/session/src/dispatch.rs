@@ -47,13 +47,19 @@ where
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
         let changes = request.changes();
+        let everyones = request.changes_for_everyone();
         let answered = tracing::Instrument::instrument(self.answer(caller, request), span).await;
         // A sign-in still waiting for the person has changed nothing yet.
         if let (Some(setting), Answered::Reply(Ok(reply))) = (changes, &answered)
             && !matches!(reply, Reply::Waiting { .. })
         {
             let org = self.org_of(caller);
-            self.inner.hub.setting_changed(org, caller.person, setting);
+            let hub = &self.inner.hub;
+            if everyones {
+                hub.organization_setting_changed(org, setting);
+            } else {
+                hub.setting_changed(org, caller.person, setting);
+            }
         }
         answered
     }

@@ -286,6 +286,11 @@ where
                     self.settings.insert(setting);
                 }
             }
+            Change::OrganizationSetting { org, setting } => {
+                if org == self.server.org_of(&self.caller) {
+                    self.settings.insert(setting);
+                }
+            }
         }
     }
 

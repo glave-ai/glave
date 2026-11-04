@@ -3244,7 +3244,7 @@
         },
         {
           "const": "appearance",
-          "description": "Their accent (`appearance/get`).",
+          "description": "Their accent, and what their organization's brand says of how glave looks\n(`appearance/get`).",
           "type": "string"
         },
         {

@@ -1,5 +1,5 @@
 //! What of a person's own a request changes, which their other clients hear of
-//! (`settings/changed`) and read again.
+//! (`settings/changed`) and read again; an organization's brand, everyone's in it.
 
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,8 @@ pub enum Setting {
     Grouping,
     /// Their filters among a router's providers (`filters/get`).
     Filters,
-    /// Their accent (`appearance/get`).
+    /// Their accent, and what their organization's brand says of how glave looks
+    /// (`appearance/get`).
     Appearance,
     /// Whether the computer is kept awake while glave works (`awake/get`).
     Awake,
@@ -96,6 +97,12 @@ impl Request {
             Self::LanguageSet { .. } => Setting::Language,
             _ => return None,
         })
+    }
+
+    /// Whether what it changes is everyone's in the organization it works in, for all of them
+    /// to hear, not the caller's alone: its brand.
+    pub(crate) const fn changes_for_everyone(&self) -> bool {
+        matches!(self, Self::BrandSet { .. })
     }
 }
 
