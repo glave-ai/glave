@@ -486,10 +486,11 @@ where
         {
             set.system = format!("{}\n\n{note}", set.system);
         }
-        if let Some((memory, _)) = self.memory_for(thread)
-            && let Ok(tools) = memory.tools().await
-        {
-            set.offer_memory(tools);
+        if let Some((memory, _)) = self.memory_for(thread) {
+            match memory.tools().await {
+                Ok(tools) => set.offer_memory(tools),
+                Err(err) => set.goes_without(err),
+            }
         }
         if self.approver.can_answer(thread.id) {
             set.offer_question();

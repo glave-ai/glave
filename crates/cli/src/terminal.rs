@@ -1,6 +1,7 @@
 //! What the person sees in the terminal: the answer as it streams, approval prompts, and the
 //! receipt that closes each turn. Every status starts with a word; color only reinforces it.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
@@ -43,6 +44,8 @@ pub(crate) struct Printer {
     speaker: String,
     /// The protections in force, such as `permissions: auto · sandbox: project`.
     protections: String,
+    /// The warnings printed that say the same on every turn, each said once.
+    warned: BTreeSet<String>,
 }
 
 impl Printer {
@@ -52,6 +55,7 @@ impl Printer {
             speaking: false,
             speaker: speaker(model).to_owned(),
             protections,
+            warned: BTreeSet::new(),
         }
     }
 
@@ -263,6 +267,13 @@ impl Printer {
     pub(crate) fn warning(&mut self, message: &str) {
         println!("{} {message}", paint(self.color, YELLOW, "warning"));
         flush();
+    }
+
+    /// A warning that would say the same on every turn, said the first time.
+    pub(crate) fn warning_once(&mut self, message: &str) {
+        if self.warned.insert(message.to_owned()) {
+            self.warning(message);
+        }
     }
 
     /// What glave is doing before the turn starts.
