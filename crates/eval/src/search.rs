@@ -65,6 +65,13 @@ mod tests {
         crate::task::load(&Path::new("../../evals/tasks").join(name)).unwrap()
     }
 
+    /// Search and `web_fetch` run outside the sandbox; a command with the network could look
+    /// anywhere else, this repository included.
+    #[test]
+    fn the_search_task_s_commands_have_no_network() {
+        assert!(!task("web-search").network);
+    }
+
     #[test]
     fn only_a_task_with_its_results_searches_and_the_stand_in_must_be_built() {
         let runtime = glave_ports::testing::runtime().unwrap();
