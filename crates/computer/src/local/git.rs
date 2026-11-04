@@ -2,10 +2,11 @@
 //! and a save commits everything to a branch and pushes it back. A plain folder lives on one
 //! computer and is worked in place; glave saves nothing in it.
 //!
-//! All of it runs outside the sandbox, and a sandboxed command can write the config and hooks of
-//! any repository in a folder it may write: only a workspace's own root is protected, and a
-//! repository can be made, or swapped in, at any time. So glave's git never lets what is in a
-//! repository run code (`specs/sandbox.md`, "Repositories inside the project").
+//! On the person's machine it runs outside the sandbox, and a sandboxed command can write the
+//! config and hooks of any repository in a folder it may write: only a workspace's own root is
+//! protected, and a repository can be made, or swapped in, at any time. So what is in a repository
+//! is not trusted to name a program (`specs/sandbox.md`, "Repositories inside the project"). A
+//! clone and a save happen only on a worker, inside its own wall, and may cross the network.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -30,13 +31,19 @@ pub(crate) type Said = Result<String, String>;
 
 /// What every git of glave's runs with: no hooks, the repository's or the person's, and no
 /// file-system monitor, which a repository's config can name a program for.
-const RUNS_NOTHING: [(&str, &str); 2] =
-    [("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false")];
+const RUNS_NOTHING: [(&str, &str); 2] = [("core.hooksPath", "/dev/null"), ("core.fsmonitor", "")];
 
-/// What a repository's own config may name a program under, by a name it chooses, so no fixed
-/// list reaches them: filter drivers, and git-lfs's custom transfers and extensions. Blanked
-/// where the repository set them; the person's own, such as git-lfs's filter, keep running.
-const NAMES_A_PROGRAM: [&str; 3] = ["filter.", "lfs.customtransfer.", "lfs.extension."];
+/// What a repository's own config may name a program under, in ways no fixed setting reaches:
+/// filter drivers, by a name it chooses, and what git-lfs runs when the person's own filter
+/// fetches a file. Blanked where the repository set them, so the person's own keep running.
+const NAMES_A_PROGRAM: [&str; 6] = [
+    "filter.",
+    "lfs.customtransfer.",
+    "lfs.extension.",
+    "core.sshcommand",
+    "core.askpass",
+    "credential.",
+];
 
 /// The commands of git's that read no file through a filter, so need no reading of the config
 /// first: every other does, and starting a program is the slow part of asking git.
@@ -137,7 +144,7 @@ impl<'a> Git<'a> {
                 self.program(&["config", "--show-scope", "--null", "--name-only", "--list"]);
             let listed = self
                 .processes
-                .output(&mut listing, limit)
+                .output(&mut listing, READS_WITHIN)
                 .await
                 .map_err(unanswered)?;
             if !listed.status.success() {
@@ -157,7 +164,7 @@ impl<'a> Git<'a> {
             RUNS_NOTHING
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-                .chain(blanked.into_iter().map(|key| (key, String::new()))),
+                .chain(blanked.iter().flat_map(|key| blanking(key))),
         ));
         let output = self
             .processes
@@ -198,6 +205,16 @@ impl<'a> Git<'a> {
         }
         command
     }
+}
+
+/// The settings that blank `key`. A filter blanked is also required, so a file it would have
+/// changed fails loudly rather than pass unencrypted or unconverted, as with git-crypt's.
+fn blanking(key: &str) -> Vec<(String, String)> {
+    let mut settings = vec![(key.to_owned(), String::new())];
+    if let (true, Some((driver, _))) = (key.starts_with("filter."), key.rsplit_once('.')) {
+        settings.push((format!("{driver}.required"), "true".to_owned()));
+    }
+    settings
 }
 
 /// What git said when it failed at `args`.

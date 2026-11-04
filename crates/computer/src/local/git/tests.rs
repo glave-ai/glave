@@ -15,6 +15,9 @@ use super::*;
 use crate::LocalComputers;
 use crate::worktrees::{self, Condition};
 
+/// `a.txt` changed but its size not, so git must read it, through any filter, to see the change.
+const SAME_SIZE: &str = "TWO\n";
+
 /// A repository with a commit, a program it can be made to run, and what that program leaves.
 struct Planted {
     dir: TempDir,
@@ -136,7 +139,7 @@ impl Planted {
             &self.repo,
             &["worktree", "add", "-q", "-b", "plain", &elsewhere, "HEAD"],
         );
-        std::fs::write(self.repo.join("a.txt"), "changed\n").unwrap();
+        std::fs::write(self.repo.join("a.txt"), SAME_SIZE).unwrap();
         let status = plain(self, &self.repo, &["status", "--porcelain"]);
         assert!(
             self.take_ran(),
@@ -162,12 +165,8 @@ impl Planted {
         })
     }
 
-    /// Glave makes a worktree of the repository, a file changes in it, and glave looks at the
-    /// worktrees it keeps, which runs `status`: nothing of the repository's has run, and git
-    /// still tells what changed.
-    fn glave_s_git_runs_nothing(&self) {
-        let opened = self.glave_opens_a_worktree().unwrap();
-        std::fs::write(Path::new(&opened.root).join("a.txt"), "changed\n").unwrap();
+    /// The one worktree glave keeps, as it looks at it.
+    fn kept(&self) -> worktrees::Kept {
         let kept = block_on!(worktrees::list(
             &self.dir.join("worktrees"),
             &environment(&self.dir),
@@ -177,6 +176,16 @@ impl Planted {
         let [kept] = kept.as_slice() else {
             panic!("{kept:?}");
         };
+        kept.clone()
+    }
+
+    /// Glave makes a worktree of the repository, a file changes in it, and glave looks at the
+    /// worktrees it keeps, which runs `status`: nothing of the repository's has run, and git
+    /// still tells what changed.
+    fn glave_s_git_runs_nothing(&self) {
+        let opened = self.glave_opens_a_worktree().unwrap();
+        std::fs::write(Path::new(&opened.root).join("a.txt"), SAME_SIZE).unwrap();
+        let kept = self.kept();
         assert_eq!(
             kept.condition,
             Condition::Unsafe {
@@ -224,20 +233,97 @@ fn a_file_system_monitor_the_config_names_never_runs() {
     planted.glave_s_git_runs_nothing();
 }
 
+/// The names a repository may give a filter: `=` is why settings don't go through `git -c`.
+const DRIVERS: [&str; 2] = ["planted", "named=with-an-equals-sign"];
+
 #[test]
-fn a_filter_the_config_names_never_runs() {
-    for driver in ["planted", "named=with-an-equals-sign"] {
+fn a_filter_the_config_names_refuses_a_worktree_rather_than_run() {
+    for driver in DRIVERS {
         let planted = planted();
         planted.filter_everything(driver);
-        for part in ["clean", "smudge"] {
-            planted.config(
-                &format!("filter.{driver}.{part}"),
-                &planted.program.to_string_lossy(),
-            );
-        }
+        planted.config(
+            &format!("filter.{driver}.smudge"),
+            &planted.program.to_string_lossy(),
+        );
         planted.plain_git_runs_it();
-        planted.glave_s_git_runs_nothing();
+        let refused = planted
+            .glave_opens_a_worktree()
+            .err()
+            .map(|error| error.to_string());
+        assert!(
+            refused
+                .as_deref()
+                .is_some_and(|said| said.contains("filter")),
+            "{refused:?}"
+        );
+        assert!(!planted.ran.exists(), "glave's git ran {driver}");
     }
+}
+
+#[test]
+fn a_filter_the_config_names_never_runs_when_glave_looks_at_a_worktree() {
+    for driver in DRIVERS {
+        let planted = planted();
+        let opened = planted.glave_opens_a_worktree().unwrap();
+        planted.filter_everything(driver);
+        planted.config(
+            &format!("filter.{driver}.clean"),
+            &planted.program.to_string_lossy(),
+        );
+        planted.plain_git_runs_it();
+        std::fs::write(Path::new(&opened.root).join("a.txt"), SAME_SIZE).unwrap();
+        // It can't say, which counts against removing it.
+        let kept = planted.kept();
+        assert!(
+            matches!(kept.condition, Condition::Unsafe { changed: true, .. }),
+            "{kept:?}"
+        );
+        assert!(!planted.ran.exists(), "glave's git ran {driver}");
+    }
+}
+
+#[test]
+fn a_filter_in_a_repository_inside_a_worktree_never_runs_and_keeps_it_from_removal() {
+    let planted = planted();
+    let opened = planted.glave_opens_a_worktree().unwrap();
+    let root = PathBuf::from(&opened.root);
+    let inner = root.join("inner");
+    let identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+    std::fs::create_dir_all(&inner).unwrap();
+    assert!(plain(&planted, &inner, &["init", "-q"]).status.success());
+    std::fs::write(inner.join("f.txt"), "one\n").unwrap();
+    assert!(plain(&planted, &inner, &["add", "f.txt"]).status.success());
+    let commit = [&identity[..], &["commit", "-qm", "one"]].concat();
+    assert!(plain(&planted, &inner, &commit).status.success());
+    assert!(plain(&planted, &root, &["add", "inner"]).status.success());
+    let commit = [&identity[..], &["commit", "-qm", "holds it"]].concat();
+    assert!(plain(&planted, &root, &commit).status.success());
+    let key = "filter.planted.clean";
+    let program = planted.program.to_string_lossy();
+    assert!(
+        plain(&planted, &inner, &["config", key, &program])
+            .status
+            .success()
+    );
+    std::fs::write(inner.join(".git/info/attributes"), "* filter=planted\n").unwrap();
+    std::fs::write(inner.join("f.txt"), "ONE\n").unwrap();
+    plain(&planted, &root, &["status", "--porcelain"]);
+    assert!(planted.take_ran(), "plain git never ran it");
+    let kept = planted.kept();
+    assert!(
+        matches!(kept.condition, Condition::Unsafe { changed: true, .. }),
+        "{kept:?}"
+    );
+    let rebuildable = block_on!(worktrees::only_rebuildable(
+        &kept,
+        &environment(&planted.dir),
+        &Processes::unrecorded()
+    ));
+    assert!(!rebuildable.unwrap());
+    assert!(
+        !planted.ran.exists(),
+        "glave's git ran the inner repository's filter"
+    );
 }
 
 #[test]
@@ -318,12 +404,29 @@ fn a_question_about_a_repository_never_fetches_what_the_config_names() {
 }
 
 #[test]
+fn a_filter_blanked_is_required_and_nothing_else_is() {
+    let filter = blanking("filter.a=b.clean");
+    assert_eq!(
+        filter,
+        [
+            ("filter.a=b.clean".to_owned(), String::new()),
+            ("filter.a=b.required".to_owned(), "true".to_owned())
+        ]
+    );
+    assert_eq!(blanking("core.sshcommand").len(), 1);
+}
+
+#[test]
 fn a_repository_s_settings_are_named_by_scope_and_only_those_that_name_a_program() {
     let listed = b"global\0filter.lfs.smudge\0local\0filter.a=b c.clean\0local\0core.bare\0\
-        worktree\0lfs.customtransfer.x.path\0local\0lfs.url\0command\0filter.c.clean\0";
+        worktree\0lfs.customtransfer.x.path\0local\0core.sshcommand\0local\0lfs.url\0command\0filter.c.clean\0";
     assert_eq!(
         named_by_repository(listed).unwrap(),
-        ["filter.a=b c.clean", "lfs.customtransfer.x.path"]
+        [
+            "filter.a=b c.clean",
+            "lfs.customtransfer.x.path",
+            "core.sshcommand"
+        ]
     );
     assert!(
         named_by_repository(b"local\0filter.\xff.clean\0").is_none(),

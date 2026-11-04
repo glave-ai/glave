@@ -185,8 +185,12 @@ pub(crate) async fn only_rebuildable(
         "--porcelain",
         "--untracked-files=normal",
         "--ignored=traditional",
+        LEAVE_SUBMODULES,
     ];
     let said = git.must(&args).await?;
+    if holds_a_submodule(&git, &kept.path).await {
+        return Ok(false);
+    }
     Ok(said.lines().all(|line| {
         line.strip_prefix("!! ")
             .and_then(|path| path.strip_suffix('/'))
@@ -211,6 +215,32 @@ pub(crate) async fn recorded(base: &Path) -> Result<Vec<(PathBuf, Record)>, Comp
     }
     found.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(found)
+}
+
+/// `status` looks inside a repository the index tracks by running git there, with that
+/// repository's config, which a command in the worktree may have written, and which glave's git
+/// has not read. So it isn't asked to; [`holds_a_submodule`] counts for what it would have seen.
+const LEAVE_SUBMODULES: &str = "--ignore-submodules=dirty";
+
+/// Whether the worktree at `root` has a repository checked out where its index tracks one, which
+/// may hold work that nothing else here sees; anything git can't answer counts as yes.
+async fn holds_a_submodule(git: &Git<'_>, root: &Path) -> bool {
+    let Ok(listed) = git.run(&["ls-files", "--stage", "-z"]).await else {
+        return true;
+    };
+    for entry in listed.split('\0') {
+        let tracked = entry
+            .strip_prefix("160000 ")
+            .and_then(|rest| rest.split_once('\t'));
+        if let Some((_, path)) = tracked
+            && tokio::fs::symlink_metadata(root.join(path).join(".git"))
+                .await
+                .is_ok()
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// `path` as a worktree kept under `base`: `None` when it is not one.
@@ -315,9 +345,15 @@ async fn describe(
     }
     // Anything git cannot answer counts against removing it.
     let changed = git
-        .run(&["status", "--porcelain", "--untracked-files=normal"])
+        .run(&[
+            "status",
+            "--porcelain",
+            "--untracked-files=normal",
+            LEAVE_SUBMODULES,
+        ])
         .await
-        .map_or(true, |status| !status.is_empty());
+        .map_or(true, |status| !status.is_empty())
+        || holds_a_submodule(&git, &kept.path).await;
     let unpushed = git
         .run(&["rev-list", "--count", "HEAD", "--not", "--remotes"])
         .await

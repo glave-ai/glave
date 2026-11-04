@@ -163,10 +163,11 @@ mod tests {
             Processes::unrecorded().output(&mut server, Duration::from_secs(60))
         )
         .unwrap();
+        let said = String::from_utf8_lossy(&done.stdout);
+        assert!(done.status.success(), "{said}");
         assert!(
-            done.status.success(),
-            "{}",
-            String::from_utf8_lossy(&done.stdout)
+            said.contains("1 passed"),
+            "the server's side never ran: {said}"
         );
         assert!(!ran.exists(), "the repository's helper ran");
     }
