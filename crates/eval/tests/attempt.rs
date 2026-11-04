@@ -196,24 +196,35 @@ fn repository_task(name: &str) -> glave_eval::Task {
 }
 
 /// `web_fetch` refuses the repository, the attempt fails for naming it whatever it found, and
-/// what `cargo run` says of the eval, which names it, reaches no command. Nothing here needs the
-/// network: the refusal comes before anything is sent.
+/// what `cargo run` says of the eval, which names it, reaches no command. In full access, with
+/// pages of its own, so nothing is stopped short of the policy on a computer with no sandbox,
+/// where Auto would ask and no one answers. Nothing here needs the network: the refusal comes
+/// before anything is sent.
 #[test]
 fn an_attempt_that_goes_for_this_repository_gets_nothing_and_fails() {
     let dir = folder("repository");
     let url = "https://github.com/glave-ai/glave/pull/732/files";
+    let said = "echo \"said=[$CARGO_PKG_REPOSITORY$CARGO_MANIFEST_DIR]\"";
     let server = FakeServer::start(vec![
-        Reply::tool_call("call_1", "bash", &json!({ "command": "env" })),
+        Reply::tool_call("call_1", "bash", &json!({ "command": said })),
         Reply::tool_call("call_2", "web_fetch", &json!({ "url": url })),
         Reply::text("Could not."),
     ])
     .unwrap();
     let run = dir.join("run");
-    let task = repository_task("web-lookup");
-    let done = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    let task = task(&dir, "", "exit 0\n");
+    let pages = dir.join("task/web");
+    std::fs::create_dir_all(&pages).unwrap();
+    std::fs::write(pages.join("page.html"), "<p>A page.</p>").unwrap();
+    let mut setup = setup(&server);
+    for name in ["CARGO_PKG_REPOSITORY", "CARGO_MANIFEST_DIR"] {
+        setup.environment.retain(|(key, _)| key != name);
+        setup.environment.push((name.into(), "cargo-said".into()));
+    }
+    let done = block_on!(attempt(&setup, &task, "fake-model", 1, &run)).unwrap();
     let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
     assert!(events.contains("github.com is not fetched"), "{events}");
-    assert!(!events.contains("CARGO_PKG_"), "{events}");
+    assert!(events.contains("said=[]"), "{events}");
     assert!(
         (done.failures.iter()).any(|failure| failure.contains("named glave-ai/glave")),
         "{:?}",

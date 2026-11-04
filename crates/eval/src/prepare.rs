@@ -142,7 +142,16 @@ async fn repository(processes: &Processes, task: &Task, environment: &Environmen
         Ok(listed) if listed.success => answers_in(&listed.text),
         _ => Vec::new(),
     };
-    std::iter::once(task.dir.clone()).chain(listed).collect()
+    with_own_folder(&task.dir, listed)
+}
+
+/// `hidden`, and `task` where nothing in it holds that folder already: bubblewrap cannot mount over
+/// a path inside a folder it has already replaced with an empty one, so no command would start.
+fn with_own_folder(task: &Path, mut hidden: Vec<PathBuf>) -> Vec<PathBuf> {
+    if !hidden.iter().any(|place| task.starts_with(place)) {
+        hidden.push(task.to_owned());
+    }
+    hidden
 }
 
 /// The places holding the answers in the checkouts `git worktree list --porcelain` lists.
@@ -314,5 +323,15 @@ mod tests {
         let listed = "worktree /r\nHEAD 1\nbranch refs/heads/main\n\nworktree /r/w\nHEAD 2\n";
         let hidden = ["/r/evals", "/r/.git", "/r/w/evals", "/r/w/.git"].map(PathBuf::from);
         assert_eq!(answers_in(listed), hidden);
+    }
+
+    #[test]
+    fn nothing_hidden_lies_inside_something_else_hidden() {
+        let checkout = || vec![PathBuf::from("/r/evals"), PathBuf::from("/r/.git")];
+        let inside = with_own_folder(Path::new("/r/evals/tasks/one"), checkout());
+        assert_eq!(inside, checkout());
+        let elsewhere = with_own_folder(Path::new("/mine/one"), checkout());
+        assert_eq!(elsewhere.last(), Some(&PathBuf::from("/mine/one")));
+        assert_eq!(elsewhere.len(), 3);
     }
 }
