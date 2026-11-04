@@ -111,8 +111,8 @@ impl ToolSet {
     /// claim there is no such tool. Before any note that must stay last (`MEMORY_RULE`).
     pub(crate) fn goes_without(&mut self, err: ToolError) {
         self.system.push_str(&format!(
-            "\n\nThe tool server {} did not answer, so its tools are not available in this turn. \
-             If the person asks for something that needs them, say that it could not be reached, \
+            "\n\nThe tool server {} is not available, so its tools are missing from this turn. If \
+             the person asks for something that needs them, tell them it is not available, \
              rather than that you have no such tool.",
             err.source_name
         ));

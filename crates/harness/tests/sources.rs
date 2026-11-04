@@ -260,9 +260,9 @@ fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
         assert_eq!(
             seen[0].system,
             format!(
-                "{plain}\n\nThe tool server docs did not answer, so its tools are not available \
-                 in this turn. If the person asks for something that needs them, say that it \
-                 could not be reached, rather than that you have no such tool."
+                "{plain}\n\nThe tool server docs is not available, so its tools are missing from \
+                 this turn. If the person asks for something that needs them, tell them it is \
+                 not available, rather than that you have no such tool."
             )
         );
         // What the other source offers is still on offer.
