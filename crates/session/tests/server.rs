@@ -275,3 +275,35 @@ fn messages_have_the_shape_the_spec_gives() {
     assert_eq!(wire["method"], "turn/live");
     assert_eq!(wire["params"]["update"]["kind"], "retrying");
 }
+
+/// What a client reads when a server does not answer before its limit, as a person's slow one
+/// or the eval's on a busy machine: the turn goes on without it, and `turn.started` says why.
+#[test]
+fn a_tool_server_that_never_answers_leaves_the_turn_saying_why() {
+    let dir = folder("server-silent");
+    block_on!(async {
+        let limits = glave_mcp::Limits {
+            startup: Duration::from_millis(200),
+            ..glave_mcp::Limits::default()
+        };
+        // A pipe no one answers on, held open until the test ends.
+        let (ours, _theirs) = tokio::io::duplex(1024);
+        let silent = Arc::new(glave_mcp::McpServer::connect("silent", ours, limits));
+        let mut setup = Setup::new(vec![answer(Some("Answered anyway."), None)]);
+        setup.tools = vec![Arc::clone(&silent) as Arc<dyn glave_ports::ToolSource>];
+        let (server, _) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "search").await.unwrap();
+        silent.close().await;
+
+        let events = events(&server, thread).await;
+        let started = events
+            .iter()
+            .map(|event| serde_json::to_value(event).unwrap())
+            .find(|event| event["type"] == "turn.started")
+            .unwrap();
+        let why = "MCP server \"silent\" did not start: it did not answer within 200 ms";
+        let without = json!([{"source_name": "silent", "message": why}]);
+        assert_eq!(started["data"]["missing"], without, "{started}");
+    });
+}

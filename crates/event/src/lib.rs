@@ -43,8 +43,8 @@ pub use payload::{
     Outcome, OutsideSandbox, ParentCall, Part, Permissions, PermissionsChosen, Principal,
     PrincipalKind, Producer, Role, StopReason, Thought, ThreadArchived, ThreadCompacted,
     ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
-    ToolCallRequested, ToolCallStarted, ToolKind, TraceId, TurnResult, TurnStarted, Usage, Verdict,
-    WebPage,
+    ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
+    Usage, Verdict, WebPage,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
