@@ -243,22 +243,14 @@ impl ToolSet {
         })
     }
 
-    /// What `query` finds (`tool_search::matching`): among the tools held back, or if none, those
-    /// loaded already, so what was found once is found again. Cloned, so loading them can follow.
+    /// What `query` finds among the connected tools (`tool_search::matching`). Cloned, so
+    /// loading them can follow.
     pub(crate) fn deferred_matching(&self, query: &str) -> Vec<ToolSpec> {
-        let all = self.deferred_specs();
-        let held: Vec<&ToolSpec> = all
-            .iter()
-            .copied()
-            .filter(|spec| self.is_held_back(&spec.name))
-            .collect();
-        let found = tool_search::matching(&held, query);
-        let found = if found.is_empty() {
-            tool_search::matching(&all, query)
-        } else {
-            found
-        };
-        found.into_iter().cloned().collect()
+        let held_back = |spec: &ToolSpec| self.is_held_back(&spec.name);
+        tool_search::matching(&self.deferred_specs(), query, held_back)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Puts those of `names` held back on the end of the list, in that order, and answers

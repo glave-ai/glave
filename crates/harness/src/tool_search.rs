@@ -150,7 +150,7 @@ where
             .iter()
             .map(|tool| format!("- {}: {}", tool.name, one_line(&tool.description)))
             .collect();
-        let text = format!("Loaded, and yours to call now:\n{}", lines.join("\n"));
+        let text = format!("Yours to call now:\n{}", lines.join("\n"));
         Ok(ToolOutput::text(false, text))
     }
 }
@@ -165,8 +165,14 @@ fn query(arguments: &Arguments) -> Option<&str> {
 }
 
 /// Which of `tools` `query` finds: the ones it names when it is nothing but tool names, else
-/// the best by BM25, at most [`MOST_FOUND`], the same way every time.
-pub(crate) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolSpec> {
+/// the best by BM25, the same way every time, and at most [`MOST_FOUND`] of those `held_back`
+/// says are still to load, and of those it says are not: a search made again finds what it found
+/// before and loads nothing else.
+pub(crate) fn matching<'a>(
+    tools: &[&'a ToolSpec],
+    query: &str,
+    held_back: impl Fn(&ToolSpec) -> bool,
+) -> Vec<&'a ToolSpec> {
     let asked: Vec<&str> = query
         .split(|c: char| c.is_whitespace() || c == ',')
         .filter(|word| !word.is_empty())
@@ -178,13 +184,24 @@ pub(crate) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolS
             Some(*found)
         })
         .collect();
-    if named.len() == asked.len() {
-        return named.into_iter().take(MOST_FOUND).collect();
-    }
-    ranked(tools, query)
+    let found = if named.len() == asked.len() {
+        named
+    } else {
+        let best = ranked(tools, query).into_iter();
+        best.filter_map(|index| tools.get(index).copied()).collect()
+    };
+    let (mut to_load, mut loaded) = (0, 0);
+    found
         .into_iter()
-        .take(MOST_FOUND)
-        .filter_map(|index| tools.get(index).copied())
+        .filter(|tool| {
+            let counted = if held_back(tool) {
+                &mut to_load
+            } else {
+                &mut loaded
+            };
+            *counted += 1;
+            *counted <= MOST_FOUND
+        })
         .collect()
 }
 
@@ -216,8 +233,10 @@ fn schema_text(schema: &Value, text: &mut String) {
 
 /// The indexes of `tools` that `query` is about, best first, by BM25 over each tool's name, which
 /// counts twice, its description and its parameters; a tie stays in `tools`' order. Sentences
-/// are full of words every tool has, so those only count when the query has no others, and what
-/// scores under half the best is left out: each tool found stays in every request after.
+/// are full of words most tools have, so where a query has rarer words, a tool must have one of
+/// them, and a word no tool has counts as rarer: finding nothing, the model can search again,
+/// but what a search finds stays in every request after. For that too, what scores under half
+/// the best is left out.
 fn ranked(tools: &[&ToolSpec], query: &str) -> Vec<usize> {
     let documents: Vec<HashMap<String, u32>> = tools
         .iter()
@@ -241,19 +260,17 @@ fn ranked(tools: &[&ToolSpec], query: &str) -> Vec<usize> {
     asked.sort_unstable();
     asked.dedup();
     let rarer: Vec<&String> = asked.iter().filter(|w| having(w) * 2.0 <= count).collect();
-    let counting = if rarer.is_empty() {
-        asked.iter().collect()
-    } else {
-        rarer
-    };
     let mut scored: Vec<(usize, f64)> = documents
         .iter()
         .zip(&lengths)
         .enumerate()
+        .filter(|(_, (document, _))| {
+            rarer.is_empty() || rarer.iter().any(|word| document.contains_key(*word))
+        })
         .map(|(index, (document, length))| {
-            let score = counting
+            let score = asked
                 .iter()
-                .filter_map(|word| Some((*word, f64::from(*document.get(*word)?))))
+                .filter_map(|word| Some((word, f64::from(*document.get(word)?))))
                 .map(|(word, times)| {
                     let having = having(word);
                     let rarity = (1.0 + (count - having + 0.5) / (having + 0.5)).ln();

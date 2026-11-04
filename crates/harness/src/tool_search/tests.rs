@@ -12,7 +12,7 @@ fn tool(name: &str, description: &str) -> ToolSpec {
 
 fn found(tools: &[ToolSpec], query: &str) -> Vec<String> {
     let tools: Vec<&ToolSpec> = tools.iter().collect();
-    let found = matching(&tools, query);
+    let found = matching(&tools, query, |_| true);
     found.iter().map(|tool| tool.name.clone()).collect()
 }
 
@@ -71,6 +71,47 @@ fn a_schema_s_own_words_find_nothing_but_its_parameters_names_do() {
     let tools = catalog();
     assert_eq!(found(&tools, "object"), Vec::<String>::new());
     assert_eq!(found(&tools, "text").len(), MOST_FOUND);
+}
+
+#[test]
+fn a_word_most_tools_have_still_counts_toward_the_best() {
+    let tools = vec![
+        tool("mcp__t__list_labels", "List the labels."),
+        tool("mcp__t__list_teams", "List the teams."),
+        tool("mcp__t__get_issue", "Get an issue."),
+        tool("mcp__t__create_issue", "Create an issue."),
+        tool("mcp__t__update_issue", "Update an issue."),
+        tool("mcp__t__close_issue", "Close an issue."),
+        tool("mcp__t__list_issues", "List the issues."),
+    ];
+    assert_eq!(found(&tools, "list issues")[0], "mcp__t__list_issues");
+}
+
+#[test]
+fn what_is_loaded_is_found_again_without_taking_the_place_of_what_is_not() {
+    let tools: Vec<ToolSpec> = (0..8)
+        .map(|n| tool(&format!("mcp__a__report_{n}"), "A report."))
+        .collect();
+    let refs: Vec<&ToolSpec> = tools.iter().collect();
+    let loaded_first_two =
+        |spec: &ToolSpec| spec.name != "mcp__a__report_0" && spec.name != "mcp__a__report_1";
+    let names = |query: &str| -> Vec<String> {
+        matching(&refs, query, loaded_first_two)
+            .iter()
+            .map(|tool| tool.name.clone())
+            .collect()
+    };
+    assert_eq!(
+        names("mcp__a__report_0"),
+        ["mcp__a__report_0"],
+        "by its name"
+    );
+    let by_words = names("report");
+    assert_eq!(
+        by_words.len(),
+        MOST_FOUND + 2,
+        "two loaded, and as many as ever to load"
+    );
 }
 
 #[test]

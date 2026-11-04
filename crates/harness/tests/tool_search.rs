@@ -518,3 +518,25 @@ fn an_answer_still_decides_a_call_whose_tool_was_held_back_while_it_waited() {
         assert!(after.contains(&"tool_search".to_owned()), "{after:?}");
     });
 }
+
+#[test]
+fn a_search_made_again_loads_nothing_else() {
+    let dir = folder("tool-search-again");
+    block_on!(async {
+        let answers = vec![
+            searching(SEARCH),
+            searching(SEARCH),
+            searching("mcp__docs__search documents"),
+            done(),
+        ];
+        let mut on = crowded(&dir, answers, settings()).await;
+        turn(&on.harness, &mut on.thread, "find it").await;
+        let seen = on.seen.lock().unwrap().clone();
+        assert_eq!(
+            seen[3].tools, seen[1].tools,
+            "only what was asked for, once"
+        );
+        let said = results(on.thread.messages());
+        assert!(said[1].contains(SEARCH), "found again: {said:?}");
+    });
+}
