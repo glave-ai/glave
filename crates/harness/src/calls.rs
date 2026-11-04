@@ -313,12 +313,14 @@ where
                 Err(stopped) => return Ok(stopped),
             }
         } else {
-            live(Live::ToolStarted {
-                summary: summary.clone(),
-            });
             None
         };
         self.record_started(thread, &call.call_id).await?;
+        if given.is_none() {
+            live(Live::ToolStarted {
+                summary: summary.clone(),
+            });
+        }
         // A command it starts in the background is recorded under this call.
         thread.commands.calling(call.call_id.clone());
         // A command, a write or an edit may change what the thread opens with, on its person's

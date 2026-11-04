@@ -70,6 +70,7 @@ where
                 .next()
                 .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
             thread.messages = crate::conversation::conversation(&events);
+            thread.unnumbered = crate::bind::own_records(&events);
             let turn = events.get(open.started..).unwrap_or_default();
             // It keeps the model and mode it started with, whatever the settings say now,
             // and its sandbox with the mode, so before the thread's own is brought.

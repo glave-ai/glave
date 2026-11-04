@@ -407,14 +407,14 @@ fn one_lost_result_then_a_siblings_answer_never_runs_the_call_again() {
         let (root, a, b, _followed) = both_waiting(&server).await;
         log.fail_with("tool.call.completed");
         server.request(answering(a.0, a.1, false)).await.unwrap();
-        // `a`'s work ends at `b`'s wait, once the turn no longer runs.
+        // `a` ran, and its work is given every chance to end at `b`'s wait.
         for _ in 0..100_000 {
-            if runs(&tools).len() == 1 && waiting(&server, root).await.is_some() {
-                let got = server.request(Request::ThreadGet { thread: root }).await;
-                if matches!(got, Ok(Reply::Thread { thread }) if thread.status == Status::Waiting) {
-                    break;
-                }
+            if !runs(&tools).is_empty() {
+                break;
             }
+            tokio::task::yield_now().await;
+        }
+        for _ in 0..1_000 {
             tokio::task::yield_now().await;
         }
         each_once(&tools, &["a"]);
