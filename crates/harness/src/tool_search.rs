@@ -165,14 +165,9 @@ fn query(arguments: &Arguments) -> Option<&str> {
 }
 
 /// Which of `tools` `query` finds: the ones it names when it is nothing but tool names, else
-/// the best by BM25, the same way every time, and at most [`MOST_FOUND`] of those `held_back`
-/// says are still to load, and of those it says are not: a search made again finds what it found
-/// before and loads nothing else.
-pub(crate) fn matching<'a>(
-    tools: &[&'a ToolSpec],
-    query: &str,
-    held_back: impl Fn(&ToolSpec) -> bool,
-) -> Vec<&'a ToolSpec> {
+/// the best by BM25, at most [`MOST_FOUND`] and the same way every time, so a search made again
+/// loads nothing else. What it leaves out, its name finds, which the listing gives.
+pub(crate) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolSpec> {
     let asked: Vec<&str> = query
         .split(|c: char| c.is_whitespace() || c == ',')
         .filter(|word| !word.is_empty())
@@ -184,24 +179,13 @@ pub(crate) fn matching<'a>(
             Some(*found)
         })
         .collect();
-    let found = if named.len() == asked.len() {
-        named
-    } else {
-        let best = ranked(tools, query).into_iter();
-        best.filter_map(|index| tools.get(index).copied()).collect()
-    };
-    let (mut to_load, mut loaded) = (0, 0);
-    found
+    if named.len() == asked.len() {
+        return named.into_iter().take(MOST_FOUND).collect();
+    }
+    ranked(tools, query)
         .into_iter()
-        .filter(|tool| {
-            let counted = if held_back(tool) {
-                &mut to_load
-            } else {
-                &mut loaded
-            };
-            *counted += 1;
-            *counted <= MOST_FOUND
-        })
+        .take(MOST_FOUND)
+        .filter_map(|index| tools.get(index).copied())
         .collect()
 }
 

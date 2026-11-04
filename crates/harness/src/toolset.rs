@@ -246,8 +246,7 @@ impl ToolSet {
     /// What `query` finds among the connected tools (`tool_search::matching`). Cloned, so
     /// loading them can follow.
     pub(crate) fn deferred_matching(&self, query: &str) -> Vec<ToolSpec> {
-        let held_back = |spec: &ToolSpec| self.is_held_back(&spec.name);
-        tool_search::matching(&self.deferred_specs(), query, held_back)
+        tool_search::matching(&self.deferred_specs(), query)
             .into_iter()
             .cloned()
             .collect()

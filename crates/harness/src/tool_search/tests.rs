@@ -12,7 +12,7 @@ fn tool(name: &str, description: &str) -> ToolSpec {
 
 fn found(tools: &[ToolSpec], query: &str) -> Vec<String> {
     let tools: Vec<&ToolSpec> = tools.iter().collect();
-    let found = matching(&tools, query, |_| true);
+    let found = matching(&tools, query);
     found.iter().map(|tool| tool.name.clone()).collect()
 }
 
@@ -88,29 +88,43 @@ fn a_word_most_tools_have_still_counts_toward_the_best() {
 }
 
 #[test]
-fn what_is_loaded_is_found_again_without_taking_the_place_of_what_is_not() {
-    let tools: Vec<ToolSpec> = (0..8)
-        .map(|n| tool(&format!("mcp__a__report_{n}"), "A report."))
+fn a_search_made_again_loads_nothing_else_however_many_tools_it_could_find() {
+    let tools: Vec<(glave_ports::ToolInfo, ToolOutput)> = (0..20)
+        .map(|n| {
+            let spec = tool(&format!("mcp__a__report_{n}"), &"A report. ".repeat(100));
+            let info = glave_ports::ToolInfo {
+                spec,
+                effect: glave_ports::Effect::Reads,
+                parallel: true,
+            };
+            (info, ToolOutput::text(false, "report"))
+        })
         .collect();
-    let refs: Vec<&ToolSpec> = tools.iter().collect();
-    let loaded_first_two =
-        |spec: &ToolSpec| spec.name != "mcp__a__report_0" && spec.name != "mcp__a__report_1";
-    let names = |query: &str| -> Vec<String> {
-        matching(&refs, query, loaded_first_two)
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect()
+    let sources: Vec<std::sync::Arc<dyn glave_ports::ToolSource>> = vec![std::sync::Arc::new(
+        glave_ports::InMemoryTools::new(tools).as_connected(),
+    )];
+    let mut set = glave_ports::block_on!(ToolSet::gather(&sources, "system"));
+    set.defer_if_crowded(1_000, &[]);
+    let names = |set: &ToolSet, query: &str| -> Vec<String> {
+        let found = set.deferred_matching(query);
+        found.into_iter().map(|tool| tool.name).collect()
     };
+    let first = names(&set, "report");
+    assert_eq!(first.len(), MOST_FOUND);
+    assert_eq!(set.load(&first), first);
+    let again = names(&set, "report");
+    assert_eq!(again, first, "found again");
     assert_eq!(
-        names("mcp__a__report_0"),
-        ["mcp__a__report_0"],
-        "by its name"
+        set.load(&again),
+        Vec::<String>::new(),
+        "and nothing else loaded"
     );
-    let by_words = names("report");
+    let by_name = names(&set, &first[0]);
+    assert_eq!(by_name, first[..1], "a loaded tool finds itself by name");
     assert_eq!(
-        by_words.len(),
-        MOST_FOUND + 2,
-        "two loaded, and as many as ever to load"
+        names(&set, "mcp__a__report_19"),
+        ["mcp__a__report_19"],
+        "what the words left out, its name finds"
     );
 }
 
