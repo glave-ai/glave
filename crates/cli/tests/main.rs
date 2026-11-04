@@ -27,6 +27,7 @@ mod folders;
 mod gateway;
 mod https;
 mod installed;
+mod invited;
 mod mcp;
 mod memory;
 mod onpath;

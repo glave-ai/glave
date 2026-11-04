@@ -112,7 +112,7 @@ impl Api {
     }
 }
 
-fn request(method: &str, params: Value) -> Request {
+pub(crate) fn request(method: &str, params: Value) -> Request {
     let message =
         serde_json::Map::from_iter([("method".into(), method.into()), ("params".into(), params)]);
     serde_json::from_value(Value::Object(message)).unwrap()
