@@ -62,17 +62,17 @@ export class AdminComponent {
   protected readonly peopleCurrent = isActive(this.peopleLink, this.router, { paths: 'exact' });
   protected readonly brandCurrent = isActive(this.brandLink, this.router);
 
+  constructor() {
+    // A tab opened here, not from the chats, hears what changes as the chats' does.
+    inject(ProjectsService).follow();
+  }
+
   /** A refused sign-in (or signing out) ends the session: back to the sign-in page. */
   protected readonly leaving = effect(() => {
     if (!this.session.signedIn()) {
       void this.router.navigateByUrl('/sign-in');
     }
   });
-
-  constructor() {
-    // A tab opened here, not from the chats, hears what changes as the chats' does.
-    inject(ProjectsService).follow();
-  }
 
   protected keydown(event: KeyboardEvent): void {
     this.nav.keydown(event);
