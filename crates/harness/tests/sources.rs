@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_event::StopReason;
+use glave_event::{Body, StopReason};
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -209,6 +209,69 @@ fn without_notes_the_system_prompt_is_glaves_own() {
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "hello").await;
         assert_eq!(seen.lock().unwrap()[0].system, settings().system_prompt);
+    });
+}
+
+/// A source that cannot say what tools it has, as a server that did not start.
+struct Gone;
+
+/// Why `Gone` has no tools, in the words of a server that ran out its limit to start.
+const WHY_GONE: &str = "MCP server \"docs\" did not start: it did not answer within 30 seconds";
+
+impl ToolSource for Gone {
+    fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
+        Box::pin(ready(Err(ToolError {
+            source_name: "docs".to_owned(),
+            message: WHY_GONE.to_owned(),
+        })))
+    }
+    fn call<'a>(
+        &'a self,
+        _name: &'a str,
+        _arguments: &'a Arguments,
+        _cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(ready(ToolOutput::text(true, WHY_GONE)))
+    }
+}
+
+#[test]
+fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
+    let dir = folder("sources-gone");
+    block_on!(async {
+        let answers = vec![answer(Some("It is not there."), vec![], StopReason::EndTurn)];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
+        let harness = harness.with_tools(vec![Arc::new(Gone), extra()]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "search the docs").await;
+
+        let events = events(harness.log(), thread.id).await;
+        let started = events.iter().find_map(|event| match &event.body {
+            Body::TurnStarted(started) => Some(started),
+            _ => None,
+        });
+        let recorded = serde_json::to_value(started.unwrap()).unwrap();
+        let without = json!([{"source_name": "docs", "message": WHY_GONE}]);
+        assert_eq!(recorded["missing"], without, "{recorded}");
+
+        let seen = seen.lock().unwrap();
+        let plain = settings().system_prompt;
+        assert_eq!(
+            seen[0].system,
+            format!(
+                "{plain}\n\nThe tool server docs did not answer, so its tools are not available \
+                 in this turn. If the person asks for something that needs them, say that it \
+                 could not be reached, rather than that you have no such tool."
+            )
+        );
+        // What the other source offers is still on offer.
+        assert!(
+            seen[0]
+                .tools
+                .iter()
+                .any(|spec| spec.name == "mcp__docs__search")
+        );
     });
 }
 

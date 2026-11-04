@@ -110,6 +110,7 @@ fn a_server_that_does_not_start_is_named_and_the_turn_goes_on() {
         )),
         "{shown}"
     );
+    assert_eq!(shown.matches("did not start").count(), 1, "{shown}");
     assert!(shown.contains("Answered anyway."), "{shown}");
 }
 

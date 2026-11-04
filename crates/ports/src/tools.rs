@@ -6,8 +6,8 @@ use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
 
+pub use glave_event::ToolError;
 use glave_event::{Arguments, Part, Risk, ServiceAdds, ServiceAnswer, ServiceField, ToolKind};
-use thiserror::Error;
 
 use crate::model::ToolSpec;
 
@@ -95,14 +95,6 @@ impl ToolOutput {
             ..Self::text(false, text)
         }
     }
-}
-
-/// Why a source could not list its tools.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{source_name}: {message}")]
-pub struct ToolError {
-    pub source_name: String,
-    pub message: String,
 }
 
 /// A signal that the turn running a call was cancelled.

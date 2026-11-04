@@ -194,6 +194,8 @@ pub async fn attempt(
         failures.push(err);
         Trace::default()
     });
+    // Offered less than the task gives, the attempt measures nothing of the model.
+    failures.extend((trace.missing.iter()).map(|why| format!("went without tools: {why}")));
     // A goal's turns may end at the step limit and go on; its own checks grade how it ended.
     if task.goal.is_none() {
         failures.extend(ended(task.outcome, &trace.outcomes).err());

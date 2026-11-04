@@ -106,7 +106,7 @@ impl Client<'_> {
     /// proposed a plan, prints it, and with someone here asks whether to build it, or what to
     /// change, and runs that too (`plan.rs`).
     pub(crate) async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
-        self.report(printer).await;
+        self.report(printer);
         let mut next = self.turn_start(prompt);
         loop {
             // Listening before the turn starts: the model may be asked before its answer
@@ -145,7 +145,7 @@ impl Client<'_> {
     /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
     /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
     pub(crate) async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
-        self.report(printer).await;
+        self.report(printer);
         let interrupt = Cancel::new();
         let _ctrl_c = CtrlC::cancels(&interrupt);
         let started = self
@@ -282,6 +282,11 @@ impl Client<'_> {
                     return false;
                 };
                 match decoded.body {
+                    Body::TurnStarted(started) if *thread == self.thread => {
+                        for gone in &started.missing {
+                            printer.warning(&gone.message);
+                        }
+                    }
                     // A subagent's never asks: no one is there for it.
                     Body::ServiceAsked(asked) if *thread == self.thread => {
                         return self
@@ -459,9 +464,9 @@ impl Client<'_> {
     }
 
     /// Reports the MCP servers started here, if there are any.
-    async fn report(&self, printer: &mut Printer) {
+    fn report(&self, printer: &mut Printer) {
         if let Some(servers) = self.servers {
-            servers.report(printer).await;
+            servers.report(printer);
         }
     }
 

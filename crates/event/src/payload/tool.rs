@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
+use thiserror::Error;
 
 use super::part::Part;
 use crate::codec::{Payload, parse};
@@ -12,6 +13,18 @@ use crate::id::CallId;
 pub(crate) const REQUESTED: &str = "tool.call.requested";
 pub(crate) const STARTED: &str = "tool.call.started";
 pub(crate) const COMPLETED: &str = "tool.call.completed";
+
+/// Why a source could not list its tools. A turn that went without it records this in its
+/// `turn.started`.
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[error("{source_name}: {message}")]
+pub struct ToolError {
+    pub source_name: String,
+    /// A sentence for the person, which a remote server's own words may be part of: never sent
+    /// to the model.
+    pub message: String,
+}
 
 /// The model asks for a tool to run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
