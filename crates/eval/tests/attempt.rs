@@ -251,7 +251,7 @@ fn this_repository_s_answers_are_hidden_from_an_attempt_s_commands() {
     block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
     let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
     assert!(events.contains("[workspace"), "{events}");
-    assert!(!events.contains("Saffron Marten"), "{events}");
+    assert!(!events.contains("Bramblewick releases"), "{events}");
     assert!(!events.contains("-found"), "{events}");
 }
 

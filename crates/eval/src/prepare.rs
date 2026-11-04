@@ -60,11 +60,14 @@ pub(crate) async fn prepare(
             .replace("{task}", &task.dir.display().to_string())
             .replace("{path}", &path)
     };
-    // Without what `cargo run` says of the eval, which names this repository and where it is.
+    // Without what `cargo run` says of the eval, which names this repository.
     let mut environment: Environment = (base.iter())
         .filter(|(name, _)| !from_cargo(name))
         .cloned()
         .collect();
+    // Asked now, in the environment the eval has, before any task's changes it.
+    let mut hidden = cargo_downloads(base);
+    hidden.extend(repository(processes, task, &environment).await);
     // Each run has a temp folder of its own, made empty, for what runs outside the sandbox,
     // its setup and its grader (the sandbox gives each command one): runs at once would
     // otherwise share the machine's, and leave there what they wrote. Removed once graded.
@@ -99,8 +102,6 @@ pub(crate) async fn prepare(
             )));
         }
     }
-    let mut hidden = cargo_downloads(base);
-    hidden.extend(repository(processes, task, &environment).await);
     Ok(Prepared {
         workspace,
         environment,
@@ -132,15 +133,16 @@ fn from_cargo(name: &OsStr) -> bool {
     name.starts_with("CARGO_PKG_") || name.starts_with("CARGO_MANIFEST_")
 }
 
-/// What holds the answers in every checkout of the repository `task` is in: its tasks and its
-/// history. The rest stays readable, as a build folder there must, with the `glave` commands run.
-/// Nothing when the task is in no repository.
+/// What holds the answers: `task`'s own folder, wherever it is, and the tasks and history in every
+/// checkout of its repository, when it has one. The rest stays readable, as a
+/// build folder there must, with the `glave` commands run.
 async fn repository(processes: &Processes, task: &Task, environment: &Environment) -> Vec<PathBuf> {
     let args = ["worktree", "list", "--porcelain"];
-    match script(processes, "git", &args, &task.dir, environment).await {
+    let listed = match script(processes, "git", &args, &task.dir, environment).await {
         Ok(listed) if listed.success => answers_in(&listed.text),
         _ => Vec::new(),
-    }
+    };
+    std::iter::once(task.dir.clone()).chain(listed).collect()
 }
 
 /// The places holding the answers in the checkouts `git worktree list --porcelain` lists.

@@ -33,22 +33,23 @@ pub(crate) async fn serve(dir: &Path) -> Result<Pages, EvalError> {
         .map_err(EvalError::io("serve the pages of", dir))
 }
 
-/// What `web_fetch` may reach in an attempt: the task's own pages, where it has any, and nothing
+/// What `web_fetch` may reach in an attempt: the task's own pages, when `pages`, and nothing
 /// else. It is still offered, as the CLI offers it, and says why it refused.
-pub(crate) fn reach(pages: Option<&str>) -> Result<WebPolicy, EvalError> {
+pub(crate) fn reach(pages: bool) -> Result<WebPolicy, EvalError> {
     let only = |pattern| {
         (Domain::parse(pattern).map(|domain| vec![domain]))
             .map_err(|err| EvalError::Setup(err.to_string()))
     };
-    Ok(match pages {
-        Some(_) => WebPolicy {
+    Ok(if pages {
+        WebPolicy {
             allow: only("127.0.0.1")?,
             ..WebPolicy::default()
-        },
-        None => WebPolicy {
+        }
+    } else {
+        WebPolicy {
             deny: only("*")?,
             ..WebPolicy::default()
-        },
+        }
     })
 }
 
@@ -123,8 +124,8 @@ mod tests {
             let pages = serve(dir).await.unwrap();
             let base = pages.base();
             let fetcher = |policy| Fetcher::new(policy, Limits::default()).unwrap();
-            let with_pages = fetcher(reach(Some(&base)).unwrap());
-            let without = fetcher(reach(None).unwrap());
+            let with_pages = fetcher(reach(true).unwrap());
+            let without = fetcher(reach(false).unwrap());
             let page = format!("{base}/releases.html");
             assert!(with_pages.fetch(&page).await.is_ok());
             assert!(without.fetch(&page).await.is_err());

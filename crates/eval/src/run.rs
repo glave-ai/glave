@@ -239,8 +239,7 @@ fn leaked(setup: &Setup, events: &str) -> Option<String> {
 /// from it, and commands from its checkouts here, but a command with the network is not: the
 /// sandbox cannot refuse one host. So going for it is no pass, whatever came back.
 fn named_the_repository(events: &str) -> Option<String> {
-    events
-        .contains(REPOSITORY)
+    (events.to_ascii_lowercase().contains(REPOSITORY))
         .then(|| format!("the attempt named {REPOSITORY}, which holds the answers"))
 }
 
@@ -350,7 +349,7 @@ async fn wire(
     // web_fetch, as the CLI offers it, reaching the task's own pages alone.
     let pages = web;
     let web = Web::new(WebSettings {
-        policy: crate::web::reach(pages)?,
+        policy: crate::web::reach(pages.is_some())?,
         limits: Limits::default(),
     })
     .map_err(|err| EvalError::Setup(err.to_string()))?;
