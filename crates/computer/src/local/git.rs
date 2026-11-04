@@ -468,7 +468,7 @@ async fn push_with_credential(
         .collect();
     let outside = Git::at(&opened.processes, &environment, &opened.root);
     let own_text = own.to_string_lossy();
-    let pushed = async {
+    let tried = async {
         // No template: one is a folder of files, a `config` among them, copied in.
         outside
             .must(&[
@@ -499,9 +499,9 @@ async fn push_with_credential(
         };
         pushing.work(&["push", "--quiet", "origin", refspec]).await
     };
-    let pushed = pushed.await;
+    let tried = tried.await;
     let _ = tokio::fs::remove_dir_all(&own).await;
-    pushed.map(|_| ())
+    tried.map(|_| ())
 }
 
 /// The workspace's own repository. A folder that is not one is refused: glave keeps no
