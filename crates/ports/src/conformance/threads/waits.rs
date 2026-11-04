@@ -5,7 +5,7 @@
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Arguments, BlobRef, CallId, Outcome, ParentCall, Part,
     ServiceAnswered, ServiceAsked, ServiceOutcome, Sha256, ToolCallCompleted, ToolCallRequested,
-    ToolKind, TurnResult, Verdict,
+    ToolCallStarted, ToolKind, TurnResult, Verdict,
 };
 
 use super::{Writer, started, turn};
@@ -161,9 +161,13 @@ async fn approval<L: EventLog>(
         decision: Verdict::AllowOnce,
         by: None,
     };
+    let went_ahead = ToolCallStarted {
+        call_id: call("call_6")?,
+    };
     let settled = [
         writer.next(46, &decided)?,
-        writer.next(47, &completed("call_6")?)?,
+        writer.next(47, &went_ahead)?,
+        writer.next(48, &completed("call_6")?)?,
     ];
     log.append(here, &settled[..1])
         .await
@@ -172,18 +176,20 @@ async fn approval<L: EventLog>(
         wait_of(log, here, parent).await?.is_none(),
         "a decided approval must no longer wait",
     )?;
-    let view = log
-        .thread_view(here, parent)
-        .await
-        .map_err(|e| e.to_string())?;
-    let first = view
-        .and_then(|view| view.turn)
-        .and_then(|turn| turn.unfinished.into_iter().next());
+    let first = first_unfinished(log, here, parent).await?;
     ensure(
         first.is_some_and(|call| call.decided && call.asked.is_none()),
-        "a decided approval's call must say so until it has a result",
+        "a decided approval's call must say so until it begins",
     )?;
-    log.append(here, &settled[1..])
+    log.append(here, &settled[1..2])
+        .await
+        .map_err(|e| e.to_string())?;
+    let first = first_unfinished(log, here, parent).await?;
+    ensure(
+        first.is_some_and(|call| !call.decided && call.asked.is_none()),
+        "a call begun must no longer say it was answered",
+    )?;
+    log.append(here, &settled[2..])
         .await
         .map_err(|e| e.to_string())?;
     Ok(())

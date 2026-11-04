@@ -59,6 +59,9 @@ where
                 thread.opened = Some(Opened::Waits);
             }
             let open = open_turn(&events).ok_or(HarnessError::NoTurn(thread.id))?;
+            if open.began {
+                return self.close_mid_call(thread).await;
+            }
             // What was recorded since the thread was read, its answer among it, comes in.
             let last = events.last().ok_or(HarnessError::NotFound(thread.id))?;
             thread.next_seq = last
@@ -67,6 +70,7 @@ where
                 .next()
                 .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
             thread.messages = crate::conversation::conversation(&events);
+            thread.unnumbered = crate::bind::own_records(&events);
             let turn = events.get(open.started..).unwrap_or_default();
             // It keeps the model and mode it started with, whatever the settings say now,
             // and its sandbox with the mode, so before the thread's own is brought.
@@ -117,6 +121,21 @@ where
             crate::goal::stopped_running(thread);
             self.pursue_after(thread, ran?, caller, cancel, live).await
         })
+    }
+
+    /// Closes `thread`'s turn, whose call began and never reported: it may have run, so it gets
+    /// the interrupted result, never another run, and the turn ends so.
+    async fn close_mid_call(&self, thread: &mut Thread) -> Result<TurnResult, HarnessError> {
+        self.close_left_open(thread).await?;
+        let events = self.load(&thread.scope, thread.id).await?;
+        events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.body {
+                Body::TurnEnded(ended) => Some(ended.clone()),
+                _ => None,
+            })
+            .ok_or(HarnessError::NoTurn(thread.id))
     }
 
     /// The model the turn whose events are `turn` was sent to and the mode it ran with, as

@@ -96,6 +96,7 @@ fn a_background_turn_runs_on_a_worktree_with_no_one_attached_and_can_be_read_aft
                 "message.added",
                 "tool.call.requested",
                 "model.responded",
+                "tool.call.started",
                 "tool.call.completed",
                 "message.added",
                 "model.responded",

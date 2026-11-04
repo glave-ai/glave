@@ -46,6 +46,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::TurnEnded(_)
         | Body::ApprovalRequested(_)
         | Body::ApprovalDecided(_)
+        | Body::ToolCallStarted(_)
         | Body::ServiceAsked(_)
         | Body::ServiceAnswered(_)
         | Body::GoalSet(_)
