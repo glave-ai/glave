@@ -21,11 +21,11 @@ use crate::payload::{
     ScheduleDeleted, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished,
     SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
     ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
-    credits, filters, gateway, goal, grouping, hook, instructions, language, memory, message,
-    model, passkey, people, plan, project, provider, remembering, secrets, service, signup,
-    standing, task, thread, tool, trust, turn, workspace,
+    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    connector, credential, credits, filters, gateway, goal, grouping, hook, instructions, language,
+    memory, message, model, passkey, people, plan, project, provider, remembering, secrets,
+    service, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -48,6 +48,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (turn::STARTED, 1),
     (message::TYPE, 1),
     (tool::REQUESTED, 1),
+    (tool::STARTED, 1),
     (tool::COMPLETED, 1),
     (model::TYPE, 1),
     (chosen::TYPE, 1),
@@ -141,6 +142,7 @@ pub enum Body {
     TurnStarted(TurnStarted),
     MessageAdded(MessageAdded),
     ToolCallRequested(ToolCallRequested),
+    ToolCallStarted(ToolCallStarted),
     ToolCallCompleted(ToolCallCompleted),
     ModelResponded(ModelResponded),
     ModelChosen(ModelChosen),
@@ -291,6 +293,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         tool::REQUESTED => {
             tool::decode_requested(version, data).map(|r| r.map(Body::ToolCallRequested))
         }
+        tool::STARTED => tool::decode_started(version, data).map(|r| r.map(Body::ToolCallStarted)),
         tool::COMPLETED => {
             tool::decode_completed(version, data).map(|r| r.map(Body::ToolCallCompleted))
         }
@@ -361,6 +364,7 @@ impl Event {
             Body::TurnStarted(payload) => encode(header, payload),
             Body::MessageAdded(payload) => encode(header, payload),
             Body::ToolCallRequested(payload) => encode(header, payload),
+            Body::ToolCallStarted(payload) => encode(header, payload),
             Body::ToolCallCompleted(payload) => encode(header, payload),
             Body::ModelResponded(payload) => encode(header, payload),
             Body::ModelChosen(payload) => encode(header, payload),

@@ -92,6 +92,7 @@ where
         if let Some(refused) = refused {
             return Ok(refused);
         }
+        self.record_started(thread, &call.call_id).await?;
         live(Live::ToolStarted {
             summary: summary.clone(),
         });

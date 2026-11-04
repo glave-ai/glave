@@ -353,6 +353,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::TurnEnded(_) => "turn.ended",
             Body::ApprovalRequested(_) => "approval.requested",
             Body::ApprovalDecided(_) => "approval.decided",
+            Body::ToolCallStarted(_) => "tool.call.started",
             Body::ServiceAsked(_) => "service.asked",
             Body::ServiceAnswered(_) => "service.answered",
             Body::GoalSet(_) => "goal.set",

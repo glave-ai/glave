@@ -45,10 +45,11 @@ fn each_question_and_its_answer_are_recorded_before_the_result() {
         let asked = kinds.iter().position(|kind| *kind == "approval.requested");
         let first = &kinds[asked.unwrap()..];
         assert_eq!(
-            &first[..3],
+            &first[..4],
             [
                 "approval.requested",
                 "approval.decided",
+                "tool.call.started",
                 "tool.call.completed"
             ],
             "{kinds:?}"

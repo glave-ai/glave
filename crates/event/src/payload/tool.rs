@@ -1,4 +1,5 @@
-//! `tool.call.requested` and `tool.call.completed`, linked by their `call_id`.
+//! `tool.call.requested`, `tool.call.started` and `tool.call.completed`, linked by their
+//! `call_id`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -9,6 +10,7 @@ use crate::codec::{Payload, parse};
 use crate::id::CallId;
 
 pub(crate) const REQUESTED: &str = "tool.call.requested";
+pub(crate) const STARTED: &str = "tool.call.started";
 pub(crate) const COMPLETED: &str = "tool.call.completed";
 
 /// The model asks for a tool to run.
@@ -71,6 +73,29 @@ pub(crate) fn decode_requested(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ToolCallRequested>> {
+    match version {
+        1 => Some(parse(data)),
+        _ => None,
+    }
+}
+
+/// A call's tool is about to run: from here on it may have run, so it is never run again from
+/// the log (`specs/one-server.md`, "A turn that dies mid-call").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCallStarted {
+    pub call_id: CallId,
+}
+
+impl Payload for ToolCallStarted {
+    const TYPE: &'static str = STARTED;
+    const VERSION: u32 = 1;
+}
+
+pub(crate) fn decode_started(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ToolCallStarted>> {
     match version {
         1 => Some(parse(data)),
         _ => None,

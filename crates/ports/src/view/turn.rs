@@ -111,6 +111,7 @@ impl OpenTurn {
     pub(crate) fn apply(&mut self, event: &RawEvent) {
         let kinds = [
             "tool.call.requested",
+            "tool.call.started",
             "tool.call.completed",
             "approval.requested",
             "approval.decided",
@@ -132,6 +133,8 @@ impl OpenTurn {
                 service: None,
                 decided: false,
             }),
+            // Answered no longer: it began, so nothing goes on from its answer.
+            Body::ToolCallStarted(started) => self.went_ahead(&started.call_id),
             Body::ToolCallCompleted(done) => {
                 self.unfinished.retain(|call| call.call != done.call_id);
             }
@@ -142,6 +145,12 @@ impl OpenTurn {
             _ => {}
         }
         self.wait = self.first_wait();
+    }
+
+    fn went_ahead(&mut self, call: &CallId) {
+        if let Some(unfinished) = self.unfinished.iter_mut().find(|found| found.call == *call) {
+            unfinished.decided = false;
+        }
     }
 
     fn asked(&mut self, call: &CallId, asked: Option<Seq>, decided: bool) {
