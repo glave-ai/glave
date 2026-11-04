@@ -40,7 +40,7 @@ use glave_process::{Owner, Processes};
 use background::Backgrounds;
 use command::Keep;
 pub(crate) use registry::new_id;
-use registry::{ClonedFrom, Opened, Registry};
+use registry::{Opened, Pushes, Registry};
 
 use crate::disk::Largest;
 pub use git::ask_repository;
@@ -330,13 +330,7 @@ impl LocalComputers {
             environment,
             hidden: Arc::clone(&self.hidden),
             glave_on_path: self.glave_on_path.clone(),
-            cloned_from: match sources {
-                Sources::Git { url, .. } => Some(ClonedFrom {
-                    url: url.clone(),
-                    credential: credential.cloned(),
-                }),
-                _ => None,
-            },
+            pushes: Pushes::of(sources, credential),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };

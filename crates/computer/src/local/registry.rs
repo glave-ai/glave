@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use glave_ports::computer::{
-    ComputerError, ComputerId, Environment, GitCredential, Refusal, Sandbox, WorkspaceId,
+    ComputerError, ComputerId, Environment, GitCredential, Refusal, Sandbox, Sources, WorkspaceId,
 };
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::{Builder, Uuid};
@@ -19,12 +19,27 @@ const MAX_COMPUTERS: usize = 64;
 /// The most workspaces open at once, across its computers.
 const MAX_WORKSPACES: usize = 1024;
 
-/// Where a clone came from, as it was asked for rather than as its config says now, which is its
-/// commands' to change on a worker; and the credential that opened it, kept in memory only.
+/// A clone opened with a credential: the credential, kept in memory only, and where it came from,
+/// as it was asked for rather than as its config says now, which is its commands' to change on a
+/// worker. Only there does the credential go.
 #[derive(Debug)]
-pub(crate) struct ClonedFrom {
+pub(crate) struct Pushes {
     pub(crate) url: String,
-    pub(crate) credential: Option<GitCredential>,
+    pub(crate) credential: GitCredential,
+}
+
+impl Pushes {
+    /// What saving `sources`, opened with `credential`, pushes with: only a clone has a place the
+    /// credential was given for.
+    pub(crate) fn of(sources: &Sources, credential: Option<&GitCredential>) -> Option<Self> {
+        match (sources, credential) {
+            (Sources::Git { url, .. }, Some(credential)) => Some(Self {
+                url: url.clone(),
+                credential: credential.clone(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// An open workspace: where it is, and what its commands run with.
@@ -44,8 +59,8 @@ pub(crate) struct Opened {
     pub(crate) hidden: Arc<[PathBuf]>,
     /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
     pub(crate) glave_on_path: Option<PathBuf>,
-    /// What it was cloned from, when it is a clone, for saving it.
-    pub(crate) cloned_from: Option<ClonedFrom>,
+    /// Where its saves go with a credential, when it was opened with one.
+    pub(crate) pushes: Option<Pushes>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one.
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,

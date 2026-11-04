@@ -1,6 +1,6 @@
 //! A worker's save and what its commands planted: its repository's config and its home folder are
 //! theirs to write, so nothing in them chooses what reads the push's credential, or where it goes.
-//! Each way is shown to reach the credential under plain git and shown not to under `save`.
+//! Each way is shown to reach it under plain git and shown not to under `save`.
 
 use glave_ports::computer::{Bytes, GitCredential, Save, Saved};
 use glave_ports::testing::fake_secret;
@@ -13,13 +13,14 @@ const BRANCH: &str = "glave/wip/test";
 
 /// A workspace opened as a worker's is, from a clone with a credential.
 struct Worker {
-    planted: Planted,
     computers: LocalComputers,
     opened: WorkspaceInfo,
     origin: PathBuf,
     secret: String,
     /// Which program, planted, saw which credential.
     told: PathBuf,
+    /// Last, so what the computers started stops before its folder goes.
+    planted: Planted,
 }
 
 fn worker() -> Worker {
@@ -52,12 +53,12 @@ fn worker() -> Worker {
             .unwrap()
     });
     Worker {
-        planted,
         computers,
         opened,
         origin,
         secret,
         told,
+        planted,
     }
 }
 
@@ -198,71 +199,140 @@ fn what_the_home_folder_names_never_sees_the_credential() {
     worker.saves_keeping_the_credential();
 }
 
-/// What a place the commands chose was sent, when `plant` points git there and a save is made.
-fn sent_where_planted(plant: impl FnOnce(&Worker, &str)) -> (Worker, Vec<String>, String) {
-    let worker = worker();
+fn listening() -> (std::net::TcpListener, String) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
-    plant(&worker, &listener.local_addr().unwrap().to_string());
-    std::fs::write(worker.root().join("work.txt"), "work\n").unwrap();
-    let sent = block_on!(async {
-        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-        let server = tokio::spawn(asks_for_a_password(listener));
-        let _ = worker.saved().await;
-        if server.is_finished() {
-            server.await.unwrap()
-        } else {
-            server.abort();
-            Vec::new()
-        }
-    });
-    let basic = worker.basic();
-    (worker, sent, basic)
+    let at = listener.local_addr().unwrap().to_string();
+    (listener, at)
+}
+
+/// Answers on `listener`, recording what it is sent, until stopped.
+fn serving(listener: std::net::TcpListener) -> tokio::task::JoinHandle<Vec<String>> {
+    tokio::spawn(asks_for_a_password(
+        tokio::net::TcpListener::from_std(listener).unwrap(),
+    ))
+}
+
+/// What `server` was sent, if git got as far as sending a password; it is stopped otherwise.
+async fn sent(server: tokio::task::JoinHandle<Vec<String>>) -> Vec<String> {
+    if server.is_finished() {
+        server.await.unwrap()
+    } else {
+        server.abort();
+        Vec::new()
+    }
+}
+
+impl Worker {
+    /// Plain git pushing to `to`, with a helper that hands it the credential: what `save` does.
+    async fn plain_push(&self, to: &str) {
+        let helper = format!(
+            "credential.helper=!f() {{ echo username=glave-user; echo password={}; }}; f",
+            self.secret
+        );
+        let mut git = Program::new("git");
+        git.args(["-c", &helper, "push", to, "HEAD:refs/heads/plain"])
+            .current_dir(self.root())
+            .env_clear()
+            .envs(environment(&self.planted.dir))
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .no_input()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Processes::unrecorded()
+            .output(&mut git, Duration::from_secs(20))
+            .await
+            .unwrap();
+    }
 }
 
 #[test]
 fn a_host_the_config_names_never_gets_the_credential() {
-    let (worker, sent, basic) = sent_where_planted(|worker, listening| {
-        worker.point_origin_at(&format!("http://{listening}/r.git"));
+    let worker = worker();
+    let (control, control_at) = listening();
+    let (listener, listening_at) = listening();
+    worker.point_origin_at(&format!("http://{control_at}/r.git"));
+    let reached_under_plain_git = block_on!(async {
+        let server = serving(control);
+        worker.plain_push("origin").await;
+        sent(server).await
     });
-    assert!(
-        !sent.contains(&basic),
-        "the planted host got the credential"
+    assert!(reached_under_plain_git.contains(&worker.basic()));
+
+    worker.point_origin_at(&format!("http://{listening_at}/r.git"));
+    std::fs::write(worker.root().join("work.txt"), "work\n").unwrap();
+    let reached = block_on!(async {
+        let server = serving(listener);
+        let _ = worker.saved().await;
+        sent(server).await
+    });
+    assert_eq!(
+        reached,
+        Vec::<String>::new(),
+        "the planted host was reached"
     );
     worker.saves_keeping_the_credential();
 }
 
-#[test]
-fn a_proxy_the_config_names_never_gets_the_credential() {
-    let (worker, sent, basic) = sent_where_planted(|worker, listening| {
-        worker.point_origin_at("http://example.invalid/r.git");
-        worker.config("http.proxy", &format!("http://{listening}"));
-    });
-    assert!(
-        !sent.contains(&basic),
-        "the planted proxy got the credential"
-    );
-    worker.saves_keeping_the_credential();
-}
-
-/// A clone over HTTP needs a real server, so this goes to the push itself: where the test above
-/// shows a proxy planted getting the credential under `main`'s git, this shows one left out of a
-/// push that really does cross HTTP.
+/// A clone over HTTP needs a real server, so these go to the push itself, which does cross HTTP:
+/// to its own URL, whichever way the config names a proxy, each shown to work on plain git.
 #[test]
 fn a_push_over_http_goes_to_its_url_past_a_proxy_the_config_names() {
+    for only_this_url in [false, true] {
+        let worker = worker();
+        let (real, real_at) = listening();
+        let (proxy, proxy_at) = listening();
+        let key = if only_this_url {
+            format!("http.http://{real_at}.proxy")
+        } else {
+            "http.proxy".to_owned()
+        };
+        let (control, control_at) = listening();
+        worker.config(&key, &format!("http://{control_at}"));
+        let url = format!("http://{real_at}/r.git");
+        let reached_under_plain_git = block_on!(async {
+            let server = serving(control);
+            worker.plain_push(&url).await;
+            sent(server).await
+        });
+        assert!(
+            reached_under_plain_git.contains(&worker.basic()),
+            "plain git passed {key} by"
+        );
+
+        worker.config(&key, &format!("http://{proxy_at}"));
+        let pushes = Pushes {
+            url: url.clone(),
+            credential: GitCredential::new("glave-user", &worker.secret).unwrap(),
+        };
+        let (reached, through_proxy) = block_on!(async {
+            let opened = worker
+                .computers
+                .registry
+                .workspace(worker.opened.id)
+                .unwrap();
+            let git = repository(&opened).await.unwrap();
+            let hash = git.must(&["rev-parse", "HEAD"]).await.unwrap();
+            let (real, proxy) = (serving(real), serving(proxy));
+            let refspec = format!("{hash}:refs/heads/{BRANCH}");
+            let refused = push_with_credential(&opened, &git, &pushes, &refspec).await;
+            assert!(refused.is_err(), "that server lets no one in");
+            (sent(real).await, sent(proxy).await)
+        });
+        assert_eq!(through_proxy, Vec::<String>::new(), "{key}");
+        assert!(reached.contains(&worker.basic()), "{key}: it never arrived");
+    }
+}
+
+#[test]
+fn a_url_holding_a_password_is_never_said_in_an_error() {
     let worker = worker();
-    let listen = || {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let at = listener.local_addr().unwrap();
-        (listener, at)
+    let (listener, at) = listening();
+    let pushes = Pushes {
+        url: format!("http://glave-user:{}@{at}/r.git", worker.secret),
+        credential: GitCredential::new("glave-user", &worker.secret).unwrap(),
     };
-    let (real, real_at) = listen();
-    let (proxy, proxy_at) = listen();
-    worker.config("http.proxy", &format!("http://{proxy_at}"));
-    worker.config("http.sslVerify", "false");
-    let credential = GitCredential::new("glave-user", &worker.secret).unwrap();
-    let (reached, through_proxy) = block_on!(async {
+    let said = block_on!(async {
         let opened = worker
             .computers
             .registry
@@ -270,25 +340,66 @@ fn a_push_over_http_goes_to_its_url_past_a_proxy_the_config_names() {
             .unwrap();
         let git = repository(&opened).await.unwrap();
         let hash = git.must(&["rev-parse", "HEAD"]).await.unwrap();
-        let real = tokio::spawn(asks_for_a_password(
-            tokio::net::TcpListener::from_std(real).unwrap(),
-        ));
-        let proxy = tokio::spawn(asks_for_a_password(
-            tokio::net::TcpListener::from_std(proxy).unwrap(),
-        ));
+        let server = serving(listener);
         let refspec = format!("{hash}:refs/heads/{BRANCH}");
-        let url = format!("http://{real_at}/r.git");
-        let refused = pushing(&opened, &git, &url, Some(&credential), &refspec).await;
-        assert!(refused.is_err(), "that server lets no one in");
-        let through_proxy = proxy.is_finished();
-        proxy.abort();
-        (real.await.unwrap(), through_proxy)
+        let refused = push_with_credential(&opened, &git, &pushes, &refspec).await;
+        let _ = sent(server).await;
+        refused.unwrap_err().to_string()
     });
-    assert!(!through_proxy, "the push went through the planted proxy");
     assert!(
-        reached.contains(&worker.basic()),
-        "the push never reached its url"
+        !said.contains(&worker.secret),
+        "the error held the password"
     );
+}
+
+#[test]
+fn a_save_leaves_nothing_to_save_again() {
+    let worker = worker();
+    worker.saves_keeping_the_credential();
+    let left = plain(
+        &worker.planted,
+        worker.root(),
+        &["rev-list", "HEAD", "--not", "--remotes"],
+    );
+    assert_eq!(String::from_utf8_lossy(&left.stdout).trim(), "");
+}
+
+#[test]
+fn a_repository_of_either_hash_is_pushed() {
+    let planted = planted();
+    let origin = planted.dir.join("sha256.git");
+    let origin_text = origin.to_string_lossy();
+    must(
+        &planted,
+        &[
+            "init",
+            "-q",
+            "--bare",
+            "--object-format=sha256",
+            &origin_text,
+        ],
+    );
+    let secret = fake_secret("");
+    let credential = GitCredential::new("glave-user", &secret).unwrap();
+    let computers = LocalComputers::new(planted.dir.join("copies"), environment(&planted.dir));
+    let sources = Sources::Git {
+        url: origin_text.clone().into_owned(),
+        at: None,
+    };
+    let save = Save {
+        branch: BRANCH.into(),
+        message: "work".into(),
+    };
+    let saved = block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let opened = computers
+            .open_with_credential(computer.id, &sources, &credential)
+            .await
+            .unwrap();
+        computers.save(opened.id, &save).await.unwrap()
+    });
+    assert!(saved.pushed);
+    assert_eq!(saved.commit.len(), 64);
 }
 
 #[test]
