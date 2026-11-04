@@ -2133,7 +2133,7 @@
           "type": "string"
         },
         "name": {
-          "description": "What it is called: \"Personal\" for the caller's own; another, while organizations have\nno names of their own, by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
+          "description": "What it is called: the name its brand gives it; with none, \"Personal\" for the caller's\nown, and another by an Owner of it (\"Dana Lee's team\"), else \"A team\".",
           "type": "string"
         },
         "own": {
@@ -3205,7 +3205,7 @@
       ]
     },
     "Setting": {
-      "description": "A person's own settings or connections, by what a client reads to show them.",
+      "description": "A person's own settings or connections, and their organization's brand, by what a client\nreads to show them.",
       "oneOf": [
         {
           "const": "providers",
@@ -3245,6 +3245,11 @@
         {
           "const": "appearance",
           "description": "Their accent (`appearance/get`).",
+          "type": "string"
+        },
+        {
+          "const": "brand",
+          "description": "Their organization's brand: how glave looks to them (`appearance/get`) and what their\norganization is called (`organization/list`).",
           "type": "string"
         },
         {
