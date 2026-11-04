@@ -55,6 +55,14 @@ impl Setting {
         Self::Passkeys,
         Self::Language,
     ];
+
+    /// Whether it reads the same in every organization the person is in, so a change made
+    /// working in one is theirs to hear in all: their passkeys and their name belong to their
+    /// account. Every other setting is kept in one organization, or is the local person's, who
+    /// is in one.
+    pub(crate) const fn follows_the_person(self) -> bool {
+        matches!(self, Self::Passkeys)
+    }
 }
 
 impl Request {
