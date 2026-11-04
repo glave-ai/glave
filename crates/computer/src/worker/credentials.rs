@@ -4,6 +4,7 @@
 //! `workspace/open`, over TLS. And repository URLs as a worker can fetch them: over HTTPS,
 //! since SSH keys never leave the person's machine.
 
+use std::ffi::OsStr;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -12,6 +13,54 @@ use glave_process::Processes;
 
 /// How long the person's credential helper has to answer.
 const FILL_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// All of the server's environment that git and a person's credential helper get, by name
+/// ignoring case: what git, the keychains and the helpers people use read. Everything else stays
+/// behind, the model's key and the store's address among it, so nothing there has to be named
+/// as a secret. `GIT_ASKPASS` is left out too: nothing is asked interactively.
+const HELPERS_READ: &[&str] = &[
+    // Finding programs, and the person's own files (`~/.gitconfig`, a keychain, a sign-in).
+    "HOME",
+    "PATH",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "XDG_RUNTIME_DIR",
+    "GIT_EXEC_PATH",
+    // A keyring on Linux, an ssh agent, gpg and the store `pass` keeps with it.
+    "DBUS_SESSION_BUS_ADDRESS",
+    "SSH_AUTH_SOCK",
+    "GNUPGHOME",
+    "GPG_TTY",
+    "PASSWORD_STORE_DIR",
+    // `gh auth git-credential` and `glab auth git-credential`, signed in by these or by a file.
+    "GH_CONFIG_DIR",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+    "GLAB_CONFIG_DIR",
+    "GITLAB_TOKEN",
+    // How a helper that renews a sign-in reaches its host.
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
+
+/// The same for families of names: git's own settings (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_KEY_0`)
+/// and Git Credential Manager's.
+const HELPERS_READ_ALL_OF: &[&str] = &["GIT_CONFIG", "GCM_"];
 
 /// Where workers' git credentials come from.
 #[derive(Debug, Clone, Default)]
@@ -47,6 +96,8 @@ async fn fill(processes: &Processes, rest: &str) -> Result<Option<GitCredential>
     let asked = format!("protocol=https\nhost={host}\npath={path}\n\n");
     let mut git = glave_process::Program::new("git");
     git.args(["credential", "fill"])
+        .env_clear()
+        .envs(std::env::vars_os().filter(|(name, _)| helpers_read(name)))
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .stdout(Stdio::piped())
@@ -64,6 +115,15 @@ async fn fill(processes: &Processes, rest: &str) -> Result<Option<GitCredential>
         return Ok(None);
     }
     Ok(parse(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// Whether git and a credential helper get the server's variable `name`.
+fn helpers_read(name: &OsStr) -> bool {
+    let name = name.to_string_lossy().to_ascii_uppercase();
+    HELPERS_READ.contains(&name.as_str())
+        || HELPERS_READ_ALL_OF
+            .iter()
+            .any(|family| name.starts_with(family))
 }
 
 /// The user name and password in git's answer.
