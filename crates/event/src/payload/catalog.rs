@@ -8,6 +8,7 @@ use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
 use crate::envelope::At;
+use crate::money::Nanos;
 use crate::payload::provider::ProviderKind;
 
 pub(crate) const REFRESHED: &str = "catalog.refreshed";
@@ -184,15 +185,15 @@ impl Precision {
     }
 }
 
-/// What a model's tokens cost, in millionths of a US dollar per million tokens.
+/// What a model's tokens cost, in billionths of a US dollar per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenPrice {
-    pub input: u64,
-    pub output: u64,
+    pub input: Nanos,
+    pub output: Nanos,
     /// Input read from the service's cache, when it prices that apart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_read: Option<u64>,
+    pub cache_read: Option<Nanos>,
 }
 
 /// How a model reasons: the levels of effort it offers, in its service's own names.

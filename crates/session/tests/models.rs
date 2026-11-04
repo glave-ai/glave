@@ -3,7 +3,7 @@
 //! the thread keeps it across turns and restarts; a model the server does not run is refused
 //! with `-32021`; and each answer's `model.responded` names the model that wrote it.
 
-use glave_event::{Body, ModelRef, Reasoning, ThreadId, TokenPrice, decode};
+use glave_event::{Body, ModelRef, Nanos, Reasoning, ThreadId, TokenPrice, decode};
 use glave_ports::Completion;
 use glave_session::protocol::{ApiError, Meta, ModelInfo, Reply, Request, code};
 use serde_json::{Value, json};
@@ -19,8 +19,8 @@ fn offered() -> Vec<ModelInfo> {
             providers: vec!["OpenRouter".into()],
             context: Some(131_072),
             price: Some(TokenPrice {
-                input: 100_000,
-                output: 400_000,
+                input: Nanos::new(100_000_000),
+                output: Nanos::new(400_000_000),
                 cache_read: None,
             }),
             reasoning: Some(Reasoning {
@@ -162,7 +162,7 @@ fn the_list_names_the_default_first_and_describes_each_model() {
             serde_json::json!({
                 "id": "hope-12b", "name": "Hope", "maker": "Glave", "default": false,
                 "providers": ["OpenRouter"], "context": 131_072,
-                "price": {"input": 100_000, "output": 400_000},
+                "price": {"input": 100_000_000, "output": 400_000_000},
                 "reasoning": {"efforts": ["high", "low", "none"], "default": "low"},
             })
         );

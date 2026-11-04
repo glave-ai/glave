@@ -104,7 +104,7 @@ function worked(workspace: WorkspaceBound = WORKTREE): FakeSession {
       thread: thread('thread-1', 'Add a --verbose flag', {
         workspace,
         turns: 3,
-        cost: { micros: 12_000, currency: 'USD' },
+        cost: { nanos: 12_000_000, currency: 'USD' },
         context: { percent: 39, tokens: 49_920, window: 128_000 },
       }),
     })
@@ -280,7 +280,7 @@ describe('ThreadPanelComponent', () => {
       thread: thread('thread-1', 'Look around', {
         workspace: { ...WORKTREE, opened: { kind: 'folder', path: '/work/glave' } },
         estimated: true,
-        cost: { micros: 1_250_000, currency: 'USD' },
+        cost: { nanos: 1_250_000_000, currency: 'USD' },
       }),
     });
     const { root } = await render(fake, []);

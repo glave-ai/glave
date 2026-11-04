@@ -1,7 +1,7 @@
 //! Routes by purpose: each purpose goes to its own route, or `main`'s when it has none, under
 //! the target's model name, and every answer says which route and target served it.
 
-use glave_event::{Currency, Money};
+use glave_event::{Currency, Money, Nanos};
 use glave_gateway::{Gateway, Price, RouteError, Routes};
 use glave_ports::{ModelProvider, Purpose, Served};
 
@@ -137,9 +137,9 @@ fn a_configured_price_costs_an_answer_the_provider_did_not() {
     let price = Price {
         list: "ours-2026-10".into(),
         currency: Currency::USD,
-        input_per_mtok: 1_000_000,
-        cache_read_per_mtok: 0,
-        output_per_mtok: 2_000_000,
+        input_per_mtok: Nanos::new(1_000_000_000),
+        cache_read_per_mtok: Nanos::ZERO,
+        output_per_mtok: Nanos::new(2_000_000_000),
     };
     let gateway =
         Gateway::new(Routes::new(vec![provider.target("hope").with_price(price)]).unwrap());
@@ -149,7 +149,7 @@ fn a_configured_price_costs_an_answer_the_provider_did_not() {
     assert_eq!(
         cost.amount,
         Money {
-            micros: 120,
+            nanos: Nanos::new(120_000),
             currency: Currency::USD
         }
     );

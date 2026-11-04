@@ -1,7 +1,7 @@
 //! The answers tests script the model with, and what it was sent.
 
 use glave_event::{
-    Arguments, Cost, Currency, ModelRef, Money, Part, StopReason, TokenCounts, Usage,
+    Arguments, Cost, Currency, ModelRef, Money, Nanos, Part, StopReason, TokenCounts, Usage,
 };
 use glave_ports::{Completion, RequestedCall};
 
@@ -59,12 +59,12 @@ pub(crate) fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>
     }
 }
 
-/// `completion`, having used `input` and `output` tokens and cost `micros`.
+/// `completion`, having used `input` and `output` tokens and cost `nanos`.
 pub(crate) fn costing(
     mut completion: Completion,
     input: u64,
     output: u64,
-    micros: i64,
+    nanos: i64,
 ) -> Completion {
     completion.usage = Usage::new(
         TokenCounts {
@@ -78,7 +78,7 @@ pub(crate) fn costing(
     .unwrap();
     completion.cost = Some(Cost {
         amount: Money {
-            micros,
+            nanos: Nanos::new(nanos),
             currency: Currency::USD,
         },
         price_list: "test".into(),

@@ -30,17 +30,17 @@ pub(crate) fn model_ended(
             let counts = completion.usage.counts();
             span.record("input_tokens", counts.input);
             span.record("output_tokens", counts.output);
-            let cost_micros = completion
+            let cost_nanos = completion
                 .cost
                 .as_ref()
-                .and_then(|cost| u64::try_from(cost.amount.micros).ok())
+                .and_then(|cost| u64::try_from(cost.amount.nanos.get()).ok())
                 .unwrap_or(0);
             tracing::info!(
                 parent: span,
                 monotonic_counter.glave.model.calls = 1_u64,
                 monotonic_counter.glave.model.input_tokens = counts.input,
                 monotonic_counter.glave.model.output_tokens = counts.output,
-                monotonic_counter.glave.model.cost_micros = cost_micros,
+                monotonic_counter.glave.model.cost_nanos = cost_nanos,
                 route,
                 model = target,
                 "model call ended"

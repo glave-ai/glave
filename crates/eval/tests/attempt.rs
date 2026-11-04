@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_eval::{Plan, Setup, attempt, load};
+use glave_event::Nanos;
 use glave_ports::block_on;
 use glave_ports::testing::{TempDir, any_secret};
 use glave_provider_openai::Config;
@@ -421,7 +422,7 @@ fn attempts_of_one_task_take_turns() {
         models: vec!["a/one".into()],
         repeat: 2,
         concurrency: 2,
-        max_cost_micros: 1_000_000,
+        max_cost: Nanos::new(1_000_000_000),
         dir: dir.join("runs"),
     };
     let attempts = block_on!(glave_eval::run(Arc::new(setup), plan, |_| {}));
@@ -446,7 +447,7 @@ fn nothing_starts_once_the_cost_cap_is_reached() {
         models: vec!["a/one".into(), "b/two".into()],
         repeat: 2,
         concurrency: 2,
-        max_cost_micros: 0,
+        max_cost: Nanos::ZERO,
         dir: dir.join("runs"),
     };
     let mut seen = 0;

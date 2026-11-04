@@ -1,7 +1,7 @@
 //! The chat completions wire format: glave's neutral request in, OpenAI's JSON out, and the
 //! shape of each streamed chunk coming back.
 
-use glave_event::{Arguments, Part, Sort};
+use glave_event::{Arguments, Nanos, Part, Sort};
 use glave_ports::{InlineFile, Message, ModelRequest, Route, ToolChoice, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -69,7 +69,7 @@ struct Preferences<'a> {
 }
 
 /// The most a provider's tokens may cost, as OpenRouter takes it: US dollars per million
-/// tokens, written out exactly from glave's millionths.
+/// tokens, written out exactly from glave's billionths.
 #[derive(Debug, Serialize)]
 struct WirePrice {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -103,10 +103,9 @@ impl<'a> Preferences<'a> {
     }
 }
 
-/// `millionths` of a US dollar as a JSON number of dollars, exactly.
-fn dollars(millionths: u64) -> Option<Box<RawValue>> {
-    let (whole, part) = (millionths / 1_000_000, millionths % 1_000_000);
-    RawValue::from_string(format!("{whole}.{part:06}")).ok()
+/// `nanos` as a JSON number of US dollars, exactly.
+fn dollars(nanos: Nanos) -> Option<Box<RawValue>> {
+    RawValue::from_string(format!("{:.9}", nanos.decimal())).ok()
 }
 
 #[derive(Debug, Serialize)]

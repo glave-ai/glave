@@ -8,7 +8,7 @@ use super::model::{ModelRef, ModelResponded, TokenCounts};
 use crate::blob::BlobRef;
 use crate::codec::{Payload, parse};
 use crate::error::InvalidValue;
-use crate::money::{Currency, Money};
+use crate::money::{Currency, Money, Nanos};
 use crate::payload::principal::open_kind;
 
 pub(crate) const STARTED: &str = "turn.started";
@@ -162,7 +162,7 @@ impl TurnResult {
             with_network: 0,
             tokens: TokenCounts::default(),
             cost: Some(Money {
-                micros: 0,
+                nanos: Nanos::ZERO,
                 currency: Currency::USD,
             }),
             estimated: false,
@@ -267,11 +267,11 @@ mod tests {
     use super::*;
     use crate::payload::model::{Cost, StopReason, Usage};
 
-    /// A call that used `input` tokens at `service`, and cost `micros` when it says; its usage
+    /// A call that used `input` tokens at `service`, and cost `nanos` when it says; its usage
     /// estimated when no router passed it on.
     fn responded(
         input: u64,
-        micros: Option<i64>,
+        nanos: Option<i64>,
         service: &str,
         upstream: Option<&str>,
     ) -> ModelResponded {
@@ -288,9 +288,9 @@ mod tests {
             stop: StopReason::EndTurn,
             provider_stop: None,
             usage: Usage::new(counts, upstream.is_none(), None).unwrap(),
-            cost: micros.map(|micros| Cost {
+            cost: nanos.map(|nanos| Cost {
                 amount: Money {
-                    micros,
+                    nanos: Nanos::new(nanos),
                     currency: Currency::USD,
                 },
                 price_list: "list".into(),
@@ -312,7 +312,7 @@ mod tests {
         assert!(!turn.estimated);
         turn.take_in(&responded(1, Some(0), "Local server", None));
         assert_eq!(turn.tokens.input, 31);
-        assert_eq!(turn.cost.map(|cost| cost.micros), Some(12));
+        assert_eq!(turn.cost.map(|cost| cost.nanos.get()), Some(12));
         assert!(turn.estimated, "one call's usage was estimated");
         assert_eq!(turn.via, ["OpenRouter (Anthropic)", "Local server"]);
         turn.take_in(&responded(1, None, "OpenRouter", Some("OpenRouter")));
@@ -345,7 +345,7 @@ mod tests {
         );
         assert_eq!((parent.model_calls, parent.tool_calls), (2, 3));
         assert_eq!((parent.outside_sandbox, parent.with_network), (1, 1));
-        assert_eq!(parent.cost.map(|cost| cost.micros), Some(6));
+        assert_eq!(parent.cost.map(|cost| cost.nanos.get()), Some(6));
         assert_eq!(parent.via, ["OpenAI (x)"]);
     }
 

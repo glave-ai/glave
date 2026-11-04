@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use glave_event::{
-    Body, CallId, GoalReason, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode,
+    Body, CallId, GoalReason, Nanos, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode,
 };
 
 /// The facts a task is graded on.
@@ -17,8 +17,8 @@ pub struct Trace {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
-    /// Total cost in micros of the reported currency; `None` when any call reported none.
-    pub cost_micros: Option<i64>,
+    /// Total cost in the reported currency; `None` when any call reported none.
+    pub cost_nanos: Option<Nanos>,
     /// How each turn ended, in order.
     pub outcomes: Vec<Outcome>,
     /// The text of the last assistant message in the last turn.
@@ -53,7 +53,7 @@ impl Default for Trace {
             input_tokens: 0,
             output_tokens: 0,
             cached_tokens: 0,
-            cost_micros: Some(0),
+            cost_nanos: Some(Nanos::ZERO),
             outcomes: Vec::new(),
             answer: String::new(),
             printed: String::new(),
@@ -116,8 +116,8 @@ impl Trace {
                 self.input_tokens = self.input_tokens.saturating_add(counts.input);
                 self.output_tokens = self.output_tokens.saturating_add(counts.output);
                 self.cached_tokens = self.cached_tokens.saturating_add(counts.cache_read);
-                self.cost_micros = match (self.cost_micros, response.cost) {
-                    (Some(total), Some(cost)) => total.checked_add(cost.amount.micros),
+                self.cost_nanos = match (self.cost_nanos, response.cost) {
+                    (Some(total), Some(cost)) => total.checked_add(cost.amount.nanos),
                     _ => None,
                 };
             }
@@ -190,7 +190,7 @@ mod tests {
                 input_tokens: 43_003,
                 output_tokens: 120,
                 cached_tokens: 40_000,
-                cost_micros: Some(4_200),
+                cost_nanos: Some(Nanos::new(4_200_000)),
                 outcomes: vec![Outcome::Completed],
                 answer: "Moved 214 files into 6 folders.".to_owned(),
                 printed: "README.md\nsrc\n".to_owned(),

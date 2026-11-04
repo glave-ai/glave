@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
+use crate::money::Nanos;
 use crate::payload::catalog::Precision;
 
 pub(crate) const SET: &str = "filters.set";
@@ -33,14 +34,14 @@ pub enum Serve {
     Provider(String),
 }
 
-/// The most a provider's tokens may cost, in millionths of a US dollar per million tokens.
+/// The most a provider's tokens may cost, in billionths of a US dollar per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MaxPrice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<u64>,
+    pub input: Option<Nanos>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<u64>,
+    pub output: Option<Nanos>,
 }
 
 /// A person's filters among the providers a router passes their calls on to. What is not

@@ -3,7 +3,7 @@
 
 use glave_event::{
     At, ComputerKind, ComputerRef, Cost, Currency, EventId, Header, MessageAdded, ModelRef,
-    ModelResponded, Money, Opened, Origin, OriginKind, Outcome, Part, Payload, Principal,
+    ModelResponded, Money, Nanos, Opened, Origin, OriginKind, Outcome, Part, Payload, Principal,
     PrincipalId, Producer, RawEvent, Role, Seq, StopReason, ThreadArchived, ThreadCompacted,
     ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnResult, TurnStarted, Usage,
     WorkspaceBound, encode,
@@ -106,7 +106,7 @@ fn responded() -> Result<ModelResponded, String> {
         usage: Usage::new(counts, false, None).map_err(|e| e.to_string())?,
         cost: Some(Cost {
             amount: Money {
-                micros: 5_000,
+                nanos: Nanos::new(5_000_000),
                 currency: Currency::USD,
             },
             price_list: "test".into(),
@@ -178,7 +178,7 @@ fn worked(view: &ThreadView) -> bool {
         && view.outcome == Some(Outcome::Completed)
         && view.tokens.input == 100
         && view.tokens.output == 10
-        && view.cost.is_some_and(|cost| cost.micros == 5_000)
+        && view.cost.is_some_and(|cost| cost.nanos.get() == 5_000_000)
         && view.for_ == person().ok()
         && at(0).is_ok_and(|start| view.created_at == start)
         && at(4).is_ok_and(|end| view.updated_at == end)

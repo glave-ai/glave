@@ -29,7 +29,7 @@ describe('turns', () => {
       at(
         8,
         'turn.ended',
-        { outcome: 'completed', tool_calls: 1, cost: { micros: 1500, currency: 'USD' } },
+        { outcome: 'completed', tool_calls: 1, cost: { nanos: 1_500_000, currency: 'USD' } },
         '2026-10-11T10:04:02.000Z',
       ),
       at(9, 'turn.started', {}, '2026-10-11T10:05:00.000Z'),
@@ -47,7 +47,7 @@ describe('turns', () => {
       result: {
         outcome: 'completed',
         tool_calls: 1,
-        cost: { micros: 1500, currency: 'USD' },
+        cost: { nanos: 1_500_000, currency: 'USD' },
       },
     });
     // Each by the seq of its start, as the server names it in what it says of the turn.
@@ -108,7 +108,7 @@ describe('turns', () => {
         ASK(1, 'x'),
         event(2, 'model.responded', {
           service: 'OpenRouter',
-          cost: { amount: { micros: 900, currency: 'USD' }, price_list: 'x' },
+          cost: { amount: { nanos: 900_000, currency: 'USD' }, price_list: 'x' },
         }),
         event(3, 'turn.ended', ended),
       ])[0]?.result;
@@ -119,7 +119,7 @@ describe('turns', () => {
         tool_calls: 3,
         outside_sandbox: 1,
         with_network: 0,
-        cost: { micros: 350, currency: 'USD' },
+        cost: { nanos: 350_000, currency: 'USD' },
         estimated: true,
         via: ['OpenRouter (Anthropic)'],
         changed: ['src/lib.rs', 7],
@@ -130,7 +130,7 @@ describe('turns', () => {
       tool_calls: 3,
       outside_sandbox: 1,
       with_network: 0,
-      cost: { micros: 350, currency: 'USD' },
+      cost: { nanos: 350_000, currency: 'USD' },
       estimated: true,
       via: ['OpenRouter (Anthropic)'],
       changed: ['src/lib.rs'],

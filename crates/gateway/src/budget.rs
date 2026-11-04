@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
-use glave_event::{Currency, Money, PrincipalId};
+use glave_event::{Currency, Money, Nanos, PrincipalId};
 use glave_ports::ProviderError;
 use thiserror::Error;
 
@@ -33,7 +33,7 @@ pub struct BudgetKey {
     pub period: u32,
 }
 
-/// A call refused because it could exceed `caller`'s budget. Amounts are in millionths of
+/// A call refused because it could exceed `caller`'s budget. Amounts are in billionths of
 /// the limit's currency.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("the person {} budget would be exceeded: {}", self.caller.person, self.detail())]
@@ -41,21 +41,26 @@ pub struct OverBudget {
     pub caller: BudgetKey,
     pub limit: Money,
     /// Spent, plus held for calls in flight.
-    pub committed: u64,
+    pub committed: Nanos,
     /// The most this call could cost.
-    pub needed: u64,
+    pub needed: Nanos,
 }
 
 impl OverBudget {
     fn detail(&self) -> String {
         format!(
             "{} of {} millionths of {} committed, and this call could need {} more",
-            self.committed,
-            allowed(self.limit),
+            shown(self.committed),
+            shown(allowed(self.limit)),
             self.limit.currency,
-            self.needed
+            shown(self.needed)
         )
     }
+}
+
+/// `nanos` as a caller reads them in a refusal, in millionths: for showing, never for counting.
+const fn shown(nanos: Nanos) -> i64 {
+    nanos.get() / 1_000
 }
 
 impl From<OverBudget> for ProviderError {
@@ -67,28 +72,28 @@ impl From<OverBudget> for ProviderError {
     }
 }
 
-/// What a call costs, or could: in millionths of a currency, when known.
+/// What a call costs, or could: in billionths of a currency, when known.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Charge(pub(crate) Option<(u64, Currency)>);
+pub(crate) struct Charge(pub(crate) Option<(Nanos, Currency)>);
 
 impl Charge {
     /// The charge in `limit`'s currency; in another, or unknown, it counts as none.
-    fn against(self, limit: Money) -> u64 {
+    fn against(self, limit: Money) -> Nanos {
         match self.0 {
-            Some((micros, currency)) if currency == limit.currency => micros,
-            _ => 0,
+            Some((nanos, currency)) if currency == limit.currency => nanos.max(Nanos::ZERO),
+            _ => Nanos::ZERO,
         }
     }
 }
 
-fn allowed(money: Money) -> u64 {
-    u64::try_from(money.micros).unwrap_or(0)
+fn allowed(money: Money) -> Nanos {
+    money.nanos.max(Nanos::ZERO)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Account {
-    spent: u64,
-    held: u64,
+    spent: Nanos,
+    held: Nanos,
 }
 
 /// Every caller's account.
@@ -124,7 +129,11 @@ impl Ledger {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
         let account = accounts.get(&caller).copied().unwrap_or_default();
         let committed = account.spent.saturating_add(account.held);
-        if committed.saturating_add(needed) > allowed(limit) {
+        // Past the most there can be is over any limit, the highest too.
+        let within = committed
+            .checked_add(needed)
+            .is_some_and(|total| total <= allowed(limit));
+        if !within {
             return Err(OverBudget {
                 caller,
                 limit,
@@ -140,21 +149,23 @@ impl Ledger {
         })
     }
 
-    /// What `caller` has spent, in millionths of the limit's currency: settled calls only.
-    pub(crate) fn spent(&self, caller: BudgetKey) -> u64 {
+    /// What `caller` has spent, in billionths of the limit's currency: settled calls only.
+    pub(crate) fn spent(&self, caller: BudgetKey) -> Nanos {
         let accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        accounts.get(&caller).map_or(0, |account| account.spent)
+        accounts
+            .get(&caller)
+            .map_or(Nanos::ZERO, |account| account.spent)
     }
 
-    /// Counts `amount`, in millionths of the limit's currency, as already spent by `caller`:
+    /// Counts `amount`, in billionths of the limit's currency, as already spent by `caller`:
     /// spending read back from the log after a restart.
-    pub(crate) fn add_spent(&self, caller: BudgetKey, amount: u64) {
+    pub(crate) fn add_spent(&self, caller: BudgetKey, amount: Nanos) {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
         let account = entry(&mut accounts, caller);
-        account.spent = account.spent.saturating_add(amount);
+        account.spent = account.spent.saturating_add(amount.max(Nanos::ZERO));
     }
 
-    fn release(&self, caller: BudgetKey, held: u64, spent: u64) {
+    fn release(&self, caller: BudgetKey, held: Nanos, spent: Nanos) {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
         let account = entry(&mut accounts, caller);
         account.held = account.held.saturating_sub(held);
@@ -168,7 +179,7 @@ fn entry(accounts: &mut BTreeMap<BudgetKey, Account>, caller: BudgetKey) -> &mut
     if accounts.len() >= MOST_CALLERS && !accounts.contains_key(&caller) {
         let idle = accounts
             .iter()
-            .filter(|(_, account)| account.held == 0)
+            .filter(|(_, account)| account.held == Nanos::ZERO)
             .min_by_key(|(caller, _)| caller.period)
             .map(|(caller, _)| *caller);
         if let Some(idle) = idle {
@@ -184,7 +195,7 @@ fn entry(accounts: &mut BTreeMap<BudgetKey, Account>, caller: BudgetKey) -> &mut
 pub(crate) struct Hold<'a> {
     ledger: &'a Ledger,
     /// Whose budget, its limit, and what is held in it; none when the call counts in none.
-    held: Option<(BudgetKey, Money, u64)>,
+    held: Option<(BudgetKey, Money, Nanos)>,
 }
 
 impl<'a> Hold<'a> {
@@ -203,7 +214,101 @@ impl<'a> Hold<'a> {
 impl Drop for Hold<'_> {
     fn drop(&mut self) {
         if let Some((caller, _, held)) = self.held.take() {
-            self.ledger.release(caller, held, 0);
+            self.ledger.release(caller, held, Nanos::ZERO);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::PrincipalId;
+
+    use super::*;
+
+    fn caller() -> BudgetKey {
+        let at = jiff::Timestamp::from_second(1).unwrap();
+        BudgetKey {
+            person: PrincipalId::new(at, [1; 10]).unwrap(),
+            period: 1,
+        }
+    }
+
+    fn charge(nanos: i64) -> Charge {
+        Charge(Some((Nanos::new(nanos), Currency::USD)))
+    }
+
+    fn ledger(limit: Nanos) -> Ledger {
+        Ledger::new(Budgets {
+            person: Some(Money {
+                nanos: limit,
+                currency: Currency::USD,
+            }),
+        })
+    }
+
+    #[test]
+    fn a_hold_is_the_worst_case_and_settles_to_the_actual() {
+        let ledger = ledger(Nanos::new(10));
+        let hold = ledger.reserve(Some(caller()), charge(10)).unwrap();
+        assert!(
+            ledger.reserve(Some(caller()), charge(1)).is_err(),
+            "all held"
+        );
+        hold.settle(charge(3));
+        assert_eq!(ledger.spent(caller()), Nanos::new(3));
+        assert!(
+            ledger.reserve(Some(caller()), charge(8)).is_err(),
+            "7 are left"
+        );
+        drop(ledger.reserve(Some(caller()), charge(7)).unwrap());
+        assert_eq!(
+            ledger.spent(caller()),
+            Nanos::new(3),
+            "unsettled, nothing is spent"
+        );
+    }
+
+    #[test]
+    fn at_the_limit_of_what_can_be_counted_a_hold_is_refused_not_wrapped() {
+        let ledger = ledger(Nanos::MAX);
+        let all = ledger.reserve(Some(caller()), Charge(Some((Nanos::MAX, Currency::USD))));
+        let all = all.unwrap();
+        let more = ledger.reserve(Some(caller()), charge(1)).unwrap_err();
+        assert_eq!(more.committed, Nanos::MAX);
+        assert_eq!(more.needed, Nanos::new(1));
+        all.settle(Charge(Some((Nanos::MAX, Currency::USD))));
+        ledger.add_spent(caller(), Nanos::new(1));
+        assert_eq!(
+            ledger.spent(caller()),
+            Nanos::MAX,
+            "stops at the most there can be"
+        );
+        assert!(ledger.reserve(Some(caller()), charge(1)).is_err());
+    }
+
+    #[test]
+    fn a_refusal_reads_as_it_always_has() {
+        let over = OverBudget {
+            caller: caller(),
+            limit: Money {
+                nanos: Nanos::new(200_000),
+                currency: Currency::USD,
+            },
+            committed: Nanos::new(110_000),
+            needed: Nanos::new(105_000),
+        };
+        assert_eq!(
+            over.detail(),
+            "110 of 200 millionths of USD committed, and this call could need 105 more"
+        );
+    }
+
+    #[test]
+    fn a_charge_below_nothing_counts_as_none() {
+        let ledger = ledger(Nanos::new(1));
+        let hold = ledger.reserve(Some(caller()), charge(-5)).unwrap();
+        hold.settle(charge(-5));
+        ledger.add_spent(caller(), Nanos::new(-5));
+        assert_eq!(ledger.spent(caller()), Nanos::ZERO);
     }
 }

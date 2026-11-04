@@ -173,7 +173,7 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
     assert_eq!(model["images"], true);
     assert_eq!(
         model["price"],
-        json!({"input": 1_000_000, "output": 4_000_000})
+        json!({"input": 1_000_000_000_u64, "output": 4_000_000_000_u64})
     );
     // The levels, and the one the first service is sent unasked.
     let reasoning = json!({"efforts": ["high", "low", "none"], "default": "low"});
@@ -200,7 +200,7 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
         .unwrap();
     assert_eq!(responded["data"]["service"], "Local server", "{responded}");
     assert_eq!(responded["data"]["upstream"], "Fireworks");
-    assert_eq!(responded["data"]["cost"]["amount"]["micros"], 420);
+    assert_eq!(responded["data"]["cost"]["amount"]["nanos"], 420_000);
     assert!(responded["data"].get("effort").is_none(), "none was sent");
     served.end();
 }
