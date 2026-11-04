@@ -456,7 +456,8 @@ fn one_lost_result_then_a_siblings_answer_never_runs_the_call_again() {
 }
 
 /// A real crash: `a` ran and its server died before its result landed. Another server on the
-/// store, which started before that and so repairs nothing, is answered for `b`.
+/// store, one that repairs nothing since it was running already (so it is not asked to here), is
+/// answered for `b`.
 #[test]
 fn a_call_a_crash_left_unreported_is_not_run_by_another_running_server() {
     block_on!(async {

@@ -8,8 +8,10 @@ use std::sync::Arc;
 
 use glave_event::{Body, CallId, CommandEnding, Event, Outcome, ServiceAnswer, StopReason};
 use glave_harness::{Cancel, Decision, HarnessError, NoOneToAsk};
-use glave_ports::testing::FaultyLog;
-use glave_ports::{Caller, Message, ToolSource};
+use glave_ports::testing::{ASKING_TOOL, AskingTool, FaultyLog};
+use glave_ports::{
+    Caller, Effect, InMemoryTools, Message, ToolInfo, ToolOutput, ToolSource, ToolSpec,
+};
 use serde_json::json;
 
 use crate::network::InTheLog;
@@ -216,6 +218,56 @@ fn an_answered_call_whose_result_never_landed_is_closed_and_never_run_again() {
         assert!(!ran.exists(), "going on again must not run it again");
         let (requested, completed) = calls(&events(harness.log(), thread.id).await);
         assert_eq!(requested, completed, "it has the interrupted result");
+    });
+}
+
+/// A call that asked nothing, whose result was lost, is not run by work left over from an answer.
+#[test]
+fn a_call_that_asked_nothing_and_lost_its_result_is_not_run_by_going_on() {
+    let dir = folder("log-fails-unasked");
+    block_on!(async {
+        let log = FaultyLog::default();
+        let info = ToolInfo {
+            spec: ToolSpec {
+                name: "count".into(),
+                description: "Counts.".into(),
+                parameters: json!({"type": "object"}),
+            },
+            effect: Effect::Reads,
+            parallel: false,
+        };
+        let tools = Arc::new(InMemoryTools::new(vec![(
+            info,
+            ToolOutput::text(false, "counted"),
+        )]));
+        let answers = vec![answer(
+            None,
+            vec![("count", json!({}))],
+            StopReason::ToolUse,
+        )];
+        let (harness, _) = harness_with(
+            workspace(&dir).await,
+            answers,
+            InTheLog,
+            log.clone(),
+            1,
+            settings(),
+        );
+        let harness = harness.with_tools(vec![Arc::clone(&tools) as Arc<dyn ToolSource>]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        log.fail_with("tool.call.completed");
+        let failed = harness
+            .run_turn(&mut thread, "count", &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
+        assert_eq!(tools.calls().len(), 1);
+
+        let again = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(again.outcome, Outcome::Interrupted);
+        assert_eq!(tools.calls().len(), 1, "going on must not run it again");
     });
 }
 

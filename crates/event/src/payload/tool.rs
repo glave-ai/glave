@@ -1,4 +1,5 @@
-//! `tool.call.requested` and `tool.call.completed`, linked by their `call_id`.
+//! `tool.call.requested`, `tool.call.started` and `tool.call.completed`, linked by their
+//! `call_id`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;

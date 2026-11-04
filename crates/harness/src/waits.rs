@@ -17,7 +17,7 @@ use glave_ports::{
 };
 
 use crate::approval::{Approver, Decision};
-use crate::harness::{Harness, HarnessError};
+use crate::harness::{Harness, HarnessError, Thread};
 use crate::service::{Round, round_of};
 use crate::tools::Tool;
 use crate::turn::Step;
@@ -122,14 +122,11 @@ pub(crate) fn open_turn(events: &[Event]) -> Option<Open> {
     })
 }
 
-/// Whether `call` in `turn` last went ahead, rather than asking or being answered since.
+/// Whether `call` in `turn` last went ahead, rather than a service asking since.
 fn began(turn: &[Event], call: &CallId) -> bool {
     turn.iter().rev().find_map(|event| match &event.body {
         Body::ToolCallStarted(started) if started.call_id == *call => Some(true),
-        Body::ApprovalRequested(asked) if asked.call_id == *call => Some(false),
-        Body::ApprovalDecided(decided) if decided.call_id == *call => Some(false),
         Body::ServiceAsked(asked) if asked.call_id == *call => Some(false),
-        Body::ServiceAnswered(answered) if answered.call_id == *call => Some(false),
         _ => None,
     }) == Some(true)
 }

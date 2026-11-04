@@ -6,7 +6,7 @@
 //! so far is read from the log.
 
 use glave_event::{Body, Event, Permissions, TurnResult};
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, read_all};
+use glave_ports::{BlobStore, BoxFuture, CallKind, Caller, EventLog, ModelProvider, read_all};
 use serde::Deserialize;
 
 use crate::approval::Approver;
@@ -55,12 +55,14 @@ where
             // next work on the thread closes first, reading the log again.
             thread.opened = Some(Opened::LeftOpen);
             let events = self.load(&thread.scope, thread.id).await?;
-            if self.opened(&thread.scope, thread.id, &events).await? == Some(Opened::Waits) {
+            let opened = self.opened(&thread.scope, thread.id, &events).await?;
+            if opened == Some(Opened::Waits) {
                 thread.opened = Some(Opened::Waits);
             }
             let open = open_turn(&events).ok_or(HarnessError::NoTurn(thread.id))?;
-            if open.began {
-                return self.close_began(thread).await;
+            let first = open.calls.first().map(|call| CallKind::of(&call.tool));
+            if opened == Some(Opened::LeftOpen) && first == Some(CallKind::Tool) {
+                return self.close_mid_call(thread).await;
             }
             // What was recorded since the thread was read, its answer among it, comes in.
             let last = events.last().ok_or(HarnessError::NotFound(thread.id))?;
@@ -122,9 +124,10 @@ where
         })
     }
 
-    /// Closes `thread`'s turn, whose answered call went ahead and never reported: it may have
-    /// run, so it gets the interrupted result, never another run, and the turn ends so.
-    async fn close_began(&self, thread: &mut Thread) -> Result<TurnResult, HarnessError> {
+    /// Closes `thread`'s turn, left open at a call that nothing answered just now, or that went
+    /// ahead and never reported: it may have run, so it gets the interrupted result, never
+    /// another run, and the turn ends so.
+    async fn close_mid_call(&self, thread: &mut Thread) -> Result<TurnResult, HarnessError> {
         self.close_left_open(thread).await?;
         let events = self.load(&thread.scope, thread.id).await?;
         events
