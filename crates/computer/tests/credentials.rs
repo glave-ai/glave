@@ -14,13 +14,16 @@ use glave_process::{Processes, Program};
 /// Set on the server the first test starts, so the second does nothing when run by anything else.
 const AS_THE_SERVER: &str = "GLAVE_TEST_AS_THE_SERVER";
 
-/// What a helper may be relying on, each a place or a sign-in of the person's for git.
+/// What a helper may be relying on, each a place, a setting or a sign-in of the person's for git,
+/// none of them anywhere on this computer. In the case each is written, since either is kept.
 const NEEDED: &[(&str, &str)] = &[
-    ("SSH_AUTH_SOCK", "/run/agent.sock"),
-    ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/bus"),
-    ("XDG_RUNTIME_DIR", "/run/user"),
-    ("XDG_CONFIG_HOME", "/config"),
-    ("GH_CONFIG_DIR", "/config/gh"),
+    ("SSH_AUTH_SOCK", "/nonexistent/agent.sock"),
+    ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus"),
+    ("XDG_RUNTIME_DIR", "/nonexistent/run"),
+    ("XDG_CONFIG_HOME", "/nonexistent/config"),
+    ("GH_CONFIG_DIR", "/nonexistent/gh"),
+    ("GCM_CREDENTIAL_STORE", "plaintext"),
+    ("https_proxy", "http://proxy.invalid"),
 ];
 
 #[test]
@@ -38,7 +41,11 @@ fn a_credential_helper_gets_what_it_needs_and_none_of_the_server_s_own() {
     std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(
         home.join(".gitconfig"),
-        format!("[credential]\n\thelper = !{}\n", helper.display()),
+        // The empty value first: no helper configured anywhere else on this computer is asked.
+        format!(
+            "[credential]\n\thelper =\n\thelper = !{}\n",
+            helper.display()
+        ),
     )
     .unwrap();
     let (key, password) = (any_secret(), any_secret());
@@ -55,7 +62,6 @@ fn a_credential_helper_gets_what_it_needs_and_none_of_the_server_s_own() {
         .env("PATH", std::env::var_os("PATH").unwrap())
         .env("HOME", &home)
         .env(AS_THE_SERVER, "1")
-        // No helper of this computer's own is asked.
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .envs(NEEDED.iter().copied())
         // Named as a secret is, and how `gh auth git-credential` signs in without a file.
@@ -77,7 +83,10 @@ fn a_credential_helper_gets_what_it_needs_and_none_of_the_server_s_own() {
         String::from_utf8_lossy(&ran.stderr)
     );
     let seen = std::fs::read_to_string(home.join("seen")).unwrap();
-    let has = |name: &str| seen.lines().any(|line| line.starts_with(&format!("{name}=")));
+    let has = |name: &str| {
+        seen.lines()
+            .any(|line| line.starts_with(&format!("{name}=")))
+    };
     for (name, _) in NEEDED {
         assert!(has(name), "{name} never reached the helper");
     }

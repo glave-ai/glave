@@ -60,7 +60,7 @@ const HELPERS_READ: &[&str] = &[
 
 /// The same for families of names: git's own settings (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_KEY_0`)
 /// and Git Credential Manager's.
-const HELPERS_READ_ALL_OF: &[&str] = &["GIT_CONFIG", "GCM_"];
+const HELPERS_READ_ALL_OF: &[&str] = &["GIT_CONFIG_", "GCM_"];
 
 /// Where workers' git credentials come from.
 #[derive(Debug, Clone, Default)]
