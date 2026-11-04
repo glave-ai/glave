@@ -19,6 +19,14 @@ const MAX_COMPUTERS: usize = 64;
 /// The most workspaces open at once, across its computers.
 const MAX_WORKSPACES: usize = 1024;
 
+/// Where a clone came from, as it was asked for rather than as its config says now, which is its
+/// commands' to change on a worker; and the credential that opened it, kept in memory only.
+#[derive(Debug)]
+pub(crate) struct ClonedFrom {
+    pub(crate) url: String,
+    pub(crate) credential: Option<GitCredential>,
+}
+
 /// An open workspace: where it is, and what its commands run with.
 #[derive(Debug)]
 pub(crate) struct Opened {
@@ -36,8 +44,8 @@ pub(crate) struct Opened {
     pub(crate) hidden: Arc<[PathBuf]>,
     /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
     pub(crate) glave_on_path: Option<PathBuf>,
-    /// The credential its sources were opened with, kept in memory only, for saving them.
-    pub(crate) credential: Option<GitCredential>,
+    /// What it was cloned from, when it is a clone, for saving it.
+    pub(crate) cloned_from: Option<ClonedFrom>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one.
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,

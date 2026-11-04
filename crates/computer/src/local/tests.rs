@@ -178,7 +178,7 @@ fn every_file(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 /// Answers git over HTTP with "401, send a password" and records each Authorization header.
-async fn asks_for_a_password(listener: tokio::net::TcpListener) -> Vec<String> {
+pub(super) async fn asks_for_a_password(listener: tokio::net::TcpListener) -> Vec<String> {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let mut seen = Vec::new();
     for _ in 0..2 {

@@ -6,7 +6,9 @@
 //! config and hooks of any repository in a folder it may write: only a workspace's own root is
 //! protected, and a repository can be made, or swapped in, at any time. So what is in a repository
 //! is not trusted to name a program (`specs/sandbox.md`, "Repositories inside the project"). A
-//! clone and a save happen only on a worker, inside its own wall, and may cross the network.
+//! clone and a save happen only on a worker, inside its own wall, where the config and the home
+//! folder are its commands' to write: only the git that clones and the git that pushes may cross
+//! the network or hold a credential, and the one that pushes reads no config they wrote.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -15,7 +17,7 @@ use std::time::Duration;
 use glave_ports::computer::{ComputerError, GitCredential, Refusal, Save, Saved};
 use glave_process::Processes;
 
-use super::registry::Opened;
+use super::registry::{Opened, new_id};
 
 /// How long git has to read the repository (a branch, a commit, its status): moments as a
 /// rule, a minute or so in a very large one.
@@ -47,12 +49,13 @@ const NAMES_A_PROGRAM: [&str; 6] = [
 
 /// The commands of git's that read no file through a filter, so need no reading of the config
 /// first: every other does, and starting a program is the slow part of asking git.
-const RUNS_NO_FILTER: [&str; 11] = [
+const RUNS_NO_FILTER: [&str; 12] = [
     "branch",
     "check-ignore",
     "check-ref-format",
     "clone",
     "config",
+    "init",
     "ls-files",
     "push",
     "remote",
@@ -65,6 +68,13 @@ const RUNS_NO_FILTER: [&str; 11] = [
 /// a repository's config can make any read fetch a missing object through a remote it names,
 /// and with that run a helper, an ssh command or a remote helper.
 const NO_TRANSPORT: &str = "none";
+
+/// What keeps a git from the config files outside its repository, which are a worker's commands'
+/// to write: the machine's and the home folder's.
+const READS_NO_CONFIG: [(&str, &str); 2] = [
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+];
 
 /// One git invocation: the processes it runs as, the environment it runs with, the folder,
 /// and any leading options.
@@ -315,14 +325,7 @@ pub(crate) async fn clone(
     git.work(&["clone", "--quiet", "--", url, &dest_text])
         .await?;
     if let Some(at) = at {
-        let inside = Git {
-            processes,
-            environment,
-            at: dest,
-            options: Vec::new(),
-            credential,
-            network: false,
-        };
+        let inside = Git::at(processes, environment, dest);
         let failed = match inside
             .said(&["checkout", "--quiet", at, "--"], WORKS_WITHIN)
             .await
@@ -339,8 +342,8 @@ pub(crate) async fn clone(
     Ok(())
 }
 
-/// Commits everything in the workspace to `save.branch`, and pushes it to `origin` if the
-/// workspace has one.
+/// Commits everything in the workspace to `save.branch`, and pushes it: a clone to where it was
+/// cloned from, whatever its config says now; any other repository to its `origin`, if it has one.
 pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, ComputerError> {
     not_an_option(|value| Refusal::BranchNotValid { value }, &save.branch)?;
     if save.message.trim().is_empty() {
@@ -383,15 +386,26 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
         "commit",
         "--quiet",
         "--no-verify",
+        "--no-gpg-sign",
         "--allow-empty",
         "-m",
         &save.message,
     ]);
     git.work(&commit).await?;
     let hash = git.must(&["rev-parse", "HEAD"]).await?;
-    let pushed = if git.ask(&["remote", "get-url", "origin"]).await?.is_ok() {
-        let refspec = format!("{reference}:{reference}");
-        git.work(&["push", "--quiet", "origin", &refspec]).await?;
+    let refspec = format!("{hash}:{reference}");
+    let pushed = if let Some(cloned) = &opened.cloned_from {
+        pushing(
+            opened,
+            &git,
+            &cloned.url,
+            cloned.credential.as_ref(),
+            &refspec,
+        )
+        .await?;
+        true
+    } else if let Ok(url) = git.ask(&["remote", "get-url", "origin"]).await? {
+        pushing(opened, &git, &url, None, &refspec).await?;
         true
     } else {
         false
@@ -400,6 +414,62 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
         commit: hash,
         pushed,
     })
+}
+
+/// Pushes `refspec` to `url`, from a repository made for it that borrows this one's objects and
+/// nothing else: the git holding the credential reads no config the workspace's commands could
+/// write. A list of what to blank wouldn't hold here: a blanked `http.sslVerify` is false, and
+/// `http.<url>.proxy` outranks `http.proxy`. The cost: a push can't use `http.*` set in the machine's
+/// own git config, only its environment (`HTTPS_PROXY`, `GIT_SSL_CAINFO`).
+async fn pushing(
+    opened: &Opened,
+    git: &Git<'_>,
+    url: &str,
+    credential: Option<&GitCredential>,
+    refspec: &str,
+) -> Result<(), ComputerError> {
+    let objects = git
+        .must(&[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "objects",
+        ])
+        .await?;
+    let objects = Path::new(&objects);
+    let own = objects
+        .with_file_name(format!("glave-push-{}", new_id()?))
+        .into_os_string();
+    let environment: Vec<(OsString, OsString)> = opened
+        .environment
+        .iter()
+        .cloned()
+        .chain(READS_NO_CONFIG.map(|(name, value)| (name.into(), value.into())))
+        .collect();
+    let outside = Git::at(&opened.processes, &environment, &opened.root);
+    let own_text = own.to_string_lossy();
+    // No template: one is a folder of files, a `config` among them, copied in.
+    let pushed = async {
+        outside
+            .must(&["init", "--quiet", "--bare", "--template=", &own_text])
+            .await?;
+        let borrowed = Path::new(&own).join("objects/info/alternates");
+        tokio::fs::write(&borrowed, format!("{}\n", objects.display()))
+            .await
+            .map_err(|error| {
+                ComputerError::Failed(format!("could not write {}: {error}", borrowed.display()))
+            })?;
+        let pushing = Git {
+            options: vec!["--git-dir".into(), own.clone()],
+            credential,
+            network: true,
+            ..outside
+        };
+        pushing.work(&["push", "--quiet", "--", url, refspec]).await
+    };
+    let pushed = pushed.await;
+    let _ = tokio::fs::remove_dir_all(&own).await;
+    pushed.map(|_| ())
 }
 
 /// The workspace's own repository. A folder that is not one is refused: glave keeps no
@@ -416,8 +486,8 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         environment: &opened.environment,
         at: &opened.root,
         options: Vec::new(),
-        credential: opened.credential.as_ref(),
-        network: true,
+        credential: None,
+        network: false,
     })
 }
 
