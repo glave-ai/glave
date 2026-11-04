@@ -2,9 +2,10 @@ import { Service, effect, inject, signal, untracked } from '@angular/core';
 import type { Setting } from '@glave/client';
 
 /**
- * What of the person's own the server says changed (`settings/changed`, sent on the lists'
- * watch the side nav keeps): each service that shows one reads it again, so a change made in
- * another tab, or from the terminal, shows here too.
+ * What of the person's own, or their organization's brand, the server says changed
+ * (`settings/changed`, sent on the lists' watch the side nav keeps): each service that shows one
+ * reads it again, so a change made in another tab, from the terminal, or by an admin, shows here
+ * too.
  */
 @Service()
 export class ChangesService {

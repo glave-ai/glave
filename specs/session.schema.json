@@ -3205,7 +3205,7 @@
       ]
     },
     "Setting": {
-      "description": "A person's own settings or connections, by what a client reads to show them.",
+      "description": "A person's own settings or connections, and their organization's brand, by what a client\nreads to show them.",
       "oneOf": [
         {
           "const": "providers",
@@ -3244,7 +3244,12 @@
         },
         {
           "const": "appearance",
-          "description": "Their accent, and what their organization's brand says of how glave looks\n(`appearance/get`).",
+          "description": "Their accent (`appearance/get`).",
+          "type": "string"
+        },
+        {
+          "const": "brand",
+          "description": "Their organization's brand: how glave looks to them (`appearance/get`) and what their\norganization is called (`organization/list`).",
           "type": "string"
         },
         {

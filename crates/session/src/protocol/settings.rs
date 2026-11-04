@@ -1,11 +1,13 @@
 //! What of a person's own a request changes, which their other clients hear of
-//! (`settings/changed`) and read again; an organization's brand, everyone's in it.
+//! (`settings/changed`) and read again, and an organization's brand, which everyone in it hears
+//! of.
 
 use serde::{Deserialize, Serialize};
 
 use super::Request;
 
-/// A person's own settings or connections, by what a client reads to show them.
+/// A person's own settings or connections, and their organization's brand, by what a client
+/// reads to show them.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -26,9 +28,11 @@ pub enum Setting {
     Grouping,
     /// Their filters among a router's providers (`filters/get`).
     Filters,
-    /// Their accent, and what their organization's brand says of how glave looks
-    /// (`appearance/get`).
+    /// Their accent (`appearance/get`).
     Appearance,
+    /// Their organization's brand: how glave looks to them (`appearance/get`) and what their
+    /// organization is called (`organization/list`).
+    Brand,
     /// Whether the computer is kept awake while glave works (`awake/get`).
     Awake,
     /// Whether glave remembers for them (`memory/get`).
@@ -42,7 +46,7 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
@@ -51,6 +55,7 @@ impl Setting {
         Self::Grouping,
         Self::Filters,
         Self::Appearance,
+        Self::Brand,
         Self::Awake,
         Self::Memory,
         Self::Passkeys,
@@ -64,11 +69,17 @@ impl Setting {
     pub(crate) const fn follows_the_person(self) -> bool {
         matches!(self, Self::Passkeys)
     }
+
+    /// Whether it is everyone's in the organization, so a change one of them makes is theirs
+    /// all to hear: its brand. Every other setting is the person's who changed it.
+    pub(crate) const fn follows_the_organization(self) -> bool {
+        matches!(self, Self::Brand)
+    }
 }
 
 impl Request {
-    /// What of the caller's own this request changes once it is answered, unless with a
-    /// sign-in still waiting for them; none for one that changes nothing of theirs.
+    /// What of the caller's own, or of their organization's, this request changes once it is
+    /// answered, unless with a sign-in still waiting for them; none for one that changes neither.
     pub(crate) fn changes(&self) -> Option<Setting> {
         Some(match self {
             Self::ProviderConnect { .. }
@@ -87,7 +98,8 @@ impl Request {
             Self::SearchSet { .. } => Setting::Search,
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::FiltersSet { .. } => Setting::Filters,
-            Self::AppearanceSet { .. } | Self::BrandSet { .. } => Setting::Appearance,
+            Self::AppearanceSet { .. } => Setting::Appearance,
+            Self::BrandSet { .. } => Setting::Brand,
             Self::AwakeSet { .. } => Setting::Awake,
             Self::MemorySet { .. } => Setting::Memory,
             Self::PasskeyCreate { .. }
@@ -97,12 +109,6 @@ impl Request {
             Self::LanguageSet { .. } => Setting::Language,
             _ => return None,
         })
-    }
-
-    /// Whether what it changes is everyone's in the organization it works in, for all of them
-    /// to hear, not the caller's alone: its brand.
-    pub(crate) const fn changes_for_everyone(&self) -> bool {
-        matches!(self, Self::BrandSet { .. })
     }
 }
 
@@ -129,6 +135,13 @@ mod tests {
             accent: Some(glave_event::Accent::Plain),
         };
         assert_eq!(appearance.changes(), Some(Setting::Appearance));
+        let brand = Request::BrandSet {
+            name: None,
+            logo: None,
+            accent: glave_event::Accent::Plain,
+            locked: false,
+        };
+        assert_eq!(brand.changes(), Some(Setting::Brand));
         assert_eq!(Request::FiltersGet {}.changes(), None);
         assert_eq!(
             Request::ProviderRefresh {}.changes(),

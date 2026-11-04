@@ -149,7 +149,7 @@ async function watchLists(
 }
 
 /**
- * Takes what the person's own setting the server says changed to whoever shows it; and a
+ * Takes the setting the server says changed to whoever shows it; and a
  * thread's summary as the server says it is now, into the lists, and again once a read
  * under way has read them, since that read began before it. A new thread in a project the lists
  * lack, as one made elsewhere, reads them again, once for each such project.

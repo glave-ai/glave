@@ -27,8 +27,7 @@ pub(crate) struct Hub {
     channels: Mutex<Channels>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
-    /// Each thread that changed, in its project, and each person's setting, for the watches
-    /// of lists.
+    /// Each thread that changed, in its project, and each setting, for the watches of lists.
     changes: broadcast::Sender<Change>,
     /// Told each time a browser's sign-in here may have ended, for the watches that follow
     /// one (`access.rs`).
@@ -55,7 +54,7 @@ pub(crate) struct Changed {
 }
 
 /// What the watches of lists hear of: a thread whose summary may have changed, or a setting
-/// that did, a person's own or everyone's in an organization.
+/// that did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Change {
     Thread(Changed),
@@ -64,11 +63,6 @@ pub(crate) enum Change {
     Setting {
         org: OrgId,
         person: Option<PrincipalId>,
-        setting: Setting,
-    },
-    /// `setting` changed through this server for everyone in `org`.
-    OrganizationSetting {
-        org: OrgId,
         setting: Setting,
     },
 }
@@ -135,14 +129,6 @@ impl Hub {
             person,
             setting,
         });
-    }
-
-    /// Tells the watches of lists that `setting` changed for everyone in `org`.
-    pub(crate) fn organization_setting_changed(&self, org: OrgId, setting: Setting) {
-        // Only fails when no list is watched, which is fine.
-        let _ = self
-            .changes
-            .send(Change::OrganizationSetting { org, setting });
     }
 
     /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams

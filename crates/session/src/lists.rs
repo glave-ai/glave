@@ -96,7 +96,7 @@ struct Follower<P, L, B> {
     /// still to be told.
     queue: VecDeque<(ProjectId, ThreadId, u8)>,
     queued: BTreeSet<ThreadId>,
-    /// The caller's own settings that changed, to tell them of next.
+    /// The settings of theirs that changed, to tell them of next.
     settings: BTreeSet<Setting>,
     /// The caller's sign-in, when something here can end it: the watch ends with it.
     access: Option<Access>,
@@ -282,12 +282,9 @@ where
                 let theirs = person.or(local) == self.caller.person.or(local);
                 // A watch stays in the organization it began in.
                 let here = org == self.server.org_of(&self.caller);
-                if theirs && (here || setting.follows_the_person()) {
-                    self.settings.insert(setting);
-                }
-            }
-            Change::OrganizationSetting { org, setting } => {
-                if org == self.server.org_of(&self.caller) {
+                if (theirs || setting.follows_the_organization())
+                    && (here || setting.follows_the_person())
+                {
                     self.settings.insert(setting);
                 }
             }

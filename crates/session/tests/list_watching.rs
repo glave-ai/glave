@@ -483,7 +483,7 @@ fn a_brand_changed_is_heard_by_everyone_in_its_organization_and_nobody_else() {
         ] {
             changed(&mut client, &language_chosen()).await;
             let expected: &[Setting] = if told {
-                &[Setting::Appearance, Setting::Language]
+                &[Setting::Brand, Setting::Language]
             } else {
                 &[Setting::Language]
             };

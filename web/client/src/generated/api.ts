@@ -1105,8 +1105,11 @@ export type ServiceAnswer = {
   };
 } | "declined";
 
-/** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "awake" | "memory" | "passkeys" | "language";
+/**
+ * A person's own settings or connections, and their organization's brand, by what a client
+ * reads to show them.
+ */
+export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "brand" | "awake" | "memory" | "passkeys" | "language";
 
 /** The accent as it is drawn, in each of light and dark. */
 export type Shades = {
