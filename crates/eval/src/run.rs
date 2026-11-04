@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glave_computer::LocalComputers;
-use glave_event::GoalReason;
+use glave_event::{GoalReason, Nanos};
 use glave_harness::{
     Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skill,
     Skills, Workspace, agents_md, change_standing, find_skills, skill_folders,
@@ -81,8 +81,8 @@ pub struct Attempt {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
-    /// Micros of the reported currency; `None` when any call reported no cost.
-    pub cost_micros: Option<i64>,
+    /// In the reported currency; `None` when any call reported no cost.
+    pub cost_nanos: Option<Nanos>,
     pub seconds: f64,
     /// How many times the conversation restarted from a summary.
     #[serde(default)]
@@ -115,7 +115,7 @@ impl Attempt {
     /// An attempt that never ran, or could not.
     pub fn unrun(task: &str, model: &str, number: u32, skipped: bool, failure: String) -> Self {
         let mut attempt = Self::graded(task, model, number, &Trace::default(), 0.0);
-        attempt.cost_micros = None;
+        attempt.cost_nanos = None;
         attempt.skipped = skipped;
         attempt.failures.push(failure);
         attempt
@@ -134,7 +134,7 @@ impl Attempt {
             input_tokens: trace.input_tokens,
             output_tokens: trace.output_tokens,
             cached_tokens: trace.cached_tokens,
-            cost_micros: trace.cost_micros,
+            cost_nanos: trace.cost_nanos,
             seconds,
             compactions: trace.compactions,
             repeated_steps: trace.repeated_steps,

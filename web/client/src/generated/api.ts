@@ -560,10 +560,10 @@ export type Logo = {
   readonly sha256: string;
 };
 
-/** The most a provider's tokens may cost, in millionths of a US dollar per million tokens. */
+/** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
 export type MaxPrice = {
-  readonly input?: number | null;
-  readonly output?: number | null;
+  readonly input?: Nanos | null;
+  readonly output?: Nanos | null;
 };
 
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
@@ -637,13 +637,20 @@ export type ModelInfo = {
 };
 
 /**
- * An exact amount: `micros` millionths of one unit of `currency`. `{"micros": 4200,
+ * An exact amount: `nanos` billionths of one unit of `currency`. `{"nanos": 4200000,
  * "currency": "USD"}` is $0.0042.
  */
 export type Money = {
   readonly currency: Currency;
-  readonly micros: number;
+  readonly nanos: Nanos;
 };
+
+/**
+ * An exact count of billionths of one unit of a currency, the unit Google's billing uses: in
+ * 64 bits it holds about nine billion dollars. The one way glave counts money, and, as what a
+ * million tokens cost, prices.
+ */
+export type Nanos = number;
 
 /** A new project's folder, on the computer glave runs on. */
 export type NewFolder = {
@@ -1280,12 +1287,12 @@ export type TokenCounts = {
   readonly reasoning: number;
 };
 
-/** What a model's tokens cost, in millionths of a US dollar per million tokens. */
+/** What a model's tokens cost, in billionths of a US dollar per million tokens. */
 export type TokenPrice = {
   /** Input read from the service's cache, when it prices that apart. */
-  readonly cache_read?: number | null;
-  readonly input: number;
-  readonly output: number;
+  readonly cache_read?: Nanos | null;
+  readonly input: Nanos;
+  readonly output: Nanos;
 };
 
 /**

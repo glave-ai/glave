@@ -196,7 +196,7 @@ pub(super) fn info(
 mod tests {
     use std::sync::Arc;
 
-    use glave_event::{At, CatalogEndpoint, CatalogProvider, TokenPrice};
+    use glave_event::{At, CatalogEndpoint, CatalogProvider, Nanos, TokenPrice};
     use glave_ports::testing::ScriptedModel;
 
     use super::*;
@@ -218,9 +218,9 @@ mod tests {
             max_output: Some(128_000),
             images: Some(true),
             price: Some(TokenPrice {
-                input: 100_000,
-                output: 500_000,
-                cache_read: Some(10_000),
+                input: Nanos::new(100_000_000),
+                output: Nanos::new(500_000_000),
+                cache_read: Some(Nanos::new(10_000_000)),
             }),
             reasoning: Some(Reasoning {
                 efforts: vec!["high".into(), "low".into()],
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(reference.len(), 1);
         let priced = price(&card(), &catalogs[1]).unwrap();
         assert_eq!(priced.list, "openrouter catalog 1970-01-01");
-        assert_eq!(priced.cache_read_per_mtok, 10_000);
+        assert_eq!(priced.cache_read_per_mtok, Nanos::new(10_000_000));
         let can = capabilities(&card());
         assert_eq!(can.context_tokens, Some(1_000_000));
         assert_eq!(can.max_output_tokens, Some(128_000));

@@ -15,7 +15,7 @@ export const MODELS: readonly ModelInfo[] = [
     default: true,
     providers: ['OpenRouter'],
     context: 1_000_000,
-    price: { input: 100_000, output: 500_000 },
+    price: { input: 100_000_000, output: 500_000_000 },
   },
   {
     id: 'hope-12b',

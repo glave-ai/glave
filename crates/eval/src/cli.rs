@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use glave_event::Money;
+use glave_event::{Money, Nanos};
 use glave_ports::{Clock as _, SystemClock};
 use glave_process::Processes;
 use glave_provider_openai::Config;
@@ -59,7 +59,7 @@ struct Options {
     tier: Option<Tier>,
     repeat: u32,
     concurrency: usize,
-    max_cost_micros: i64,
+    max_cost: Nanos,
     baseline: Option<PathBuf>,
     tasks: PathBuf,
     plans: bool,
@@ -166,7 +166,7 @@ fn run(options: &Options) -> Result<bool, String> {
         models: options.models.clone(),
         repeat: options.repeat,
         concurrency: options.concurrency,
-        max_cost_micros: options.max_cost_micros,
+        max_cost: options.max_cost,
         dir: dir.clone(),
     };
     let attempts = runtime.block_on(suite::run(Arc::clone(&setup), plan, |attempt| {
@@ -335,7 +335,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         tier: Some(Tier::Fast),
         repeat: 1,
         concurrency: 6,
-        max_cost_micros: 2_000_000,
+        max_cost: Nanos::new(2_000_000_000),
         baseline: None,
         tasks: PathBuf::from("evals/tasks"),
         plans: true,
@@ -367,7 +367,7 @@ fn options(args: &[String]) -> Result<Options, String> {
                 options.concurrency = usize::try_from(positive(&value()?, "--concurrency")?)
                     .map_err(|err| err.to_string())?;
             }
-            "--max-cost" => options.max_cost_micros = micros(&value()?)?,
+            "--max-cost" => options.max_cost = amount(&value()?)?,
             "--baseline" => options.baseline = Some(PathBuf::from(value()?)),
             "--tasks" => options.tasks = PathBuf::from(value()?),
             "--no-plan" => options.plans = false,
@@ -400,12 +400,12 @@ fn positive(text: &str, name: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("{name} needs a whole number above 0"))
 }
 
-/// Dollars, `2` or `0.50`, as micros; never fewer than none.
-fn micros(text: &str) -> Result<i64, String> {
+/// Dollars, `2` or `0.50`; never fewer than none.
+fn amount(text: &str) -> Result<Nanos, String> {
     Money::parse_dollars(text)
         .ok()
-        .map(|money| money.micros)
-        .filter(|micros| *micros >= 0)
+        .map(|money| money.nanos)
+        .filter(|nanos| *nanos >= Nanos::ZERO)
         .ok_or_else(|| format!("--max-cost is dollars, such as 2 or 0.50, not {text:?}"))
 }
 
@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(options.models, DEFAULT_MODELS);
         assert_eq!(options.tier, Some(Tier::Fast));
         assert_eq!(options.repeat, 1);
-        assert_eq!(options.max_cost_micros, 2_000_000);
+        assert_eq!(options.max_cost, Nanos::new(2_000_000_000));
         assert!(options.plans, "as glave runs");
     }
 
@@ -467,7 +467,7 @@ mod tests {
                 tier: None,
                 repeat: 3,
                 concurrency: 2,
-                max_cost_micros: 500_000,
+                max_cost: Nanos::new(500_000_000),
                 baseline: Some("old.json".into()),
                 tasks: "t".into(),
                 plans: false,
@@ -548,7 +548,7 @@ mod tests {
         assert!(parse(&["--max-cost", "-1"]).is_err());
         assert!(parse(&["--max-cost", "-0.5"]).is_err());
         assert!(parse(&["--max-cost", "1.x"]).is_err());
-        assert_eq!(micros("2"), Ok(2_000_000));
-        assert_eq!(micros("0.05"), Ok(50_000));
+        assert_eq!(amount("2"), Ok(Nanos::new(2_000_000_000)));
+        assert_eq!(amount("0.05"), Ok(Nanos::new(50_000_000)));
     }
 }

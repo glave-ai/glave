@@ -6,11 +6,11 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use glave_event::{Money, TokenCounts};
+use glave_event::{Money, Nanos, TokenCounts};
 use glave_ports::{Delta, Payer, ProviderError};
 
 use super::Charging;
-use super::book::micros;
+use super::book::in_dollars;
 use crate::estimate::FIT_BYTES_PER_TOKEN;
 use crate::price::Price;
 
@@ -20,7 +20,7 @@ use crate::price::Price;
 pub(crate) struct Paying<'a> {
     credits: &'a dyn Charging,
     payer: Payer,
-    held: i64,
+    held: Nanos,
     price: &'a Price,
     /// The tokens the call reads, as estimated before it was sent.
     input: u64,
@@ -39,7 +39,7 @@ impl<'a> Paying<'a> {
         price: &'a Price,
         input: u64,
     ) -> Result<Self, ProviderError> {
-        let held = micros(worst).unwrap_or(0).max(0);
+        let held = in_dollars(worst).unwrap_or(Nanos::ZERO).max(Nanos::ZERO);
         credits.hold(payer.org, held).await?;
         Ok(Self {
             credits,
@@ -62,7 +62,9 @@ impl<'a> Paying<'a> {
     /// Counts what the call cost, `cost` when its provider says it in dollars, else `counts`
     /// at its price, in the hold's place, and writes it to the store.
     pub(crate) async fn settle(self, cost: Option<Money>, counts: &TokenCounts) {
-        let cost = cost.and_then(micros).unwrap_or_else(|| self.priced(counts));
+        let cost = cost
+            .and_then(in_dollars)
+            .unwrap_or_else(|| self.price.nanos(counts));
         self.counted(cost).await;
     }
 
@@ -70,21 +72,21 @@ impl<'a> Paying<'a> {
     /// writes it to the store: nothing when none of its answer came.
     pub(crate) async fn broke(self) {
         let cost = if self.seen.load(Ordering::Relaxed) == 0 {
-            0
+            Nanos::ZERO
         } else {
             self.so_far()
         };
         self.counted(cost).await;
     }
 
-    async fn counted(mut self, cost: i64) {
+    async fn counted(mut self, cost: Nanos) {
         self.settled = true;
         self.credits.settle(self.payer, self.held, cost);
         self.credits.write(self.payer.org).await;
     }
 
     /// What the call cost so far: what it read, and what of its answer came, at its price.
-    fn so_far(&self) -> i64 {
+    fn so_far(&self) -> Nanos {
         let counts = TokenCounts {
             input: self.input,
             output: self
@@ -93,12 +95,7 @@ impl<'a> Paying<'a> {
                 .div_ceil(FIT_BYTES_PER_TOKEN),
             ..TokenCounts::default()
         };
-        self.priced(&counts)
-    }
-
-    /// `counts` at the call's price, in millionths of a dollar.
-    fn priced(&self, counts: &TokenCounts) -> i64 {
-        i64::try_from(self.price.micros(counts)).unwrap_or(i64::MAX)
+        self.price.nanos(&counts)
     }
 }
 

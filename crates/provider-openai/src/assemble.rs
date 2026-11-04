@@ -288,7 +288,7 @@ fn usage_and_cost(
         .map_err(|e| ProviderError::Protocol(e.to_string()))?;
     let cost = wire
         .cost
-        .and_then(|cost| Money::parse_dollars(cost.get()).ok())
+        .and_then(|cost| Money::reported_dollars(cost.get()))
         .map(|amount| Cost {
             amount,
             price_list: format!("{provider}:reported"),

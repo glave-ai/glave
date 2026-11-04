@@ -25,7 +25,7 @@ use crate::support::{Fake, block_on, dollars, price, request};
 /// 2026-10-30T09:00:00Z.
 const NOW: i64 = 1_793_350_800_000;
 
-/// The most the test request could cost at a millionth of a dollar a token: its input, and
+/// The most the test request could cost at a billionth of a dollar a token: its input, and
 /// its 100 tokens of answer.
 const WORST: i64 = 5 + 100;
 
@@ -55,7 +55,7 @@ fn credits(log: &FaultyLog, limit: Option<i64>) -> Arc<Credits<FaultyLog>> {
     ))
 }
 
-/// A gateway over `fake`'s model `m` at a millionth of a dollar a token, charging `credits`.
+/// A gateway over `fake`'s model `m` at a billionth of a dollar a token, charging `credits`.
 fn gateway(fake: &Arc<Fake>, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
     over(vec![fake.target("m").with_price(price(1_000_000))], credits)
 }
@@ -80,17 +80,34 @@ fn paid(org: OrgId, person: PrincipalId) -> ModelRequest {
     }
 }
 
-fn add(credits: &Credits<FaultyLog>, org: OrgId, micros: i64, reference: &str) {
+fn add(credits: &Credits<FaultyLog>, org: OrgId, nanos: i64, reference: &str) {
     let by = Principal::person(person(9));
-    block_on!(credits.add(org, dollars(micros), reference, by)).unwrap();
+    block_on!(credits.add(org, dollars(nanos), reference, by)).unwrap();
 }
 
 fn balance(credits: &Credits<FaultyLog>, org: OrgId) -> i64 {
-    block_on!(credits.account(org)).unwrap().balance.micros
+    block_on!(credits.account(org)).unwrap().balance.nanos.get()
 }
 
 fn ask(gateway: &Gateway, asked: &ModelRequest) -> Result<glave_ports::Completion, ProviderError> {
     block_on!(gateway.complete(asked, &mut |_| {}))
+}
+
+#[test]
+fn a_call_too_cheap_to_be_worth_a_cent_is_still_charged_exactly() {
+    let log = FaultyLog::default();
+    let credits = credits(&log, None);
+    let fake = Fake::new("p");
+    // A billionth of a dollar a million tokens: the fake's 110 tokens cost a ten-thousandth of
+    // a billionth, the least there can be.
+    let gateway = over(vec![fake.target("m").with_price(price(1))], &credits);
+    let (acme, ada) = (org(1), person(1));
+    add(&credits, acme, 1_000, "order-1");
+    ask(&gateway, &paid(acme, ada)).unwrap();
+    let account = block_on!(credits.account(acme)).unwrap();
+    assert_eq!(account.spent, dollars(1), "never free by rounding");
+    assert_eq!(account.balance, dollars(999), "and never rounded to a cent");
+    assert_eq!(account.people.get(&ada), Some(&dollars(1)));
 }
 
 #[test]

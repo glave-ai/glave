@@ -1,8 +1,8 @@
 import { listFormat, numberFormat } from './intl';
 
-/** An exact amount of money: `micros` millionths of one unit of `currency` (ISO 4217). */
+/** An exact amount of money: `nanos` billionths of one unit of `currency` (ISO 4217). */
 export interface GlzMoney {
-  readonly micros: number;
+  readonly nanos: number;
   readonly currency: string;
 }
 
@@ -11,7 +11,7 @@ export interface GlzMoney {
  * `$1.25` above. `locale` defaults to the browser's.
  */
 export function formatMoney(money: GlzMoney, locale?: string): string {
-  const amount = money.micros / 1_000_000;
+  const amount = money.nanos / 1_000_000_000;
   const small = amount !== 0 && Math.abs(amount) < 0.01;
   return numberFormat(locale, {
     style: 'currency',

@@ -6,7 +6,7 @@
 
 use std::sync::{Arc, OnceLock, Weak};
 
-use glave_event::{Body, Filters, FiltersSet, Payload, Serve, decode};
+use glave_event::{Body, Filters, FiltersSet, Nanos, Payload, Serve, decode};
 use glave_gateway::Filtering;
 use glave_ports::stream::Reserved;
 use glave_ports::{
@@ -174,6 +174,14 @@ fn checked(filters: &Filters) -> Result<(), ApiError> {
         .is_some_and(|most| most.input.is_none() && most.output.is_none())
     {
         return invalid(Sentence::NoMostPrice);
+    }
+    if filters.max_price.is_some_and(|most| {
+        [most.input, most.output]
+            .into_iter()
+            .flatten()
+            .any(|price| price < Nanos::ZERO)
+    }) {
+        return invalid(Sentence::MostPriceBelowNothing);
     }
     let chosen = filters.serves.values().filter_map(|serve| match serve {
         Serve::Provider(slug) => Some(slug),

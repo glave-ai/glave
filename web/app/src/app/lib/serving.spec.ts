@@ -30,7 +30,7 @@ function endpoint(
     based_in: home,
     precision: 'eight_bit',
     keeps_nothing: false,
-    price: { input: 100_000, output: 400_000 },
+    price: { input: 100_000_000, output: 400_000_000 },
     speed: 90,
     ...more,
   };
@@ -43,8 +43,8 @@ const FLASH: ModelInfo = {
   default: false,
   endpoints: [
     endpoint('deepseek', 'CN', { hidden_by: ['based_in'] }),
-    endpoint('fireworks', 'US', { price: { input: 150_000, output: 600_000 }, speed: 130 }),
-    endpoint('groq', 'US', { price: { input: 120_000, output: 500_000 }, speed: 210 }),
+    endpoint('fireworks', 'US', { price: { input: 150_000_000, output: 600_000_000 }, speed: 130 }),
+    endpoint('groq', 'US', { price: { input: 120_000_000, output: 500_000_000 }, speed: 210 }),
   ],
 };
 
@@ -63,7 +63,7 @@ describe('serving', () => {
   it('keeps the providers the server says the filters leave, and their cheapest and fastest', () => {
     const shown = shownEndpoints(FLASH);
     expect(shown.map((each) => each.slug)).toEqual(['fireworks', 'groq']);
-    expect(cheapest(shown)).toEqual({ input: 120_000, output: 500_000 });
+    expect(cheapest(shown)).toEqual({ input: 120_000_000, output: 500_000_000 });
     expect(fastest(shown)).toBe(210);
     expect(cheapest([])).toBeNull();
     expect(fastest([endpoint('slow', 'US', { speed: null })])).toBeNull();
@@ -83,7 +83,9 @@ describe('serving', () => {
     const dear: ModelInfo = {
       ...FLASH,
       id: 'dear',
-      endpoints: [endpoint('a', 'US', { price: { input: 900_000, output: 900_000 }, speed: 300 })],
+      endpoints: [
+        endpoint('a', 'US', { price: { input: 900_000_000, output: 900_000_000 }, speed: 300 }),
+      ],
     };
     expect(sortedModels([dear, DIRECT, FLASH], 'price').map((each) => each.id)).toEqual([
       FLASH.id,
@@ -118,7 +120,9 @@ describe('serving', () => {
   });
 
   it('writes prices, counts and what the filters hide for the reader', () => {
-    expect(priceLine({ input: 120_000, output: 500_000 }, 'en')).toBe('$0.12 in · $0.50 out');
+    expect(priceLine({ input: 120_000_000, output: 500_000_000 }, 'en')).toBe(
+      '$0.12 in · $0.50 out',
+    );
     expect(providersText(1, 'en')).toBe('1 provider');
     expect(providersText(3, 'en')).toBe('3 providers');
     const hidden = [

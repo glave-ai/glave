@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use crate::error::invalid;
-use glave_event::{HookPoint, Money, Permissions};
+use glave_event::{HookPoint, Money, Nanos, Permissions};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge};
 use glave_ports::host::PublicOrigin;
@@ -580,7 +580,7 @@ fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<M
     };
     Money::parse_dollars(&text)
         .ok()
-        .filter(|money| money.micros >= 0)
+        .filter(|money| money.nanos >= Nanos::ZERO)
         .map(Some)
         .ok_or_else(|| serde::de::Error::custom(format!("{text} is not an amount of dollars")))
 }

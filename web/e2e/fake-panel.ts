@@ -25,7 +25,7 @@ export const TESTS: RunningCommand = {
 /** What its summary says beyond any thread's: how full its context is, and what it cost. */
 export const VERBOSE_SUMMARY: Partial<ThreadSummary> = {
   turns: 2,
-  cost: { micros: 12_000, currency: 'USD' },
+  cost: { nanos: 12_000_000, currency: 'USD' },
   context: { percent: 39, tokens: 49_920, window: 128_000 },
 };
 

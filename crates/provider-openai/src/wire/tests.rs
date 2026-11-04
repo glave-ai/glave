@@ -1,7 +1,7 @@
 //! The wire format's shape, checked as JSON.
 
 use super::*;
-use glave_event::{CallId, MaxPrice};
+use glave_event::{CallId, MaxPrice, Nanos};
 use glave_ports::ToolCall;
 use serde_json::json;
 
@@ -277,8 +277,8 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         sort: Some(Sort::Speed),
         zdr: true,
         max_price: Some(MaxPrice {
-            input: Some(150_000),
-            output: Some(2_000_000),
+            input: Some(Nanos::new(150_000_000)),
+            output: Some(Nanos::new(2_000_000_000)),
         }),
     };
     let request = ModelRequest {
@@ -571,4 +571,17 @@ fn reasoning_goes_back_within_the_turn_and_every_turn_only_where_demanded() {
     };
     assert_eq!(carried("openrouter"), [false, true, true]);
     assert_eq!(carried("api.deepseek.com"), [true, true, true]);
+}
+
+#[test]
+fn the_most_a_provider_may_cost_is_sent_exact_to_the_last_place() {
+    let route = Route {
+        max_price: Some(MaxPrice {
+            input: Some(Nanos::new(1)),
+            output: None,
+        }),
+        ..Route::default()
+    };
+    let sent = serde_json::to_string(&Preferences::of(Some(&route)).max_price).unwrap();
+    assert_eq!(sent, r#"{"prompt":0.000000001}"#);
 }

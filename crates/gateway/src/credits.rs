@@ -18,7 +18,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
     At, CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet, Currency, EventId, Header, Money,
-    Payload, Principal, RawEvent, Seq, encode,
+    Nanos, Payload, Principal, RawEvent, Seq, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{
@@ -162,7 +162,7 @@ impl<L: EventLog> Credits<L> {
         reference: &str,
         by: Principal,
     ) -> Result<Account, CreditsError> {
-        if amount.currency != Currency::USD || amount.micros <= 0 {
+        if amount.currency != Currency::USD || amount.nanos <= Nanos::ZERO {
             return Err(CreditsError::Amount { amount });
         }
         self.record(org, |book| match book.added(reference) {
@@ -188,7 +188,7 @@ impl<L: EventLog> Credits<L> {
         limit: Money,
         by: Principal,
     ) -> Result<Account, CreditsError> {
-        if limit.currency != Currency::USD || limit.micros < 0 {
+        if limit.currency != Currency::USD || limit.nanos < Nanos::ZERO {
             return Err(CreditsError::Amount { amount: limit });
         }
         self.record(org, |_| {
@@ -294,7 +294,7 @@ impl<L: EventLog> Credits<L> {
 
     /// Holds `worst` of `org`'s credits once what this server owes the store is written and
     /// the others' charges are read, or refuses it.
-    async fn hold(&self, org: OrgId, worst: i64) -> Result<(), ProviderError> {
+    async fn hold(&self, org: OrgId, worst: Nanos) -> Result<(), ProviderError> {
         self.write(org).await;
         let unsaved = self.with_book(org, |book| book.unwritten.len());
         let read = if unsaved >= MOST_UNWRITTEN {
@@ -316,8 +316,8 @@ impl<L: EventLog> Credits<L> {
     }
 
     /// Lets go of `held` of `payer`'s organization's credits and counts `cost` in its place.
-    fn settle(&self, payer: Payer, held: i64, cost: i64) {
-        let charged = (cost > 0).then(|| Unwritten {
+    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos) {
+        let charged = (cost > Nanos::ZERO).then(|| Unwritten {
             charged: CreditsCharged {
                 kind: CostKind::Model,
                 amount: dollars(cost),
@@ -333,20 +333,20 @@ impl<L: EventLog> Credits<L> {
 /// What the gateway asks of the credits, whatever log keeps them: a trait only so that the
 /// gateway, which keeps no log, need not name the log's type.
 pub(crate) trait Charging: Send + Sync + fmt::Debug {
-    /// Holds `worst` millionths of a dollar of `org`'s credits for a call, or refuses it.
-    fn hold(&self, org: OrgId, worst: i64) -> BoxFuture<'_, Result<(), ProviderError>>;
-    /// Lets go of `held` and counts `cost` millionths of a dollar in its place, at once.
-    fn settle(&self, payer: Payer, held: i64, cost: i64);
+    /// Holds `worst`, in dollars, of `org`'s credits for a call, or refuses it.
+    fn hold(&self, org: OrgId, worst: Nanos) -> BoxFuture<'_, Result<(), ProviderError>>;
+    /// Lets go of `held` and counts `cost`, in dollars, in its place, at once.
+    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos);
     /// Writes what was counted for `org` and the store does not have yet.
     fn write(&self, org: OrgId) -> BoxFuture<'_, ()>;
 }
 
 impl<L: EventLog> Charging for Credits<L> {
-    fn hold(&self, org: OrgId, worst: i64) -> BoxFuture<'_, Result<(), ProviderError>> {
+    fn hold(&self, org: OrgId, worst: Nanos) -> BoxFuture<'_, Result<(), ProviderError>> {
         Box::pin(Self::hold(self, org, worst))
     }
 
-    fn settle(&self, payer: Payer, held: i64, cost: i64) {
+    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos) {
         Self::settle(self, payer, held, cost);
     }
 
@@ -377,7 +377,7 @@ mod tests {
             Box::new(CountingEntropy::starting_at(1)),
             None,
         );
-        credits.with_book(org(0), |book| book.held = 5);
+        credits.with_book(org(0), |book| book.held = Nanos::new(5));
         for n in 1..BOOKS {
             credits.with_book(org(n), |_| ());
         }

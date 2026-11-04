@@ -81,7 +81,7 @@ fn a_background_turn_runs_on_a_worktree_with_no_one_attached_and_can_be_read_aft
             (finished.tokens.input, finished.tokens.output),
             (2_200, 150)
         );
-        assert_eq!(finished.cost.map(|cost| cost.micros), Some(5_000));
+        assert_eq!(finished.cost.map(|cost| cost.nanos.get()), Some(5_000));
         let listed = tasks(&server).await;
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].thread, thread);
