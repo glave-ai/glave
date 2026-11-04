@@ -11,6 +11,7 @@ import Palette from 'lucide/dist/esm/icons/palette.mjs';
 import Users from 'lucide/dist/esm/icons/users.mjs';
 
 import { NavService } from '../../services/nav.service';
+import { ProjectsService } from '../../services/projects.service';
 import { SessionService } from '../../services/session.service';
 
 /**
@@ -60,6 +61,11 @@ export class AdminComponent {
   /** People is current on its own page alone: Brand's is under it. */
   protected readonly peopleCurrent = isActive(this.peopleLink, this.router, { paths: 'exact' });
   protected readonly brandCurrent = isActive(this.brandLink, this.router);
+
+  constructor() {
+    // A tab opened here, not from the chats, hears what changes as the chats' does.
+    inject(ProjectsService).follow();
+  }
 
   /** A refused sign-in (or signing out) ends the session: back to the sign-in page. */
   protected readonly leaving = effect(() => {
