@@ -13,7 +13,7 @@ impl McpError {
     pub(crate) fn start(server: &str, message: impl Into<String>) -> Self {
         Self::Start {
             server: server.to_owned(),
-            message: message.into(),
+            message: crate::reason::without_url_secrets(&message.into()),
         }
     }
 }

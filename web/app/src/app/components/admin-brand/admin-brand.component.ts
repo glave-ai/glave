@@ -10,8 +10,9 @@ import {
   inject,
   signal,
   viewChild,
+  type WritableSignal,
 } from '@angular/core';
-import { type Accent, ApiError, type Shades } from '@glave/client';
+import { type Accent, ApiError, type OrganizationLook, type Shades } from '@glave/client';
 import {
   GlzAvatarComponent,
   GlzButtonComponent,
@@ -29,12 +30,31 @@ import { base64Of } from '../../lib/attachments';
 import { sentence, unreached } from '../../lib/text';
 import { PLAIN } from '../../services/appearance.service';
 import { BrandService } from '../../services/brand.service';
+import { onChange } from '../../services/changes.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
+
+/** What the form says, field by field. */
+interface Fields {
+  readonly name: string;
+  readonly logo: string | null;
+  readonly accent: string;
+  readonly adjust: boolean;
+  readonly locked: boolean;
+}
+
+/** Moves `field` from `was` to `now`, unless it says something else: the person's edit. */
+function follow<T>(field: WritableSignal<T>, was: T, now: T): void {
+  if (field() === was) {
+    field.set(now);
+  }
+}
 
 /**
  * Admin › Brand: how glave looks and what it's called for everyone in the organization. Its name,
  * its logo, its accent with how that reads in light and dark, and the switch that makes everyone
  * use it. Nothing is kept until Save. The values shown are the server's, for the color chosen.
+ * Each field the person has not edited follows what the server keeps, as another admin changes it
+ * and again just before Save, so Save writes back only what the person changed.
  */
 @Component({
   selector: 'app-admin-brand',
@@ -100,11 +120,15 @@ export class AdminBrandComponent {
   protected readonly problem = signal<string | null>(null);
   /** Whether the form holds what the server keeps, so Save can't overwrite what it never read. */
   protected readonly ready = signal(false);
-  /** Whether a logo or a save is on its way, so what is saved is what shows. */
-  protected readonly busy = signal(false);
+  /** How many logos and saves are on their way, so what is saved is what shows. */
+  private readonly busy = signal(0);
   protected readonly saved = signal(false);
   protected readonly savedLine = computed(() => (this.saved() ? this.copy.saved : ''));
-  protected readonly unsaveable = computed(() => !this.ready() || this.busy());
+  protected readonly unsaveable = computed(() => !this.ready() || this.busy() > 0);
+  /** What the server last said it keeps, which the form differs from where it is edited. */
+  private kept: Fields = this.fields();
+  /** The reads and saves on their way, each sent once the one before it is answered. */
+  private sending: Promise<unknown> = Promise.resolve();
   /** How many previews were asked for: only the latest one's answer is shown. */
   private previews = 0;
 
@@ -122,6 +146,7 @@ export class AdminBrandComponent {
 
   constructor() {
     void this.load();
+    onChange('brand', () => void this.reread());
     inject(DestroyRef).onDestroy(() => {
       this.showPicked(null);
     });
@@ -159,14 +184,14 @@ export class AdminBrandComponent {
     if (file === undefined) {
       return;
     }
-    this.busy.set(true);
+    this.busy.update((busy) => busy + 1);
     this.saved.set(false);
     await this.guarded(async () => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       this.logo.set(await this.service.upload(base64Of(bytes)));
       this.showPicked(URL.createObjectURL(file));
     });
-    this.busy.set(false);
+    this.busy.update((busy) => busy - 1);
   }
 
   protected removeLogo(): void {
@@ -188,16 +213,22 @@ export class AdminBrandComponent {
   }
 
   protected async save(): Promise<void> {
-    this.busy.set(true);
+    this.busy.update((busy) => busy + 1);
     this.saved.set(false);
-    await this.guarded(async () => {
-      const value = this.accent();
-      const accent: Accent =
-        value === PLAIN ? PLAIN : { color: { color: value, adjust: this.adjust() } };
-      await this.service.keep(this.name(), this.logo(), accent, this.locked());
-      this.saved.set(true);
-    });
-    this.busy.set(false);
+    await this.guarded(() =>
+      this.inTurn(async () => {
+        this.take(await this.service.read());
+        const sent = this.fields();
+        const accent: Accent =
+          sent.accent === PLAIN ? PLAIN : { color: { color: sent.accent, adjust: sent.adjust } };
+        const brand = await this.service.keep(sent.name, sent.logo, accent, sent.locked);
+        this.kept = sent;
+        this.take(brand);
+        // What was typed while it was on its way is not saved yet.
+        this.saved.set(JSON.stringify(this.fields()) === JSON.stringify(this.kept));
+      }),
+    );
+    this.busy.update((busy) => busy - 1);
   }
 
   private showPicked(url: string | null): void {
@@ -209,19 +240,65 @@ export class AdminBrandComponent {
   }
 
   private async load(): Promise<void> {
-    await this.guarded(async () => {
-      const brand = await this.service.read();
-      this.name.set(brand.name ?? '');
-      this.logo.set(brand.logo ?? null);
-      this.locked.set(brand.locked);
-      if (brand.accent === PLAIN) {
-        this.accent.set(PLAIN);
-      } else {
-        this.accent.set(brand.accent.color.color);
-        this.adjust.set(brand.accent.color.adjust);
-      }
+    await this.guarded(() => this.read());
+  }
+
+  /** Reads again on hearing a change; failing is no news, since Save reads for itself. */
+  private async reread(): Promise<void> {
+    if (!this.ready()) {
+      await this.load();
+      return;
+    }
+    await this.read().catch(() => undefined);
+  }
+
+  private read(): Promise<void> {
+    return this.inTurn(async () => {
+      this.take(await this.service.read());
       this.ready.set(true);
     });
+  }
+
+  /** Runs `work` once what is on its way is answered, so an older answer can't undo a newer. */
+  private inTurn(work: () => Promise<void>): Promise<void> {
+    const turn = this.sending.then(work);
+    this.sending = turn.catch(() => undefined);
+    return turn;
+  }
+
+  private fields(): Fields {
+    return {
+      name: this.name(),
+      logo: this.logo(),
+      accent: this.accent(),
+      adjust: this.adjust(),
+      locked: this.locked(),
+    };
+  }
+
+  /** Takes `brand` as what is kept, into each field not edited here. */
+  private take(brand: OrganizationLook): void {
+    const was = this.kept;
+    const now: Fields = {
+      name: brand.name ?? '',
+      logo: brand.logo ?? null,
+      accent: brand.accent === PLAIN ? PLAIN : brand.accent.color.color,
+      adjust: brand.accent === PLAIN ? was.adjust : brand.accent.color.adjust,
+      locked: brand.locked,
+    };
+    this.kept = now;
+    // A file picked here and saved is drawn no longer once another logo is what is kept.
+    if (this.logo() === was.logo && now.logo !== was.logo) {
+      this.showPicked(null);
+    }
+    follow(this.name, was.name, now.name);
+    follow(this.logo, was.logo, now.logo);
+    follow(this.locked, was.locked, now.locked);
+    // One choice to the server: a color and how it is tuned go together, or neither does.
+    if (this.accent() === was.accent && this.adjust() === was.adjust) {
+      this.accent.set(now.accent);
+      this.adjust.set(now.adjust);
+    }
   }
 
   private async preview(value: string, adjust: boolean): Promise<void> {

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, bail};
 use glave_computer::{
     Docker, DockerSettings, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers,
-    WorkerCredentials, https_url, person_sandbox, read_environment,
+    WorkerCredentials, ask_repository, https_url, person_sandbox, read_environment,
 };
 use glave_event::PrincipalId;
 use glave_harness::{Homes, Workers};
@@ -210,35 +210,14 @@ impl Homes for OnCluster {
     }
 }
 
-/// How long git has to read this repository, which it does in a moment.
-const GIT_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Runs git in `folder`; its output, or an error saying what it said.
-async fn git(processes: &Processes, folder: &Path, args: &[&str]) -> anyhow::Result<String> {
-    let mut git = glave_process::Program::new("git");
-    git.args(args).current_dir(folder);
-    let output = processes
-        .output(&mut git, GIT_ANSWERS_WITHIN)
-        .await
-        .context("could not run git")?;
-    if !output.status.success() {
-        bail!(
-            "git {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
 /// This repository as a worker clones it: its `origin` over HTTPS, at the current commit,
 /// which must already be on a remote.
 async fn sources(processes: &Processes, folder: &Path) -> anyhow::Result<Sources> {
-    let url = git(processes, folder, &["remote", "get-url", "origin"])
+    let url = ask_repository(processes, folder, &["remote", "get-url", "origin"])
         .await
         .context("--on cloud clones this repository's origin, and it has none")?;
-    let commit = git(processes, folder, &["rev-parse", "HEAD"]).await?;
-    let unpushed = git(
+    let commit = ask_repository(processes, folder, &["rev-parse", "HEAD"]).await?;
+    let unpushed = ask_repository(
         processes,
         folder,
         &["rev-list", "HEAD", "--not", "--remotes"],

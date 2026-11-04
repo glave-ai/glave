@@ -128,24 +128,14 @@ fn settings(
     helper: &Path,
     environment: &[(OsString, OsString)],
 ) -> Vec<(OsString, OsString)> {
-    let before = environment
-        .iter()
-        .find(|(name, _)| name == "GIT_CONFIG_COUNT")
-        .and_then(|(_, count)| count.to_str()?.parse::<usize>().ok())
-        .unwrap_or(0);
     let run = format!("!{}", quoted(&helper.to_string_lossy()));
-    let mut settings = Vec::new();
-    let mut n = before;
-    for host in hosts {
-        let key = format!("credential.{}.helper", host.url);
-        for value in [String::new(), run.clone()] {
-            settings.push((format!("GIT_CONFIG_KEY_{n}").into(), key.clone().into()));
-            settings.push((format!("GIT_CONFIG_VALUE_{n}").into(), value.into()));
-            n = n.saturating_add(1);
-        }
-    }
-    settings.push(("GIT_CONFIG_COUNT".into(), n.to_string().into()));
-    settings
+    super::git::config_settings(
+        environment,
+        hosts.iter().flat_map(|host| {
+            let key = format!("credential.{}.helper", host.url);
+            [(key.clone(), String::new()), (key, run.clone())]
+        }),
+    )
 }
 
 /// The helper: on `get`, it sends the password and git's request to glave and prints the

@@ -27,8 +27,7 @@ pub(crate) struct Hub {
     channels: Mutex<Channels>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
-    /// Each thread that changed, in its project, and each person's setting, for the watches
-    /// of lists.
+    /// Each thread that changed, in its project, and each setting, for the watches of lists.
     changes: broadcast::Sender<Change>,
     /// Told each time a browser's sign-in here may have ended, for the watches that follow
     /// one (`access.rs`).
@@ -54,13 +53,15 @@ pub(crate) struct Changed {
     pub(crate) thread: ThreadId,
 }
 
-/// What the watches of lists hear of: a thread whose summary may have changed, or a person's
-/// own setting that did.
+/// What the watches of lists hear of: a thread whose summary may have changed, or a setting
+/// that did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Change {
     Thread(Changed),
-    /// `setting` changed through this server for `person`, `None` for the local person.
+    /// `setting` changed through this server by a request of `person`, `None` for the local
+    /// person, working in `org`.
     Setting {
+        org: OrgId,
         person: Option<PrincipalId>,
         setting: Setting,
     },
@@ -114,11 +115,20 @@ impl Hub {
         self.sign_ins.send_replace(());
     }
 
-    /// Tells the watches of lists that `person`'s `setting` changed (`None`: the local
-    /// person's).
-    pub(crate) fn setting_changed(&self, person: Option<PrincipalId>, setting: Setting) {
+    /// Tells the watches of lists that `setting` changed by a request of `person` (`None`: the
+    /// local person) working in `org`.
+    pub(crate) fn setting_changed(
+        &self,
+        org: OrgId,
+        person: Option<PrincipalId>,
+        setting: Setting,
+    ) {
         // Only fails when no list is watched, which is fine.
-        let _ = self.changes.send(Change::Setting { person, setting });
+        let _ = self.changes.send(Change::Setting {
+            org,
+            person,
+            setting,
+        });
     }
 
     /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams

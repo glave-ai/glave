@@ -40,6 +40,8 @@ pub struct Trace {
     pub asks: u32,
     /// Commands whose output carries the sandbox's note that it may have blocked them.
     pub blocked: u32,
+    /// Why a turn went without a source of tools, each reason once, in the order first seen.
+    pub missing: Vec<String>,
 }
 
 impl Default for Trace {
@@ -62,6 +64,7 @@ impl Default for Trace {
             repeated_steps: 0,
             asks: 0,
             blocked: 0,
+            missing: Vec::new(),
         }
     }
 }
@@ -97,9 +100,14 @@ impl Trace {
     /// Adds one event.
     fn add(&mut self, body: Body, steps: &mut Steps) {
         match body {
-            Body::TurnStarted(_) => {
+            Body::TurnStarted(started) => {
                 self.turns = self.turns.saturating_add(1);
                 self.answer.clear();
+                for gone in started.missing {
+                    if !self.missing.contains(&gone.message) {
+                        self.missing.push(gone.message);
+                    }
+                }
             }
             Body::MessageAdded(message) if message.role == Role::Assistant => {
                 self.answer = text_of(&message.parts);
@@ -199,6 +207,7 @@ mod tests {
                 repeated_steps: 0,
                 asks: 0,
                 blocked: 0,
+                missing: Vec::new(),
             }
         );
     }
@@ -272,6 +281,26 @@ mod tests {
         let trace = parse(&events).unwrap();
         assert_eq!(trace.asks, 1, "glave settled the other two itself");
         assert_eq!(trace.blocked, 1);
+    }
+
+    #[test]
+    fn a_turn_without_a_source_says_why_once_however_many_turns_went_without() {
+        let turn = |seq: u32| {
+            let why = "MCP server \"search\" did not start: it did not answer within 30 seconds";
+            serde_json::json!({"glave": 1, "id": format!("0192f5c2-7000-7000-8000-{seq:012}"),
+                "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": seq,
+                "at": "2026-10-07T21:14:00.001Z", "type": "turn.started", "v": 1,
+                "data": {"model": {"provider": "p", "name": "m"},
+                    "config": {"sha256": "0".repeat(64), "bytes": 2,
+                        "media_type": "application/json"},
+                    "missing": [{"source_name": "search", "message": why}]}})
+            .to_string()
+        };
+        let trace = parse(&format!("{}\n{}", turn(2), turn(3))).unwrap();
+        assert_eq!(
+            trace.missing,
+            ["MCP server \"search\" did not start: it did not answer within 30 seconds"]
+        );
     }
 
     #[test]

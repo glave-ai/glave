@@ -551,6 +551,7 @@ where
                 config,
                 trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
+                missing: offer.missing.clone(),
             },
         )?;
         let message = MessageAdded {

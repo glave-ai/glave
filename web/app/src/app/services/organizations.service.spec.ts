@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import type { OrganizationInfo } from '@glave/client';
 
+import { ChangesService } from './changes.service';
 import { SessionService } from './session.service';
 import { OrganizationsService } from './organizations.service';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
@@ -48,6 +49,51 @@ describe('OrganizationsService', () => {
     both.choose(ACME);
     both.choose(OWN);
     expect(chosen.mock.calls).toEqual([['acme'], ['own']]);
+  });
+
+  it('reads them again when the server says the brand changed, keeping the latest answer', async () => {
+    const waiting: ((answer: object) => void)[] = [];
+    const fake = new FakeSession().answer(
+      'organization/list',
+      () =>
+        new Promise((resolve) => {
+          waiting.push(resolve);
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const organizations = TestBed.inject(OrganizationsService);
+    const first = organizations.load();
+    TestBed.tick();
+    TestBed.inject(ChangesService).tell('brand');
+    TestBed.tick();
+    expect(waiting).toHaveLength(2);
+    waiting[1]?.({ organizations: [{ ...OWN, name: 'Acme' }] });
+    waiting[0]?.({ organizations: [OWN] });
+    await first;
+    await organizations.load();
+    expect(organizations.organizations()).toEqual([{ ...OWN, name: 'Acme' }]);
+  });
+
+  it('keeps an earlier answer when a later read fails', async () => {
+    const waiting: { resolve: (answer: object) => void; reject: (why: unknown) => void }[] = [];
+    const fake = new FakeSession().answer(
+      'organization/list',
+      () =>
+        new Promise((resolve, reject) => {
+          waiting.push({ resolve, reject });
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const organizations = TestBed.inject(OrganizationsService);
+    const first = organizations.load();
+    TestBed.tick();
+    TestBed.inject(ChangesService).tell('brand');
+    TestBed.tick();
+    expect(waiting).toHaveLength(2);
+    waiting[1]?.reject(new Error('cut off'));
+    waiting[0]?.resolve({ organizations: [OWN] });
+    await first;
+    expect(organizations.organizations()).toEqual([OWN]);
   });
 
   it('reads nothing signed out, and forgets what it read once signed out', async () => {

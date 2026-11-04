@@ -6,6 +6,7 @@ A wall around the commands the model runs, enforced by the operating system, and
 
 Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). It is glave's default: Auto's `project` level, with the network, wherever it can run; where it cannot, commands ask first (below).
 
+- glave's own git doesn't run what a repository nested in the project names (#1193).
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
 
 ## Why on by default
@@ -26,7 +27,7 @@ What protects against what:
 | --- | --- |
 | Secrets reaching the model | always on: commands get no secret-named variables but the secrets the person added (`session.md`, "Secrets"), whose values are masked in all output as they are (a command that prints one changed is not caught), and secret files need approval, which Full access declines without asking (shipped) |
 | Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the sandbox; without it, the person approving each command |
-| Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same |
+| Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same. In a repository nested in the project, glave's own git doesn't run what it names, but for a race; the person's own git still does (*Repositories inside the project*) |
 | Secrets read by a command | the sandbox's read limits, for common credential stores and secret-named project files; commands that print a credential (`gh auth token`, `security find-generic-password -w`, …) ask, and Full access declines them (`approvals.md`); not tokens stored elsewhere |
 | The machine's cloud credentials (its metadata service, on a cloud machine) | Kubernetes workers' network policy, `web_fetch` and remote MCP servers refuse it; commands in the sandbox with the network on, and Docker workers, do not yet (*Cloud metadata*, #714): `network = false`, or a machine with no role |
 | Secrets or project files sent out over the network | by commands after untrusted content, which is where a planted instruction comes from: new commands lose the network, each needing the person for it (`approvals.md`, "Untrusted content"); always: `--no-network`, or an organization's `[sandbox] network = false`. Before it, with the network on (a person's default), whatever a command can read can be sent, the secrets the person added included, as in Claude Code and Codex, until the outbound proxy (#643) comes with Glave Cloud's secrets; and a URL `web_fetch` reads can carry what the model read, after untrusted content too (a known gap); `[web]` narrows its hosts. A command already running in the background, and an open-world MCP tool's arguments, are not covered either. `evals/tasks/web-exfil` measures it |
@@ -90,6 +91,23 @@ The project folder; a temp folder of each command's own, which it sees as `TMPDI
 - Files tools run commands from: `.mcp.json`, `.vscode/`, `.idea/`, `.envrc`.
 
 The rest of `.git` stays writable, so committing, staging and branching work. (Codex makes all of `.git` read-only; Claude Code protects hooks and config, as here.)
+
+**Repositories inside the project** (#1193). Only a workspace's own `.git` is protected. A command may write the config and hooks of any other repository in a folder it can write: one nested in the project, or in `/tmp`, including one that is another project's folder. So glave's own git on the person's machine does not trust a repository to name a program:
+
+- It runs no hooks (`core.hooksPath` to nowhere) and no file-system monitor. The cost: a person's `post-checkout` hook doesn't run when glave makes a worktree.
+- Before a command that may read files through a filter, it reads the repository's own config and blanks what names a program there: filter drivers, and what git-lfs runs (its custom transfers and extensions, `core.sshCommand`, `core.askPass`, credential helpers). The person's own filters keep running, so a worktree still gets git-lfs's real files. A filter blanked is also required, so a file it would change fails loudly. The cost: glave makes no worktree where a filter only the repository's config defines applies (git-crypt, git-annex, `git lfs install --local`), and says why; working in the folder itself still works.
+- It may use no transport (`GIT_ALLOW_PROTOCOL`), so a read cannot fetch a missing object through a remote the config names, with whatever helper or ssh command that remote runs. The cost: no worktree of a partial clone while a file it needs is missing.
+- It doesn't look inside submodules with `status`, which would run git with the submodule's own config; a worktree with one checked out counts as changed, so a cleanup keeps it until the person removes it.
+- `git credential fill` for a worker runs from no repository, so only the person's own helpers answer. The cost: a helper set only in the config of the repository the server started in, or by an `includeIf` on it, gives a worker no credential.
+
+The same on Seatbelt, bubblewrap and Landlock, which is why it lives here and not in any of them, and it holds for a repository made after a command started. Why not refuse the writes: measured on Seatbelt (2026-11-04), denying `.git/config` and `.git/hooks` by name makes `git init` and `git clone` fail outright inside the project, and `git remote add` in a repository there; and it doesn't hold, since a `.git` file pointing at a folder of another name, or the repository's folder renamed and a new one put in its place, each gets a chosen config past it. Protecting the repositories found when a command starts has the same two holes and misses one made by that command.
+
+**Not closed:**
+
+- The person's own git in such a folder (their terminal, an editor that runs `git status` on opening it), which runs what is planted there; so does a command they let out of the sandbox (*Letting one command out*), and Full access. A `Makefile` or `package.json` a command wrote runs too.
+- A race: blanking reads the config, then git reads it again. A command still running that adds a filter between the two wins it, in 20 of 60 tries with a tight loop in a review's test. Running `status` and the checkout inside the sandbox would close it, at the cost of git-lfs's fetching, which needs sign-ins the sandbox hides.
+- A worker's `save`, which runs inside its own wall with the push's credential in its environment: its config is the commands' to write there, so `gpg.program`, a transport and so on still run there, and can read that credential.
+- A project made at `~/.config` can write git's own global config, which glave's git takes for the person's.
 
 **A thread's worktree** (`computers.md`): the writable set is the worktree folder and its repository's shared git folder (`git rev-parse --git-common-dir`), where its commits go, and nothing else. The shared folder's `hooks/`, `config`, `config.worktree`, `worktrees/` and `modules/` stay read-only, except the worktree's own folder in `worktrees/`, where its index, `HEAD` and logs go; that folder's hooks, config and `modules/` stay read-only, and neither it nor the shared folder can be renamed or replaced. So a commit works but nothing is planted that runs in another checkout. The main checkout's files and other threads' worktrees stay unwritable (#130). The worktree lives under `~/.glave/worktrees`, so the read rule for glave's own data below excepts the workspace itself.
 
@@ -262,5 +280,7 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 | Claude Code | off | Seatbelt; on Linux bubblewrap + `socat`, network through a domain-filtering proxy, an optional seccomp filter blocking Unix sockets; documents the same Ubuntu AppArmor profile | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
 | Gemini CLI | off | Seatbelt profiles on macOS; on Linux a container: Docker, Podman, gVisor (`runsc`) or LXC | | |
 | OpenCode | none | none (permission rules only) | | |
+
+A repository nested in the project (checked in source 2026-11-04): Codex protects `.git` only at each writable root's top level, and its own git treats a repository as untrusted (`codex-rs/worktree/src/git.rs`, `git-utils/src/info.rs`: `core.hooksPath=/dev/null`, `core.fsmonitor` off or built in, `safe.bareRepository=explicit`, configured filters blanked by name, LFS smudging skipped). Claude Code denies nested `.git/hooks` and `.git/config` (`sandbox-runtime`: by pattern on macOS, on Linux by a ripgrep scan down to depth 3 before each command, each match a mount, with nothing mounted where `.git` is absent so `git init` works). glave takes Codex's way, keeping the person's own filters.
 
 Letting one command out (checked 2026-10-17): Claude Code's Bash tool takes `dangerouslyDisableSandbox`; a retry with it prompts ("Bash command (unsandboxed)") in its manual modes, goes to its classifier in auto mode, is denied in `dontAsk`, runs without asking in `bypassPermissions`, and `allowUnsandboxedCommands: false` turns it off. Codex's shell tool takes `sandbox_permissions: "require_escalated"` with a `justification`, a question shown to the person; with `on-request` approvals it asks (or its `auto_review` reviewer decides), with `never` it is refused, and the person may save a `prefix_rule` so similar commands stop asking. glave asks every time, has no rule to save, and lets its judge decide only what the person asked for in so many words.

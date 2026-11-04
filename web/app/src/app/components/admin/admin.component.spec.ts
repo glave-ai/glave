@@ -33,4 +33,15 @@ describe('AdminComponent', () => {
     expect(people?.getAttribute('aria-current')).toBeNull();
     expect(brand?.getAttribute('aria-current')).toBe('page');
   });
+
+  it('watches for what changes, opened here with no chats before it', async () => {
+    const fake = new FakeSession();
+    TestBed.configureTestingModule({
+      providers: [...provideFakeSession(fake), provideRouter([])],
+    });
+    TestBed.createComponent(AdminComponent);
+    await vi.waitFor(() => {
+      expect(fake.paramsOf('thread/list/watch')).toHaveLength(1);
+    });
+  });
 });

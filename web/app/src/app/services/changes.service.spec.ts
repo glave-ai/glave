@@ -42,5 +42,8 @@ describe('ChangesService', () => {
     changes.tell('search');
     TestBed.tick();
     expect(reader.reads).toEqual(['search', 'search']);
+    changes.tell('grouping');
+    TestBed.tick();
+    expect(reader.reads).toEqual(['search', 'search']);
   });
 });

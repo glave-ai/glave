@@ -15,7 +15,6 @@ use glave_harness::{
 };
 use glave_memory::Tidier;
 use glave_ports::computer::{Sandbox, SandboxLevel};
-use glave_ports::settings::{Domain, WebPolicy};
 use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -36,6 +35,9 @@ use crate::trace::{self, Trace};
 
 /// Model calls one turn of an attempt may make, unless its task says otherwise.
 const MAX_STEPS: u32 = 50;
+
+/// This repository, as its URLs and remotes name it.
+const REPOSITORY: &str = "glave-ai/glave";
 
 /// The harness as an attempt wires it.
 type Wired = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>;
@@ -187,10 +189,13 @@ pub async fn attempt(
     write(dir.join("transcript.txt"), &transcript).await?;
     write(dir.join("memory.jsonl"), &memory.ledger).await?;
     failures.extend(leaked(setup, &events));
+    failures.extend(named_the_repository(&events));
     let trace = trace::parse(&events).unwrap_or_else(|err| {
         failures.push(err);
         Trace::default()
     });
+    // Offered less than the task gives, it fails saying why, as a provider's error does.
+    failures.extend((trace.missing.iter()).map(|why| format!("went without tools: {why}")));
     // A goal's turns may end at the step limit and go on; its own checks grade how it ended.
     if task.goal.is_none() {
         failures.extend(ended(task.outcome, &trace.outcomes).err());
@@ -230,6 +235,14 @@ fn leaked(setup: &Setup, events: &str) -> Option<String> {
     let key = (setup.endpoint.auth.fixed_key()).map(glave_ports::auth::Secret::expose)?;
     (key.len() >= 8 && events.contains(key))
         .then(|| "the endpoint's API key reached the model: rotate it now".to_owned())
+}
+
+/// The failure when `events` name this repository, which holds the answers. `web_fetch` is kept
+/// from it, and commands from its checkouts here, but a command with the network is not: the
+/// sandbox cannot refuse one host. So going for it is no pass, whatever came back.
+fn named_the_repository(events: &str) -> Option<String> {
+    (events.to_ascii_lowercase().contains(REPOSITORY))
+        .then(|| format!("the attempt named {REPOSITORY}, which holds the answers"))
 }
 
 /// Runs the task's grader, if it has one, in the workspace, keeping its output in `dir`; the
@@ -335,17 +348,10 @@ async fn wire(
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    // web_fetch, as the CLI offers it; a task's own pages are on 127.0.0.1, named exactly.
+    // web_fetch, as the CLI offers it, reaching the task's own pages alone.
     let pages = web;
-    let mut policy = WebPolicy::default();
-    if pages.is_some() {
-        policy.allow = ["127.0.0.1", "*"]
-            .iter()
-            .filter_map(|pattern| Domain::parse(pattern).ok())
-            .collect();
-    }
     let web = Web::new(WebSettings {
-        policy,
+        policy: crate::web::reach(pages.is_some())?,
         limits: Limits::default(),
     })
     .map_err(|err| EvalError::Setup(err.to_string()))?;

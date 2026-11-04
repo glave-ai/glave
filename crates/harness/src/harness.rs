@@ -463,9 +463,12 @@ where
         }
         // Where someone can choose where it goes, and the thread works on this computer.
         if thread.home.is_none() && self.someone_answers(thread) {
+            // The person's own folder is theirs alone: what its `mcp.json` names runs as them,
+            // with the server's whole environment.
+            let own = self.settings.own.clone();
             sources.push(Arc::new(Install {
                 workspace: Arc::clone(self.workspace_for(thread)),
-                own: self.settings.own.clone(),
+                own: own.filter(|_| self.trusting(thread.for_)),
             }));
         }
         if self.trusting(thread.for_) {
@@ -486,10 +489,11 @@ where
         {
             set.system = format!("{}\n\n{note}", set.system);
         }
-        if let Some((memory, _)) = self.memory_for(thread)
-            && let Ok(tools) = memory.tools().await
-        {
-            set.offer_memory(tools);
+        if let Some((memory, _)) = self.memory_for(thread) {
+            match memory.tools().await {
+                Ok(tools) => set.offer_memory(tools),
+                Err(err) => set.goes_without(err),
+            }
         }
         if self.approver.can_answer(thread.id) {
             set.offer_question();

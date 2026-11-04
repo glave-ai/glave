@@ -326,8 +326,9 @@ impl Servers {
             .collect()
     }
 
-    /// Before the first turn only: waits for every server to start, and says why any did not.
-    pub(crate) async fn report(&self, printer: &mut Printer) {
+    /// Before the first turn only: says which servers are still starting, which the turn waits
+    /// for. Each turn's `turn.started` says why one did not.
+    pub(crate) fn report(&self, printer: &mut Printer) {
         if self.reported.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -339,12 +340,6 @@ impl Servers {
             .collect();
         if !starting.is_empty() {
             printer.status(&format!("starting MCP servers: {}", starting.join(", ")));
-        }
-        // They start side by side, so this waits only as long as the slowest.
-        for server in &all {
-            if let Err(err) = server.started().await {
-                printer.warning(&err.to_string());
-            }
         }
     }
 

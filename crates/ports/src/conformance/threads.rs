@@ -136,6 +136,7 @@ fn turn(writer: &mut Writer, from: u64) -> Result<Vec<RawEvent>, String> {
                 config: blob,
                 trace: None,
                 auth: None,
+                missing: Vec::new(),
             },
         )?,
         writer.next(from + 2, &responded()?)?,
