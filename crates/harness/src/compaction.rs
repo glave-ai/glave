@@ -195,7 +195,7 @@ where
     pub(crate) async fn compact_if_needed(
         &self,
         thread: &mut Thread,
-        offer: &ToolSet,
+        offer: &mut ToolSet,
         summary: &mut TurnResult,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
@@ -212,6 +212,11 @@ where
             Ok(compacted) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 summary.take_in(&compacted.completion.responded());
+                // A thread of its own opens again with the prompt and tools on offer now; a
+                // subagent's are its parent's.
+                if !thread.delegated() {
+                    *offer = self.tools(thread).await;
+                }
                 Ok(())
             }
             Err(HarnessError::Provider(error)) => {
@@ -336,6 +341,8 @@ where
         self.commit(thread, events).await?;
         thread.messages = vec![Message::User { parts }];
         thread.measured = None;
+        // The conversation starts again, and so may its prefix (`prefix.rs`).
+        thread.prefix = crate::prefix::Prefixed::None;
         // The start shows every memory the thread knows now, and the notes fold away.
         if self.memory_for(thread).is_some() {
             thread.memory.restart();

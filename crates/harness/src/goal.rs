@@ -222,6 +222,13 @@ pub(crate) fn spec() -> ToolSpec {
 
 /// Runs an `update_goal` call: the model ends the thread's goal, met or paused.
 pub(crate) fn update(thread: &mut Thread, arguments: &Arguments) -> ToolOutput {
+    // Listed in every thread, so its tools never change when a goal starts (`prefix.rs`).
+    if thread.goal.as_ref().is_none_or(|goal| !goal.running) {
+        return ToolOutput::text(
+            true,
+            "This thread has no goal running, so there is none to update.",
+        );
+    }
     let (output, verdict) = updated(arguments);
     if let (Some(goal), Some(verdict)) = (thread.goal.as_mut(), verdict) {
         goal.verdict = Some(verdict);

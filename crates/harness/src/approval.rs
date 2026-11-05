@@ -165,8 +165,9 @@ pub trait Approver: Send + Sync {
         async move { (decided.await, None) }
     }
 
-    /// Whether someone can answer approvals and questions in `thread`: `question` is offered,
-    /// and a pending approval announced, only then.
+    /// Whether someone can answer approvals and questions in `thread` now: a pending approval
+    /// is announced, and `question` runs, only then; it is listed where someone could at the
+    /// thread's first call (`prefix.rs`).
     fn can_answer(&self, thread: ThreadId) -> bool {
         let _ = thread;
         false

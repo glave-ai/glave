@@ -158,7 +158,7 @@ fn the_model_pauses_with_a_reason_and_the_person_resumes_the_goal() {
         {
             let seen = seen.lock().unwrap();
             let (plain, other) = (seen.get(2).unwrap(), seen.get(3).unwrap());
-            assert!(!offers(plain, UPDATE_GOAL));
+            assert!(offers(plain, UPDATE_GOAL), "listed in every thread");
             assert_eq!((&plain.tools, &plain.system), (&other.tools, &other.system));
         }
 
@@ -379,24 +379,28 @@ fn turns_without_a_tool_call_stall_a_goal() {
 }
 
 #[test]
-fn the_goal_tool_is_offered_only_in_a_goals_turns() {
+fn the_goal_tool_is_listed_in_every_thread_and_refused_without_a_goal() {
     let dir = folder("goal-absent");
     block_on!(async {
-        let (harness, seen) = harness_seeing(
-            &dir,
-            vec![done("Hi.")],
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        )
-        .await;
+        let answers = vec![
+            call(UPDATE_GOAL, json!({"status": "complete"})),
+            done("Hi."),
+        ];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "hello").await;
         let seen = seen.lock().unwrap();
         let request = seen.first().unwrap();
-        assert!(!offers(request, UPDATE_GOAL));
+        assert!(
+            offers(request, UPDATE_GOAL),
+            "so that a goal starting changes no tools"
+        );
         assert!(!request.system.contains("# Goal"));
         assert!(thread.goal().is_none());
+        assert_eq!(
+            results(thread.messages()),
+            ["This thread has no goal running, so there is none to update."]
+        );
     });
 }

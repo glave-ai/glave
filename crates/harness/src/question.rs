@@ -13,6 +13,10 @@ use serde_json::json;
 /// The tool's name.
 pub(crate) const QUESTION: &str = glave_ports::QUESTION_TOOL;
 
+/// What a `question` call is told in a turn no one answers, as one run as a task.
+pub(crate) const NO_ONE: &str = "No one is there to answer questions in this turn. Go on with \
+     your best judgement, and say in your answer what you assumed.";
+
 /// Most questions in one call.
 const MOST: usize = 4;
 

@@ -270,8 +270,7 @@ where
             return Ok(None);
         }
         self.bring(thread).await?;
-        let mut toolset = self.tools(thread).await;
-        toolset.offer_goal();
+        let toolset = self.tools(thread).await;
         let text = match opening {
             Some(objective) => objective.to_owned(),
             None => continuation(&goal),
