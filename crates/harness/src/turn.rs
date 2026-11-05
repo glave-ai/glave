@@ -356,7 +356,7 @@ where
             if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;
             }
-            self.compact_if_needed(thread, &step.toolset, &mut step.summary, cancel, live)
+            self.compact_if_needed(thread, &mut step.toolset, &mut step.summary, cancel, live)
                 .await?;
             self.read_queued(thread, cancel, live).await?;
             let last = self.last_step(thread, &step.summary);
@@ -538,6 +538,8 @@ where
             .opening_parts()
             .filter(|_| opening)
             .unwrap_or_default();
+        // What changed since the model was told, before the person's words (`prefix.rs`).
+        parts.extend(crate::prefix::news(offer));
         parts.push(Part::Text {
             text: prompt.to_owned(),
         });
@@ -569,6 +571,7 @@ where
             None => self.stage(thread, &mut events, &message)?,
         }
         self.commit(thread, events).await?;
+        crate::prefix::heard(thread, offer);
         thread.turns = thread.turns.saturating_add(1);
         thread.messages.push(Message::User { parts });
         if by_glave {

@@ -80,7 +80,7 @@ where
             thread.permissions = mode.or(chosen.1);
             let carried = async {
                 self.reopen_removed(thread).await?;
-                let mut toolset = if let Some(tools) = tools {
+                let toolset = if let Some(tools) = tools {
                     tools
                 } else {
                     self.bring(thread).await?;
@@ -89,7 +89,6 @@ where
                 let goal = crate::goal::of_turn(thread, &events, open.started);
                 let summary = self.tallies(&thread.scope, thread.id, turn).await?;
                 if goal {
-                    toolset.offer_goal();
                     crate::goal::going_on(thread, turn, &summary);
                 }
                 let step = Step {

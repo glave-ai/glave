@@ -1,12 +1,14 @@
 //! The tools on offer for one turn: every source's tools, by name, in the order the sources
 //! were given, and the system prompt with what the sources say about them. A source that cannot
-//! list its tools is left out of the turn, not fatal to it.
+//! list its tools is left out, not fatal to the turn; one whose tools a thread's prefix already
+//! lists keeps them listed, and a call to one is told it isn't answering (`prefix.rs`).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
 
+use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
@@ -27,14 +29,14 @@ const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remem
 /// server's own words may be part of it.
 const WHY_CHARS: usize = 500;
 
-/// One of glave's own tools, which the harness runs itself, offered in some turns only.
+/// One of glave's own tools, which the harness runs itself, offered in some threads only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Own {
     /// `question`: only when someone can answer.
     Question,
     /// `agent`.
     Agent,
-    /// `update_goal`: only in a goal's turns.
+    /// `update_goal`: in every thread a person, not an agent, writes to.
     Goal,
     /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
@@ -53,7 +55,7 @@ impl Own {
 }
 
 /// The tools of one turn.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ToolSet {
     pub(crate) specs: Vec<ToolSpec>,
     /// The system prompt for the turn: glave's own, then any notes from the sources.
@@ -65,6 +67,12 @@ pub(crate) struct ToolSet {
     own: Vec<Own>,
     /// The memory tools on offer, by name: only where the thread reads memory.
     pub(crate) memory: Vec<String>,
+    /// Tools the thread's prefix lists whose source does not answer now: a call to one is told
+    /// so, rather than that there is no such tool.
+    silent: Vec<String>,
+    /// What changed since the model was last told, as the note the turn's message opens with,
+    /// and what the model knows once it reads it (`prefix.rs`).
+    pub(crate) news: Option<(String, Told)>,
 }
 
 impl ToolSet {
@@ -76,6 +84,8 @@ impl ToolSet {
             missing: Vec::new(),
             own: Vec::new(),
             memory: Vec::new(),
+            silent: Vec::new(),
+            news: None,
         };
         let mut missing = Vec::new();
         for (index, source) in sources.iter().enumerate() {
@@ -111,7 +121,7 @@ impl ToolSet {
     /// claim there is no such tool. Before any note that must stay last (`MEMORY_RULE`).
     pub(crate) fn goes_without(&mut self, err: ToolError) {
         self.system = format!(
-            "{}\n\nThe tool server {:?} is not available, so its tools are missing from this turn. \
+            "{}\n\nThe tool server {:?} is not available, so its tools are missing from this thread. \
              If the person asks for something that needs them, tell them it is not available, \
              rather than that you have no such tool.",
             self.system, err.source_name
@@ -227,16 +237,52 @@ impl ToolSet {
             missing: self.missing.clone(),
             own: Vec::new(),
             memory: Vec::new(),
+            silent: self.silent.clone(),
+            news: None,
         }
     }
 
-    /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
+    /// These tools, as listed, called through the sources of `now`, the tools on offer now: a
+    /// tool `now` lacks stays listed, silent, and a tool only `now` has is not offered.
+    pub(crate) fn route(&mut self, now: Self) {
+        self.silent.clear();
+        for spec in &self.specs {
+            let Some(found) = self.by_name.get_mut(&spec.name) else {
+                continue;
+            };
+            match now.by_name.get(&spec.name) {
+                Some(answers) => found.clone_from(answers),
+                None => self.silent.push(spec.name.clone()),
+            }
+        }
+        self.missing = now.missing;
+    }
+
+    /// The tool called `name`, forgiving case and stray whitespace, with its source's index:
+    /// none when its source does not answer now.
     pub(crate) fn get(&self, name: &str) -> Option<(usize, &ToolInfo)> {
         let found = self
             .by_name
             .get(name)
             .or_else(|| self.by_name.get(&name.trim().to_ascii_lowercase()))?;
-        Some((found.0, &found.1))
+        (!self.silent.contains(&found.1.spec.name)).then_some((found.0, &found.1))
+    }
+
+    /// What a call of `name` is told when no source runs it: that its source isn't answering,
+    /// when it is listed, else that there is no such tool, and which there are.
+    pub(crate) fn not_found(&self, name: &str) -> String {
+        let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
+        match self.specs.iter().find(listed) {
+            Some(spec) => format!(
+                "{:?} is not answering: the service behind it did not respond. Try again later, \
+                 or go on without it.",
+                spec.name
+            ),
+            None => format!(
+                "There is no tool named {name:?}. The tools are {}.",
+                self.names().join(", ")
+            ),
+        }
     }
 
     pub(crate) fn names(&self) -> Vec<&str> {

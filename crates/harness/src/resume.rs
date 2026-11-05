@@ -102,6 +102,7 @@ where
             opened: self.opened(&scope, id, &events).await?,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
+            prefix: None,
         };
         self.rebuild_memory(&mut thread, &events).await;
         Ok(thread)

@@ -32,6 +32,7 @@ mod modes;
 mod network;
 mod outside_sandbox;
 mod plan;
+mod prefix;
 mod project_folders;
 mod purposes;
 mod retry;
