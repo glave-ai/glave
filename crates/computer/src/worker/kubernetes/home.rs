@@ -153,21 +153,14 @@ impl PersonComputer {
         };
         self.claim().await?;
         self.sleep().await?;
-        let glave = self.cluster.glave().await?;
-        // Hashed off the runtime's threads: a release's glave is tens of MB.
-        let (glave, digest) = tokio::task::spawn_blocking(move || {
-            let digest = glave_ports::digest(&glave);
-            (glave, digest)
-        })
-        .await
-        .map_err(|error| failed("could not hash the glave for the computer", error))?;
+        let (glave, digest) = self.cluster.glave_and_digest().await?;
         let name = self.name();
         let claim = self.claim_name();
         let home = Home {
             key: &self.key,
             claim: &claim,
             idle_minutes: self.idle_minutes,
-            glave: digest.as_str(),
+            glave: &digest,
         };
         match self.cluster.start_on(&name, spec, &glave, Some(home)).await {
             Ok(link) => Ok(link),

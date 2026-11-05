@@ -227,6 +227,10 @@ opt-level = 3
 [profile.dev.package.zune-jpeg]
 opt-level = 3
 
+# Hashing a debug glave of hundreds of MB unoptimized takes seconds, as a person's computer wakes.
+[profile.dev.package.sha2]
+opt-level = 3
+
 # Full debug info for stepping through code: `cargo build --profile debugging`.
 [profile.debugging]
 inherits = "dev"

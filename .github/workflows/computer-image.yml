@@ -49,7 +49,7 @@ jobs:
         with:
           persist-credentials: false
       # glave of the latest release for each processor (dist's static builds), checked against
-      # the provenance the release made for its archives. Before the first release there is
+      # the provenance the release made for its archives, signed by the Release workflow alone. Before the first release there is
       # none, and the image carries no glave. After a release, an image already published with
       # its version means the run was a dry run, and nothing more is done.
       - name: glave of the latest release
@@ -72,7 +72,8 @@ jobs:
             arch="${pair%%:*}"
             archive="glave-${pair#*:}-unknown-linux-musl.tar.xz"
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$archive" --dir "$RUNNER_TEMP"
-            gh attestation verify "$RUNNER_TEMP/$archive" --repo "$GITHUB_REPOSITORY"
+            gh attestation verify "$RUNNER_TEMP/$archive" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
             mkdir -p "$RUNNER_TEMP/$arch" "images/computer/glave/$arch"
             tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/$arch"
             install -m 0755 "$RUNNER_TEMP/$arch/${archive%.tar.xz}/glave" "images/computer/glave/$arch/glave"

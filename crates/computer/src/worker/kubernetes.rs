@@ -17,7 +17,8 @@ mod sizing;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
@@ -83,7 +84,13 @@ pub struct Kubernetes {
     /// The Pod glave runs in, when it runs in one in the workers' namespace: every worker names
     /// it as its owner, so the cluster removes them when it is deleted, however glave ended.
     owner: Option<Owner>,
+    /// The SHA-256 of the glave for workers, kept from the last time it was hashed with the
+    /// file as it was then, shared by every copy: hashed again only once the file changes.
+    hashed: Arc<Mutex<Option<(Stamp, String)>>>,
 }
+
+/// A file as it was: its path, its size and when it last changed.
+type Stamp = (PathBuf, u64, Option<SystemTime>);
 
 impl std::fmt::Debug for Kubernetes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -188,6 +195,7 @@ impl Kubernetes {
             glave: settings.glave,
             labels: BTreeMap::new(),
             owner,
+            hashed: Arc::default(),
         })
     }
 
@@ -223,6 +231,33 @@ impl Kubernetes {
                 .into(),
             )
         })
+    }
+
+    /// The glave for workers and its SHA-256, which is hashed only the first time and when the
+    /// file has changed since: a release's glave is tens of MB.
+    async fn glave_and_digest(&self) -> Result<(Vec<u8>, String), ComputerError> {
+        let stamp = tokio::fs::metadata(&self.glave)
+            .await
+            .ok()
+            .map(|file| (self.glave.clone(), file.len(), file.modified().ok()));
+        let glave = self.glave().await?;
+        let kept = self.hashed.lock().ok().and_then(|hashed| hashed.clone());
+        if let (Some(stamp), Some((was, digest))) = (&stamp, kept)
+            && *stamp == was
+        {
+            return Ok((glave, digest));
+        }
+        // Off the runtime's threads.
+        let (glave, digest) = tokio::task::spawn_blocking(move || {
+            let digest = glave_ports::digest(&glave).as_str().to_owned();
+            (glave, digest)
+        })
+        .await
+        .map_err(|error| failed("could not hash the glave for workers", error))?;
+        if let (Some(stamp), Ok(mut hashed)) = (stamp, self.hashed.lock()) {
+            *hashed = Some((stamp, digest.clone()));
+        }
+        Ok((glave, digest))
     }
 
     /// Starts the worker `name` from `spec`, with `glave` as the program it serves with.
@@ -279,7 +314,7 @@ impl Kubernetes {
         let files = objects::files(glave, spec).map_err(|long| {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
-        self.copy_in(name, &files).await?;
+        self.copy_in(name, &files, "glave").await?;
         Ok(Link::Bridged)
     }
 
@@ -320,14 +355,16 @@ impl Kubernetes {
         home: &Home<'_>,
     ) -> Result<bool, ComputerError> {
         let token = super::tar::token_file(objects::TOKEN, &spec.token)?;
-        let (ended, _) = self.fed(name, &home.image_glave(), &token).await?;
+        let (ended, _) = self
+            .fed(name, &home.image_glave(), &token, "the token")
+            .await?;
         Ok(ended.is_some_and(|status| status.status.as_deref() == Some("Success")))
     }
 
-    /// Copies `files` (a tar archive) into the running worker through the API server.
-    async fn copy_in(&self, name: &str, files: &[u8]) -> Result<(), ComputerError> {
+    /// Copies `files` (a tar archive of `what`) into the running worker through the API server.
+    async fn copy_in(&self, name: &str, files: &[u8], what: &str) -> Result<(), ComputerError> {
         let (ended, said) = self
-            .fed(name, &["tar", "-x", "-f", "-", "-C", "/"], files)
+            .fed(name, &["tar", "-x", "-f", "-", "-C", "/"], files, what)
             .await?;
         match ended {
             // A cluster too old to close standard input on its own says nothing; the wait in
@@ -335,22 +372,28 @@ impl Kubernetes {
             None => Ok(()),
             Some(status) if status.status.as_deref() == Some("Success") => Ok(()),
             Some(status) => Err(ComputerError::Failed(format!(
-                "copying glave into the worker failed (the image needs tar): {} {}",
+                "copying {what} into the worker failed (the image needs tar): {} {}",
                 status.message.unwrap_or_default(),
                 said.trim()
             ))),
         }
     }
 
-    /// Runs `command` in the running worker `name` through the API server with `input` on its
-    /// standard input, within [`COPIED_WITHIN`]: how it ended, when the cluster says, and what
-    /// it printed on standard error.
-    async fn fed(&self, name: &str, command: &[&str], input: &[u8]) -> Result<Fed, ComputerError> {
-        tokio::time::timeout(COPIED_WITHIN, self.feeding(name, command, input))
+    /// Runs `command` in the running worker `name` through the API server with `input`, which
+    /// is `what`, on its standard input, within [`COPIED_WITHIN`]: how it ended, when the
+    /// cluster says, and what it printed on standard error.
+    async fn fed(
+        &self,
+        name: &str,
+        command: &[&str],
+        input: &[u8],
+        what: &str,
+    ) -> Result<Fed, ComputerError> {
+        tokio::time::timeout(COPIED_WITHIN, self.feeding(name, command, input, what))
             .await
             .unwrap_or_else(|_| {
                 Err(ComputerError::Failed(format!(
-                    "copying glave into the worker did not finish within {}",
+                    "copying {what} into the worker did not finish within {}",
                     glave_ports::spoken(COPIED_WITHIN)
                 )))
             })
@@ -361,7 +404,9 @@ impl Kubernetes {
         name: &str,
         command: &[&str],
         input: &[u8],
+        what: &str,
     ) -> Result<Fed, ComputerError> {
+        let could_not = format!("could not copy {what} into the worker");
         let params = AttachParams::default()
             .container(objects::CONTAINER)
             .stdin(true)
@@ -371,15 +416,12 @@ impl Kubernetes {
         let pods = self.pods();
         let mut process = match pods.exec(name, command.iter().copied(), &params).await {
             Ok(process) => process,
-            Err(error) => {
-                let what = "could not copy glave into the worker";
-                return Err(exec_failed(&pods, name, what, &error).await);
-            }
+            Err(error) => return Err(exec_failed(&pods, name, &could_not, &error).await),
         };
         let (Some(mut stdin), Some(mut errors)) = (process.stdin(), process.stderr()) else {
-            return Err(ComputerError::Failed(
-                "copying glave in gave no standard input".into(),
-            ));
+            return Err(ComputerError::Failed(format!(
+                "copying {what} in gave no standard input"
+            )));
         };
         let status = process.take_status();
         let write = async move {
@@ -399,7 +441,7 @@ impl Kubernetes {
             None => None,
         };
         let _ = process.join().await;
-        written.map_err(|error| failed("could not copy glave into the worker", error))?;
+        written.map_err(|error| failed(&could_not, error))?;
         Ok((ended, said))
     }
 
@@ -516,7 +558,7 @@ impl Backend for Kubernetes {
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
             let file = super::tar::token_file(objects::TOKEN, token)?;
-            self.copy_in(name, &file).await
+            self.copy_in(name, &file, "the token").await
         })
     }
 
