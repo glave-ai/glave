@@ -34,6 +34,7 @@ fn person<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a>
             key: "k1",
             claim: "glave-home-k1",
             idle_minutes: IDLE_MINUTES,
+            glave: "the-sha-256-of-the-glave-chosen",
         }),
         owner: None,
         ..shape(spec, labels)
@@ -292,6 +293,35 @@ fn the_token_goes_in_and_ready_comes_last() {
     );
     assert_eq!(arch(Some(0x3E)), Some("amd64"));
     assert_eq!(arch(None), None);
+}
+
+#[test]
+fn a_persons_computer_serves_its_images_glave_only_when_it_is_the_one_chosen() {
+    let spec = spec(true);
+    let labels = BTreeMap::new();
+    let shape = person(&spec, &labels);
+    let home = shape.home.unwrap();
+    let [shell, flag, script, chosen] = home.image_glave();
+    assert_eq!((shell, flag, chosen), ("/bin/sh", "-c", home.glave));
+    // The token goes in first; the image's glave is named the computer's, and the Pod told
+    // everything has arrived, only once its SHA-256 is the one the server chose.
+    let at = |text: &str| script.find(text).unwrap();
+    assert!(at("tar -x -f - -C /") < at("[ \"$(cat /usr/libexec/glave/glave.sha256"));
+    assert!(at("= \"$0\" ]") < at("ln -s /usr/libexec/glave/glave /opt/glave/glave"));
+    assert!(at("ln -s") < at(": > /opt/glave/ready"));
+    assert_eq!(
+        script.matches("&&").count(),
+        3,
+        "each step only after the last"
+    );
+    // The Pod runs whichever glave is at /opt/glave/glave: the image's, named there, or the
+    // one copied in, when the image's is another.
+    assert_eq!(
+        shape.pod()["spec"]["containers"][0]["command"][4],
+        json!(GLAVE)
+    );
+    let copied = String::from_utf8_lossy(&files(b"another glave", &spec).unwrap()).into_owned();
+    assert!(copied.contains("opt/glave/glave") && copied.contains("another glave"));
 }
 
 #[test]

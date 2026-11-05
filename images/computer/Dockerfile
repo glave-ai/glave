@@ -1,13 +1,31 @@
 # glave-computer: the machine a person's computer in the cloud runs (specs/computers.md,
 # decision 12). Wolfi, for glibc and packages rebuilt as soon as a fix ships; the tools a
 # person's work needs first, and version managers that keep what a person adds in their home,
-# which is their disk. glave itself is copied in at each wake, never baked in. Published weekly
-# (.github/workflows/computer-image.yml).
+# which is their disk. And glave of a release, when the build is given one, which a server of
+# that release serves with rather than copying its own in at each wake (decision 10). Published
+# weekly and after each release (.github/workflows/computer-image.yml).
 #
 # The base pinned by digest, moved by hand: the keys and repository it holds check every package
 # installed below. Every package, the base's own too, is the latest at each build (`apk
 # upgrade`), so fixes land at once.
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:88a20e2d017bd20cdc0cb3910de603e7bea9512a6c351a8dd3c9df212ab03d73
+ARG BASE=cgr.dev/chainguard/wolfi-base:latest@sha256:88a20e2d017bd20cdc0cb3910de603e7bea9512a6c351a8dd3c9df212ab03d73
+
+# glave for this image's processor, when the build put one at glave/<amd64|arm64>/glave (the
+# workflow, from a release whose provenance it checked; CI's kind job, from its own build), and
+# its SHA-256 beside it, which a server checks against the glave it chose before serving with
+# it. None otherwise, and glave is copied in. Picked on the builder's own processor, so only
+# the one for this image's goes in it.
+FROM --platform=$BUILDPLATFORM $BASE AS glave
+ARG TARGETARCH
+COPY glave/ /given/
+RUN set -eu; \
+    mkdir /out; \
+    if [ -f "/given/$TARGETARCH/glave" ]; then \
+      install -m 0755 "/given/$TARGETARCH/glave" /out/glave; \
+      sha256sum /out/glave | cut -d ' ' -f 1 > /out/glave.sha256; \
+    fi
+
+FROM $BASE
 
 # bubblewrap: glave's sandbox, which commands on a person's computer run in
 # (specs/sandbox.md, "On a person's computer").
@@ -38,6 +56,10 @@ RUN set -eu; \
     for tool in cargo cargo-clippy cargo-fmt clippy-driver rust-analyzer rustc rustdoc rustfmt; do \
       ln -s /usr/bin/rustup "/usr/local/bin/$tool"; \
     done
+
+# glave, when there is one, owned by root on a read-only root filesystem: nothing the person runs
+# can change it.
+COPY --from=glave /out/ /usr/libexec/glave/
 
 # nonroot's home is the person's disk, for what reads it from the user database (ssh, git).
 RUN sed -i 's#:/home/nonroot:#:/home/glave:#' /etc/passwd
