@@ -1,7 +1,7 @@
 //! The objects one worker is on Kubernetes, as the API server takes them: a Pod that waits for
 //! glave and then serves with it on a Unix socket, and a NetworkPolicy that keeps the worker's
-//! network as policy decided. And the files the harness copies in, and how far a starting Pod
-//! has got.
+//! network as policy decided. And the files the harness copies in, or for a person's computer
+//! the glave its image carries, and how far a starting Pod has got.
 
 use std::collections::BTreeMap;
 
@@ -25,6 +25,14 @@ const SECRET: &str = "/opt/glave/secret";
 pub(crate) const TOKEN: &str = "opt/glave/secret/token";
 /// What the harness copies in last, so the worker knows everything else has arrived.
 const READY: &str = "opt/glave/ready";
+/// Run by `/bin/sh -c` in a person's computer, with the SHA-256 of the glave the server chose as
+/// `$0` and the token, as a tar archive, on standard input: puts the token in, then, only when
+/// the glave glave's computer image carries (`images/computer`, with its SHA-256 beside it) is
+/// that very glave, names it as the computer's and says everything has arrived. Fails
+/// otherwise, and the server copies glave in instead.
+const FROM_IMAGE: &str = "tar -x -f - -C / && \
+[ \"$(cat /usr/libexec/glave/glave.sha256 2>/dev/null)\" = \"$0\" ] && \
+ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready";
 /// The label every worker object carries, so leftovers can be found.
 pub(crate) const LABEL: &str = "glave.worker";
 /// The label a person's computer's objects carry instead, its key as the value: never a
@@ -70,13 +78,24 @@ pub(crate) struct Owner {
     pub(crate) uid: String,
 }
 
-/// A person's computer: its key, and the claim that is its disk.
+/// A person's computer: its key, the claim that is its disk, and the glave it serves with.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Home<'a> {
     pub(crate) key: &'a str,
     pub(crate) claim: &'a str,
     /// The minutes it goes unasked before it ends on its own.
     pub(crate) idle_minutes: u32,
+    /// The SHA-256 of the glave the server chose for it: its image's own serves when it is
+    /// that one, and is copied in otherwise.
+    pub(crate) glave: &'a str,
+}
+
+impl Home<'_> {
+    /// What runs in the computer to put its token in and serve with its image's glave, when
+    /// that is the glave the server chose ([`FROM_IMAGE`]); it fails when it is not.
+    pub(crate) fn image_glave(&self) -> [&str; 4] {
+        ["/bin/sh", "-c", FROM_IMAGE, self.glave]
+    }
 }
 
 /// What one worker's objects are made of.

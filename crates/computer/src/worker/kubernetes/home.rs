@@ -1,8 +1,8 @@
 //! A person's computer on Kubernetes (`specs/computers.md`, "A person's computer in the
 //! cloud"): a PersistentVolumeClaim that is their disk and, while awake, one Pod mounting it as
 //! their home, with a NetworkPolicy beside it. Sleeping removes the Pod and its policy and
-//! keeps the claim; waking makes them again on the same claim, with glave and a fresh token
-//! copied in. Nothing here is owned by the Pod glave runs in: a person's computer outlives any
+//! keeps the claim; waking makes them again on the same claim, with a fresh token copied in,
+//! and glave too unless its image carries the very glave the server chose. Nothing here is owned by the Pod glave runs in: a person's computer outlives any
 //! one glave, and is labelled `glave.computer`, never as a worker, so no glave reaps it.
 
 use std::sync::Arc;
@@ -153,13 +153,14 @@ impl PersonComputer {
         };
         self.claim().await?;
         self.sleep().await?;
-        let glave = self.cluster.glave().await?;
+        let (glave, digest) = self.cluster.glave_and_digest().await?;
         let name = self.name();
         let claim = self.claim_name();
         let home = Home {
             key: &self.key,
             claim: &claim,
             idle_minutes: self.idle_minutes,
+            glave: &digest,
         };
         match self.cluster.start_on(&name, spec, &glave, Some(home)).await {
             Ok(link) => Ok(link),
