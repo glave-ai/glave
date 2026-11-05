@@ -28,9 +28,9 @@ use crate::support::*;
 type Held = Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>;
 
 /// A tool server that stops answering while `down`, and comes back.
-struct Flaky {
-    down: AtomicBool,
-    tools: InMemoryTools,
+pub(crate) struct Flaky {
+    pub(crate) down: AtomicBool,
+    pub(crate) tools: InMemoryTools,
 }
 
 impl ToolSource for Flaky {
@@ -149,6 +149,13 @@ fn opened_alike(requests: &[ModelRequest]) {
         "the compaction opened with what is on offer now"
     );
     assert!(prefix(&requests[6]) == compacted, "and kept it");
+    // Another model gets its own: the prompt names it, the tools are those on offer.
+    assert!(
+        requests[7].system.contains("another-model"),
+        "{}",
+        requests[7].system
+    );
+    assert_eq!(requests[7].tools, requests[6].tools);
     let offered =
         |request: &ModelRequest, name: &str| request.tools.iter().any(|spec| spec.name == name);
     for name in ["mcp__docs__search", "mcp__mail__send", "web_fetch"] {

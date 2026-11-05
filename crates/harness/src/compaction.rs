@@ -342,7 +342,7 @@ where
         thread.messages = vec![Message::User { parts }];
         thread.measured = None;
         // The conversation starts again, and so may its prefix (`prefix.rs`).
-        thread.prefix = None;
+        thread.prefix = crate::prefix::Prefixed::None;
         // The start shows every memory the thread knows now, and the notes fold away.
         if self.memory_for(thread).is_some() {
             thread.memory.restart();

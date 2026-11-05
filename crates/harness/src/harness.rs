@@ -32,7 +32,7 @@ use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
 use crate::plan::Planning;
-use crate::prefix::Prefix;
+use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
 use crate::skills::Skills;
@@ -200,9 +200,9 @@ pub struct Thread {
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
     pub(crate) home: Option<crate::homes::AtHome>,
-    /// The system prompt and tools its model calls open with, from its first (`prefix.rs`);
-    /// none until then, and again once it is compacted or read again from the log.
-    pub(crate) prefix: Option<Prefix>,
+    /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
+    /// as its log kept them when it was read again, and none once it is compacted.
+    pub(crate) prefix: Prefixed,
 }
 
 impl Thread {
@@ -541,13 +541,12 @@ where
     ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes()?)?;
         let for_ = caller.person.or(self.actors.person);
-        let (workspace, bound) = match place {
-            Some(place) => self
-                .place(scope, id, place, for_)
-                .await
-                .map(|(w, b)| (w, Some(b)))?,
-            None => (None, None),
+        let placed = match place {
+            Some(place) => Some(self.place(scope, id, place, for_).await?),
+            None => None,
         };
+        let (workspace, bound) =
+            placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
         let instructions = self
             .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
             .await;
@@ -591,13 +590,14 @@ where
             opened: None,
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
-            prefix: None,
+            prefix: Prefixed::None,
         };
         let mut events = Vec::new();
-        let kind = parent
-            .as_ref()
-            .map_or(OriginKind::Prompt, |_| OriginKind::Subagent);
-        let mut origin = Origin::of(kind);
+        let mut origin = Origin::of(if parent.is_some() {
+            OriginKind::Subagent
+        } else {
+            OriginKind::Prompt
+        });
         origin.by = Self::other_than_for(&thread, caller.person);
         self.stage(
             &thread,

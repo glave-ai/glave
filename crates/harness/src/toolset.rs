@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
 use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
 
 use crate::prefix::Told;
@@ -29,6 +30,15 @@ const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remem
 /// server's own words may be part of it.
 const WHY_CHARS: usize = 500;
 
+/// Memory's tools, by name, which the harness runs itself (`memory/call.rs`).
+const MEMORY: [&str; 4] = [REMEMBER, EDIT_MEMORY, FORGET, RECALL];
+
+/// Whether `name` is one of glave's own tools, which the harness runs itself and offers by
+/// what a thread is, never a service someone connected.
+pub(crate) fn is_glaves(name: &str) -> bool {
+    MEMORY.contains(&name) || Own::ALL.iter().any(|own| own.name() == name)
+}
+
 /// One of glave's own tools, which the harness runs itself, offered in some threads only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Own {
@@ -43,6 +53,9 @@ enum Own {
 }
 
 impl Own {
+    /// Every one of glave's own tools.
+    const ALL: [Self; 4] = [Self::Question, Self::Agent, Self::Goal, Self::Plan];
+
     /// The tool's name.
     fn name(self) -> &'static str {
         match self {
@@ -67,12 +80,9 @@ pub(crate) struct ToolSet {
     own: Vec<Own>,
     /// The memory tools on offer, by name: only where the thread reads memory.
     pub(crate) memory: Vec<String>,
-    /// Tools the thread's prefix lists whose source does not answer now: a call to one is told
-    /// so, rather than that there is no such tool.
-    silent: Vec<String>,
     /// What changed since the model was last told, as the note the turn's message opens with,
     /// and what the model knows once it reads it (`prefix.rs`).
-    pub(crate) news: Option<(String, Told)>,
+    pub(crate) news: Option<Box<(String, Told)>>,
 }
 
 impl ToolSet {
@@ -84,7 +94,6 @@ impl ToolSet {
             missing: Vec::new(),
             own: Vec::new(),
             memory: Vec::new(),
-            silent: Vec::new(),
             news: None,
         };
         let mut missing = Vec::new();
@@ -237,35 +246,37 @@ impl ToolSet {
             missing: self.missing.clone(),
             own: Vec::new(),
             memory: Vec::new(),
-            silent: self.silent.clone(),
             news: None,
         }
     }
 
-    /// These tools, as listed, called through the sources of `now`, the tools on offer now: a
-    /// tool `now` lacks stays listed, silent, and a tool only `now` has is not offered.
-    pub(crate) fn route(&mut self, now: Self) {
-        self.silent.clear();
-        for spec in &self.specs {
-            let Some(found) = self.by_name.get_mut(&spec.name) else {
-                continue;
-            };
-            match now.by_name.get(&spec.name) {
-                Some(answers) => found.clone_from(answers),
-                None => self.silent.push(spec.name.clone()),
-            }
-        }
-        self.missing = now.missing;
+    /// These tools called through their sources, listed as `system` and `specs` say, a
+    /// thread's prefix: a tool only these offer is not on offer, and one only `specs` lists is
+    /// told it isn't answering ([`ToolSet::not_found`]).
+    pub(crate) fn listed_as(mut self, system: String, specs: Vec<ToolSpec>) -> Self {
+        let listed = |name: &str| specs.iter().any(|spec| spec.name == name);
+        self.by_name.retain(|name, _| listed(name));
+        // glave's own run here whatever is on offer now, and say so when they can't.
+        self.own = Own::ALL
+            .into_iter()
+            .filter(|own| listed(own.name()))
+            .collect();
+        self.memory = (MEMORY.iter())
+            .filter(|name| listed(name))
+            .map(|name| (*name).to_owned())
+            .collect();
+        self.system = system;
+        self.specs = specs;
+        self
     }
 
-    /// The tool called `name`, forgiving case and stray whitespace, with its source's index:
-    /// none when its source does not answer now.
+    /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
     pub(crate) fn get(&self, name: &str) -> Option<(usize, &ToolInfo)> {
         let found = self
             .by_name
             .get(name)
             .or_else(|| self.by_name.get(&name.trim().to_ascii_lowercase()))?;
-        (!self.silent.contains(&found.1.spec.name)).then_some((found.0, &found.1))
+        Some((found.0, &found.1))
     }
 
     /// What a call of `name` is told when no source runs it: that its source isn't answering,

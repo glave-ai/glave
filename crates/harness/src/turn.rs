@@ -1,33 +1,29 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
-use glave_event::{
-    BlobRef, CallId, Caution, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part,
-    Permissions, Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnResult, TurnStarted,
-};
+use glave_event::{MessageAdded, Outcome, Part, Principal, Role, StopReason, TurnResult};
 use glave_ports::{
-    BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
-    ModelRequest, Pieces, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
+    BlobStore, BoxFuture, Caller, EventLog, Failure, Message, ModelProvider, ToolCall, ToolChoice,
 };
-use std::time::Duration;
-
-use serde::Serialize;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
-use crate::compaction::{Measured, chars};
-use crate::files::refuses_files;
 use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::memory::{ConfigMemory, MemoryVerb};
-use crate::question::Question;
 use crate::repeats::Repeats;
-use crate::sandbox::{Recorded, recorded};
 use crate::service::Round;
 use crate::telemetry;
-use crate::thought::Thinking;
 use crate::toolset::ToolSet;
 use crate::waits::{Answered, Opened};
 use tracing::Instrument as _;
+
+mod begin;
+mod live;
+mod model;
+
+pub(crate) use begin::CONFIG_LIMIT;
+pub(crate) use live::Prompt;
+pub use live::{Live, Said};
+use model::measure;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -37,123 +33,6 @@ const CANCELLED: &str = "[The person cancelled this turn on purpose. A command t
 const STEP_LIMIT: &str = "[This turn has reached its step limit, so tools are off until the \
      person's next message. Reply in text only: say that you reached the step limit, what you \
      have done, what is left, and what to do next.]";
-
-/// What the person sees while a turn runs. Never stored.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Live {
-    Text(String),
-    Reasoning(String),
-    /// The reasoning's headline changed: its last bold title, else its last whole sentence.
-    Thinking(String),
-    /// The reasoning ended, after this long: the model wrote something else, or its call ended.
-    Thought(Duration),
-    ToolStarted {
-        summary: String,
-    },
-    ToolFinished {
-        summary: String,
-        is_error: bool,
-    },
-    /// An action that did not run: the person said no, or no one was there to ask. `caution`
-    /// is why it asked, as the person reads it, when a caution did, and `reason` what it was
-    /// written from, as its `approval.requested` records them.
-    ToolDeclined {
-        summary: String,
-        caution: Option<String>,
-        reason: Option<Caution>,
-        no_one_there: bool,
-    },
-    /// The conversation was summarized to fit the context window; sizes are estimates.
-    Compacted {
-        before_tokens: u64,
-        after_tokens: u64,
-    },
-    /// A needed compaction failed; the turn goes on without it.
-    CompactionFailed(String),
-    /// The model asked the person questions, and the turn waits for the answers.
-    Asked {
-        call_id: CallId,
-        questions: Vec<Question>,
-    },
-    /// The call's `approval.requested` waits for the person's answer, which someone can give.
-    /// One the judge let run is decided at once, and never pending.
-    ApprovalPending {
-        call_id: CallId,
-    },
-    /// A subagent started, in a child thread.
-    SubagentStarted {
-        thread: ThreadId,
-        description: String,
-    },
-    /// What a subagent shows, under its own thread.
-    Child {
-        thread: ThreadId,
-        update: Box<Live>,
-    },
-    /// A subagent is done; `ok` when it finished its work.
-    SubagentEnded {
-        thread: ThreadId,
-        ok: bool,
-    },
-    /// A memory was saved, edited or forgotten in this turn: shown at once in every client.
-    Memory {
-        verb: MemoryVerb,
-        memory: MemoryId,
-        /// Its text, when it was saved or edited.
-        text: Option<String>,
-    },
-    /// A message the person sent while the turn ran that the model will not read: a hook
-    /// stopped it (`reason`, as the hook gave it), or the turn was stopped or failed before its
-    /// next call (`None`). `id` is the one it was queued with.
-    Unread {
-        id: EventId,
-        reason: Option<String>,
-    },
-    /// The model was asked, and nothing has come back yet.
-    Waiting,
-    /// A model call failed in a way that may pass, and is tried again after `wait`.
-    Retrying {
-        retry: u32,
-        of: u32,
-        wait: Duration,
-        error: String,
-    },
-}
-
-/// A person's message: its text, and the files they added to it, as `file` parts.
-#[derive(Debug, Clone, Copy)]
-pub struct Said<'a> {
-    pub text: &'a str,
-    pub files: &'a [Part],
-}
-
-/// What the person asked for, and who asked.
-#[derive(Clone, Copy)]
-pub(crate) struct Prompt<'a> {
-    pub(crate) text: &'a str,
-    /// The files the person added to it, as `file` parts after its text.
-    pub(crate) files: &'a [Part],
-    pub(crate) caller: &'a Caller,
-    /// Whether glave wrote the prompt, as a goal's continuation: recorded as glave's, and
-    /// never read as the person's say-so.
-    pub(crate) by_glave: bool,
-    /// The id its message is recorded with, when it was made already: a message sent while
-    /// the turn before ran keeps the id it was queued with.
-    pub(crate) id: Option<EventId>,
-}
-
-impl<'a> Prompt<'a> {
-    /// `text`, as `caller` wrote it.
-    pub(crate) fn new(text: &'a str, caller: &'a Caller) -> Self {
-        Self {
-            text,
-            files: &[],
-            caller,
-            by_glave: false,
-            id: None,
-        }
-    }
-}
 
 /// What a turn carries from step to step.
 pub(crate) struct Step {
@@ -168,33 +47,6 @@ pub(crate) struct Step {
     pub(crate) round: Option<Round>,
     /// Whether the model proposed a plan in this turn, in plan mode: the turn ends with it.
     pub(crate) proposed: bool,
-}
-
-/// The version of the turn configuration blob.
-const CONFIG_VERSION: u32 = 2;
-
-/// The most a turn's configuration may be: its system prompt and tools, many times over.
-pub(crate) const CONFIG_LIMIT: u64 = 16 * 1024 * 1024;
-
-/// The full configuration of a turn, stored once by hash and referenced from `turn.started`.
-#[derive(Serialize)]
-struct TurnConfig<'a> {
-    /// The blob's format: 2 since it records memory. Blobs without `v` are version 1.
-    v: u32,
-    model: &'a str,
-    provider: &'a str,
-    system: &'a str,
-    tools: &'a [ToolSpec],
-    max_output_tokens: Option<u32>,
-    /// What the agent could do without asking: the thread's mode.
-    permissions: Permissions,
-    /// The sandbox commands ran in; absent when there was none.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sandbox: Option<Recorded>,
-    /// The memories the model knew at the turn's start, at their versions; absent when the
-    /// thread reads no memory, so a configuration without memory is what it always was.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    memory: Option<ConfigMemory>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -490,207 +342,6 @@ where
         }
     }
 
-    /// After a refusal as too long for the model: the thread counts as full, so the next step
-    /// compacts first and then tries again.
-    fn mark_full(&self, thread: &mut Thread, refused: &ProviderError) {
-        self.learn_window(&self.model_for(thread), refused);
-        thread.measured = Some(Measured {
-            tokens: u64::MAX,
-            chars: chars(&thread.messages),
-        });
-    }
-
-    /// Records what ended in the background since the last turn, stores the turn's
-    /// configuration, then records `turn.started` and the person's message.
-    async fn begin(
-        &self,
-        thread: &mut Thread,
-        prompt: Prompt<'_>,
-        offer: &ToolSet,
-    ) -> Result<(), HarnessError> {
-        let Prompt {
-            text: prompt,
-            files,
-            caller,
-            by_glave,
-            id,
-        } = prompt;
-        // Where it works now that its project's folder moved, before the turn that works there.
-        if let Some(bound) = thread.rebound.take() {
-            self.record(thread, &bound).await?;
-            // Glave's own record: call ids do not count it, so the model is sent the same.
-            thread.unnumbered = thread.unnumbered.saturating_add(1);
-        }
-        // What ended in the background since the last turn is recorded before this one.
-        self.check_commands(thread).await?;
-        let sent_to = self.model_for(thread);
-        let provider = self.current_default().provider;
-        let config = self
-            .store_config(thread, offer, &sent_to, &provider)
-            .await?;
-        let model = ModelRef {
-            provider,
-            name: sent_to,
-        };
-        // A new thread opens with the project's instructions.
-        let opening = thread.messages.is_empty();
-        let mut parts = thread
-            .opening_parts()
-            .filter(|_| opening)
-            .unwrap_or_default();
-        // What changed since the model was told, before the person's words (`prefix.rs`).
-        parts.extend(crate::prefix::news(offer));
-        parts.push(Part::Text {
-            text: prompt.to_owned(),
-        });
-        parts.extend_from_slice(files);
-        let mut events = Vec::new();
-        self.stage(
-            thread,
-            &mut events,
-            &TurnStarted {
-                model,
-                config,
-                trace: caller.trace.clone(),
-                auth: caller.auth.clone(),
-                missing: offer.missing.clone(),
-            },
-        )?;
-        let message = MessageAdded {
-            role: Role::User,
-            parts: parts.clone(),
-            author: if by_glave {
-                Some(Principal::glave())
-            } else {
-                Self::other_than_for(thread, caller.person)
-            },
-            thought: None,
-        };
-        match id {
-            Some(id) => self.stage_as(thread, &mut events, &message, id)?,
-            None => self.stage(thread, &mut events, &message)?,
-        }
-        self.commit(thread, events).await?;
-        crate::prefix::heard(thread, offer);
-        thread.turns = thread.turns.saturating_add(1);
-        thread.messages.push(Message::User { parts });
-        if by_glave {
-            return Ok(());
-        }
-        thread.request = Some(prompt.to_owned());
-        if !thread.delegated() {
-            thread.asked.push(prompt.to_owned());
-        }
-        Ok(())
-    }
-
-    /// Stores the turn's full configuration, as sent to `model` at `provider`, and answers
-    /// the reference `turn.started` holds.
-    async fn store_config(
-        &self,
-        thread: &mut Thread,
-        offer: &ToolSet,
-        model: &str,
-        provider: &str,
-    ) -> Result<BlobRef, HarnessError> {
-        let memory = self.look_at_memory(thread).await;
-        let config = TurnConfig {
-            v: CONFIG_VERSION,
-            model,
-            provider,
-            system: &offer.system,
-            tools: &offer.specs,
-            max_output_tokens: self.settings.max_output_tokens,
-            permissions: self.permissions_for(thread),
-            sandbox: self.workspace_for(thread).sandbox().map(recorded),
-            memory,
-        };
-        let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
-        let stored = self.blobs.put(
-            &thread.scope,
-            Some(thread.id),
-            "application/json",
-            CONFIG_LIMIT,
-            Box::new(Pieces::from(bytes)),
-        );
-        Ok(stored.await?)
-    }
-
-    /// Sends the conversation to the model, forwarding live text as it arrives, and answers
-    /// with how its reasoning went. When its
-    /// provider refuses the images and PDFs sent inline, it is asked once more with every file
-    /// by its name, and the model is taken for one that reads none: a file never stops a
-    /// thread.
-    async fn ask_model(
-        &self,
-        thread: &Thread,
-        offer: &ToolSet,
-        tool_choice: ToolChoice,
-        live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<(Completion, Thinking), HarnessError> {
-        let model = self.model_for(thread);
-        let (messages, files) = self
-            .with_files(&thread.scope, &model, self.sent(thread))
-            .await;
-        let mut request = ModelRequest {
-            model,
-            system: offer.system.clone(),
-            messages,
-            tools: offer.specs.clone(),
-            tool_choice,
-            max_output_tokens: self.settings.max_output_tokens,
-            purpose: if thread.delegated() {
-                Purpose::Subagent
-            } else {
-                Purpose::Main
-            },
-            files,
-            effort: thread.effort.clone(),
-            payer: Some(thread.payer()),
-            route: None,
-        };
-        let retries = self.settings.retries;
-        let mut retry = 0;
-        let mut named = false;
-        loop {
-            live(Live::Waiting);
-            let mut thinking = Thinking::default();
-            let mut forward = |delta: Delta| thinking.see(delta, self.clock.now(), live);
-            let answered = self.provider.complete(&request, &mut forward).await;
-            match answered {
-                Ok(completion) => {
-                    thinking.end(self.clock.now(), live);
-                    if named {
-                        self.learn_without_images(&request.model);
-                    }
-                    return Ok((completion, thinking));
-                }
-                Err(error) if !request.files.is_empty() && refuses_files(&error) => {
-                    tracing::warn!(
-                        model = %request.model,
-                        "the provider refused the files sent inline: sent again by their names"
-                    );
-                    request.files.clear();
-                    named = true;
-                }
-                Err(error) if error.is_transient() && retry < retries.attempts => {
-                    retry += 1;
-                    // Only the wait's jitter: without randomness it waits the plain backoff.
-                    let jitter = self.entropy.bytes().unwrap_or_default();
-                    let wait = retries.wait(retry, jitter);
-                    live(Live::Retrying {
-                        retry,
-                        of: retries.attempts,
-                        wait,
-                        error: error.to_string(),
-                    });
-                    tokio::time::sleep(wait).await;
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-    }
-
     /// Records `turn.ended`, with what the turn did and cost: its `result`.
     async fn end(&self, thread: &mut Thread, result: &TurnResult) -> Result<(), HarnessError> {
         let mut events = Vec::new();
@@ -704,59 +355,6 @@ where
         // the next thread in its folder opens with.
         self.refresh_at_home(thread).await;
         Ok(())
-    }
-
-    /// Records a finished model response: its message, with what its reasoning came to as
-    /// `thinking` saw it, its tool calls, each with its line as `tools` describe it, then its
-    /// usage.
-    async fn record_response(
-        &self,
-        thread: &mut Thread,
-        completion: &Completion,
-        thinking: &Thinking,
-        tools: &ToolSet,
-    ) -> Result<Vec<ToolCall>, HarnessError> {
-        let mut events = Vec::new();
-        if !completion.parts.is_empty() {
-            let message = MessageAdded {
-                role: Role::Assistant,
-                parts: completion.parts.clone(),
-                author: None,
-                thought: thinking.thought(&completion.parts),
-            };
-            self.stage(thread, &mut events, &message)?;
-        }
-        let mut calls = Vec::new();
-        for requested in &completion.tool_calls {
-            let seq = Self::seq_after(thread, &events)?;
-            let call = ToolCall {
-                // Numbered as the model has always seen them: bindings do not count, so where
-                // a thread works never changes what the model is sent.
-                call_id: CallId::new(format!(
-                    "call_{}",
-                    seq.get().saturating_sub(thread.unnumbered)
-                ))?,
-                tool: requested.tool.clone(),
-                arguments: requested.arguments.clone(),
-            };
-            let payload = ToolCallRequested {
-                call_id: call.call_id.clone(),
-                provider_call_id: requested.provider_call_id.clone(),
-                tool: call.tool.clone(),
-                arguments: call.arguments.clone(),
-                summary: self.describe(thread, tools, &call),
-                kind: self.kind(thread, tools, &call),
-            };
-            self.stage(thread, &mut events, &payload)?;
-            calls.push(call);
-        }
-        self.stage(thread, &mut events, &completion.responded())?;
-        self.commit(thread, events).await?;
-        thread.messages.push(Message::Assistant {
-            parts: completion.parts.clone(),
-            tool_calls: calls.clone(),
-        });
-        Ok(calls)
     }
 }
 
@@ -781,13 +379,4 @@ fn outcome_of(stop: StopReason) -> Outcome {
         StopReason::Interrupted | StopReason::Cancelled => Outcome::Interrupted,
         StopReason::Error | StopReason::MalformedToolCall | StopReason::Pause => Outcome::Failed,
     }
-}
-
-/// Remembers the size the provider reported, for estimating the next request.
-fn measure(thread: &mut Thread, completion: &Completion) {
-    let reported = completion.usage.counts();
-    thread.measured = Some(Measured {
-        tokens: reported.input.saturating_add(reported.output),
-        chars: chars(&thread.messages),
-    });
 }

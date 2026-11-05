@@ -2,13 +2,13 @@
 //! from its first call on, so the provider's prompt cache keeps matching and the conversation
 //! is never billed again in full (owner, 2026-11-05; `specs/invariants.md`, 27). Only a
 //! compaction, which restarts the conversation, and another model, which shares none of the
-//! cache, make a new one. What changes meanwhile reaches the model at the end of the
-//! conversation instead, in one note that opens the turn's message, as Claude Code and OpenCode
-//! send a `<system-reminder>` and Codex its context updates: accounts connected, plan mode on or
-//! off, a listed tool that changed (a skill installed), and tools that came after the prefix,
-//! which wait for a compaction or a new thread. A tool whose source stops answering stays listed.
+//! cache, make a new one; a thread read again from the log keeps the one its log recorded.
+//! What changes meanwhile reaches the model at the end of the conversation instead, in one note
+//! that opens the turn's message, as Claude Code and OpenCode send a `<system-reminder>` and
+//! Codex its context updates (`told.rs`). A tool whose source stops answering stays listed.
 
-use std::collections::BTreeMap;
+mod kept;
+mod told;
 
 use glave_event::{Part, Permissions};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSpec};
@@ -17,123 +17,55 @@ use crate::approval::Approver;
 use crate::harness::{Harness, Thread};
 use crate::toolset::ToolSet;
 
-/// What the model is told when it is no longer signed in to any git host.
-const SIGNED_OUT: &str = "No account is connected any more: git and the forge tools no longer \
-     sign in by themselves.";
+pub(crate) use kept::Kept;
+pub(crate) use told::Told;
 
-/// What the model is told when plan mode ends without a plan built.
-const PLAN_OFF: &str = "Plan mode is off: what it said above no longer applies, and you may \
-     change things as the person's mode allows.";
-
-/// What the model is told when memory is turned off.
-const MEMORY_OFF: &str = "Memory is off now: its tools are refused, and what is said above about \
-     saving to it no longer applies.";
-
-/// What the model is told when memory is turned on again, its tools listed.
-const MEMORY_ON: &str = "Memory is on again: its tools work.";
+/// Where a thread's prefix stands. Boxed, so a thread held across the turn's many awaits
+/// stays small.
+#[derive(Debug, Clone, Default)]
+pub(crate) enum Prefixed {
+    /// None yet, or none since a compaction: its next call makes one.
+    #[default]
+    None,
+    /// As its log kept it, until its next call takes it up.
+    Kept(Box<Kept>),
+    /// The one its calls open with.
+    Made(Box<Prefix>),
+}
 
 /// The prefix a thread's model calls open with.
 #[derive(Debug, Clone)]
 pub(crate) struct Prefix {
     /// The model it was made for.
     model: String,
-    /// Its system prompt and tools, as its first call sent them.
-    tools: ToolSet,
+    /// Its system prompt, as its first call sent it.
+    system: String,
+    /// Its tools, as its first call listed them.
+    specs: Vec<ToolSpec>,
     /// What the model has been told of what can change: by the prefix, then by notes.
     told: Told,
-}
-
-/// What the model knows of what can change mid-thread.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Told {
-    /// The accounts the person connected, as the prompt says them.
-    signed_in: Option<String>,
-    /// Whether the thread is in plan mode.
-    planning: bool,
-    /// Whether the thread reads memory.
-    memory: bool,
-    /// Every tool it was told of, by name: those the prefix lists, then those it was told came.
-    tools: BTreeMap<String, ToolSpec>,
-}
-
-impl Told {
-    /// The note that tells a model who knows this what `now` changes, if it changes anything.
-    fn news(&self, now: &Self, listed: &ToolSet) -> Option<String> {
-        let mut notes = Vec::new();
-        if self.signed_in != now.signed_in {
-            notes.push(now.signed_in.as_deref().unwrap_or(SIGNED_OUT).to_owned());
-        }
-        if self.planning != now.planning {
-            let plan_mode = crate::plan::PLAN_MODE.trim_start();
-            notes.push((if now.planning { plan_mode } else { PLAN_OFF }).to_owned());
-        }
-        if self.memory && !now.memory {
-            notes.push(MEMORY_OFF.to_owned());
-        } else if !self.memory && now.memory && !listed.memory.is_empty() {
-            notes.push(MEMORY_ON.to_owned());
-        }
-        for (name, spec) in &now.tools {
-            let is_listed = || listed.specs.iter().any(|listed| listed.name == *name);
-            if self.tools.get(name).is_some_and(|was| was != spec) && is_listed() {
-                notes.push(changed(spec));
-            }
-        }
-        let came: Vec<String> = (now.tools.keys())
-            .filter(|name| !self.tools.contains_key(*name))
-            .map(|name| format!("`{name}`"))
-            .collect();
-        if !came.is_empty() {
-            notes.push(format!(
-                "Tools were connected after this conversation began: {}. They are not \
-                 available here yet: they will be once the conversation is compacted, or in a \
-                 new thread. If the person asks for them, tell them so.",
-                came.join(", ")
-            ));
-        }
-        (!notes.is_empty()).then(|| {
-            format!(
-                "<system-reminder>\n{}\n</system-reminder>",
-                notes.join("\n\n")
-            )
-        })
-    }
-
-    /// What the model knows once it has read the news of `now`: never less than before.
-    fn and(&self, now: Self) -> Self {
-        let mut tools = self.tools.clone();
-        tools.extend(now.tools);
-        Self { tools, ..now }
-    }
-}
-
-/// What the model is told of a listed tool whose description or parameters changed.
-fn changed(spec: &ToolSpec) -> String {
-    format!(
-        "The tool `{}` changed after this conversation began. It now reads: {}\nIts parameters: {}",
-        spec.name, spec.description, spec.parameters
-    )
 }
 
 impl Prefix {
     /// The tools of a turn whose model calls open with this prefix, called through what is
     /// on offer `now`, with the news of what `told` changes.
     fn behind(&self, now: ToolSet, told: Told) -> ToolSet {
-        let mut set = self.tools.clone();
-        set.route(now);
-        set.news = (self.told.news(&told, &self.tools)).map(|news| (news, self.told.and(told)));
+        let mut set = now.listed_as(self.system.clone(), self.specs.clone());
+        set.news =
+            (self.told.news(&told, &self.specs)).map(|news| Box::new((news, self.told.and(told))));
         set
     }
 }
 
 /// The note that opens `offer`'s turn's message, if anything changed since the model was told.
 pub(crate) fn news(offer: &ToolSet) -> Option<Part> {
-    let (text, _) = offer.news.as_ref()?;
+    let (text, _) = offer.news.as_deref()?;
     Some(Part::Text { text: text.clone() })
 }
 
 /// Remembers that `thread`'s model was told what `offer`'s news says, once it is recorded.
 pub(crate) fn heard(thread: &mut Thread, offer: &ToolSet) {
-    if let (Some(prefix), Some((_, told))) = (thread.prefix.as_mut(), offer.news.as_ref()) {
+    if let (Prefixed::Made(prefix), Some((_, told))) = (&mut thread.prefix, offer.news.as_deref()) {
         prefix.told = told.clone();
     }
 }
@@ -145,21 +77,34 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The tools of `thread`'s next turn: its prefix, made now from what is on offer when it
-    /// has none for its model, and called through what is on offer now.
+    /// The tools of `thread`'s next turn: its prefix, kept or made now from what is on offer
+    /// when it has none for its model, and called through what is on offer now.
     pub(crate) async fn tools(&self, thread: &mut Thread) -> ToolSet {
-        let (now, told) = self.on_offer(thread).await;
+        // Boxed: what every source says can be large, and turns hold this across awaits.
+        let (now, told) = Box::pin(self.on_offer(thread)).await;
         let model = self.model_for(thread);
-        if let Some(prefix) = thread
-            .prefix
-            .as_ref()
-            .filter(|prefix| prefix.model == model)
-        {
-            return prefix.behind(now, told);
+        let prefix = match std::mem::take(&mut thread.prefix) {
+            Prefixed::Made(prefix) if prefix.model == model => prefix,
+            Prefixed::Kept(kept) if kept.model == model => Box::new(kept.prefix()),
+            _ => Box::new(Prefix {
+                model,
+                system: now.system.clone(),
+                specs: now.specs.clone(),
+                told: told.clone(),
+            }),
+        };
+        let set = prefix.behind(now, told);
+        thread.prefix = Prefixed::Made(prefix);
+        set
+    }
+
+    /// `given`, a subagent's tools from its parent, behind the prefix the child's log kept,
+    /// when it is going on with the same model: a child keeps its own first prefix.
+    pub(crate) fn kept_for(&self, thread: &Thread, given: ToolSet) -> ToolSet {
+        match &thread.prefix {
+            Prefixed::Kept(kept) if kept.model == self.model_for(thread) => kept.tools(given),
+            _ => given,
         }
-        let tools = now.clone();
-        thread.prefix = Some(Prefix { model, tools, told });
-        now
     }
 
     /// The tools on offer now in `thread`, from every source: the harness's, then its
@@ -199,14 +144,11 @@ where
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }
-        let tools = (set.specs.iter())
-            .map(|spec| (spec.name.clone(), spec.clone()))
-            .collect();
         let told = Told {
             signed_in,
             planning,
             memory: self.memory_for(thread).is_some(),
-            tools,
+            tools: Told::services(&set.specs),
         };
         (set, told)
     }

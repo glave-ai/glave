@@ -81,7 +81,7 @@ where
             let carried = async {
                 self.reopen_removed(thread).await?;
                 let toolset = if let Some(tools) = tools {
-                    tools
+                    self.kept_for(thread, tools)
                 } else {
                     self.bring(thread).await?;
                     self.tools(thread).await
