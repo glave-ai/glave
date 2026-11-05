@@ -1,0 +1,4 @@
+# The glave a build of the image carries, put here by the build that has one (Dockerfile); never
+# committed.
+*
+!.gitignore

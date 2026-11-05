@@ -1,12 +1,14 @@
 name: computer image
 
 # glave's computer image (images/computer, specs/computers.md, decision 12), for x86-64 and
-# arm64. Built on a pull request that changes it, published nowhere. Published weekly, so
-# Wolfi's fixes reach it, and when run by hand: pushed to GitHub's container registry under
-# the day it was built, and attested there with GitHub's build provenance. glave itself is not
-# in it (it is copied in at each wake), so it follows Wolfi, not glave's releases. A deployment
-# names it by the digest the run's summary prints (`[computers] image`). CI's `kind` job builds
-# and tests the same Dockerfile on every push.
+# arm64, with glave of the latest release in it (decision 10), once there is one. Built on a
+# pull request that changes it, published nowhere. Published weekly, so Wolfi's fixes reach it,
+# after a release, and when run by hand: pushed to GitHub's container registry under the day it
+# was built and the version of the glave in it (`0.1.0`), and attested there with GitHub's
+# build provenance. A deployment names it by the digest the run's summary prints
+# (`[computers] image`), of its own release, so its server serves people's computers with the
+# image's glave rather than copying its own in at each wake. CI's `kind` job builds and tests
+# the same Dockerfile, with the glave it built, on every push.
 on:
   pull_request:
     paths:
@@ -14,6 +16,11 @@ on:
       - .github/workflows/computer-image.yml
   schedule:
     - cron: "23 5 * * 1"
+  # After a release: a run that published one is followed by its image, the first with its
+  # version; a dry run, which published none, by nothing.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +34,7 @@ jobs:
   image:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     # The only job in the repository that writes packages: the image, and its attestation.
     permissions:
       attestations: write
@@ -40,14 +48,45 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # glave of the latest release for each processor (dist's static builds), checked against
+      # the provenance the release made for its archives. Before the first release there is
+      # none, and the image carries no glave. After a release, an image already published with
+      # its version means the run was a dry run, and nothing more is done.
+      - name: glave of the latest release
+        id: glave
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -z "$tag" ]; then
+            echo "no release of glave yet: the image carries none"
+            exit 0
+          fi
+          version="${tag#v}"
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ] && docker buildx imagetools inspect "$IMAGE:$version" >/dev/null 2>&1; then
+            echo "$IMAGE:$version is published already: no new release"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for pair in amd64:x86_64 arm64:aarch64; do
+            arch="${pair%%:*}"
+            archive="glave-${pair#*:}-unknown-linux-musl.tar.xz"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$archive" --dir "$RUNNER_TEMP"
+            gh attestation verify "$RUNNER_TEMP/$archive" --repo "$GITHUB_REPOSITORY"
+            mkdir -p "$RUNNER_TEMP/$arch" "images/computer/glave/$arch"
+            tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/$arch"
+            install -m 0755 "$RUNNER_TEMP/$arch/${archive%.tar.xz}/glave" "images/computer/glave/$arch/glave"
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # arm64 built under QEMU, both by a BuildKit release: each pinned by digest, as the
       # image's base is, since this job can write packages.
       - name: A builder for both processors
+        if: steps.glave.outputs.skip != 'true'
         run: |
           docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
           docker buildx create --use --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
       - name: Sign in to GitHub's container registry
-        if: env.PUBLISH == 'true'
+        if: env.PUBLISH == 'true' && steps.glave.outputs.skip != 'true'
         env:
           TOKEN: ${{ github.token }}
         run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
@@ -55,11 +94,20 @@ jobs:
       # On a pull request the image is built and left in the builder.
       - name: Build, and push unless on a pull request
         id: push
+        if: steps.glave.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.glave.outputs.version }}
         run: |
           tag="$IMAGE:$(date -u +%Y-%m-%d)"
+          tags=(--tag "$tag")
+          named="\`$tag\`, with no glave"
+          if [ -n "$VERSION" ]; then
+            tags+=(--tag "$IMAGE:$VERSION")
+            named="\`$tag\` and \`$IMAGE:$VERSION\`, with glave $VERSION"
+          fi
           output=$([ "$PUBLISH" = true ] && echo --push || echo --output=type=cacheonly)
           docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
-            --tag "$tag" --metadata-file "$RUNNER_TEMP/image.json" "$output" images/computer
+            "${tags[@]}" --metadata-file "$RUNNER_TEMP/image.json" "$output" images/computer
           [ "$PUBLISH" = true ] || exit 0
           digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
           case "$digest" in
@@ -67,9 +115,9 @@ jobs:
             *) echo "no digest for the pushed image: $digest" >&2; exit 1 ;;
           esac
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "glave's computer image, \`$tag\`: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "glave's computer image, $named: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/attest@v4
-        if: env.PUBLISH == 'true'
+        if: env.PUBLISH == 'true' && steps.glave.outputs.skip != 'true'
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -77,7 +125,7 @@ jobs:
           create-storage-record: false
       # A package's first push is private, and only its settings page makes it public, once.
       - name: Anyone can pull it
-        if: env.PUBLISH == 'true'
+        if: env.PUBLISH == 'true' && steps.glave.outputs.skip != 'true'
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |

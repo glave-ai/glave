@@ -1,10 +1,11 @@
 //! A person's computer on a real cluster, with `GLAVE_TEST_KUBE=1`, a real glave
 //! (`GLAVE_TEST_WORKER_GLAVE`) and glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`,
-//! `images/computer`), as CI's `kind` job runs it: a file written before it sleeps is there
-//! after it wakes, it runs as `nonroot` and writes nowhere but its home and `/tmp`, its tools
-//! are there, it reaches the internet but nothing in the cluster, a bridge into it
-//! that drops ends only that bridge, the wake is timed, and destroying it leaves nothing
-//! behind.
+//! `images/computer`, built with that glave in it), as CI's `kind` job runs it: a file written
+//! before it sleeps is there after it wakes, it serves with its image's glave, it runs as
+//! `nonroot` and writes nowhere but its home and `/tmp`, its tools are there, it reaches the
+//! internet but nothing in the cluster, a bridge into it that drops ends only that bridge, the
+//! wake is timed, and destroying it leaves nothing behind. Given another glave than its
+//! image's, glave is copied in.
 
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,7 @@ use glave_ports::computer::{
     Command, ComputerId, Computers, Ending, Environment, Image, Limits, Network, Sources,
 };
 
+use super::super::Kubernetes;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
 use crate::worker::backend::Backend as _;
@@ -22,6 +24,7 @@ use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 /// What the first wake writes and checks: a file kept on its disk, and the walls around it,
 /// each said as a fact so a failure shows which.
 const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(id -u)\"; \
+    echo \"glave=$(readlink /opt/glave/glave)\"; \
     echo \"name=$(whoami) at $(awk -F: '$3 == 65532 { print $6 }' /etc/passwd)\"; \
     for tool in bash git cc make tar python3 uv node npm fnm rustup cargo jq rg ssh curl; do \
     command -v \"$tool\" >/dev/null || echo \"missing=$tool\"; done; \
@@ -120,7 +123,8 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             isolation: cluster.isolation(),
             ..Limits::default()
         };
-        let computers = WorkerComputers::on(Box::new(person), limits, WorkerCredentials::None);
+        let computers =
+            WorkerComputers::on(Box::new(person), limits.clone(), WorkerCredentials::None);
         let environment = Environment {
             image: Image::Oci(image),
             network: Some(Network::On),
@@ -132,23 +136,54 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         // carried on it is lost) and the next call reaches it through a new one.
         let after = [DROP_BRIDGES, "cat kept.txt"];
         let (woke, read) = awake(&computers, &environment, &after).await;
+        // Given another glave than its image's, the same computer has it copied in.
+        let (copied_woke, copied) = {
+            let folder = glave_ports::testing::TempDir::new("another-glave").unwrap();
+            let cluster = another_glave(&cluster, &folder);
+            let person = PersonComputer::new(cluster.clone(), &key, 1).unwrap();
+            let computers =
+                WorkerComputers::on(Box::new(person), limits.clone(), WorkerCredentials::None);
+            let which = "echo \"link=$(readlink /opt/glave/glave)\"; \
+                test -x /opt/glave/glave && echo copied";
+            awake(&computers, &environment, &[which]).await
+        };
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
             .unwrap()
             .destroy()
             .await;
         let left = left_behind(&cluster).await;
-        eprintln!("a person's computer woke in {} ms", woke.as_millis());
+        eprintln!(
+            "a person's computer woke in {} ms with its image's glave, and in {} ms with glave \
+             copied in",
+            woke.as_millis(),
+            copied_woke.as_millis()
+        );
+        assert_eq!(copied.unwrap().trim(), "link=\ncopied");
         assert_eq!(
             wrote.unwrap().trim(),
-            "home=/home/glave\nuser=65532\nname=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=yes\n\
+            "home=/home/glave\nuser=65532\nglave=/usr/libexec/glave/glave\n\
+             name=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=yes\n\
              api=refused\npods=refused\ninternet=reached",
-            "its own home, glave's image's tools, never root, nothing written outside it but \
-             /tmp, and the internet but nothing in the cluster"
+            "its own home, glave's image's glave and tools, never root, nothing written \
+             outside it but /tmp, and the internet but nothing in the cluster"
         );
         assert_eq!(read.unwrap().trim(), "kept");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
+}
+
+/// `cluster` with another glave than the one it was given, in `folder`: the same program with a
+/// byte after it, which it never reads, so its SHA-256 is not its image's glave's.
+fn another_glave(cluster: &Kubernetes, folder: &glave_ports::testing::TempDir) -> Kubernetes {
+    let another = folder.path().join("glave");
+    let mut bytes = std::fs::read(&cluster.glave).unwrap();
+    bytes.push(0);
+    std::fs::write(&another, bytes).unwrap();
+    Kubernetes {
+        glave: another,
+        ..cluster.clone()
+    }
 }
 
 #[test]

@@ -439,8 +439,12 @@ jobs:
           # A registry on the runner the cluster pulls from, so glave's computer image is used
           # by its digest, as a deployment pins it.
           registry: true
+      - run: cargo build -p glave
+      # With the glave just built in it, as a release's image carries that release's, so a
+      # person's computer serves with it rather than having it copied in.
       - name: glave's computer image, built and pushed to the cluster's registry
         run: |
+          install -D -m 0755 target/debug/glave images/computer/glave/amd64/glave
           docker build -t kind-registry:5000/glave-computer:test images/computer
           docker push -q kind-registry:5000/glave-computer:test
           image="$(docker inspect --format '{{index .RepoDigests 0}}' kind-registry:5000/glave-computer:test)"
@@ -514,7 +518,6 @@ jobs:
             name: glave-test-runc
           handler: runc
           EOF
-      - run: cargo build -p glave
       # What passing tests print is shown too: how long a person's computer took to wake.
       - run: cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/^worker::kubernetes::/)'
       # A person's computer under gVisor, as GKE Sandbox runs it: its disk, walls and tools,
