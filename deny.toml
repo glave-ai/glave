@@ -22,6 +22,10 @@ ignore = [
     # The fix is in 0.7.6, which elliptic-curve 0.13 can't take. Remove when webauthn-rs moves to
     # elliptic-curve 0.14.
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 only checks passkey signatures with public keys" },
+    # pin-utils was archived on 2026-10-01: an "unmaintained" notice, not a security flaw. It arrives
+    # only through aws-smithy-http and aws-smithy-types, under aws-sigv4, and the latest of those
+    # still use it. Remove when aws-smithy drops it.
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils archived; no fix through aws-smithy yet" },
 ]
 
 [licenses]
