@@ -96,7 +96,11 @@ fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() 
         );
         assert_eq!(
             &offered[7..],
-            ["mcp__docs__search", "mcp__tracker__create_issue"]
+            [
+                "mcp__docs__search",
+                "mcp__tracker__create_issue",
+                "update_goal"
+            ]
         );
         assert_eq!(tools.calls().len(), 1, "a read-only tool never asks");
         assert_eq!(results(thread.messages()), ["Found: the setup guide."]);
@@ -265,7 +269,7 @@ fn a_turn_without_a_source_records_why_and_tells_the_model_only_its_name() {
             seen[0].system,
             format!(
                 "{plain}\n\nThe tool server \"docs\" is not available, so its tools are missing from \
-                 this turn. If the person asks for something that needs them, tell them it is \
+                 this thread. If the person asks for something that needs them, tell them it is \
                  not available, rather than that you have no such tool."
             )
         );

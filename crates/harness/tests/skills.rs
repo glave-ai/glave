@@ -78,8 +78,10 @@ fn with_skills_only_the_skill_tool_is_added_and_loading_one_never_asks() {
         let names = |request: &ModelRequest| -> Vec<String> {
             request.tools.iter().map(|spec| spec.name.clone()).collect()
         };
+        // After the other sources' tools, before glave's own (`update_goal`).
         let mut expected = names(&before);
-        expected.push("skill".to_owned());
+        let own = expected.len().saturating_sub(1);
+        expected.insert(own, "skill".to_owned());
         assert_eq!(names(&after), expected);
         let loaded = thread.messages().iter().find_map(|message| match message {
             Message::Tool { output, .. } => output.iter().find_map(|part| match part {
