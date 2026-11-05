@@ -185,7 +185,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        if step.toolset.is_question(&call.tool) {
+        if step.toolset.is_question(&call.tool) && !self.approver.can_answer(thread.id) {
+            return Ok(ToolOutput::text(true, question::NO_ONE));
+        } else if step.toolset.is_question(&call.tool) {
             return self.put_questions(thread, call, cancel, live).await;
         } else if step.toolset.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
@@ -213,9 +215,7 @@ where
         let waited = step.waited(&call.call_id);
         let tools = &step.toolset;
         let Some((index, info)) = tools.get(&call.tool) else {
-            let (tool, names) = (&call.tool, tools.names().join(", "));
-            let text = format!("There is no tool named {tool:?}. The tools are {names}.");
-            return Ok(ToolOutput::text(true, text));
+            return Ok(ToolOutput::text(true, tools.not_found(&call.tool)));
         };
         let Some(source) = self.source_for(thread, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));

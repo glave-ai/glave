@@ -30,6 +30,7 @@ mod judge;
 mod memory;
 mod outside;
 mod plan;
+mod prefix;
 mod project_folders;
 mod prompt;
 mod question;

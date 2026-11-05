@@ -190,11 +190,12 @@ impl Report {
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 8] = [
+        let rows: [(&str, &Row); 9] = [
             ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
             ("per passed task", &|a| per_task(PerPassedTask::of(a))),
             ("cost", &|a| dollars(spent(a))),
             ("tokens", &|a| thousands(tokens(a))),
+            ("input from cache", &|a| cache_hits(a)),
             ("tool calls", &|a| {
                 a.iter()
                     .map(|a| u64::from(a.tool_calls))
@@ -290,6 +291,17 @@ fn tokens(attempts: &[&Attempt]) -> u64 {
     (attempts.iter())
         .map(|a| a.input_tokens.saturating_add(a.output_tokens))
         .sum()
+}
+
+/// The share of `attempts`' input tokens the provider read from its prompt cache, as it
+/// reported them; a dash when none reported input.
+fn cache_hits(attempts: &[&Attempt]) -> String {
+    let input: u64 = attempts.iter().map(|a| a.input_tokens).sum();
+    let cached: u64 = attempts.iter().map(|a| a.cached_tokens).sum();
+    if input == 0 {
+        return "-".to_owned();
+    }
+    format!("{}%", cached.saturating_mul(100) / input)
 }
 
 /// What a passed task took: its cost and tokens, or a dash when none passed.

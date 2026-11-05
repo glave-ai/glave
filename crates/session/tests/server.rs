@@ -186,11 +186,8 @@ fn a_turn_answered_by_no_one_declines_what_asks_where_clients_answer_and_the_nex
             .iter()
             .map(|request| request.contains("\"name\":\"question\""))
             .collect();
-        assert_eq!(
-            offered,
-            [false, false, true],
-            "no question while no one answers, then offered again"
-        );
+        // A thread's tools are those of its first call, which no one answered (`prefix.rs`).
+        assert_eq!(offered, [false, false, false], "never while no one answers");
     });
 }
 

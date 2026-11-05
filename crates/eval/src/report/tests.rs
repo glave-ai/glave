@@ -104,7 +104,10 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
         vec![
             costing("lab/dear", 1, true, Some(3_000_000)),
             costing("lab/dear", 2, false, Some(1_000_000)),
-            costing("lab/cheap", 1, true, Some(1_000_000)),
+            Attempt {
+                cached_tokens: 900,
+                ..costing("lab/cheap", 1, true, Some(1_000_000))
+            },
             costing("lab/cheap", 2, true, Some(1_000_000)),
             costing("lab/free", 1, true, Some(0)),
             costing("lab/free", 2, true, Some(0)),
@@ -125,6 +128,7 @@ Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost re
 | per passed task | $0.0040 · 2,468 tokens | $0.0010 · 1,234 tokens | no cost reported · 1,234 tokens | - |
 | cost | $0.0040 | $0.0020 | - | $0.0040 |
 | tokens | 2,468 | 2,468 | 2,468 | 2,468 |
+| input from cache | 0% | 37% | 0% | 0% |
 | tool calls | 4 | 4 | 4 | 4 |
 | asks | 2 | 2 | 2 | 2 |
 | blocked commands | 0 | 0 | 0 | 0 |

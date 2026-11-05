@@ -269,7 +269,9 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
         "{listed}"
     );
 
-    api.turn(&thread, "and now?");
+    // A thread's tools never change mid-thread: the connection's come with a new thread.
+    let fresh = api.call("thread/start", json!({}))["result"]["thread"]["id"].clone();
+    api.turn(&fresh, "and now?");
     let asked = world.model.received();
     assert!(offered_whose(&asked[1].body), "it started again, signed in");
     let results = said(&asked[2].body, "tool").concat();
@@ -290,7 +292,8 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
     assert!(removed["error"].is_null(), "{removed}");
     let again = api.call("connection/list", json!({}));
     assert_eq!(theirs(&again), signed_out, "{again}");
-    api.turn(&thread, "still there?");
+    let after = api.call("thread/start", json!({}))["result"]["thread"]["id"].clone();
+    api.turn(&after, "still there?");
     assert!(!offered_whose(&world.model.received()[3].body));
 
     let told: Vec<String> = world.said.later.try_iter().collect();
