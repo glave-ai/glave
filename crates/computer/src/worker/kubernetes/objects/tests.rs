@@ -166,11 +166,11 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
     );
     assert_eq!(
         container["resources"]["limits"],
-        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "10Gi"})
+        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"})
     );
     assert_eq!(
         container["resources"]["requests"],
-        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "1Gi"})
+        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"})
     );
     let command = container["command"].as_array().unwrap();
     assert_eq!(
