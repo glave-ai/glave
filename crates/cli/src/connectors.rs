@@ -1,6 +1,7 @@
 //! `glave connectors`: glave's catalog of connectors from the terminal, through the session API
 //! of the person's server (`specs/session.md`, "Connectors"), as plain text: the connected ones
-//! first, then the rest by category. `glave connect <id>` connects one.
+//! first, each with where it is used, then the rest by category. `glave connect <id>` connects
+//! one, for every thread; `glave connectors use <id> <where>` changes where it is used.
 
 use std::process::ExitCode;
 
@@ -16,10 +17,13 @@ glave connectors: the apps glave can work in for you, each an official MCP serve
 runs
 
 Usage:
-  glave connectors                   list them: those connected first, then the rest by kind
-  glave connectors disconnect <id>   disconnect one, destroying its sign-in
+  glave connectors                       list them: those connected first, then the rest by kind
+  glave connectors use <id> everywhere   use one in every chat and project
+  glave connectors use <id> <project>    use one only in that project, or only in Chats
+  glave connectors disconnect <id>       disconnect one, destroying its sign-in
 
-Connect one with glave connect <id>: you sign in to it in the browser, when it asks you to.";
+Connect one with glave connect <id>: you sign in to it in the browser, when it asks you to.
+It is used everywhere until you choose where.";
 
 /// `glave connectors ...`.
 pub(crate) fn main(words: &[String]) -> ExitCode {
@@ -28,6 +32,10 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
         match words.as_slice() {
             [] => reach::with(list).await,
             ["disconnect", id] => reach::with(async |server| disconnect(server, id).await).await,
+            ["use", id, place @ ..] if !place.is_empty() => {
+                let place = place.join(" ");
+                reach::with(async |server| used(server, id, &place).await).await
+            }
             _ => bail!("unexpected words\n\n{USAGE}"),
         }
     })
@@ -44,6 +52,7 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
             company: None,
             category: None,
             tag: None,
+            used_in: None,
         })
         .await?
     else {
@@ -56,7 +65,7 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
         println!("  none yet");
     }
     for connector in mine {
-        println!("{}", line(connector));
+        println!("{}", used_line(connector));
         if connector.status == ConnectorStatus::SignInAgain {
             println!("    sign in again with glave connect {}", connector.id);
         }
@@ -89,10 +98,52 @@ fn line(connector: &ConnectorInfo) -> String {
     )
 }
 
-/// Connects the connector `id`, signing in to it in the browser when it asks.
+/// A connector connected as a line: its id, its name and where it is used.
+fn used_line(connector: &ConnectorInfo) -> String {
+    let used = connector.used.as_ref().map(ToString::to_string);
+    format!(
+        "  {:<26} {}: {}",
+        connector.id,
+        connector.name,
+        used.unwrap_or_default()
+    )
+}
+
+/// Uses the connector `id` from now on everywhere, or only in the project called `place`
+/// (their Chats among them).
+async fn used(server: &mut Reached, id: &str, place: &str) -> anyhow::Result<()> {
+    let only = if place.eq_ignore_ascii_case("everywhere") {
+        None
+    } else {
+        let Reply::Projects { projects, .. } =
+            server.request(Request::ProjectList { limit: None }).await?
+        else {
+            bail!("glave answered project/list with something else");
+        };
+        let named = projects.iter().find(|it| it.name.eq_ignore_ascii_case(place));
+        let Some(project) = named else {
+            bail!("none of your projects is called {place:?}: say everywhere, or a project's name");
+        };
+        Some(project.id)
+    };
+    let request = Request::ConnectorPlace {
+        connector: id.to_owned(),
+        only,
+    };
+    match server.request(request).await? {
+        Reply::Connector { connector } => {
+            println!("{}", used_line(&connector).trim_start());
+            Ok(())
+        }
+        _ => bail!("glave answered connector/place with something else"),
+    }
+}
+
+/// Connects the connector `id` for every thread, signing in to it in the browser when it asks.
 pub(crate) async fn connect(server: &mut Reached, id: &str) -> anyhow::Result<()> {
     let request = Request::ConnectorConnect {
         connector: id.to_owned(),
+        only: None,
     };
     match server.request(request).await? {
         Reply::Connector { connector } => {

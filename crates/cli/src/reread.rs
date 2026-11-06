@@ -15,10 +15,10 @@ use std::sync::{Arc, PoisonError};
 
 use glave_computer::person_sandbox;
 use glave_config::policy::{Choices, Locations};
-use glave_harness::Defaults;
+use glave_harness::{Defaults, OwnTools};
 use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::{Hooks, Judge};
-use glave_ports::{BoxFuture, ToolSource};
+use glave_ports::BoxFuture;
 use glave_session::{Apply, Changed, Models, Rereads, Runs};
 
 use crate::args::Args;
@@ -128,7 +128,7 @@ impl Rereading {
 
     /// The person's own servers as `setup` turns them on, when they changed. A rule that now
     /// forbids them puts them all away; a `mcp.json` that no longer reads leaves them running.
-    async fn own_servers(&self, setup: &Setup) -> Option<Vec<Arc<dyn ToolSource>>> {
+    async fn own_servers(&self, setup: &Setup) -> Option<OwnTools> {
         let constraints = &setup.loaded.constraints;
         let through_gateway = self.start.gateway.is_some();
         let mcp = setup.choices.mcp.as_ref();
@@ -151,7 +151,7 @@ impl Rereading {
         };
         self.servers.reconcile(wanted).then(|| {
             self.projects.set_taken(self.servers.names());
-            self.servers.sources()
+            self.servers.tools()
         })
     }
 

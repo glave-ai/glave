@@ -3,9 +3,12 @@
 //! connector that asks for a sign-in has its token kept beside it, as a `connection.connected`
 //! at its address; disconnecting it records `connector.disconnected` and removes that sign-in,
 //! destroying its token. Both are content-free: the connector is named by its id in the catalog.
+//! Where its threads use it is recorded with it: everywhere, or only in one project, which may be
+//! the person's Chats; connecting it again records where it is used now, in place of before.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::codec::{Payload, parse};
 use crate::payload::principal::Principal;
@@ -19,6 +22,10 @@ pub(crate) const DISCONNECTED: &str = "connector.disconnected";
 pub struct ConnectorConnected {
     /// Its id in the catalog: `linear`.
     pub connector: String,
+    /// The one project whose threads alone use it, the person's Chats among them: none where
+    /// every thread of theirs does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only: Option<Uuid>,
     /// Who connected it.
     pub by: Principal,
 }

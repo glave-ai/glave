@@ -1,8 +1,10 @@
 //! A thread's prefix: the system prompt and tools its model calls open with, the same bytes
 //! from its first call on, so the provider's prompt cache keeps matching and the conversation
 //! is never billed again in full (owner, 2026-11-05; `specs/invariants.md`, 27). Only a
-//! compaction, which restarts the conversation, and another model, which shares none of the
-//! cache, make a new one; a thread read again from the log keeps the one its log recorded.
+//! compaction, which restarts the conversation, another model, which shares none of the cache,
+//! and a connection of the person's turned on for the thread's place, whose tools it lacks
+//! (owner, 2026-11-06), make a new one, once; a thread read again from the log keeps the one
+//! its log recorded.
 //! What changes meanwhile reaches the model at the end of the conversation instead, in one note
 //! that opens the turn's message, as Claude Code and OpenCode send a `<system-reminder>` and
 //! Codex its context updates (`told.rs`). A tool whose source stops answering stays listed.
@@ -81,18 +83,23 @@ where
     /// when it has none for its model, and called through what is on offer now.
     pub(crate) async fn tools(&self, thread: &mut Thread) -> ToolSet {
         // Boxed: what every source says can be large, and turns hold this across awaits.
-        let (now, told) = Box::pin(self.on_offer(thread)).await;
+        let (now, told, own) = Box::pin(self.on_offer(thread)).await;
         let model = self.model_for(thread);
-        let prefix = match std::mem::take(&mut thread.prefix) {
-            Prefixed::Made(prefix) if prefix.model == model => prefix,
-            Prefixed::Kept(kept) if kept.model == model => Box::new(kept.prefix()),
-            _ => Box::new(Prefix {
+        let kept = match std::mem::take(&mut thread.prefix) {
+            Prefixed::Made(prefix) if prefix.model == model => Some(prefix),
+            Prefixed::Kept(kept) if kept.model == model => Some(Box::new(kept.prefix())),
+            _ => None,
+        };
+        // A connection turned on for this place since: its tools come with a new prefix.
+        let kept = kept.filter(|prefix| own.iter().all(|it| prefix.told.tools.contains_key(it)));
+        let prefix = kept.unwrap_or_else(|| {
+            Box::new(Prefix {
                 model,
                 system: now.system.clone(),
                 specs: now.specs.clone(),
                 told: told.clone(),
-            }),
-        };
+            })
+        });
         let set = prefix.behind(now, told);
         thread.prefix = Prefixed::Made(prefix);
         set
@@ -108,10 +115,12 @@ where
     }
 
     /// The tools on offer now in `thread`, from every source: the harness's, then its
-    /// project's; and what they would tell the model of what can change.
-    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told) {
-        let sources = self.sources_for(thread);
+    /// project's; what they would tell the model of what can change; and the names of those
+    /// of the person's own connections.
+    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told, Vec<String>) {
+        let (sources, own) = self.sources_and_own(thread);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
+        let own = set.named_by(&own);
         let mut signed_in = None;
         if let Some(credentials) = self.workspace_for(thread).credentials() {
             signed_in = crate::prompt::signed_in(&credentials.hosts().await);
@@ -150,6 +159,6 @@ where
             memory: self.memory_for(thread).is_some(),
             tools: Told::services(&set.specs),
         };
-        (set, told)
+        (set, told, own)
     }
 }

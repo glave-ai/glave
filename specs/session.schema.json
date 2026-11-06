@@ -541,6 +541,17 @@
           "description": "The vendor's name for it, never translated: `Linear`.",
           "type": "string"
         },
+        "only": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Connected, the one project whose threads alone use it, the person's Chats among them:\nnone where every thread of theirs does."
+        },
         "returns": {
           "$ref": "#/$defs/ConnectorReturns"
         },
@@ -560,6 +571,13 @@
         "url": {
           "description": "Its server's address.",
           "type": "string"
+        },
+        "used": {
+          "description": "Connected, where it is used, in the caller's language: `Everywhere, including chats`,\n`Only in Acme Site`.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5120,6 +5138,16 @@
         "properties": {
           "connector": {
             "type": "string"
+          },
+          "only": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5205,6 +5233,17 @@
               }
             ],
             "default": null
+          },
+          "used_in": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only those connected that the threads of this project use, the person's Chats\namong them."
           }
         },
         "type": "object"
@@ -5242,6 +5281,42 @@
           "categories",
           "tags",
           "connectors"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connector/place": {
+      "params": {
+        "properties": {
+          "connector": {
+            "type": "string"
+          },
+          "only": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "connector"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A connector, as it was connected.",
+        "properties": {
+          "connector": {
+            "$ref": "#/$defs/ConnectorInfo"
+          }
+        },
+        "required": [
+          "connector"
         ],
         "type": "object"
       },

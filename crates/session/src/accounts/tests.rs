@@ -13,7 +13,7 @@ use glave_ports::testing::{CountingEntropy, ManualClock, fake_secret};
 use glave_ports::{EventLog as _, OrgId, ProjectId, Scope, block_on};
 use glave_store_sqlite::{SqliteLog, Store};
 
-use super::AccountLedger;
+use super::{AccountLedger, KeptConnector};
 
 /// 2026-10-03, in milliseconds.
 const START: i64 = 1_791_000_000_000;
@@ -304,24 +304,36 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         let kit = kit();
         let ledger = &kit.ledger;
         let url = "https://mcp.example.com/mcp";
-        ledger.keep_connector("docs", None).await.unwrap();
-        ledger.keep_connector("docs", None).await.unwrap();
+        let kept = |id: &str, only: Option<u128>| KeptConnector {
+            id: id.to_owned(),
+            only: only.map(|n| ProjectId::from_uuid(uuid(n))),
+        };
+        ledger.keep_connector(&kept("docs", None), None).await.unwrap();
+        ledger.keep_connector(&kept("docs", None), None).await.unwrap();
         let token = fake_secret("mcp_");
         let sign_in = connection(1, url, &token);
         ledger
-            .keep_connector("tracker", Some(&sign_in))
+            .keep_connector(&kept("tracker", None), Some(&sign_in))
             .await
             .unwrap();
         let accounts = ledger.accounts().await.unwrap();
-        assert_eq!(accounts.connectors, ["docs", "tracker"], "each kept once");
+        let both = [kept("docs", None), kept("tracker", None)];
+        assert_eq!(accounts.connectors, both, "each kept once");
         assert_eq!(accounts.connections, [sign_in]);
+
+        // Used only in one place, it keeps its place among the connected.
+        assert!(ledger.place_connector(&kept("docs", Some(7))).await.unwrap());
+        let moved = [kept("docs", Some(7)), kept("tracker", None)];
+        assert_eq!(ledger.accounts().await.unwrap().connectors, moved);
+        assert!(!ledger.place_connector(&kept("other", None)).await.unwrap());
+        ledger.place_connector(&kept("docs", None)).await.unwrap();
 
         assert!(ledger.remove_connector("tracker", url).await.unwrap());
         assert!(!ledger.remove_connector("tracker", url).await.unwrap());
         let accounts = ledger.accounts().await.unwrap();
         assert_eq!(
             (accounts.connectors, accounts.connections),
-            (vec!["docs".to_owned()], vec![])
+            (vec![kept("docs", None)], vec![])
         );
         let data = stored(&kit).await;
         assert_eq!(holding(&data, &token), 0, "its key is destroyed: {data:?}");

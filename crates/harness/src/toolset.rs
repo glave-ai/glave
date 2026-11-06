@@ -4,6 +4,7 @@
 //! lists keeps them listed, and a call to one is told it isn't answering (`prefix.rs`).
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
@@ -270,6 +271,16 @@ impl ToolSet {
         self
     }
 
+    /// The names of the tools the sources at `indices` offer, in order.
+    pub(crate) fn named_by(&self, indices: &Range<usize>) -> Vec<String> {
+        (self.specs.iter())
+            .filter(|spec| {
+                (self.by_name.get(&spec.name)).is_some_and(|(at, _)| indices.contains(at))
+            })
+            .map(|spec| spec.name.clone())
+            .collect()
+    }
+
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
     pub(crate) fn get(&self, name: &str) -> Option<(usize, &ToolInfo)> {
         let found = self
@@ -280,13 +291,27 @@ impl ToolSet {
     }
 
     /// What a call of `name` is told when no source runs it: that its source isn't answering,
-    /// when it is listed, else that there is no such tool, and which there are.
+    /// when it is listed and its source could not list its tools; that it is off here, when it
+    /// is listed and no source offers it now (its connection turned off, or used only
+    /// elsewhere); else that there is no such tool, and which there are.
     pub(crate) fn not_found(&self, name: &str) -> String {
         let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
+        let down = |spec: &ToolSpec| {
+            (self.missing.iter()).any(|err| {
+                let server = format!("mcp__{}__", err.source_name);
+                spec.name == err.source_name || spec.name.starts_with(&server)
+            })
+        };
         match self.specs.iter().find(listed) {
-            Some(spec) => format!(
+            Some(spec) if down(spec) => format!(
                 "{:?} is not answering: the service behind it did not respond. Try again later, \
                  or go on without it.",
+                spec.name
+            ),
+            Some(spec) => format!(
+                "{:?} is turned off here: the person turned its connection off, or uses it only \
+                 in another place. Tell them, rather than trying again; they can turn it on for \
+                 this place in their connections.",
                 spec.name
             ),
             None => format!(

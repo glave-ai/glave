@@ -68,8 +68,8 @@ pub struct Wiring<P, L, B> {
     /// is offered what is found there, with glave's own.
     pub skills: Option<glave_harness::Skills>,
     /// The person's own tools, such as their MCP servers': for their threads alone, never a
-    /// thread of anyone signed in from elsewhere.
-    pub own: Vec<Arc<dyn ToolSource>>,
+    /// thread of anyone signed in from elsewhere, each only in the places they use it.
+    pub own: glave_harness::OwnTools,
     /// Whether a new thread in a project with a folder works in a worktree of its own unless
     /// `thread/start` or its project says; off, it works in the folder itself.
     pub worktree: bool,
@@ -181,7 +181,7 @@ impl<P, L, B> Wiring<P, L, B> {
             web: None,
             tools: Vec::new(),
             skills: None,
-            own: Vec::new(),
+            own: glave_harness::OwnTools::default(),
             worktree: false,
             hooks: Hooks::default(),
             workers: None,

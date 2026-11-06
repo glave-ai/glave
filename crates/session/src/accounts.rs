@@ -16,7 +16,9 @@ use glave_event::{
     Secret, SecretAdded, SecretRemoved, Seq, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
-use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
+use glave_ports::{
+    Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, ProjectId, Scope,
+};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -73,15 +75,31 @@ pub struct Accounts {
     pub credentials: Vec<CredentialConnected>,
     /// The connections signed in to, one for each server's address.
     pub connections: Vec<ConnectionConnected>,
-    /// The connectors of glave's catalog connected, by their ids, in the order connected.
-    pub connectors: Vec<String>,
+    /// The connectors of glave's catalog connected, each once, in the order connected.
+    pub connectors: Vec<KeptConnector>,
     /// The secrets the person added, one for each name.
     pub secrets: Vec<SecretAdded>,
     /// Credentials renewed, each with the kept one it became, the latest last.
     renamed: Vec<(CredentialId, CredentialId)>,
 }
 
+/// A connector of glave's catalog the person connected, and where their threads use it
+/// (`specs/policy.md`, "Connections").
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct KeptConnector {
+    /// Its id in the catalog.
+    pub id: String,
+    /// The one project whose threads alone use it, their Chats among them: none where every
+    /// thread of theirs does.
+    pub only: Option<ProjectId>,
+}
+
 impl Accounts {
+    /// The connector `id`, when it is connected.
+    pub fn connector(&self, id: &str) -> Option<&KeptConnector> {
+        self.connectors.iter().find(|kept| kept.id == id)
+    }
+
     /// The git host kept as `credential`, or as the one it was renewed into.
     pub fn credential(&self, credential: CredentialId) -> Option<&CredentialConnected> {
         let current = self
@@ -323,18 +341,18 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
-    /// Records the connector `connector` of glave's catalog as connected, unless it is, and
-    /// keeps `sign_in`, the person's sign-in to its server, when it asks for one, replacing
-    /// any kept for the same server.
+    /// Records `connector`, of glave's catalog, as connected and used where it says, unless it
+    /// is already, there; and keeps `sign_in`, the person's sign-in to its server, when it asks
+    /// for one, replacing any kept for the same server.
     pub async fn keep_connector(
         &self,
-        connector: &str,
+        connector: &KeptConnector,
         sign_in: Option<&ConnectionConnected>,
     ) -> Result<(), AccountsError> {
         self.append(|accounts| {
             let mut events = Vec::new();
-            if !accounts.connectors.iter().any(|kept| kept == connector) {
-                events.push(Event::ConnectorConnected(connector.to_owned()));
+            if accounts.connector(&connector.id) != Some(connector) {
+                events.push(Event::ConnectorConnected(connector.clone()));
             }
             if let Some(sign_in) = sign_in {
                 events.push(Event::ConnectionConnected(sign_in.clone()));
@@ -352,6 +370,19 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(())
     }
 
+    /// Uses the connector `connector.id` where `connector` says from now on, while it is
+    /// connected: false, changing nothing, when it is not.
+    pub async fn place_connector(&self, connector: &KeptConnector) -> Result<bool, AccountsError> {
+        let placed = self
+            .append(|accounts| {
+                let kept = accounts.connector(&connector.id)?;
+                let moved = (kept != connector).then(|| Event::ConnectorConnected(connector.clone()));
+                Some((moved.into_iter().collect(), ()))
+            })
+            .await?;
+        Ok(placed.is_some())
+    }
+
     /// Records the connector `connector` as disconnected and removes the sign-in to its server
     /// at `url`, which is erased when the accounts are next read. False when it was not
     /// connected.
@@ -362,9 +393,7 @@ impl<L: EventLog> AccountLedger<L> {
     ) -> Result<bool, AccountsError> {
         let removed = self
             .append(|accounts| {
-                if !accounts.connectors.iter().any(|kept| kept == connector) {
-                    return None;
-                }
+                accounts.connector(connector)?;
                 let mut events = vec![Event::ConnectorDisconnected(connector.to_owned())];
                 events.extend(
                     accounts
@@ -536,8 +565,13 @@ impl<L: EventLog> AccountLedger<L> {
             Event::ConnectionRemoved(connection) => {
                 encode(header, &ConnectionRemoved { connection, by })?
             }
-            Event::ConnectorConnected(connector) => {
-                encode(header, &ConnectorConnected { connector, by })?
+            Event::ConnectorConnected(KeptConnector { id, only }) => {
+                let connected = ConnectorConnected {
+                    connector: id,
+                    only: only.map(ProjectId::as_uuid),
+                    by,
+                };
+                encode(header, &connected)?
             }
             Event::ConnectorDisconnected(connector) => {
                 encode(header, &ConnectorDisconnected { connector, by })?
@@ -600,15 +634,18 @@ impl Read {
                 }
             }
             Body::ConnectorConnected(connected) => {
-                accounts
-                    .connectors
-                    .retain(|kept| *kept != connected.connector);
-                accounts.connectors.push(connected.connector);
+                let only = connected.only.map(ProjectId::from_uuid);
+                let id = connected.connector;
+                // Used elsewhere now, it keeps its place among the connected.
+                match accounts.connectors.iter_mut().find(|kept| kept.id == id) {
+                    Some(kept) => kept.only = only,
+                    None => accounts.connectors.push(KeptConnector { id, only }),
+                }
             }
             Body::ConnectorDisconnected(disconnected) => {
                 accounts
                     .connectors
-                    .retain(|kept| *kept != disconnected.connector);
+                    .retain(|kept| kept.id != disconnected.connector);
             }
             Body::SecretAdded(added) => {
                 accounts.secrets.retain(|kept| kept.secret != added.secret);
@@ -637,8 +674,8 @@ enum Event {
     CredentialRemoved(CredentialId, Option<CredentialId>),
     ConnectionConnected(ConnectionConnected),
     ConnectionRemoved(CredentialId),
-    /// A connector of glave's catalog, by its id.
-    ConnectorConnected(String),
+    /// A connector of glave's catalog connected, or used elsewhere.
+    ConnectorConnected(KeptConnector),
     ConnectorDisconnected(String),
     SecretAdded(SecretAdded),
     SecretRemoved(CredentialId),

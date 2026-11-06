@@ -77,7 +77,7 @@ mod usage;
 mod watch;
 mod words;
 
-pub use accounts::{AccountLedger, Accounts, AccountsError};
+pub use accounts::{AccountLedger, Accounts, AccountsError, KeptConnector};
 pub use approvals::Answering;
 pub use awake::{KeepAwake, Unawake};
 pub use connections::{Connecting, Connections, Returned, Searching};

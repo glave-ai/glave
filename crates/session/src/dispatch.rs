@@ -7,6 +7,7 @@ use glave_ports::memories::Control;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::choice::Choice;
+use crate::accounts::KeptConnector;
 use crate::connectors::Narrowed;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
@@ -579,16 +580,22 @@ where
                 company,
                 category,
                 tag,
+                used_in,
             } => {
                 let narrowed = Narrowed {
                     company,
                     category,
                     tag,
                 };
-                self.list_connectors(caller, &narrowed).await
+                self.list_connectors(caller, &narrowed, used_in).await
             }
-            Request::ConnectorConnect { connector } => {
+            Request::ConnectorConnect { connector, only } => {
+                let connector = KeptConnector { id: connector, only };
                 self.connect_connector(caller, connector).await
+            }
+            Request::ConnectorPlace { connector, only } => {
+                let connector = KeptConnector { id: connector, only };
+                self.place_connector(caller, connector).await
             }
             Request::ConnectorDisconnect { connector } => {
                 self.disconnect_connector(caller, connector).await

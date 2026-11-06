@@ -91,6 +91,7 @@ impl Request {
             Self::ConnectionPoll { .. }
             | Self::ConnectionRemove { .. }
             | Self::ConnectorConnect { .. }
+            | Self::ConnectorPlace { .. }
             | Self::ConnectorDisconnect { .. } => Setting::Connections,
             Self::SecretAdd { .. } | Self::SecretReplace { .. } | Self::SecretRemove { .. } => {
                 Setting::Secrets

@@ -4,6 +4,7 @@ mod error;
 mod settings;
 
 use std::collections::{BTreeMap, HashSet};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
@@ -26,6 +27,7 @@ use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
 use crate::compaction::Measured;
 use crate::defaults::Defaults;
+use crate::own_tools::OwnTools;
 use crate::goal::{GoalProgress, Pursuit};
 use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
@@ -81,9 +83,9 @@ pub struct Harness<P, L, B, A> {
     /// The skills on this computer and glave's own (`with_skills`).
     pub(crate) skills: Option<Arc<Skills>>,
     /// The person's own tools, such as their MCP servers', offered after the other sources to
-    /// their threads alone: they run with the person's sign-ins. None by default; the host
-    /// replaces them when the person's settings change.
-    pub(crate) own: RwLock<Vec<Arc<dyn ToolSource>>>,
+    /// their threads alone, in the places they use them: they run with the person's sign-ins.
+    /// None by default; the host replaces them when the person's settings change.
+    pub(crate) own: RwLock<OwnTools>,
     /// What threads run with where neither they nor their projects choose: the settings' and
     /// the workspace's at first, then the host's. Each turn takes them as it starts.
     pub(crate) defaults: RwLock<Arc<Defaults>>,
@@ -419,18 +421,18 @@ where
         self
     }
 
-    /// Offers the tools of `sources`, the person's own, to the threads of the person the
-    /// harness works for alone, after its other sources.
+    /// Offers the tools of `own`, the person's own, to the threads of the person the harness
+    /// works for alone, each in the places they use it, after its other sources.
     #[must_use]
-    pub fn with_own_tools(self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
-        self.set_own_tools(sources);
+    pub fn with_own_tools(self, own: OwnTools) -> Self {
+        self.set_own_tools(own);
         self
     }
 
-    /// Offers the tools of `sources` as the person's own in place of those before, from each
+    /// Offers the tools of `own` as the person's own in place of those before, from each
     /// thread's next turn on: a turn already running keeps the tools it started with.
-    pub fn set_own_tools(&self, sources: Vec<Arc<dyn ToolSource>>) {
-        *self.own.write().unwrap_or_else(PoisonError::into_inner) = sources;
+    pub fn set_own_tools(&self, own: OwnTools) {
+        *self.own.write().unwrap_or_else(PoisonError::into_inner) = own;
     }
 
     /// Runs `hooks` at their points of the turns of the person the harness works for.
@@ -445,6 +447,15 @@ where
     /// the harness's other sources, the person's own when the thread is theirs, then its
     /// project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
+        self.sources_and_own(thread).0
+    }
+
+    /// [`Harness::sources_for`], and where among them the person's own are: those of the
+    /// place the thread works in.
+    pub(crate) fn sources_and_own(
+        &self,
+        thread: &Thread,
+    ) -> (Vec<Arc<dyn ToolSource>>, Range<usize>) {
         let mut sources = self.sources.clone();
         let builtins = crate::builtins::BUILTINS;
         if let (Some(source), Some(own)) =
@@ -471,12 +482,14 @@ where
                 own: own.filter(|_| self.trusting(thread.for_)),
             }));
         }
+        let start = sources.len();
         if self.trusting(thread.for_) {
             let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
-            sources.extend(own.iter().cloned());
+            sources.extend(own.of(thread.scope.project()).iter().cloned());
         }
+        let own = start..sources.len();
         sources.extend(thread.brought.tools.iter().cloned());
-        sources
+        (sources, own)
     }
 
     pub fn workspace(&self) -> &Workspace {

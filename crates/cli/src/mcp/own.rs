@@ -4,7 +4,8 @@
 //! changed one starts again. One a turn still uses is closed once no turn does. A remote
 //! server is signed in with the person's sign-in to its address, asked for at each request
 //! (`connected.rs`), and starts again when they sign in to it or remove that sign-in. The
-//! connectors of glave's catalog they connected start beside them, by their ids.
+//! connectors of glave's catalog they connected start beside them, by their ids, each offered
+//! to the threads of the place it is used in: everywhere, or one project of theirs alone.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -13,8 +14,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
+use glave_harness::OwnTools;
 use glave_mcp::{Limits, McpServer, Reachable};
-use glave_ports::ToolSource;
+use glave_ports::ProjectId;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
 
@@ -32,6 +34,8 @@ pub(crate) struct Wanted {
     untrusted: bool,
     /// Whether the person is signed in at its address.
     signed_in: bool,
+    /// The one project whose threads alone use it: none where every thread of theirs does.
+    only: Option<ProjectId>,
 }
 
 /// What the person's settings turn on: the servers of `home`'s `mcp.json` that `chosen`
@@ -89,11 +93,11 @@ pub(crate) async fn wanted(
             .with_context(|| format!("in {}", path.display()))?
     };
     let chose = |id: &str| chosen.is_none_or(|chosen| chosen.value.iter().any(|it| it == id));
-    let connectors = connectors.into_iter().filter(|(id, _)| chose(id));
+    let connectors = connectors.into_iter().filter(|(id, _, _)| chose(id));
+    let configs = configs.into_iter().map(|(name, config)| (name, config, None));
     Ok(configs
-        .into_iter()
         .chain(connectors)
-        .map(|(name, config)| {
+        .map(|(name, config, only)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
             let signed_in = match &config {
                 ServerConfig::Http { url, .. } => {
@@ -106,19 +110,20 @@ pub(crate) async fn wanted(
                 config,
                 untrusted,
                 signed_in,
+                only,
             }
         })
         .collect())
 }
 
 /// The connectors of glave's catalog `signed` holds that `constraints` offer, by their ids, as
-/// remote servers, in the order of their ids: none the person's `own` servers already name, or
-/// are at the address of.
+/// remote servers, each with the one project it is used in alone, in the order of their ids:
+/// none the person's `own` servers already name, or are at the address of.
 fn connectors(
     own: &BTreeMap<String, ServerConfig>,
     signed: &Signed,
     constraints: &Constraints,
-) -> Vec<(String, ServerConfig)> {
+) -> Vec<(String, ServerConfig, Option<ProjectId>)> {
     let Ok(catalog) = glave_session::Catalog::built_in() else {
         return Vec::new();
     };
@@ -130,18 +135,19 @@ fn connectors(
             ServerConfig::Stdio { .. } => None,
         })
         .collect();
-    let mut connectors: Vec<(String, ServerConfig)> = catalog
+    let kept = |id: &str| signed.connectors.iter().find(|it| it.id == id);
+    let mut connectors: Vec<(String, ServerConfig, Option<ProjectId>)> = catalog
         .connectors
         .into_iter()
-        .filter(|it| signed.connectors.contains(&it.id) && offered.allows(&it.id))
-        .filter(|it| !own.contains_key(&it.id))
+        .filter(|it| offered.allows(&it.id) && !own.contains_key(&it.id))
         .filter(|it| glave_mcp::address(&it.url).is_some_and(|url| !theirs.contains(&url)))
-        .map(|it| {
+        .filter_map(|it| {
+            let only = kept(&it.id)?.only;
             let config = ServerConfig::Http {
                 url: it.url,
                 headers: BTreeMap::new(),
             };
-            (it.id, config)
+            Some((it.id, config, only))
         })
         .collect();
     connectors.sort_by(|one, other| one.0.cmp(&other.0));
@@ -312,10 +318,25 @@ impl Servers {
             .collect()
     }
 
-    /// The servers as tool sources, the catalog first, then in the order of their names,
-    /// then their resources.
-    pub(crate) fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
-        super::sources(&self.all())
+    /// The servers as tool sources, for the threads of each place: the catalog first, then
+    /// those used there in the order of their names, then their resources. A place with
+    /// connectors of its own has them beside those used everywhere; every other place has
+    /// only those.
+    pub(crate) fn tools(&self) -> OwnTools {
+        let running = self.lock();
+        let used_in = |place: Option<ProjectId>| -> Vec<Arc<McpServer>> {
+            let here = (running.servers.iter())
+                .filter(|(wanted, _)| wanted.only.is_none() || wanted.only == place)
+                .map(|(_, server)| Arc::clone(server));
+            self.catalog.iter().cloned().chain(here).collect()
+        };
+        let places: BTreeSet<ProjectId> = (running.servers.iter())
+            .filter_map(|(wanted, _)| wanted.only)
+            .collect();
+        let everywhere = OwnTools::everywhere(super::sources(&used_in(None)));
+        places.into_iter().fold(everywhere, |tools, place| {
+            tools.with_place(place, super::sources(&used_in(Some(place))))
+        })
     }
 
     /// The servers' names, in order.
@@ -398,10 +419,14 @@ mod tests {
             "mine": {"url": "https://mcp.notion.com/mcp"}
         }}"#;
         std::fs::write(home.join(FILE), servers).unwrap();
+        let project = ProjectId::from_uuid(uuid::Uuid::from_u128(7));
         let signed = Signed {
             addresses: BTreeSet::from(["https://mcp.sentry.dev/mcp".to_owned()]),
             connectors: ["sentry", "deepwiki", "linear", "notion"]
-                .map(str::to_owned)
+                .map(|id| glave_session::KeptConnector {
+                    id: id.to_owned(),
+                    only: (id == "deepwiki").then_some(project),
+                })
                 .into(),
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -412,16 +437,18 @@ mod tests {
             let wanted = runtime.block_on(wanted(&home, chosen, &rules, false, &signed));
             let wanted = wanted.unwrap();
             let signed_in: Vec<bool> = wanted.iter().map(|it| it.signed_in).collect();
+            let only: Vec<Option<ProjectId>> = wanted.iter().map(|it| it.only).collect();
             let names: Vec<String> = wanted.into_iter().map(|it| it.name).collect();
-            (names, signed_in)
+            (names, signed_in, only)
         };
-        let (all, signed_in) = names("version = 1\n", None);
+        let (all, signed_in, only) = names("version = 1\n", None);
         assert_eq!(
             all,
             ["linear", "mine", "deepwiki", "sentry"],
             "a name or an address of mcp.json's is its own"
         );
         assert_eq!(signed_in, [false, false, false, true]);
+        assert_eq!(only, [None, None, Some(project), None], "used where it was put");
         let chosen = Chosen {
             value: vec!["sentry".to_owned()],
             from: glave_config::policy::Source::Default,
@@ -452,6 +479,7 @@ mod tests {
             },
             untrusted: false,
             signed_in: false,
+            only: None,
         }
     }
 
@@ -479,7 +507,7 @@ mod tests {
                 !servers.reconcile(started),
                 "the same settings change nothing"
             );
-            let held = servers.sources();
+            let held = servers.tools();
             assert!(servers.reconcile(vec![server("a", "a"), server("b", "b2"), server("c", "c")]));
             assert_eq!(servers.names(), ["a", "b", "c"]);
             assert!(Arc::ptr_eq(&a, &first(&servers)), "a stays as it was");

@@ -3,6 +3,7 @@
 //! it is signed in to. Categories and tags are fixed here, each with its Fluent message, so
 //! none can exist without its words.
 
+use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
 use super::Told;
@@ -128,6 +129,14 @@ pub struct ConnectorInfo {
     /// The vendor's own page about it.
     pub docs: String,
     pub status: ConnectorStatus,
+    /// Connected, the one project whose threads alone use it, the person's Chats among them:
+    /// none where every thread of theirs does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only: Option<ProjectId>,
+    /// Connected, where it is used, in the caller's language: `Everywhere, including chats`,
+    /// `Only in Acme Site`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<Told>,
 }
 
 /// What a connector's tools hand back, as its vendor's docs say.

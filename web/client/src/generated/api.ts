@@ -195,6 +195,11 @@ export type ConnectorInfo = {
   readonly id: string;
   /** The vendor's name for it, never translated: `Linear`. */
   readonly name: string;
+  /**
+   * Connected, the one project whose threads alone use it, the person's Chats among them:
+   * none where every thread of theirs does.
+   */
+  readonly only?: ProjectId | null;
   readonly returns: ConnectorReturns;
   readonly sign_in: ConnectorSignIn;
   readonly status: ConnectorStatus;
@@ -202,6 +207,11 @@ export type ConnectorInfo = {
   readonly tags: readonly (ConnectorTagId)[];
   /** Its server's address. */
   readonly url: string;
+  /**
+   * Connected, where it is used, in the caller's language: `Everywhere, including chats`,
+   * `Only in Acme Site`.
+   */
+  readonly used?: string | null;
 };
 
 /** What a connector's tools hand back, as its vendor's docs say. */
@@ -1665,6 +1675,7 @@ export type ConnectionStartResult = {
 
 export type ConnectorConnectParams = {
   readonly connector: string;
+  readonly only?: ProjectId | null;
 };
 
 export type ConnectorConnectResult = {
@@ -1683,6 +1694,11 @@ export type ConnectorListParams = {
   readonly category?: ConnectorCategoryId | null;
   readonly company?: string | null;
   readonly tag?: ConnectorTagId | null;
+  /**
+   * Only those connected that the threads of this project use, the person's Chats
+   * among them.
+   */
+  readonly used_in?: ProjectId | null;
 };
 
 /**
@@ -1694,6 +1710,16 @@ export type ConnectorListResult = {
   readonly companies: readonly (ConnectorCompany)[];
   readonly connectors: readonly (ConnectorInfo)[];
   readonly tags: readonly (ConnectorTag)[];
+};
+
+export type ConnectorPlaceParams = {
+  readonly connector: string;
+  readonly only?: ProjectId | null;
+};
+
+/** A connector, as it was connected. */
+export type ConnectorPlaceResult = {
+  readonly connector: ConnectorInfo;
 };
 
 export type CredentialConnectParams = {
@@ -2802,6 +2828,7 @@ export interface Methods {
   readonly "connector/connect": { readonly params: ConnectorConnectParams; readonly result: ConnectorConnectResult };
   readonly "connector/disconnect": { readonly params: ConnectorDisconnectParams; readonly result: ConnectorDisconnectResult };
   readonly "connector/list": { readonly params: ConnectorListParams; readonly result: ConnectorListResult };
+  readonly "connector/place": { readonly params: ConnectorPlaceParams; readonly result: ConnectorPlaceResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };

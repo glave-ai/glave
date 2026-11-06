@@ -3,11 +3,13 @@
 //! from then on, their token asked for at each request. The host keeps the sign-ins sealed and
 //! hands their tokens to the servers; the server decides who may ask, and is where the browser
 //! comes back to. The connectors of glave's catalog (`connectors.rs`) are connected the same
-//! way, by their ids, and listed with the catalog's words in the caller's language.
+//! way, by their ids, and listed with the catalog's words in the caller's language, each with
+//! where the person's threads use it: everywhere, or only in one project of theirs.
 
 use glave_event::Secret;
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, ProjectId};
 
+use crate::accounts::KeptConnector;
 use crate::connectors::{Catalog, Narrowed};
 use crate::protocol::{
     ApiError, ConnectionInfo, ConnectorCategory, ConnectorCategoryId, ConnectorInfo,
@@ -86,17 +88,22 @@ pub trait Connections: Send + Sync {
     /// Turns web search on or off in the person's own settings: how it is then.
     fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
 
-    /// The connectors of glave's catalog the person may connect here, by their ids, in any
-    /// order, each with whether it is connected.
-    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(String, ConnectorStatus)>, ApiError>>;
+    /// The connectors of glave's catalog the person may connect here, in any order, each with
+    /// whether it is connected and, when it is, where their threads use it.
+    fn connectors(
+        &self,
+    ) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>>;
 
-    /// Connects the connector `connector` of glave's catalog: at once when it asks no one to
-    /// sign in, else by signing in, the browser to come back to `redirect`.
+    /// Connects `connector`, of glave's catalog, to be used where it says: at once when it
+    /// asks no one to sign in, else by signing in, the browser to come back to `redirect`.
     fn connect(
         &self,
-        connector: String,
+        connector: KeptConnector,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>>;
+
+    /// Uses the connected connector `connector.id` where `connector` says from now on.
+    fn place(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>>;
 
     /// Disconnects the connector `connector`, destroying its sign-in.
     fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>>;
@@ -173,21 +180,37 @@ where
     }
 
     /// Answers `connector/list`: the catalog's connectors the host offers that have what the
-    /// caller narrowed by, in its order, and the companies, categories and tags they have.
+    /// caller narrowed by, in its order, and the companies, categories and tags they have;
+    /// `used_in` a project of the caller's, only those connected that its threads use.
     pub(crate) async fn list_connectors(
         &self,
         caller: &Caller,
         narrowed: &Narrowed,
+        used_in: Option<ProjectId>,
     ) -> Result<Reply, ApiError> {
         let offered = self.connections_for(caller)?.connectors().await?;
+        if let Some(project) = used_in {
+            self.owned(caller, project).await?;
+        }
         let catalog = built_in()?;
-        let status = |id: &str| offered.iter().find(|(it, _)| it == id).map(|(_, it)| *it);
-        let connectors: Vec<ConnectorInfo> = catalog
-            .connectors
-            .iter()
-            .filter(|connector| narrowed.has(connector))
-            .filter_map(|connector| Some(info(connector, status(&connector.id)?)))
-            .collect();
+        let found = |id: &str| offered.iter().find(|(it, _)| it.id == id);
+        let mut connectors = Vec::new();
+        for connector in catalog.connectors.iter().filter(|it| narrowed.has(it)) {
+            let Some((kept, status)) = found(&connector.id) else {
+                continue;
+            };
+            let connected = *status != ConnectorStatus::Available;
+            let here = connected && kept.only.is_none_or(|only| Some(only) == used_in);
+            if used_in.is_some() && !here {
+                continue;
+            }
+            let mut info = info(connector, *status);
+            if connected {
+                info.only = kept.only;
+                info.used = Some(self.used_where(caller, kept.only).await);
+            }
+            connectors.push(info);
+        }
         let companies = catalog
             .companies
             .iter()
@@ -218,23 +241,75 @@ where
         })
     }
 
-    /// Answers `connector/connect`.
+    /// Answers `connector/connect`, for its threads everywhere or only in a project the
+    /// caller owns.
     pub(crate) async fn connect_connector(
         &self,
         caller: &Caller,
-        connector: String,
+        connector: KeptConnector,
     ) -> Result<Reply, ApiError> {
         let connections = self.connections_for(caller)?;
         let catalog = built_in()?;
-        let Some(found) = catalog.connector(&connector) else {
-            return Err(no_connector(&connector));
+        let Some(found) = catalog.connector(&connector.id) else {
+            return Err(no_connector(&connector.id));
         };
+        if let Some(project) = connector.only {
+            self.owned(caller, project).await?;
+        }
+        let only = connector.only;
         match connections.connect(connector, self.redirect()).await? {
             Connecting::Connected => Ok(Reply::Connector {
-                connector: info(found, ConnectorStatus::Connected),
+                connector: self.placed(caller, found, only).await,
             }),
             Connecting::SignIn(sign_in) => Ok(Reply::SignIn { sign_in }),
             Connecting::NoWayBack => Err(self.no_way_back()),
+        }
+    }
+
+    /// Answers `connector/place`: the connector, used where it now is.
+    pub(crate) async fn place_connector(
+        &self,
+        caller: &Caller,
+        connector: KeptConnector,
+    ) -> Result<Reply, ApiError> {
+        let connections = self.connections_for(caller)?;
+        let catalog = built_in()?;
+        let Some(found) = catalog.connector(&connector.id) else {
+            return Err(no_connector(&connector.id));
+        };
+        if let Some(project) = connector.only {
+            self.owned(caller, project).await?;
+        }
+        let only = connector.only;
+        connections.place(connector).await?;
+        Ok(Reply::Connector {
+            connector: self.placed(caller, found, only).await,
+        })
+    }
+
+    /// `connector`, connected and used everywhere, or `only` in one project.
+    async fn placed(
+        &self,
+        caller: &Caller,
+        connector: &crate::connectors::Connector,
+        only: Option<ProjectId>,
+    ) -> ConnectorInfo {
+        ConnectorInfo {
+            only,
+            used: Some(self.used_where(caller, only).await),
+            ..info(connector, ConnectorStatus::Connected)
+        }
+    }
+
+    /// Where a connection the caller's threads use everywhere, or `only` in one project, is
+    /// used, in one line: the project by its name, which may be gone.
+    async fn used_where(&self, caller: &Caller, only: Option<ProjectId>) -> Told {
+        let Some(project) = only else {
+            return Sentence::UsedEverywhere.into();
+        };
+        match self.owned(caller, project).await {
+            Ok(found) => Sentence::UsedOnlyIn { place: found.name }.into(),
+            Err(_) => Sentence::UsedOnlyInGone.into(),
         }
     }
 
@@ -353,6 +428,8 @@ fn info(connector: &crate::connectors::Connector, status: ConnectorStatus) -> Co
         description: connector.told(),
         docs: connector.docs.clone(),
         status,
+        only: None,
+        used: None,
     }
 }
 

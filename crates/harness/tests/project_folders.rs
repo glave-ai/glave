@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Body, HookPoint, StopReason};
 use glave_harness::{
-    AllowAll, Approver, Brought, Cancel, Harness, NoOneToAsk, Permissions, Place, ProjectFolders,
-    Settled, Thread,
+    AllowAll, Approver, Brought, Cancel, Harness, NoOneToAsk, OwnTools, Permissions, Place,
+    ProjectFolders, Settled, Thread,
 };
 use glave_ports::Caller;
 use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -240,7 +240,10 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
         let harness = harness
             .with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>))
             .with_hooks(Hooks::new(vec![prompt_hook()]).unwrap())
-            .with_own_tools(vec![Arc::new(tool("mcp__mine__search", "Mine."))]);
+            .with_own_tools(OwnTools::everywhere(vec![Arc::new(tool(
+                "mcp__mine__search",
+                "Mine.",
+            ))]));
         let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
         let grace = Caller {
             person: Some(someone.unwrap()),

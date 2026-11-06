@@ -4,11 +4,10 @@
 //! The host decides what changed; the server takes the models, how threads run and the
 //! person's own tools it answers with.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use glave_harness::Defaults;
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ToolSource};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider};
 
 use crate::providers::Models;
 use crate::server::Server;
@@ -19,7 +18,7 @@ pub struct Changed {
     /// The models the server runs from now on.
     pub models: Option<Models>,
     /// The person's own tools from now on, such as their MCP servers'.
-    pub own: Option<Vec<Arc<dyn ToolSource>>>,
+    pub own: Option<glave_harness::OwnTools>,
     /// How threads run from now on where neither they nor their projects choose.
     pub runs: Option<Runs>,
 }

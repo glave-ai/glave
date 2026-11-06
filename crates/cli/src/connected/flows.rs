@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use glave_event::{At, ConnectionConnected, Principal, Secret};
 use glave_mcp::{SignIn, SignInError};
 use glave_ports::{Clock as _, SystemClock};
-use glave_session::Returned;
+use glave_session::{KeptConnector, Returned};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -37,8 +37,8 @@ struct Flow {
     url: String,
     /// What the person calls the server.
     name: String,
-    /// The connector of glave's catalog it connects, when it is one.
-    connector: Option<String>,
+    /// The connector of glave's catalog it connects, and where it is used, when it is one.
+    connector: Option<KeptConnector>,
     state: String,
     /// Until the browser comes back.
     signin: Option<SignIn>,
@@ -85,14 +85,14 @@ impl Connected {
     }
 
     /// Starts signing in to the server at `url`, which the person calls `name`, the browser to
-    /// come back to `redirect`; for the connector `connector` of glave's catalog, connecting it
-    /// once signed in.
+    /// come back to `redirect`; for `connector`, of glave's catalog, connecting it once signed
+    /// in, to be used where it says.
     pub(super) async fn sign_in(
         &self,
         url: String,
         name: String,
         redirect: String,
-        connector: Option<String>,
+        connector: Option<KeptConnector>,
     ) -> Result<SignInLink, ApiError> {
         // As MCP's step-up authorization says: what the sign-in it replaces grants, and what
         // the server asked for since, so nothing granted before is lost.
@@ -235,8 +235,8 @@ struct Trade {
     more: MoreAsked,
     url: String,
     name: String,
-    /// The connector of glave's catalog it connects, when it is one.
-    connector: Option<String>,
+    /// The connector of glave's catalog it connects, and where it is used, when it is one.
+    connector: Option<KeptConnector>,
 }
 
 impl Trade {
