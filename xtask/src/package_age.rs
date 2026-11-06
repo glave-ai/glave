@@ -3,9 +3,9 @@
 //! release (a maintainer's account taken over, a malicious version published) is usually found
 //! and pulled within days, and a change could otherwise bring one in the hour it appears.
 //!
-//! What is new is what the lockfiles name that they didn't at the change's base (`base.rs`),
-//! and its registry says when it was published (`registry.rs`). A version from a path, the
-//! workspace or git has no registry to say, and is named and skipped. A security fix that
+//! What is new is what the lockfiles name that they didn't at the change's base
+//! (`crate::base`), and its registry says when it was published (`registry.rs`). A version
+//! from a path, the workspace or git has no registry to say, and is named and skipped. A security fix that
 //! can't wait is listed in `allowed.rs` with its reason, and its entry fails the check once
 //! the version is old enough, so the list doesn't rot. When a registry can't be reached, CI
 //! fails; elsewhere the check warns and passes, as CI runs it again.
@@ -14,7 +14,6 @@
 //! 11.10 and later installs only versions as old (`min-release-age`, web/.npmrc).
 
 mod allowed;
-mod base;
 mod locked;
 mod registry;
 
@@ -23,8 +22,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use glave_ports::{Clock as _, SystemClock};
 use jiff::{SignedDuration, Timestamp};
 
+use crate::base::{self, Base};
+
 use allowed::{ALLOWED, Entry};
-use base::Base;
 use locked::{Added, Elsewhere, Pinned, Registry};
 use registry::{Registries, Unknown};
 

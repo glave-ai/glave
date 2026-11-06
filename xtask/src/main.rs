@@ -8,11 +8,13 @@
     reason = "a developer's command: it reports in the terminal"
 )]
 
+mod base;
 mod bench;
 mod changed;
 mod ci;
 mod cli;
 mod cmd;
+mod credits;
 mod deps;
 mod duplicates;
 mod env_file;
