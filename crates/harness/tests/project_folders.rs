@@ -1,9 +1,10 @@
 //! What a project chooses and turns on for the threads that work in it, read again at each
 //! turn: its tools offered after the harness's, its hooks run after the harness's, the mode
 //! its settings give, its commands out of the sandbox where that is full access, and its model, judge, titles and `web_fetch` in place of the harness's. Nothing of it
-//! before the person trusts it, all of it from the next turn after, none of it in a thread
-//! elsewhere, and nothing of the project's, nor the harness's own hooks and tools, in another
-//! person's.
+//! before the person trusts it, all of it from the next turn after but its tools, which a
+//! thread's prefix holds until a new thread or a compaction (`prefix.rs`), none of it in a
+//! thread elsewhere, and nothing of the project's, nor the harness's own hooks and tools, in
+//! another person's.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -26,20 +27,20 @@ use serde_json::json;
 use crate::support::*;
 
 /// A project the test trusts between turns, with a tool, a hook and settings.
-struct Project {
+pub(crate) struct Project {
     trusted: AtomicBool,
     protections: Protections,
 }
 
 impl Project {
-    fn new(protections: Protections) -> Arc<Self> {
+    pub(crate) fn new(protections: Protections) -> Arc<Self> {
         Arc::new(Self {
             trusted: AtomicBool::new(false),
             protections,
         })
     }
 
-    fn trust(&self) {
+    pub(crate) fn trust(&self) {
         self.trusted.store(true, Ordering::SeqCst);
     }
 
@@ -89,7 +90,7 @@ impl ProjectFolders for Project {
 
 /// `harness` with `project` as the project of every folder, and a thread started in
 /// `project_dir`.
-async fn in_project<A: Approver>(
+pub(crate) async fn in_project<A: Approver>(
     harness: Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
     project: &Arc<Project>,
     project_dir: &Path,
@@ -105,7 +106,7 @@ async fn in_project<A: Approver>(
 }
 
 /// A tool `name` that answers every call with `says`.
-fn tool(name: &str, says: &str) -> InMemoryTools {
+pub(crate) fn tool(name: &str, says: &str) -> InMemoryTools {
     let info = ToolInfo {
         spec: ToolSpec {
             name: name.into(),
@@ -138,7 +139,7 @@ fn tool_names(seen: &Seen, request: usize) -> Vec<String> {
 }
 
 #[test]
-fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
+fn a_project_s_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted_its_tools_in_a_new_thread() {
     let dir = folder("projects-on");
     let project_dir = folder("projects-on-project");
     let project = Project::new(Protections {
@@ -156,6 +157,12 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
                 StopReason::ToolUse,
             ),
             answer(Some("Done."), vec![], StopReason::EndTurn),
+            answer(
+                None,
+                vec![("mcp__docs__search", json!({}))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Found."), vec![], StopReason::EndTurn),
         ];
         let (harness, seen) =
             harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
@@ -173,7 +180,9 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
             Some(Permissions::FullAccess)
         );
         turn(&harness, &mut thread, "search, then write").await;
-        assert!(tool_names(&seen, 2).contains(&"mcp__docs__search".to_owned()));
+        assert!(!tool_names(&seen, 2).contains(&"mcp__docs__search".to_owned()));
+        let told = texts(seen.lock().unwrap()[2].messages.last().unwrap()).join("\n");
+        assert!(told.contains("`mcp__docs__search`"), "{told}");
         assert!(
             project_dir.join("after.txt").exists(),
             "full access, from the project"
@@ -199,7 +208,13 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
                 _ => None,
             })
             .collect();
-        assert!(results[0].contains("Found it."), "{results:?}");
+        assert!(results[0].contains("There is no tool named"), "{results:?}");
+
+        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+        let mut fresh = thread_in(&harness, place).await;
+        turn(&harness, &mut fresh, "search").await;
+        assert!(tool_names(&seen, 4).contains(&"mcp__docs__search".to_owned()));
+        assert_eq!(crate::support::results(fresh.messages()), ["Found it."]);
     });
 }
 
@@ -494,9 +509,12 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
             offered.is_some_and(|tool| tool.parameters["properties"].get("network").is_some())
         };
         assert!(!network(0), "the sandbox has the network");
+        // The thread's prefix keeps the tool as it was; the model is told how it changed.
+        assert!(!network(1), "the same tools in every call");
+        let told = texts(seen.lock().unwrap()[1].messages.last().unwrap()).join("\n");
         assert!(
-            network(1),
-            "the project's threads go without it, and may ask"
+            told.contains("The tool `bash` changed") && told.contains("\"network\""),
+            "the project's threads go without it, and may ask: {told}"
         );
     });
 }

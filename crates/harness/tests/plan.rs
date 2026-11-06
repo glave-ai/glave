@@ -256,18 +256,20 @@ fn proposed_then_built() -> Vec<Completion> {
     ]
 }
 
-/// What the turn that built the plan was sent: glave's prompt with the plan as edited, out of
-/// plan mode.
+/// What the turn that built the plan was sent: glave's prompt with the plan as edited, after a
+/// note that plan mode is off, behind the prompt and tools the thread began with.
 fn built_from_the_edit(build: &ModelRequest) {
-    let prompt = said(build).pop().unwrap();
+    let message = texts(build.messages.last().unwrap());
+    let prompt = message.last().unwrap();
     assert!(
         prompt.starts_with("The person approved this plan."),
         "{prompt}"
     );
     assert!(prompt.contains("3. [pending] Run the tests"), "{prompt}");
+    assert!(message[0].contains("Plan mode is off"), "{message:?}");
     assert!(
-        !build.system.contains("Plan mode:"),
-        "no longer in plan mode"
+        build.system.contains("Plan mode:"),
+        "the prompt it began with"
     );
 }
 

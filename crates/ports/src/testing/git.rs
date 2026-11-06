@@ -174,7 +174,7 @@ fn served(bare: &Path, path: &str) -> Option<Vec<u8>> {
 /// Git credentials for tests: one credential for every host they name, and what they were asked.
 #[derive(Debug)]
 pub struct FixedGitCredentials {
-    hosts: Vec<CredentialHost>,
+    hosts: Mutex<Vec<CredentialHost>>,
     credential: GitCredential,
     asked: Mutex<Vec<CredentialAsk>>,
 }
@@ -182,9 +182,16 @@ pub struct FixedGitCredentials {
 impl FixedGitCredentials {
     pub fn new(hosts: Vec<CredentialHost>, credential: GitCredential) -> Self {
         Self {
-            hosts,
+            hosts: Mutex::new(hosts),
             credential,
             asked: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Names `hosts` from now on, as a person connecting or removing an account.
+    pub fn set_hosts(&self, hosts: Vec<CredentialHost>) {
+        if let Ok(mut named) = self.hosts.lock() {
+            *named = hosts;
         }
     }
 
@@ -199,7 +206,8 @@ impl FixedGitCredentials {
 
 impl GitCredentials for FixedGitCredentials {
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
-        Box::pin(std::future::ready(self.hosts.clone()))
+        let hosts = self.hosts.lock().map(|hosts| hosts.clone());
+        Box::pin(std::future::ready(hosts.unwrap_or_default()))
     }
 
     fn request<'a>(&'a self, ask: &'a CredentialAsk) -> BoxFuture<'a, Option<GitCredential>> {
