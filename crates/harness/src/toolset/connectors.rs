@@ -359,16 +359,29 @@ impl ToolSet {
             };
         }
         // Called by its own name: as its connector's tool is called, when its arguments are
-        // shaped so, name it, and it has no parameter called `tool`.
+        // shaped so (naming it, or only `arguments`) and it has no such parameters.
         let (_, info) = self.get(name).unzip();
-        let has_tool =
-            info.is_some_and(|info| info.spec.parameters.pointer("/properties/tool").is_some());
-        let names_itself = |map: &Map<String, Value>| {
-            text_of(map, "tool").is_some_and(|tool| tool == name || tool == short_of(name))
+        let has = |key: &str| {
+            info.is_some_and(|info| {
+                let parameter = format!("/properties/{key}");
+                info.spec.parameters.pointer(&parameter).is_some()
+            })
+        };
+        let shaped = |map: &Map<String, Value>| {
+            let names_itself =
+                text_of(map, "tool").is_some_and(|tool| tool == name || tool == short_of(name));
+            let only_arguments = map.len() == 1 && map.contains_key("arguments");
+            !has("tool") && !has("arguments") && (names_itself || only_arguments)
         };
         match (map, connector_of(name)) {
-            (Some(map), Some(connector)) if !has_tool && names_itself(map) => {
-                self.through(call, connector)
+            (Some(map), Some(connector)) if shaped(map) => {
+                let mut map = map.clone();
+                map.insert("tool".to_owned(), Value::String(name.to_owned()));
+                let call = ToolCall {
+                    arguments: Arguments::Json(map),
+                    ..call.clone()
+                };
+                self.through(&call, connector)
             }
             _ => self.checked(call.clone()),
         }

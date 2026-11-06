@@ -179,6 +179,8 @@ fn a_connector_s_tool_calls_the_tool_it_names_with_its_arguments_however_they_co
     );
     let shaped = json!({"tool": "tool_7", "arguments": {"number": 4120}});
     assert_eq!(runs(&set, &call("mcp__github__tool_7", &shaped)), wanted);
+    let inside = json!({"arguments": "{\"number\": 4120}"});
+    assert_eq!(runs(&set, &call("mcp__github__tool_7", &inside)), wanted);
 }
 
 #[test]
