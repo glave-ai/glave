@@ -50,12 +50,21 @@ pub enum SignInError {
 
 impl SignInError {
     fn from_auth(url: &str, error: &AuthError) -> Self {
-        let message = error.to_string();
+        let message = match error {
+            // rmcp keeps why the request failed, glave's own refusal among them, as its source.
+            AuthError::DiscoveryRequestFailed { source, .. } => format!("{error}: {source}"),
+            _ => error.to_string(),
+        };
         let url = url.to_owned();
         match error {
             AuthError::HttpError(_)
             | AuthError::TokenRefreshFailed(_)
-            | AuthError::MetadataError(_) => Self::Unreachable { url, message },
+            | AuthError::MetadataError(_)
+            | AuthError::DiscoveryRequestFailed { .. }
+            | AuthError::ProtectedResourceMetadataInvalid { .. }
+            | AuthError::AuthorizationServersUnavailable { .. } => {
+                Self::Unreachable { url, message }
+            }
             _ => Self::Refused { url, message },
         }
     }
@@ -339,7 +348,8 @@ mod tests {
         let url = format!("http://localhost:{port}/mcp");
         glave_ports::block_on!(async {
             let manager = guarded(&url, Reachable::OnlyPublic).await.unwrap();
-            let said = manager.resolve_metadata().await.unwrap_err().to_string();
+            let failed = manager.resolve_metadata().await.unwrap_err();
+            let said = SignInError::from_auth(&url, &failed).to_string();
             assert!(
                 said.contains("where people sign in from elsewhere"),
                 "{said}"
