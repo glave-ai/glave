@@ -140,7 +140,7 @@ where
         };
         let workspace = self.workspace_for(thread);
         let protections = brought.settled.protections;
-        let mode = thread.defaults.permissions(protections, thread.permissions);
+        let mode = self.mode(thread, protections);
         let planning = mode == Permissions::Plan;
         // A worker's own container or virtual machine is its wall: only this computer's
         // commands and those on a person's own computer run in the sandbox.
@@ -154,12 +154,15 @@ where
             // Without the network once the thread has read untrusted content.
             let wanted = offline_after(protections.sandbox(mode, most), thread.untrusted);
             let asks = thread.defaults.ask_network;
+            let walled = self.walled(thread);
             if workspace.sandbox() != wanted.as_ref()
                 || workspace.asks_network() != asks
                 || workspace.plans() != planning
+                || workspace.is_walled() != walled
             {
                 let within = workspace.within(wanted.as_ref()).await?;
                 let within = within.asking_network(asks).planning(planning);
+                let within = within.walled(walled);
                 thread.workspace = Some(Arc::new(within));
             }
         } else if workspace.plans() != planning {
@@ -174,6 +177,16 @@ where
     /// a project's own on and whose own hooks and tools are the harness's.
     pub(crate) fn trusting(&self, person: Option<glave_event::PrincipalId>) -> bool {
         person == self.actors.person
+    }
+
+    /// Whether `thread`'s commands run on this computer, the server's own, for someone other
+    /// than the person the harness works for: then they never leave the sandbox, whose walls
+    /// hide glave's folder and the server's secrets in it (`specs/sandbox.md`, "Whose
+    /// computer"). On a person's own computer, or a worker, their own wall holds instead.
+    pub(crate) fn walled(&self, thread: &Thread) -> bool {
+        !self.trusting(thread.for_)
+            && thread.home.is_none()
+            && self.workspace_for(thread).info().computer == self.workspace.info().computer
     }
 
     /// What `project` chooses for the threads of the person the harness works for, as the

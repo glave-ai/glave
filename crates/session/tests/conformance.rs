@@ -1,8 +1,8 @@
 //! One set of scenarios, run over every transport: in-process, JSON-RPC 2.0 over a stream of
 //! lines (as stdio carries it), the same over a Unix socket to a long-running server, and HTTP
-//! with server-sent events, signed in. A transport changes how messages travel, never what they
-//! mean (`specs/session.md`), so each scenario must end the same way over each. Each works in
-//! its caller's own Chats: the person here's on this computer, the signed-in person's over HTTP.
+//! with server-sent events, signed in with the local token. A transport changes how messages
+//! travel, never what they mean (`specs/session.md`), so each scenario must end the same way
+//! over each. Each works in the Chats of the person here.
 
 use glave_event::{Body, Outcome, ThreadId, decode};
 use glave_session::protocol::{
@@ -15,8 +15,10 @@ use tokio::io::{
 };
 use tokio::task::JoinHandle;
 
-use crate::support::issuer::{Issuer, Signer};
-use crate::support::web::{Events, Served, Web, serve_http};
+use glave_session::signin::{LocalToken, SignIn};
+
+use crate::support::issuer::{Issuer, Signer, fixed_clock};
+use crate::support::web::{Events, Served, Web, serve_http, serve_with};
 use crate::support::*;
 
 /// What a scenario does after a notification: send these requests, in order.
@@ -192,14 +194,16 @@ impl Client for OverJsonRpc {
     }
 }
 
-/// JSON-RPC 2.0 over HTTP, signed in through a fake identity provider.
+/// JSON-RPC 2.0 over HTTP, signed in through a fake identity provider, or with the local
+/// token as the person here.
 pub(crate) struct OverHttp {
     web: Web,
     served: Served,
-    _issuer: Issuer,
+    _issuer: Option<Issuer>,
 }
 
 impl OverHttp {
+    /// Signed in as someone else than the person here, through an identity provider.
     pub(crate) async fn new(tested: Tested) -> Self {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("key-1");
@@ -209,7 +213,21 @@ impl OverHttp {
         Self {
             web: Web::new(&served, Some(token)),
             served,
-            _issuer: issuer,
+            _issuer: Some(issuer),
+        }
+    }
+
+    /// Signed in with the local token, as the person here, whose computer the server's is:
+    /// anyone else's commands there run only in the sandbox, which a test computer has none
+    /// of (`specs/sandbox.md`, "Whose computer").
+    pub(crate) async fn here(tested: Tested) -> Self {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let served = serve_with(tested, signin, None).await;
+        Self {
+            web: Web::new(&served, Some(token.reveal().to_owned())),
+            served,
+            _issuer: None,
         }
     }
 
@@ -320,7 +338,7 @@ macro_rules! over_each_transport {
 
         let $dir = folder(concat!($name, "-http"));
         let tested = server(&$dir, $answers, Answering::Clients).await;
-        let mut $client = OverHttp::new(tested).await;
+        let mut $client = OverHttp::here(tested).await;
         $body
         $client.close().await;
     }};

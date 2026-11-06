@@ -16,8 +16,10 @@ use tokio::io::{
 };
 use tokio::task::JoinHandle;
 
-use crate::support::issuer::{Issuer, Signer};
-use crate::support::web::{Web, serve_http};
+use glave_session::signin::{LocalToken, SignIn};
+
+use crate::support::issuer::{Issuer, Signer, fixed_clock};
+use crate::support::web::{Web, serve_http, serve_with};
 use crate::support::*;
 
 /// A thread nobody has.
@@ -179,12 +181,12 @@ const RUN_ACCENTED: &str = "[Ŕûñ ţĥîš çöɱɱåñð? one";
 #[test]
 fn an_approval_asks_in_the_callers_language_as_it_streams_and_in_its_history() {
     block_on!(async {
-        let issuer = Issuer::start().await;
-        let signer = Signer::es256("key-1");
-        issuer.publish(&signer);
+        // The person here, whose commands may ask to run outside the sandbox.
         let dir = folder("languages-approval");
-        let served = serve_http(server(&dir, asking(), Answering::NoOne).await, &issuer).await;
-        let token = signer.sign(&issuer.claims("ada"));
+        let local = LocalToken::new([7; 32]);
+        let signin = SignIn::local(local.clone(), Box::new(fixed_clock()));
+        let served = serve_with(server(&dir, asking(), Answering::NoOne).await, signin, None).await;
+        let token = local.reveal().to_owned();
         let mut reading = Web::new(&served, Some(token.clone())).reading("en-XA");
         let mut plain = Web::new(&served, Some(token));
         let started = reading

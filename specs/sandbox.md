@@ -9,6 +9,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - glave's own git doesn't run what a repository nested in the project names (#1193).
 - A worker's `save` hands its credential to nothing its commands planted (#1198; `computers.md`, "Workers").
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
+- Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*).
 
 ## Why on by default
 
@@ -75,6 +76,15 @@ Cargo's home is left alone. It holds the person's settings, installed tools and 
 - Where commands run without a sandbox (`off`, none on this computer, or a worker's own wall), the argument changes nothing: there is nothing to ask.
 
 **Or only with the network.** Where the sandbox has no network, a command that needs the internet (an install, `git push`) can ask for that alone: `network: true` and a `reason`. It is the same request narrowed, and asks the same way, every time, in Auto and Ask first, with the caution "It can reach the internet, which commands here otherwise cannot." Allowed, the command runs as a command with the network on always does: its writes stay in the project, the credential stores and secret files stay hidden (on macOS the keychain becomes reachable, as it is whenever the network is on, *Reads*), and its package managers keep the sandbox's caches. The model is offered `network` only where the sandbox has none; with the network on, the argument changes nothing. An organization's `[sandbox] ask_network = false` forbids asking for the network, and with it asking to run outside the sandbox where the network is off (`policy.md`, "The network"): the model is offered neither, and is told so in `bash`'s description and in the note on a blocked command; a call that asks anyway is refused without asking anyone.
+
+**Whose computer.** Decided 2026-11-06 (#1212). Leaving the sandbox, by Full access, a command let out, or approving commands where no sandbox runs, is for the person whose computer it is: the person the server works for. Anyone else whose threads run on the server's computer (someone invited to a person's own server, someone signed in through a company login) works beside the server's secrets in glave's folder, its local token among them, which a command outside the sandbox could read to act as the owner. So for them:
+
+- Full access is never offered (`server/discover`'s modes) and is refused when asked for, in plain words ("Full access is only for this server's owner, since its commands could reach the server's own files"); a mode chosen before, a project's, or the server's own above Auto runs as Auto, and a thread's summary says Auto.
+- `bash` is never offered `outside_sandbox` in their threads, nor the blocked-command note to use it; only `network`, where the sandbox has none and the policy lets commands ask. A call that asks anyway is refused without asking anyone, the model told only the owner's commands may run outside the sandbox.
+- Where no sandbox runs on the server's computer at all (or Auto's cannot, with only the read-only one there), none of their commands runs: their approval would let it out. Ask first and Plan keep the read-only sandbox where it runs. `server/discover` tells them so in its own sentence (`unsandboxed`).
+- On a computer of their own (`computers.md`) or a worker, that wall is theirs, and none of this applies.
+
+The server's sandbox already hides glave's folder from every sandboxed command (*Reads*; `invariants.md`, 23), so what was missing was only who may leave it (`invariants.md`, 28).
 
 ## What the project level allows
 

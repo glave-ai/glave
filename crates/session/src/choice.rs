@@ -95,45 +95,76 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Refuses `mode` with `-32012` unless a thread here may choose it.
-    pub(crate) fn allowed_permissions(&self, mode: Permissions) -> Result<(), ApiError> {
-        let modes = self.modes();
+    /// Refuses `mode` with `-32012` unless a thread of `person` here may choose it: Full
+    /// access, which has no sandbox, only where they may leave it.
+    pub(crate) fn allowed_permissions(
+        &self,
+        person: Option<PrincipalId>,
+        mode: Permissions,
+    ) -> Result<(), ApiError> {
+        let modes = self.modes(person);
         if modes.contains(&mode) {
             return Ok(());
         }
         let left: Vec<&str> = modes.into_iter().map(label).collect();
-        Err(ApiError::new(
-            code::NOT_ALLOWED,
+        let left = either(&left);
+        let sentence = if self.modes(None).contains(&mode) {
+            Sentence::FullAccessOwnerOnly { left }
+        } else {
             Sentence::PermissionsNotAllowed {
                 mode: label(mode).to_owned(),
-                left: either(&left),
-            },
-        ))
+                left,
+            }
+        };
+        Err(ApiError::new(code::NOT_ALLOWED, sentence))
     }
 
-    /// The mode `thread` runs with now, as its summary shows it, as its turns run with it:
-    /// its own choice, else its project's, else the server's, as `project` changes them.
+    /// The mode a thread of `person` runs with now, as its summary shows it, as its turns run
+    /// with it: its own choice, else its project's, else the server's, as `project` changes
+    /// them, and Auto at most where they may not leave the sandbox.
     pub(crate) async fn permissions_now(
         &self,
         scope: &Scope,
         thread: ThreadId,
+        person: Option<PrincipalId>,
         project: Protections,
     ) -> Result<Permissions, ApiError> {
         let chosen = self.chosen_permissions(scope, thread).await?;
-        Ok(self.inner.harness.defaults().permissions(project, chosen))
+        let mode = self.inner.harness.defaults().permissions(project, chosen);
+        Ok(self.within_sandbox(person, mode))
     }
 
-    /// The modes a thread may choose now, in the order a person is offered them: what the
-    /// harness's cap leaves. One the thread chose before a cap came runs capped, never refused.
-    pub(crate) fn modes(&self) -> Vec<Permissions> {
+    /// The modes a thread of `person` may choose now, in the order a person is offered them:
+    /// what the harness's cap leaves, without Full access where they may not leave the
+    /// sandbox. One the thread chose before a cap came runs capped, never refused.
+    pub(crate) fn modes(&self, person: Option<PrincipalId>) -> Vec<Permissions> {
         let defaults = self.inner.harness.defaults();
-        choosable(defaults.permissions, defaults.highest)
+        let mut modes = choosable(defaults.permissions, defaults.highest);
+        if !self.computer_is_theirs(person) {
+            modes.retain(|mode| *mode != Permissions::FullAccess);
+        }
+        modes
     }
 
-    /// Why Auto asks before every change and command here, when it does: no sandbox can
-    /// run on this computer (and Ask first asks so too), or only one that keeps files as they
-    /// are.
-    pub(crate) fn unsandboxed(&self) -> Option<Sentence> {
+    /// `mode` as a thread of `person` runs with it here: Auto at most where they may not
+    /// leave the sandbox, as the harness runs it.
+    pub(crate) fn within_sandbox(
+        &self,
+        person: Option<PrincipalId>,
+        mode: Permissions,
+    ) -> Permissions {
+        if self.computer_is_theirs(person) {
+            mode
+        } else {
+            mode.min(Permissions::Auto)
+        }
+    }
+
+    /// Why Auto asks before every change and command here for `person`, when it does: no
+    /// sandbox can run on this computer (and Ask first asks so too), or only one that keeps
+    /// files as they are. For someone whose computer it is not, why fewer of their commands
+    /// run instead.
+    pub(crate) fn unsandboxed(&self, person: Option<PrincipalId>) -> Option<Sentence> {
         let defaults = self.inner.harness.defaults();
         if self.inner.homes.is_some() {
             return defaults
@@ -141,7 +172,12 @@ where
                 .is_none()
                 .then_some(Sentence::OwnComputerWall);
         }
+        let theirs = self.computer_is_theirs(person);
         match defaults.sandbox.as_ref() {
+            None if !theirs => Some(Sentence::UnsandboxedOwnerOnly),
+            Some(sandbox) if sandbox.level != SandboxLevel::Project && !theirs => {
+                Some(Sentence::OnlyReadOnlySandboxTheirs)
+            }
             None => Some(Sentence::Unsandboxed),
             Some(sandbox) if sandbox.level != SandboxLevel::Project => {
                 Some(Sentence::OnlyReadOnlySandbox)
@@ -168,10 +204,13 @@ where
         }
     }
 
-    /// Whether what a project chooses counts for a thread of `person`: the person on this
-    /// computer, whose trust turns it on; or anyone where people have computers of their own,
-    /// whose projects' choices are theirs alone and what loosens is on only once they trust it.
-    pub(crate) fn goes_by_project(&self, person: Option<PrincipalId>) -> bool {
+    /// Whether the computer a thread of `person` works on is theirs: the person on this
+    /// computer, the server's; or anyone where people have computers of their own. Then what
+    /// a project chooses counts for it (on this computer once the person trusts it; on their
+    /// own, what loosens once they do), and its commands may leave the sandbox. Anyone else's
+    /// run on the server's computer, beside its secrets, so only in the sandbox
+    /// (`specs/sandbox.md`, "Whose computer").
+    pub(crate) fn computer_is_theirs(&self, person: Option<PrincipalId>) -> bool {
         self.inner.homes.is_some() || person.is_none_or(|person| Some(person) == self.person())
     }
 

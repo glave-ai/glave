@@ -47,7 +47,7 @@ pub(crate) fn spec(asks: Asks) -> ToolSpec {
         "background".into(),
         json!({"type": "boolean", "description": "Start it in the background and answer at once with its number"}),
     );
-    if !matches!(asks, Asks::Nothing | Asks::Never) {
+    if matches!(asks, Asks::Outside | Asks::OutsideOrNetwork) {
         description.push_str(
             " If it blocked a command the task needs, run that same command again with \
              outside_sandbox and a reason: the person is asked to allow it.",
@@ -57,49 +57,68 @@ pub(crate) fn spec(asks: Asks) -> ToolSpec {
             json!({"type": "boolean", "description": "Run outside the sandbox. Only after the sandbox blocked this same command; the person is asked every time"}),
         );
     }
-    let reason = match asks {
-        Asks::Outside => {
-            Some("With outside_sandbox: why the command needs it, in one sentence for the person")
-        }
-        Asks::OutsideOrNetwork => {
-            description.push_str(
-                " The sandbox has no network here: if a command the task needs must reach the \
-                 internet, run it again with network and a reason instead; the person is asked \
-                 to allow it, and it stays in the sandbox otherwise.",
-            );
-            properties.insert(
-                "network".into(),
-                json!({"type": "boolean", "description": "Run with the internet, in the sandbox otherwise. Only after this same command failed without it; the person is asked every time"}),
-            );
+    beyond(asks, &mut description, &mut properties);
+    ToolSpec {
+        name: Tool::Bash.name().to_owned(),
+        description,
+        parameters: json!({"type": "object", "properties": properties, "required": ["command"]}),
+    }
+}
+
+/// What `bash`'s description and arguments say of what its commands may ask for, `asks`,
+/// beyond the sandbox: with the network where it has none, and the reason for either.
+fn beyond(asks: Asks, description: &mut String, properties: &mut Map<String, serde_json::Value>) {
+    let (said, reason) = match asks {
+        Asks::Outside => (
+            "",
+            Some("With outside_sandbox: why the command needs it, in one sentence for the person"),
+        ),
+        Asks::OutsideOrNetwork => (
+            " The sandbox has no network here: if a command the task needs must reach the \
+             internet, run it again with network and a reason instead; the person is asked \
+             to allow it, and it stays in the sandbox otherwise.",
             Some(
                 "With outside_sandbox or network: why the command needs it, in one sentence for the person",
-            )
-        }
-        Asks::Nothing => {
-            description.push_str(
-                " They have no network here, and none may ask for it or to run outside the \
-                 sandbox: do the task without the internet, or tell the person what needs it.",
-            );
-            None
-        }
-        Asks::Never => {
-            description.push_str(
-                " In plan mode the sandbox keeps every file as it is, and no command may leave \
-                 it: look around with commands that only read.",
-            );
-            None
-        }
+            ),
+        ),
+        Asks::Nothing => (
+            " They have no network here, and none may ask for it or to run outside the \
+             sandbox: do the task without the internet, or tell the person what needs it.",
+            None,
+        ),
+        Asks::Never => (
+            " In plan mode the sandbox keeps every file as it is, and no command may leave \
+             it: look around with commands that only read.",
+            None,
+        ),
+        Asks::Contained => (
+            " On this server only its owner's commands may run outside the sandbox: if it \
+             blocked a command the task needs, do the task another way or tell the person \
+             what is needed.",
+            None,
+        ),
+        Asks::NetworkOnly => (
+            " The sandbox has no network here, and on this server only its owner's commands \
+             may run outside it: if a command the task needs must reach the internet, run it \
+             again with network and a reason; the person is asked to allow it, and it stays \
+             in the sandbox otherwise.",
+            Some(
+                "With network: why the command needs the internet, in one sentence for the person",
+            ),
+        ),
     };
+    description.push_str(said);
+    if matches!(asks, Asks::OutsideOrNetwork | Asks::NetworkOnly) {
+        properties.insert(
+            "network".into(),
+            json!({"type": "boolean", "description": "Run with the internet, in the sandbox otherwise. Only after this same command failed without it; the person is asked every time"}),
+        );
+    }
     if let Some(reason) = reason {
         properties.insert(
             "reason".into(),
             json!({"type": "string", "description": reason}),
         );
-    }
-    ToolSpec {
-        name: Tool::Bash.name().to_owned(),
-        description,
-        parameters: json!({"type": "object", "properties": properties, "required": ["command"]}),
     }
 }
 
@@ -277,6 +296,18 @@ mod tests {
     use glave_ports::testing::any_secret;
 
     use super::*;
+
+    #[test]
+    fn someone_else_on_the_server_s_computer_is_never_offered_to_leave_the_sandbox() {
+        for asks in [Asks::Contained, Asks::NetworkOnly] {
+            let offered = spec(asks);
+            let said = format!("{} {}", offered.description, offered.parameters);
+            assert!(!said.contains("outside_sandbox"), "{said}");
+            assert!(said.contains("only its owner's commands"), "{said}");
+        }
+        let network = spec(Asks::NetworkOnly).parameters.to_string();
+        assert!(network.contains("\"network\"") && network.contains("\"reason\""));
+    }
 
     #[test]
     fn commands_never_see_secrets() {

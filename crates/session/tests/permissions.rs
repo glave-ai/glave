@@ -3,8 +3,9 @@
 //! run with that mode from then on, across restarts; choosing the mode a thread already
 //! has records nothing; a thread that chooses none runs with the server's; the summary shows
 //! the mode; one above the policy's cap is refused with `-32012`, in plain words; one
-//! chosen before a cap came runs capped; Full access never waits for anyone; and a log from
-//! before the modes were renamed opens with the new names.
+//! chosen before a cap came runs capped; Full access never waits for anyone, and is never
+//! anyone's but the person here on the server's computer; and a log from before the modes
+//! were renamed opens with the new names.
 
 use std::path::Path;
 
@@ -318,5 +319,83 @@ fn a_log_from_before_the_modes_were_renamed_opens_with_the_new_ones() {
             recorded(&server, thread).await,
             ["chose auto", "chose ask", "asked: NoOneThere"]
         );
+    });
+}
+
+#[test]
+fn someone_else_than_the_person_here_never_runs_with_full_access_on_the_server_s_computer() {
+    let dir = folder("permissions-theirs");
+    block_on!(async {
+        let mut setup = Setup::new(writes("a.txt"));
+        setup.answering = Answering::NoOne;
+        setup.identity_provider = true;
+        let server = setup.build_on(&dir, Shared::default()).await.0;
+        let ada = signed_in("ada");
+        let Reply::Server(theirs) = server.request_as(&ada, Request::Discover {}).await.unwrap()
+        else {
+            panic!("server info");
+        };
+        assert_eq!(theirs.modes, [Auto, Plan, Ask], "Full access is not theirs");
+        assert_eq!(theirs.permissions, Auto, "the server's own, as theirs run");
+        let why = theirs.unsandboxed.map(|told| told.to_string());
+        assert_eq!(
+            why.as_deref(),
+            Some(
+                "This server can't run the sandbox, and only its owner's commands may run \
+                 without it, so none of yours run here."
+            )
+        );
+        let Reply::Server(mine) = server.request(Request::Discover {}).await.unwrap() else {
+            panic!("server info");
+        };
+        assert_eq!(mine.modes, [Auto, Plan, Ask, FullAccess]);
+
+        let start = |permissions| Request::ThreadStart {
+            project: None,
+            worktree: None,
+            background: false,
+            computer: None,
+            model: None,
+            permissions,
+            effort: None,
+        };
+        let refused = server.request_as(&ada, start(Some(FullAccess))).await;
+        let refused = refused.unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED, "{refused:?}");
+        assert_eq!(
+            refused.message.to_string(),
+            "Full access is only for this server's owner, since its commands could reach the \
+             server's own files: choose Auto, Plan or Ask first"
+        );
+        // The server's own Full access runs as Auto for them: with no sandbox, the write asks.
+        let Reply::Thread { thread } = server.request_as(&ada, start(None)).await.unwrap() else {
+            panic!("a thread");
+        };
+        assert_eq!(thread.permissions, Auto);
+        let turn = Request::TurnStart {
+            thread: thread.id,
+            prompt: "write it".into(),
+            background: false,
+            budget: None,
+            meta: Meta::default(),
+            model: None,
+            permissions: None,
+            unattended: false,
+            files: Vec::new(),
+            effort: None,
+        };
+        server.request_as(&ada, turn).await.unwrap();
+        let read = Request::ThreadEvents {
+            thread: thread.id,
+            after: None,
+            limit: None,
+        };
+        let Reply::Events { events, .. } = server.request_as(&ada, read).await.unwrap() else {
+            panic!("events");
+        };
+        let asked = events
+            .into_iter()
+            .any(|raw| matches!(decode(raw).unwrap().body, Body::ApprovalRequested(_)));
+        assert!(asked, "the write asked first");
     });
 }
