@@ -7,6 +7,7 @@ A wall around the commands the model runs, enforced by the operating system, and
 Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). It is glave's default: Auto's `project` level, with the network, wherever it can run; where it cannot, commands ask first (below).
 
 - glave's own git doesn't run what a repository nested in the project names (#1193).
+- A worker's `save` hands its credential to nothing its commands planted (#1198; `computers.md`, "Workers").
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
 
 ## Why on by default
@@ -106,7 +107,6 @@ The same on Seatbelt, bubblewrap and Landlock, which is why it lives here and no
 
 - The person's own git in such a folder (their terminal, an editor that runs `git status` on opening it), which runs what is planted there; so does a command they let out of the sandbox (*Letting one command out*), and Full access. A `Makefile` or `package.json` a command wrote runs too.
 - A race: blanking reads the config, then git reads it again. A command still running that adds a filter between the two wins it, in 20 of 60 tries with a tight loop in a review's test. Running `status` and the checkout inside the sandbox would close it, at the cost of git-lfs's fetching, which needs sign-ins the sandbox hides.
-- A worker's `save`, which runs inside its own wall with the push's credential in its environment: its config is the commands' to write there, so `gpg.program`, a transport and so on still run there, and can read that credential.
 - A project made at `~/.config` can write git's own global config, which glave's git takes for the person's.
 
 **A thread's worktree** (`computers.md`): the writable set is the worktree folder and its repository's shared git folder (`git rev-parse --git-common-dir`), where its commits go, and nothing else. The shared folder's `hooks/`, `config`, `config.worktree`, `worktrees/` and `modules/` stay read-only, except the worktree's own folder in `worktrees/`, where its index, `HEAD` and logs go; that folder's hooks, config and `modules/` stay read-only, and neither it nor the shared folder can be renamed or replaced. So a commit works but nothing is planted that runs in another checkout. The main checkout's files and other threads' worktrees stay unwritable (#130). The worktree lives under `~/.glave/worktrees`, so the read rule for glave's own data below excepts the workspace itself.

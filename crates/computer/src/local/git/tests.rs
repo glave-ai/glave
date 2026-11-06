@@ -15,6 +15,8 @@ use super::*;
 use crate::LocalComputers;
 use crate::worktrees::{self, Condition};
 
+mod saving;
+
 /// `a.txt` changed but its size not, so git must read it, through any filter, to see the change.
 const SAME_SIZE: &str = "TWO\n";
 
