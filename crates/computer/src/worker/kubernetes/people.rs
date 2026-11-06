@@ -2,7 +2,7 @@
 //! person's computer in the cloud"): each person's computer handed to whatever works there as
 //! planned, asleep or awake, and woken only by the first call that needs it (decision 6), once
 //! however many ask at the same time; kept awake while a turn or task holds it. A computer
-//! sleeps on its own once nothing has asked it anything for 10 minutes and no command runs
+//! sleeps on its own once nothing has asked it anything for 2 hours and no command runs
 //! there in the background (`computer serve --idle`); the next ask finds it ended and wakes it
 //! again.
 
