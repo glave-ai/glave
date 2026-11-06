@@ -383,6 +383,9 @@ fn someone_removed_has_their_commands_in_the_background_stopped() {
         ];
         let mut setup = Setup::new(answers);
         setup.identity_provider = true;
+        // Her commands run on a computer of her own: on the server's, only in the sandbox.
+        let homes = crate::homes::Here::new(&dir.join("people"));
+        setup.homes = Some(Arc::new(homes) as Arc<dyn glave_harness::Homes>);
         let server = setup.build_on(&dir, log.clone()).await.0;
         let ada = signed_in("ada");
         let (thread, at) = chat(&server, &ada, false).await;

@@ -201,7 +201,7 @@ where
             self.offered_effort(&model, effort)?;
         }
         if let Some(mode) = choice.permissions {
-            self.allowed_permissions(mode)?;
+            self.allowed_permissions(caller.person, mode)?;
         }
         let (finish, done) = watch::channel(None);
         // Held until this says what it did: on any way out before that, the key is let go.

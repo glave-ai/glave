@@ -252,7 +252,7 @@ where
         protections: Protections,
     ) -> Result<ThreadSummary, ApiError> {
         let theirs = view.whose();
-        let protections = if self.goes_by_project(theirs) {
+        let protections = if self.computer_is_theirs(theirs) {
             protections
         } else {
             Protections::default()
@@ -297,7 +297,7 @@ where
             standing: view.standing,
             title,
             permissions: self
-                .permissions_now(&scope, view.thread, protections)
+                .permissions_now(&scope, view.thread, theirs, protections)
                 .await?,
             trust: None,
             for_: view.for_,

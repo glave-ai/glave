@@ -508,7 +508,7 @@ where
             self.offered_effort(&model, effort)?;
         }
         if let Some(mode) = choice.permissions {
-            self.allowed_permissions(mode)?;
+            self.allowed_permissions(caller.person, mode)?;
         }
         let project = scope.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
