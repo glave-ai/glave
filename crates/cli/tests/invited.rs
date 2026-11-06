@@ -1,6 +1,7 @@
 //! Someone invited to a person's own server (`specs/model.md`, "Invites"), the real binary at a
 //! public origin: what the agent adds for them never reaches the owner's own folder, whose
-//! `mcp.json` runs as the owner with the server's whole environment; the owner adds as ever.
+//! `mcp.json` runs as the owner with the server's whole environment, and their commands never
+//! leave the sandbox, which hides the server's token; the owner does both as ever.
 
 use glave_event::{Body, ServiceAnswer, ThreadId, decode};
 use glave_identity::testing::Authenticator;
@@ -48,10 +49,10 @@ async fn invited(owner: &Remote, url: &str, origin: &str) -> Remote {
     Remote::new(url, made["session"].as_str().unwrap().to_owned()).unwrap()
 }
 
-/// Runs a turn in a new thread of `caller` to its end, answering each place glave asks about
-/// with the person's own folder: how many times it asked.
-async fn turn(caller: &Remote) -> usize {
-    let started = request("thread/start", json!({}));
+/// Runs a turn in a new thread of `caller`, started with `params`, to its end, answering each
+/// place glave asks about with the person's own folder: how many times it asked.
+async fn turn(caller: &Remote, params: Value) -> usize {
+    let started = request("thread/start", params);
     let started = serde_json::to_value(caller.request(&started).await.unwrap()).unwrap();
     let thread: ThreadId = serde_json::from_value(started["thread"]["id"].clone()).unwrap();
     let prompt = json!({"thread": thread, "prompt": "add these"});
@@ -106,7 +107,7 @@ fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_ca
     block_on!(async {
         let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
         let theirs = invited(&owner, &url, &origin).await;
-        let asks = turn(&theirs).await;
+        let asks = turn(&theirs, json!({})).await;
         assert!(!servers.exists(), "they wrote the owner's mcp.json");
         let skills = place.home.join("skills/notes");
         assert!(!skills.exists(), "they wrote the owner's skills");
@@ -114,8 +115,64 @@ fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_ca
         let told = model.received()[2].body.to_string();
         assert!(told.contains("Nothing can be added here"), "{told}");
 
-        assert_eq!(turn(&owner).await, 1);
+        assert_eq!(turn(&owner, json!({})).await, 1);
         let written = std::fs::read_to_string(&servers).unwrap();
         assert!(written.contains("mine"), "{written}");
+    });
+}
+
+#[test]
+fn someone_invited_never_leaves_the_sandbox_on_the_server_s_computer_and_the_owner_still_can() {
+    let place = place("invited-sandbox");
+    let token_file = place.home.join("serve.token");
+    let cat = format!("cat '{}'", token_file.display());
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "bash", &json!({"command": cat})),
+        Reply::tool_call(
+            "call_2",
+            "bash",
+            &json!({"command": cat, "outside_sandbox": true, "reason": "To read it."}),
+        ),
+        Reply::text("Could not."),
+        Reply::tool_call("call_3", "bash", &json!({"command": cat})),
+        Reply::text("Read it."),
+    ])
+    .unwrap();
+    choose(&place, "serve", "{ origin = \"http://localhost\" }");
+    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &[]);
+    let (_, port) = url.rsplit_once(':').unwrap();
+    let origin = format!("http://localhost:{port}");
+    let token = std::fs::read_to_string(&token_file).unwrap();
+    let token = token.trim();
+    let full = json!({"permissions": "full-access"});
+    block_on!(async {
+        let owner = Remote::new(&url, token.to_owned()).unwrap();
+        let theirs = invited(&owner, &url, &origin).await;
+        let found = theirs.request(&request("server/discover", json!({}))).await;
+        let found = serde_json::to_value(found.unwrap()).unwrap();
+        assert!(
+            !found["modes"].to_string().contains("full-access"),
+            "{found}"
+        );
+        let refused = theirs.request(&request("thread/start", full.clone())).await;
+        let refused = serde_json::to_string(&refused.unwrap_err()).unwrap();
+        assert!(
+            refused.contains("only for this server's owner"),
+            "{refused}"
+        );
+
+        assert_eq!(turn(&theirs, json!({})).await, 0, "nothing to ask them");
+        let told: Vec<String> = model.received()[1..3]
+            .iter()
+            .map(|received| received.body.to_string())
+            .collect();
+        let read = told.iter().any(|body| body.contains(token));
+        assert!(!read, "they read the owner's token");
+        let refused = "only its owner's commands may run outside the sandbox";
+        assert!(told[1].contains(refused), "{}", told[1]);
+
+        assert_eq!(turn(&owner, full).await, 0);
+        let read = model.received()[4].body.to_string().contains(token);
+        assert!(read, "the owner reads their own token");
     });
 }

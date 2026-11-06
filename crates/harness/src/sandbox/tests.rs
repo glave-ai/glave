@@ -185,6 +185,11 @@ fn the_note_on_a_blocked_command_offers_only_what_its_commands_may_ask_for() {
     );
     let outside = note(Asks::Outside);
     assert!(outside.contains("outside_sandbox: true") && !outside.contains("network: true"));
+    // Someone else's commands on the server's computer never leave the sandbox.
+    let contained = note(Asks::Contained);
+    assert!(contained.contains("only its owner's") && !contained.contains("outside_sandbox"));
+    let only = note(Asks::NetworkOnly);
+    assert!(only.contains("network: true") && !only.contains("outside_sandbox"));
     assert_eq!(
         blocked_note(Asks::Nothing, Some(0), offline),
         None,

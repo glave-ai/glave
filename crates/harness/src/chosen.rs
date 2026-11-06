@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::sync::PoisonError;
 
 use glave_event::{Body, EffortChosen, Event, ModelChosen, Permissions, PermissionsChosen};
+use glave_ports::settings::Protections;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::approval::{ApprovalMode, Approver};
@@ -172,8 +173,18 @@ where
     /// What the agent may do in `thread`: its own choice, else its project's, else the
     /// harness's mode, never above the policy's cap ([`crate::Defaults::permissions`]).
     pub fn permissions_for(&self, thread: &Thread) -> Permissions {
-        let protections = thread.brought.settled.protections;
-        thread.defaults.permissions(protections, thread.permissions)
+        self.mode(thread, thread.brought.settled.protections)
+    }
+
+    /// The mode `thread` runs with in a project that changes it as `protections` says: Auto at
+    /// most where it is walled in ([`Harness::walled`]), since Full access has no sandbox.
+    pub(crate) fn mode(&self, thread: &Thread, protections: Protections) -> Permissions {
+        let mode = thread.defaults.permissions(protections, thread.permissions);
+        if self.walled(thread) {
+            mode.min(Permissions::Auto)
+        } else {
+            mode
+        }
     }
 
     /// How much `thread`'s turns ask before acting, as its mode comes to it where its

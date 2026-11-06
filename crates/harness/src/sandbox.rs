@@ -28,6 +28,18 @@ pub(crate) const PLAN_STAYS: &str = "Not run: in plan mode commands stay in the 
      they change nothing, until the person approves the plan. Look around with commands that \
      only read, and put what needs more in the plan.";
 
+/// What the model is told when a command would run without the sandbox on the server's own
+/// computer for someone other than its owner.
+pub(crate) const OWNER_ONLY: &str = "Not run: on this server only its owner's commands may run \
+     outside the sandbox. Do the task another way in the sandbox, or tell the person what is \
+     needed.";
+
+/// What the model is told when a command would run where no sandbox runs, on the server's own
+/// computer for someone other than its owner.
+pub(crate) const NO_SANDBOX_HERE: &str = "Not run: on this server only its owner's commands may \
+     run without the sandbox, and the sandbox can't run here for this thread. Do what needs no \
+     command, and tell the person which command is needed.";
+
 /// What the model is told when what a command would run without of the sandbox changed while
 /// it waited for the person, so their answer was about something else.
 pub(crate) const CHANGED: &str = "Not run: the sandbox changed while this waited for the \
@@ -46,6 +58,12 @@ pub(crate) enum Asks {
     Nothing,
     /// Nothing, in plan mode: what a command runs in changes nothing, and it stays so.
     Never,
+    /// Nothing, for someone other than the person whose computer it is: commands never leave
+    /// the sandbox, which has the network.
+    Contained,
+    /// Only for the network, where the sandbox has none, for someone other than the person
+    /// whose computer it is: commands never leave the sandbox.
+    NetworkOnly,
 }
 
 impl Asks {
@@ -54,9 +72,14 @@ impl Asks {
         if workspace.plans() {
             return Self::Never;
         }
+        let walled = workspace.is_walled();
         match workspace.sandbox() {
+            Some(sandbox) if !sandbox.network && workspace.asks_network() && walled => {
+                Self::NetworkOnly
+            }
             Some(sandbox) if !sandbox.network && workspace.asks_network() => Self::OutsideOrNetwork,
             Some(sandbox) if !sandbox.network => Self::Nothing,
+            _ if walled => Self::Contained,
             _ => Self::Outside,
         }
     }
@@ -90,15 +113,26 @@ where
     /// of the sandbox `thread`'s commands run in, where the person is asked, or was, about
     /// `asked`: refused when it would leave the sandbox otherwise than they were asked, since
     /// the sandbox changed while it waited, and when it would leave it at all where its
-    /// commands may not ask to. `None` when it may go on.
+    /// commands may not ask to. A command of `name` where no sandbox runs, for a thread walled
+    /// in ([`Harness::walled`]), is refused without asking anyone. `None` when it may go on.
     pub(crate) fn let_out_refused(
         &self,
         thread: &Thread,
+        name: &str,
         lifted_asked: (Option<Lifted>, Option<Lifted>),
         summary: &str,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Option<ToolOutput> {
-        let_out_refused(self.workspace_for(thread), lifted_asked, summary, live)
+        let workspace = self.workspace_for(thread);
+        let bash = Tool::named(name) == Some(Tool::Bash);
+        if bash && workspace.sandbox().is_none() && self.walled(thread) {
+            live(Live::ToolFinished {
+                summary: format!("{summary} (not allowed here)"),
+                is_error: true,
+            });
+            return Some(ToolOutput::text(true, NO_SANDBOX_HERE));
+        }
+        let_out_refused(workspace, lifted_asked, summary, live)
     }
 }
 
@@ -116,6 +150,9 @@ fn let_out_refused(
         (PLAN_STAYS, NOT_IN_PLAN)
     } else if lifted.is_some() && asks == Asks::Nothing {
         (NOT_ALLOWED, "not allowed here")
+    } else if lifted == Some(Lifted::Sandbox) && matches!(asks, Asks::Contained | Asks::NetworkOnly)
+    {
+        (OWNER_ONLY, "not allowed here")
     } else {
         return None;
     };
@@ -165,8 +202,8 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
         "nodename nor servname",
     ];
     let offline: &[&str] = match asks {
-        Asks::Outside | Asks::Never => &[],
-        Asks::OutsideOrNetwork | Asks::Nothing => &[
+        Asks::Outside | Asks::Never | Asks::Contained => &[],
+        Asks::OutsideOrNetwork | Asks::Nothing | Asks::NetworkOnly => &[
             "name resolution",
             "getaddrinfo",
             "enotfound",
@@ -206,6 +243,22 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
             "[This command may have been blocked by the sandbox: in plan mode commands cannot \
              change any file or read secrets, and none may leave the sandbox. Look around with \
              commands that only read, and put what needs changing in the plan.]"
+        }
+        Asks::Contained => {
+            "[This command may have been blocked by the sandbox: commands here cannot write \
+             outside the project, change git hooks or config, or read secrets (credential \
+             stores and files such as .env and private keys are hidden), and on this server \
+             only its owner's may run outside it. Do the task another way, or tell the person \
+             what is needed.]"
+        }
+        Asks::NetworkOnly => {
+            "[This command may have been blocked by the sandbox: commands here cannot use the \
+             network, write outside the project, change git hooks or config, or read secrets \
+             (credential stores and files such as .env and private keys are hidden), and on \
+             this server only its owner's may run outside it. If the task needs this very \
+             command to reach the internet, run it again with network: true and a reason, and \
+             the person is asked to allow it; otherwise do the task another way or tell the \
+             person what is needed.]"
         }
     })
 }
