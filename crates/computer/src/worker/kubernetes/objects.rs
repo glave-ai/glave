@@ -42,8 +42,8 @@ pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// its disk (`specs/computers.md`, decision 12).
 const PERSON_USER: u32 = 65_532;
 /// How long a person's computer goes unasked, with nothing running in the background, before
-/// it ends on its own: asleep after 10 minutes idle (`specs/computers.md`, decision 4).
-pub(crate) const IDLE_MINUTES: u32 = 10;
+/// it ends on its own: asleep after 2 hours idle (`specs/computers.md`, decision 4).
+pub(crate) const IDLE_MINUTES: u32 = 120;
 /// Where a person's disk is mounted in their computer: their home.
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// Where glave on a person's computer makes scratch folders: its folder in their home.
