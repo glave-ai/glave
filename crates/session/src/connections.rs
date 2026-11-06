@@ -246,18 +246,11 @@ where
         caller: &Caller,
         connector: KeptConnector,
     ) -> Result<Reply, ApiError> {
-        let connections = self.connections_for(caller)?;
-        let catalog = built_in()?;
-        let Some(found) = catalog.connector(&connector.id) else {
-            return Err(no_connector(&connector.id));
-        };
-        if let Some(project) = connector.only {
-            self.owned(caller, project).await?;
-        }
+        let (connections, found) = self.placeable(caller, &connector).await?;
         let only = connector.only;
         match connections.connect(connector, self.redirect()).await? {
             Connecting::Connected => Ok(Reply::Connector {
-                connector: self.placed(caller, found, only).await,
+                connector: self.placed(caller, &found, only).await,
             }),
             Connecting::SignIn(sign_in) => Ok(Reply::SignIn { sign_in }),
             Connecting::NoWayBack => Err(self.no_way_back()),
@@ -270,19 +263,30 @@ where
         caller: &Caller,
         connector: KeptConnector,
     ) -> Result<Reply, ApiError> {
-        let connections = self.connections_for(caller)?;
-        let catalog = built_in()?;
-        let Some(found) = catalog.connector(&connector.id) else {
-            return Err(no_connector(&connector.id));
-        };
-        if let Some(project) = connector.only {
-            self.owned(caller, project).await?;
-        }
+        let (connections, found) = self.placeable(caller, &connector).await?;
         let only = connector.only;
         connections.place(connector).await?;
         Ok(Reply::Connector {
-            connector: self.placed(caller, found, only).await,
+            connector: self.placed(caller, &found, only).await,
         })
+    }
+
+    /// The caller's connections and `connector`'s entry in the catalog, once it is one glave
+    /// has and its place, if it has one, a project the caller owns.
+    async fn placeable(
+        &self,
+        caller: &Caller,
+        connector: &KeptConnector,
+    ) -> Result<(&dyn Connections, crate::connectors::Connector), ApiError> {
+        let connections = self.connections_for(caller)?;
+        let found = built_in()?
+            .connector(&connector.id)
+            .cloned()
+            .ok_or_else(|| no_connector(&connector.id))?;
+        if let Some(project) = connector.only {
+            self.owned(caller, project).await?;
+        }
+        Ok((connections, found))
     }
 
     /// `connector`, connected and used everywhere, or `only` in one project.
