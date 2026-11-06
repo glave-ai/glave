@@ -1,12 +1,15 @@
 //! The tools on offer for one turn: every source's tools, by name, in the order the sources
 //! were given, and the system prompt with what the sources say about them. A source that cannot
-//! list its tools is left out of the turn, not fatal to it.
+//! list its tools is left out, not fatal to the turn; one whose tools a thread's prefix already
+//! lists keeps them listed, and a call to one is told it isn't answering (`prefix.rs`).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
 use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
 
+use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
@@ -27,20 +30,32 @@ const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remem
 /// server's own words may be part of it.
 const WHY_CHARS: usize = 500;
 
-/// One of glave's own tools, which the harness runs itself, offered in some turns only.
+/// Memory's tools, by name, which the harness runs itself (`memory/call.rs`).
+const MEMORY: [&str; 4] = [REMEMBER, EDIT_MEMORY, FORGET, RECALL];
+
+/// Whether `name` is one of glave's own tools, which the harness runs itself and offers by
+/// what a thread is, never a service someone connected.
+pub(crate) fn is_glaves(name: &str) -> bool {
+    MEMORY.contains(&name) || Own::ALL.iter().any(|own| own.name() == name)
+}
+
+/// One of glave's own tools, which the harness runs itself, offered in some threads only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Own {
     /// `question`: only when someone can answer.
     Question,
     /// `agent`.
     Agent,
-    /// `update_goal`: only in a goal's turns.
+    /// `update_goal`: in every thread a person, not an agent, writes to.
     Goal,
     /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
 }
 
 impl Own {
+    /// Every one of glave's own tools.
+    const ALL: [Self; 4] = [Self::Question, Self::Agent, Self::Goal, Self::Plan];
+
     /// The tool's name.
     fn name(self) -> &'static str {
         match self {
@@ -53,7 +68,7 @@ impl Own {
 }
 
 /// The tools of one turn.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ToolSet {
     pub(crate) specs: Vec<ToolSpec>,
     /// The system prompt for the turn: glave's own, then any notes from the sources.
@@ -65,6 +80,9 @@ pub(crate) struct ToolSet {
     own: Vec<Own>,
     /// The memory tools on offer, by name: only where the thread reads memory.
     pub(crate) memory: Vec<String>,
+    /// What changed since the model was last told, as the note the turn's message opens with,
+    /// and what the model knows once it reads it (`prefix.rs`).
+    pub(crate) news: Option<Box<(String, Told)>>,
 }
 
 impl ToolSet {
@@ -76,6 +94,7 @@ impl ToolSet {
             missing: Vec::new(),
             own: Vec::new(),
             memory: Vec::new(),
+            news: None,
         };
         let mut missing = Vec::new();
         for (index, source) in sources.iter().enumerate() {
@@ -111,7 +130,7 @@ impl ToolSet {
     /// claim there is no such tool. Before any note that must stay last (`MEMORY_RULE`).
     pub(crate) fn goes_without(&mut self, err: ToolError) {
         self.system = format!(
-            "{}\n\nThe tool server {:?} is not available, so its tools are missing from this turn. \
+            "{}\n\nThe tool server {:?} is not available, so its tools are missing from this thread. \
              If the person asks for something that needs them, tell them it is not available, \
              rather than that you have no such tool.",
             self.system, err.source_name
@@ -227,7 +246,28 @@ impl ToolSet {
             missing: self.missing.clone(),
             own: Vec::new(),
             memory: Vec::new(),
+            news: None,
         }
+    }
+
+    /// These tools called through their sources, listed as `system` and `specs` say, a
+    /// thread's prefix: a tool only these offer is not on offer, and one only `specs` lists is
+    /// told it isn't answering ([`ToolSet::not_found`]).
+    pub(crate) fn listed_as(mut self, system: String, specs: Vec<ToolSpec>) -> Self {
+        let listed = |name: &str| specs.iter().any(|spec| spec.name == name);
+        self.by_name.retain(|name, _| listed(name));
+        // glave's own run here whatever is on offer now, and say so when they can't.
+        self.own = Own::ALL
+            .into_iter()
+            .filter(|own| listed(own.name()))
+            .collect();
+        self.memory = (MEMORY.iter())
+            .filter(|name| listed(name))
+            .map(|name| (*name).to_owned())
+            .collect();
+        self.system = system;
+        self.specs = specs;
+        self
     }
 
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
@@ -237,6 +277,23 @@ impl ToolSet {
             .get(name)
             .or_else(|| self.by_name.get(&name.trim().to_ascii_lowercase()))?;
         Some((found.0, &found.1))
+    }
+
+    /// What a call of `name` is told when no source runs it: that its source isn't answering,
+    /// when it is listed, else that there is no such tool, and which there are.
+    pub(crate) fn not_found(&self, name: &str) -> String {
+        let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
+        match self.specs.iter().find(listed) {
+            Some(spec) => format!(
+                "{:?} is not answering: the service behind it did not respond. Try again later, \
+                 or go on without it.",
+                spec.name
+            ),
+            None => format!(
+                "There is no tool named {name:?}. The tools are {}.",
+                self.names().join(", ")
+            ),
+        }
     }
 
     pub(crate) fn names(&self) -> Vec<&str> {

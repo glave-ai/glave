@@ -51,6 +51,8 @@ where
         let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
         let messages = conversation(&events);
+        // Boxed: reading a blob back is a large future, and a resume runs inside many.
+        let prefix = Box::pin(self.prefix_kept(&scope, &events)).await;
         // On a person's own computer, reached again only at a turn: what the thread opened
         // with, kept in its log, until a turn finds the computer awake and reads them there.
         let instructions = if crate::homes::at_home(bound.as_ref()).is_some() {
@@ -102,6 +104,7 @@ where
             opened: self.opened(&scope, id, &events).await?,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
+            prefix,
         };
         self.rebuild_memory(&mut thread, &events).await;
         Ok(thread)

@@ -25,6 +25,11 @@ async fn remembering<L: glave_ports::EventLog + 'static>(
     }
 }
 
+/// Whether the `n`th request the model received holds `text`.
+fn told(seen: &Seen, n: usize, text: &str) -> bool {
+    json(seen).get(n).unwrap().contains(text)
+}
+
 /// Whether the model was offered memory's tools in the `n`th request it received.
 fn offered(seen: &Seen, n: usize) -> bool {
     json(seen).get(n).unwrap().contains(REMEMBER)
@@ -33,7 +38,7 @@ fn offered(seen: &Seen, n: usize) -> bool {
 #[test]
 fn on_until_the_person_turns_it_off_then_no_thread_reads_it_and_what_they_saved_stays() {
     block_on!(async {
-        let answers = (0..3).map(|_| answer(Some("Hi."), None)).collect();
+        let answers = (0..4).map(|_| answer(Some("Hi."), None)).collect();
         let (server, _store, _dir, seen) = served_seeing("remembering", answers).await;
         let ada = Caller::default();
         assert_eq!(
@@ -62,7 +67,8 @@ fn on_until_the_person_turns_it_off_then_no_thread_reads_it_and_what_they_saved_
             RememberingInfo::Chosen { on: false }
         );
         turn(&server, chat, "again").await.unwrap();
-        assert!(!offered(&seen, 1), "no memory tool once it is off");
+        // The thread's tools never change mid-thread: the model is told, and its calls refused.
+        assert!(told(&seen, 1, "Memory is off now"), "told once it is off");
         let list = Request::MemoryList {
             scope: None,
             project: None,
@@ -77,7 +83,13 @@ fn on_until_the_person_turns_it_off_then_no_thread_reads_it_and_what_they_saved_
             .await
             .unwrap();
         turn(&server, chat, "and again").await.unwrap();
-        assert!(offered(&seen, 2), "on again from the next turn");
+        assert!(
+            told(&seen, 2, "Memory is on again"),
+            "on again from the next turn"
+        );
+        let fresh = start(&server, false).await;
+        turn(&server, fresh, "hi").await.unwrap();
+        assert!(offered(&seen, 3), "and in a new thread");
     });
 }
 

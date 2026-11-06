@@ -32,11 +32,11 @@ use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
 use crate::plan::Planning;
+use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
 use crate::skills::Skills;
 use crate::tools::workspace::Workspace;
-use crate::toolset::ToolSet;
 use crate::waits::Opened;
 use crate::worker::Workers;
 
@@ -200,6 +200,9 @@ pub struct Thread {
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
     pub(crate) home: Option<crate::homes::AtHome>,
+    /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
+    /// as its log kept them when it was read again, and none once it is compacted.
+    pub(crate) prefix: Prefixed,
 }
 
 impl Thread {
@@ -476,40 +479,6 @@ where
         sources
     }
 
-    /// The tools on offer now in `thread`, from every source: the harness's, then its
-    /// project's.
-    pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
-        let sources = self.sources_for(thread);
-        let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
-        if let Some(credentials) = self.workspace_for(thread).credentials()
-            && let Some(note) = crate::prompt::signed_in(&credentials.hosts().await)
-        {
-            set.system = format!("{}\n\n{note}", set.system);
-        }
-        if let Some((memory, _)) = self.memory_for(thread) {
-            match memory.tools().await {
-                Ok(tools) => set.offer_memory(tools),
-                Err(err) => set.goes_without(err),
-            }
-        }
-        if self.approver.can_answer(thread.id) {
-            set.offer_question();
-        }
-        if self.settings.subagents {
-            set.offer_agent();
-        }
-        // Plan mode proposes its plan with it, and a thread with a plan keeps it current, so
-        // both have it whatever the settings say.
-        let planning = self.permissions_for(thread) == Permissions::Plan;
-        if self.settings.plans || planning || thread.plan.plan.is_some() {
-            set.offer_plan();
-        }
-        if planning {
-            set.system.push_str(crate::plan::PLAN_MODE);
-        }
-        set
-    }
-
     pub fn workspace(&self) -> &Workspace {
         &self.workspace
     }
@@ -621,6 +590,7 @@ where
             opened: None,
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
+            prefix: Prefixed::None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -629,16 +599,15 @@ where
             OriginKind::Prompt
         });
         origin.by = Self::other_than_for(&thread, caller.person);
-        let producer = Producer {
-            name: "glave".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-        };
         self.stage(
             &thread,
             &mut events,
             &ThreadStarted {
                 origin,
-                producer,
+                producer: Producer {
+                    name: "glave".into(),
+                    version: env!("CARGO_PKG_VERSION").into(),
+                },
                 fork: None,
                 parent,
                 for_: thread.for_.map(Principal::person),
