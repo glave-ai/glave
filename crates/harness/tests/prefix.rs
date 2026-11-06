@@ -1,7 +1,8 @@
 //! A thread's prefix (`specs/invariants.md`, 27): every model call of a thread opens with the
 //! same system prompt and tools, byte for byte, whatever changes between its turns; what
 //! changed reaches the model at the end, in a note. Only a compaction, another model and a
-//! connection of the person's turned on (`connection_places.rs`) make a new prefix.
+//! connection of the person's turned on (`connection_places.rs`) make a new prefix: a server of
+//! their own settings waits.
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -10,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, Permissions, StopReason};
 use glave_harness::{
-    AllowAll, ApprovalRequest, Approver, Cancel, Decision, Defaults, Harness, Skills, Thread,
-    find_skills, skill_folders,
+    AllowAll, ApprovalRequest, Approver, Cancel, Decision, Defaults, Harness, OwnTools, Skills,
+    Thread, find_skills, skill_folders,
 };
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::settings::Protections;
@@ -112,7 +113,7 @@ async fn set_up(
 }
 
 /// Between turns: a git host connected, plan mode on, the project trusted (its tools and
-/// hooks read again), the settings read again with
+/// hooks read again), a new MCP server of the person's own, the settings read again with
 /// `web_fetch`, a skill installed, and the tracker no longer answering.
 async fn change_everything(harness: &Held, thread: &mut Thread, world: &World, project_dir: &Path) {
     world.credentials.set_hosts(vec![CredentialHost {
@@ -125,6 +126,10 @@ async fn change_everything(harness: &Held, thread: &mut Thread, world: &World, p
         .await
         .unwrap();
     world.project.trust();
+    harness.set_own_tools(OwnTools::everywhere(vec![Arc::new(tool(
+        "mcp__mail__send",
+        "Sent.",
+    ))]));
     let web = Arc::new(tool("web_fetch", "A page.")) as Arc<dyn ToolSource>;
     harness.set_defaults(Defaults {
         web: Some(web),
@@ -157,7 +162,7 @@ fn opened_alike(requests: &[ModelRequest]) {
     assert_eq!(requests[7].tools, requests[6].tools);
     let offered =
         |request: &ModelRequest, name: &str| request.tools.iter().any(|spec| spec.name == name);
-    for name in ["mcp__docs__search", "web_fetch"] {
+    for name in ["mcp__docs__search", "mcp__mail__send", "web_fetch"] {
         assert!(
             !offered(&requests[4], name),
             "{name} waited for the compaction"
@@ -177,6 +182,7 @@ fn told_at_the_end(requests: &[ModelRequest]) {
     for told in [
         "Accounts the person connected",
         "Plan mode:",
+        "`mcp__mail__send`",
         "`mcp__docs__search`",
         "`web_fetch`",
         "release-notes",

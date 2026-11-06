@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use glave_event::StopReason;
-use glave_harness::{AllowAll, OwnTools};
+use glave_harness::{AllowAll, OwnTools, Placed};
 use glave_ports::{InMemoryLog, ModelRequest, OrgId, ProjectId, Scope, ToolSource};
 use serde_json::json;
 
@@ -21,11 +21,21 @@ fn place(n: u8) -> Scope {
     )
 }
 
-/// The person's tools: mail everywhere, and `only`'s connection in `at` alone.
+/// The person's tools: their own mail server everywhere, and the connection whose tool is
+/// `only` in `at` alone, of the two they may connect.
 fn own(only: &str, at: Scope) -> OwnTools {
     let mail = Arc::new(tool("mcp__mail__send", "Sent.")) as Arc<dyn ToolSource>;
     let theirs = Arc::new(tool(only, "Done there.")) as Arc<dyn ToolSource>;
-    OwnTools::everywhere(vec![Arc::clone(&mail)]).with_place(at.project(), vec![mail, theirs])
+    let everywhere = Placed {
+        sources: vec![Arc::clone(&mail)],
+        connections: Vec::new(),
+    };
+    let here = Placed {
+        sources: vec![mail, theirs],
+        connections: vec![only.split("__").nth(1).unwrap().to_owned()],
+    };
+    let connectors = vec!["notes".to_owned(), "stripe".to_owned()];
+    OwnTools::new(everywhere, connectors).with_place(at.project(), here)
 }
 
 fn lists(request: &ModelRequest, name: &str) -> bool {
@@ -113,10 +123,43 @@ fn moved_away_mid_thread_its_calls_are_refused_and_turned_on_it_comes_once() {
         let requests = seen.lock().unwrap().clone();
         assert_eq!(requests[2].tools, requests[0].tools, "the prefix stayed");
         let refused = results(requests[3].messages.as_slice()).join("\n");
-        assert!(refused.contains("is turned off here"), "{refused}");
+        assert!(refused.contains("is not connected here"), "{refused}");
         assert!(!lists(&requests[4], "mcp__stripe__charge"));
         assert!(lists(&requests[5], "mcp__stripe__charge"), "came at once");
         assert!(lists(&requests[5], "mcp__mail__send"));
         assert_eq!(requests[6].tools, requests[5].tools, "once");
+    });
+}
+
+#[test]
+fn a_subagent_has_no_connection_its_parent_s_place_does_not_use() {
+    let dir = folder("places-children");
+    let (chats, acme) = (place(2), place(3));
+    block_on!(async {
+        let child = json!({"description": "x", "prompt": "Do x."});
+        let asks = || answer(None, vec![("agent", child.clone())], StopReason::ToolUse);
+        let done = |text| answer(Some(text), vec![], StopReason::EndTurn);
+        let answers = vec![asks(), done("Did x."), done("Done.")];
+        let answers = [answers.clone(), answers].concat();
+        let mut settings = settings();
+        settings.subagents = true;
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings).await;
+        harness.set_own_tools(own("mcp__stripe__charge", acme));
+        let mut chat = harness.start_thread(chats).await.unwrap();
+        turn(&harness, &mut chat, "do x").await;
+        let mut project = harness.start_thread(acme).await.unwrap();
+        turn(&harness, &mut project, "do x").await;
+
+        let requests = seen.lock().unwrap().clone();
+        assert!(
+            !lists(&requests[1], "mcp__stripe__charge"),
+            "a chat's child"
+        );
+        assert!(lists(&requests[1], "mcp__mail__send"));
+        assert!(
+            lists(&requests[4], "mcp__stripe__charge"),
+            "a project's child"
+        );
     });
 }

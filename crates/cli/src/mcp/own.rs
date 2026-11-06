@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
-use glave_harness::OwnTools;
+use glave_harness::{OwnTools, Placed};
 use glave_mcp::{Limits, McpServer, Reachable};
 use glave_ports::ProjectId;
 use glave_ports::settings::mcp::ServerConfig;
@@ -26,7 +26,7 @@ use crate::gateway::remote::Remote;
 use crate::terminal::Printer;
 
 /// One of the person's servers as their settings describe it: started again when this
-/// changes.
+/// changes, but for where a connector is used.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Wanted {
     name: String,
@@ -34,8 +34,38 @@ pub(crate) struct Wanted {
     untrusted: bool,
     /// Whether the person is signed in at its address.
     signed_in: bool,
-    /// The one project whose threads alone use it: none where every thread of theirs does.
-    only: Option<ProjectId>,
+    from: From,
+}
+
+/// Where one of the person's servers comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum From {
+    /// Their `mcp.json`: used by every thread of theirs.
+    Settings,
+    /// glave's catalog, a connection: used by every thread of theirs, or `only` by those of
+    /// one project.
+    Connector { only: Option<ProjectId> },
+}
+
+impl Wanted {
+    /// Whether it runs as `other` does: the same server, wherever it is used.
+    fn runs_as(&self, other: &Self) -> bool {
+        let connector = |wanted: &Self| matches!(wanted.from, From::Connector { .. });
+        self.name == other.name
+            && self.config == other.config
+            && self.untrusted == other.untrusted
+            && self.signed_in == other.signed_in
+            && connector(self) == connector(other)
+    }
+
+    /// Whether the threads of `place` use it: every place, or none for the place of a thread
+    /// that is in no project of a person's.
+    fn used_in(&self, place: Option<ProjectId>) -> bool {
+        match self.from {
+            From::Settings | From::Connector { only: None } => true,
+            From::Connector { only } => only == place,
+        }
+    }
 }
 
 /// What the person's settings turn on: the servers of `home`'s `mcp.json` that `chosen`
@@ -96,10 +126,12 @@ pub(crate) async fn wanted(
     let connectors = connectors.into_iter().filter(|(id, _, _)| chose(id));
     let configs = configs
         .into_iter()
-        .map(|(name, config)| (name, config, None));
+        .map(|(name, config)| (name, config, From::Settings));
+    let connectors =
+        connectors.map(|(name, config, only)| (name, config, From::Connector { only }));
     Ok(configs
         .chain(connectors)
-        .map(|(name, config, only)| {
+        .map(|(name, config, from)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
             let signed_in = match &config {
                 ServerConfig::Http { url, .. } => {
@@ -112,7 +144,7 @@ pub(crate) async fn wanted(
                 config,
                 untrusted,
                 signed_in,
-                only,
+                from,
             }
         })
         .collect())
@@ -272,17 +304,18 @@ impl Servers {
             running.servers = before;
             return false;
         }
+        // Moved to another place, a connector keeps running: only where it is offered changes.
         let (mut kept, gone): (Vec<_>, Vec<_>) = before
             .into_iter()
-            .partition(|(had, _)| wanted.contains(had));
+            .partition(|(had, _)| wanted.iter().any(|want| want.runs_as(had)));
         running
             .retired
             .extend(gone.into_iter().map(|(_, server)| server));
         running.servers = wanted
             .into_iter()
             .map(|want| {
-                if let Some(at) = kept.iter().position(|(had, _)| *had == want) {
-                    kept.swap_remove(at)
+                if let Some(at) = kept.iter().position(|(had, _)| had.runs_as(&want)) {
+                    (want, kept.swap_remove(at).1)
                 } else {
                     let server = self.started(&want);
                     (want, server)
@@ -326,18 +359,33 @@ impl Servers {
     /// only those.
     pub(crate) fn tools(&self) -> OwnTools {
         let running = self.lock();
-        let used_in = |place: Option<ProjectId>| -> Vec<Arc<McpServer>> {
-            let here = (running.servers.iter())
-                .filter(|(wanted, _)| wanted.only.is_none() || wanted.only == place)
-                .map(|(_, server)| Arc::clone(server));
-            self.catalog.iter().cloned().chain(here).collect()
+        let used_in = |place: Option<ProjectId>| -> Placed {
+            let here: Vec<&(Wanted, Arc<McpServer>)> = (running.servers.iter())
+                .filter(|(wanted, _)| wanted.used_in(place))
+                .collect();
+            let servers: Vec<Arc<McpServer>> = (self.catalog.iter().cloned())
+                .chain(here.iter().map(|(_, server)| Arc::clone(server)))
+                .collect();
+            let connections = (here.iter())
+                .filter(|(wanted, _)| matches!(wanted.from, From::Connector { .. }))
+                .map(|(wanted, _)| wanted.name.clone())
+                .collect();
+            Placed {
+                sources: super::sources(&servers),
+                connections,
+            }
         };
         let places: BTreeSet<ProjectId> = (running.servers.iter())
-            .filter_map(|(wanted, _)| wanted.only)
+            .filter_map(|(wanted, _)| match wanted.from {
+                From::Connector { only } => only,
+                From::Settings => None,
+            })
             .collect();
-        let everywhere = OwnTools::everywhere(super::sources(&used_in(None)));
+        let catalog = glave_session::Catalog::built_in().map(|it| it.connectors);
+        let connectors = catalog.unwrap_or_default().into_iter().map(|it| it.id);
+        let everywhere = OwnTools::new(used_in(None), connectors.collect());
         places.into_iter().fold(everywhere, |tools, place| {
-            tools.with_place(place, super::sources(&used_in(Some(place))))
+            tools.with_place(place, used_in(Some(place)))
         })
     }
 
@@ -439,20 +487,26 @@ mod tests {
             let wanted = runtime.block_on(wanted(&home, chosen, &rules, false, &signed));
             let wanted = wanted.unwrap();
             let signed_in: Vec<bool> = wanted.iter().map(|it| it.signed_in).collect();
-            let only: Vec<Option<ProjectId>> = wanted.iter().map(|it| it.only).collect();
+            let from: Vec<From> = wanted.iter().map(|it| it.from).collect();
             let names: Vec<String> = wanted.into_iter().map(|it| it.name).collect();
-            (names, signed_in, only)
+            (names, signed_in, from)
         };
-        let (all, signed_in, only) = names("version = 1\n", None);
+        let (all, signed_in, from) = names("version = 1\n", None);
         assert_eq!(
             all,
             ["linear", "mine", "deepwiki", "sentry"],
             "a name or an address of mcp.json's is its own"
         );
         assert_eq!(signed_in, [false, false, false, true]);
+        let only = |only| From::Connector { only };
         assert_eq!(
-            only,
-            [None, None, Some(project), None],
+            from,
+            [
+                From::Settings,
+                From::Settings,
+                only(Some(project)),
+                only(None)
+            ],
             "used where it was put"
         );
         let chosen = Chosen {
@@ -485,7 +539,7 @@ mod tests {
             },
             untrusted: false,
             signed_in: false,
-            only: None,
+            from: From::Settings,
         }
     }
 

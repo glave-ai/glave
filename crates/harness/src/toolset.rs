@@ -4,7 +4,7 @@
 //! lists keeps them listed, and a call to one is told it isn't answering (`prefix.rs`).
 
 use std::collections::HashMap;
-use std::ops::Range;
+use std::fmt;
 use std::sync::Arc;
 
 use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
@@ -68,10 +68,24 @@ impl Own {
     }
 }
 
+/// The sources a turn's tools were gathered from, in order, which its calls go to.
+#[derive(Clone, Default)]
+struct Sources(Vec<Arc<dyn ToolSource>>);
+
+impl fmt::Debug for Sources {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} sources", self.0.len())
+    }
+}
+
 /// The tools of one turn.
 #[derive(Debug, Clone)]
 pub(crate) struct ToolSet {
     pub(crate) specs: Vec<ToolSpec>,
+    sources: Sources,
+    /// The person's connections, by their servers' names, that are not used where the thread
+    /// works: a call to one its prefix lists is told so.
+    pub(crate) away: Vec<String>,
     /// The system prompt for the turn: glave's own, then any notes from the sources.
     pub(crate) system: String,
     by_name: HashMap<String, (usize, ToolInfo)>,
@@ -90,6 +104,8 @@ impl ToolSet {
     pub(crate) async fn gather(sources: &[Arc<dyn ToolSource>], system: &str) -> Self {
         let mut set = Self {
             specs: Vec::new(),
+            sources: Sources(sources.to_vec()),
+            away: Vec::new(),
             system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
@@ -235,6 +251,8 @@ impl ToolSet {
                 .filter(|spec| by_name.contains_key(&spec.name))
                 .cloned()
                 .collect(),
+            sources: self.sources.clone(),
+            away: self.away.clone(),
             // A child neither reads nor writes memory, and proposes no plan: in plan mode its
             // tools are refused as its parent's are.
             system: [crate::plan::PLAN_MODE, MEMORY_RULE]
@@ -271,14 +289,9 @@ impl ToolSet {
         self
     }
 
-    /// The names of the tools the sources at `indices` offer, in order.
-    pub(crate) fn named_by(&self, indices: &Range<usize>) -> Vec<String> {
-        (self.specs.iter())
-            .filter(|spec| {
-                (self.by_name.get(&spec.name)).is_some_and(|(at, _)| indices.contains(at))
-            })
-            .map(|spec| spec.name.clone())
-            .collect()
+    /// The source at `index`, as the tools were gathered.
+    pub(crate) fn source(&self, index: usize) -> Option<Arc<dyn ToolSource>> {
+        self.sources.0.get(index).cloned()
     }
 
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
@@ -290,28 +303,25 @@ impl ToolSet {
         Some((found.0, &found.1))
     }
 
-    /// What a call of `name` is told when no source runs it: that its source isn't answering,
-    /// when it is listed and its source could not list its tools; that it is off here, when it
-    /// is listed and no source offers it now (its connection turned off, or used only
-    /// elsewhere); else that there is no such tool, and which there are.
+    /// What a call of `name` is told when no source runs it: that it is not connected here,
+    /// when it is listed and of one of the person's connections not used where the thread
+    /// works; that its source isn't answering, when it is listed otherwise; else that there is
+    /// no such tool, and which there are.
     pub(crate) fn not_found(&self, name: &str) -> String {
         let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
-        let down = |spec: &ToolSpec| {
-            (self.missing.iter()).any(|err| {
-                let server = format!("mcp__{}__", err.source_name);
-                spec.name == err.source_name || spec.name.starts_with(&server)
-            })
+        let away = |spec: &ToolSpec| {
+            (self.away.iter()).any(|server| spec.name.starts_with(&format!("mcp__{server}__")))
         };
         match self.specs.iter().find(listed) {
-            Some(spec) if down(spec) => format!(
-                "{:?} is not answering: the service behind it did not respond. Try again later, \
-                 or go on without it.",
+            Some(spec) if away(spec) => format!(
+                "{:?} is not connected here: the person disconnected its service, or uses it \
+                 only in another project or in their chats. Tell them so rather than trying \
+                 again; they can connect it here from their connections.",
                 spec.name
             ),
             Some(spec) => format!(
-                "{:?} is turned off here: the person turned its connection off, or uses it only \
-                 in another place. Tell them, rather than trying again; they can turn it on for \
-                 this place in their connections.",
+                "{:?} is not answering: the service behind it did not respond. Try again later, \
+                 or go on without it.",
                 spec.name
             ),
             None => format!(

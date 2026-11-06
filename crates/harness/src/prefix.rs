@@ -12,6 +12,8 @@
 mod kept;
 mod told;
 
+use std::collections::BTreeSet;
+
 use glave_event::{Part, Permissions};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSpec};
 
@@ -46,6 +48,9 @@ pub(crate) struct Prefix {
     specs: Vec<ToolSpec>,
     /// What the model has been told of what can change: by the prefix, then by notes.
     told: Told,
+    /// The person's connections offered where the thread works as it was made, by their
+    /// servers' names: one that comes after makes the prefix again.
+    connections: BTreeSet<String>,
 }
 
 impl Prefix {
@@ -83,7 +88,7 @@ where
     /// when it has none for its model, and called through what is on offer now.
     pub(crate) async fn tools(&self, thread: &mut Thread) -> ToolSet {
         // Boxed: what every source says can be large, and turns hold this across awaits.
-        let (now, told, own) = Box::pin(self.on_offer(thread)).await;
+        let (now, told, connections) = Box::pin(self.on_offer(thread)).await;
         let model = self.model_for(thread);
         let kept = match std::mem::take(&mut thread.prefix) {
             Prefixed::Made(prefix) if prefix.model == model => Some(prefix),
@@ -91,13 +96,14 @@ where
             _ => None,
         };
         // A connection turned on for this place since: its tools come with a new prefix.
-        let kept = kept.filter(|prefix| own.iter().all(|it| prefix.told.tools.contains_key(it)));
+        let kept = kept.filter(|prefix| connections.is_subset(&prefix.connections));
         let prefix = kept.unwrap_or_else(|| {
             Box::new(Prefix {
                 model,
                 system: now.system.clone(),
                 specs: now.specs.clone(),
                 told: told.clone(),
+                connections,
             })
         });
         let set = prefix.behind(now, told);
@@ -115,12 +121,13 @@ where
     }
 
     /// The tools on offer now in `thread`, from every source: the harness's, then its
-    /// project's; what they would tell the model of what can change; and the names of those
-    /// of the person's own connections.
-    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told, Vec<String>) {
-        let (sources, own) = self.sources_and_own(thread);
+    /// project's; what they would tell the model of what can change; and the person's
+    /// connections offered where it works.
+    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told, BTreeSet<String>) {
+        let (own, away) = self.own_for(thread);
+        let sources = self.sources_with(thread, &own.sources);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
-        let own = set.named_by(&own);
+        set.away = away;
         let mut signed_in = None;
         if let Some(credentials) = self.workspace_for(thread).credentials() {
             signed_in = crate::prompt::signed_in(&credentials.hosts().await);
@@ -159,6 +166,6 @@ where
             memory: self.memory_for(thread).is_some(),
             tools: Told::services(&set.specs),
         };
-        (set, told, own)
+        (set, told, own.connections.into_iter().collect())
     }
 }

@@ -124,15 +124,16 @@ impl Connections for InMemory {
             let connected = self.connectors.lock().unwrap();
             Ok(OFFERED
                 .iter()
-                .map(|id| match connected.iter().find(|it| it.id == *id) {
-                    Some(kept) => (kept.clone(), ConnectorStatus::Connected),
-                    None => {
-                        let kept = KeptConnector {
-                            id: (*id).to_owned(),
-                            only: None,
-                        };
-                        (kept, ConnectorStatus::Available)
-                    }
+                .map(|id| {
+                    let kept = connected.iter().find(|it| it.id == *id);
+                    let status = if kept.is_some() {
+                        ConnectorStatus::Connected
+                    } else {
+                        ConnectorStatus::Available
+                    };
+                    let only = None;
+                    let id = (*id).to_owned();
+                    (kept.cloned().unwrap_or(KeptConnector { id, only }), status)
                 })
                 .collect())
         })

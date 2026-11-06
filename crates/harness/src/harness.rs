@@ -4,7 +4,6 @@ mod error;
 mod settings;
 
 use std::collections::{BTreeMap, HashSet};
-use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
@@ -32,7 +31,7 @@ use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
-use crate::own_tools::OwnTools;
+use crate::own_tools::{OwnTools, Placed};
 use crate::plan::Planning;
 use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
@@ -447,21 +446,28 @@ where
     /// the harness's other sources, the person's own when the thread is theirs, then its
     /// project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
-        self.sources_and_own(thread).0
+        self.sources_with(thread, &self.own_for(thread).0.sources)
     }
 
-    /// [`Harness::sources_for`], and where among them the person's own are: those of the
-    /// place the thread works in.
-    pub(crate) fn sources_and_own(
+    /// The person's own tools for `thread`, when it is theirs: those of the place it works in,
+    /// and the connections they may connect that are not among them.
+    pub(crate) fn own_for(&self, thread: &Thread) -> (Placed, Vec<String>) {
+        if !self.trusting(thread.for_) {
+            return (Placed::default(), Vec::new());
+        }
+        let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
+        own.of(thread.scope.project())
+    }
+
+    /// [`Harness::sources_for`], with `own` as the person's own.
+    pub(crate) fn sources_with(
         &self,
         thread: &Thread,
-    ) -> (Vec<Arc<dyn ToolSource>>, Range<usize>) {
+        own: &[Arc<dyn ToolSource>],
+    ) -> Vec<Arc<dyn ToolSource>> {
         let mut sources = self.sources.clone();
-        let builtins = crate::builtins::BUILTINS;
-        if let (Some(source), Some(own)) =
-            (sources.get_mut(builtins), self.source_for(thread, builtins))
-        {
-            *source = own;
+        if let Some(source) = sources.get_mut(crate::builtins::BUILTINS) {
+            *source = self.builtins_for(thread);
         }
         if let Some(web) = thread.brought.web.as_ref().or(thread.defaults.web.as_ref()) {
             let after = crate::builtins::BUILTINS
@@ -482,14 +488,9 @@ where
                 own: own.filter(|_| self.trusting(thread.for_)),
             }));
         }
-        let start = sources.len();
-        if self.trusting(thread.for_) {
-            let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
-            sources.extend(own.of(thread.scope.project()).iter().cloned());
-        }
-        let own = start..sources.len();
+        sources.extend(own.iter().cloned());
         sources.extend(thread.brought.tools.iter().cloned());
-        (sources, own)
+        sources
     }
 
     pub fn workspace(&self) -> &Workspace {

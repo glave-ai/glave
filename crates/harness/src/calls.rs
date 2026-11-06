@@ -156,7 +156,7 @@ where
             return crate::subagent::describe(arguments);
         }
         let described = tools.get(name).and_then(|(index, info)| {
-            let source = self.source_for(thread, index)?;
+            let source = self.source_for(thread, tools, index)?;
             Some(source.describe(&info.spec.name, arguments))
         });
         described.unwrap_or_else(|| describe_call(name, arguments))
@@ -171,7 +171,9 @@ where
         }
         tools
             .get(name)
-            .and_then(|(index, info)| Some(self.source_for(thread, index)?.kind(&info.spec.name)))
+            .and_then(|(index, info)| {
+                Some(self.source_for(thread, tools, index)?.kind(&info.spec.name))
+            })
             .unwrap_or_default()
     }
 
@@ -217,7 +219,7 @@ where
         let Some((index, info)) = tools.get(&call.tool) else {
             return Ok(ToolOutput::text(true, tools.not_found(&call.tool)));
         };
-        let Some(source) = self.source_for(thread, index) else {
+        let Some(source) = self.source_for(thread, tools, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };
         let name = info.spec.name.as_str();
