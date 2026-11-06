@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use glave_event::{At, ConnectionConnected, Principal, Secret};
 use glave_mcp::{SignIn, SignInError};
 use glave_ports::{Clock as _, SystemClock};
-use glave_session::{KeptConnector, Returned};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
+use glave_session::{KeptConnector, Returned};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 

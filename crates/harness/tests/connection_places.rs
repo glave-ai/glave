@@ -69,7 +69,10 @@ fn a_chat_never_reaches_a_project_s_connection_nor_a_project_a_chat_s() {
 
         let requests = seen.lock().unwrap().clone();
         assert!(!lists(&requests[0], "mcp__stripe__charge"), "not in a chat");
-        assert!(lists(&requests[0], "mcp__mail__send"), "everywhere is everywhere");
+        assert!(
+            lists(&requests[0], "mcp__mail__send"),
+            "everywhere is everywhere"
+        );
         assert!(lists(&requests[2], "mcp__stripe__charge"), "in its project");
         assert!(!lists(&requests[4], "mcp__notes__add"), "not in a project");
         assert!(lists(&requests[6], "mcp__notes__add"), "in Chats");

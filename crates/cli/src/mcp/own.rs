@@ -94,7 +94,9 @@ pub(crate) async fn wanted(
     };
     let chose = |id: &str| chosen.is_none_or(|chosen| chosen.value.iter().any(|it| it == id));
     let connectors = connectors.into_iter().filter(|(id, _, _)| chose(id));
-    let configs = configs.into_iter().map(|(name, config)| (name, config, None));
+    let configs = configs
+        .into_iter()
+        .map(|(name, config)| (name, config, None));
     Ok(configs
         .chain(connectors)
         .map(|(name, config, only)| {
@@ -448,7 +450,11 @@ mod tests {
             "a name or an address of mcp.json's is its own"
         );
         assert_eq!(signed_in, [false, false, false, true]);
-        assert_eq!(only, [None, None, Some(project), None], "used where it was put");
+        assert_eq!(
+            only,
+            [None, None, Some(project), None],
+            "used where it was put"
+        );
         let chosen = Chosen {
             value: vec!["sentry".to_owned()],
             from: glave_config::policy::Source::Default,

@@ -90,9 +90,7 @@ pub trait Connections: Send + Sync {
 
     /// The connectors of glave's catalog the person may connect here, in any order, each with
     /// whether it is connected and, when it is, where their threads use it.
-    fn connectors(
-        &self,
-    ) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>>;
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>>;
 
     /// Connects `connector`, of glave's catalog, to be used where it says: at once when it
     /// asks no one to sign in, else by signing in, the browser to come back to `redirect`.

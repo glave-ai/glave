@@ -119,9 +119,7 @@ impl Connections for InMemory {
         })
     }
 
-    fn connectors(
-        &self,
-    ) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
         Box::pin(async move {
             let connected = self.connectors.lock().unwrap();
             Ok(OFFERED
@@ -674,7 +672,11 @@ fn a_connector_is_used_everywhere_or_only_in_one_place_of_the_caller_s() {
         };
         assert_eq!(ids_of(&web.call(&used_in(acme)).await), ["deepwiki"]);
         let none: Vec<&str> = Vec::new();
-        assert_eq!(ids_of(&web.call(&used_in(chats)).await), none, "not in Chats");
+        assert_eq!(
+            ids_of(&web.call(&used_in(chats)).await),
+            none,
+            "not in Chats"
+        );
 
         let place = |only| Request::ConnectorPlace {
             connector: "deepwiki".into(),
@@ -688,7 +690,10 @@ fn a_connector_is_used_everywhere_or_only_in_one_place_of_the_caller_s() {
         assert_eq!(placed["result"]["connector"]["used"], "Only in Chats");
         let listed = web.call(&all_connectors()).await;
         assert_eq!(listed["result"]["connectors"][1]["used"], "Only in Chats");
-        assert!(listed["result"]["connectors"][0].get("used").is_none(), "unconnected");
+        assert!(
+            listed["result"]["connectors"][0].get("used").is_none(),
+            "unconnected"
+        );
 
         let nowhere = glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(7));
         let refused = web.call(&place(Some(nowhere))).await;

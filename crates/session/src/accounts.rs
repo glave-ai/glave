@@ -376,7 +376,8 @@ impl<L: EventLog> AccountLedger<L> {
         let placed = self
             .append(|accounts| {
                 let kept = accounts.connector(&connector.id)?;
-                let moved = (kept != connector).then(|| Event::ConnectorConnected(connector.clone()));
+                let moved =
+                    (kept != connector).then(|| Event::ConnectorConnected(connector.clone()));
                 Some((moved.into_iter().collect(), ()))
             })
             .await?;

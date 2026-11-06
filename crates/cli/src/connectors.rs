@@ -120,7 +120,9 @@ async fn used(server: &mut Reached, id: &str, place: &str) -> anyhow::Result<()>
         else {
             bail!("glave answered project/list with something else");
         };
-        let named = projects.iter().find(|it| it.name.eq_ignore_ascii_case(place));
+        let named = projects
+            .iter()
+            .find(|it| it.name.eq_ignore_ascii_case(place));
         let Some(project) = named else {
             bail!("none of your projects is called {place:?}: say everywhere, or a project's name");
         };

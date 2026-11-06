@@ -308,8 +308,14 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
             id: id.to_owned(),
             only: only.map(|n| ProjectId::from_uuid(uuid(n))),
         };
-        ledger.keep_connector(&kept("docs", None), None).await.unwrap();
-        ledger.keep_connector(&kept("docs", None), None).await.unwrap();
+        ledger
+            .keep_connector(&kept("docs", None), None)
+            .await
+            .unwrap();
+        ledger
+            .keep_connector(&kept("docs", None), None)
+            .await
+            .unwrap();
         let token = fake_secret("mcp_");
         let sign_in = connection(1, url, &token);
         ledger
@@ -322,7 +328,12 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         assert_eq!(accounts.connections, [sign_in]);
 
         // Used only in one place, it keeps its place among the connected.
-        assert!(ledger.place_connector(&kept("docs", Some(7))).await.unwrap());
+        assert!(
+            ledger
+                .place_connector(&kept("docs", Some(7)))
+                .await
+                .unwrap()
+        );
         let moved = [kept("docs", Some(7)), kept("tracker", None)];
         assert_eq!(ledger.accounts().await.unwrap().connectors, moved);
         assert!(!ledger.place_connector(&kept("other", None)).await.unwrap());

@@ -358,9 +358,7 @@ impl Connections for Connected {
         Box::pin(self.searching_set(on))
     }
 
-    fn connectors(
-        &self,
-    ) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
         Box::pin(self.listed_connectors())
     }
 
