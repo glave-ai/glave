@@ -1,0 +1,5 @@
+{
+ "mcp__github__actions_list": [{"when": "list_workflow_runs", "text": "{\"workflow_runs\":[{\"id\":99812,\"name\":\"ci\",\"path\":\".github/workflows/ci.yml\",\"conclusion\":\"failure\",\"head_branch\":\"main\"}]}"}],
+ "mcp__github_rest__actions_list_workflow_runs": [{"when": "ci", "text": "{\"workflow_runs\":[{\"id\":99812,\"name\":\"ci\",\"conclusion\":\"failure\"}]}"}],
+ "mcp__github_rest__actions_list_workflow_runs_for_repo": [{"when": "web", "text": "{\"workflow_runs\":[{\"id\":99812,\"name\":\"ci\",\"path\":\".github/workflows/ci.yml\",\"conclusion\":\"failure\"}]}"}]
+}

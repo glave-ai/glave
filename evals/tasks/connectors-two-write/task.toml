@@ -1,0 +1,10 @@
+[task]
+name = "glave/connectors-two-write"
+description = "Read from one connector, write to another"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "ALERT-7734" },
+    { sent = "10442" },
+]

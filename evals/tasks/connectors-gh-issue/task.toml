@@ -1,0 +1,10 @@
+[task]
+name = "glave/connectors-gh-issue"
+description = "A GitHub issue among GitLab, Jira and Linear"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "Rosalind Achterberg" },
+    { answer_lacks = ["Tom Wrong"] },
+]

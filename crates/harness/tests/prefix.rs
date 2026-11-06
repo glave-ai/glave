@@ -112,8 +112,9 @@ async fn set_up(
 }
 
 /// Between turns: a git host connected, plan mode on, the project trusted (its tools and
-/// hooks read again), a new MCP server of the person's own, the settings read again with
-/// `web_fetch`, a skill installed, and the tracker no longer answering.
+/// hooks read again), a tool source of the person's own that is no connection (one turned on
+/// makes the prefix again, `tool_search.rs`), the settings read again with `web_fetch`, a skill
+/// installed, and the tracker no longer answering.
 async fn change_everything(harness: &Held, thread: &mut Thread, world: &World, project_dir: &Path) {
     world.credentials.set_hosts(vec![CredentialHost {
         url: "https://github.com".into(),

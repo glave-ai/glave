@@ -1,0 +1,5 @@
+{
+ "mcp__gitlab__get_issue": [{"when": "42", "text": "{\"iid\":42,\"title\":\"Rotate the Vault root token\",\"state\":\"opened\"}"}],
+ "mcp__gitlab__search_issues": [{"when": "", "text": "[{\"iid\":42,\"title\":\"Rotate the Vault root token\"}]"}],
+ "mcp__github__issue_read": [{"when": "42", "text": "{\"number\":42,\"title\":\"Tom Wrong\",\"state\":\"open\"}"}]
+}

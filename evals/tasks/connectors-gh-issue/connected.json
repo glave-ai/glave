@@ -1,0 +1,5 @@
+{
+ "mcp__github__issue_read": [{"when": "4120", "text": "{\"number\":4120,\"title\":\"Checkout button misaligned on Safari\",\"state\":\"open\",\"assignees\":[\"Rosalind Achterberg\"]}"}],
+ "mcp__github_rest__issues_get": [{"when": "4120", "text": "{\"number\":4120,\"title\":\"Checkout button misaligned on Safari\",\"state\":\"open\",\"assignees\":[{\"login\":\"Rosalind Achterberg\"}]}"}],
+ "mcp__gitlab__get_issue": [{"when": "4120", "text": "{\"iid\":4120,\"state\":\"closed\",\"assignee\":\"Tom Wrong\"}"}]
+}

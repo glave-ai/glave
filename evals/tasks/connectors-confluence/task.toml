@@ -1,0 +1,9 @@
+[task]
+name = "glave/connectors-confluence"
+description = "A Confluence page among Notion"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "Ines Castellano" },
+]

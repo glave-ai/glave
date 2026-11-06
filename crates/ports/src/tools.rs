@@ -189,6 +189,13 @@ pub trait ToolSource: Send + Sync {
     /// The tools on offer now.
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>>;
 
+    /// Whether these tools are a service someone connected (`mcp__<connector>__<tool>`), not
+    /// glave's own: when a thread's connected tools would crowd its model's list, each connector
+    /// is listed as one tool and `tool_search` finds the rest (`specs/model.md`, "A connection").
+    fn connected(&self) -> bool {
+        false
+    }
+
     /// How to use these tools, in their maker's words, for the model; asked after `tools`.
     fn instructions(&self) -> Option<String> {
         None

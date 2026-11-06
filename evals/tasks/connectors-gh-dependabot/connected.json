@@ -1,0 +1,4 @@
+{
+ "mcp__github__list_dependabot_alerts": [{"when": "web", "text": "[{\"number\":12,\"state\":\"open\",\"severity\":\"critical\",\"package\":\"fast-xml-parser\"},{\"number\":11,\"state\":\"open\",\"severity\":\"low\",\"package\":\"minimist\"}]"}],
+ "mcp__github_rest__dependabot_list_alerts_for_repo": [{"when": "web", "text": "[{\"number\":12,\"state\":\"open\",\"security_advisory\":{\"severity\":\"critical\"},\"dependency\":{\"package\":{\"name\":\"fast-xml-parser\"}}}]"}]
+}

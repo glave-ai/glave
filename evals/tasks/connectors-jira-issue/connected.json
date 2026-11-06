@@ -1,0 +1,20 @@
+{
+ "mcp__atlassian__getJiraIssue": [
+  {
+   "when": "OPS-311",
+   "text": "{\"key\":\"OPS-311\",\"fields\":{\"summary\":\"Refund delayed\",\"status\":{\"name\":\"In Progress\"},\"assignee\":{\"displayName\":\"Tamsin Okoye\"}}}"
+  }
+ ],
+ "mcp__linear__get_issue": [
+  {
+   "when": "OPS-311",
+   "text": "{\"identifier\":\"OPS-311\",\"state\":\"Done\",\"assignee\":\"Tom Wrong\"}"
+  }
+ ],
+ "mcp__atlassian__getAccessibleAtlassianResources": [
+  {
+   "when": "",
+   "text": "[{\"id\":\"c0ffee12-3456-7890-abcd-ef0123456789\",\"name\":\"acme\",\"url\":\"https://acme.atlassian.net\",\"scopes\":[\"read:jira-work\",\"write:jira-work\",\"read:confluence-content.all\"]}]"
+  }
+ ]
+}

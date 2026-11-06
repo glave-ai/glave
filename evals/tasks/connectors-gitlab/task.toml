@@ -1,0 +1,10 @@
+[task]
+name = "glave/connectors-gitlab"
+description = "A GitLab issue among GitHub and Bitbucket"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "Rotate the Vault root token" },
+    { answer_lacks = ["Tom Wrong"] },
+]
