@@ -1,0 +1,26 @@
+{
+ "mcp__datadog__get_monitor": [
+  {
+   "when": "checkout-latency",
+   "text": "{\"name\":\"checkout-latency\",\"state\":\"ALERT-7734\"}"
+  }
+ ],
+ "mcp__atlassian__addOrEditJiraIssueComment": [
+  {
+   "when": "OPS-311",
+   "text": "{\"ok\":true,\"commentId\":\"10442\"}"
+  }
+ ],
+ "mcp__atlassian__getAccessibleAtlassianResources": [
+  {
+   "when": "",
+   "text": "[{\"id\":\"c0ffee12-3456-7890-abcd-ef0123456789\",\"name\":\"acme\",\"url\":\"https://acme.atlassian.net\",\"scopes\":[\"read:jira-work\",\"write:jira-work\",\"read:confluence-content.all\"]}]"
+  }
+ ],
+ "mcp__atlassian__getJiraIssue": [
+  {
+   "when": "OPS-311",
+   "text": "{\"key\":\"OPS-311\",\"fields\":{\"summary\":\"Refund delayed\",\"status\":{\"name\":\"In Progress\"}}}"
+  }
+ ]
+}

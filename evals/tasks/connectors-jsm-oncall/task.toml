@@ -1,0 +1,10 @@
+[task]
+name = "glave/connectors-jsm-oncall"
+description = "A deep Atlassian tool, with PagerDuty as the trap"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "Odalys Brandvold" },
+    { answer_lacks = ["Tom Wrong"] },
+]

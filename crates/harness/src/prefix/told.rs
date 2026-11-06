@@ -1,7 +1,7 @@
 //! What the model knows of what can change mid-thread, and the note that tells it what changed
 //! since: one `<system-reminder>` that opens the turn's message.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use glave_ports::ToolSpec;
 use glave_ports::memories::REMEMBER;
@@ -40,6 +40,8 @@ pub(crate) struct Told {
     /// Every tool of a service it was told of, by name: those the prefix lists, then those it
     /// was told came. glave's own, offered by what the thread is, are never among them.
     pub(super) tools: BTreeMap<String, ToolSpec>,
+    /// Those of a service someone connected, on offer now, by name.
+    pub(super) connected: BTreeSet<String>,
 }
 
 impl Told {
@@ -82,16 +84,21 @@ impl Told {
                 notes.push(changed(spec));
             }
         }
-        let came: Vec<String> = (now.tools.keys())
-            .filter(|name| !self.tools.contains_key(*name))
-            .map(|name| format!("`{name}`"))
-            .collect();
-        if !came.is_empty() {
+        let (usable, waiting) = self.came(now, listed);
+        if !usable.is_empty() {
+            notes.push(format!(
+                "Tools were connected after this conversation began, and your tool list has \
+                 them now: {}.",
+                usable.join(", ")
+            ));
+        }
+        if !waiting.is_empty() {
+            let waiting: Vec<String> = waiting.iter().map(|name| format!("`{name}`")).collect();
             notes.push(format!(
                 "Tools were connected after this conversation began: {}. They are not \
                  available here yet: they will be once the conversation is compacted, or in a \
                  new thread. If the person asks for them, tell them so.",
-                came.join(", ")
+                waiting.join(", ")
             ));
         }
         (!notes.is_empty()).then(|| {
@@ -100,6 +107,54 @@ impl Told {
                 notes.join("\n\n")
             )
         })
+    }
+
+    /// Of the tools `now` offers that the model was never told of, those `listed`, a prefix's
+    /// tools, reach (by name, or a connector's tool and its count where connectors are listed),
+    /// and those that wait for a new prefix, by name.
+    fn came(&self, now: &Self, listed: &[ToolSpec]) -> (Vec<String>, Vec<String>) {
+        let lists = |name: &str| listed.iter().any(|spec| spec.name == name);
+        let searching = lists(crate::toolset::TOOL_SEARCH);
+        let mut usable = Vec::new();
+        let mut through: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut waiting = Vec::new();
+        for name in now
+            .tools
+            .keys()
+            .filter(|name| !self.tools.contains_key(*name))
+        {
+            let connector = crate::toolset::connector_of(name)
+                .filter(|_| searching && now.connected.contains(name))
+                .filter(|connector| lists(&crate::toolset::wrapper(connector)));
+            match connector {
+                // A new tool of a connector the model knows: its search finds it.
+                Some(connector) if self.knows(connector) => {}
+                Some(connector) => *through.entry(connector).or_default() += 1,
+                None if lists(name) => usable.push(format!("`{name}`")),
+                None => waiting.push(name.clone()),
+            }
+        }
+        usable.extend(through.into_iter().map(|(connector, count)| {
+            let wrapper = crate::toolset::wrapper(connector);
+            format!(
+                "`{wrapper}` ({count} tools, which {} finds)",
+                crate::toolset::TOOL_SEARCH
+            )
+        }));
+        (usable, waiting)
+    }
+
+    /// Whether the model was told of `connector`: of its tool, or of any of its tools.
+    fn knows(&self, connector: &str) -> bool {
+        self.tools.contains_key(&crate::toolset::wrapper(connector))
+            || (self.tools.keys()).any(|name| crate::toolset::connector_of(name) == Some(connector))
+    }
+
+    /// Whether a connected tool came that `listed`, a prefix's tools, can't reach: then the
+    /// thread's prefix is made again, once, so that a connection turned on works at once.
+    pub(super) fn connection_came(&self, now: &Self, listed: &[ToolSpec]) -> bool {
+        let (_, waiting) = self.came(now, listed);
+        waiting.iter().any(|name| now.connected.contains(name))
     }
 
     /// What the model knows once it has read the news of `now`: never fewer tools than before.

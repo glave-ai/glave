@@ -1,0 +1,9 @@
+[task]
+name = "glave/connectors-jira-jql"
+description = "A JQL search among 258 Atlassian tools"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "17" },
+]

@@ -6,6 +6,8 @@
 //! What changes meanwhile reaches the model at the end of the conversation instead, in one note
 //! that opens the turn's message, as Claude Code and OpenCode send a `<system-reminder>` and
 //! Codex its context updates (`told.rs`). A tool whose source stops answering stays listed.
+//! A connection turned on is the one change that makes a new prefix mid-thread, once, so that
+//! it works at once (owner, 2026-11-06): the note says so.
 
 mod kept;
 mod told;
@@ -83,7 +85,7 @@ where
         // Boxed: what every source says can be large, and turns hold this across awaits.
         let (now, told) = Box::pin(self.on_offer(thread)).await;
         let model = self.model_for(thread);
-        let prefix = match std::mem::take(&mut thread.prefix) {
+        let mut prefix = match std::mem::take(&mut thread.prefix) {
             Prefixed::Made(prefix) if prefix.model == model => prefix,
             Prefixed::Kept(kept) if kept.model == model => Box::new(kept.prefix()),
             _ => Box::new(Prefix {
@@ -93,6 +95,10 @@ where
                 told: told.clone(),
             }),
         };
+        if prefix.told.connection_came(&told, &prefix.specs) {
+            prefix.system.clone_from(&now.system);
+            prefix.specs.clone_from(&now.specs);
+        }
         let set = prefix.behind(now, told);
         thread.prefix = Prefixed::Made(prefix);
         set
@@ -149,7 +155,9 @@ where
             planning,
             memory: self.memory_for(thread).is_some(),
             tools: Told::services(&set.specs),
+            connected: set.connected_names(),
         };
+        set.frame(self.context_window(&self.model_for(thread)));
         (set, told)
     }
 }

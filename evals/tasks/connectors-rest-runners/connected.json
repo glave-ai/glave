@@ -1,0 +1,3 @@
+{
+ "mcp__github_rest__actions_list_self_hosted_runners_for_org": [{"when": "acme", "text": "{\"total_count\":3,\"runners\":[{\"name\":\"linux-x64-01\",\"status\":\"online\"},{\"name\":\"mac-builder-03\",\"status\":\"offline\"},{\"name\":\"linux-arm-02\",\"status\":\"online\"}]}"}]
+}

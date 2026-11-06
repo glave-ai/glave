@@ -1,0 +1,9 @@
+[task]
+name = "glave/connectors-gh-pr-files"
+description = "A method of a merged GitHub tool"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "src/ledger/rounding.rs" },
+]

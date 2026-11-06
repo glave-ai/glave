@@ -1,0 +1,20 @@
+{
+ "mcp__atlassian__searchJiraIssuesUsingJql": [
+  {
+   "when": "PAY",
+   "text": "{\"total\":17,\"issues\":[{\"key\":\"PAY-210\"},{\"key\":\"PAY-204\"}],\"note\":\"17 matching, 2 shown\"}"
+  }
+ ],
+ "mcp__atlassian__search": [
+  {
+   "when": "PAY",
+   "text": "[{\"title\":\"PAY bug triage notes\",\"type\":\"confluence page\"}]"
+  }
+ ],
+ "mcp__atlassian__getAccessibleAtlassianResources": [
+  {
+   "when": "",
+   "text": "[{\"id\":\"c0ffee12-3456-7890-abcd-ef0123456789\",\"name\":\"acme\",\"url\":\"https://acme.atlassian.net\",\"scopes\":[\"read:jira-work\",\"write:jira-work\",\"read:confluence-content.all\"]}]"
+  }
+ ]
+}

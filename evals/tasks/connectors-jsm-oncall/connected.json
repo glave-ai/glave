@@ -1,0 +1,26 @@
+{
+ "mcp__atlassian__getJsmOpsScheduleInfo": [
+  {
+   "when": "",
+   "text": "{\"schedule\":\"payments-primary\",\"onCallNow\":[{\"name\":\"Odalys Brandvold\"}]}"
+  }
+ ],
+ "mcp__atlassian__getJsmOpsTeamInfo": [
+  {
+   "when": "",
+   "text": "{\"team\":\"payments\",\"schedules\":[\"payments-primary\"],\"note\":\"read the schedule for who is on call\"}"
+  }
+ ],
+ "mcp__pagerduty__list_oncalls": [
+  {
+   "when": "",
+   "text": "On call for payments: Tom Wrong."
+  }
+ ],
+ "mcp__atlassian__getAccessibleAtlassianResources": [
+  {
+   "when": "",
+   "text": "[{\"id\":\"c0ffee12-3456-7890-abcd-ef0123456789\",\"name\":\"acme\",\"url\":\"https://acme.atlassian.net\",\"scopes\":[\"read:jira-work\",\"write:jira-work\",\"read:confluence-content.all\"]}]"
+  }
+ ]
+}

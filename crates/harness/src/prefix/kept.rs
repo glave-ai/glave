@@ -41,6 +41,7 @@ impl Kept {
             planning: self.permissions == Permissions::Plan,
             memory: self.memory.is_some(),
             tools: Told::services(&self.tools),
+            connected: std::collections::BTreeSet::new(),
         };
         Prefix {
             model: self.model,
