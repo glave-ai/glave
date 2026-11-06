@@ -1,5 +1,6 @@
 //! `cargo xtask ci`: the local gate, what CI runs: the Rust checks and docs, that no tracked
-//! file holds a secret-shaped literal, that crates keep the dependency rule and start processes
+//! file holds a secret-shaped literal, that no new commit credits a stranger on GitHub
+//! (`credits.rs`), that crates keep the dependency rule and start processes
 //! only through glave-process, that every wait has a limit (`waits.rs`), that what a library
 //! crate exports has a caller outside it (`unused_pub.rs`), that the tests leave nothing behind
 //! (`leftovers.rs`), that every package version a change brings in is at least 7 days old
@@ -66,6 +67,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let threads = threads()?;
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
     step("secrets", crate::secrets::check)?;
+    step("credits", crate::credits::check)?;
     step("dependency rule", crate::deps::check)?;
     step("one spawn path", crate::spawns::check)?;
     step("every wait has a limit", crate::waits::check)?;

@@ -1,4 +1,5 @@
-//! What the lockfiles are compared with: the commit a change starts from.
+//! The commit a change starts from, which the checks of what it brings in compare with: the
+//! lockfiles' package versions (`package_age.rs`) and the commits' addresses (`credits.rs`).
 //!
 //! On CI, GitHub's event says, for a pull request (`pull_request.base.sha`, the base branch
 //! GitHub merged it into) and for the merge queue (`merge_group.base_sha`, the commit its group
@@ -6,29 +7,34 @@
 //! origin/main, or, on main itself, the commit before this one (its first parent).
 //!
 //! A base older than the change's own start (a pull request's base from before main moved)
-//! only adds versions to check, never hides one: what came into main since was checked as it
-//! came, and has only aged. CI's checkout holds one commit, so a base it lacks is fetched, that
+//! only adds versions or commits to check, never hides one: what came into main since was
+//! checked as it came, and a version has only aged. CI's checkout holds one commit, so a base it lacks is fetched, that
 //! commit alone.
 
 use serde_json::Value;
 
-/// The commit the lockfiles are compared with, and what it is.
+/// The commit a change starts from, and what it is.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Base {
+pub(crate) struct Base {
     commit: String,
     what: &'static str,
 }
 
 impl Base {
     /// What it is, and its commit, short, in words.
-    pub(super) fn said(&self) -> String {
+    pub(crate) fn said(&self) -> String {
         let short = self.commit.get(..10).unwrap_or(&self.commit);
         format!("{} ({short})", self.what)
     }
 
+    /// The commit's full id.
+    pub(crate) fn commit(&self) -> &str {
+        &self.commit
+    }
+
     /// The text of `path`, from the workspace's root, at this commit, or `None` when the commit
     /// has no such file.
-    pub(super) fn file(&self, path: &str) -> Result<Option<String>, String> {
+    pub(crate) fn file(&self, path: &str) -> Result<Option<String>, String> {
         let listed = git(&["ls-tree", "--name-only", &self.commit, "--", path])?;
         if listed.trim().is_empty() {
             return Ok(None);
@@ -39,7 +45,7 @@ impl Base {
 
 /// The base of this run, fetched if this clone lacks it; `None` off CI with no origin/main to
 /// compare with.
-pub(super) fn find() -> Result<Option<Base>, String> {
+pub(crate) fn find() -> Result<Option<Base>, String> {
     let base = match from_event()? {
         Some(base) => base,
         None => match from_git()? {
@@ -59,7 +65,7 @@ pub(super) fn find() -> Result<Option<Base>, String> {
         ])
         .map_err(|err| {
             format!(
-                "could not fetch {} to compare the lockfiles with: {err}",
+                "could not fetch {} to compare this change with: {err}",
                 base.said()
             )
         })?;
@@ -112,8 +118,8 @@ fn from_git() -> Result<Option<Base>, String> {
     let head = git(&["rev-parse", "HEAD"])?.trim().to_owned();
     let before = |what| -> Result<Option<Base>, String> {
         let object = git(&["cat-file", "commit", "HEAD"])?;
-        let commit = first_parent(&object)
-            .ok_or("this commit has no parent to compare the lockfiles with")?;
+        let commit =
+            first_parent(&object).ok_or("this commit has no parent to compare this change with")?;
         Ok(Some(Base {
             commit: commit.to_owned(),
             what,

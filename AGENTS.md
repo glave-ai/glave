@@ -92,6 +92,7 @@ cargo xtask deps        # the dependency rule: each crate depends only on the la
 cargo xtask file-sizes  # line limits only
 cargo xtask duplicates  # no new copy-paste: 6 lines of code alike in two places fail, unless xtask/src/duplicates/baseline.txt lists them (it only shrinks)
 cargo xtask secrets     # no secret-shaped literal in a tracked file
+cargo xtask credits     # no commit since the change's base credits a stranger on GitHub (an address at users.noreply.github.com that xtask/src/credits.rs doesn't allow, or the identity agents once committed as)
 cargo xtask spawns      # every process glave starts goes through glave-process
 cargo xtask waits       # every wait has a limit on its line, or a reason in xtask/src/waits/bounded.rs
 cargo xtask unused-pub  # what a library crate exports has a caller outside it: another crate, a binary or a test
@@ -110,7 +111,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), a caller outside its crate for everything public (`cargo xtask unused-pub`), clippy with `-D warnings`, docs with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes, no new copy-paste (`cargo xtask duplicates`). New behavior has tests. Every feature a person can see can be tried by hand on one computer, against the real server (glave itself, never a stand-in), with no account, tunnel or cost. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), no commit crediting a stranger (`cargo xtask credits`), the dependency rule (`cargo xtask deps`), a caller outside its crate for everything public (`cargo xtask unused-pub`), clippy with `-D warnings`, docs with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes, no new copy-paste (`cargo xtask duplicates`). New behavior has tests. Every feature a person can see can be tried by hand on one computer, against the real server (glave itself, never a stand-in), with no account, tunnel or cost. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
@@ -272,6 +273,7 @@ Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-1
 - Every pull request links its issue: `Closes #N` when it finishes one, `Part of #N` when it doesn't. Work with no issue gets one first.
 - Branch names start with the change's type (`feat/`, `fix/`, `test/`, `docs/`, `chore/`); labels follow from them and from the files changed.
 - Never force-push a shared branch.
+- Agents set no git identity of their own (no `-c user.name` or `user.email`): they commit as the machine's git config says, with no `Co-authored-by` or other attribution lines. GitHub credits any address at `users.noreply.github.com`, as author, committer or co-author, to the real account with that login, so a made-up one there credits a stranger; `cargo xtask credits` refuses it.
 
 ## Working here as an agent
 

@@ -7,8 +7,8 @@ usage: cargo xtask <command>
 
 commands:
   ci [--all] [--target <triple>]
-                    the local gate: format, secrets, the dependency rule, one spawn path, a
-                    limit on every wait, a caller for what is public, lint, tests and what they
+                    the local gate: format, secrets, credits, the dependency rule, one spawn
+                    path, a limit on every wait, a caller for what is public, lint, tests and what they
                     leave behind, dependency audit, package ages, file sizes, no new
                     copy-paste, and the web checks, which need Node 22.22.3+
                     (GLAVE_SKIP_WEB=1 skips them).
@@ -17,6 +17,11 @@ commands:
                     --all, and CI always, check everything. --target builds the lint, docs and
                     tests for a target other than this machine's (CI's run on musl). Off CI,
                     tests run on half the cores (GLAVE_TEST_THREADS=n sets how many)
+  credits           fail on a commit since the change's base whose author, committer or
+                    Co-authored-by address is at users.noreply.github.com, which GitHub
+                    credits to the account with that login, unless xtask/src/credits.rs
+                    allows the address with its reason, and on the identity agents once
+                    committed as (agents now set none of their own)
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
@@ -79,6 +84,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "duplicates" => crate::duplicates::check(),
             "package-age" => crate::package_age::check(),
             "secrets" => crate::secrets::check(),
+            "credits" => crate::credits::check(),
             "spawns" => crate::spawns::check(),
             "waits" => crate::waits::check(),
             "unused-pub" => crate::unused_pub::check(),
