@@ -634,7 +634,8 @@ fn a_connector_is_used_everywhere_or_only_in_one_place_of_the_caller_s() {
     block_on!(async {
         let token = LocalToken::new([7; 32]);
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let (tested, _) = fresh(&folder("conn-connector-places")).await;
+        let dir = folder("conn-connector-places");
+        let (tested, _) = fresh(&dir).await;
         let served = serve_with(tested, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
         let made = Request::ProjectCreate {
