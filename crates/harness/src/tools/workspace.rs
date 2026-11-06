@@ -32,6 +32,10 @@ const SANDBOX_STARTS_WITHIN: u64 = 10;
 
 /// One workspace on one computer, the sandbox its commands run in, and what the model has
 /// seen there.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "four independent switches a turn sets on its own copy: the network asks, plan mode, whose computer, a computer that sleeps"
+)]
 pub struct Workspace {
     computers: Arc<dyn Computers>,
     info: WorkspaceInfo,
@@ -43,6 +47,9 @@ pub struct Workspace {
     /// Whether its commands work for a plan (plan mode): they may never ask to leave the
     /// sandbox, whatever it has. Off by default.
     planning: bool,
+    /// Whether its commands work for someone other than the person whose computer this is:
+    /// they may never ask to leave the sandbox, only for the network. Off by default.
+    walled: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
     /// The person's secrets: their values in every command's environment, and masked in every
@@ -81,6 +88,7 @@ impl Workspace {
             sandbox: None,
             asks_network: true,
             planning: false,
+            walled: false,
             credentials: None,
             hidden: KnownSecrets::default(),
             asleep_at_times: false,
@@ -124,6 +132,19 @@ impl Workspace {
         self.planning
     }
 
+    /// The same binding for someone other than the person whose computer this is, or not
+    /// (`walled`): there no command may ask to leave the sandbox.
+    #[must_use]
+    pub(crate) fn walled(mut self, walled: bool) -> Self {
+        self.walled = walled;
+        self
+    }
+
+    /// Whether its commands work for someone other than the person whose computer this is.
+    pub(crate) fn is_walled(&self) -> bool {
+        self.walled
+    }
+
     /// Lets every command's git and forge tools ask `credentials` for a credential each time
     /// they need one (`specs/computers.md`, rule 8), as do the worktrees and scratch folders
     /// made from this workspace.
@@ -158,6 +179,7 @@ impl Workspace {
         let other = Self {
             asks_network: self.asks_network,
             planning: self.planning,
+            walled: self.walled,
             asleep_at_times: self.asleep_at_times,
             hidden: self.hidden.clone(),
             ..other

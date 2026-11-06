@@ -145,9 +145,12 @@ where
                     name: "glave".to_owned(),
                     version: env!("CARGO_PKG_VERSION").to_owned(),
                     protocols: vec![crate::protocol::PROTOCOL.to_owned()],
-                    permissions: self.inner.harness.defaults().permissions,
-                    modes: self.modes(),
-                    unsandboxed: self.unsandboxed().map(crate::protocol::Told::from),
+                    permissions: self
+                        .within_sandbox(caller.person, self.inner.harness.defaults().permissions),
+                    modes: self.modes(caller.person),
+                    unsandboxed: self
+                        .unsandboxed(caller.person)
+                        .map(crate::protocol::Told::from),
                     id: self.server_id(),
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
                     here: self.passkeys_here(),

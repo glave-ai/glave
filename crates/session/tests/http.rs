@@ -253,7 +253,11 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
         issuer.publish(&signer);
         let dir = folder("http-recorded");
         let answers = vec![
-            answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
+            // A file, not a command: hers run only in the sandbox, which a test computer lacks.
+            answer(
+                None,
+                Some(("write", json!({"path": "ran.txt", "content": ""}))),
+            ),
             answer(Some("Done."), None),
         ];
         let served = serve_http(server(&dir, answers, Answering::Clients).await, &issuer).await;

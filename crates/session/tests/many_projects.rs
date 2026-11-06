@@ -204,13 +204,8 @@ fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() 
         let issuer = Issuer::start().await;
         let signer = Signer::es256("key-1");
         issuer.publish(&signer);
-        let answers = vec![
-            answer(
-                None,
-                Some(("write", json!({"path": "note.md", "content": "hi"}))),
-            ),
-            answer(Some("Saved."), None),
-        ];
+        // Her changes and commands would ask first, on the server's computer: no one here does.
+        let answers = vec![answer(Some("Saved."), None)];
         let mut setup = Setup::new(answers);
         setup.answering = Answering::NoOne;
         let (tested, _) = setup.build(&dir).await;
@@ -256,14 +251,7 @@ fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() 
             root.starts_with(dir.with_extension("scratch").canonicalize().unwrap()),
             "{root:?}"
         );
-        assert!(
-            root.join("note.md").exists(),
-            "written in the scratch folder"
-        );
-        assert!(
-            !dir.join("note.md").exists(),
-            "never in the server's folder"
-        );
+        assert!(root.is_dir(), "a folder of its own in the scratch folder");
         // ada works in her own projects, never in grace's.
         let peek = ada.call(&Request::ThreadGet { thread }).await;
         assert_eq!(refused(&peek), Some(code::NO_THREAD), "{peek}");

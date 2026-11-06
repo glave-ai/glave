@@ -241,7 +241,9 @@ where
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
-            if let Some(refused) = self.let_out_refused(thread, (lifted, asked), &summary, live) {
+            if let Some(refused) =
+                self.let_out_refused(thread, name, (lifted, asked), &summary, live)
+            {
                 return Ok(refused);
             }
             if let Some(lifted) = lifted {
@@ -264,7 +266,8 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
-        if let Some(refused) = self.let_out_refused(thread, (lifted, lifted), &summary, live) {
+        if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
+        {
             return Ok(refused);
         }
         let request = ApprovalRequest {

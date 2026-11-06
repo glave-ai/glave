@@ -300,6 +300,12 @@ sentences! {
         "glave can't read your filters among providers: choose them again",
     PermissionsNotAllowed { mode: String, left: String } = "permissions-not-allowed"
         "{ $mode } isn't allowed here: choose { $left }",
+    FullAccessOwnerOnly { left: String } = "full-access-owner-only"
+        "Full access is only for this server's owner, since its commands could reach the server's own files: choose { $left }",
+    UnsandboxedOwnerOnly = "unsandboxed-owner-only"
+        "This server can't run the sandbox, and only its owner's commands may run without it, so none of yours run here.",
+    OnlyReadOnlySandboxTheirs = "only-read-only-sandbox-theirs"
+        "This server can only run the sandbox that keeps files as they are, and only its owner's commands may run without it: choose Ask first to run commands that only read.",
     Unsandboxed = "unsandboxed"
         "This computer can't run the sandbox, so Auto and Ask first both ask before every change and command.",
     DiskShort { percent: String } = "disk-short"

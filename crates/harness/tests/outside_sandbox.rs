@@ -1,7 +1,8 @@
 //! Running one command outside the sandbox: it asks the person in every mode, each time; the
 //! judge may clear it only while someone could be asked and the thread has read nothing
 //! untrusted, and never sees the model's reason; with no one there it never runs; and where
-//! commands run without a sandbox, the request changes nothing.
+//! commands run without a sandbox, the request changes nothing. Someone other than the person
+//! the harness works for never leaves the sandbox on its computer, and no one is asked.
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -349,5 +350,111 @@ fn without_a_sandbox_the_request_changes_nothing() {
         assert_eq!(turn.outside_sandbox, 0);
         let recorded = events(harness.log(), thread.id).await;
         assert!(decided(&recorded).is_empty(), "nothing to ask");
+    });
+}
+
+/// Someone other than the person the harness works for, whose commands run on its computer.
+fn grace() -> glave_ports::Caller {
+    let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+    glave_ports::Caller {
+        person: Some(someone.unwrap()),
+        ..glave_ports::Caller::default()
+    }
+}
+
+/// What the model was told the call it made last came to.
+fn told(thread: &glave_harness::Thread) -> String {
+    results(thread.messages())
+        .last()
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[test]
+fn another_person_s_command_never_leaves_the_sandbox_and_no_one_is_asked() {
+    let Some(base) = sandboxed("theirs") else {
+        return;
+    };
+    block_on!(async {
+        let answers = vec![
+            answer(
+                None,
+                vec![outside(&base, "theirs.txt")],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Could not."), vec![], StopReason::EndTurn),
+        ];
+        let person = Person::answering(Decision::AllowOnce);
+        let (harness, _) = with_person(&base, answers, &person, in_the_sandbox()).await;
+        let grace = grace();
+        let mut thread = harness.start_thread_as(scope(), &grace).await.unwrap();
+        let full = glave_harness::Permissions::FullAccess;
+        harness
+            .choose_permissions(&mut thread, &grace, full)
+            .await
+            .unwrap();
+        let turn = harness
+            .run_turn_as(
+                &mut thread,
+                "write beside it",
+                &grace,
+                &Cancel::new(),
+                &mut |_| {},
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            harness.permissions_for(&thread),
+            glave_harness::Permissions::Auto,
+            "Full access has no sandbox"
+        );
+        assert!(!base.join("theirs.txt").exists());
+        assert_eq!(turn.outside_sandbox, 0);
+        assert!(person.asked().is_empty(), "no one is asked");
+        assert!(told(&thread).contains("only its owner's commands may run outside the sandbox"));
+    });
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn where_no_sandbox_runs_another_person_s_commands_never_run_and_the_person_s_own_do() {
+    let dir = folder("outside-theirs-unsandboxed");
+    block_on!(async {
+        let write = |file: &str| {
+            let call = json!({ "command": format!("echo x > {file}") });
+            answer(None, vec![("bash", call)], StopReason::ToolUse)
+        };
+        let answers = vec![
+            write("theirs.txt"),
+            answer(Some("Could not."), vec![], StopReason::EndTurn),
+            write("mine.txt"),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let harness = harness(&dir, answers, NoOneToAsk).await;
+        let full = glave_harness::Permissions::FullAccess;
+        let grace = grace();
+        let mut theirs = harness.start_thread_as(scope(), &grace).await.unwrap();
+        harness
+            .choose_permissions(&mut theirs, &grace, full)
+            .await
+            .unwrap();
+        harness
+            .run_turn_as(&mut theirs, "write it", &grace, &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert!(!dir.join("theirs.txt").exists());
+        assert!(told(&theirs).contains("the sandbox can't run here for this thread"));
+
+        let mine = glave_ports::Caller::default();
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        harness
+            .choose_permissions(&mut thread, &mine, full)
+            .await
+            .unwrap();
+        harness
+            .run_turn(&mut thread, "write it", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert!(dir.join("mine.txt").exists(), "the person's own runs");
     });
 }
