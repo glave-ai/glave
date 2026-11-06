@@ -97,14 +97,14 @@ pub(crate) fn check() -> Result<(), String> {
             "{} that GitHub must not credit:\n  {}\n\
              GitHub counts any address at {NO_REPLY} as the account with that login. Agents set \
              no git identity of their own and add no Co-authored-by line: they commit as this \
-             machine's git config says. To mend the commits named, remove any such line \
-             (git commit --amend), take this machine's identity with `git rebase -x 'git commit \
-             --amend --reset-author --no-edit' {}`, and push the result to a new branch. If the \
-             address is one GitHub should credit, add it to ALLOWED in xtask/src/credits.rs \
-             with the reason.",
+             machine's git config says. To mend the commits named, remove any such line with \
+             `git rebase -i {base}` (reword), take this machine's identity with `git rebase -x \
+             'git commit --amend --reset-author --no-edit' {base}`, and push the result to a \
+             new branch. If the address is one GitHub should credit, add it to ALLOWED in \
+             xtask/src/credits.rs with the reason.",
             counted(refused.len()),
             refused.join("\n  "),
-            base.commit()
+            base = base.commit()
         ));
     }
     println!(

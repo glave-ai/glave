@@ -8,8 +8,8 @@ usage: cargo xtask <command>
 commands:
   ci [--all] [--target <triple>]
                     the local gate: format, secrets, credits, the dependency rule, one spawn
-                    path, a limit on every wait, a caller for what is public, lint, tests and what they
-                    leave behind, dependency audit, package ages, file sizes, no new
+                    path, a limit on every wait, a caller for what is public, lint, tests and
+                    what they leave behind, dependency audit, package ages, file sizes, no new
                     copy-paste, and the web checks, which need Node 22.22.3+
                     (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main

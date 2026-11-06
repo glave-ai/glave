@@ -8,8 +8,8 @@
 //!
 //! A base older than the change's own start (a pull request's base from before main moved)
 //! only adds versions or commits to check, never hides one: what came into main since was
-//! checked as it came, and a version has only aged. CI's checkout holds one commit, so a base it lacks is fetched, that
-//! commit alone.
+//! checked as it came, and a version has only aged. CI's checkout holds one commit, so a base
+//! it lacks is fetched, that commit alone.
 
 use serde_json::Value;
 

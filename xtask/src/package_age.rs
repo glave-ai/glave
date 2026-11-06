@@ -7,8 +7,8 @@
 //! (`crate::base`), and its registry says when it was published (`registry.rs`). A version
 //! from a path, the workspace or git has no registry to say, and is named and skipped. A
 //! security fix that can't wait is listed in `allowed.rs` with its reason, and its entry fails
-//! the check once the version is old enough, so the list doesn't rot. When a registry can't be reached, CI
-//! fails; elsewhere the check warns and passes, as CI runs it again.
+//! the check once the version is old enough, so the list doesn't rot. When a registry can't be
+//! reached, CI fails; elsewhere the check warns and passes, as CI runs it again.
 //!
 //! Dependabot's version updates wait as long (`cooldown`, .github/dependabot.yml), and npm
 //! 11.10 and later installs only versions as old (`min-release-age`, web/.npmrc).
