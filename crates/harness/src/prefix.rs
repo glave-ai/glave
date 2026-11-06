@@ -150,6 +150,7 @@ where
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }
+        set.frame(self.context_window(&self.model_for(thread)));
         let told = Told {
             signed_in,
             planning,
@@ -157,7 +158,6 @@ where
             tools: Told::services(&set.specs),
             connected: set.connected_names(),
         };
-        set.frame(self.context_window(&self.model_for(thread)));
         (set, told)
     }
 }

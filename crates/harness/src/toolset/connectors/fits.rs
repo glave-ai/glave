@@ -5,7 +5,9 @@
 use serde_json::{Map, Value};
 
 /// What is wrong with `arguments` by `schema`, when anything is: a required one missing, one it
-/// does not name where it takes no others, or one of the wrong type or not among its values.
+/// does not name where it says it takes no others, or one of the wrong type or not among its
+/// values. A schema that builds its parameters from parts (`anyOf` and the like) is checked for
+/// what it requires alone.
 pub(super) fn problem(schema: &Value, arguments: &Map<String, Value>) -> Option<String> {
     let required = schema.get("required").and_then(Value::as_array);
     for name in required.into_iter().flatten().filter_map(Value::as_str) {
@@ -14,13 +16,12 @@ pub(super) fn problem(schema: &Value, arguments: &Map<String, Value>) -> Option<
         }
     }
     let properties = schema.get("properties").and_then(Value::as_object)?;
-    let open = !matches!(
-        schema.get("additionalProperties"),
-        None | Some(Value::Bool(false))
-    );
+    let parts = ["anyOf", "oneOf", "allOf", "$ref", "patternProperties"];
+    let closed = schema.get("additionalProperties") == Some(&Value::Bool(false))
+        && !parts.iter().any(|part| schema.get(*part).is_some());
     for (name, value) in arguments {
         let Some(property) = properties.get(name) else {
-            if open {
+            if !closed {
                 continue;
             }
             let known: Vec<&String> = properties.keys().collect();
@@ -73,7 +74,7 @@ mod tests {
             "number": {"type": "integer"},
             "method": {"type": "string", "enum": ["get", "get_comments"]},
             "labels": {"type": ["array", "null"]}
-        }, "required": ["number"]});
+        }, "required": ["number"], "additionalProperties": false});
         let fine = args(&json!({"number": 4120, "method": "get", "labels": null}));
         assert_eq!(problem(&schema, &fine), None);
         let missing = problem(&schema, &args(&json!({"method": "get"}))).unwrap();
@@ -91,9 +92,11 @@ mod tests {
 
     #[test]
     fn a_schema_open_to_more_takes_more() {
-        let schema = json!({"type": "object", "properties": {"a": {"type": "string"}},
-            "additionalProperties": true});
+        let schema = json!({"type": "object", "properties": {"a": {"type": "string"}}});
         assert_eq!(problem(&schema, &args(&json!({"a": "x", "b": 1}))), None);
+        let built = json!({"type": "object", "properties": {"a": {"type": "string"}},
+            "additionalProperties": false, "anyOf": [{"properties": {"b": {}}}]});
+        assert_eq!(problem(&built, &args(&json!({"b": 1}))), None);
         assert_eq!(
             problem(&json!({"type": "object"}), &args(&json!({"b": 1}))),
             None

@@ -183,8 +183,9 @@ fn month_start(now: Timestamp) -> Result<At, ApiError> {
 }
 
 /// Adds to `calls` each call in `events` at or after `since` of a tool whose name starts with
-/// one of `prefixes`, to its server; the longest prefix wins, as a server's own name may hold
-/// another's.
+/// one of `prefixes`, or of the one tool a server's tools are called through where they are
+/// listed by connector (`mcp__<server>`), to its server; the longest prefix wins, as a server's
+/// own name may hold another's.
 fn tally(
     events: &[RawEvent],
     since: At,
@@ -201,6 +202,7 @@ fn tally(
             },
         );
     for tool in asked {
+        let tool = format!("{tool}__");
         let server = prefixes
             .iter()
             .filter(|(prefix, _)| tool.starts_with(prefix.as_str()))

@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use glave_ports::ToolSpec;
 use glave_ports::memories::REMEMBER;
 
+use crate::toolset::{TOOL_SEARCH, connector_called, connector_of, wrapper};
+
 /// What the model is told when it is no longer signed in to any git host.
 const SIGNED_OUT: &str = "No account is connected any more: git and the forge tools no longer \
      sign in by themselves.";
@@ -78,22 +80,33 @@ impl Told {
             (false, true) => notes.push(MEMORY_LATER.to_owned()),
             _ => {}
         }
-        for (name, spec) in &now.tools {
+        // A connector's own tool says what it holds, which a search shows anew.
+        let real = |name: &str| connector_called(name).is_none() && name != TOOL_SEARCH;
+        for (name, spec) in now.tools.iter().filter(|(name, _)| real(name)) {
             let is_listed = || listed.iter().any(|listed| listed.name == *name);
             if self.tools.get(name).is_some_and(|was| was != spec) && is_listed() {
                 notes.push(changed(spec));
             }
         }
-        let (usable, waiting) = self.came(now, listed);
-        if !usable.is_empty() {
+        let came = self.came(now, listed);
+        if !came.usable.is_empty() {
             notes.push(format!(
                 "Tools were connected after this conversation began, and your tool list has \
                  them now: {}.",
-                usable.join(", ")
+                came.usable.join(", ")
             ));
         }
-        if !waiting.is_empty() {
-            let waiting: Vec<String> = waiting.iter().map(|name| format!("`{name}`")).collect();
+        if !came.relisted.is_empty() {
+            notes.push(format!(
+                "Your tool list now holds connected tools by their connector: {}. Each calls \
+                 its connector's tools by name, and {TOOL_SEARCH} finds them.",
+                came.relisted.join(", ")
+            ));
+        }
+        if !came.waiting.is_empty() {
+            let waiting: Vec<String> = (came.waiting.iter())
+                .map(|name| format!("`{name}`"))
+                .collect();
             notes.push(format!(
                 "Tools were connected after this conversation began: {}. They are not \
                  available here yet: they will be once the conversation is compacted, or in a \
@@ -109,52 +122,61 @@ impl Told {
         })
     }
 
-    /// Of the tools `now` offers that the model was never told of, those `listed`, a prefix's
-    /// tools, reach (by name, or a connector's tool and its count where connectors are listed),
-    /// and those that wait for a new prefix, by name.
-    fn came(&self, now: &Self, listed: &[ToolSpec]) -> (Vec<String>, Vec<String>) {
+    /// What `now` offers that the model was never told of, sorted by whether `listed`, a
+    /// prefix's tools, reaches it.
+    fn came(&self, now: &Self, listed: &[ToolSpec]) -> Came {
         let lists = |name: &str| listed.iter().any(|spec| spec.name == name);
-        let searching = lists(crate::toolset::TOOL_SEARCH);
-        let mut usable = Vec::new();
-        let mut through: BTreeMap<&str, usize> = BTreeMap::new();
-        let mut waiting = Vec::new();
-        for name in now
-            .tools
-            .keys()
-            .filter(|name| !self.tools.contains_key(*name))
-        {
-            let connector = crate::toolset::connector_of(name)
-                .filter(|_| searching && now.connected.contains(name))
-                .filter(|connector| lists(&crate::toolset::wrapper(connector)));
-            match connector {
-                // A new tool of a connector the model knows: its search finds it.
-                Some(connector) if self.knows(connector) => {}
-                Some(connector) => *through.entry(connector).or_default() += 1,
-                None if lists(name) => usable.push(format!("`{name}`")),
-                None => waiting.push(name.clone()),
+        let searching = lists(TOOL_SEARCH);
+        let mut came = Came::default();
+        for name in now.tools.keys().filter(|n| !self.tools.contains_key(*n)) {
+            let called = connector_called(name);
+            let connector =
+                called.or_else(|| connector_of(name).filter(|_| now.connected.contains(name)));
+            let Some(connector) = connector else {
+                if lists(name) {
+                    came.usable.push(format!("`{name}`"));
+                } else {
+                    came.waiting.push(name.clone());
+                }
+                continue;
+            };
+            let known = self.knows(connector);
+            let through = searching && lists(&wrapper(connector));
+            match (called.is_some(), known) {
+                (true, true) if lists(name) => came.relisted.push(format!("`{name}`")),
+                (true, false) if lists(name) => {
+                    let count = (now.connected.iter())
+                        .filter(|tool| connector_of(tool) == Some(connector))
+                        .count();
+                    let line = format!("`{name}` ({count} tools, which {TOOL_SEARCH} finds)");
+                    came.usable.push(line);
+                }
+                // A known connector's tools are listed by their own names; a new tool of one
+                // listed as one tool is found by the search.
+                (true, true) => {}
+                (false, true) if through => {}
+                (false, _) if lists(name) => came.usable.push(format!("`{name}`")),
+                (_, true) => came.waiting.push(name.clone()),
+                (_, false) => {
+                    came.waiting.push(name.clone());
+                    came.connection = true;
+                }
             }
         }
-        usable.extend(through.into_iter().map(|(connector, count)| {
-            let wrapper = crate::toolset::wrapper(connector);
-            format!(
-                "`{wrapper}` ({count} tools, which {} finds)",
-                crate::toolset::TOOL_SEARCH
-            )
-        }));
-        (usable, waiting)
+        came
     }
 
     /// Whether the model was told of `connector`: of its tool, or of any of its tools.
     fn knows(&self, connector: &str) -> bool {
-        self.tools.contains_key(&crate::toolset::wrapper(connector))
-            || (self.tools.keys()).any(|name| crate::toolset::connector_of(name) == Some(connector))
+        self.tools.contains_key(&wrapper(connector))
+            || (self.tools.keys()).any(|name| connector_of(name) == Some(connector))
     }
 
-    /// Whether a connected tool came that `listed`, a prefix's tools, can't reach: then the
-    /// thread's prefix is made again, once, so that a connection turned on works at once.
+    /// Whether a connector the model was never told of came, which `listed`, a prefix's tools,
+    /// can't reach: then the thread's prefix is made again, once, so that a connection turned
+    /// on works at once.
     pub(super) fn connection_came(&self, now: &Self, listed: &[ToolSpec]) -> bool {
-        let (_, waiting) = self.came(now, listed);
-        waiting.iter().any(|name| now.connected.contains(name))
+        self.came(now, listed).connection
     }
 
     /// What the model knows once it has read the news of `now`: never fewer tools than before.
@@ -163,6 +185,19 @@ impl Told {
         tools.extend(now.tools);
         Self { tools, ..now }
     }
+}
+
+/// What came since the model was last told, by what it can do with it.
+#[derive(Debug, Default)]
+struct Came {
+    /// What it can call now, as the note names it.
+    usable: Vec<String>,
+    /// Connectors' tools now listed in place of their tools, which it knew by name.
+    relisted: Vec<String>,
+    /// What waits for a new prefix, by name.
+    waiting: Vec<String>,
+    /// Whether a connector it was never told of is among what waits.
+    connection: bool,
 }
 
 /// What the model is told of a listed tool whose description or parameters changed.

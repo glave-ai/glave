@@ -24,7 +24,7 @@ pub(super) fn matching<'a>(tools: &[&'a ToolSpec], query: &str) -> Vec<&'a ToolS
         .filter(|word| !word.is_empty())
         .collect();
     let is_named = |tool: &ToolSpec, word: &str| {
-        let short = tool.name.rsplit("__").next().unwrap_or(&tool.name);
+        let short = super::short_of(&tool.name);
         tool.name.eq_ignore_ascii_case(word) || short.eq_ignore_ascii_case(word)
     };
     let every_word_names = asked

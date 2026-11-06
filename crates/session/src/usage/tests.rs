@@ -68,6 +68,13 @@ fn only_this_month_s_calls_to_a_connection_s_tools_count_each_to_its_own_server(
             ToolCallRequested::TYPE,
             &call("mcp__docs__read"),
         ),
+        // Called through its connector's one tool, where tools are listed by connector.
+        event(
+            8,
+            "2026-10-02T09:00:05Z",
+            ToolCallRequested::TYPE,
+            &call("mcp__search"),
+        ),
     ];
     let prefixes = [
         (glave_mcp::exposed("search", ""), "search"),
@@ -77,6 +84,6 @@ fn only_this_month_s_calls_to_a_connection_s_tools_count_each_to_its_own_server(
     tally(&events, at("2026-10-01T00:00:00Z"), &prefixes, &mut calls);
     assert_eq!(
         calls,
-        BTreeMap::from([("search".to_owned(), 2), ("search__v2".to_owned(), 1)])
+        BTreeMap::from([("search".to_owned(), 3), ("search__v2".to_owned(), 1)])
     );
 }

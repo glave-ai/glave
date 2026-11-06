@@ -2,8 +2,8 @@
 //! one tool, `mcp__<connector>`, that calls any of its tools by name, and `tool_search` finds
 //! them and shows their parameters (#247). The list is part of a thread's prefix, so it never
 //! changes as tools are found: a search's result holds what it found, at the end of the
-//! conversation, and the prompt cache keeps matching. Every call still names the real tool by
-//! the time it is asked about, judged, hooked and recorded, and its arguments are checked
+//! conversation, and the prompt cache keeps matching. Every call names the real tool by the
+//! time it is asked about, judged and hooked, and in its summary, and its arguments are checked
 //! against the real tool's parameters first, since the model may not have seen them.
 
 mod fits;
@@ -69,6 +69,19 @@ pub(crate) fn wrapper(connector: &str) -> String {
     format!("mcp__{connector}")
 }
 
+/// The connector whose tool `name` is, when it is one: `github` of `mcp__github`.
+pub(crate) fn connector_called(name: &str) -> Option<&str> {
+    let connector = name.strip_prefix("mcp__")?;
+    (!connector.is_empty() && !connector.contains("__")).then_some(connector)
+}
+
+/// A connected tool's name within its connector: `issue_read` of `mcp__github__issue_read`.
+fn short_of(name: &str) -> &str {
+    connector_of(name)
+        .and_then(|connector| name.get(wrapper(connector).len().saturating_add(2)..))
+        .unwrap_or(name)
+}
+
 /// What a call of `name`, listed but not on offer now, is told.
 pub(crate) fn not_available(name: &str) -> String {
     format!(
@@ -110,7 +123,7 @@ fn search_spec() -> ToolSpec {
 /// each, after what the connector says of itself, `about`.
 fn wrapper_spec(connector: &str, tools: &[&ToolSpec], about: Option<&String>) -> ToolSpec {
     let mut description = format!(
-        "Calls one of the {} tools of the {connector} connector: its name in `tool`, its \
+        "Calls a tool of the {connector} connector ({} in all): its name in `tool`, its \
          arguments in `arguments`. Find a tool and its parameters first with {TOOL_SEARCH} \
          (connector \"{connector}\").",
         tools.len()
@@ -120,7 +133,7 @@ fn wrapper_spec(connector: &str, tools: &[&ToolSpec], about: Option<&String>) ->
     }
     description.push_str("\nIts tools include:");
     for tool in tools.iter().take(SAMPLED) {
-        let name = tool.name.rsplit("__").next().unwrap_or(&tool.name);
+        let name = short_of(&tool.name);
         let _ = write!(
             description,
             "\n- {name}: {}",
@@ -152,9 +165,7 @@ fn found_text(found: &[&ToolSpec]) -> String {
         .iter()
         .filter_map(|tool| {
             let connector = connector_of(&tool.name)?;
-            let name = tool
-                .name
-                .get(wrapper(connector).len().saturating_add(2)..)?;
+            let name = short_of(&tool.name);
             example.get_or_insert_with(|| (wrapper(connector), name.to_owned()));
             let description: String = tool.description.chars().take(DESCRIBED).collect();
             Some(json!({
@@ -271,6 +282,28 @@ impl ToolSet {
         self.specs = specs;
     }
 
+    /// These tools with each connector's own told again from the connected tools on offer
+    /// here: a subagent's, which may have fewer of them than its parent's.
+    pub(super) fn told_again(mut self) -> Self {
+        if !self.searching() {
+            return self;
+        }
+        let specs = std::mem::take(&mut self.specs);
+        self.specs = (specs.into_iter())
+            .map(|spec| match connector_called(&spec.name) {
+                Some(connector) if !self.by_name.contains_key(&spec.name) => {
+                    let tools: Vec<&ToolSpec> = (self.catalog.iter())
+                        .filter(|name| connector_of(name) == Some(connector))
+                        .filter_map(|name| Some(&self.get(name)?.1.spec))
+                        .collect();
+                    wrapper_spec(connector, &tools, self.about.get(connector))
+                }
+                _ => spec,
+            })
+            .collect();
+        self
+    }
+
     /// Whether connectors are listed, each as one tool, with `tool_search`.
     fn searching(&self) -> bool {
         !self.by_name.contains_key(TOOL_SEARCH) && self.specs.iter().any(|s| s.name == TOOL_SEARCH)
@@ -278,10 +311,9 @@ impl ToolSet {
 
     /// The connector a listed connector's tool called `name` calls.
     fn wrapper_of<'a>(&self, name: &'a str) -> Option<&'a str> {
-        let connector = name.strip_prefix("mcp__")?;
+        let connector = connector_called(name)?;
         let listed = self.specs.iter().any(|spec| spec.name == name);
-        (listed && !connector.contains("__") && !self.by_name.contains_key(name))
-            .then_some(connector)
+        (listed && !self.by_name.contains_key(name)).then_some(connector)
     }
 
     /// Whether a list of these tools keeps the one called `name` when its connected tools are
@@ -313,15 +345,29 @@ impl ToolSet {
             return self.through(call, connector);
         }
         if !self.is_connected(name) {
-            return Route::Run(call.clone());
+            // `mcp__<connector>__tool_search`, as a model may name the search within one.
+            let searched = connector_of(name).filter(|connector| {
+                let searches = [TOOL_SEARCH, "search"];
+                searches
+                    .iter()
+                    .any(|s| short_of(name).eq_ignore_ascii_case(s))
+                    && self.wrapper_of(&wrapper(connector)).is_some()
+            });
+            return match (searched, self.get(name)) {
+                (Some(connector), None) => search_of(map, Some(connector)),
+                _ => Route::Run(call.clone()),
+            };
         }
         // Called by its own name: as its connector's tool is called, when its arguments are
-        // shaped so and it has no parameter called `tool`.
+        // shaped so, name it, and it has no parameter called `tool`.
         let (_, info) = self.get(name).unzip();
         let has_tool =
             info.is_some_and(|info| info.spec.parameters.pointer("/properties/tool").is_some());
+        let names_itself = |map: &Map<String, Value>| {
+            text_of(map, "tool").is_some_and(|tool| tool == name || tool == short_of(name))
+        };
         match (map, connector_of(name)) {
-            (Some(map), Some(connector)) if !has_tool && text_of(map, "tool").is_some() => {
+            (Some(map), Some(connector)) if !has_tool && names_itself(map) => {
                 self.through(call, connector)
             }
             _ => self.checked(call.clone()),
@@ -451,12 +497,12 @@ impl ToolSet {
         if self.wrapper_of(&wrapper(connector)).is_some() {
             return not_available(&wrapper(connector));
         }
-        let mut known: Vec<&str> = self
-            .catalog
-            .iter()
-            .filter_map(|n| connector_of(n))
-            .collect();
-        known.dedup();
+        let mut known: Vec<&str> = Vec::new();
+        for name in self.catalog.iter().filter_map(|name| connector_of(name)) {
+            if !known.contains(&name) {
+                known.push(name);
+            }
+        }
         format!(
             "There is no connector called {connector:?}. The connectors are {}.",
             known.join(", ")

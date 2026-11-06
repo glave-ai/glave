@@ -102,7 +102,7 @@ fn past_a_tenth_of_the_window_each_connector_is_one_tool_after_the_search() {
     );
     let github = &set.specs[2].description;
     assert!(
-        github.starts_with("Calls one of the 30 tools of the github connector"),
+        github.starts_with("Calls a tool of the github connector (30 in all)"),
         "{github}"
     );
     assert!(
@@ -221,6 +221,13 @@ fn a_search_through_a_connector_s_tool_searches_it_unless_it_has_a_tool_called_s
         };
         assert_eq!(set.route(&given), searched, "{tool}");
     }
+    // Named as if the search were one of the connector's tools.
+    let within = call("mcp__github__tool_search", &json!({"query": "tool 7"}));
+    let searched = Route::Search {
+        query: Some("tool 7".into()),
+        connector: Some("github".into()),
+    };
+    assert_eq!(set.route(&within), searched);
     let notion = call(
         "mcp__notion",
         &json!({"tool": "search", "arguments": {"number": 1}}),
@@ -297,6 +304,11 @@ fn an_explorer_keeps_the_search_and_the_connectors_with_tools_that_read() {
     let set = set_of(vec![connector("github", 200)], 128_000);
     let child = set.for_child(SubagentType::Explore);
     assert_eq!(names(&child), ["read", TOOL_SEARCH, "mcp__github"]);
+    let github = &child.specs[2].description;
+    assert!(
+        github.starts_with("Calls a tool of the github connector (1 in all)"),
+        "{github}"
+    );
     let found = text(&child.search(Some("tool"), None));
     assert!(found.contains("\"tool\":\"tool_0\""), "{found}");
     assert!(

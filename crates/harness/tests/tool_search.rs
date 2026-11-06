@@ -4,12 +4,13 @@
 //! about, run and recorded.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, StopReason};
 use glave_harness::{AllowAll, Decision};
 use glave_ports::{
-    Completion, Effect, InMemoryLog, InMemoryTools, ModelRequest, ToolInfo, ToolOutput, ToolSource,
-    ToolSpec,
+    BoxFuture, Cancellation, Completion, Effect, InMemoryLog, InMemoryTools, ModelRequest,
+    ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
 };
 use serde_json::{Value, json};
 
@@ -278,5 +279,125 @@ fn a_thread_read_again_keeps_its_connectors_and_calls_through_them() {
             "nothing came"
         );
         assert_eq!(github.calls().len(), 1);
+    });
+}
+
+/// Each turn's tools, as the harness was given them before it: `own[n]` before turn `n`.
+async fn turns_with(
+    dir: &std::path::Path,
+    own: Vec<Vec<Arc<dyn ToolSource>>>,
+) -> Vec<ModelRequest> {
+    let answers = own.iter().map(|_| done("Fine.")).collect();
+    let log = InMemoryLog::new();
+    let (harness, seen) = harness_seeing(dir, answers, AllowAll, log, 1, settings()).await;
+    let mut thread = None;
+    for tools in own {
+        harness.set_own_tools(tools);
+        let thread = match &mut thread {
+            Some(thread) => thread,
+            None => thread.insert(harness.start_thread(scope()).await.unwrap()),
+        };
+        turn(&harness, thread, "go on").await;
+    }
+    seen.lock().unwrap().clone()
+}
+
+#[test]
+fn a_new_tool_of_a_connection_listed_in_full_waits_and_changes_nothing() {
+    let dir = folder("tool-search-grew");
+    block_on!(async {
+        let before = connection("github", 3) as Arc<dyn ToolSource>;
+        let after = connection("github", 4) as Arc<dyn ToolSource>;
+        let requests = turns_with(&dir, vec![vec![before], vec![after]]).await;
+        assert!(
+            prefix(&requests[1]) == prefix(&requests[0]),
+            "not made again"
+        );
+        let news = last_said(&requests[1]);
+        assert!(
+            news.contains("`mcp__github__tool_3`. They are not available here yet"),
+            "{news}"
+        );
+    });
+}
+
+#[test]
+fn a_connection_that_takes_the_list_past_its_room_lists_every_connector_by_its_tool() {
+    let dir = folder("tool-search-flip");
+    block_on!(async {
+        let github = connection("github", 3) as Arc<dyn ToolSource>;
+        let jira = connection("jira", 150) as Arc<dyn ToolSource>;
+        let both = vec![Arc::clone(&github), jira];
+        let requests = turns_with(&dir, vec![vec![github], both]).await;
+        assert!(names(&requests[0]).contains(&"mcp__github__tool_0"));
+        let listed = names(&requests[1]);
+        assert!(
+            listed.contains(&"mcp__github") && listed.contains(&"mcp__jira"),
+            "{listed:?}"
+        );
+        let news = last_said(&requests[1]);
+        assert!(
+            news.contains("`mcp__jira` (150 tools, which tool_search finds)"),
+            "{news}"
+        );
+        assert!(news.contains("by their connector: `mcp__github`"), "{news}");
+    });
+}
+
+/// A connection that is not answering while `down`.
+struct Down {
+    down: AtomicBool,
+    tools: Arc<InMemoryTools>,
+}
+
+impl ToolSource for Down {
+    fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
+        if self.down.load(Ordering::SeqCst) {
+            let err = ToolError {
+                source_name: "jira".into(),
+                message: "it did not answer".into(),
+            };
+            return Box::pin(std::future::ready(Err(err)));
+        }
+        self.tools.tools()
+    }
+
+    fn connected(&self) -> bool {
+        true
+    }
+
+    fn call<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Arguments,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, ToolOutput> {
+        self.tools.call(name, arguments, cancel)
+    }
+}
+
+#[test]
+fn a_connection_down_at_the_first_call_works_once_it_answers_on_a_prefix_made_once_more() {
+    let dir = folder("tool-search-back");
+    block_on!(async {
+        let jira = Arc::new(Down {
+            down: AtomicBool::new(true),
+            tools: connection("jira", 2),
+        });
+        let own = || vec![Arc::clone(&jira) as Arc<dyn ToolSource>];
+        let answers = vec![done("Jira is down."), done("Jira is back."), done("Still.")];
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
+        harness.set_own_tools(own());
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "jira?").await;
+        jira.down.store(false, Ordering::SeqCst);
+        turn(&harness, &mut thread, "jira now?").await;
+        turn(&harness, &mut thread, "and now?").await;
+        let requests = seen.lock().unwrap().clone();
+        assert!(!names(&requests[0]).contains(&"mcp__jira__tool_0"));
+        assert!(names(&requests[1]).contains(&"mcp__jira__tool_0"));
+        assert!(prefix(&requests[2]) == prefix(&requests[1]), "made once");
+        assert!(last_said(&requests[1]).contains("`mcp__jira__tool_0`, `mcp__jira__tool_1`"));
     });
 }
