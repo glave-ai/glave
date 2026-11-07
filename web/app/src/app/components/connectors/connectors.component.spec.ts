@@ -311,7 +311,14 @@ describe('ConnectorsComponent', () => {
       .answer('connector/list', (params) =>
         (params as { used_in?: string }).used_in === 'p1'
           ? { categories: CATEGORIES, connectors: [{ ...NOTION, status: 'connected' }] }
-          : { categories: CATEGORIES, connectors: [DEEPWIKI, { ...NOTION, status: 'connected' }] },
+          : {
+              categories: CATEGORIES,
+              connectors: [
+                DEEPWIKI,
+                { ...NOTION, status: 'connected' },
+                { ...LINEAR, status: 'connected', only: 'p3', used: 'Only in Beta' },
+              ],
+            },
       )
       .answer('connector/connect', { connector: { ...DEEPWIKI, status: 'connected' } });
     openedTab();
@@ -321,6 +328,7 @@ describe('ConnectorsComponent', () => {
     const heading = root.querySelector('[data-testid="connectors-connected"] h3');
     expect(heading?.textContent).toBe('Used in Acme Site');
     expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected Disconnect']);
+    expect(rows(root, 'connectors-elsewhere')).toEqual(['L Linear Only in Beta Disconnect']);
     expect(root.querySelector('[data-testid="connectors-here"]')?.textContent).toContain(
       'Apps you connect here are used only in Acme Site.',
     );
@@ -328,5 +336,22 @@ describe('ConnectorsComponent', () => {
     await settle(fixture);
     expect(fake.paramsOf('connector/connect')).toEqual([{ connector: 'deepwiki', only: 'p1' }]);
     await expectAccessible(root);
+  });
+
+  it('offers no choice of place to a person with only their Chats', async () => {
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [record('p2', 'Chats', 'personal')] })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', {
+        categories: CATEGORIES,
+        connectors: [{ ...NOTION, status: 'connected', used: 'Everywhere, including chats' }],
+      });
+    const { fixture, root } = await page(fake);
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    expect(rows(root, 'connectors-connected')).toEqual([
+      'N Notion Everywhere, including chats Disconnect',
+    ]);
+    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
   });
 });

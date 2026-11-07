@@ -12,7 +12,7 @@ import {
   input,
   signal,
 } from '@angular/core';
-import type { ConnectionInfo } from '@glave/client';
+import type { ConnectionInfo, ProjectId } from '@glave/client';
 import {
   type GlzButtonVariant,
   GlzButtonComponent,
@@ -140,7 +140,7 @@ export class ConnectionsComponent {
   } as const;
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink, empty: Plug } as const;
   /** The project the page was opened for, from its ⋯ menu: what its threads use. */
-  readonly project = input<string | undefined>(undefined);
+  readonly project = input<ProjectId | undefined>(undefined);
   protected readonly place = computed(() => this.project() ?? null);
   private readonly service = inject(ConnectionsService);
   private readonly credentials = inject(CredentialsService);

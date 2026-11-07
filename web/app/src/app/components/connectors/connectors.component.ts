@@ -12,6 +12,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import type { ConnectorInfo, ProjectId } from '@glave/client';
 import {
@@ -135,6 +136,9 @@ export class ConnectorsComponent {
     disconnectText: $localize`:@@connectors.disconnectText:glave stops using it for you and forgets any sign-in to it. You can connect it again at any time.`,
     noMatch: $localize`:@@connectors.noMatch:No app matches that search.`,
     everywhere: $localize`:@@connectors.everywhere:Everywhere, including chats`,
+    change: $localize`:@@connectors.change:Change`,
+    thisProject: $localize`:@@connectors.thisProject:this project`,
+    elsewhere: $localize`:@@connectors.elsewhere:Connected elsewhere`,
   } as const;
   /** The project the page is for, whose threads alone use what is connected from it. */
   readonly project = input<ProjectId | null>(null);
@@ -160,17 +164,24 @@ export class ConnectorsComponent {
   protected readonly confirming = signal(false);
 
   /** Where a connector can be used: everywhere, or only in one of the person's places. */
+  // The button shows only "Change": the row's line says where it is used, in the server's words.
   protected readonly places = computed((): readonly GlzMenuOption[] => [
-    { value: EVERYWHERE, label: this.copy.everywhere },
+    { value: EVERYWHERE, label: this.copy.everywhere, short: this.copy.change },
     ...this.projects.projects().map(({ project }) => ({
       value: project.id,
       label: $localize`:@@connectors.onlyIn:Only in ${project.name}:PLACE:`,
+      short: this.copy.change,
     })),
   ]);
+  /** Whether there is somewhere to choose: with only their Chats, a person sees no places. */
+  private readonly choosing = computed(() =>
+    this.projects.projects().some(({ project }) => project.kind === 'project'),
+  );
   /** The name of the project the page is for, once it is known. */
   private readonly projectName = computed(() => {
     const id = this.project();
-    return this.projects.projects().find((it) => it.project.id === id)?.project.name ?? '';
+    const found = this.projects.projects().find((it) => it.project.id === id);
+    return found?.project.name ?? this.copy.thisProject;
   });
   /** For a project, where what is connected from here is used. */
   protected readonly here = computed(() => {
@@ -195,13 +206,24 @@ export class ConnectorsComponent {
       it.name.toLocaleLowerCase().includes(query) ||
       it.description.toLocaleLowerCase().includes(query);
     const found = catalog.connectors.filter(matches);
-    const connected = catalog.here ?? catalog.connectors.filter((it) => it.status !== 'available');
+    const mine = catalog.connectors.filter((it) => it.status !== 'available');
+    const here = catalog.here ?? mine;
     const sections: Section[] = [
       {
         id: 'connectors-connected-heading',
         testId: 'connectors-connected',
         heading: this.connectedHeading(),
-        rows: connected.filter(matches).map((it) => this.row(it)),
+        rows: here.filter(matches).map((it) => this.row(it)),
+      },
+      // For a project, those connected but used elsewhere, which its menu can bring here.
+      {
+        id: 'connectors-elsewhere-heading',
+        testId: 'connectors-elsewhere',
+        heading: this.copy.elsewhere,
+        rows: mine
+          .filter((it) => catalog.here !== null && !here.some((kept) => kept.id === it.id))
+          .filter(matches)
+          .map((it) => this.row(it)),
       },
     ];
     for (const category of catalog.categories) {
@@ -227,7 +249,8 @@ export class ConnectorsComponent {
 
   constructor() {
     effect(() => {
-      void this.service.load(this.project());
+      const project = this.project();
+      untracked(() => void this.service.load(project));
     });
     inject(DestroyRef).onDestroy(() => {
       for (const stop of this.stops.values()) {
@@ -408,7 +431,7 @@ export class ConnectorsComponent {
       link: null,
       linkText: '',
       disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
-      place: status === 'available' ? null : (connector.only ?? EVERYWHERE),
+      place: status === 'available' || !this.choosing() ? null : (connector.only ?? EVERYWHERE),
       placeLabel: $localize`:@@connectors.placeLabel:Where ${name}:NAME: is used`,
     };
     if (connected) {
