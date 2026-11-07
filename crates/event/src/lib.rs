@@ -31,6 +31,7 @@ pub use payload::{
     LanguageSet, MailAsked, MaxPrice, MemorySet, Serve, SignupFinished, SignupStarted, SkillFound,
     Sort,
 };
+pub use payload::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
 pub use payload::{
     AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
@@ -58,7 +59,6 @@ pub use payload::{
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
 pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};
-pub use payload::{ConnectorConnected, ConnectorDisconnected};
 pub use payload::{CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet};
 pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,

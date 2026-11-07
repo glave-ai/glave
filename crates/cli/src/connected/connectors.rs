@@ -119,6 +119,36 @@ impl Connected {
         kept_there(self.ledger.place_connector(&kept).await?, &kept)
     }
 
+    /// Calls the account `kept` names `name` from now on, its sign-in, and what its server
+    /// asked for more, kept under the new name; the person's servers are reconciled at the next
+    /// turn. Never named where a server of the person's own settings is at its address, which
+    /// is used in its stead and shares its sign-in.
+    pub(super) async fn renaming(
+        &self,
+        kept: KeptConnector,
+        name: Option<String>,
+    ) -> Result<(), ApiError> {
+        let catalog = catalog()?;
+        let url = catalog.connector(&kept.id).and_then(|it| address(&it.url));
+        let url = url.unwrap_or_default();
+        if name.is_some() && self.remotes().await.contains_key(&url) {
+            let said = format!(
+                "your own settings name a server at {}'s address, which glave uses in its place: \
+                 remove it there to name this account",
+                kept.id
+            );
+            return Err(ApiError::new(code::INVALID_PARAMS, said));
+        }
+        let renamed = self.ledger.rename_connector(&kept, name.as_deref(), &url);
+        kept_there(renamed.await?, &kept)?;
+        if let Some(asked) = self.more.of(&url, kept.account.as_deref()) {
+            self.more.ask(&url, name.as_deref(), &asked.join(" "));
+        }
+        self.more.forget(&url, kept.account.as_deref());
+        self.kept().await?;
+        Ok(())
+    }
+
     /// Disconnects the account `kept` names, removing its sign-in, so its token is destroyed
     /// now.
     pub(super) async fn disconnecting(&self, kept: KeptConnector) -> Result<(), ApiError> {
@@ -174,6 +204,13 @@ pub(super) fn kept_there(placement: Placement, kept: &KeptConnector) -> Result<(
             format!(
                 "another {} account is used there already: use this one somewhere else, or move \
                  that one first",
+                kept.id
+            ),
+        )),
+        Placement::NameTaken => Err(ApiError::new(
+            code::INVALID_PARAMS,
+            format!(
+                "another {} account has that name already: give this one another",
                 kept.id
             ),
         )),

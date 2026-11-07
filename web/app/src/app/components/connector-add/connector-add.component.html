@@ -1,0 +1,56 @@
+<!-- Made as it opens and gone when it closes, so nothing of it stays in the page closed: WebKit
+     keeps the style a closed dialog's parts last had, motion and all, whatever the page asks now. -->
+@if (open()) {
+  <glz-dialog testId="connector-add" [heading]="heading()" [(open)]="open">
+    <form class="glz-stack glz-gap-4" (submit)="done($event)">
+      <glz-form-field [label]="copy.account">
+        <glz-radio-group
+          data-testid="connector-add-which"
+          cards
+          [value]="account()"
+          (valueChange)="choseAccount($event)"
+        >
+          @for (each of had(); track each.value) {
+            <glz-radio [value]="each.value" [hint]="copy.already">{{ each.label }}</glz-radio>
+          }
+          <glz-radio [value]="another">{{ anotherLabel() }}</glz-radio>
+        </glz-radio-group>
+      </glz-form-field>
+      @if (naming()) {
+        <glz-form-field [label]="copy.nameIt" [hint]="copy.nameHint">
+          <input
+            glzInput
+            type="text"
+            autocomplete="off"
+            [maxLength]="longest"
+            data-testid="connector-add-name"
+            [value]="name()"
+            (input)="typed($event)"
+          />
+        </glz-form-field>
+      }
+      <glz-form-field [label]="copy.useIt">
+        <glz-radio-group
+          data-testid="connector-add-place"
+          [value]="place()"
+          (valueChange)="chosePlace($event)"
+        >
+          @for (each of where(); track each.value) {
+            <glz-radio [value]="each.value" [hint]="each.hint">{{ each.label }}</glz-radio>
+          }
+        </glz-radio-group>
+      </glz-form-field>
+      @if (problem(); as problem) {
+        <p class="error" role="alert" data-testid="connector-add-problem">{{ problem }}</p>
+      }
+    </form>
+    <div glzDialogActions class="glz-row glz-gap-2">
+      <button glzButton data-testid="connector-add-cancel" (click)="cancel()">
+        {{ copy.cancel }}
+      </button>
+      <button glzButton variant="primary" data-testid="connector-add-done" (click)="done()">
+        {{ action() }}
+      </button>
+    </div>
+  </glz-dialog>
+}

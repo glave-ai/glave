@@ -1,0 +1,21 @@
+// One account of a service, beneath it: its name, where it is used, and its menu, on one line
+// that wraps on a phone.
+:host {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-height: var(--glz-control-height-touch);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--glz-text-sm);
+}
+
+.used {
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}

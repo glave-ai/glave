@@ -53,6 +53,21 @@ describe('RenameDialogComponent', () => {
     expect(renamed).toEqual(['Notes']);
   });
 
+  it('renames an account of an app, by a name of 40 characters at most', async () => {
+    const fixture = TestBed.createComponent(RenameDialogComponent);
+    fixture.componentRef.setInput('kind', 'account');
+    fixture.componentRef.setInput('title', 'Stripe');
+    fixture.componentRef.setInput('open', true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="rename"]')?.textContent).toContain(
+      'Rename the account',
+    );
+    expect(root.textContent).toContain('Up to 40 characters');
+    expect(input(root).maxLength).toBe(40);
+    await expectAccessible(root);
+  });
+
   it('renames a project by its name', async () => {
     const fixture = TestBed.createComponent(RenameDialogComponent);
     fixture.componentRef.setInput('kind', 'project');

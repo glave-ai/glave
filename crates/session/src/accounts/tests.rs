@@ -416,3 +416,60 @@ fn two_accounts_of_one_service_are_each_signed_in_to_and_disconnected_apart() {
         assert_eq!(holding(&data, &two), 0, "its key is destroyed: {data:?}");
     });
 }
+
+#[test]
+fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.stripe.com";
+        let first = account("stripe", None, None);
+        let acme = account("stripe", Some("Acme"), Some(7));
+        let token = fake_secret("mcp_");
+        ledger
+            .keep_connector(&first, Some(&connection(1, url, &token)))
+            .await
+            .unwrap();
+        ledger.keep_connector(&acme, None).await.unwrap();
+
+        let renamed = ledger.rename_connector(&first, Some("Glave"), url).await;
+        assert_eq!(renamed.unwrap(), Placement::Placed);
+        let accounts = ledger.accounts().await.unwrap();
+        let glave = account("stripe", Some("Glave"), None);
+        assert_eq!(
+            accounts.connectors,
+            [glave.clone(), acme.clone()],
+            "in its place"
+        );
+        let signed = accounts
+            .sign_in(url, Some("Glave"))
+            .map(|it| it.token.expose().to_owned());
+        assert_eq!(
+            signed.as_deref(),
+            Some(token.as_str()),
+            "its sign-in, renamed"
+        );
+        assert!(
+            accounts.sign_in(url, None).is_none(),
+            "and no longer under no name"
+        );
+
+        let clash = ledger.rename_connector(&glave, Some("Acme"), url).await;
+        assert_eq!(clash.unwrap(), Placement::NameTaken);
+        let gone = ledger.rename_connector(&first, Some("Zed"), url).await;
+        assert_eq!(gone.unwrap(), Placement::NotConnected);
+
+        let back = ledger.rename_connector(&glave, None, url).await;
+        assert_eq!(back.unwrap(), Placement::Placed);
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(
+            accounts.connectors,
+            [first, acme],
+            "unnamed again, in its place"
+        );
+        let kept: Vec<_> = (accounts.connections.iter())
+            .map(|it| it.account.clone())
+            .collect();
+        assert_eq!(kept, [None], "one sign-in, under no name again");
+    });
+}

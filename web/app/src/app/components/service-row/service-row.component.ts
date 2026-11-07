@@ -16,6 +16,8 @@ import { initials } from '@glave/glaze';
 export class ServiceRowComponent {
   /** What the person calls the service. */
   readonly name = input.required<string>();
+  /** What its tile's letters are of, when not its name: the service's, for one of its accounts. */
+  readonly tile = input<string | null>(null);
 
-  protected readonly letters = computed(() => initials(this.name()));
+  protected readonly letters = computed(() => initials(this.tile() ?? this.name()));
 }

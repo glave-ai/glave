@@ -5374,6 +5374,44 @@
       },
       "streams": false
     },
+    "connector/rename": {
+      "params": {
+        "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connector": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connector"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A connector, as it was connected.",
+        "properties": {
+          "connector": {
+            "$ref": "#/$defs/ConnectorInfo"
+          }
+        },
+        "required": [
+          "connector"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "credential/connect": {
       "params": {
         "properties": {

@@ -26,6 +26,7 @@
             <app-service-row
               data-testid="connector"
               [name]="row.name"
+              [tile]="row.tile"
               [attr.data-connector]="row.id"
             >
               @if (row.problem; as problem) {
@@ -53,12 +54,30 @@
                 </span>
               } @else {
                 <span class="detail" data-testid="connector-detail">
-                  @if (row.connected) {
-                    <span class="dot" aria-hidden="true"></span>
-                  }
+                  <span class="dot" aria-hidden="true" [class.shown]="row.connected"></span>
                   <span dir="auto">{{ row.detail }}</span>
                 </span>
+                <span class="note" data-testid="connector-note" [class.shown]="row.noted">{{
+                  row.note
+                }}</span>
               }
+              <!-- Shown only for a service with two accounts or more. -->
+              <div
+                class="accounts"
+                role="list"
+                data-testid="connector-accounts"
+                [class.shown]="row.listed"
+              >
+                @for (beneath of row.accounts; track beneath.key) {
+                  <app-connector-account
+                    [service]="row.tile"
+                    [account]="beneath.account"
+                    [place]="beneath.place"
+                    [places]="places()"
+                    (picked)="picked(row, beneath.account, $event)"
+                  />
+                }
+              </div>
               @if (row.place; as place) {
                 <glz-menu-select
                   appServiceAction
@@ -71,19 +90,36 @@
                   (valueChange)="move(row, $event)"
                 />
               }
-              <button
-                glzButton
-                appServiceAction
-                class="action"
-                size="sm"
-                data-testid="connector-action"
-                [variant]="row.variant"
-                [disabled]="row.busy"
-                [attr.aria-label]="row.actionLabel"
-                (click)="act(row)"
-              >
-                {{ row.action }}
-              </button>
+              @if (row.adds) {
+                <button
+                  glzButton
+                  appServiceAction
+                  class="action"
+                  size="sm"
+                  variant="ghost"
+                  data-testid="connector-add-account"
+                  [disabled]="row.busy"
+                  [attr.aria-label]="row.addLabel"
+                  (click)="addTo(row)"
+                >
+                  {{ copy.add }}
+                </button>
+              }
+              @if (row.acts) {
+                <button
+                  glzButton
+                  appServiceAction
+                  class="action"
+                  size="sm"
+                  data-testid="connector-action"
+                  [variant]="row.variant"
+                  [disabled]="row.busy"
+                  [attr.aria-label]="row.actionLabel"
+                  (click)="act(row)"
+                >
+                  {{ row.action }}
+                </button>
+              }
               @if (row.again) {
                 <button
                   glzButton
@@ -110,6 +146,20 @@
 @if (problem(); as problem) {
   <p class="detail problem" role="alert" data-testid="connectors-problem">{{ problem }}</p>
 }
+<app-rename-dialog
+  kind="account"
+  [title]="renameTitle()"
+  [(open)]="renameOpen"
+  (renamed)="renamed($event)"
+/>
+<app-connector-add
+  [connector]="adding()"
+  [here]="project()"
+  [hereName]="projectName()"
+  [places]="places()"
+  [(open)]="addOpen"
+  (chosen)="added($event)"
+/>
 <glz-confirm-dialog
   testId="connectors-disconnect"
   danger

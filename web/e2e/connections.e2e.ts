@@ -180,3 +180,64 @@ test('web search is a switch in Settings, and the composer shows a globe while i
   await expect(globe).toHaveCount(0);
   expect(problems()).toEqual([]);
 });
+
+test('a second account of an app is added and named, each beneath it with its own menu', async ({
+  page,
+  browserName,
+}) => {
+  const problems = watchForProblems(page);
+  const site = browserName === 'webkit' ? CONNECTIONS_WEBKIT : CONNECTIONS;
+  const glave = served(site);
+  writeFileSync(join(homeOf(site), 'mcp.json'), JSON.stringify({ mcpServers: {} }));
+  const code = await signInCode(site);
+  await page.goto(`${glave}/settings#code=${code}`);
+  await byTestId(page, 'settings-connections').click();
+  await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
+
+  // DeepWiki asks no one to sign in, so each account of it connects at once.
+  const deepwiki = page.locator('[data-connector="deepwiki"]');
+  await deepwiki.getByTestId('connector-action').click();
+  const connected = byTestId(page, 'connectors-connected').locator('[data-connector="deepwiki"]');
+  await expect(connected).toContainText('Everywhere, including chats');
+  await connected.getByTestId('connector-add-account').click();
+  const dialog = byTestId(page, 'connector-add');
+  await expect(dialog).toContainText('Sign in to another DeepWiki account');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+  await byTestId(page, 'connector-add-name').fill('Acme');
+  await byTestId(page, 'connector-add-place').getByText('Only in Chats').click();
+  await byTestId(page, 'connector-add-done').click();
+
+  await expect(connected.getByTestId('connector-detail')).toContainText('2 accounts');
+  const accounts = connected.getByTestId('connector-account');
+  await expect(accounts).toHaveCount(2);
+  await expect(accounts.nth(0)).toContainText('Everywhere, including chats');
+  await expect(accounts.nth(1)).toContainText('Acme');
+  await expect(accounts.nth(1)).toContainText('Only in Chats');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+
+  // The first, never named, is named now.
+  await accounts.nth(0).getByTestId('connector-account-menu-trigger').click();
+  await byTestId(page, 'connector-account-menu-action').getByText('Rename').click();
+  await byTestId(page, 'rename-input').fill('Glave');
+  await byTestId(page, 'rename-save').click();
+  await expect(accounts.nth(0)).toContainText('Glave');
+
+  // Acme disconnected from its menu, Glave is DeepWiki's one account again, on one row.
+  await accounts.nth(1).getByTestId('connector-account-menu-trigger').click();
+  await byTestId(page, 'connector-account-menu-action').getByText('Disconnect').click();
+  await byTestId(page, 'connectors-disconnect-ok').click();
+  await expect(accounts).toHaveCount(0);
+  await expect(connected.getByTestId('connector-detail')).toContainText(
+    'Everywhere, including chats',
+  );
+  await connected.getByTestId('connector-action').click();
+  await byTestId(page, 'connectors-disconnect-ok').click();
+  await expect(deepwiki.getByTestId('connector-action')).toHaveText('Connect');
+  expect(problems()).toEqual([]);
+});

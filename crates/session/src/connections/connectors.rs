@@ -178,6 +178,44 @@ where
         Ok(Reply::Done {})
     }
 
+    /// Answers `connector/rename`: the connector, its account under its new name, which no
+    /// other account of the service has, in any case.
+    pub(crate) async fn rename_connector(
+        &self,
+        caller: &Caller,
+        connector: KeptConnector,
+        name: Option<String>,
+    ) -> Result<Reply, ApiError> {
+        let connections = self.connections_for(caller)?;
+        let found = built_in()?
+            .connector(&connector.id)
+            .cloned()
+            .ok_or_else(|| no_connector(&connector.id))?;
+        let connector = KeptConnector {
+            account: named(connector.account)?,
+            ..connector
+        };
+        let name = named(name)?;
+        let folded = |it: &Option<String>| it.as_ref().map(|name| name.to_lowercase());
+        let offered = connections.connectors().await?;
+        let taken = (offered.iter())
+            .filter(|(kept, status)| *status != ConnectorStatus::Available && kept.id == found.id)
+            .any(|(kept, _)| {
+                !kept.same_account(&connector) && folded(&kept.account) == folded(&name)
+            });
+        if taken {
+            let said = Sentence::AccountNameTaken {
+                service: found.name.clone(),
+                name: name.unwrap_or_else(|| found.name.clone()),
+            };
+            return Err(ApiError::new(code::INVALID_PARAMS, said));
+        }
+        connections.rename(connector, name).await?;
+        Ok(Reply::Connector {
+            connector: self.as_now(caller, connections, &found).await?,
+        })
+    }
+
     /// The caller's connections, `connector`'s entry in the catalog and the account, its name
     /// tidied, once it is one glave has, its place, if it has one, a project the caller owns,
     /// and no other account of the service is used there. `connecting` it, a new account of a

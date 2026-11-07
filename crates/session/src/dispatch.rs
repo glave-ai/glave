@@ -625,6 +625,18 @@ where
                 };
                 self.disconnect_connector(caller, connector).await
             }
+            Request::ConnectorRename {
+                connector,
+                account,
+                name,
+            } => {
+                let connector = KeptConnector {
+                    id: connector,
+                    account,
+                    only: None,
+                };
+                self.rename_connector(caller, connector, name).await
+            }
         })
     }
 }

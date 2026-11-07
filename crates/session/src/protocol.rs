@@ -759,6 +759,15 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         account: Option<String>,
     } -> [Done],
+    /// Calls an account of a connector `name` from now on, unique among the service's accounts;
+    /// none leaves it unnamed, as a service's first account is until it is named.
+    "connector/rename" => ConnectorRename {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    } -> [Connector],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for

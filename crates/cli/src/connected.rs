@@ -393,6 +393,14 @@ impl Connections for Connected {
     fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(self.disconnecting(connector))
     }
+
+    fn rename(
+        &self,
+        connector: KeptConnector,
+        name: Option<String>,
+    ) -> BoxFuture<'_, Result<(), ApiError>> {
+        Box::pin(self.renaming(connector, name))
+    }
 }
 
 #[cfg(test)]

@@ -1,25 +1,28 @@
-<glz-dialog testId="rename" [heading]="naming().heading" [(open)]="open">
-  <form (submit)="save($event)">
-    <glz-form-field [label]="naming().label" [hint]="copy.hint">
-      <input
-        glzInput
-        data-testid="rename-input"
-        [maxLength]="limit"
-        [value]="draft()"
-        (input)="typed($event)"
-      />
-    </glz-form-field>
-  </form>
-  <div glzDialogActions class="glz-row glz-gap-2">
-    <button glzButton data-testid="rename-cancel" (click)="cancel()">{{ copy.cancel }}</button>
-    <button
-      glzButton
-      variant="primary"
-      data-testid="rename-save"
-      [disabled]="invalid()"
-      (click)="save()"
-    >
-      {{ copy.save }}
-    </button>
-  </div>
-</glz-dialog>
+<!-- Made as it opens and gone when it closes, as the add dialog beside it on Connections is. -->
+@if (open()) {
+  <glz-dialog testId="rename" [heading]="naming().heading" [(open)]="open">
+    <form (submit)="save($event)">
+      <glz-form-field [label]="naming().label" [hint]="hint()">
+        <input
+          glzInput
+          data-testid="rename-input"
+          [maxLength]="limit()"
+          [value]="draft()"
+          (input)="typed($event)"
+        />
+      </glz-form-field>
+    </form>
+    <div glzDialogActions class="glz-row glz-gap-2">
+      <button glzButton data-testid="rename-cancel" (click)="cancel()">{{ copy.cancel }}</button>
+      <button
+        glzButton
+        variant="primary"
+        data-testid="rename-save"
+        [disabled]="invalid()"
+        (click)="save()"
+      >
+        {{ copy.save }}
+      </button>
+    </div>
+  </glz-dialog>
+}
