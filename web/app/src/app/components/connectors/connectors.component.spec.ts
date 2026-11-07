@@ -344,23 +344,23 @@ describe('ConnectorsComponent', () => {
     await expectAccessible(root);
   });
 
-  it('offers no choice of place to a person with only their Chats', async () => {
+  /** The page for a person with only their Chats, Notion connected with `accounts`. */
+  async function onlyChats(accounts: NonNullable<ConnectorInfo['accounts']>): Promise<HTMLElement> {
     const fake = new FakeSession()
       .answer('project/list', { projects: [record('p2', 'Chats', 'personal')] })
       .answer('thread/list', { threads: [] })
       .answer('connector/list', {
         categories: CATEGORIES,
-        connectors: [
-          {
-            ...NOTION,
-            status: 'connected',
-            accounts: [{ status: 'connected', used: 'Everywhere, including chats' }],
-          },
-        ],
+        connectors: [{ ...NOTION, status: 'connected', accounts }],
       });
     const { fixture, root } = await page(fake);
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
+    return root;
+  }
+
+  it('offers no choice of place to a person with only their Chats', async () => {
+    const root = await onlyChats([{ status: 'connected', used: 'Everywhere, including chats' }]);
     expect(rows(root, 'connectors-connected')).toEqual([
       'N Notion Everywhere, including chats Disconnect',
     ]);
@@ -368,25 +368,10 @@ describe('ConnectorsComponent', () => {
   });
 
   it('says where each account of a service is used, by its name', async () => {
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('p2', 'Chats', 'personal')] })
-      .answer('thread/list', { threads: [] })
-      .answer('connector/list', {
-        categories: CATEGORIES,
-        connectors: [
-          {
-            ...NOTION,
-            status: 'connected',
-            accounts: [
-              { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
-              { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' },
-            ],
-          },
-        ],
-      });
-    const { fixture, root } = await page(fake);
-    await TestBed.inject(ProjectsService).refresh();
-    await settle(fixture);
+    const root = await onlyChats([
+      { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+      { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' },
+    ]);
     expect(rows(root, 'connectors-connected')).toEqual([
       'N Notion Glave: Everywhere, including chats · Acme: Only in Acme Site Disconnect',
     ]);
