@@ -1,16 +1,17 @@
 //! What every event log's keyword search must do (`EventLog::search`): find messages and tool
 //! output by their words as soon as they are appended, best match first, never a failed call's
-//! output, a memory tool's result or any other event, never another scope's, and never more than
-//! asked.
+//! output, a memory tool's result or any other event, never another scope's, never more than
+//! asked, and nothing of a thread once it is deleted.
 
 use glave_event::{
-    At, CallId, EventId, Header, MessageAdded, Outcome, Part, RawEvent, Role, Seq, ThreadId,
-    ToolCallCompleted, TurnResult, encode,
+    At, CallId, EventId, Header, MessageAdded, Outcome, Part, RawEvent, Role, Seq, ThreadDeleted,
+    ThreadId, ToolCallCompleted, TurnResult, encode,
 };
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
 use crate::log::EventLog;
 use crate::memories::FROM_MEMORY;
+use crate::scope::Scope;
 use crate::search::Found;
 
 fn header(thread: ThreadId, seq: u64) -> Result<Header, String> {
@@ -99,12 +100,7 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
         ),
         (
             elsewhere,
-            vec![said(
-                third,
-                1,
-                Role::User,
-                "Deploy the other client's site.",
-            )?],
+            vec![said(third, 1, Role::User, "Deploy the other site.")?],
         ),
     ];
     for (scope, events) in &appended {
@@ -149,5 +145,35 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
     ensure(
         find(elsewhere, "deploy postgres", 10).await? == [at(third, 1)?],
         "a search must stay inside its scope",
+    )?;
+    deleting(log, (here, elsewhere), first, (second, third)).await
+}
+
+/// Deleting `gone` (`thread.deleted`) takes its words out of the index, and only its: `kept`
+/// in `here` and `away` in `elsewhere` are still found.
+async fn deleting<L: EventLog>(
+    log: &L,
+    (here, elsewhere): (Scope, Scope),
+    gone: ThreadId,
+    (kept, away): (ThreadId, ThreadId),
+) -> Verdict {
+    let deleted =
+        encode(header(gone, 4)?, &ThreadDeleted { by: None }).map_err(|e| e.to_string())?;
+    log.append(&here, &[deleted])
+        .await
+        .map_err(|e| e.to_string())?;
+    let find = |scope, query: &'static str| async move {
+        log.search(&scope, query, 10)
+            .await
+            .map_err(|e| format!("search for {query:?} failed: {e}"))
+    };
+    ensure(
+        find(here, "deploy make db noted").await?.is_empty(),
+        "a deleted thread's words must leave the index with it",
+    )?;
+    ensure(
+        find(here, "postgres jsonb").await? == [at(kept, 1)?]
+            && find(elsewhere, "deploy").await? == [at(away, 1)?],
+        "deleting a thread must leave every other thread's words in the index",
     )
 }

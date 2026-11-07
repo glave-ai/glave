@@ -1,11 +1,14 @@
 //! Keyword search over conversations (`specs/memory.md`, "Recall"): the words an event is
 //! found by, and what a search finds. Each store keeps a full-text index of these words in its
 //! own engine (SQLite FTS5, Postgres full-text search), written in the same transaction as the
-//! events, and every adapter normalises words the same way, here.
+//! events, and every adapter normalises words the same way, here. A thread's words leave the
+//! index in the transaction that deletes it ([`deletes_thread`]).
 
 use std::collections::BTreeSet;
 
-use glave_event::{Body, Part, RawEvent, Seq, ThreadId, ToolCallCompleted, decode};
+use glave_event::{
+    Body, Part, Payload, RawEvent, Seq, ThreadDeleted, ThreadId, ToolCallCompleted, decode,
+};
 
 use crate::memories::FROM_MEMORY;
 
@@ -104,6 +107,15 @@ fn from_memory(done: &ToolCallCompleted) -> bool {
 /// The words `event` is indexed under; empty for an event a search never looks in.
 pub fn indexed(event: &RawEvent) -> Vec<String> {
     searchable(event).map_or_else(Vec::new, |text| terms(&text, MOST_TERMS))
+}
+
+/// Whether `events`, appended to one thread, delete it (`thread.deleted`): then every adapter
+/// removes the thread's words from its index in the same transaction, so nothing of a deleted
+/// chat stays searchable, or even countable, there (`specs/storage.md`, "Search index").
+pub fn deletes_thread(events: &[RawEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| event.kind.as_str() == ThreadDeleted::TYPE)
 }
 
 /// The words a query searches for.

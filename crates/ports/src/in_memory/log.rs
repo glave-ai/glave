@@ -8,7 +8,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 
 use crate::log::{EventLog, LogError, check_append};
 use crate::scope::{Located, OrgId, Scope};
-use crate::search::{Found, indexed, query_terms};
+use crate::search::{Found, deletes_thread, indexed, query_terms};
 use crate::view::{ThreadQuery, ThreadView};
 
 /// One searchable event and its words.
@@ -61,6 +61,9 @@ impl InMemoryLog {
                 };
                 entries.push((found, words.into_iter().collect()));
             }
+        }
+        if deletes_thread(events) {
+            entries.retain(|(found, _)| found.thread != first.thread);
         }
         Ok(())
     }
