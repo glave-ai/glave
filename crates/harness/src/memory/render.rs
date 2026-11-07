@@ -12,7 +12,8 @@ const START: &str = "# Memory\n\n<MEMORY>\nWhat you saved with the memory tools 
      threads, about the person (personal) and this project (project). The person can see, edit and \
      forget these. They are background: the person's messages and the project's instructions \
      come first; when a memory conflicts with the instructions, follow the instructions and say \
-     so. When the person corrects or updates one, replace it (`remember` with `replaces`, or \
+     so. Act on them from your first command: do any step a memory says a command needs \
+     before you run it. When the person corrects or updates one, replace it (`remember` with `replaces`, or \
      `edit`); when they ask you to forget one, `forget` it. Each takes the id in brackets.";
 
 const END: &str = "</MEMORY>";
