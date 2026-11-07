@@ -48,6 +48,24 @@ const RECORDS: &[&str] = &[
     GoalResumed::TYPE,
 ];
 
+/// What is read back from before a thread's end, and how many at a time.
+struct Back {
+    kinds: &'static [&'static str],
+    page: usize,
+}
+
+/// Its records, every one.
+const EARLIER: Back = Back {
+    kinds: RECORDS,
+    page: PAGE,
+};
+
+/// Its messages, back to the person's latest few: a page holds about as many as are wanted.
+const ASKED: Back = Back {
+    kinds: &[MessageAdded::TYPE],
+    page: MOST_MESSAGES,
+};
+
 impl<P, L, B, A> Harness<P, L, B, A>
 where
     P: ModelProvider,
@@ -71,11 +89,10 @@ where
             return Ok(end);
         };
         let mut asked = end.iter().filter(|event| by_person(event)).count();
-        let records = self.back(scope, id, Some(RECORDS), from, PAGE, |_| false);
+        let records = self.back(scope, id, &EARLIER, from, |_| false);
         let mut events = in_order(records.await?.into_iter().chain(end));
         if asked < MOST_MESSAGES {
-            let kinds = [MessageAdded::TYPE];
-            let messages = self.back(scope, id, Some(&kinds), from, MOST_MESSAGES, |event| {
+            let messages = self.back(scope, id, &ASKED, from, |event| {
                 asked = asked.saturating_add(usize::from(by_person(event)));
                 asked >= MOST_MESSAGES
             });
@@ -115,15 +132,14 @@ where
         Ok(Some(started.first().map_or(compacted.seq, |turn| turn.seq)))
     }
 
-    /// Thread `id`'s events of `kinds` (or of every kind) before `before`, newest first, read
-    /// `page` at a time, back to the first that `last` says is the last wanted, or to its start.
+    /// Thread `id`'s events of `back`'s kinds before `before`, newest first, back to the first
+    /// that `last` says is the last wanted, or to its start.
     async fn back(
         &self,
         scope: &Scope,
         id: ThreadId,
-        kinds: Option<&[&str]>,
+        back: &Back,
         before: Seq,
-        page: usize,
         mut last: impl FnMut(&Event) -> bool,
     ) -> Result<Vec<Event>, HarnessError> {
         let mut events = Vec::new();
@@ -131,9 +147,9 @@ where
         loop {
             let read = self
                 .log
-                .read_back(scope, id, kinds, Some(before), page)
+                .read_back(scope, id, Some(back.kinds), Some(before), back.page)
                 .await?;
-            let full = read.len() == page;
+            let full = read.len() == back.page;
             before = read.last().map_or(before, |event| event.seq);
             for raw in read {
                 let event = decode(raw).map_err(|e| HarnessError::Event(e.to_string()))?;
