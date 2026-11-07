@@ -59,17 +59,18 @@ function rows(root: ParentNode, testId: string): readonly string[] {
   );
 }
 
-/** Opens the menu `testId` and picks its option that says `text`. */
+/** Opens the menu of the connector `id`'s one account and picks what says `text`. */
 async function choose(
   fixture: { whenStable(): Promise<unknown> },
-  testId: string,
+  id: string,
   text: string,
 ): Promise<void> {
   await settle(fixture);
-  document.querySelector<HTMLElement>(`[data-testid="${testId}-trigger"]`)?.click();
+  const trigger = `[data-connector="${id}"] [data-testid="connector-menu-trigger"]`;
+  document.querySelector<HTMLElement>(trigger)?.click();
   await fixture.whenStable();
-  const options = document.querySelectorAll<HTMLElement>(`[data-testid="${testId}-option"]`);
-  [...options].find((option) => option.textContent.includes(text))?.click();
+  const items = document.querySelectorAll<HTMLElement>('[data-testid="connector-menu-action"]');
+  [...items].find((item) => item.textContent.includes(text))?.click();
   await settle(fixture);
 }
 
@@ -114,7 +115,7 @@ describe('ConnectorsComponent', () => {
       connectors: [LINEAR, DEEPWIKI, { ...NOTION, status: 'connected' }],
     });
     const { fixture, root } = await page(fake);
-    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected Disconnect']);
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected']);
     expect(rows(root, 'connectors-dev')).toEqual([
       'L Linear Issues, projects and cycles. Connect',
       'D DeepWiki Answers about public repositories. Connect',
@@ -158,7 +159,7 @@ describe('ConnectorsComponent', () => {
     await settle(fixture);
     expect(fake.paramsOf('connector/connect')).toEqual([{ connector: 'deepwiki' }]);
     expect(tab.closed()).toBe(true);
-    expect(rows(root, 'connectors-connected')).toEqual(['D DeepWiki Connected Disconnect']);
+    expect(rows(root, 'connectors-connected')).toEqual(['D DeepWiki Connected']);
     expect(said).toEqual(['DeepWiki, Connected']);
   });
 
@@ -197,8 +198,7 @@ describe('ConnectorsComponent', () => {
         return {};
       });
     const { fixture, root } = await page(fake);
-    press(root, 'notion');
-    await settle(fixture);
+    await choose(fixture, 'notion', 'Disconnect');
     expect(fake.paramsOf('connector/disconnect')).toEqual([]);
     document.querySelector<HTMLElement>('[data-testid="connectors-disconnect-ok"]')?.click();
     await settle(fixture);
@@ -271,16 +271,14 @@ describe('ConnectorsComponent', () => {
     const { fixture, root } = await page(fake);
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
-    expect(rows(root, 'connectors-connected')).toEqual([
-      'N Notion Everywhere, including chats Disconnect',
-    ]);
-    const place = root.querySelector('[data-testid="connector-place-trigger"]');
-    expect(place?.textContent).toContain('Where Notion is used');
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Everywhere, including chats']);
+    const menu = root.querySelector('[data-testid="connector-menu-trigger"]');
+    expect(menu?.getAttribute('aria-label')).toBe('Options for Notion');
     await expectAccessible(root);
-    await choose(fixture, 'connector-place', 'Only in Acme Site');
+    await choose(fixture, 'notion', 'Only in Acme Site');
     expect(fake.paramsOf('connector/place')).toEqual([{ connector: 'notion', only: 'p1' }]);
-    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Only in Acme Site Disconnect']);
-    await choose(fixture, 'connector-place', 'Everywhere, including chats');
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Only in Acme Site']);
+    await choose(fixture, 'notion', 'Everywhere, including chats');
     expect(fake.paramsOf('connector/place')).toEqual([
       { connector: 'notion', only: 'p1' },
       { connector: 'notion' },
@@ -316,8 +314,8 @@ describe('ConnectorsComponent', () => {
     await settle(fixture);
     const heading = root.querySelector('[data-testid="connectors-connected"] h3');
     expect(heading?.textContent).toBe('Used in Acme Site');
-    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected Disconnect']);
-    expect(rows(root, 'connectors-elsewhere')).toEqual(['L Linear Only in Beta Disconnect']);
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected']);
+    expect(rows(root, 'connectors-elsewhere')).toEqual(['L Linear Only in Beta']);
     expect(root.querySelector('[data-testid="connectors-here"]')?.textContent).toContain(
       'Apps you connect here are used only in Acme Site.',
     );
@@ -355,7 +353,7 @@ describe('ConnectorsComponent', () => {
       [...it.querySelectorAll('.label, .used')].map((part) => part.textContent.trim()).join(' '),
     );
     expect(beneath).toEqual(['Glave Everywhere, including chats', 'Acme Only in Acme Site']);
-    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connector-menu-trigger"]')).toBeNull();
     await expectAccessible(root);
 
     const menus = root.querySelectorAll<HTMLElement>(
@@ -447,7 +445,14 @@ describe('ConnectorsComponent', () => {
     const one: ConnectorInfo = {
       ...NOTION,
       status: 'connected',
-      accounts: [{ status: 'connected', used: 'Everywhere, including chats' }],
+      accounts: [
+        {
+          status: 'connected',
+          used: 'Everywhere, including chats',
+          who: 'Glave Inc.',
+          signed_in: 'Signed in as Glave Inc.',
+        },
+      ],
     };
     const fake = new FakeSession()
       .answer('project/list', {
@@ -458,35 +463,64 @@ describe('ConnectorsComponent', () => {
       .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', { connection: { url: PAGE, status: 'signed_in' } });
     openedTab();
-    const { fixture, root } = await page(fake, 'p1');
+    const { fixture } = await page(fake, 'p1');
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
-    root
-      .querySelector<HTMLElement>('[data-connector="notion"] [data-testid="connector-add-account"]')
-      ?.click();
-    await settle(fixture);
+    await choose(fixture, 'notion', 'Add another Notion account');
     const dialog = document.querySelector('[data-testid="connector-add"]');
     expect(dialog?.textContent).toContain('Connect Notion');
-    expect(dialog?.textContent).toContain('Already connected');
+    expect(dialog?.textContent).toContain('Signed in as Glave Inc.');
     expect(dialog?.textContent).toContain('Sign in to another Notion account');
     expect(dialog?.textContent).toContain('Nothing else can see it');
+    const name = document.querySelector<HTMLInputElement>('[data-testid="connector-add-name"]');
+    expect(name?.placeholder).toBe('From your Notion sign-in, such as Acme Corp');
     const done = document.querySelector<HTMLElement>('[data-testid="connector-add-done"]');
     expect(done?.textContent.trim()).toBe('Sign in to Notion');
-    done?.click();
-    await settle(fixture);
-    const problem = document.querySelector('[data-testid="connector-add-problem"]');
-    expect(problem?.textContent).toContain('Give this account a name.');
-    expect(fake.paramsOf('connector/connect')).toEqual([]);
-    const name = document.querySelector<HTMLInputElement>('[data-testid="connector-add-name"]');
-    if (name === null) {
-      throw new Error('no name field');
-    }
-    name.value = ' Acme ';
-    name.dispatchEvent(new Event('input'));
+    // Left unnamed, the server names it from its sign-in.
     done?.click();
     await settle(fixture);
     expect(fake.paramsOf('connector/connect')).toEqual([
-      { connector: 'notion', account: 'Acme', only: 'p1' },
+      { connector: 'notion', only: 'p1', another: true },
     ]);
+  });
+
+  it('names a lone account from its sign-in, saying it shows once there is a second', async () => {
+    const one: ConnectorInfo = {
+      ...NOTION,
+      status: 'connected',
+      accounts: [
+        {
+          status: 'connected',
+          used: 'Everywhere, including chats',
+          who: 'Glave Inc.',
+          signed_in: 'Signed in as Glave Inc.',
+        },
+      ],
+    };
+    const fake = new FakeSession()
+      .answer('connector/list', { categories: CATEGORIES, connectors: [one] })
+      .answer('connector/rename', { connector: one });
+    const { fixture, root } = await page(fake);
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Signed in as Glave Inc.']);
+    const where = root.querySelector('[data-testid="connector-where"]');
+    expect(where?.textContent).toBe('Everywhere, including chats');
+    await expectAccessible(root);
+    await choose(fixture, 'notion', 'Name this account');
+    const dialog = document.querySelector('[data-testid="rename"]');
+    expect(dialog?.querySelector('h2')?.textContent).toContain('Name this Notion account');
+    const named = document.querySelector<HTMLInputElement>('[data-testid="rename-input"]');
+    expect(named?.value).toBe('Glave Inc.');
+    expect(document.querySelector('[data-testid="rename-note"]')?.textContent).toBe(
+      'Filled in from your Notion sign-in. Shown when you add a second Notion account.',
+    );
+    if (named === null) {
+      throw new Error('no name field');
+    }
+    named.value = 'Glave';
+    named.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    document.querySelector<HTMLElement>('[data-testid="rename-save"]')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('connector/rename')).toEqual([{ connector: 'notion', name: 'Glave' }]);
   });
 });

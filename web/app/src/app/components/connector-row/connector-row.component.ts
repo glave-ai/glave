@@ -12,12 +12,13 @@ import {
   type GlzButtonVariant,
   GlzButtonComponent,
   GlzIconComponent,
+  GlzMenuButtonComponent,
   type GlzMenuOption,
-  GlzMenuSelectComponent,
+  type GlzOption,
 } from '@glave/glaze';
 import { ExternalLink, LoaderCircle } from 'lucide';
 
-import { signInWaiting } from '../../lib/connections';
+import { ACCOUNT_NAME_LIMIT, signInWaiting } from '../../lib/connections';
 import { plural } from '../../lib/plural';
 import {
   type AccountAction,
@@ -36,18 +37,31 @@ export interface Waiting {
 /**
  * What the person asked of an account of the connector, by its name (none: the one never
  * named): connect it, used only in `only` (by default where the page is), stop its sign-in, use
- * it in `only` from now on (none: everywhere), rename it or disconnect it, each as `called`.
+ * it in `only` from now on (none: everywhere), add another, rename it (the name it starts from
+ * as `called`) or disconnect it (as `called`).
  */
 export type ConnectorAction =
   | { readonly kind: 'connect'; readonly account: string | null; readonly only?: ProjectId | null }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'place'; readonly account: string | null; readonly only: ProjectId | null }
   | { readonly kind: 'add' }
-  | { readonly kind: 'rename'; readonly account: string | null; readonly called: string }
+  | {
+      readonly kind: 'rename';
+      readonly account: string | null;
+      readonly called: string;
+      /** The dialog's heading and note, where the row has its own. */
+      readonly heading: string | null;
+      readonly note: string | null;
+    }
   | { readonly kind: 'disconnect'; readonly account: string | null; readonly called: string };
 
 /** The choice of where a connector is used that stands for every place. */
 export const EVERYWHERE = 'everywhere';
+
+/** The values of a lone account's menu beside each place's own. */
+const NAME = '\u0000name';
+const ADD = '\u0000add';
+const DISCONNECT = '\u0000disconnect';
 
 /** A connector as its row shows it. */
 interface Row {
@@ -71,16 +85,23 @@ interface Row {
   readonly variant: GlzButtonVariant;
   /** Disconnect's name for screen readers, for a row to sign in to again. */
   readonly disconnectLabel: string;
-  /** Connected, where it is used: `everywhere`, or the project its threads alone use. */
-  readonly place: string | null;
+  /** Connected, its one account's place: `everywhere`, or the project its threads alone use. */
+  readonly place: string;
+  /**
+   * Connected with one account, its menu (each other place, naming it, adding another, and
+   * disconnecting) and the menu's name; else none. Where it is used shows at the row's end
+   * while the line under its name says who it is signed in as.
+   */
+  readonly menu: readonly GlzOption[];
+  readonly menued: boolean;
+  readonly menuLabel: string;
+  readonly where: string | null;
   /** The account the row moves, signs in to again and disconnects, with one: by its name, none unnamed. */
   readonly account: string | null;
   /** Where that account is used alone, or none for everywhere. */
   readonly only: ProjectId | null;
   /** What its moving and disconnecting call it: its name, with the account's when named. */
   readonly called: string;
-  /** The choice of where it is used, as screen readers name it. */
-  readonly placeLabel: string;
   /** With two accounts or more, each beneath it, with its own menu; else none. */
   readonly accounts: readonly Beneath[];
   readonly listed: boolean;
@@ -112,7 +133,7 @@ interface Beneath {
     ServiceRowComponent,
     GlzButtonComponent,
     GlzIconComponent,
-    GlzMenuSelectComponent,
+    GlzMenuButtonComponent,
     ConnectorAccountComponent,
   ],
   templateUrl: './connector-row.component.html',
@@ -147,6 +168,7 @@ export class ConnectorRowComponent {
     openSignIn: $localize`:@@connectorRow.openSignIn:Open the sign-in`,
     newTab: $localize`:@@connectorRow.newTab:in a new tab`,
     add: $localize`:@@connectorRow.add:Add account`,
+    name: $localize`:@@connectorRow.name:Name this account`,
   } as const;
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink } as const;
   private readonly locale = inject(LOCALE_ID);
@@ -154,13 +176,23 @@ export class ConnectorRowComponent {
   /** For a project, why the account used everywhere else is not used here, in the server's words. */
   protected readonly note = computed(() => this.connector().replaced ?? null);
 
-  /** Uses its account where `place` says from now on: everywhere, or one project. */
-  protected move(place: string | null): void {
-    const { place: was, account } = this.row();
-    if (place === null || place === was) {
+  /** Does what was picked from its one account's menu. */
+  protected chose(value: string): void {
+    const { account, busy } = this.row();
+    if (busy) {
       return;
     }
-    this.acted.emit({ kind: 'place', account, only: place === EVERYWHERE ? null : place });
+    if (value === NAME) {
+      const { status } = this.connector();
+      const one = this.connector().accounts?.[0] ?? { status, used: '' };
+      this.acted.emit(this.renaming(one, true));
+    } else if (value === ADD) {
+      this.add();
+    } else if (value === DISCONNECT) {
+      this.ask();
+    } else {
+      this.acted.emit({ kind: 'place', account, only: value === EVERYWHERE ? null : value });
+    }
   }
 
   /** What its button does: stops waiting, disconnects, or connects (again, where it is). */
@@ -200,11 +232,54 @@ export class ConnectorRowComponent {
     } else if (action.kind === 'again') {
       this.acted.emit({ kind: 'connect', account: name, only: account.only ?? null });
     } else if (action.kind === 'rename') {
-      this.acted.emit({ kind: 'rename', account: name, called: name ?? service });
+      this.acted.emit(this.renaming(account, false));
     } else {
-      const called = name === null ? service : this.called(service, name);
+      const shown = account.label ?? name;
+      const called = shown === null ? service : this.called(service, shown);
       this.acted.emit({ kind: 'disconnect', account: name, called });
     }
+  }
+
+  /**
+   * Renaming `account`, the service's `one` account or one beneath it: it starts from its name,
+   * else who it is signed in as, which the dialog's note says, else the service's. Its one
+   * account is named as the mockup's "Name this account", shown once there is a second.
+   */
+  private renaming(account: ConnectorAccount, one: boolean): ConnectorAction {
+    const service = this.connector().name;
+    const name = account.name ?? null;
+    const label = account.label ?? null;
+    // Who it is signed in as stands in for a name the person never gave.
+    const filled = label !== null || (name === null && (account.who ?? null) !== null);
+    let note: string | null = null;
+    if (one && filled) {
+      note = $localize`:@@connectorRow.filledOne:Filled in from your ${service}:SERVICE: sign-in. Shown when you add a second ${service}:SERVICE: account.`;
+    } else if (one) {
+      note = $localize`:@@connectorRow.shownOne:Shown when you add a second ${service}:SERVICE: account.`;
+    } else if (filled) {
+      note = $localize`:@@connectorRow.filled:Filled in from your ${service}:SERVICE: sign-in.`;
+    }
+    const heading = one
+      ? $localize`:@@connectorRow.nameHeading:Name this ${service}:SERVICE: account`
+      : null;
+    // The field starts within the name's length, though who can be longer.
+    const prefill = (label ?? name ?? account.who ?? service).slice(0, ACCOUNT_NAME_LIMIT);
+    return { kind: 'rename', account: name, called: prefill.trim(), heading, note };
+  }
+
+  /** Its one account's menu: each other place, naming it, adding another, and disconnecting. */
+  private menuOf(place: string): readonly GlzOption[] {
+    const service = this.connector().name;
+    const places = this.choosing() ? this.places().filter((it) => it.value !== place) : [];
+    return [
+      ...places.map((it) => ({ value: it.value, label: it.label })),
+      { value: NAME, label: this.copy.name },
+      {
+        value: ADD,
+        label: $localize`:@@connectorRow.addAnother:Add another ${service}:SERVICE: account`,
+      },
+      { value: DISCONNECT, label: this.copy.disconnect },
+    ];
   }
 
   /** What the row calls the account `account` of `service` where it acts on it: `Stripe (Acme)`. */
@@ -229,9 +304,12 @@ export class ConnectorRowComponent {
     const [first] = all;
     const several = all.length > 1;
     const account = first?.name ?? null;
-    const called = account === null ? name : this.called(name, account);
+    // What it goes by: who for one the person left unnamed, else its name.
+    const shown = first?.label ?? account;
+    const called = shown === null ? name : this.called(name, shown);
     const base = {
-      name: account === null || several ? name : this.titled(name, account),
+      // Named only beside another account: where the project's own takes the place of another.
+      name: shown === null || several || this.note() === null ? name : this.titled(name, shown),
       connected,
       again,
       busy,
@@ -239,9 +317,11 @@ export class ConnectorRowComponent {
       link: null,
       linkText: '',
       disconnectLabel: $localize`:@@connectorRow.disconnectLabel:Disconnect ${called}:NAME:`,
-      place:
-        status === 'available' || several || !this.choosing() ? null : (first?.only ?? EVERYWHERE),
-      placeLabel: $localize`:@@connectorRow.placeLabel:Where ${called}:NAME: is used`,
+      place: first?.only ?? EVERYWHERE,
+      menu: [],
+      menued: false,
+      menuLabel: $localize`:@@connectorRow.menu:Options for ${called}:NAME:`,
+      where: null,
       account,
       only: first?.only ?? null,
       called,
@@ -250,7 +330,8 @@ export class ConnectorRowComponent {
         : [],
       listed: several,
       acts: !several,
-      adds: status !== 'available',
+      // A lone account's menu adds another; one to sign in to again is signed in to first.
+      adds: several,
       addLabel: $localize`:@@connectorRow.addLabel:Add account to ${name}:NAME:`,
     };
     // A sign-in waiting shows first: a connected one's second account's, or one signed in again.
@@ -284,11 +365,16 @@ export class ConnectorRowComponent {
       };
     }
     if (connected) {
+      const signedIn = first?.signed_in ?? null;
       return {
         ...base,
-        detail: first?.used ?? this.copy.connected,
-        action: busy ? this.copy.disconnecting : this.copy.disconnect,
-        actionLabel: base.disconnectLabel,
+        acts: false,
+        menu: this.menuOf(base.place),
+        menued: true,
+        detail: signedIn ?? first?.used ?? this.copy.connected,
+        where: signedIn === null ? null : (first?.used ?? null),
+        action: '',
+        actionLabel: '',
         variant: 'ghost',
       };
     }

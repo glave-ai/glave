@@ -80,7 +80,7 @@ mod words;
 pub use accounts::{AccountLedger, Accounts, AccountsError, KeptConnector, Placement};
 pub use approvals::Answering;
 pub use awake::{KeepAwake, Unawake};
-pub use connections::{Connecting, Connections, Returned, Searching};
+pub use connections::{Connecting, Connections, OfferedAccount, Returned, Searching};
 pub use connectors::{Catalog, CatalogError, Connector};
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;

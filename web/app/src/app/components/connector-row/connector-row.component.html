@@ -50,17 +50,19 @@
       }
     </div>
   }
-  @if (row().place; as place) {
-    <glz-menu-select
-      appServiceAction
-      quiet
-      testId="connector-place"
-      [label]="row().placeLabel"
-      [options]="places()"
-      [value]="place"
-      [disabled]="row().busy"
-      (valueChange)="move($event)"
-    />
+  @if (row().menued) {
+    <span appServiceAction class="end">
+      @if (row().where; as where) {
+        <span class="where" data-testid="connector-where">{{ where }}</span>
+      }
+      <glz-menu-button
+        testId="connector-menu"
+        [label]="row().menuLabel"
+        [actions]="row().menu"
+        [disabled]="row().busy"
+        (action)="chose($event)"
+      />
+    </span>
   }
   @if (row().adds) {
     <button

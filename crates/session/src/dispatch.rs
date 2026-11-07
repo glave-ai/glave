@@ -571,13 +571,14 @@ where
                 connector,
                 account,
                 only,
+                another,
             } => {
                 let connector = KeptConnector {
                     id: connector,
                     account,
                     only,
                 };
-                self.connect_connector(caller, connector).await
+                self.connect_connector(caller, connector, another).await
             }
             Request::ConnectorPlace {
                 connector,

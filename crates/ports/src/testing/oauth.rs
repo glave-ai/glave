@@ -22,13 +22,14 @@ use crate::computer::bytes::encode;
 /// The client id the fake registers every client as.
 pub const FAKE_CLIENT: &str = "fake-client";
 
-/// What the fake grants once: a token, the refresh token that renews it, and how many seconds
-/// it lasts.
+/// What the fake grants once: a token, the refresh token that renews it, how many seconds it
+/// lasts, and who it is for, which an OpenID Connect ID token beside it names.
 #[derive(Debug, Clone)]
 pub struct Grant {
     pub token: String,
     pub refresh: Option<String>,
     pub lasts: Option<u64>,
+    pub who: Option<String>,
 }
 
 /// A fake authorization server.
@@ -225,17 +226,31 @@ fn token(asked: &BTreeMap<String, String>, state: &mut State) -> Answer {
     state
         .refreshes
         .extend(grant.refresh.clone().map(|refresh| (refresh, resource)));
-    let granted = json!({"access_token": grant.token, "token_type": "Bearer",
-                         "expires_in": grant.lasts, "refresh_token": grant.refresh});
+    let mut granted = json!({"access_token": grant.token, "token_type": "Bearer",
+                             "expires_in": grant.lasts, "refresh_token": grant.refresh});
+    if let (Some(fields), Some(who)) = (granted.as_object_mut(), grant.who) {
+        fields.insert("id_token".into(), json!(id_token(&who)));
+    }
     Answer::Json(200, granted)
+}
+
+/// An unsigned ID token naming `who`, as a token endpoint hands one back beside its token.
+fn id_token(who: &str) -> String {
+    let part = |value: Value| unpadded(&encode(value.to_string().as_bytes()));
+    let header = part(json!({"alg": "none"}));
+    format!("{header}.{}.", part(json!({"sub": "fake", "name": who})))
+}
+
+/// Base64 `text` as base64url, unpadded.
+fn unpadded(text: &str) -> String {
+    text.trim_end_matches('=')
+        .replace('+', "-")
+        .replace('/', "_")
 }
 
 /// PKCE's S256: the verifier's SHA-256 in base64url, unpadded.
 fn s256(verifier: &str) -> String {
-    encode(&Sha256::digest(verifier.as_bytes()))
-        .trim_end_matches('=')
-        .replace('+', "-")
-        .replace('/', "_")
+    unpadded(&encode(&Sha256::digest(verifier.as_bytes())))
 }
 
 /// The fields of a form or a query, decoded.

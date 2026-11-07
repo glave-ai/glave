@@ -67,17 +67,20 @@ export class ConnectorsService {
    * Connects the account `account` of the connector `id` (none: the one never named), used
    * only in `only`, by default the project the list is for, else everywhere: none once it is
    * connected, as one that asks no one to sign in is at once; else the page where the person
-   * signs in, and the sign-in's flow.
+   * signs in, and the sign-in's flow. `another`, it is a new account of a service connected
+   * already, which unnamed the server names from its sign-in.
    */
   async connect(
     id: string,
     account: string | null = null,
     only: ProjectId | null = this.forProject(),
+    another = false,
   ): Promise<SignInLink | null> {
     const answer = await this.session.call('connector/connect', {
       connector: id,
       ...named(account),
       ...(only === null ? {} : { only }),
+      ...(another ? { another } : {}),
     });
     if ('sign_in' in answer) {
       return answer.sign_in;

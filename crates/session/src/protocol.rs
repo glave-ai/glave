@@ -731,6 +731,11 @@ methods! {
         account: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
+        /// Another account of a service connected already, which with no `account` is named at
+        /// its sign-in: as who it is signed in as, where the service says, else the service's
+        /// name and a number (`Notion 2`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        another: bool,
     } -> [Connector, SignIn],
     /// Uses an account of a connected connector everywhere from now on, or only in `only`, a
     /// project of the caller's or their Chats: threads elsewhere are refused its tools at once.

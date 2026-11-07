@@ -39,7 +39,11 @@ interface Drawn {
 async function drawn(
   connector: ConnectorInfo,
   { waiting, working = false, problem, choosing = true }: Drawn = {},
-): Promise<{ readonly root: HTMLElement; readonly acted: ConnectorAction[] }> {
+): Promise<{
+  readonly root: HTMLElement;
+  readonly acted: ConnectorAction[];
+  readonly menu: () => Promise<readonly HTMLElement[]>;
+}> {
   const fixture = TestBed.createComponent(ConnectorRowComponent);
   fixture.componentRef.setInput('connector', connector);
   fixture.componentRef.setInput('waiting', waiting ?? null);
@@ -56,9 +60,23 @@ async function drawn(
   list.append(root);
   document.body.append(list);
   onTestFinished(() => {
+    document.body.click();
     list.remove();
   });
-  return { root, acted };
+  // Opens its one account's menu: its items.
+  const menu = async (): Promise<readonly HTMLElement[]> => {
+    // A task after it is drawn, as a person's press always is.
+    await new Promise((resolve) => setTimeout(resolve));
+    press(root, 'connector-menu-trigger');
+    await fixture.whenStable();
+    return [...document.querySelectorAll<HTMLElement>('[data-testid="connector-menu-action"]')];
+  };
+  return { root, acted, menu };
+}
+
+/** Picks what says `text` of `items`. */
+function pick(items: readonly HTMLElement[], text: string): void {
+  items.find((item) => item.textContent.trim() === text)?.click();
 }
 
 /** The row's tile, name, line and button's word. */
@@ -81,13 +99,52 @@ describe('ConnectorRowComponent', () => {
     await expectAccessible(available.root);
 
     const connected = await drawn({ ...NOTION, status: 'connected' }, { choosing: false });
-    expect(line(connected.root)).toBe('N Notion Connected Disconnect');
+    expect(line(connected.root)).toBe('N Notion Connected');
     expect(connected.root.querySelector('.dot')).not.toBeNull();
-    press(connected.root, 'connector-action');
-    press(connected.root, 'connector-add-account');
+    expect(connected.root.querySelector('[data-testid="connector-action"]')).toBeNull();
+    pick(await connected.menu(), 'Disconnect');
+    pick(await connected.menu(), 'Add another Notion account');
     expect(connected.acted).toEqual([
       { kind: 'disconnect', account: null, called: 'Notion' },
       { kind: 'add' },
+    ]);
+  });
+
+  it('gives a lone account a menu: where it is used, naming it, another, and disconnecting', async () => {
+    const accounts = [
+      {
+        status: 'connected',
+        used: 'Everywhere, including chats',
+        who: 'Glave Inc.',
+        signed_in: 'Signed in as Glave Inc.',
+      },
+    ] as const;
+    const { root, acted, menu } = await drawn({ ...NOTION, status: 'connected', accounts });
+    expect(line(root)).toBe('N Notion Signed in as Glave Inc.');
+    expect(root.querySelector('[data-testid="connector-where"]')?.textContent).toBe(
+      'Everywhere, including chats',
+    );
+    const trigger = root.querySelector('[data-testid="connector-menu-trigger"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('Options for Notion');
+    await expectAccessible(root);
+    const items = await menu();
+    expect(items.map((item) => item.textContent.trim())).toEqual([
+      'Only in Acme Site',
+      'Name this account',
+      'Add another Notion account',
+      'Disconnect',
+    ]);
+    pick(items, 'Only in Acme Site');
+    pick(await menu(), 'Name this account');
+    expect(acted).toEqual([
+      { kind: 'place', account: null, only: 'p1' },
+      {
+        kind: 'rename',
+        account: null,
+        called: 'Glave Inc.',
+        heading: 'Name this Notion account',
+        note: 'Filled in from your Notion sign-in. Shown when you add a second Notion account.',
+      },
     ]);
   });
 
@@ -103,12 +160,11 @@ describe('ConnectorRowComponent', () => {
   it('offers no choice of place to a person with only their Chats', async () => {
     const accounts = [{ status: 'connected', used: 'Everywhere, including chats' }] as const;
     const one = { ...NOTION, status: 'connected', accounts } as const;
-    const { root } = await drawn(one, { choosing: false });
-    expect(line(root)).toBe('N Notion Everywhere, including chats Disconnect');
-    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
-    const chooses = await drawn(one);
-    const place = chooses.root.querySelector('[data-testid="connector-place-trigger"]');
-    expect(place?.textContent).toContain('Where Notion is used');
+    const { root, menu } = await drawn(one, { choosing: false });
+    expect(line(root)).toBe('N Notion Everywhere, including chats');
+    expect(root.querySelector('[data-testid="connector-where"]')).toBeNull();
+    const items = (await menu()).map((item) => item.textContent.trim());
+    expect(items).toEqual(['Name this account', 'Add another Notion account', 'Disconnect']);
   });
 
   it('shows the sign-in as a link where no tab opened, and stops it', async () => {
@@ -155,8 +211,9 @@ describe('ConnectorRowComponent', () => {
     expect(line(root)).toBe('N Notion 2 accounts');
     expect(root.querySelector('.dot')).not.toBeNull();
     expect(root.querySelectorAll('[data-testid="connector-account"]')).toHaveLength(2);
-    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connector-menu-trigger"]')).toBeNull();
     expect(root.querySelector('[data-testid="connector-action"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connector-add-account"]')).not.toBeNull();
     await expectAccessible(root);
   });
 
@@ -166,11 +223,45 @@ describe('ConnectorRowComponent', () => {
     ] as const;
     const replaced = 'Your Notion account used everywhere else is not used here.';
     const { root } = await drawn({ ...NOTION, status: 'connected', accounts, replaced });
-    expect(line(root)).toBe('N Notion: Acme Only in Acme Site Disconnect');
+    expect(line(root)).toBe('N Notion: Acme Only in Acme Site');
     expect(root.querySelector('[data-testid="connector-note"]')?.textContent.trim()).toBe(replaced);
     expect(root.querySelector('[data-testid="connector-accounts"]')).toBeNull();
     await expectAccessible(root);
+    // Its name shows only beside another account.
     const plain = await drawn({ ...NOTION, status: 'connected', accounts });
+    expect(line(plain.root)).toBe('N Notion Only in Acme Site');
     expect(plain.root.querySelector('[data-testid="connector-note"]')).toBeNull();
+  });
+
+  it("starts naming one from who it is signed in as, within a name's length", async () => {
+    const who = 'An Organization Whose Name Runs Well Past Forty Letters';
+    const accounts = [
+      { status: 'connected', used: 'Everywhere, including chats', who, signed_in: who },
+    ] as const;
+    const { acted, menu } = await drawn({ ...NOTION, status: 'connected', accounts });
+    pick(await menu(), 'Name this account');
+    const [renaming] = acted;
+    const called = renaming?.kind === 'rename' ? renaming.called : '';
+    expect(called).toBe(who.slice(0, 40).trim());
+    expect(called.length).toBeLessThanOrEqual(40);
+  });
+
+  it('goes by who for an account the person left unnamed, its name still addressing it', async () => {
+    const accounts = [
+      { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+      {
+        name: 'Notion 2',
+        status: 'connected',
+        only: 'p1',
+        used: 'Only in Acme Site',
+        who: 'Acme Corp',
+        signed_in: 'Signed in as Acme Corp',
+        label: 'Acme Corp',
+      },
+    ] as const;
+    const { root } = await drawn({ ...NOTION, status: 'connected', accounts });
+    const names = [...root.querySelectorAll('[data-testid="connector-account-name"]')];
+    expect(names.map((it) => it.textContent.trim())).toEqual(['Glave', 'Acme Corp']);
+    expect(root.textContent).not.toContain('Notion 2');
   });
 });

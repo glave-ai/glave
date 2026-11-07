@@ -41,10 +41,12 @@ impl Tokens {
         self.tokens
             .iter()
             .zip(&self.refreshes)
-            .map(|(token, refresh)| Grant {
+            .zip([Some("Acme Corp".to_owned()), None])
+            .map(|((token, refresh), who)| Grant {
                 token: token.clone(),
                 refresh: Some(refresh.clone()),
                 lasts: Some(3600),
+                who,
             })
             .collect()
     }
@@ -196,6 +198,9 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
         assert_eq!(field(&back, "state"), signin.state());
         let granted = signin.finish(&field(&back, "code"), None).await.unwrap();
         assert_eq!(granted.token.expose(), one.as_str());
+        // Who it is for, as the ID token beside it says, never in its `Debug`.
+        assert_eq!(granted.who.as_deref(), Some("Acme Corp"));
+        assert!(!format!("{granted:?}").contains("Acme"));
         let refresh = granted.refresh.as_ref().unwrap();
         assert_eq!(refresh.expose(), first_refresh.as_str());
         assert_eq!(granted.lasts, Some(Duration::from_secs(3600)));

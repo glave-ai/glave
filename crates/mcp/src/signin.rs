@@ -8,6 +8,7 @@
 //! does not sign anyone in this way.
 
 mod http;
+mod who;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,15 +62,29 @@ impl SignInError {
     }
 }
 
-/// What the authorization server granted: a token, how long it lasts, what renews it, and
-/// how it was signed in. Its `Debug` shows neither token.
-#[derive(Debug)]
+/// What the authorization server granted: a token, how long it lasts, what renews it, how it
+/// was signed in, and who as, where it said. Its `Debug` shows neither token, nor who.
 pub struct Granted {
     pub token: Secret,
     /// How long the token lasts from now, when the server said.
     pub lasts: Option<Duration>,
     pub refresh: Option<Secret>,
     pub client: SignInClient,
+    /// Who the person signed in as, in the service's words, where it said: `Acme Corp`. Theirs
+    /// alone to see, and never logged.
+    pub who: Option<String>,
+}
+
+impl std::fmt::Debug for Granted {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Granted")
+            .field("token", &self.token)
+            .field("lasts", &self.lasts)
+            .field("refresh", &self.refresh)
+            .field("client", &self.client)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A sign-in waiting for the person to authorize glave in their browser.
@@ -306,6 +321,7 @@ fn granted(
         lasts,
         refresh: text("refresh_token"),
         client,
+        who: who::signed_in_as(&fields),
     })
 }
 

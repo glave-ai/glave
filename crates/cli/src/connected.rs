@@ -23,10 +23,10 @@ use glave_event::{ConnectionConnected, PrincipalId};
 use glave_mcp::{Reachable, address};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
-use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, SignInLink, code,
+use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
+use glave_session::{
+    Accounts, Connecting, Connections, KeptConnector, OfferedAccount, Returned, Searching,
 };
-use glave_session::{Accounts, Connecting, Connections, KeptConnector, Returned, Searching};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -374,16 +374,17 @@ impl Connections for Connected {
         Box::pin(self.searching_set(on))
     }
 
-    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<OfferedAccount>, ApiError>> {
         Box::pin(self.listed_connectors())
     }
 
     fn connect(
         &self,
         connector: KeptConnector,
+        another: bool,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
-        Box::pin(self.connecting(connector, redirect))
+        Box::pin(self.connecting(connector, another, redirect))
     }
 
     fn place(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {

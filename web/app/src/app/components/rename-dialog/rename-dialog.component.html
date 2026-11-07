@@ -1,7 +1,7 @@
 <!-- Made as it opens and gone when it closes, as the add dialog beside it on Connections is. -->
 @if (open()) {
-  <glz-dialog testId="rename" [heading]="naming().heading" [(open)]="open">
-    <form (submit)="save($event)">
+  <glz-dialog testId="rename" [heading]="headed()" [(open)]="open">
+    <form class="glz-stack glz-gap-3" (submit)="save($event)">
       <glz-form-field [label]="naming().label" [hint]="hint()">
         <input
           glzInput
@@ -11,6 +11,9 @@
           (input)="typed($event)"
         />
       </glz-form-field>
+      @if (note(); as note) {
+        <p class="note" data-testid="rename-note">{{ note }}</p>
+      }
     </form>
     <div glzDialogActions class="glz-row glz-gap-2">
       <button glzButton data-testid="rename-cancel" (click)="cancel()">{{ copy.cancel }}</button>

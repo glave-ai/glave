@@ -1,3 +1,9 @@
 :host {
   display: contents;
 }
+
+// A note of the page's own under the field, such as where a name came from.
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
