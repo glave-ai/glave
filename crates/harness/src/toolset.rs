@@ -7,7 +7,7 @@
 
 mod connectors;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::Arc;
 
@@ -36,22 +36,6 @@ const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remem
 /// The most of why a source could not list its tools that a turn records, on one line: a remote
 /// server's own words may be part of it.
 const WHY_CHARS: usize = 500;
-
-/// What the system prompt says of a source that could not list its tools, around its name.
-const GONE: (&str, &str) = (
-    "\n\nThe tool server ",
-    " is not available, so its tools are missing from this thread.",
-);
-
-/// The connectors whose servers `system`, a thread's prefix, says are not available: those
-/// whose tools it went without.
-pub(crate) fn gone_from(system: &str) -> BTreeSet<String> {
-    let (open, close) = GONE;
-    (system.split(open).skip(1))
-        .filter_map(|after| after.split_once(close))
-        .map(|(quoted, _)| glave_ports::name_part(quoted.trim_matches('"')))
-        .collect()
-}
 
 /// Memory's tools, by name, which the harness runs itself (`memory/call.rs`).
 const MEMORY: [&str; 4] = [REMEMBER, EDIT_MEMORY, FORGET, RECALL];
@@ -185,10 +169,10 @@ impl ToolSet {
     /// never why, which may be a remote server's own words, so that it says so and does not
     /// claim there is no such tool. Before any note that must stay last (`MEMORY_RULE`).
     pub(crate) fn goes_without(&mut self, err: ToolError) {
-        let (open, close) = GONE;
         self.system = format!(
-            "{}{open}{:?}{close} If the person asks for something that needs them, tell them it \
-             is not available, rather than that you have no such tool.",
+            "{}\n\nThe tool server {:?} is not available, so its tools are missing from this thread. \
+             If the person asks for something that needs them, tell them it is not available, \
+             rather than that you have no such tool.",
             self.system, err.source_name
         );
         self.missing.push(ToolError {
@@ -381,13 +365,6 @@ impl ToolSet {
     /// Whether `connector` is one of the person's connections not used where the thread works.
     fn is_away(&self, connector: &str) -> bool {
         self.away.iter().any(|it| it == connector)
-    }
-
-    /// The connectors of the sources that could not list their tools, as their tools are named.
-    pub(crate) fn gone(&self) -> BTreeSet<String> {
-        (self.missing.iter())
-            .map(|err| glave_ports::name_part(&err.source_name))
-            .collect()
     }
 
     pub(crate) fn names(&self) -> Vec<&str> {

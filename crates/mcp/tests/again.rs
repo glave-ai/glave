@@ -5,10 +5,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use glave_harness::Cancel;
 use glave_mcp::{Limits, McpServer};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::{ManualClock, TempDir};
-use glave_ports::{Clock, ToolSource as _, block_on};
+use glave_ports::{Clock, InMemoryBlobs, ModelRequest, ToolSource, block_on};
+
+use crate::history::{harness_for, scope, step};
 
 const SERVER: &str = env!("CARGO_BIN_EXE_glave-mcp-test-server");
 
@@ -91,5 +94,65 @@ fn nothing_waits_for_a_server_starting_again_and_closing_it_stops_it() {
         clock.advance_seconds(3_600);
         server.tools().await.unwrap_err();
         assert!(!server.starting());
+    });
+}
+
+/// What a request opens with, as the provider's prompt cache reads it.
+fn prefix(request: &ModelRequest) -> (String, Vec<u8>) {
+    let tools = serde_json::to_vec(&request.tools).unwrap();
+    (request.system.clone(), tools)
+}
+
+/// A server of the person's own on this computer that comes back mid-thread comes as a
+/// connection turned on does (`specs/invariants.md`, 27): the prefix is made again once, with
+/// its tools, and kept from then on.
+#[test]
+fn a_local_server_back_mid_thread_makes_the_prefix_again_once() {
+    block_on!(async {
+        let dir = TempDir::new("mcp-again-thread").unwrap();
+        let program = dir.path().join("server");
+        let clock = Arc::new(ManualClock::at_second(1_000));
+        let server = Arc::new(launch(&program, &[], &clock));
+        let source = Arc::clone(&server) as Arc<dyn ToolSource>;
+        let answers = (0..4).map(|_| step(None)).collect();
+        let (harness, seen) =
+            harness_for(dir.path(), InMemoryBlobs::new(), answers, vec![source]).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let mut turn = async |said: &str| {
+            let (cancel, mut heard) = (Cancel::new(), |_| {});
+            let ran = harness.run_turn(&mut thread, said, &cancel, &mut heard);
+            ran.await.unwrap();
+        };
+        turn("hello").await;
+        std::os::unix::fs::symlink(SERVER, &program).unwrap();
+        clock.advance_seconds(10);
+        // This turn starts it again and goes on without it.
+        turn("and now?").await;
+        server.started().await.unwrap();
+        turn("now?").await;
+        turn("still?").await;
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(requests.len(), 4);
+        assert!(
+            prefix(&requests[1]) == prefix(&requests[0]),
+            "it was not back yet"
+        );
+        assert!(
+            prefix(&requests[2]) != prefix(&requests[0]),
+            "made again once it was back"
+        );
+        assert!(
+            prefix(&requests[3]) == prefix(&requests[2]),
+            "and only once"
+        );
+        let echo = |at: usize| {
+            requests[at]
+                .tools
+                .iter()
+                .any(|tool| tool.name == "mcp__later__echo")
+        };
+        assert!(!echo(1) && echo(2), "its tools came with it");
+        drop(harness);
+        server.close().await;
     });
 }

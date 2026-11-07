@@ -162,7 +162,6 @@ where
             memory: self.memory_for(thread).is_some(),
             tools: Told::services(&set.specs),
             connected: set.connected_names(),
-            gone: set.gone(),
         };
         (set, told)
     }

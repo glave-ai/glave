@@ -386,10 +386,8 @@ impl ToolSource for Down {
     }
 }
 
-/// A server that answers again is no connection turned on (#1199): the thread keeps its
-/// prefix, read again from the log too, and is told once; its tools come in a new thread.
 #[test]
-fn a_connection_down_at_the_first_call_comes_back_in_a_new_thread_on_the_prefix_it_had() {
+fn a_connection_down_at_the_first_call_works_once_it_answers_on_a_prefix_made_once_more() {
     let dir = folder("tool-search-back");
     block_on!(async {
         let jira = Arc::new(Down {
@@ -397,12 +395,7 @@ fn a_connection_down_at_the_first_call_comes_back_in_a_new_thread_on_the_prefix_
             tools: connection("jira", 2),
         });
         let own = || vec![Arc::clone(&jira) as Arc<dyn ToolSource>];
-        let answers = vec![
-            done("Jira is down."),
-            done("Jira is back, in a new thread."),
-            done("Still."),
-            done("Here it is."),
-        ];
+        let answers = vec![done("Jira is down."), done("Jira is back."), done("Still.")];
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
         harness.set_own_tools(OwnTools::everywhere(own()));
@@ -410,26 +403,11 @@ fn a_connection_down_at_the_first_call_comes_back_in_a_new_thread_on_the_prefix_
         turn(&harness, &mut thread, "jira?").await;
         jira.down.store(false, Ordering::SeqCst);
         turn(&harness, &mut thread, "jira now?").await;
-        // As after a restart, or a thread let go of while idle.
-        let mut again = harness.resume_thread(scope(), thread.id).await.unwrap();
-        turn(&harness, &mut again, "and now?").await;
-        let mut fresh = harness.start_thread(scope()).await.unwrap();
-        turn(&harness, &mut fresh, "jira?").await;
+        turn(&harness, &mut thread, "and now?").await;
         let requests = seen.lock().unwrap().clone();
         assert!(!names(&requests[0]).contains(&"mcp__jira__tool_0"));
-        for (at, request) in requests[..3].iter().enumerate() {
-            assert!(
-                prefix(request) == prefix(&requests[0]),
-                "call {at} as the first"
-            );
-        }
-        let news = last_said(&requests[1]);
-        assert!(news.contains("answer again: `jira`"), "{news}");
-        assert!(news.contains("in a new thread"), "{news}");
-        assert!(!news.contains("mcp__jira__tool_0"), "{news}");
-        // Read again from the log, the thread knows only what its prefix says: told again.
-        assert!(last_said(&requests[2]).contains("answer again: `jira`"));
-        assert!(names(&requests[3]).contains(&"mcp__jira__tool_0"));
-        assert!(!requests[3].system.contains("is not available"));
+        assert!(names(&requests[1]).contains(&"mcp__jira__tool_0"));
+        assert!(prefix(&requests[2]) == prefix(&requests[1]), "made once");
+        assert!(last_said(&requests[1]).contains("`mcp__jira__tool_0`, `mcp__jira__tool_1`"));
     });
 }

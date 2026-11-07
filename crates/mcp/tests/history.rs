@@ -31,13 +31,13 @@ const KINDS: [&str; 6] = [
     "flood",
 ];
 
-fn scope() -> Scope {
+pub(crate) fn scope() -> Scope {
     let id = |n: u128| uuid::Uuid::from_u128(n);
     Scope::glaves_own(OrgId::from_uuid(id(1)), ProjectId::from_uuid(id(2)))
 }
 
 /// The model's answer: a call of the server's `blocks` for `what`, or, with none, done.
-fn step(what: Option<&str>) -> Completion {
+pub(crate) fn step(what: Option<&str>) -> Completion {
     let counts = TokenCounts {
         input: 100,
         cache_read: 0,
@@ -86,24 +86,8 @@ async fn run_turn<B: BlobStore>(
     Thread,
     Seen,
 ) {
-    let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
-        .await
-        .unwrap();
     let mut answers: Vec<Completion> = KINDS.iter().map(|kind| step(Some(kind))).collect();
     answers.push(step(None));
-    let provider = ScriptedModel::new(answers);
-    let seen = provider.seen();
-    let mut settings = Settings::new("test-model", "script");
-    settings.permissions = Permissions::FullAccess;
-    let parts = Parts {
-        provider,
-        log: InMemoryLog::new(),
-        blobs,
-        approver: AllowAll,
-        clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
-        entropy: Box::new(CountingEntropy::starting_at(1)),
-        workspace: Workspace::new(computers, info),
-    };
     let config = ServerConfig::Stdio {
         command: SERVER.to_owned(),
         args: Vec::new(),
@@ -119,13 +103,39 @@ async fn run_turn<B: BlobStore>(
     );
     server.started().await.unwrap();
     let server: Arc<dyn ToolSource> = Arc::new(server);
-    let harness = Harness::new(parts, settings).with_tools(vec![server]);
+    let (harness, seen) = harness_for(dir, blobs, answers, vec![server]).await;
     let mut thread = harness.start_thread(scope()).await.unwrap();
     harness
         .run_turn(&mut thread, "fetch them all", &Cancel::new(), &mut |_| {})
         .await
         .unwrap();
     (harness, thread, seen)
+}
+
+/// A harness on this machine in full access, its model answering `answers`, with `tools`.
+pub(crate) async fn harness_for<B: BlobStore>(
+    dir: &Path,
+    blobs: B,
+    answers: Vec<Completion>,
+    tools: Vec<Arc<dyn ToolSource>>,
+) -> (Harness<ScriptedModel, InMemoryLog, B, AllowAll>, Seen) {
+    let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
+        .await
+        .unwrap();
+    let provider = ScriptedModel::new(answers);
+    let seen = provider.seen();
+    let mut settings = Settings::new("test-model", "script");
+    settings.permissions = Permissions::FullAccess;
+    let parts = Parts {
+        provider,
+        log: InMemoryLog::new(),
+        blobs,
+        approver: AllowAll,
+        clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+        entropy: Box::new(CountingEntropy::starting_at(1)),
+        workspace: Workspace::new(computers, info),
+    };
+    (Harness::new(parts, settings).with_tools(tools), seen)
 }
 
 /// The longest stretch of base64's letters in `text`, by the plainest reading there is: lines

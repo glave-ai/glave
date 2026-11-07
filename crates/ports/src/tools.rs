@@ -258,20 +258,6 @@ pub trait ToolSource: Send + Sync {
     }
 }
 
-/// A part of a tool's name as the model sees it, a server's or its tool's, as
-/// `mcp__<server>__<tool>` names them: anything outside `A-Za-z0-9_-` becomes `_`.
-pub fn name_part(part: &str) -> String {
-    part.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 /// How much of a call's arguments its description shows.
 const DESCRIBED: usize = 120;
 
