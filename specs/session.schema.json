@@ -5170,7 +5170,7 @@
       "params": {
         "properties": {
           "account": {
-            "default": null,
+            "description": "The person's name for the account: `Acme`.",
             "type": [
               "string",
               "null"
@@ -5229,7 +5229,6 @@
       "params": {
         "properties": {
           "account": {
-            "default": null,
             "type": [
               "string",
               "null"
@@ -5337,7 +5336,6 @@
       "params": {
         "properties": {
           "account": {
-            "default": null,
             "type": [
               "string",
               "null"
@@ -5354,8 +5352,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
