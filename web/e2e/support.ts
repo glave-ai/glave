@@ -497,8 +497,12 @@ const NOT_SIGNED_IN = /^Failed to load resource: the server responded with a sta
 export function watchForProblems(page: Page): Problems {
   const problems: string[] = [];
   const webkit = page.context().browser()?.browserType().name() === 'webkit';
-  // What WebKit says of a fetch of the session API it refuses while the page is left.
-  let refused: string | null = null;
+  // What WebKit says of a fetch of the session API it refuses as the page is left, at each origin
+  // the page has been left from. Playwright hands over the page's errors and its navigations on
+  // channels of their own, in no promised order: a refusal can come before the leaving's request
+  // or after the next page has loaded (#208). So it is weighed as `problems()` is read, once the
+  // leaving has been heard, never by when it came.
+  const leftFrom = new Set<string>();
   // Where a sign-out has got to, what the page sent once it had, and the 401s of calls before.
   let signOut: 'not begun' | 'running' | 'over' = 'not begun';
   const sentSince = new WeakSet<Request>();
@@ -508,13 +512,16 @@ export function watchForProblems(page: Page): Problems {
       sentSince.add(request);
     }
     // However the page is left (a reload, a link, `leave`), WebKit refuses the calls of the
-    // session API still in flight, saying so as an error, until the next page has loaded.
-    if (webkit && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-      refused = refusal(request.url());
+    // session API it starts as it goes, saying so as an error. A first load leaves no page.
+    if (
+      webkit &&
+      request.isNavigationRequest() &&
+      request.frame() === page.mainFrame() &&
+      page.url() !== 'about:blank'
+    ) {
+      leftFrom.add(refusal(page.url()));
+      leftFrom.add(refusal(request.url()));
     }
-  });
-  page.on('domcontentloaded', () => {
-    refused = null;
   });
   page.on('response', (response) => {
     if (
@@ -531,10 +538,7 @@ export function watchForProblems(page: Page): Problems {
     }
   });
   page.on('pageerror', (error) => {
-    const said = whole(error);
-    if (said !== refused) {
-      problems.push(said);
-    }
+    problems.push(whole(error));
   });
   const signingOut = async (run: () => Promise<void>): Promise<void> => {
     signOut = 'running';
@@ -543,7 +547,9 @@ export function watchForProblems(page: Page): Problems {
   };
   const unexcused = (): readonly string[] => {
     let left = excused;
-    return problems.filter((problem) => !(NOT_SIGNED_IN.test(problem) && left-- > 0));
+    return problems.filter(
+      (problem) => !leftFrom.has(problem) && !(NOT_SIGNED_IN.test(problem) && left-- > 0),
+    );
   };
   return Object.assign(unexcused, { signingOut });
 }
