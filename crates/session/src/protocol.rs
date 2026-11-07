@@ -725,32 +725,25 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         used_in: Option<ProjectId>,
     } -> [Connectors],
-    /// Connects an account of a connector: at once, or the sign-in page, then
-    /// `connection/poll`. Its threads use it everywhere, or only in `only`, a project of the
-    /// caller's or their Chats. An `account` the service has already is connected again; a
-    /// second account takes a name of its own, and a place no other account of it is used in.
+    /// Connects `account` of a connector, everywhere or only in `only` (a project or Chats): at
+    /// once, or the sign-in page, then `connection/poll`. A second needs a name and a place.
     "connector/connect" => ConnectorConnect {
         connector: String,
-        /// The person's name for the account: `Acme`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        account: Option<String>,
+        #[serde(default)] account: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector, SignIn],
-    /// Uses an account of a connected connector everywhere from now on, or only in `only`, a
-    /// project of the caller's or their Chats: threads elsewhere are refused its tools at once.
+    /// Uses an account of a connector everywhere, or only in `only`: elsewhere, refused at once.
     "connector/place" => ConnectorPlace {
         connector: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        account: Option<String>,
+        #[serde(default)] account: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector],
     /// Disconnects an account of a connector, destroying its sign-in.
     "connector/disconnect" => ConnectorDisconnect {
         connector: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        account: Option<String>,
+        #[serde(default)] account: Option<String>,
     } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {

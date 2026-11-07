@@ -1703,7 +1703,6 @@ export type ConnectionStartResult = {
 };
 
 export type ConnectorConnectParams = {
-  /** The person's name for the account: `Acme`. */
   readonly account?: string | null;
   readonly connector: string;
   readonly only?: ProjectId | null;
