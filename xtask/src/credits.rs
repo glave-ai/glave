@@ -115,16 +115,9 @@ pub(crate) fn check() -> Result<(), String> {
     Ok(())
 }
 
-/// What `git log` prints of the commits since `base`. CI's checkout holds one commit, which
-/// hides the ones before it, so a shallow clone fetches its history first.
+/// What `git log` prints of the commits since `base`, which [`base::find`] made sure this
+/// clone holds.
 fn log_since(base: &Base) -> Result<String, String> {
-    let shallow = cmd::query("git", &["rev-parse", "--is-shallow-repository"])?;
-    if shallow.trim() == "true" {
-        let head = cmd::query("git", &["rev-parse", "HEAD"])?;
-        let fetch = ["fetch", "--quiet", "--no-tags", "--unshallow", "origin"];
-        cmd::query("git", &[fetch.as_slice(), &[head.trim()]].concat())
-            .map_err(|err| format!("could not fetch this commit's history to check it: {err}"))?;
-    }
     let range = format!("{}..HEAD", base.commit());
     cmd::query("git", &["log", FORMAT, &range])
 }
