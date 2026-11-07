@@ -1,5 +1,5 @@
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
@@ -205,6 +205,13 @@ describe('ProjectsNavComponent', () => {
     expect(fake.paramsOf('project/rename')).toEqual([{ project: 'p1', name: 'glave app' }]);
     expect(texts(rendered.root, 'nav-project-toggle')).toContain('glave app');
     expect(rendered.root.querySelector('[data-testid="nav-error"]')).toBeNull();
+  });
+
+  it("opens what a project's threads connect to from its ⋯", async () => {
+    const rendered = await render();
+    const router = TestBed.inject(Router);
+    await pick(rendered, 'nav-project-more', 'action', 'Connections');
+    expect(router.url).toBe('/settings/connections?project=p1');
   });
 
   it('says why a rename failed', async () => {

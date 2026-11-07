@@ -455,7 +455,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'nav-project-toggle')).toHaveAccessibleDescription('needs you');
     await byTestId(page, 'nav-project-toggle').hover();
     await byTestId(page, 'nav-project-more-trigger').click();
-    await expect(byTestId(page, 'nav-project-more-action')).toHaveText(['Rename']);
+    await expect(byTestId(page, 'nav-project-more-action')).toHaveText(['Rename', 'Connections']);
     await expectAccessible(page);
   });
 }

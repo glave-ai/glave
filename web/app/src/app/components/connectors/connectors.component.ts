@@ -8,20 +8,26 @@ import {
   Injector,
   afterNextRender,
   computed,
+  effect,
   inject,
+  input,
   signal,
+  untracked,
 } from '@angular/core';
-import type { ConnectorInfo } from '@glave/client';
+import type { ConnectorInfo, ProjectId } from '@glave/client';
 import {
   type GlzButtonVariant,
   GlzButtonComponent,
   GlzConfirmDialogComponent,
   GlzIconComponent,
+  type GlzMenuOption,
+  GlzMenuSelectComponent,
 } from '@glave/glaze';
 import { ExternalLink, LoaderCircle, Search } from 'lucide';
 
 import { connectionProblem, openedTab, sentTo } from '../../lib/connections';
 import { ConnectorsService } from '../../services/connectors.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ServiceRowComponent } from '../service-row/service-row.component';
 
 /** A sign-in waiting for the person in the browser. */
@@ -57,7 +63,14 @@ interface Row {
   readonly variant: GlzButtonVariant;
   /** Disconnect's name for screen readers, for a row to sign in to again. */
   readonly disconnectLabel: string;
+  /** Connected, where it is used: `everywhere`, or the project its threads alone use. */
+  readonly place: string | null;
+  /** The choice of where it is used, as screen readers name it. */
+  readonly placeLabel: string;
 }
+
+/** The choice of where a connector is used that stands for every place. */
+const EVERYWHERE = 'everywhere';
 
 /** A card of the page: its heading, and its connectors. */
 interface Section {
@@ -84,14 +97,22 @@ function setTo<T>(
 
 /**
  * glave's connectors, on the Connections page: a search over them, those connected first, each
- * with Disconnect, which asks first; then the rest by category, each with Connect, which
+ * with where it is used, everywhere or only in one project or Chats, which the person changes
+ * there, and Disconnect, which asks first; for a `project`, only those its threads use, and one
+ * connected here is used only there; then the rest by category, each with Connect, which
  * connects one that asks no one to sign in at once, and otherwise opens its sign-in in a new tab
  * and waits until the server says it is done. Names, descriptions and categories are the
  * server's; the page writes only its own labels for a connector's status.
  */
 @Component({
   selector: 'app-connectors',
-  imports: [ServiceRowComponent, GlzButtonComponent, GlzConfirmDialogComponent, GlzIconComponent],
+  imports: [
+    ServiceRowComponent,
+    GlzButtonComponent,
+    GlzConfirmDialogComponent,
+    GlzIconComponent,
+    GlzMenuSelectComponent,
+  ],
   templateUrl: './connectors.component.html',
   styleUrl: './connectors.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -114,9 +135,16 @@ export class ConnectorsComponent {
     newTab: $localize`:@@connectors.newTab:in a new tab`,
     disconnectText: $localize`:@@connectors.disconnectText:glave stops using it for you and forgets any sign-in to it. You can connect it again at any time.`,
     noMatch: $localize`:@@connectors.noMatch:No app matches that search.`,
+    everywhere: $localize`:@@connectors.everywhere:Everywhere, including chats`,
+    change: $localize`:@@connectors.change:Change`,
+    thisProject: $localize`:@@connectors.thisProject:this project`,
+    elsewhere: $localize`:@@connectors.elsewhere:Connected elsewhere`,
   } as const;
+  /** The project the page is for, whose threads alone use what is connected from it. */
+  readonly project = input<ProjectId | null>(null);
   protected readonly icons = { waiting: LoaderCircle, search: Search, open: ExternalLink } as const;
   private readonly service = inject(ConnectorsService);
+  private readonly projects = inject(ProjectsService);
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -135,6 +163,33 @@ export class ConnectorsComponent {
   private readonly disconnecting = signal<Row | null>(null);
   protected readonly confirming = signal(false);
 
+  /** Where a connector can be used: everywhere, or only in one of the person's places. */
+  // The button shows only "Change": the row's line says where it is used, in the server's words.
+  protected readonly places = computed((): readonly GlzMenuOption[] => [
+    { value: EVERYWHERE, label: this.copy.everywhere, short: this.copy.change },
+    ...this.projects.projects().map(({ project }) => ({
+      value: project.id,
+      label: $localize`:@@connectors.onlyIn:Only in ${project.name}:PLACE:`,
+      short: this.copy.change,
+    })),
+  ]);
+  /** Whether there is somewhere to choose: with only their Chats, a person sees no places. */
+  private readonly choosing = computed(() =>
+    this.projects.projects().some(({ project }) => project.kind === 'project'),
+  );
+  /** The name of the project the page is for, once it is known. */
+  private readonly projectName = computed(() => {
+    const id = this.project();
+    const found = this.projects.projects().find((it) => it.project.id === id);
+    return found?.project.name ?? this.copy.thisProject;
+  });
+  /** For a project, where what is connected from here is used. */
+  protected readonly here = computed(() => {
+    const name = this.projectName();
+    return this.project() === null
+      ? null
+      : $localize`:@@connectors.here:Apps you connect here are used only in ${name}:PROJECT:.`;
+  });
   /** Whether the server lists any connector here. */
   protected readonly offered = computed(() => (this.service.catalog()?.connectors.length ?? 0) > 0);
   /** Why the list failed, once it had listed some: a refusal before is the page's to say. */
@@ -146,18 +201,29 @@ export class ConnectorsComponent {
       return [];
     }
     const query = this.query().trim().toLocaleLowerCase();
-    const found = catalog.connectors.filter(
-      (it) =>
-        query === '' ||
-        it.name.toLocaleLowerCase().includes(query) ||
-        it.description.toLocaleLowerCase().includes(query),
-    );
+    const matches = (it: ConnectorInfo): boolean =>
+      query === '' ||
+      it.name.toLocaleLowerCase().includes(query) ||
+      it.description.toLocaleLowerCase().includes(query);
+    const found = catalog.connectors.filter(matches);
+    const mine = catalog.connectors.filter((it) => it.status !== 'available');
+    const here = catalog.here ?? mine;
     const sections: Section[] = [
       {
         id: 'connectors-connected-heading',
         testId: 'connectors-connected',
-        heading: this.copy.connected,
-        rows: found.filter((it) => it.status !== 'available').map((it) => this.row(it)),
+        heading: this.connectedHeading(),
+        rows: here.filter(matches).map((it) => this.row(it)),
+      },
+      // For a project, those connected but used elsewhere, which its menu can bring here.
+      {
+        id: 'connectors-elsewhere-heading',
+        testId: 'connectors-elsewhere',
+        heading: this.copy.elsewhere,
+        rows: mine
+          .filter((it) => catalog.here !== null && !here.some((kept) => kept.id === it.id))
+          .filter(matches)
+          .map((it) => this.row(it)),
       },
     ];
     for (const category of catalog.categories) {
@@ -182,7 +248,10 @@ export class ConnectorsComponent {
   });
 
   constructor() {
-    void this.service.load();
+    effect(() => {
+      const project = this.project();
+      untracked(() => void this.service.load(project));
+    });
     inject(DestroyRef).onDestroy(() => {
       for (const stop of this.stops.values()) {
         stop.abort();
@@ -194,6 +263,15 @@ export class ConnectorsComponent {
     if (event.target instanceof HTMLInputElement) {
       this.query.set(event.target.value);
     }
+  }
+
+  /** Uses `row`'s connector where `place` says from now on: everywhere, or one project. */
+  protected move(row: Row, place: string | null): void {
+    if (place === null || place === row.place) {
+      return;
+    }
+    const only = place === EVERYWHERE ? null : place;
+    void this.busyWith(row.id, () => this.service.place(row.id, only));
   }
 
   /** What the row's button does: disconnects, stops waiting, or connects. */
@@ -314,6 +392,14 @@ export class ConnectorsComponent {
     );
   }
 
+  /** The connected card's heading: for a project, what its threads use. */
+  private connectedHeading(): string {
+    const name = this.projectName();
+    return this.project() === null
+      ? this.copy.connected
+      : $localize`:@@connectors.usedIn:Used in ${name}:PROJECT:`;
+  }
+
   /** What is said of the connector `name` now in the state `state`. */
   private said(name: string, state: string): string {
     return $localize`:@@connectors.said:${name}:NAME:, ${state}:STATE:`;
@@ -345,11 +431,13 @@ export class ConnectorsComponent {
       link: null,
       linkText: '',
       disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
+      place: status === 'available' || !this.choosing() ? null : (connector.only ?? EVERYWHERE),
+      placeLabel: $localize`:@@connectors.placeLabel:Where ${name}:NAME: is used`,
     };
     if (connected) {
       return {
         ...base,
-        detail: this.copy.connected,
+        detail: connector.used ?? this.copy.connected,
         action: busy ? this.copy.disconnecting : this.copy.disconnect,
         actionLabel: base.disconnectLabel,
         variant: 'ghost',

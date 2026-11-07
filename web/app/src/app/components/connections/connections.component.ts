@@ -9,9 +9,10 @@ import {
   afterNextRender,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
-import type { ConnectionInfo } from '@glave/client';
+import type { ConnectionInfo, ProjectId } from '@glave/client';
 import {
   type GlzButtonVariant,
   GlzButtonComponent,
@@ -138,6 +139,9 @@ export class ConnectionsComponent {
     emptyText: $localize`:@@connections.emptyText:Services that ask you to sign in show up here.`,
   } as const;
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink, empty: Plug } as const;
+  /** The project the page was opened for, from its ⋯ menu: what its threads use. */
+  readonly project = input<ProjectId | undefined>(undefined);
+  protected readonly place = computed(() => this.project() ?? null);
   private readonly service = inject(ConnectionsService);
   private readonly credentials = inject(CredentialsService);
   private readonly connectors = inject(ConnectorsService);

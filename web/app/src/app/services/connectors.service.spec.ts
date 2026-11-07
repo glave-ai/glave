@@ -34,7 +34,11 @@ describe('ConnectorsService', () => {
     const connectors = TestBed.inject(ConnectorsService);
     expect(connectors.catalog()).toBeNull();
     await connectors.load();
-    expect(connectors.catalog()).toEqual({ categories: CATEGORIES, connectors: [LINEAR] });
+    expect(connectors.catalog()).toEqual({
+      categories: CATEGORIES,
+      connectors: [LINEAR],
+      here: null,
+    });
     refused = true;
     await connectors.load();
     expect(connectors.catalog()?.connectors).toEqual([LINEAR]);
