@@ -1,9 +1,9 @@
 //! Workers on Docker: a container per worker from the environment's pinned image, with CPU,
 //! memory and process limits, no new privileges, and either no network at all or the default
 //! bridge with glave's port published on 127.0.0.1 only, cloud metadata refused (`fence`).
-//! Every worker's standard input is
-//! attached and held by the glave that started it: when that glave ends, however it ends, Docker
-//! closes it and the worker's glave ends, which stops the container (a later glave removes it).
+//! Every worker's standard input is attached and held by the glave that started it: when that
+//! glave ends, however it ends, Docker closes it and the worker's glave ends, which stops the
+//! container (a later glave removes it).
 //! glave goes in as a file before the container starts (a Linux build for the engine's
 //! processor, from a path the person sets), with the TLS identity and token the harness side
 //! made for this worker.
