@@ -27,6 +27,27 @@ impl SqliteLog {
     pub(crate) fn new(connection: Shared, keys: Arc<SqliteKeyring>) -> Self {
         Self { connection, keys }
     }
+
+    /// The events `query` finds in `scope`, given its organization and project as the
+    /// database keeps them, each opened.
+    fn events(
+        &self,
+        scope: Scope,
+        query: impl FnOnce(&Connection, [String; 2]) -> rusqlite::Result<Vec<Row>> + Send + 'static,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        let this = self.clone();
+        async move {
+            let ids = [scope.org().to_string(), scope.project().to_string()];
+            let rows = run(&this.connection, move |connection| query(connection, ids))
+                .await
+                .map_err(|e| LogError::Storage(e.to_string()))?;
+            let mut events = Vec::with_capacity(rows.len());
+            for row in rows {
+                events.push(row.into_event(&this.keys, &scope).await?);
+            }
+            Ok(events)
+        }
+    }
 }
 
 /// Why an append failed inside the transaction: the shared rule, or the database.
@@ -91,100 +112,48 @@ impl EventLog for SqliteLog {
         after: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
-        let scope = *scope;
-        let this = self.clone();
-        async move {
-            let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
-            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let rows = run(&this.connection, move |connection| {
-                let mut statement = connection.prepare_cached(
-                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = ?1 AND project = ?2 AND thread = ?3 AND seq > ?4
-                     ORDER BY seq LIMIT ?5",
-                )?;
-                let rows = statement.query_map(
-                    params![
-                        scope.org().to_string(),
-                        scope.project().to_string(),
-                        thread.to_string(),
-                        after,
-                        limit
-                    ],
-                    |row| {
-                        Ok(Row {
-                            glave: row.get(0)?,
-                            id: row.get(1)?,
-                            thread: row.get(2)?,
-                            seq: row.get(3)?,
-                            at: row.get(4)?,
-                            kind: row.get(5)?,
-                            v: row.get(6)?,
-                            data: row.get(7)?,
-                            key_id: row.get(8)?,
-                        })
-                    },
-                )?;
-                rows.collect::<rusqlite::Result<Vec<Row>>>()
-            })
-            .await
-            .map_err(|e| LogError::Storage(e.to_string()))?;
-            let mut events = Vec::with_capacity(rows.len());
-            for row in rows {
-                events.push(row.into_event(&this.keys, &scope).await?);
-            }
-            Ok(events)
-        }
+        let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.events(*scope, move |connection, [org, project]| {
+            let mut statement = connection.prepare_cached(
+                "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+                 WHERE org = ?1 AND project = ?2 AND thread = ?3 AND seq > ?4
+                 ORDER BY seq LIMIT ?5",
+            )?;
+            let rows = statement.query_map(
+                params![org, project, thread.to_string(), after, limit],
+                Row::read,
+            )?;
+            rows.collect()
+        })
     }
 
-    fn latest_of(
+    fn read_back(
         &self,
         scope: &Scope,
         thread: ThreadId,
-        kinds: &[&str],
-    ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
-        let scope = *scope;
-        let this = self.clone();
-        // The types travel as one JSON array, so the statement is the same for any number.
-        let kinds = serde_json::to_string(kinds);
-        async move {
-            let kinds = kinds.map_err(|e| LogError::Storage(e.to_string()))?;
-            let rows = run(&this.connection, move |connection| {
-                let mut statement = connection.prepare_cached(
-                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = ?1 AND project = ?2 AND thread = ?3
-                       AND type IN (SELECT value FROM json_each(?4))
-                     ORDER BY seq DESC LIMIT 1",
-                )?;
-                let rows = statement.query_map(
-                    params![
-                        scope.org().to_string(),
-                        scope.project().to_string(),
-                        thread.to_string(),
-                        kinds
-                    ],
-                    |row| {
-                        Ok(Row {
-                            glave: row.get(0)?,
-                            id: row.get(1)?,
-                            thread: row.get(2)?,
-                            seq: row.get(3)?,
-                            at: row.get(4)?,
-                            kind: row.get(5)?,
-                            v: row.get(6)?,
-                            data: row.get(7)?,
-                            key_id: row.get(8)?,
-                        })
-                    },
-                )?;
-                rows.collect::<rusqlite::Result<Vec<Row>>>()
-            })
-            .await
-            .map_err(|e| LogError::Storage(e.to_string()))?;
-            match rows.into_iter().next() {
-                Some(row) => Ok(Some(row.into_event(&this.keys, &scope).await?)),
-                None => Ok(None),
-            }
-        }
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        let before = i64::try_from(before.map_or(u64::MAX, Seq::get)).unwrap_or(i64::MAX);
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        // The types travel as one JSON array, so the statement is the same for any number;
+        // none (`NULL`) means every type.
+        let kinds = kinds.map(|kinds| serde_json::to_string(kinds).unwrap_or_default());
+        self.events(*scope, move |connection, [org, project]| {
+            let mut statement = connection.prepare_cached(
+                "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+                 WHERE org = ?1 AND project = ?2 AND thread = ?3 AND seq < ?4
+                   AND (?5 IS NULL OR type IN (SELECT value FROM json_each(?5)))
+                 ORDER BY seq DESC LIMIT ?6",
+            )?;
+            let rows = statement.query_map(
+                params![org, project, thread.to_string(), before, kinds, limit],
+                Row::read,
+            )?;
+            rows.collect()
+        })
     }
 
     fn search(
@@ -406,6 +375,21 @@ struct Row {
 }
 
 impl Row {
+    /// The row a statement selecting `glave, id, thread, seq, at, type, v, data, key_id` read.
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            glave: row.get(0)?,
+            id: row.get(1)?,
+            thread: row.get(2)?,
+            seq: row.get(3)?,
+            at: row.get(4)?,
+            kind: row.get(5)?,
+            v: row.get(6)?,
+            data: row.get(7)?,
+            key_id: row.get(8)?,
+        })
+    }
+
     async fn into_event(self, keys: &SqliteKeyring, scope: &Scope) -> Result<RawEvent, LogError> {
         let glave = u32::try_from(self.glave).map_err(LogError::corrupt)?;
         let thread = ThreadId::try_from(parse_uuid(&self.thread)?).map_err(LogError::corrupt)?;

@@ -128,6 +128,10 @@ pub struct ThreadCompacted {
     /// The message the conversation restarts from: the summary and the person's latest
     /// request.
     pub parts: Vec<Part>,
+    /// Whether the thread had read untrusted content by then, which a thread read again from
+    /// here on, never from before it, keeps knowing.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub untrusted: bool,
 }
 
 impl Payload for ThreadCompacted {

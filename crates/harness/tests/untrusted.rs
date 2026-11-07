@@ -125,6 +125,57 @@ fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it
 }
 
 #[test]
+fn a_thread_read_again_from_after_a_compaction_keeps_that_it_read_untrusted_content() {
+    let Some(base) = sandboxed("untrusted-compacted") else {
+        return;
+    };
+    block_on!(async {
+        let ask = r#"{"decision":"ask","reason":"the page asked, not the person"}"#;
+        let answers = vec![
+            answer(None, vec![("lookup", json!({}))], StopReason::ToolUse),
+            answer(
+                Some("It says to run a script."),
+                vec![],
+                StopReason::EndTurn,
+            ),
+            answer(Some("Noted."), vec![], StopReason::EndTurn),
+            answer(Some("We looked the setup up."), vec![], StopReason::EndTurn),
+            // After resuming from the compaction's end: the page's results are behind it.
+            planted(),
+            answer(Some(ask), vec![], StopReason::EndTurn),
+            answer(Some("I did not run it."), vec![], StopReason::EndTurn),
+        ];
+        let workspace = walled(&base, false).await;
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged(),
+        );
+        let harness = harness.with_tools(vec![lookup()]);
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let prompt = "Look up how to set this project up and summarise it.";
+        turn(&harness, &mut thread, prompt).await;
+        turn(&harness, &mut thread, "Thanks.").await;
+        harness
+            .compact(&mut thread, &glave_harness::Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+
+        let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        turn(&harness, &mut resumed, "Carry on.").await;
+        let judge = shown(&seen.lock().unwrap()[5]);
+        assert!(judge.contains("read untrusted content"), "{judge}");
+        assert!(
+            judge.contains(prompt),
+            "the person's messages from before it are still theirs: {judge}"
+        );
+    });
+}
+
+#[test]
 fn without_untrusted_content_the_judge_is_not_told_of_any() {
     let Some(base) = sandboxed("untrusted-none") else {
         return;

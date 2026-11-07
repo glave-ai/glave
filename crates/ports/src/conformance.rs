@@ -3,6 +3,7 @@
 //! Each suite returns the first violation it finds as an error message.
 
 mod at_rest;
+mod back;
 mod blobs;
 mod computers;
 mod directory;
@@ -89,6 +90,18 @@ fn event(thread: ThreadId, seq: u64) -> Result<RawEvent, String> {
     .map_err(|e| e.to_string())
 }
 
+/// The thread's event `seq`: its renaming to `title`.
+fn renamed(thread: ThreadId, seq: u64, title: &str) -> Result<RawEvent, String> {
+    let header = Header {
+        id: EventId::try_from(uuid_v7(8_000 + seq)).map_err(|e| e.to_string())?,
+        thread,
+        seq: Seq::new(seq).map_err(|e| e.to_string())?,
+        at: At::try_from("2026-10-07T21:14:03.512Z".to_owned()).map_err(|e| e.to_string())?,
+    };
+    let title = title.to_owned();
+    encode(header, &ThreadRenamed { title, by: None }).map_err(|e| e.to_string())
+}
+
 fn events(thread: ThreadId, seqs: &[u64]) -> Result<Vec<RawEvent>, String> {
     seqs.iter().map(|seq| event(thread, *seq)).collect()
 }
@@ -98,8 +111,8 @@ fn seqs(events: &[RawEvent]) -> Vec<u64> {
 }
 
 /// Every [`EventLog`] must number threads gap-free, reject conflicting or gapped appends
-/// all-or-nothing, let exactly one of writers racing for a place take it, read in pages, and
-/// keep scopes apart.
+/// all-or-nothing, let exactly one of writers racing for a place take it, read in pages from
+/// either end, and keep scopes apart.
 pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     let here = scope(1);
     let elsewhere = scope(2);
@@ -163,6 +176,7 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     ensure(seqs(&page) == [2], "reads must page from after the cursor")?;
 
     latest_of_types(log, here, t).await?;
+    back::reading_back(log, here).await?;
     locating(log, here, t).await?;
 
     let isolated = read_all(elsewhere, t).await.map_err(|e| e.to_string())?;
@@ -233,20 +247,10 @@ async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verd
     )?;
 
     let mixed = thread(4)?;
-    let renamed = |seq: u64, title: &str| -> Result<RawEvent, String> {
-        let header = Header {
-            id: EventId::try_from(uuid_v7(8_000 + seq)).map_err(|e| e.to_string())?,
-            thread: mixed,
-            seq: Seq::new(seq).map_err(|e| e.to_string())?,
-            at: At::try_from("2026-10-07T21:14:03.512Z".to_owned()).map_err(|e| e.to_string())?,
-        };
-        let title = title.to_owned();
-        encode(header, &ThreadRenamed { title, by: None }).map_err(|e| e.to_string())
-    };
     let written = [
-        renamed(1, "first")?,
+        renamed(mixed, 1, "first")?,
         event(mixed, 2)?,
-        renamed(3, "second")?,
+        renamed(mixed, 3, "second")?,
         event(mixed, 4)?,
     ];
     log.append(&here, &written)

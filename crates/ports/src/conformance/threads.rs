@@ -325,6 +325,7 @@ async fn where_and_how_full<L: EventLog>(log: &L, here: &Scope, id: ThreadId) ->
     let compacted = ThreadCompacted {
         through: Seq::new(4).map_err(|e| e.to_string())?,
         parts: Vec::new(),
+        untrusted: false,
     };
     let more = vec![writer.next(44, &compacted)?];
     log.append(here, &more).await.map_err(|e| e.to_string())?;

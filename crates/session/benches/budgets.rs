@@ -1,6 +1,7 @@
 //! The performance budgets in AGENTS.md, measured on the release build: the binary's size,
 //! a command answered by the person's server while it runs, recording turns, and resuming a
-//! 10,000-event thread from SQLite.
+//! 10,000-event thread from SQLite: one never compacted, read whole, and one compacted as its
+//! window fills, read from its end.
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
 //! on an idle machine, since these are wall-clock numbers.
 //!
@@ -38,6 +39,10 @@ const EVENTS: usize = 10_000;
 /// Each scripted turn records 8 events: turn.started, the person's message, the call, its
 /// response, the result, the answer, its response, turn.ended.
 const EVENTS_PER_TURN: usize = 8;
+/// Turns between one compaction and the next in the compacted thread: about what a
+/// 128,000-token window holds of these turns (each reads 1.4 KB of notes) before it compacts at
+/// 80%.
+const TURNS_PER_COMPACTION: usize = 250;
 /// Commands timed against the running server.
 const ANSWERS: usize = 30;
 const RESUMES: usize = 10;
@@ -79,7 +84,8 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let (recorded, resume) = runtime.block_on(threads(dir))?;
+    let (recorded, resume) = runtime.block_on(threads(dir, None))?;
+    let (_, compacted) = runtime.block_on(threads(dir, Some(TURNS_PER_COMPACTION)))?;
     let binary_budget = format!("< {BINARY_MB} MB");
     let rows = [
         (
@@ -99,6 +105,12 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
             "< 100 ms",
             format!("{:.1} ms (median of {RESUMES})", ms(resume)),
             ms(resume) < 100.0,
+        ),
+        (
+            "resume it, compacted",
+            "< 100 ms",
+            format!("{:.1} ms (median of {RESUMES})", ms(compacted)),
+            ms(compacted) < 100.0,
         ),
         (
             "record a turn (8 events)",
@@ -239,9 +251,15 @@ fn turns() -> usize {
     EVENTS.saturating_sub(1) / EVENTS_PER_TURN
 }
 
-/// Records a 10,000-event thread through the harness, then resumes it from a freshly opened
-/// store, as `glave --continue` does: how long recording took, and the median resume.
-async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
+/// Records a 10,000-event thread through the harness, compacted every `compacting` turns
+/// when that is given, then resumes it from a freshly opened store, as `glave --continue` does:
+/// how long recording took, and the median resume.
+async fn threads(dir: &Path, compacting: Option<usize>) -> anyhow::Result<(Duration, Duration)> {
+    let dir = dir.join(if compacting.is_some() {
+        "compacted"
+    } else {
+        "whole"
+    });
     let project = dir.join("thread");
     std::fs::create_dir_all(&project)?;
     std::fs::write(project.join("README.md"), "A line of notes.\n".repeat(80))?;
@@ -256,20 +274,25 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
         store.org(uuid(1)).await?,
         glave_ports::ProjectId::from_uuid(uuid(2)),
     );
-    let harness = harness_on(&store, &project).await?;
+    let harness = harness_on(&store, &project, compacting).await?;
     let mut thread = harness.start_thread(scope).await?;
     let started = Instant::now();
-    for _ in 0..turns() {
+    for turn in 1..=turns() {
         harness
             .run_turn(&mut thread, "read the notes", &Cancel::new(), &mut |_| {})
             .await?;
+        if compacting.is_some_and(|every| turn % every == 0) {
+            harness
+                .compact(&mut thread, &Cancel::new(), &mut |_| {})
+                .await?;
+        }
     }
     let recorded = started.elapsed();
     let mut resumes = Vec::with_capacity(RESUMES);
     for _ in 0..RESUMES {
         let started = Instant::now();
         let store = Store::open(&database, keys()?, std::sync::Arc::new(bucket.clone())).await?;
-        let fresh = harness_on(&store, &project).await?;
+        let fresh = harness_on(&store, &project, compacting).await?;
         let again = fresh.resume_thread(scope, thread.id).await?;
         resumes.push(started.elapsed());
         if again.messages().len() != thread.messages().len() {
@@ -281,12 +304,16 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
 
 type Benched = Harness<ScriptedModel, SqliteLog, SqliteBlobs, AllowAll>;
 
-async fn harness_on(store: &Store, project: &Path) -> anyhow::Result<Benched> {
+async fn harness_on(
+    store: &Store,
+    project: &Path,
+    compacting: Option<usize>,
+) -> anyhow::Result<Benched> {
     let mut settings = Settings::new("bench-model", "bench");
-    // A thread this long would be compacted; the benchmark measures the full log instead.
+    // Compacted only when the benchmark says, never as the window fills.
     settings.compaction.window_tokens = u64::MAX / 100;
     let parts = Parts {
-        provider: scripted()?,
+        provider: scripted(compacting)?,
         log: store.log(),
         blobs: store.blobs(),
         approver: AllowAll,
@@ -300,8 +327,9 @@ async fn harness_on(store: &Store, project: &Path) -> anyhow::Result<Benched> {
     Ok(Harness::new(parts, settings))
 }
 
-/// A model that reads the notes, then answers, turn after turn.
-fn scripted() -> anyhow::Result<ScriptedModel> {
+/// A model that reads the notes, then answers, turn after turn, and summarizes the thread
+/// after every `compacting` turns when that is given.
+fn scripted(compacting: Option<usize>) -> anyhow::Result<ScriptedModel> {
     let usage = Usage::new(
         TokenCounts {
             input: 2_000,
@@ -338,11 +366,23 @@ fn scripted() -> anyhow::Result<ScriptedModel> {
     let said = Part::Text {
         text: "The notes repeat one line, eighty times over.".into(),
     };
-    Ok(ScriptedModel::cycling(vec![
+    let turn = [
         completion(Vec::new(), vec![read], StopReason::ToolUse),
         completion(vec![said], Vec::new(), StopReason::EndTurn),
-    ])
-    .unrecorded())
+    ];
+    let mut answers: Vec<Completion> = turn
+        .iter()
+        .cycle()
+        .take(turn.len() * compacting.unwrap_or(1))
+        .cloned()
+        .collect();
+    if compacting.is_some() {
+        let summary = Part::Text {
+            text: "We read the notes, which repeat one line, turn after turn.".into(),
+        };
+        answers.push(completion(vec![summary], Vec::new(), StopReason::EndTurn));
+    }
+    Ok(ScriptedModel::cycling(answers).unrecorded())
 }
 
 fn uuid(n: u8) -> uuid::Uuid {

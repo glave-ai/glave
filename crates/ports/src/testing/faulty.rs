@@ -170,6 +170,24 @@ impl EventLog for FaultyLog {
         }
     }
 
+    fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        let read = self.log.read_back(scope, thread, kinds, before, limit);
+        async move {
+            let events = read.await?;
+            if strikes(&self.faults.blip, &events) {
+                return Err(blipped());
+            }
+            Ok(events)
+        }
+    }
+
     fn search(
         &self,
         scope: &Scope,

@@ -15,7 +15,7 @@ use serde::Deserialize;
 use crate::untrusted::defuse;
 
 /// The most of the person's words the judge reads: their latest messages, each cut short.
-const MOST_MESSAGES: usize = 12;
+pub(crate) const MOST_MESSAGES: usize = 12;
 const MOST_CHARS: usize = 2_000;
 /// The longest answer the judge may give, room included for models that reason first.
 const MOST_OUTPUT_TOKENS: u32 = 1_024;

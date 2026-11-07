@@ -15,6 +15,7 @@ use jiff::Timestamp;
 use serde_json::value::RawValue;
 use tokio_postgres::Row;
 use tokio_postgres::error::SqlState;
+use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use crate::store::{PostgresKeyring, connection, describe};
@@ -29,6 +30,27 @@ pub struct PostgresLog {
 impl PostgresLog {
     pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>) -> Self {
         Self { pool, keys }
+    }
+
+    /// The events `sql` selects in `scope`, its organization and project the first two
+    /// parameters and `params` the rest, each opened.
+    async fn selected(
+        &self,
+        scope: &Scope,
+        sql: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<RawEvent>, LogError> {
+        let client = connection(&self.pool, scope.org()).await.map_err(storage)?;
+        let statement = client.prepare_cached(sql).await.map_err(database)?;
+        let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
+        let mut all: Vec<&(dyn ToSql + Sync)> = vec![&org, &project];
+        all.extend_from_slice(params);
+        let rows = client.query(&statement, &all).await.map_err(database)?;
+        let mut events = Vec::with_capacity(rows.len());
+        for row in &rows {
+            events.push(event(&self.keys, scope, row).await?);
+        }
+        Ok(events)
     }
 }
 
@@ -107,7 +129,7 @@ impl EventLog for PostgresLog {
                     .transpose()?;
                 check_append(last, &events)?;
                 let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
-                let params: [&(dyn tokio_postgres::types::ToSql + Sync); 11] = [
+                let params: [&(dyn ToSql + Sync); 11] = [
                     &org,
                     &project,
                     &thread,
@@ -235,39 +257,39 @@ impl EventLog for PostgresLog {
         after: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
-        let scope = *scope;
-        let pool = self.pool.clone();
-        let keys = Arc::clone(&self.keys);
+        let (scope, this) = (*scope, self.clone());
         async move {
             let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let client = connection(&pool, scope.org()).await.map_err(storage)?;
-            let statement = client
-                .prepare_cached(
-                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = $1 AND project = $2 AND thread = $3 AND seq > $4
-                     ORDER BY seq LIMIT $5",
-                )
+            let sql = "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+                 WHERE org = $1 AND project = $2 AND thread = $3 AND seq > $4
+                 ORDER BY seq LIMIT $5";
+            this.selected(&scope, sql, &[&thread.as_uuid(), &after, &limit])
                 .await
-                .map_err(database)?;
-            let rows = client
-                .query(
-                    &statement,
-                    &[
-                        &scope.org().as_uuid(),
-                        &scope.project().as_uuid(),
-                        &thread.as_uuid(),
-                        &after,
-                        &limit,
-                    ],
-                )
-                .await
-                .map_err(database)?;
-            let mut events = Vec::with_capacity(rows.len());
-            for row in &rows {
-                events.push(event(&keys, &scope, row).await?);
-            }
-            Ok(events)
+        }
+    }
+
+    fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        let (scope, this) = (*scope, self.clone());
+        // None (`NULL`) means every type.
+        let kinds: Option<Vec<String>> =
+            kinds.map(|kinds| kinds.iter().map(|&kind| kind.to_owned()).collect());
+        async move {
+            let before = i64::try_from(before.map_or(u64::MAX, Seq::get)).unwrap_or(i64::MAX);
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let sql = "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+                 WHERE org = $1 AND project = $2 AND thread = $3 AND seq < $4
+                   AND ($5::text[] IS NULL OR type = ANY($5))
+                 ORDER BY seq DESC LIMIT $6";
+            let params: [&(dyn ToSql + Sync); 4] = [&thread.as_uuid(), &before, &kinds, &limit];
+            this.selected(&scope, sql, &params).await
         }
     }
 

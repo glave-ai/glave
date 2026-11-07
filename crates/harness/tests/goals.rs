@@ -6,6 +6,7 @@
 use glave_event::{Body, Event, GoalReason, Part, PrincipalKind, StopReason};
 use glave_harness::{AllowAll, Cancel, Goal, UPDATE_GOAL};
 use glave_ports::Caller;
+use glave_ports::testing::FaultyLog;
 use glave_ports::{Completion, EventLog, InMemoryLog, Message, ModelRequest};
 use serde_json::json;
 
@@ -319,6 +320,60 @@ fn a_goal_survives_a_restart_and_continues_from_the_log() {
         assert!(
             matches!(opening, Message::User { parts } if parts.iter().any(
                 |part| matches!(part, Part::Text { text } if text.contains("<objective>\nship it"))))
+        );
+    });
+}
+
+#[test]
+fn a_goal_read_again_after_a_compaction_still_counts_its_turns_before_it() {
+    let dir = folder("goal-compacted");
+    block_on!(async {
+        let log = std::sync::Arc::new(InMemoryLog::new());
+        let first = harness_on(
+            &dir,
+            vec![done("Started.")],
+            AllowAll,
+            FaultyLog::over(std::sync::Arc::clone(&log)),
+            1,
+            settings(),
+        )
+        .await;
+        let mut thread = first.start_thread(scope()).await.unwrap();
+        let crashed = first
+            .start_goal(
+                &mut thread,
+                goal("ship it", 1_000_000),
+                &Caller::default(),
+                &Cancel::new(),
+                &mut |_| {},
+            )
+            .await;
+        assert!(
+            crashed.is_err(),
+            "the script runs out in the goal's second turn"
+        );
+        let held = first.goal(scope(), thread.id).await.unwrap().unwrap();
+        assert_eq!((held.turns, held.tokens), (2, 110));
+        // The summary, by a glave started again on the same log.
+        let second = harness_on(
+            &dir,
+            vec![done("We started shipping it.")],
+            AllowAll,
+            FaultyLog::over(log),
+            2,
+            settings(),
+        )
+        .await;
+        let mut resumed = second.resume_thread(scope(), thread.id).await.unwrap();
+        second
+            .compact(&mut resumed, &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let read = second.goal(scope(), thread.id).await.unwrap().unwrap();
+        assert_eq!(
+            (read.turns, read.tokens),
+            (held.turns, held.tokens),
+            "the first turn's tokens, from before the compaction, still count"
         );
     });
 }
