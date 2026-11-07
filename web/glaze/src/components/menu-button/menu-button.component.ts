@@ -1,6 +1,13 @@
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import type { ConnectedPosition } from '@angular/cdk/overlay';
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  booleanAttribute,
+  computed,
+  input,
+  output,
+} from '@angular/core';
 import { Ellipsis } from 'lucide';
 
 import { GlzFocusOnPressDirective } from '../../directives/focus-on-press.directive';
@@ -24,7 +31,8 @@ const POSITIONS: readonly ConnectedPosition[] = [
  * A small ⋯ button that opens a menu of what can be done with something, such as a project in
  * a side nav: its `actions`, each emitted by value (`action`) when picked. The CDK's menu
  * (`menuitem`), so arrow keys, typeahead, Escape and focus return work. The button is named by
- * `label`.
+ * `label`; `disabled` makes it a native disabled button, which opens nothing, such as while what
+ * an action started is still running.
  *
  * ```html
  * <glz-menu-button
@@ -58,6 +66,8 @@ export class GlzMenuButtonComponent {
   readonly label = input.required<string>();
   /** What can be done, in the menu's order; picking one emits its value. */
   readonly actions = input<readonly GlzOption[]>([]);
+  /** Whether the button opens nothing for now: a native disabled button. */
+  readonly disabled = input(false, { transform: booleanAttribute });
   /** Emitted with an action's value when the person picks it. */
   readonly action = output<string>();
 

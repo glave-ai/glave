@@ -44,6 +44,7 @@
           [account]="beneath.account"
           [place]="beneath.place"
           [places]="places()"
+          [busy]="row().busy"
           (picked)="picked(beneath.account, $event)"
         />
       }
