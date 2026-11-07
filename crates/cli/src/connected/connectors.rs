@@ -10,7 +10,7 @@ use std::sync::PoisonError;
 
 use glave_mcp::address;
 use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorSignIn, ConnectorStatus, code};
-use glave_session::{Catalog, Connecting, Connector, KeptConnector, Placement};
+use glave_session::{Accounts, Catalog, Connecting, Connector, KeptConnector, OfferedAccount, Placement};
 
 use super::{Connected, Remote, described};
 use crate::mcp::Offered;
@@ -32,7 +32,7 @@ impl Connected {
     /// to sign in to again), and each one not connected once.
     pub(super) async fn listed_connectors(
         &self,
-    ) -> Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError> {
+    ) -> Result<Vec<OfferedAccount>, ApiError> {
         let catalog = catalog()?;
         let accounts = self.accounts().await?;
         let none: BTreeMap<String, Remote> = BTreeMap::new();
@@ -55,8 +55,13 @@ impl Connected {
         let mut listed = Vec::new();
         for connector in offered {
             let before = listed.len();
+            let url = address(&connector.url).unwrap_or_default();
             for kept in accounts.accounts_of(&connector.id) {
-                listed.push((kept.clone(), status(connector, kept)));
+                let who = accounts.sign_in(&url, kept.account.as_deref());
+                listed.push(OfferedAccount {
+                    who: who.and_then(|it| it.who.clone()),
+                    ..OfferedAccount::new(kept.clone(), status(connector, kept))
+                });
             }
             if listed.len() == before {
                 let none = KeptConnector {
@@ -64,17 +69,19 @@ impl Connected {
                     account: None,
                     only: None,
                 };
-                listed.push((none, ConnectorStatus::Available));
+                listed.push(OfferedAccount::new(none, ConnectorStatus::Available));
             }
         }
         Ok(listed)
     }
 
     /// Connects `kept`, to be used where it says: at once when it asks no one to sign in, else
-    /// by signing in, the browser to come back to `redirect`.
+    /// by signing in, the browser to come back to `redirect`. `another`, it is a new account of
+    /// its service, unnamed, which takes its name as it is kept ([`named_new`]).
     pub(super) async fn connecting(
         &self,
         kept: KeptConnector,
+        another: bool,
         redirect: Option<String>,
     ) -> Result<Connecting, ApiError> {
         let catalog = catalog()?;
@@ -85,6 +92,10 @@ impl Connected {
             .ok_or_else(|| unknown(id))?;
         match connector.sign_in {
             ConnectorSignIn::None => {
+                let kept = match another {
+                    true => named_new(&self.accounts().await?, kept, None, &connector.name),
+                    false => kept,
+                };
                 kept_there(self.ledger.keep_connector(&kept, None).await?, &kept)?;
                 Ok(Connecting::Connected)
             }
@@ -95,7 +106,7 @@ impl Connected {
                 let url = at(connector)?;
                 // A server of the person's own settings at its address is used in its stead,
                 // so another account of it would never run.
-                if kept.account.is_some() && self.remotes().await.contains_key(&url) {
+                if (kept.account.is_some() || another) && self.remotes().await.contains_key(&url) {
                     let said = format!(
                         "your own settings name a server at {}'s address, which glave uses in \
                          its place: remove it there to connect another account",
@@ -107,7 +118,7 @@ impl Connected {
                     Some(account) => format!("{} ({account})", connector.name),
                     None => connector.name.clone(),
                 };
-                let link = self.sign_in(url, name, redirect, Some(kept)).await?;
+                let link = self.sign_in(url, name, redirect, Some(kept), another).await?;
                 Ok(Connecting::SignIn(link))
             }
         }
@@ -182,6 +193,43 @@ impl Connected {
             .collect()
     }
 }
+
+/// A new account of `kept`'s service, which the person left unnamed, named as `who` it is
+/// signed in as, where the service said, else as `service` and a number (`Notion 2`): unique
+/// among the service's accounts in any case, a number added when another has the name, and a
+/// name's length at most. One the person named keeps its name, as does the service's first,
+/// unnamed, when nothing says who it is.
+pub(super) fn named_new(
+    accounts: &Accounts,
+    kept: KeptConnector,
+    who: Option<&str>,
+    service: &str,
+) -> KeptConnector {
+    let first_of_its = accounts.accounts_of(&kept.id).next().is_none();
+    if kept.account.is_some() || (first_of_its && who.is_none()) {
+        return kept;
+    }
+    let taken: BTreeSet<String> = (accounts.accounts_of(&kept.id))
+        .filter_map(|it| it.account.as_ref())
+        .map(|name| name.to_lowercase())
+        .collect();
+    let (base, first) = match who.map(str::trim).filter(|it| !it.is_empty()) {
+        Some(who) => (who, 1),
+        None => (service, 2),
+    };
+    // Each number one more than the last, until one is free: no more than there are accounts.
+    let named = (first..=first + taken.len()).map(|n| {
+        let number = if n == 1 { String::new() } else { format!(" {n}") };
+        let room = NAME.saturating_sub(number.chars().count());
+        let cut: String = base.chars().take(room).collect();
+        format!("{}{number}", cut.trim_end())
+    });
+    let account = named.into_iter().find(|name| !taken.contains(&name.to_lowercase()));
+    KeptConnector { account, ..kept }
+}
+
+/// The longest name an account takes, in characters, as the session API holds names.
+const NAME: usize = 40;
 
 /// The catalog glave was built with.
 pub(crate) fn catalog() -> Result<Catalog, ApiError> {

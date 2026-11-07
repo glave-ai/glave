@@ -8,9 +8,9 @@
 //! signed in with any token but the last is answered `403 insufficient_scope`, asking for
 //! `scope`, as a server whose operation needs more than the person granted. With
 //! `--fake-sign-in` in its place, it asks for the sign-in at a fake authorization server of its
-//! own (`glave_ports::testing`'s), which grants its first `--token` at each sign-in, for the web
-//! app's end-to-end tests. With
-//! `--ends-with-stdin` it ends once its standard input closes, as when what started it ends,
+//! own (`glave_ports::testing`'s), which grants its first `--token` at each sign-in (with
+//! `--signed-in-as <who>` too, beside an ID token naming `who`), for the web app's end-to-end
+//! tests. With `--ends-with-stdin` it ends once its standard input closes, as when what started it ends,
 //! however that ends. With `--results <text>` it stands in for a hosted web search, Exa's
 //! offering only its search: its one tool is `web_search_exa`, answering every query with
 //! `text`. Built with the `test-server` feature.
@@ -604,7 +604,9 @@ fn main() -> ExitCode {
     };
     let fake = if flags.iter().any(|flag| flag == "--fake-sign-in") {
         // A sign-in that grants nothing would quietly let no one in.
-        let Some(Ok(fake)) = server.tokens.first().map(|token| fake_sign_in(token)) else {
+        let who = valued("--signed-in-as").into_iter().next();
+        let fake = server.tokens.first().map(|token| fake_sign_in(token, who));
+        let Some(Ok(fake)) = fake else {
             return ExitCode::FAILURE;
         };
         Some(fake)
@@ -636,12 +638,14 @@ fn main() -> ExitCode {
 /// How many sign-ins the authorization server of `--fake-sign-in` grants.
 const FAKE_GRANTS: usize = 64;
 
-/// A fake authorization server granting `token` at each sign-in, never to expire.
-fn fake_sign_in(token: &str) -> std::io::Result<FakeAuthServer> {
+/// A fake authorization server granting `token` at each sign-in, never to expire, to `who`
+/// when it says.
+fn fake_sign_in(token: &str, who: Option<String>) -> std::io::Result<FakeAuthServer> {
     let grant = Grant {
         token: token.to_owned(),
         refresh: None,
         lasts: None,
+        who,
     };
     FakeAuthServer::start(vec![grant; FAKE_GRANTS])
 }

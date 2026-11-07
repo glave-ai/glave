@@ -90,16 +90,19 @@ pub trait Connections: Send + Sync {
     fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
 
     /// The connectors of glave's catalog the person may connect here, in any order: each
-    /// account of one connected, with whether its sign-in works and where their threads use
-    /// it, and each one not connected once, as `Available`.
-    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>>;
+    /// account of one connected, with whether its sign-in works, where their threads use it and
+    /// who it is signed in as, and each one not connected once, as `Available`.
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<OfferedAccount>, ApiError>>;
 
     /// Connects `connector`, an account of a connector of glave's catalog, to be used where it
     /// says: at once when it asks no one to sign in, else by signing in as that account, the
-    /// browser to come back to `redirect`.
+    /// browser to come back to `redirect`. `another`, unnamed, it is a new account of a service
+    /// connected already, named as it is kept: as who it is signed in as, where its service
+    /// says, else the service's name and a number.
     fn connect(
         &self,
         connector: KeptConnector,
+        another: bool,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>>;
 
@@ -116,6 +119,27 @@ pub trait Connections: Send + Sync {
         connector: KeptConnector,
         name: Option<String>,
     ) -> BoxFuture<'_, Result<(), ApiError>>;
+}
+
+/// An account of a connector of glave's catalog as the host offers it: connected or not, and
+/// who it is signed in as, where its service said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferedAccount {
+    pub connector: KeptConnector,
+    pub status: ConnectorStatus,
+    /// The person's own, shown only to them: `Acme Corp`.
+    pub who: Option<String>,
+}
+
+impl OfferedAccount {
+    /// `connector`, `status`, with no one it is known to be signed in as.
+    pub fn new(connector: KeptConnector, status: ConnectorStatus) -> Self {
+        Self {
+            connector,
+            status,
+            who: None,
+        }
+    }
 }
 
 /// How connecting a connector went.

@@ -39,6 +39,8 @@ struct Flow {
     name: String,
     /// The connector of glave's catalog it connects, and where it is used, when it is one.
     connector: Option<KeptConnector>,
+    /// Whether that is a new account of the service, unnamed, named as it is kept.
+    another: bool,
     state: String,
     /// Until the browser comes back.
     signin: Option<SignIn>,
@@ -81,7 +83,7 @@ impl Connected {
         let Some(redirect) = redirect else {
             return Ok(None);
         };
-        self.sign_in(url, name, redirect, None).await.map(Some)
+        self.sign_in(url, name, redirect, None, false).await.map(Some)
     }
 
     /// Starts signing in to the server at `url`, which the person calls `name`, the browser to
@@ -93,16 +95,18 @@ impl Connected {
         name: String,
         redirect: String,
         connector: Option<KeptConnector>,
+        another: bool,
     ) -> Result<SignInLink, ApiError> {
         // As MCP's step-up authorization says: what the sign-in it replaces grants, and what
-        // the server asked for since, so nothing granted before is lost.
+        // the server asked for since, so nothing granted before is lost. A new account replaces
+        // none.
         let account = connector.as_ref().and_then(|it| it.account.as_deref());
-        let granted = self
-            .kept_for(&url, account)
-            .await
-            .map(|kept| kept.client.scopes);
-        let mut more = granted.unwrap_or_default();
-        more.extend(self.more.of(&url, account).unwrap_or_default());
+        let mut more = Vec::new();
+        if !another {
+            let granted = self.kept_for(&url, account).await;
+            more.extend(granted.map(|kept| kept.client.scopes).unwrap_or_default());
+            more.extend(self.more.of(&url, account).unwrap_or_default());
+        }
         let (signin, page) = SignIn::start(&url, &name, &redirect, &more, self.reachable)
             .await
             .map_err(|error| refused(&error, &name))?;
@@ -116,6 +120,7 @@ impl Connected {
             url,
             name,
             connector,
+            another,
             state: signin.state().to_owned(),
             signin: Some(signin),
             started: Instant::now(),
@@ -160,9 +165,9 @@ impl Connected {
             .find(|flow| flow.state == returned.state)
             .map(|flow| {
                 let named = (flow.url.clone(), flow.name.clone(), flow.connector.clone());
-                (named, flow.signin.take(), Arc::clone(&flow.ended))
+                (named, flow.another, flow.signin.take(), Arc::clone(&flow.ended))
             });
-        let Some(((url, name, connector), signin, ended)) = found else {
+        let Some(((url, name, connector), another, signin, ended)) = found else {
             return "glave is no longer waiting for this sign-in. Sign in again.".to_owned();
         };
         // The page loaded again: the browser came back already.
@@ -187,6 +192,7 @@ impl Connected {
             url,
             name: name.clone(),
             connector,
+            another,
         };
         let issuer = returned.issuer;
         let traded = async move {
@@ -241,6 +247,9 @@ struct Trade {
     name: String,
     /// The connector of glave's catalog it connects, and where it is used, when it is one.
     connector: Option<KeptConnector>,
+    /// Whether that is a new account of the service, unnamed, named as it is kept: then `name`
+    /// is the service's.
+    another: bool,
 }
 
 impl Trade {
@@ -255,17 +264,26 @@ impl Trade {
             .finish(code.expose(), issuer)
             .await
             .map_err(|error| refused(&error, &self.name))?;
+        let connector = match self.connector {
+            Some(kept) if self.another => {
+                let accounts = self.ledger.accounts().await?;
+                let who = granted.who.as_deref();
+                Some(super::connectors::named_new(&accounts, kept, who, &self.name))
+            }
+            other => other,
+        };
         let connection = ConnectionConnected {
             connection: new_id().map_err(|e| ApiError::internal(&e))?,
             url: self.url,
-            account: self.connector.as_ref().and_then(|it| it.account.clone()),
+            account: connector.as_ref().and_then(|it| it.account.clone()),
             token: granted.token,
             expires: expires(granted.lasts),
             refresh: granted.refresh,
             client: granted.client,
+            who: granted.who,
             by: Principal::person(self.ledger.person()),
         };
-        match &self.connector {
+        match &connector {
             // Another account of it may have been put in its place while the person signed in.
             Some(connector) => {
                 let placed = self.ledger.keep_connector(connector, Some(&connection));

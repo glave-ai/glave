@@ -451,6 +451,13 @@
           ],
           "description": "The one project whose threads alone use it, the person's Chats among them: none where\nevery thread of theirs does."
         },
+        "signed_in": {
+          "description": "The same, in the caller's language: `Signed in as Acme Corp`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/$defs/ConnectorStatus",
           "description": "Connected, or to sign in to again."
@@ -458,6 +465,13 @@
         "used": {
           "description": "Where it is used, in the caller's language: `Everywhere, including chats`, `Only in\nAcme Site`.",
           "type": "string"
+        },
+        "who": {
+          "description": "Who it is signed in as, in the service's words, where it said: `Acme Corp`. The\ncaller's own: shown only to them.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5175,6 +5189,10 @@
               "string",
               "null"
             ]
+          },
+          "another": {
+            "description": "Another account of a service connected already, which with no `account` is named at\nits sign-in: as who it is signed in as, where the service says, else the service's\nname and a number (`Notion 2`).",
+            "type": "boolean"
           },
           "connector": {
             "type": "string"

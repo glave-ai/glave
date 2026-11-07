@@ -43,6 +43,10 @@ pub struct ConnectionConnected {
     )]
     pub refresh: Option<Secret>,
     pub client: SignInClient,
+    /// Who the person signed in as, in the service's words, where its authorization server
+    /// said: `Acme Corp`. The person's own, shown only to them, never logged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
     /// Who connected it.
     pub by: Principal,
 }

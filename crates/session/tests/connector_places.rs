@@ -28,6 +28,7 @@ fn connect(account: Option<&str>, only: Option<ProjectId>) -> Request {
         connector: "deepwiki".into(),
         account: account.map(str::to_owned),
         only,
+        another: false,
     }
 }
 
@@ -135,6 +136,28 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         let long = "a".repeat(41);
         let shape = refused(&web.call(&connect(Some(&long), Some(acme))).await);
         assert!(shape.contains("40 characters"), "{shape}");
+
+        // Another, left unnamed, is named as it is kept: as who it is signed in as.
+        let another = Request::ConnectorConnect {
+            connector: "deepwiki".into(),
+            account: None,
+            only: Some(chats),
+            another: true,
+        };
+        let joined = web.call(&another).await;
+        let accounts = &joined["result"]["connector"]["accounts"];
+        assert_eq!(
+            accounts[1],
+            json!({"name": "Acme Corp", "only": chats, "used": "Only in Chats",
+                   "status": "connected", "who": "Acme Corp",
+                   "signed_in": "Signed in as Acme Corp"}),
+            "{joined}"
+        );
+        let disconnect = Request::ConnectorDisconnect {
+            connector: "deepwiki".into(),
+            account: Some("Acme Corp".into()),
+        };
+        web.call(&disconnect).await;
 
         let connected = web.call(&connect(Some("Acme"), Some(acme))).await;
         let accounts = &connected["result"]["connector"]["accounts"];

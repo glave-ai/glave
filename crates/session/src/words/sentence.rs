@@ -501,6 +501,7 @@ sentences! {
         "another { $service } account is used only in a project that is gone: disconnect that one first",
     AccountNameTaken { service: String, name: String } = "account-name-taken"
         "another of your { $service } accounts is called { $name } already: give this one another name",
+    SignedInAs { who: String } = "signed-in-as" "Signed in as { $who }",
     AccountReplaced { service: String } = "account-replaced"
         "Your { $service } account used everywhere else is not used here: this one takes its place.",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",

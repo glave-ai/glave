@@ -168,6 +168,8 @@ export type ConnectorAccount = {
    * every thread of theirs does.
    */
   readonly only?: ProjectId | null;
+  /** The same, in the caller's language: `Signed in as Acme Corp`. */
+  readonly signed_in?: string | null;
   /** Connected, or to sign in to again. */
   readonly status: ConnectorStatus;
   /**
@@ -175,6 +177,11 @@ export type ConnectorAccount = {
    * Acme Site`.
    */
   readonly used: string;
+  /**
+   * Who it is signed in as, in the service's words, where it said: `Acme Corp`. The
+   * caller's own: shown only to them.
+   */
+  readonly who?: string | null;
 };
 
 /** A category of connectors. */
@@ -1705,6 +1712,12 @@ export type ConnectionStartResult = {
 export type ConnectorConnectParams = {
   /** The person's name for the account: `Acme`. */
   readonly account?: string | null;
+  /**
+   * Another account of a service connected already, which with no `account` is named at
+   * its sign-in: as who it is signed in as, where the service says, else the service's
+   * name and a number (`Notion 2`).
+   */
+  readonly another?: boolean;
   readonly connector: string;
   readonly only?: ProjectId | null;
 };

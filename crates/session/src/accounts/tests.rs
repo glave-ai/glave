@@ -203,6 +203,7 @@ fn connection(n: u128, url: &str, token: &str) -> ConnectionConnected {
             client_id: "client".into(),
             scopes: Vec::new(),
         },
+        who: None,
         by: Principal::glave(),
     }
 }
