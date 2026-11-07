@@ -106,7 +106,13 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
+      # The whole history, so the checks of what a change brings in (`cargo xtask credits` and
+      # `package-age`, xtask/src/base.rs) find its base and the commits since it here, with no
+      # fetch of their own: a fetch outside the checkout failed when the runner couldn't resolve
+      # github.com (#1215). The checkout retries its own fetch.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       # Every shell script the repository tracks: each `.sh`, and each file whose first line runs
       # sh, bash, dash or ksh. Not the files an eval task starts from (evals/tasks/*/environment),
       # which the model is given as they are, flaws and all. Once, as the scripts are the same.
@@ -648,7 +654,10 @@ jobs:
       - name: A runner took the job
         id: started
         run: echo started=true >> "$GITHUB_OUTPUT"
+      # The whole history, as in `linux-checks`, for the checks that compare with a change's base.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       # macOS's /bin/sh is bash 3.2, which reads some scripts otherwise than dash and shellcheck
       # do: a heredoc inside $(…) whose text holds a `)` ends early there, and what follows runs
       # as commands. The scripts in .github run on macOS in a release, or by a maintainer's hand.

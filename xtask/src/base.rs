@@ -8,8 +8,10 @@
 //!
 //! A base older than the change's own start (a pull request's base from before main moved)
 //! only adds versions or commits to check, never hides one: what came into main since was
-//! checked as it came, and a version has only aged. CI's checkout holds one commit, so a base
-//! it lacks is fetched, that commit alone.
+//! checked as it came, and a version has only aged. Nothing here fetches: the clone holds the
+//! base and the history since it already, as CI's checkout brings the whole history
+//! (`fetch-depth: 0`, .github/workflows/ci.yml), and a clone without them is refused with what
+//! it lacks, never passed.
 
 use serde_json::Value;
 
@@ -43,8 +45,8 @@ impl Base {
     }
 }
 
-/// The base of this run, fetched if this clone lacks it; `None` off CI with no origin/main to
-/// compare with.
+/// The base of this run, which this clone must hold with the history since it; `None` off CI
+/// with no origin/main to compare with.
 pub(crate) fn find() -> Result<Option<Base>, String> {
     let base = match from_event()? {
         Some(base) => base,
@@ -55,20 +57,18 @@ pub(crate) fn find() -> Result<Option<Base>, String> {
     };
     let commit = format!("{}^{{commit}}", base.commit);
     if git(&["rev-parse", "--quiet", "--verify", &commit]).is_err() {
-        git(&[
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--depth=1",
-            "origin",
-            &base.commit,
-        ])
-        .map_err(|err| {
-            format!(
-                "could not fetch {} to compare this change with: {err}",
-                base.said()
-            )
-        })?;
+        return Err(format!(
+            "this clone lacks {}, the commit to compare this change with: fetch it, or on CI \
+             check out the whole history (fetch-depth: 0)",
+            base.said()
+        ));
+    }
+    if git(&["rev-parse", "--is-shallow-repository"])?.trim() == "true" {
+        return Err(format!(
+            "this clone is shallow, so it may lack the commits since {}: fetch the whole \
+             history (git fetch --unshallow), or on CI check out with fetch-depth: 0",
+            base.said()
+        ));
     }
     Ok(Some(base))
 }
