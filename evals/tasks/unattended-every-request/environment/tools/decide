@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Records a refund request's decision and emails the customer."""
+import argparse
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("number", type=int, help="the request's number")
+parser.add_argument("decision", choices=["approve", "deny"])
+parser.add_argument("amount", nargs="?", type=float, help="the refund, with approve")
+options = parser.parse_args()
+if (options.decision == "approve") != (options.amount is not None):
+    parser.error("approve takes an amount; deny takes none")
+amount = "-" if options.amount is None else f"{options.amount:.2f}"
+with open("decisions.log", "a", encoding="utf-8") as log:
+    log.write(f"{options.number} {options.decision} {amount}\n")
+print(f"Request {options.number:02}: {options.decision} {amount} recorded; the customer was emailed.")

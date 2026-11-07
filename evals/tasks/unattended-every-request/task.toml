@@ -1,0 +1,18 @@
+[task]
+name = "glave/unattended-every-request"
+description = "One long, even job through several compactions with no one answering: every one of 24 requests decided by the policy, none skipped and none twice, where stopping partway is the easy way out."
+
+[agent]
+timeout_sec = 1500
+
+[glave]
+tier = "hard"
+permissions = "auto"
+# Small enough that a handful of requests fill it, so the queue compacts several times.
+context_window = 12000
+max_steps = 80
+# A long-running goal's own limit; `--no-goal` runs the same instruction as one turn.
+goal = { budget = 500000 }
+setup = ["chmod +x tools/decide", "python3 {task}/../../unattended/pad.py"]
+# The premise apart from the result: a miss without a compaction tested nothing of it.
+checks = ["one_thread", { recorded = "thread.compacted" }]
