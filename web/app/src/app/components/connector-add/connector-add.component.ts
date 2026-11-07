@@ -26,7 +26,10 @@ import { ACCOUNT_NAME_LIMIT } from '../../lib/connections';
 export interface AccountChosen {
   /** Whether it is one already connected, moved here, or another to sign in to. */
   readonly existing: boolean;
-  /** Its name: none for the one never named. */
+  /**
+   * Its name: none for the one never named, or, another, for one the server names from its
+   * sign-in.
+   */
   readonly account: string | null;
   /** The one place it is used, or none for everywhere. */
   readonly only: ProjectId | null;
@@ -42,11 +45,14 @@ interface Had {
   readonly value: string;
   readonly name: string | null;
   readonly label: string;
+  /** Who it is signed in as, in the server's words, else that it is connected already. */
+  readonly hint: string;
 }
 
 /**
  * Connecting another account of a service the person has: which account (one connected
- * already, to use here, or another to sign in to), its name, and where it is used. From
+ * already, to use here, each with who it is signed in as, or another to sign in to), its name,
+ * which the server takes from its sign-in when it is left empty, and where it is used. From
  * inside a project it starts on only that project, which nothing else can see; elsewhere, on
  * everywhere. The server says whether the name and the place may be had.
  */
@@ -80,9 +86,8 @@ export class ConnectorAddComponent {
   protected readonly copy = {
     account: $localize`:@@connectorAdd.account:Account`,
     already: $localize`:@@connectorAdd.already:Already connected`,
-    nameIt: $localize`:@@connectorAdd.nameIt:Name it`,
+    nameIt: $localize`:@@connectorAdd.nameIt:Name it (optional)`,
     nameHint: $localize`:@@connectorAdd.nameHint:Such as the company it's for.`,
-    nameNeeded: $localize`:@@connectorAdd.nameNeeded:Give this account a name.`,
     useIt: $localize`:@@connectorAdd.useIt:Use it`,
     nothingElse: $localize`:@@connectorAdd.nothingElse:Nothing else can see it`,
     everywhere: $localize`:@@connectorAdd.everywhere:Everywhere, including chats`,
@@ -102,12 +107,18 @@ export class ConnectorAddComponent {
     const service = this.service();
     return $localize`:@@connectorAdd.another:Sign in to another ${service}:SERVICE: account`;
   });
+  /** What an empty name becomes, as the field says before anything is typed. */
+  protected readonly namePlaceholder = computed(() => {
+    const service = this.service();
+    return $localize`:@@connectorAdd.namePlaceholder:From your ${service}:SERVICE: sign-in, such as Acme Corp`;
+  });
   /** Each account connected, by its name or the service's. */
   protected readonly had = computed((): readonly Had[] =>
     (this.connector()?.accounts ?? []).map((it, index) => ({
       value: String(index),
       name: it.name ?? null,
       label: it.name ?? this.service(),
+      hint: it.signed_in ?? this.copy.already,
     })),
   );
   /** Where it may be used: from a project, there or everywhere; else every place. */
@@ -187,18 +198,14 @@ export class ConnectorAddComponent {
     }
   }
 
-  /** Says what was chosen, and closes; a new account needs a name first. */
+  /** Says what was chosen, and closes; a new account left unnamed is named by the server. */
   protected done(event?: Event): void {
     event?.preventDefault();
     const place = this.place();
     const only: ProjectId | null = place === EVERYWHERE ? null : place;
     if (this.naming()) {
       const name = this.name().trim();
-      if (name === '') {
-        this.problem.set(this.copy.nameNeeded);
-        return;
-      }
-      this.chosen.emit({ existing: false, account: name, only });
+      this.chosen.emit({ existing: false, account: name === '' ? null : name, only });
     } else {
       const had = this.had().find((it) => it.value === this.account());
       this.chosen.emit({ existing: true, account: had?.name ?? null, only });

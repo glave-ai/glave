@@ -46,6 +46,7 @@ describe('ConnectorAccountComponent', () => {
     });
     expect(root.querySelector('.label')?.textContent).toBe('Acme');
     expect(root.querySelector('.used')?.textContent).toBe('Only in Acme Site');
+    expect(root.querySelector('[data-testid="connector-account-who"]')).toBeNull();
     // As the page holds it: an item of its service's list of accounts.
     const list = document.createElement('div');
     list.setAttribute('role', 'list');
@@ -71,5 +72,23 @@ describe('ConnectorAccountComponent', () => {
     expect(root.querySelector('.label')?.textContent).toBe('Stripe');
     await pick('Sign in again');
     expect(picked).toEqual([{ kind: 'again' }]);
+  });
+
+  it('says who it is signed in as, under its name, where the service said', async () => {
+    const { root } = await drawn({
+      name: 'Acme',
+      status: 'connected',
+      used: 'Only in Acme Site',
+      who: 'Acme Corp',
+      signed_in: 'Signed in as Acme Corp',
+    });
+    const who = root.querySelector('[data-testid="connector-account-who"]');
+    expect(who?.textContent).toBe('Signed in as Acme Corp');
+    const list = document.createElement('div');
+    list.setAttribute('role', 'list');
+    document.body.append(list);
+    list.append(root);
+    await expectAccessible(list);
+    list.remove();
   });
 });

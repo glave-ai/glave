@@ -65,6 +65,26 @@ describe('RenameDialogComponent', () => {
     );
     expect(root.textContent).toContain('Up to 40 characters');
     expect(input(root).maxLength).toBe(40);
+    expect(root.querySelector('[data-testid="rename-note"]')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it("takes the page's own heading and a note under the field", async () => {
+    const fixture = TestBed.createComponent(RenameDialogComponent);
+    fixture.componentRef.setInput('kind', 'account');
+    fixture.componentRef.setInput('title', 'Glave Inc.');
+    fixture.componentRef.setInput('heading', 'Name this Stripe account');
+    fixture.componentRef.setInput('note', 'Filled in from your Stripe sign-in.');
+    fixture.componentRef.setInput('open', true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="rename"] h2')?.textContent).toContain(
+      'Name this Stripe account',
+    );
+    expect(input(root).value).toBe('Glave Inc.');
+    expect(root.querySelector('[data-testid="rename-note"]')?.textContent).toBe(
+      'Filled in from your Stripe sign-in.',
+    );
     await expectAccessible(root);
   });
 

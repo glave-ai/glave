@@ -243,7 +243,9 @@ fn id_token(who: &str) -> String {
 
 /// Base64 `text` as base64url, unpadded.
 fn unpadded(text: &str) -> String {
-    text.trim_end_matches('=').replace('+', "-").replace('/', "_")
+    text.trim_end_matches('=')
+        .replace('+', "-")
+        .replace('/', "_")
 }
 
 /// PKCE's S256: the verifier's SHA-256 in base64url, unpadded.

@@ -1,4 +1,9 @@
-<span class="label" dir="auto" data-testid="connector-account-name">{{ name() }}</span>
+<span class="text">
+  <span class="label" dir="auto" data-testid="connector-account-name">{{ name() }}</span>
+  @if (account().signed_in; as signedIn) {
+    <span class="who" data-testid="connector-account-who">{{ signedIn }}</span>
+  }
+</span>
 <span class="used" data-testid="connector-account-used">{{ account().used }}</span>
 <glz-menu-button
   testId="connector-account-menu"

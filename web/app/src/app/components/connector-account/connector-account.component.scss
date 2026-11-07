@@ -8,11 +8,24 @@
   min-height: var(--glz-control-height-touch);
 }
 
-.label {
+// Its name, and under it who it is signed in as.
+.text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-half);
   min-width: 0;
+}
+
+.label {
   overflow-wrap: anywhere;
   font-size: var(--glz-text-sm);
+}
+
+.who {
+  overflow-wrap: anywhere;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
 }
 
 .used {

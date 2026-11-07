@@ -10,7 +10,9 @@ use std::sync::PoisonError;
 
 use glave_mcp::address;
 use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorSignIn, ConnectorStatus, code};
-use glave_session::{Accounts, Catalog, Connecting, Connector, KeptConnector, OfferedAccount, Placement};
+use glave_session::{
+    Accounts, Catalog, Connecting, Connector, KeptConnector, OfferedAccount, Placement,
+};
 
 use super::{Connected, Remote, described};
 use crate::mcp::Offered;
@@ -30,9 +32,7 @@ impl Connected {
     /// The connectors offered here: each account of one connected, with where it is used and
     /// whether its sign-in works (one that no longer does, or whose server asked for more, is
     /// to sign in to again), and each one not connected once.
-    pub(super) async fn listed_connectors(
-        &self,
-    ) -> Result<Vec<OfferedAccount>, ApiError> {
+    pub(super) async fn listed_connectors(&self) -> Result<Vec<OfferedAccount>, ApiError> {
         let catalog = catalog()?;
         let accounts = self.accounts().await?;
         let none: BTreeMap<String, Remote> = BTreeMap::new();
@@ -118,7 +118,9 @@ impl Connected {
                     Some(account) => format!("{} ({account})", connector.name),
                     None => connector.name.clone(),
                 };
-                let link = self.sign_in(url, name, redirect, Some(kept), another).await?;
+                let link = self
+                    .sign_in(url, name, redirect, Some(kept), another)
+                    .await?;
                 Ok(Connecting::SignIn(link))
             }
         }
@@ -219,12 +221,18 @@ pub(super) fn named_new(
     };
     // Each number one more than the last, until one is free: no more than there are accounts.
     let named = (first..=first + taken.len()).map(|n| {
-        let number = if n == 1 { String::new() } else { format!(" {n}") };
+        let number = if n == 1 {
+            String::new()
+        } else {
+            format!(" {n}")
+        };
         let room = NAME.saturating_sub(number.chars().count());
         let cut: String = base.chars().take(room).collect();
         format!("{}{number}", cut.trim_end())
     });
-    let account = named.into_iter().find(|name| !taken.contains(&name.to_lowercase()));
+    let account = named
+        .into_iter()
+        .find(|name| !taken.contains(&name.to_lowercase()));
     KeptConnector { account, ..kept }
 }
 

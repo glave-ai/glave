@@ -83,7 +83,9 @@ impl Connected {
         let Some(redirect) = redirect else {
             return Ok(None);
         };
-        self.sign_in(url, name, redirect, None, false).await.map(Some)
+        self.sign_in(url, name, redirect, None, false)
+            .await
+            .map(Some)
     }
 
     /// Starts signing in to the server at `url`, which the person calls `name`, the browser to
@@ -165,7 +167,12 @@ impl Connected {
             .find(|flow| flow.state == returned.state)
             .map(|flow| {
                 let named = (flow.url.clone(), flow.name.clone(), flow.connector.clone());
-                (named, flow.another, flow.signin.take(), Arc::clone(&flow.ended))
+                (
+                    named,
+                    flow.another,
+                    flow.signin.take(),
+                    Arc::clone(&flow.ended),
+                )
             });
         let Some(((url, name, connector), another, signin, ended)) = found else {
             return "glave is no longer waiting for this sign-in. Sign in again.".to_owned();
@@ -268,7 +275,9 @@ impl Trade {
             Some(kept) if self.another => {
                 let accounts = self.ledger.accounts().await?;
                 let who = granted.who.as_deref();
-                Some(super::connectors::named_new(&accounts, kept, who, &self.name))
+                Some(super::connectors::named_new(
+                    &accounts, kept, who, &self.name,
+                ))
             }
             other => other,
         };

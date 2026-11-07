@@ -44,7 +44,9 @@
 }
 <app-rename-dialog
   kind="account"
-  [title]="renameTitle()"
+  [title]="renameShown().title"
+  [heading]="renameShown().heading"
+  [note]="renameShown().note"
   [(open)]="renameOpen"
   (renamed)="renamed($event)"
 />

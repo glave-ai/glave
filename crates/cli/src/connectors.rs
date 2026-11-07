@@ -138,7 +138,11 @@ fn connected_lines(connector: &ConnectorInfo, places: &Places) {
             let (id, name, count) = (&connector.id, &connector.name, accounts.len());
             println!("  {id:<26} {name}: {count} accounts");
             for labelled in accounts {
-                println!("    {:<24} {}", handle(connector, labelled), about(labelled));
+                println!(
+                    "    {:<24} {}",
+                    handle(connector, labelled),
+                    about(labelled)
+                );
                 again(connector, labelled, places);
             }
         }

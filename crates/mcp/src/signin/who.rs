@@ -49,7 +49,11 @@ fn claims(token: &str) -> Option<Map<String, Value>> {
 /// `text` on one line, its runs of space one, without control characters, at most [`LONGEST`].
 fn tidy(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
-    let line: String = words.join(" ").chars().filter(|it| !it.is_control()).collect();
+    let line: String = words
+        .join(" ")
+        .chars()
+        .filter(|it| !it.is_control())
+        .collect();
     line.chars().take(LONGEST).collect()
 }
 
@@ -89,7 +93,10 @@ mod tests {
     fn says_nothing_it_was_not_told() {
         assert_eq!(signed_in_as(&json!({"access_token": "t"})), None);
         assert_eq!(signed_in_as(&json!({"id_token": "not a token"})), None);
-        assert_eq!(signed_in_as(&json!({"id_token": token(&json!(["a"]))})), None);
+        assert_eq!(
+            signed_in_as(&json!({"id_token": token(&json!(["a"]))})),
+            None
+        );
         let blank = token(&json!({"name": "  ", "preferred_username": "ada"}));
         assert_eq!(
             signed_in_as(&json!({"id_token": blank})).as_deref(),

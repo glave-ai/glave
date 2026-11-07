@@ -16,7 +16,15 @@ const STRIPE: ConnectorInfo = {
   description: 'Payments.',
   docs: 'https://docs.stripe.com/mcp',
   status: 'connected',
-  accounts: [{ name: 'Glave', status: 'connected', used: 'Everywhere, including chats' }],
+  accounts: [
+    {
+      name: 'Glave',
+      status: 'connected',
+      used: 'Everywhere, including chats',
+      who: 'Glave Inc.',
+      signed_in: 'Signed in as Glave Inc.',
+    },
+  ],
 };
 
 function byTestId<T extends HTMLElement>(testId: string): T | null {
@@ -60,6 +68,8 @@ describe('ConnectorAddComponent', () => {
     const { fixture, chosen } = await opened('p1');
     const dialog = byTestId('connector-add');
     expect(dialog?.textContent).toContain('Glave');
+    expect(dialog?.textContent).toContain('Signed in as Glave Inc.');
+    expect(dialog?.textContent).toContain('Name it (optional)');
     expect(dialog?.textContent).toContain('Only in Acme Site');
     await expectAccessible(document.body);
     const name = byTestId<HTMLInputElement>('connector-add-name');
@@ -86,5 +96,14 @@ describe('ConnectorAddComponent', () => {
     byTestId('connector-add-done')?.click();
     await fixture.whenStable();
     expect(chosen).toEqual([{ existing: true, account: 'Glave', only: 'p1' }]);
+  });
+
+  it('leaves a new account unnamed for the server to name from its sign-in', async () => {
+    const { fixture, chosen } = await opened('p1');
+    const name = byTestId<HTMLInputElement>('connector-add-name');
+    expect(name?.placeholder).toBe('From your Stripe sign-in, such as Acme Corp');
+    byTestId('connector-add-done')?.click();
+    await fixture.whenStable();
+    expect(chosen).toEqual([{ existing: false, account: null, only: 'p1' }]);
   });
 });

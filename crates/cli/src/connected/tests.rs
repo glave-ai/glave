@@ -419,10 +419,16 @@ fn another_account_left_unnamed_is_named_as_who_it_is_signed_in_as() {
         };
         let none = ledger.accounts().await.unwrap();
         assert_eq!(named(&none, None), None, "a first, unnamed, says nothing");
-        assert_eq!(named(&none, Some(" Acme Corp ")).as_deref(), Some("Acme Corp"));
+        assert_eq!(
+            named(&none, Some(" Acme Corp ")).as_deref(),
+            Some("Acme Corp")
+        );
 
         let first = signed_in(url, &fake_secret("lin_"), None);
-        ledger.keep_connector(&everywhere("linear"), Some(&first)).await.unwrap();
+        ledger
+            .keep_connector(&everywhere("linear"), Some(&first))
+            .await
+            .unwrap();
         let acme = KeptConnector {
             account: Some("acme corp".into()),
             only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
@@ -431,7 +437,10 @@ fn another_account_left_unnamed_is_named_as_who_it_is_signed_in_as() {
         ledger.keep_connector(&acme, None).await.unwrap();
         let two = ledger.accounts().await.unwrap();
         assert_eq!(named(&two, None).as_deref(), Some("Linear 2"));
-        assert_eq!(named(&two, Some("Acme Corp")).as_deref(), Some("Acme Corp 2"));
+        assert_eq!(
+            named(&two, Some("Acme Corp")).as_deref(),
+            Some("Acme Corp 2")
+        );
         let long = "x".repeat(60);
         let cut = named(&two, Some(&long)).unwrap();
         assert_eq!(cut.chars().count(), 40);

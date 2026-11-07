@@ -150,10 +150,17 @@ where
         connector: KeptConnector,
         another: bool,
     ) -> Result<Reply, ApiError> {
-        let joining = if another { Joining::Another } else { Joining::Connect };
+        let joining = if another {
+            Joining::Another
+        } else {
+            Joining::Connect
+        };
         let (connections, found, connector) = self.placeable(caller, connector, joining).await?;
         let another = another && connector.account.is_none();
-        match connections.connect(connector, another, self.redirect()).await? {
+        match connections
+            .connect(connector, another, self.redirect())
+            .await?
+        {
             Connecting::Connected => Ok(Reply::Connector {
                 connector: self.as_now(caller, connections, &found).await?,
             }),
@@ -213,7 +220,8 @@ where
         let taken = (offered.iter())
             .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
             .any(|it| {
-                !it.connector.same_account(&connector) && folded(&it.connector.account) == folded(&name)
+                !it.connector.same_account(&connector)
+                    && folded(&it.connector.account) == folded(&name)
             });
         if taken {
             let said = Sentence::AccountNameTaken {
@@ -266,11 +274,16 @@ where
         };
         // Another account, unnamed, is none of those the service has.
         let unnamed = joining == Joining::Another && connector.account.is_none();
-        let (same, others): (Vec<_>, Vec<_>) = (connected.into_iter())
-            .partition(|kept| !unnamed && kept.same_account(&connector));
+        let (same, others): (Vec<_>, Vec<_>) =
+            (connected.into_iter()).partition(|kept| !unnamed && kept.same_account(&connector));
         let service = found.name.clone();
         let connecting = joining != Joining::Place;
-        if connecting && !unnamed && same.is_empty() && connector.account.is_none() && !others.is_empty() {
+        if connecting
+            && !unnamed
+            && same.is_empty()
+            && connector.account.is_none()
+            && !others.is_empty()
+        {
             let said = Sentence::AccountUnnamed { service };
             return Err(ApiError::new(code::INVALID_PARAMS, said));
         }

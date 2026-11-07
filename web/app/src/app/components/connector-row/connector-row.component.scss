@@ -53,6 +53,18 @@
   font-size: var(--glz-text-sm);
 }
 
+// A lone account's end: where it is used, then its menu.
+.end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+.where {
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
 .problem {
   color: var(--glz-color-danger);
 }
