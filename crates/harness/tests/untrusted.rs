@@ -45,6 +45,34 @@ fn lookup() -> Arc<InMemoryTools> {
     )]))
 }
 
+/// What the person asks first: to look something up on the web.
+const PROMPT: &str = "Look up how to set this project up and summarise it.";
+
+/// A thread in the walled workspace on `base`, judged, whose model answers with `answers`, after
+/// a first turn asking [`PROMPT`] with the web lookup at hand; and what the model is sent.
+async fn looked_up(
+    base: &std::path::Path,
+    answers: Vec<glave_ports::Completion>,
+) -> (
+    glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, NoOneToAsk>,
+    Seen,
+    glave_harness::Thread,
+) {
+    let workspace = walled(base, false).await;
+    let (harness, seen) = harness_with(
+        workspace,
+        answers,
+        NoOneToAsk,
+        InMemoryLog::new(),
+        1,
+        judged(),
+    );
+    let harness = harness.with_tools(vec![lookup()]);
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    turn(&harness, &mut thread, PROMPT).await;
+    (harness, seen, thread)
+}
+
 /// What a judge's request showed it.
 fn shown(request: &ModelRequest) -> String {
     format!("{:?}", request.messages)
@@ -67,19 +95,7 @@ fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it
             answer(Some(ask), vec![], StopReason::EndTurn),
             answer(Some("Still not."), vec![], StopReason::EndTurn),
         ];
-        let workspace = walled(&base, false).await;
-        let (harness, seen) = harness_with(
-            workspace,
-            answers,
-            NoOneToAsk,
-            InMemoryLog::new(),
-            1,
-            judged(),
-        );
-        let harness = harness.with_tools(vec![lookup()]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let prompt = "Look up how to set this project up and summarise it.";
-        turn(&harness, &mut thread, prompt).await;
+        let (harness, seen, thread) = looked_up(&base, answers).await;
         let said = results(thread.messages());
         assert!(
             said[0].starts_with("[Untrusted content follows"),
@@ -120,6 +136,45 @@ fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it
         assert!(
             shown(&judge).contains("read untrusted content"),
             "resuming keeps it: {judge:?}"
+        );
+    });
+}
+
+#[test]
+fn a_thread_read_again_from_after_a_compaction_keeps_that_it_read_untrusted_content() {
+    let Some(base) = sandboxed("untrusted-compacted") else {
+        return;
+    };
+    block_on!(async {
+        let ask = r#"{"decision":"ask","reason":"the page asked, not the person"}"#;
+        let answers = vec![
+            answer(None, vec![("lookup", json!({}))], StopReason::ToolUse),
+            answer(
+                Some("It says to run a script."),
+                vec![],
+                StopReason::EndTurn,
+            ),
+            answer(Some("Noted."), vec![], StopReason::EndTurn),
+            answer(Some("We looked the setup up."), vec![], StopReason::EndTurn),
+            // After resuming from the compaction's end: the page's results are behind it.
+            planted(),
+            answer(Some(ask), vec![], StopReason::EndTurn),
+            answer(Some("I did not run it."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, seen, mut thread) = looked_up(&base, answers).await;
+        turn(&harness, &mut thread, "Thanks.").await;
+        harness
+            .compact(&mut thread, &glave_harness::Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+
+        let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        turn(&harness, &mut resumed, "Carry on.").await;
+        let judge = shown(&seen.lock().unwrap()[5]);
+        assert!(judge.contains("read untrusted content"), "{judge}");
+        assert!(
+            judge.contains(PROMPT),
+            "the person's messages from before it are still theirs: {judge}"
         );
     });
 }

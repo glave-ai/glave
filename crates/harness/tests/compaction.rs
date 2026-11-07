@@ -3,7 +3,8 @@
 
 use glave_event::StopReason;
 use glave_harness::{AllowAll, Cancel, Compaction, Live};
-use glave_ports::{InMemoryLog, ModelRequest};
+use glave_ports::testing::FaultyLog;
+use glave_ports::{EventLog as _, InMemoryLog, ModelRequest};
 
 use crate::support::*;
 
@@ -221,5 +222,55 @@ fn an_empty_summary_leaves_the_thread_as_it_was() {
         assert!(sent[2].messages.len() > 1, "the full conversation goes on");
         let recorded = kinds(&events(harness.log(), thread.id).await);
         assert!(!recorded.contains(&"thread.compacted"), "{recorded:?}");
+    });
+}
+
+/// What the model is sent over the last of four turns of a thread compacted after the second,
+/// a turn that reads a file, so its call is numbered after everything before it. With
+/// `resumed`, the thread is read again from the log before that turn, reading none of the
+/// first turn's results: a compacted thread is read from its end.
+async fn four_turns(resumed: bool) -> String {
+    let dir = folder(if resumed { "end-resumed" } else { "end-held" });
+    std::fs::write(dir.join("a.txt"), "hi\n").unwrap();
+    let answers = vec![
+        reads("a.txt"),
+        answer(Some("It says hi."), vec![], StopReason::EndTurn),
+        answer(Some("Hello."), vec![], StopReason::EndTurn),
+        answer(Some("We read a.txt."), vec![], StopReason::EndTurn),
+        answer(Some("Still here."), vec![], StopReason::EndTurn),
+        reads("a.txt"),
+        answer(Some("Still hi."), vec![], StopReason::EndTurn),
+    ];
+    let log = FaultyLog::default();
+    let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log.clone(), 1, settings()).await;
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    turn(&harness, &mut thread, "read a.txt").await;
+    turn(&harness, &mut thread, "hello").await;
+    harness
+        .compact(&mut thread, &Cancel::new(), &mut |_| {})
+        .await
+        .unwrap();
+    turn(&harness, &mut thread, "still there?").await;
+    if resumed {
+        log.fail_with("tool.call.completed");
+        thread = harness.resume_thread(scope(), thread.id).await.unwrap();
+        assert!(
+            log.read(&scope(), thread.id, None, 1_000).await.is_err(),
+            "resuming read none of the first turn's results: the blip still waited for one"
+        );
+    }
+    turn(&harness, &mut thread, "read it again").await;
+    let sent = requests(&seen);
+    let last: Vec<_> = sent[sent.len() - 2..]
+        .iter()
+        .map(|request| (&request.messages, &request.tools))
+        .collect();
+    format!("{last:?}")
+}
+
+#[test]
+fn a_compacted_thread_is_read_again_from_its_end_and_goes_on_the_same() {
+    block_on!(async {
+        assert_eq!(four_turns(true).await, four_turns(false).await);
     });
 }

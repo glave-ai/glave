@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnResult, Verdict, decode};
+use glave_event::{Body, CallId, Event, Outcome, Part, ThreadId, TurnResult, Verdict};
 use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider, Scope, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
@@ -12,8 +12,7 @@ use crate::conversation::conversation;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::waits::Opened;
 
-/// Events read per page while loading a thread.
-const PAGE: usize = 1_000;
+mod end;
 
 const INTERRUPTED: &str = "[interrupted: glave stopped before this call finished]";
 
@@ -108,26 +107,6 @@ where
         };
         self.rebuild_memory(&mut thread, &events).await;
         Ok(thread)
-    }
-
-    pub(crate) async fn load(
-        &self,
-        scope: &Scope,
-        id: ThreadId,
-    ) -> Result<Vec<Event>, HarnessError> {
-        let mut events = Vec::new();
-        let mut after: Option<Seq> = None;
-        loop {
-            let page = self.log.read(scope, id, after, PAGE).await?;
-            let full = page.len() == PAGE;
-            after = page.last().map(|event| event.seq).or(after);
-            for raw in page {
-                events.push(decode(raw).map_err(|e| HarnessError::Event(e.to_string()))?);
-            }
-            if !full {
-                return Ok(events);
-            }
-        }
     }
 
     /// Closes what a turn left open in thread `id`, as its log has it now, when it does not
@@ -315,10 +294,12 @@ fn by_person(added: &glave_event::MessageAdded) -> bool {
             .is_none_or(|author| author.kind != glave_event::PrincipalKind::Glave)
 }
 
-/// Whether the thread has read untrusted content: any call's output marked so.
-fn read_untrusted(events: &[Event]) -> bool {
+/// Whether the thread has read untrusted content: any call's output marked so, or a compaction
+/// that says it had by then.
+pub(crate) fn read_untrusted(events: &[Event]) -> bool {
     events.iter().any(|event| match &event.body {
         Body::ToolCallCompleted(done) => done.untrusted,
+        Body::ThreadCompacted(compacted) => compacted.untrusted,
         _ => false,
     })
 }

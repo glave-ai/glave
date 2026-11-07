@@ -1,4 +1,4 @@
-//! The event log port: append-only, gap-free per thread, read in pages.
+//! The event log port: append-only, gap-free per thread, read in pages from either end.
 
 use std::future::Future;
 
@@ -30,6 +30,19 @@ pub trait EventLog: Send + Sync {
         scope: &Scope,
         thread: ThreadId,
         after: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send;
+
+    /// Reads up to `limit` events of a thread back from its end, newest first: those before
+    /// `before` (or from its last), of the types `kinds` names (or of every type). A thread
+    /// that does not exist in `scope` reads as empty. Opening a long thread reads only its end
+    /// this way, and of what came before only the types it still needs.
+    fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send;
 
@@ -79,8 +92,8 @@ pub trait EventLog: Send + Sync {
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send;
 
-    /// The thread's latest event whose type is one of `kinds`, if it has one. The default reads
-    /// the thread from the start; an adapter that can ask its storage answers faster.
+    /// The thread's latest event whose type is one of `kinds`, if it has one: the first that
+    /// reading back finds. An adapter that can ask its storage faster answers so.
     fn latest_of(
         &self,
         scope: &Scope,
@@ -88,27 +101,14 @@ pub trait EventLog: Send + Sync {
         kinds: &[&str],
     ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
         async move {
-            let mut latest = None;
-            let mut after: Option<Seq> = None;
-            loop {
-                let page = self.read(scope, thread, after, LATEST_PAGE).await?;
-                let full = page.len() == LATEST_PAGE;
-                after = page.last().map(|event| event.seq).or(after);
-                for event in page {
-                    if kinds.contains(&event.kind.as_str()) {
-                        latest = Some(event);
-                    }
-                }
-                if !full {
-                    return Ok(latest);
-                }
+            if kinds.is_empty() {
+                return Ok(None);
             }
+            let latest = self.read_back(scope, thread, Some(kinds), None, 1).await?;
+            Ok(latest.into_iter().next())
         }
     }
 }
-
-/// Events the default `latest_of` reads per page.
-const LATEST_PAGE: usize = 1_000;
 
 /// Why an append or a read failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

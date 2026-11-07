@@ -336,6 +336,7 @@ where
         let compacted = ThreadCompacted {
             through,
             parts: parts.clone(),
+            untrusted: thread.untrusted,
         };
         self.stage(thread, &mut events, &compacted)?;
         self.commit(thread, events).await?;

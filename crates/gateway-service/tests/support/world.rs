@@ -42,6 +42,17 @@ impl EventLog for SharedLog {
         self.0.read(scope, thread, after, limit).await
     }
 
+    async fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> Result<Vec<RawEvent>, LogError> {
+        self.0.read_back(scope, thread, kinds, before, limit).await
+    }
+
     async fn search(
         &self,
         scope: &Scope,

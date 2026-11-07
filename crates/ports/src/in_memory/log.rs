@@ -98,20 +98,51 @@ impl InMemoryLog {
         after: Option<Seq>,
         limit: usize,
     ) -> Result<Vec<RawEvent>, LogError> {
+        self.reading(scope, thread, |events| {
+            events
+                .iter()
+                .filter(|event| after.is_none_or(|after| event.seq > after))
+                .take(limit)
+                .cloned()
+                .collect()
+        })
+    }
+
+    fn read_back_now(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> Result<Vec<RawEvent>, LogError> {
+        self.reading(scope, thread, |events| {
+            events
+                .iter()
+                .rev()
+                .filter(|event| before.is_none_or(|before| event.seq < before))
+                .filter(|event| kinds.is_none_or(|kinds| kinds.contains(&event.kind.as_str())))
+                .take(limit)
+                .cloned()
+                .collect()
+        })
+    }
+
+    /// What `read` makes of the thread's events, oldest first; nothing for a thread it lacks.
+    fn reading(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        read: impl FnOnce(&[RawEvent]) -> Vec<RawEvent>,
+    ) -> Result<Vec<RawEvent>, LogError> {
         let threads = self
             .threads
             .lock()
             .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))?;
-        let Some(stored) = threads.get(&(*scope, thread)) else {
-            return Ok(Vec::new());
-        };
-        Ok(stored
-            .events
-            .iter()
-            .filter(|event| after.is_none_or(|after| event.seq > after))
-            .take(limit)
-            .cloned()
-            .collect())
+        Ok(threads
+            .get(&(*scope, thread))
+            .map(|stored| read(&stored.events))
+            .unwrap_or_default())
     }
 }
 
@@ -196,6 +227,17 @@ impl EventLog for InMemoryLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
         ready(self.read_now(scope, thread, after, limit))
+    }
+
+    fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        ready(self.read_back_now(scope, thread, kinds, before, limit))
     }
 
     fn search(

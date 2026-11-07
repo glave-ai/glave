@@ -232,6 +232,20 @@ impl EventLog for DataLog {
         }
     }
 
+    async fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> Result<Vec<RawEvent>, LogError> {
+        match self {
+            Self::Sqlite(log) => log.read_back(scope, thread, kinds, before, limit).await,
+            Self::Postgres(log) => log.read_back(scope, thread, kinds, before, limit).await,
+        }
+    }
+
     async fn search(
         &self,
         scope: &Scope,

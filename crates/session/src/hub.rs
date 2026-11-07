@@ -295,6 +295,17 @@ impl<L: EventLog> EventLog for Observed<L> {
         self.inner.read(scope, thread, after, limit)
     }
 
+    fn read_back(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: Option<&[&str]>,
+        before: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        self.inner.read_back(scope, thread, kinds, before, limit)
+    }
+
     fn search(
         &self,
         scope: &Scope,

@@ -304,10 +304,7 @@ where
         let messages = crate::conversation::conversation(&events);
         let report = crate::subagent::report(&messages, summary.outcome);
         let mut output = ToolOutput::text(summary.outcome != Outcome::Completed, report);
-        output.untrusted = events.iter().any(|event| match &event.body {
-            Body::ToolCallCompleted(done) => done.untrusted,
-            _ => false,
-        });
+        output.untrusted = crate::resume::read_untrusted(&events);
         Ok((output, summary))
     }
 
