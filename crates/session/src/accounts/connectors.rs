@@ -176,15 +176,14 @@ impl<L: EventLog> AccountLedger<L> {
     }
 
     /// Calls the account `connector` names `name` from now on (none: unnamed), where it is
-    /// used, its sign-in to its server at `url` kept under its new name; with `shared`, the
-    /// person's own server at that address keeps the sign-in it shared too. `NameTaken` when
-    /// another account of the service has that name, and `NotConnected` when it is not.
+    /// used, its sign-in to its server at `url` kept under its new name, in the place of any
+    /// kept there under it. `NameTaken` when another account of the service has that name, and
+    /// `NotConnected` when it is not.
     pub async fn rename_connector(
         &self,
         connector: &KeptConnector,
         name: Option<&str>,
         url: &str,
-        shared: bool,
     ) -> Result<Placement, AccountsError> {
         let fresh = self.new_id()?;
         let renamed = self
@@ -209,10 +208,9 @@ impl<L: EventLog> AccountLedger<L> {
                         account: new.account.clone(),
                         ..sign_in.clone()
                     };
+                    events.extend(replaced(accounts, &moved));
                     events.push(Event::ConnectionConnected(moved));
-                    if !(shared && kept.account.is_none()) {
-                        events.push(Event::ConnectionRemoved(sign_in.connection));
-                    }
+                    events.push(Event::ConnectionRemoved(sign_in.connection));
                 }
                 Some((events, Placement::Placed))
             })

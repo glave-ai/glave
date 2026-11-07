@@ -432,9 +432,7 @@ fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
             .unwrap();
         ledger.keep_connector(&acme, None).await.unwrap();
 
-        let renamed = ledger
-            .rename_connector(&first, Some("Glave"), url, false)
-            .await;
+        let renamed = ledger.rename_connector(&first, Some("Glave"), url).await;
         assert_eq!(renamed.unwrap(), Placement::Placed);
         let accounts = ledger.accounts().await.unwrap();
         let glave = account("stripe", Some("Glave"), None);
@@ -456,13 +454,22 @@ fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
             "and no longer under no name"
         );
 
-        let clash = ledger
-            .rename_connector(&glave, Some("Acme"), url, false)
-            .await;
+        let clash = ledger.rename_connector(&glave, Some("Acme"), url).await;
         assert_eq!(clash.unwrap(), Placement::NameTaken);
-        let gone = ledger
-            .rename_connector(&first, Some("Zed"), url, false)
-            .await;
+        let gone = ledger.rename_connector(&first, Some("Zed"), url).await;
         assert_eq!(gone.unwrap(), Placement::NotConnected);
+
+        let back = ledger.rename_connector(&glave, None, url).await;
+        assert_eq!(back.unwrap(), Placement::Placed);
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(
+            accounts.connectors,
+            [first, acme],
+            "unnamed again, in its place"
+        );
+        let kept: Vec<_> = (accounts.connections.iter())
+            .map(|it| it.account.clone())
+            .collect();
+        assert_eq!(kept, [None], "one sign-in, under no name again");
     });
 }

@@ -75,7 +75,11 @@ describe('ConnectorAddComponent', () => {
 
   it('uses an account connected already, from Settings everywhere unless moved', async () => {
     const { fixture, chosen } = await opened(null);
-    await pickRadio(fixture, 'connector-add-account', 'Glave');
+    // Glave is used everywhere, so a new account starts where none is.
+    const places = byTestId('connector-add-place')?.querySelectorAll('label') ?? [];
+    const checked = [...places].find((it) => it.querySelector('input')?.checked === true);
+    expect(checked?.textContent).toContain('Only in Acme Site');
+    await pickRadio(fixture, 'connector-add-which', 'Glave');
     expect(byTestId('connector-add-name')).toBeNull();
     expect(byTestId('connector-add-done')?.textContent.trim()).toBe('Use it');
     await pickRadio(fixture, 'connector-add-place', 'Only in Acme Site');

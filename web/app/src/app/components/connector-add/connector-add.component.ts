@@ -20,6 +20,8 @@ import {
   GlzRadioGroupComponent,
 } from '@glave/glaze';
 
+import { ACCOUNT_NAME_LIMIT } from '../../lib/connections';
+
 /** What the person chose: an account of the service and where it is used. */
 export interface AccountChosen {
   /** Whether it is one already connected, moved here, or another to sign in to. */
@@ -95,7 +97,7 @@ export class ConnectorAddComponent {
   });
   protected readonly another = ANOTHER;
   /** The longest name the server takes. */
-  protected readonly longest = 40;
+  protected readonly longest = ACCOUNT_NAME_LIMIT;
   protected readonly anotherLabel = computed(() => {
     const service = this.service();
     return $localize`:@@connectorAdd.another:Sign in to another ${service}:SERVICE: account`;
@@ -148,11 +150,25 @@ export class ConnectorAddComponent {
         untracked(() => {
           this.account.set(ANOTHER);
           this.name.set('');
-          this.place.set(this.here() ?? EVERYWHERE);
+          this.place.set(this.free());
           this.problem.set(null);
         });
       }
     });
+  }
+
+  /**
+   * Where a new account starts: where the page is, or, from Settings, the first place no
+   * account of the service is used in, since no two are used in one.
+   */
+  private free(): string {
+    const here = this.here();
+    if (here !== null) {
+      return here;
+    }
+    const used = (this.connector()?.accounts ?? []).map((it) => it.only ?? EVERYWHERE);
+    const open = this.where().find((it) => !used.includes(it.value));
+    return open?.value ?? EVERYWHERE;
   }
 
   protected choseAccount(value: string | null): void {

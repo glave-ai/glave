@@ -68,7 +68,7 @@
                 data-testid="connector-accounts"
                 [class.shown]="row.listed"
               >
-                @for (beneath of row.accounts; track $index) {
+                @for (beneath of row.accounts; track beneath.key) {
                   <app-connector-account
                     [service]="row.tile"
                     [account]="beneath.account"

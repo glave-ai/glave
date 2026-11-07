@@ -18,12 +18,11 @@ import {
   GlzInputDirective,
 } from '@glave/glaze';
 
+import { ACCOUNT_NAME_LIMIT } from '../../lib/connections';
 import { plural } from '../../lib/plural';
 
 /** The longest title `thread/rename` takes, and the longest name a project is given. */
 const TITLE_LIMIT = 200;
-/** The longest name `connector/rename` gives an account. */
-const ACCOUNT_LIMIT = 40;
 
 /** What is renamed: a thread, by its title, a project or an app's account, by its name. */
 export type Renamed = 'thread' | 'project' | 'account';
@@ -69,7 +68,7 @@ export class RenameDialogComponent {
     account: {
       heading: $localize`:@@renameDialog.accountHeading:Rename the account`,
       label: $localize`:@@renameDialog.accountLabel:Name`,
-      limit: ACCOUNT_LIMIT,
+      limit: ACCOUNT_NAME_LIMIT,
     },
   };
   protected readonly naming = computed(() => this.namings[this.kind()]);

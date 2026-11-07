@@ -103,6 +103,8 @@ interface Row {
 interface Beneath {
   readonly account: ConnectorAccount;
   readonly place: string;
+  /** What tracks it among its service's accounts: its name, unique among them. */
+  readonly key: string;
 }
 
 /** What Disconnect asks about: an account of a connector, as the page calls it. */
@@ -390,7 +392,7 @@ export class ConnectorsComponent {
       this.renaming.set({ id: row.id, account: name, title: name ?? row.name });
       this.renameOpen.set(true);
     } else {
-      const called = name === null ? row.name : `${row.name} (${name})`;
+      const called = name === null ? row.name : this.called(row.name, name);
       this.ask({ id: row.id, name: row.name, account: name, called });
     }
   }
@@ -498,9 +500,12 @@ export class ConnectorsComponent {
         if (focused !== null && focused !== this.document.body) {
           return;
         }
-        const button = this.host.nativeElement.querySelector<HTMLElement>(
-          `[data-connector="${id}"] [data-testid="connector-action"]`,
-        );
+        // A service with two accounts or more has no button of its own: its Add account takes it.
+        const row = `[data-connector="${id}"]`;
+        const host = this.host.nativeElement;
+        const button =
+          host.querySelector<HTMLElement>(`${row} [data-testid="connector-action"]`) ??
+          host.querySelector<HTMLElement>(`${row} [data-testid="connector-add-account"]`);
         button?.focus();
       },
       { injector: this.injector },
@@ -513,6 +518,16 @@ export class ConnectorsComponent {
     return this.project() === null
       ? this.copy.connected
       : $localize`:@@connectors.usedIn:Used in ${name}:PROJECT:`;
+  }
+
+  /** What the page calls the account `account` of `service` where it acts on it: `Stripe (Acme)`. */
+  private called(service: string, account: string): string {
+    return $localize`:@@connectors.called:${service}:SERVICE: (${account}:ACCOUNT:)`;
+  }
+
+  /** A row's title for the one account of `service` it shows, named: `Stripe: Acme`. */
+  private titled(service: string, account: string): string {
+    return $localize`:@@connectors.titled:${service}:SERVICE:: ${account}:ACCOUNT:`;
   }
 
   /** What is said of the connector `name` now in the state `state`. */
@@ -539,10 +554,10 @@ export class ConnectorsComponent {
     const [first] = all;
     const several = all.length > 1;
     const account = first?.name ?? null;
-    const called = account === null ? name : `${name} (${account})`;
+    const called = account === null ? name : this.called(name, account);
     const base = {
       id,
-      name: account === null || several ? name : `${name}: ${account}`,
+      name: account === null || several ? name : this.titled(name, account),
       connected,
       again,
       busy,
@@ -557,7 +572,9 @@ export class ConnectorsComponent {
       account,
       only: first?.only ?? null,
       called,
-      accounts: several ? all.map((it) => ({ account: it, place: it.only ?? EVERYWHERE })) : [],
+      accounts: several
+        ? all.map((it) => ({ account: it, place: it.only ?? EVERYWHERE, key: it.name ?? '' }))
+        : [],
       listed: several,
       tile: name,
       acts: !several,
@@ -572,6 +589,8 @@ export class ConnectorsComponent {
         ...base,
         waiting: true,
         acts: true,
+        // Its Cancel stops the sign-in; Disconnect would not know which account to take.
+        again: again && !several,
         detail: this.waitingLine(name, waited.opened),
         link: waited.link,
         linkText: waited.opened ? this.copy.openAgain : this.copy.openSignIn,

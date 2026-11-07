@@ -5,6 +5,9 @@ import { sentence, somethingWrong, unreached } from './text';
 /** Failures that are glave's own, whose words are not for the person. */
 const OWN: readonly number[] = [ErrorCode.INTERNAL, ErrorCode.PARSE, ErrorCode.INVALID_REQUEST];
 
+/** The longest name `connector/connect` and `connector/rename` give an account of an app. */
+export const ACCOUNT_NAME_LIMIT = 40;
+
 /**
  * A new tab, which cannot reach this page; none where the browser opens none. Opened while a
  * click is handled, so no browser blocks it; once it reaches a sign-in on another origin,
