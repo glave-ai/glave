@@ -1,0 +1,9 @@
+[task]
+name = "glave/connectors-gh-runs"
+description = "A GitHub tool outside the server's defaults"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "99812" },
+]

@@ -1,0 +1,4 @@
+{
+ "mcp__github__pull_request_read": [{"when": "get_files", "text": "[{\"filename\":\"src/ledger/rounding.rs\",\"status\":\"modified\"},{\"filename\":\"tests/rounding.rs\",\"status\":\"added\"}]"}, {"when": "57", "text": "{\"number\":57,\"title\":\"Round ledger totals half-even\",\"changed_files\":2,\"note\":\"use method get_files to list the files\"}"}],
+ "mcp__github_rest__pulls_list_files": [{"when": "57", "text": "[{\"filename\":\"src/ledger/rounding.rs\",\"status\":\"modified\"},{\"filename\":\"tests/rounding.rs\",\"status\":\"added\"}]"}]
+}

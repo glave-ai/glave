@@ -8,11 +8,11 @@
 //! What changes meanwhile reaches the model at the end of the conversation instead, in one note
 //! that opens the turn's message, as Claude Code and OpenCode send a `<system-reminder>` and
 //! Codex its context updates (`told.rs`). A tool whose source stops answering stays listed.
+//! A connection turned on is the one change that makes a new prefix mid-thread, once, so that
+//! it works at once (owner, 2026-11-06): the note says so.
 
 mod kept;
 mod told;
-
-use std::collections::BTreeSet;
 
 use glave_event::{Part, Permissions};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSpec};
@@ -48,9 +48,6 @@ pub(crate) struct Prefix {
     specs: Vec<ToolSpec>,
     /// What the model has been told of what can change: by the prefix, then by notes.
     told: Told,
-    /// The person's connections offered where the thread works as it was made, by their
-    /// servers' names: one that comes after makes the prefix again.
-    connections: BTreeSet<String>,
 }
 
 impl Prefix {
@@ -88,24 +85,22 @@ where
     /// when it has none for its model, and called through what is on offer now.
     pub(crate) async fn tools(&self, thread: &mut Thread) -> ToolSet {
         // Boxed: what every source says can be large, and turns hold this across awaits.
-        let (now, told, connections) = Box::pin(self.on_offer(thread)).await;
+        let (now, told) = Box::pin(self.on_offer(thread)).await;
         let model = self.model_for(thread);
-        let kept = match std::mem::take(&mut thread.prefix) {
-            Prefixed::Made(prefix) if prefix.model == model => Some(prefix),
-            Prefixed::Kept(kept) if kept.model == model => Some(Box::new(kept.prefix())),
-            _ => None,
-        };
-        // A connection turned on for this place since: its tools come with a new prefix.
-        let kept = kept.filter(|prefix| connections.is_subset(&prefix.connections));
-        let prefix = kept.unwrap_or_else(|| {
-            Box::new(Prefix {
+        let mut prefix = match std::mem::take(&mut thread.prefix) {
+            Prefixed::Made(prefix) if prefix.model == model => prefix,
+            Prefixed::Kept(kept) if kept.model == model => Box::new(kept.prefix()),
+            _ => Box::new(Prefix {
                 model,
                 system: now.system.clone(),
                 specs: now.specs.clone(),
                 told: told.clone(),
-                connections,
-            })
-        });
+            }),
+        };
+        if prefix.told.connection_came(&told, &prefix.specs) {
+            prefix.system.clone_from(&now.system);
+            prefix.specs.clone_from(&now.specs);
+        }
         let set = prefix.behind(now, told);
         thread.prefix = Prefixed::Made(prefix);
         set
@@ -120,10 +115,10 @@ where
         }
     }
 
-    /// The tools on offer now in `thread`, from every source: the harness's, then its
-    /// project's; what they would tell the model of what can change; and the person's
-    /// connections offered where it works.
-    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told, BTreeSet<String>) {
+    /// The tools on offer now in `thread`, from every source: the harness's, the person's own
+    /// used where it works, then its project's; and what they would tell the model of what can
+    /// change.
+    async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told) {
         let (own, away) = self.own_for(thread);
         let sources = self.sources_with(thread, &own.sources);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
@@ -160,12 +155,14 @@ where
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }
+        set.frame(self.context_window(&self.model_for(thread)));
         let told = Told {
             signed_in,
             planning,
             memory: self.memory_for(thread).is_some(),
             tools: Told::services(&set.specs),
+            connected: set.connected_names(),
         };
-        (set, told, own.connections.into_iter().collect())
+        (set, told)
     }
 }

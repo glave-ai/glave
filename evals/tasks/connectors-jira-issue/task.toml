@@ -1,0 +1,10 @@
+[task]
+name = "glave/connectors-jira-issue"
+description = "A Jira issue among Linear and GitLab issues"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "Tamsin Okoye" },
+    { answer_lacks = ["Tom Wrong"] },
+]

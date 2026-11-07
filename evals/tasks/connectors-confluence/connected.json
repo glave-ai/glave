@@ -1,0 +1,32 @@
+{
+ "mcp__atlassian__searchConfluence": [
+  {
+   "when": "runbook",
+   "text": "[{\"id\":\"88231\",\"title\":\"Payments runbook\",\"space\":\"OPS\",\"lastUpdatedBy\":\"Ines Castellano\"}]"
+  }
+ ],
+ "mcp__atlassian__search": [
+  {
+   "when": "runbook",
+   "text": "[{\"id\":\"88231\",\"title\":\"Payments runbook\",\"type\":\"confluence page\",\"lastUpdatedBy\":\"Ines Castellano\"}]"
+  }
+ ],
+ "mcp__atlassian__getConfluenceContent": [
+  {
+   "when": "88231",
+   "text": "{\"id\":\"88231\",\"title\":\"Payments runbook\",\"version\":{\"by\":\"Ines Castellano\"}}"
+  }
+ ],
+ "mcp__notion__search": [
+  {
+   "when": "runbook",
+   "text": "[{\"title\":\"Payments runbook (old)\",\"last_edited_by\":\"Tom Wrong\"}]"
+  }
+ ],
+ "mcp__atlassian__getAccessibleAtlassianResources": [
+  {
+   "when": "",
+   "text": "[{\"id\":\"c0ffee12-3456-7890-abcd-ef0123456789\",\"name\":\"acme\",\"url\":\"https://acme.atlassian.net\",\"scopes\":[\"read:jira-work\",\"write:jira-work\",\"read:confluence-content.all\"]}]"
+  }
+ ]
+}

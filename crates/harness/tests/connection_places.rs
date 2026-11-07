@@ -25,7 +25,7 @@ fn place(n: u8) -> Scope {
 /// `only` in `at` alone, of the two they may connect.
 fn own(only: &str, at: Scope) -> OwnTools {
     let mail = Arc::new(tool("mcp__mail__send", "Sent.")) as Arc<dyn ToolSource>;
-    let theirs = Arc::new(tool(only, "Done there.")) as Arc<dyn ToolSource>;
+    let theirs = Arc::new(tool(only, "Done there.").as_connected()) as Arc<dyn ToolSource>;
     let everywhere = Placed {
         sources: vec![Arc::clone(&mail)],
         connections: Vec::new(),

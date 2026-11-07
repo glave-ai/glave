@@ -1,16 +1,18 @@
 //! Running one of the model's tool calls: asking the person when the call needs it, running
 //! the tool, and recording its result.
 
+mod described;
+
 use std::sync::Arc;
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, CallId, Caution, Outcome, Principal, Settled,
-    ToolCallCompleted, ToolKind, TurnResult, Verdict,
+    ToolCallCompleted, TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
     Assessment, BlobStore, Called, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
-    ToolSource, describe_call,
+    ToolSource,
 };
 
 use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there};
@@ -25,7 +27,7 @@ use crate::room::fit;
 use crate::sandbox;
 use crate::service::Round;
 use crate::tools::Tool;
-use crate::toolset::ToolSet;
+use crate::toolset::Route;
 use crate::turn::{Live, Step};
 use crate::waits::{Answered, verdict_of};
 
@@ -86,12 +88,8 @@ where
                     "You made this exact call several times in a row. Change your approach.",
                 )
             } else {
-                let output = self.call_tool(thread, first, step, cancel, live).await?;
-                if step.toolset.get(&first.tool).map(|(index, _)| index) == Some(BUILTINS) {
-                    self.with_nested_instructions(thread, first, output).await
-                } else {
-                    output
-                }
+                self.route_and_call(thread, first, step, cancel, live)
+                    .await?
             };
             step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
             if let Some(path) = Tool::changes(&first.tool, &first.arguments)
@@ -104,6 +102,33 @@ where
             rest = rest.get(1..).unwrap_or_default();
         }
         Ok(())
+    }
+
+    /// Runs `call` as the tools route it: as it is, as the connected tool it stands for, as a
+    /// search of the connected tools, or not at all.
+    async fn route_and_call(
+        &self,
+        thread: &mut Thread,
+        call: &ToolCall,
+        step: &mut Step,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<ToolOutput, HarnessError> {
+        match step.toolset.route(call) {
+            Route::Run(call) => {
+                let output = self.call_tool(thread, &call, step, cancel, live).await?;
+                if step.toolset.get(&call.tool).map(|(index, _)| index) == Some(BUILTINS) {
+                    Ok(self.with_nested_instructions(thread, &call, output).await)
+                } else {
+                    Ok(output)
+                }
+            }
+            Route::Search { query, connector } => {
+                let found = step.toolset.search(query.as_deref(), connector.as_deref());
+                Ok(fit(found, self.tool_room(thread)))
+            }
+            Route::Refused(output) => Ok(output),
+        }
     }
 
     /// Runs `calls`, which start subagents side by side, and records their results: refused as
@@ -141,40 +166,6 @@ where
                 .await?;
         }
         Ok(())
-    }
-
-    /// `call` in a line, for the person (`bash: cargo test`), as `tools` offer it: what its
-    /// `tool.call.requested` records, and what its live update and an approval of it say, each
-    /// by the same description: its source's, or glave's own tool's.
-    pub(crate) fn describe(&self, thread: &Thread, tools: &ToolSet, call: &ToolCall) -> String {
-        let (name, arguments) = (call.tool.as_str(), &call.arguments);
-        if tools.is_plan(name) {
-            return crate::plan::describe(arguments);
-        } else if tools.is_memory(name) {
-            return crate::memory::described(name, arguments);
-        } else if tools.is_agent(name) {
-            return crate::subagent::describe(arguments);
-        }
-        let described = tools.get(name).and_then(|(index, info)| {
-            let source = self.source_for(thread, tools, index)?;
-            Some(source.describe(&info.spec.name, arguments))
-        });
-        described.unwrap_or_else(|| describe_call(name, arguments))
-    }
-
-    /// What kind of work `call` does, as its source says: glave's own plan, memory and
-    /// subagent tools, and a tool not offered, are `other`.
-    pub(crate) fn kind(&self, thread: &Thread, tools: &ToolSet, call: &ToolCall) -> ToolKind {
-        let name = call.tool.as_str();
-        if tools.is_plan(name) || tools.is_memory(name) || tools.is_agent(name) {
-            return ToolKind::Other;
-        }
-        tools
-            .get(name)
-            .and_then(|(index, info)| {
-                Some(self.source_for(thread, tools, index)?.kind(&info.spec.name))
-            })
-            .unwrap_or_default()
     }
 
     /// Runs one tool call, asking the person first when its effect needs them in this mode or

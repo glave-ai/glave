@@ -9,6 +9,8 @@
 //!   web/             optional, glave's own: pages served on 127.0.0.1 at `{web}` (`web.rs`)
 //!   search.md        optional, glave's own: web search, on, answering every
 //!                    query with this text (`search.rs`)
+//!   connected.json   optional, glave's own: every connector of `evals/connectors` connected,
+//!                    its tools answering as this says (`connected.rs`)
 //! ```
 //!
 //! The agent never sees `tests/`, so it cannot read or weaken the grader.
@@ -201,6 +203,11 @@ impl Task {
     /// (`search.rs`).
     pub(crate) fn search_results(&self) -> Option<PathBuf> {
         Some(self.dir.join("search.md")).filter(|path| path.is_file())
+    }
+
+    /// What the connected services answer, when the task connects them (`connected.rs`).
+    pub(crate) fn connected_answers(&self) -> Option<PathBuf> {
+        Some(self.dir.join("connected.json")).filter(|path| path.is_file())
     }
 
     /// The grader, if the task has one.

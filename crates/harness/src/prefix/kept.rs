@@ -41,18 +41,13 @@ impl Kept {
             planning: self.permissions == Permissions::Plan,
             memory: self.memory.is_some(),
             tools: Told::services(&self.tools),
+            connected: std::collections::BTreeSet::new(),
         };
-        // The servers whose tools it lists: a connection among them was offered when it was made.
-        let connections = (self.tools.iter())
-            .filter_map(|spec| spec.name.strip_prefix("mcp__")?.split_once("__"))
-            .map(|(server, _)| server.to_owned())
-            .collect();
         Prefix {
             model: self.model,
             system: self.system,
             specs: self.tools,
             told,
-            connections,
         }
     }
 }

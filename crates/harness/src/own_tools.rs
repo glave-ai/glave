@@ -2,7 +2,6 @@
 //! connection of theirs is used everywhere, or only in one project, their Chats among them. A
 //! thread is offered those of its project alone, so a connection used elsewhere is neither
 //! listed nor found in it, and a call to one its prefix still lists is refused (`toolset.rs`).
-//! A connection that comes to a thread's place makes its prefix again, once (`prefix.rs`).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -10,8 +9,7 @@ use std::sync::Arc;
 use glave_ports::{ProjectId, ToolSource};
 
 /// The person's own tool sources for the threads of one place, and the names of the
-/// connections among them: the servers the person connected, whose coming makes a thread's
-/// prefix again.
+/// connections among them: the connectors of glave's catalog the person connected.
 #[derive(Clone, Default)]
 pub struct Placed {
     pub sources: Vec<Arc<dyn ToolSource>>,

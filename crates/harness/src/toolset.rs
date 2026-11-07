@@ -2,8 +2,12 @@
 //! were given, and the system prompt with what the sources say about them. A source that cannot
 //! list its tools is left out, not fatal to the turn; one whose tools a thread's prefix already
 //! lists keeps them listed, and a call to one is told it isn't answering (`prefix.rs`).
+//! Connected tools that would crowd the list are listed a connector to a tool instead
+//! (`connectors.rs`).
 
-use std::collections::HashMap;
+mod connectors;
+
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::Arc;
 
@@ -12,6 +16,8 @@ use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
 
 use crate::prefix::Told;
 use crate::subagent::SubagentType;
+
+pub(crate) use connectors::{Route, TOOL_SEARCH, connector_called, connector_of, wrapper};
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
@@ -98,6 +104,13 @@ pub(crate) struct ToolSet {
     /// What changed since the model was last told, as the note the turn's message opens with,
     /// and what the model knows once it reads it (`prefix.rs`).
     pub(crate) news: Option<Box<(String, Told)>>,
+    /// Whether each source, by its index, is a service someone connected.
+    connected: Vec<bool>,
+    /// The connected tools on offer, by name, in the order their sources list them: what
+    /// `tool_search` searches.
+    catalog: Vec<String>,
+    /// What each connector says of itself, in a line, by its name.
+    about: BTreeMap<String, String>,
 }
 
 impl ToolSet {
@@ -112,19 +125,29 @@ impl ToolSet {
             own: Vec::new(),
             memory: Vec::new(),
             news: None,
+            connected: Vec::new(),
+            catalog: Vec::new(),
+            about: BTreeMap::new(),
         };
         let mut missing = Vec::new();
         for (index, source) in sources.iter().enumerate() {
+            let connected = source.connected();
+            set.connected.push(connected);
             match source.tools().await {
                 Ok(tools) => {
+                    let first = set.catalog.len();
                     for info in tools {
                         // The first source to name a tool keeps it.
                         if set.by_name.contains_key(&info.spec.name) {
                             continue;
                         }
+                        if connected {
+                            set.catalog.push(info.spec.name.clone());
+                        }
                         set.specs.push(info.spec.clone());
                         set.by_name.insert(info.spec.name.clone(), (index, info));
                     }
+                    set.about_from(first, source.instructions());
                 }
                 Err(err) => missing.push(err),
             }
@@ -244,13 +267,15 @@ impl ToolSet {
             .filter(|(_, (_, info))| keeps(info))
             .map(|(name, found)| (name.clone(), found.clone()))
             .collect();
+        let catalog: Vec<String> = (self.catalog.iter())
+            .filter(|name| by_name.contains_key(*name))
+            .cloned()
+            .collect();
+        let kept = |spec: &&ToolSpec| {
+            by_name.contains_key(&spec.name) || self.lists_for(&spec.name, &catalog)
+        };
         Self {
-            specs: self
-                .specs
-                .iter()
-                .filter(|spec| by_name.contains_key(&spec.name))
-                .cloned()
-                .collect(),
+            specs: self.specs.iter().filter(kept).cloned().collect(),
             sources: self.sources.clone(),
             away: self.away.clone(),
             // A child neither reads nor writes memory, and proposes no plan: in plan mode its
@@ -266,7 +291,11 @@ impl ToolSet {
             own: Vec::new(),
             memory: Vec::new(),
             news: None,
+            connected: self.connected.clone(),
+            catalog,
+            about: self.about.clone(),
         }
+        .told_again()
     }
 
     /// These tools called through their sources, listed as `system` and `specs` say, a
@@ -274,7 +303,16 @@ impl ToolSet {
     /// told it isn't answering ([`ToolSet::not_found`]).
     pub(crate) fn listed_as(mut self, system: String, specs: Vec<ToolSpec>) -> Self {
         let listed = |name: &str| specs.iter().any(|spec| spec.name == name);
-        self.by_name.retain(|name, _| listed(name));
+        // Where connectors are listed, a connected tool is called through its connector's.
+        let searching = listed(TOOL_SEARCH);
+        let through =
+            |name: &str| searching && connector_of(name).is_some_and(|c| listed(&wrapper(c)));
+        let connected = &self.connected;
+        self.by_name.retain(|name, (index, _)| {
+            listed(name) || (connected.get(*index) == Some(&true) && through(name))
+        });
+        let by_name = &self.by_name;
+        self.catalog.retain(|name| by_name.contains_key(name));
         // glave's own run here whatever is on offer now, and say so when they can't.
         self.own = Own::ALL
             .into_iter()
@@ -310,20 +348,13 @@ impl ToolSet {
     pub(crate) fn not_found(&self, name: &str) -> String {
         let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
         let away = |spec: &ToolSpec| {
-            (self.away.iter()).any(|server| spec.name.starts_with(&format!("mcp__{server}__")))
+            let connector = connector_of(&spec.name);
+            let connector = connector.or_else(|| connector_called(&spec.name));
+            connector.is_some_and(|connector| self.is_away(connector))
         };
         match self.specs.iter().find(listed) {
-            Some(spec) if away(spec) => format!(
-                "{:?} is not connected here: the person disconnected its service, or uses it \
-                 only in another project or in their chats. Tell them so rather than trying \
-                 again; they can connect it here from their connections.",
-                spec.name
-            ),
-            Some(spec) => format!(
-                "{:?} is not answering: the service behind it did not respond. Try again later, \
-                 or go on without it.",
-                spec.name
-            ),
+            Some(spec) if away(spec) => not_connected_here(&spec.name),
+            Some(spec) => connectors::not_available(&spec.name),
             None => format!(
                 "There is no tool named {name:?}. The tools are {}.",
                 self.names().join(", ")
@@ -331,7 +362,22 @@ impl ToolSet {
         }
     }
 
+    /// Whether `connector` is one of the person's connections not used where the thread works.
+    fn is_away(&self, connector: &str) -> bool {
+        self.away.iter().any(|it| it == connector)
+    }
+
     pub(crate) fn names(&self) -> Vec<&str> {
         self.specs.iter().map(|spec| spec.name.as_str()).collect()
     }
+}
+
+/// What a call of `name`, of one of the person's connections not used where the thread works,
+/// is told.
+fn not_connected_here(name: &str) -> String {
+    format!(
+        "{name:?} is not connected here: the person disconnected its service, or uses it only in \
+         another project or in their chats. Nothing ran. Tell them so rather than trying again; \
+         they can connect it here from their connections."
+    )
 }

@@ -75,6 +75,10 @@ cargo xtask eval --tier hard --only unattended --repeat 3
 cargo xtask eval --tier hard --only unattended --repeat 3 --no-goal
 ```
 
+## Connected tools
+
+A task with a `connected.json` connects every connector in `evals/connectors` (1,787 tools: GitHub's MCP server, 133, from its tool snapshots at 99d6d65; Atlassian's Rovo MCP server, 258, names and descriptions from its supported-tools page, with open parameters since its schemas are not public; GitHub's REST API, 1,261, one tool per operation of `github/rest-api-description` v1.1.4; and 27 made-up services of 5 tools each). That is more than a model's list holds, so glave lists each connector as one tool and the model searches (`specs/model.md`, "A thread's connected tools"). Each connector's tools are ordered with its server's defaults first. `connected.json` says what tools answer: for each, a list of `{when, text}`, the first whose `when` the call's arguments hold. Any other call finds nothing. The `connectors-*` tasks hold traps: the same record in another service, answering wrongly.
+
 ## A task
 
 Tasks use [Harbor](https://github.com/harbor-framework/harbor)'s layout:

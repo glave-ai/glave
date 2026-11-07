@@ -1,0 +1,9 @@
+[task]
+name = "glave/connectors-rest-runners"
+description = "One endpoint among 1,261 REST tools"
+
+[glave]
+permissions = "auto"
+checks = [
+    { answer_contains = "mac-builder-03" },
+]
