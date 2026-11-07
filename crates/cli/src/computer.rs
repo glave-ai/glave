@@ -2,7 +2,8 @@
 //! computer protocol (`specs/computers.md`) on stdio, on TCP at 127.0.0.1, over TLS at any
 //! address (how a worker on Docker is reached), or on a Unix socket; and `glave computer
 //! bridge`, which carries one connection between its standard input and output and that socket
-//! (how a computer in a Pod is reached, through an exec).
+//! (how a computer in a Pod is reached, through an exec); and `glave computer fence`, which
+//! refuses cloud metadata in its network namespace (how a worker on Docker is kept from it).
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -56,6 +57,9 @@ Usage:
                                      and the computer serving on the socket at <path>,
                                      waiting up to 30 seconds for it to be there; it ends
                                      when the computer closes the connection
+  glave computer fence               refuse cloud metadata addresses in this network
+                                     namespace (Linux, with NET_ADMIN), all but DNS on port
+                                     53; how a worker on Docker is kept from them
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -67,6 +71,8 @@ enum Asked {
     Serve(Transport),
     /// Carry one connection to the computer serving on the socket at the path.
     Bridge(PathBuf),
+    /// Refuse cloud metadata in this network namespace.
+    Fence,
 }
 
 /// How to serve.
@@ -169,11 +175,12 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
             ))
         }
         [bridge, path] if bridge == "bridge" => Ok(Asked::Bridge(PathBuf::from(path))),
+        [fence] if fence == "fence" => Ok(Asked::Fence),
         _ => Err(
             "expected: glave computer serve --stdio, --tcp <port>, --tls <host:port> <folder> \
              [--until-input-ends], or --socket <path> <folder> [--idle <minutes>] [--keep-disk]; \
              or glave \
-             computer bridge <path>"
+             computer bridge <path>, or glave computer fence"
                 .into(),
         ),
     }
@@ -213,6 +220,9 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
             carried.with_context(|| format!("bridging to {}", path.display()))
         }
         Asked::Serve(transport) => runtime.block_on(run(transport)),
+        Asked::Fence => {
+            glave_computer::fence().context("could not refuse cloud metadata in this namespace")
+        }
     };
     match ran {
         Ok(()) => ExitCode::SUCCESS,
@@ -468,6 +478,8 @@ mod tests {
             parse(&words("bridge /opt/glave/glave.sock")),
             Ok(Asked::Bridge(socket()))
         );
+        assert_eq!(parse(&words("fence")), Ok(Asked::Fence));
+        assert!(parse(&words("fence --now")).is_err());
         assert!(parse(&words("bridge")).is_err());
         assert!(parse(&words("bridge a b")).is_err());
     }

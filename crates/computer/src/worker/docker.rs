@@ -1,8 +1,9 @@
 //! Workers on Docker: a container per worker from the environment's pinned image, with CPU,
 //! memory and process limits, no new privileges, and either no network at all or the default
-//! bridge with glave's port published on 127.0.0.1 only. Every worker's standard input is
-//! attached and held by the glave that started it: when that glave ends, however it ends, Docker
-//! closes it and the worker's glave ends, which stops the container (a later glave removes it).
+//! bridge with glave's port published on 127.0.0.1 only, cloud metadata refused (`fence`).
+//! Every worker's standard input is attached and held by the glave that started it: when that
+//! glave ends, however it ends, Docker closes it and the worker's glave ends, which stops the
+//! container (a later glave removes it).
 //! glave goes in as a file before the container starts (a Linux build for the engine's
 //! processor, from a path the person sets), with the TLS identity and token the harness side
 //! made for this worker.
@@ -23,6 +24,8 @@ use super::backend::{
 use super::engine::{ANSWERS_WITHIN, Engine, PULL_QUIET, Within, demultiplex, query};
 use super::tar::{Entry, archive};
 use crate::token::Token;
+
+mod fence;
 
 /// Where glave and its identity go inside a worker.
 const HOME: &str = "/opt/glave";
@@ -155,7 +158,9 @@ impl Docker {
         }
     }
 
-    fn container(&self, name: &str, spec: &Spec) -> Value {
+    /// The labels of the container `name` started for `spec`: its own, its starter's, and
+    /// those put on every container.
+    fn labels(&self, name: &str, spec: &Spec) -> BTreeMap<String, String> {
         let mut labels = self.labels.clone();
         labels.insert(LABEL.to_owned(), name.to_owned());
         if let Some(starter) = spec
@@ -165,6 +170,11 @@ impl Docker {
         {
             labels.insert(STARTED_BY.to_owned(), starter);
         }
+        labels
+    }
+
+    fn container(&self, name: &str, spec: &Spec) -> Value {
+        let labels = self.labels(name, spec);
         let command = if spec.network {
             json!([
                 format!("{HOME}/glave"),
@@ -232,20 +242,11 @@ impl Docker {
     /// glave and the worker's identity, as a tar archive put at `/`.
     fn files(glave: &[u8], spec: &Spec) -> Result<Vec<u8>, ComputerError> {
         let token = spec.token.to_file();
+        let [opt, home, program] = program(glave);
         archive(&[
-            Entry::Folder {
-                name: "opt",
-                mode: 0o755,
-            },
-            Entry::Folder {
-                name: "opt/glave",
-                mode: 0o755,
-            },
-            Entry::File {
-                name: "opt/glave/glave",
-                mode: 0o755,
-                content: glave,
-            },
+            opt,
+            home,
+            program,
             Entry::Folder {
                 name: "opt/glave/tls",
                 mode: 0o700,
@@ -296,22 +297,7 @@ impl Docker {
                 made.message()
             )));
         }
-        let files = Bytes::from(Self::files(glave, spec)?);
-        let put = self
-            .engine
-            .send(
-                Method::PUT,
-                &format!("/containers/{name}/archive?path=/"),
-                Some((files, "application/x-tar")),
-                Within::All(COPIED_WITHIN),
-            )
-            .await?;
-        if !put.status.is_success() {
-            return Err(ComputerError::Failed(format!(
-                "could not put glave into the worker: {}",
-                put.message()
-            )));
-        }
+        self.put(name, Self::files(glave, spec)?).await?;
         // Attached before it starts, so its input is held from its first moment.
         let output = u8::from(!spec.network);
         let path =
@@ -320,9 +306,35 @@ impl Docker {
         self.ok(Method::POST, &format!("/containers/{name}/start"), None)
             .await?;
         if spec.network {
-            self.published(name, spec, held(attached)).await
+            let holding = held(attached);
+            if let Err(error) = self.fence(name, spec, glave).await {
+                holding.abort();
+                return Err(error);
+            }
+            self.published(name, spec, holding).await
         } else {
             Ok(stream(attached))
+        }
+    }
+
+    /// Puts the tar archive `files` at `/` in the container `name`, not yet started.
+    async fn put(&self, name: &str, files: Vec<u8>) -> Result<(), ComputerError> {
+        let put = self
+            .engine
+            .send(
+                Method::PUT,
+                &format!("/containers/{name}/archive?path=/"),
+                Some((Bytes::from(files), "application/x-tar")),
+                Within::All(COPIED_WITHIN),
+            )
+            .await?;
+        if put.status.is_success() {
+            Ok(())
+        } else {
+            Err(ComputerError::Failed(format!(
+                "could not put glave into the worker: {}",
+                put.message()
+            )))
         }
     }
 
@@ -398,6 +410,25 @@ impl Docker {
             _ => String::new(),
         }
     }
+}
+
+/// glave at `/opt/glave/glave`, with the folders it is in.
+fn program(glave: &[u8]) -> [Entry<'_>; 3] {
+    [
+        Entry::Folder {
+            name: "opt",
+            mode: 0o755,
+        },
+        Entry::Folder {
+            name: "opt/glave",
+            mode: 0o755,
+        },
+        Entry::File {
+            name: "opt/glave/glave",
+            mode: 0o755,
+            content: glave,
+        },
+    ]
 }
 
 /// The ELF machine of a 64-bit little-endian executable; `None` for anything else.
