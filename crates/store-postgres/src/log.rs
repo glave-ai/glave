@@ -4,10 +4,10 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use deadpool_postgres::Pool;
+use deadpool_postgres::{Pool, Transaction};
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, erased_payload};
-use glave_ports::search::{Found, indexed, query_terms};
+use glave_ports::search::{Found, deletes_thread, indexed, query_terms};
 use glave_ports::{
     EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
@@ -151,16 +151,7 @@ impl EventLog for PostgresLog {
                         database(error)
                     });
                 }
-                if columns.words.iter().any(Option::is_some) {
-                    let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
-                    transaction
-                        .execute(
-                            &index,
-                            &[&org, &project, &thread, &columns.seq, &columns.words],
-                        )
-                        .await
-                        .map_err(database)?;
-                }
+                index(&transaction, [org, project, thread], &columns, &events).await?;
                 crate::views::fold_in(&transaction, &scope, &events).await?;
                 transaction.commit().await.map_err(database)
             },
@@ -355,6 +346,36 @@ impl EventLog for PostgresLog {
             .transpose()
         }
     }
+}
+
+/// Writes the batch's searchable events into the index, in the batch's `transaction`; a batch
+/// that deletes its thread then takes every row of the thread out ([`deletes_thread`]).
+async fn index(
+    transaction: &Transaction<'_>,
+    [org, project, thread]: [Uuid; 3],
+    columns: &Columns,
+    events: &[RawEvent],
+) -> Result<(), LogError> {
+    if columns.words.iter().any(Option::is_some) {
+        let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
+        transaction
+            .execute(
+                &index,
+                &[&org, &project, &thread, &columns.seq, &columns.words],
+            )
+            .await
+            .map_err(database)?;
+    }
+    if deletes_thread(events) {
+        transaction
+            .execute(
+                "DELETE FROM event_search WHERE org = $1 AND project = $2 AND thread = $3",
+                &[&org, &project, &thread],
+            )
+            .await
+            .map_err(database)?;
+    }
+    Ok(())
 }
 
 /// A batch of events turned inside out: one array per column, as `INSERT` takes them.

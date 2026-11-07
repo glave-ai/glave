@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, Sealed, erased_payload};
-use glave_ports::search::{Found, indexed, query_terms};
+use glave_ports::search::{Found, deletes_thread, indexed, query_terms};
 use glave_ports::{
     EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
@@ -354,6 +354,13 @@ fn append_now(
                 let seq = i64::try_from(event.seq.get()).unwrap_or(i64::MAX);
                 index.execute(params![words, org, project, event.thread.to_string(), seq])?;
             }
+        }
+        if deletes_thread(events) {
+            transaction
+                .prepare_cached(
+                    "DELETE FROM event_search WHERE org = ?1 AND project = ?2 AND thread = ?3",
+                )?
+                .execute(params![org, project, thread])?;
         }
     }
     crate::views::fold_in(&transaction, scope, events)?;

@@ -19,6 +19,7 @@ Partly built (issue #22). Each piece built has one line, which the pull requests
 - **Spaces are projects** (#435): every table and column, the key-derivation label (`glave/project-key/v1`) and the key records' fields are named for projects.
 - **A thread read from its end** (#1058): the event log reads a thread back from its end (`EventLog::read_back`: newest first, before a place, of some types or all) on SQLite, Postgres and in memory, one conformance suite for all three; resuming a thread reads its end and, of what came before, only what outlasts a compaction ("A thread read from its end"). What #1058 asks of archived threads (leaving the list, their search kept fast) is a piece of its own.
 - **A client opens a thread from its end** (#1058): `thread/turns` reads a client its latest 20 turns back from the end, and the turns before them a page at a time as the person goes back (`session.md`, "Opening a thread from its end"); the web app opens every thread this way.
+- **The search index's rows go with their chat** (#1186): appending `thread.deleted` removes the thread's rows of `event_search` in the same transaction, on SQLite, Postgres and in memory (`glave_ports::search::deletes_thread`, `conformance::search`); no project or key erasure removes threads today, so none has rows to take. Sealing the index itself waits for Glave Cloud (#1186).
 - **Not yet:** `glave gateway serve` on Postgres, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
 
 Settled while building, within this contract:
@@ -142,6 +143,7 @@ On an always-on computer a thread grows for months, so reading one again (a rest
 
 - **What is indexed:** the text of each `message.added` and each successful `tool.call.completed`, as normalised words (`glave_ports::search`: lowercase letters and digits, a plural's `s` dropped, common words left out, at most 2,048 distinct words an event). The index row is written in the same transaction as its event. Nothing else is indexed, memories included: `recall` matches those in the memory view, so forgetting one leaves nothing behind in the index. Nor does a memory's text come in through a memory tool's result: its `structured` marks it (`from_memory`), and it is never indexed (`memory.md`, "Seeing, editing and forgetting").
 - **No word in the clear.** Each word is stored as HMAC-SHA-256 under the project key's naming half (the half that names blobs), labelled `glave/search/v1`, its first 16 bytes in hex. The same words match until the project is erased; another project's never do; once the project key is destroyed, nothing in the index can be matched again.
+- **Gone with their chat.** A thread's rows leave the index in the transaction that records its `thread.deleted`, so a deleted chat's words are neither found nor counted there, while its content waits, sealed, for erasure ("Erasure").
 - **Results are positions,** `(thread, seq)`, best match first (BM25 in SQLite, `ts_rank` in Postgres), then newest first. The event itself is read and opened as any other read; one whose key was destroyed no longer opens and is skipped.
 
 ## Erasure
