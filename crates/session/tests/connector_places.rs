@@ -202,22 +202,22 @@ fn an_account_is_named_and_renamed_to_a_name_no_other_of_the_service_has() {
         );
         web.call(&connect(Some("Acme"), Some(acme))).await;
 
-        let taken = web.call(&rename(Some("Glave"), Some("acme"))).await;
-        assert_eq!(taken["error"]["code"], code::INVALID_PARAMS, "{taken}");
-        let said = taken["error"]["message"].as_str().unwrap();
+        let clash = web.call(&rename(Some("Glave"), Some("acme"))).await;
+        assert_eq!(clash["error"]["code"], code::INVALID_PARAMS, "{clash}");
+        let said = clash["error"]["message"].as_str().unwrap();
         assert!(said.contains("is called acme already"), "{said}");
         let long = "a".repeat(41);
         let shape = web.call(&rename(Some("Glave"), Some(&long))).await;
         assert_eq!(shape["error"]["code"], code::INVALID_PARAMS, "{shape}");
         let unnamed = web.call(&rename(Some("Acme"), None)).await;
-        let names: Vec<_> = (unnamed["result"]["connector"]["accounts"]
+        let listed: Vec<_> = (unnamed["result"]["connector"]["accounts"]
             .as_array()
             .unwrap())
         .iter()
         .map(|it| it.get("name").cloned())
         .collect();
         assert_eq!(
-            names,
+            listed,
             [Some(json!("Glave")), None],
             "named no more: {unnamed}"
         );

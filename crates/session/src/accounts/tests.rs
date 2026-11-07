@@ -456,10 +456,10 @@ fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
             "and no longer under no name"
         );
 
-        let taken = ledger
+        let clash = ledger
             .rename_connector(&glave, Some("Acme"), url, false)
             .await;
-        assert_eq!(taken.unwrap(), Placement::NameTaken);
+        assert_eq!(clash.unwrap(), Placement::NameTaken);
         let gone = ledger
             .rename_connector(&first, Some("Zed"), url, false)
             .await;
