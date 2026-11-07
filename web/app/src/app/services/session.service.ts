@@ -216,7 +216,7 @@ export class SessionService {
     }
   }
 
-  /** Starts a turn or goal, yielding its notifications; the generator returns its result. */
+  /** Starts a turn, yielding its notifications; the generator returns its result. */
   async *stream<M extends StreamingMethod>(
     method: M,
     params: Methods[M]['params'],

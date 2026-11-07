@@ -1545,86 +1545,6 @@
         }
       ]
     },
-    "GoalProgress": {
-      "description": "A thread's latest goal and how far it has come.",
-      "properties": {
-        "ended": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GoalReason"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Why it ended; `None` while it is active."
-        },
-        "note": {
-          "description": "When it is paused, what the model needs from the person, in its words.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "objective": {
-          "type": "string"
-        },
-        "token_budget": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tokens": {
-          "description": "Tokens its turns have used so far.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "turns": {
-          "description": "Turns it has run.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "objective",
-        "token_budget",
-        "tokens",
-        "turns"
-      ],
-      "type": "object"
-    },
-    "GoalReason": {
-      "description": "Why a goal ended.",
-      "oneOf": [
-        {
-          "const": "met",
-          "description": "The model verified the goal is met and said so with `update_goal`.",
-          "type": "string"
-        },
-        {
-          "const": "paused",
-          "description": "The model cannot go on without the person, and said why with `update_goal`. The goal\ncan be resumed.",
-          "type": "string"
-        },
-        {
-          "const": "stopped",
-          "description": "The person stopped it, or cancelled its turn.",
-          "type": "string"
-        },
-        {
-          "const": "budget",
-          "description": "Its token budget ran out.",
-          "type": "string"
-        },
-        {
-          "const": "stalled",
-          "description": "Three turns in a row ended without the model calling a tool: no progress.",
-          "type": "string"
-        }
-      ]
-    },
     "GoneFolder": {
       "description": "A project whose folder isn't there anymore, on the computer it is checked out on, with the\nsentence that says so.",
       "properties": {
@@ -2962,7 +2882,7 @@
       "type": "object"
     },
     "ScheduleId": {
-      "description": "Identifies one schedule: a prompt or goal that runs as a task at set times.",
+      "description": "Identifies one schedule: a prompt that runs as a task at set times.",
       "format": "uuid",
       "type": "string"
     },
@@ -2976,9 +2896,6 @@
         },
         "created_at": {
           "$ref": "#/$defs/At"
-        },
-        "goal": {
-          "type": "boolean"
         },
         "last": {
           "anyOf": [
@@ -3558,7 +3475,7 @@
           "$ref": "#/$defs/ThreadId"
         },
         "title": {
-          "description": "The prompt or objective, shortened.",
+          "description": "The prompt, shortened.",
           "type": "string"
         },
         "tokens": {
@@ -3584,7 +3501,7 @@
       "oneOf": [
         {
           "const": "agent",
-          "description": "A thread: a turn, or a goal's turns, run by the agent.",
+          "description": "A thread: a turn run by the agent.",
           "type": "string"
         }
       ]
@@ -4598,10 +4515,6 @@
     "NO_FOLDER": {
       "code": -32029,
       "message": "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)"
-    },
-    "NO_GOAL": {
-      "code": -32007,
-      "message": "The thread has no active goal (or, to resume, no paused one)"
     },
     "NO_IMAGES": {
       "code": -32031,
@@ -5789,117 +5702,6 @@
           "path",
           "folders"
         ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "goal/get": {
-      "params": {
-        "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadId"
-          }
-        },
-        "required": [
-          "thread"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "The thread's latest goal, or `null`.",
-        "properties": {
-          "goal": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/GoalProgress"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "streams": false
-    },
-    "goal/start": {
-      "params": {
-        "properties": {
-          "background": {
-            "description": "Works toward the goal as a task, with no one attached: answered at once.",
-            "type": "boolean"
-          },
-          "budget": {
-            "description": "Tokens the goal may use; glave's default when absent.",
-            "format": "uint64",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "objective": {
-            "description": "What to achieve, with how to verify it in the person's words.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "thread": {
-            "$ref": "#/$defs/ThreadId"
-          },
-          "unattended": {
-            "description": "No one answers its turns, as `turn/start`'s `unattended` says.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "thread"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "anyOf": [
-          {
-            "properties": {
-              "turn": {
-                "$ref": "#/$defs/TurnResult"
-              }
-            },
-            "required": [
-              "turn"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "task": {
-                "$ref": "#/$defs/TaskInfo"
-              }
-            },
-            "required": [
-              "task"
-            ],
-            "type": "object"
-          }
-        ]
-      },
-      "streams": true
-    },
-    "goal/stop": {
-      "params": {
-        "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadId"
-          }
-        },
-        "required": [
-          "thread"
-        ],
-        "type": "object"
-      },
-      "result": {
         "type": "object"
       },
       "streams": false
@@ -7325,9 +7127,6 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
-          },
-          "goal": {
-            "type": "boolean"
           },
           "project": {
             "anyOf": [

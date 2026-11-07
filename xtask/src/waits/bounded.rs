@@ -97,12 +97,6 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     // A turn just cancelled, which stops at once: its commands within their grace.
     (
-        "crates/session/src/goal.rs",
-        "let _ = running.wait_for(|done| *done).await;",
-        1,
-        "the goal's turn, cancelled the line before, which stops at once",
-    ),
-    (
         "crates/session/src/server.rs",
         "let _ = finished.wait_for(|done| *done).await;",
         1,

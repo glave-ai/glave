@@ -26,7 +26,6 @@ use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
 use crate::compaction::Measured;
 use crate::defaults::Defaults;
-use crate::goal::{GoalProgress, Pursuit};
 use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::install::Install;
@@ -139,8 +138,6 @@ pub struct Thread {
     /// The threads that started this one, nearest first: empty unless this is a subagent's
     /// thread, whose prompts an agent, not the person, writes.
     pub(crate) above: Vec<ThreadId>,
-    /// The thread's latest goal, active or ended; `None` until one is set.
-    pub(crate) goal: Option<Pursuit>,
     /// The thread's plan (`plan.rs`). A subagent's thread keeps none.
     pub(crate) plan: Planning,
     /// The workspace the thread's tools act on when it is not the harness's own, such as its
@@ -210,11 +207,6 @@ impl Thread {
     /// The conversation the model will see next.
     pub fn messages(&self) -> &[Message] {
         &self.messages
-    }
-
-    /// The thread's latest goal and how far it has come, active or ended.
-    pub fn goal(&self) -> Option<&GoalProgress> {
-        self.goal.as_ref().map(|goal| &goal.progress)
     }
 
     /// The person whose work this thread is: its recorded `for`.
@@ -581,7 +573,6 @@ where
             asked: Vec::new(),
             turns: 0,
             above: parent.iter().map(|call| call.thread).collect(),
-            goal: None,
             plan: Planning::default(),
             note: bound.as_ref().and_then(crate::worker::note),
             workspace,

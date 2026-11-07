@@ -22,7 +22,6 @@ mod computers;
 mod connection_places;
 mod faults;
 mod files;
-mod goals;
 mod homes;
 mod hooks;
 mod install;

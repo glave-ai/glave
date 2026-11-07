@@ -151,7 +151,7 @@ impl fmt::Display for ThreadId {
 }
 
 v7_id!(
-    /// Identifies one schedule: a prompt or goal that runs as a task at set times.
+    /// Identifies one schedule: a prompt that runs as a task at set times.
     ScheduleId,
     "schedule id"
 );

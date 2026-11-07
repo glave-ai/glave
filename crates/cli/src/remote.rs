@@ -1,5 +1,5 @@
 //! The CLI as a client of a session server elsewhere (`glave --server https://…`, or
-//! `[server] url` in the person's `config.toml`): threads, turns, goals, approvals and
+//! `[server] url` in the person's `config.toml`): threads, turns, approvals and
 //! questions go over HTTP and are followed exactly as here. Nothing runs on this computer but
 //! the terminal: the server has the model, the tools and the history. Sign-in is a token in
 //! GLAVE_SERVER_TOKEN: an OIDC access token for the server's audience, or, on the server's own
@@ -9,7 +9,6 @@ use std::io::IsTerminal as _;
 use std::process::ExitCode;
 
 use anyhow::{Context as _, bail};
-use glave_harness::{DEFAULT_BUDGET, Goal};
 use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request};
 
@@ -39,7 +38,7 @@ pub(crate) async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
     }
 }
 
-/// Runs the turn or goal `args` ask for on the server at `url`.
+/// Runs the turn `args` ask for on the server at `url`.
 pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     if args.background {
         bail!("--background runs a task in glave on this computer: not with --server");
@@ -56,12 +55,6 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
         bail!("{url} is not a glave session server");
     };
-    if args.resume && args.goal.is_some() && (args.model.is_some() || args.permissions.is_some()) {
-        bail!(
-            "--model and --permissions choose for a new thread or a turn; a goal on a thread \
-             you continue keeps the thread's choice"
-        );
-    }
     let worktree = args.worktree.then_some(true);
     // A server elsewhere has no folder of this computer: the thread is in the person's Chats.
     let (thread, _) = pick_thread(
@@ -85,15 +78,7 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         permissions: args.permissions,
     };
     let mut printer = Printer::new("glave", format!("on {}", remote.url()));
-    let code = if let Some(objective) = &args.goal {
-        let goal = Goal {
-            objective: objective.clone(),
-            token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
-        };
-        Box::pin(client.goal(goal, &mut printer)).await
-    } else {
-        Box::pin(client.turn(&args.prompt, &mut printer)).await
-    };
+    let code = Box::pin(client.turn(&args.prompt, &mut printer)).await;
     if let Some(path) = &args.events {
         export(elsewhere, thread, path).await?;
     }

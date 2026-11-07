@@ -71,7 +71,7 @@ describe('turns', () => {
       ASK(1, 'Plan it'),
       SAY(2, 'Planned'),
       event(3, 'turn.started', {}),
-      SAY(4, 'Carrying on with the goal'),
+      SAY(4, 'Carrying on'),
     ]);
     expect(turns.map((turn) => turn.items.length)).toEqual([2, 1]);
   });

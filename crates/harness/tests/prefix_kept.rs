@@ -1,12 +1,12 @@
 //! A thread's prefix kept through what reads it again or goes on with it
 //! (`specs/invariants.md`, 27): a thread read again from the log, a turn going on after a
-//! wait, a goal's continuations, and a subagent going on after its parent was read again.
+//! wait, and a subagent going on after its parent was read again.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Body, StopReason, ThreadId};
-use glave_harness::{AllowAll, Cancel, Decision, Goal, HarnessError, Live};
+use glave_harness::{AllowAll, Cancel, Decision, HarnessError, Live};
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::testing::{FixedGitCredentials, fake_secret};
 use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest, Purpose, ToolSource};
@@ -64,43 +64,6 @@ fn a_thread_read_again_from_the_log_keeps_its_prefix_and_hears_what_changed() {
             "{message}"
         );
         assert!(requests[2].system.contains("Accounts the person connected"));
-    });
-}
-
-#[test]
-fn a_goals_turns_open_as_the_turns_before_them() {
-    let dir = folder("prefix-goal");
-    block_on!(async {
-        let complete = vec![("update_goal", json!({"status": "complete"}))];
-        let answers = vec![
-            done("Hello."),
-            done("Looked around."),
-            answer(None, complete, StopReason::ToolUse),
-            done("It is done."),
-        ];
-        let log = InMemoryLog::new();
-        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        turn(&harness, &mut thread, "hello").await;
-        let goal = Goal {
-            objective: "tidy the notes".into(),
-            token_budget: 1_000_000,
-        };
-        harness
-            .start_goal(
-                &mut thread,
-                goal,
-                &Caller::default(),
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
-        let requests = seen.lock().unwrap().clone();
-        assert_eq!(requests.len(), 4, "a turn, then the goal's two turns");
-        for request in &requests {
-            assert!(prefix(request) == prefix(&requests[0]), "the same bytes");
-        }
     });
 }
 

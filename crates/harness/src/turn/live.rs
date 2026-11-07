@@ -105,7 +105,7 @@ pub(crate) struct Prompt<'a> {
     /// The files the person added to it, as `file` parts after its text.
     pub(crate) files: &'a [Part],
     pub(crate) caller: &'a Caller,
-    /// Whether glave wrote the prompt, as a goal's continuation: recorded as glave's, and
+    /// Whether glave wrote the prompt, as a plan's build: recorded as glave's, and
     /// never read as the person's say-so.
     pub(crate) by_glave: bool,
     /// The id its message is recorded with, when it was made already: a message sent while

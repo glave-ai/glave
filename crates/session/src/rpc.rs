@@ -163,11 +163,6 @@ where
                     thread,
                     background: false,
                     ..
-                }
-                | Request::GoalStart {
-                    thread,
-                    background: false,
-                    ..
                 },
             )) => turn = Some(watches.turn(*thread)),
             _ => {}
@@ -561,7 +556,7 @@ mod tests {
 
     #[test]
     fn a_response_with_neither_result_nor_error_is_no_reply() {
-        // Read by its shape, it was "no goal".
+        // Read by its shape, it would be the first reply that takes an empty result.
         let empty = outcome(&json!({"jsonrpc": "2.0", "id": 1}));
         assert!(
             matches!(

@@ -5,7 +5,7 @@ use glave_event::{
     Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
-use glave_harness::{GoalProgress, RunningCommand};
+use glave_harness::RunningCommand;
 use glave_ports::computer::DiskUse;
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
@@ -515,11 +515,8 @@ pub enum Reply {
     /// The organization's credits, as much as the caller may see.
     #[schemars(title = "Credits")]
     Credits { credits: CreditsInfo },
-    // After every reply with a field of its own, since a missing `goal` or `plan` reads as
-    // `null`; before `Done`, which takes any object.
-    /// The thread's latest goal, or `null`.
-    #[schemars(title = "Goal")]
-    Goal { goal: Option<GoalProgress> },
+    // After every reply with a field of its own, since a missing `plan` reads as `null`;
+    // before `Done`, which takes any object.
     /// The thread's plan, or `null`.
     #[schemars(title = "Plan")]
     Plan { plan: Option<PlanInfo> },

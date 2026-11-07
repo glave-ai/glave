@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
-    /// A thread: a turn, or a goal's turns, run by the agent.
+    /// A thread: a turn run by the agent.
     Agent,
 }
 
@@ -30,7 +30,7 @@ pub struct TaskInfo {
     /// The project its thread is in.
     pub project: ProjectId,
     pub kind: TaskKind,
-    /// The prompt or objective, shortened.
+    /// The prompt, shortened.
     pub title: String,
     pub model: String,
     /// Tokens used so far, subagents' included.
@@ -59,8 +59,6 @@ pub struct ScheduleInfo {
     pub schedule: ScheduleId,
     pub when: When,
     pub prompt: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub goal: bool,
     pub budget: u64,
     pub created_at: At,
     /// When it last ran: the time that run was due.

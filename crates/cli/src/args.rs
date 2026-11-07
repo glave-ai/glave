@@ -18,18 +18,12 @@ Usage:
                                 starts glave in the background first when it is not
                                 running (glave server --help)
   glave [options] <prompt...>   run one turn with this prompt, answered in the terminal
-  glave --goal <objective> [--goal-budget <tokens>] [options]
-                                keep working across turns until the model has checked the
-                                goal is met, or pauses it because it needs you. Say how to
-                                check in the objective (\"... until cargo test passes\").
-                                Stops when its token budget (default 1000000) runs out,
-                                after three turns in a row without a tool call, or on Ctrl-C
   glave --background <prompt> [--budget <tokens>], or -b
                                 run the turn as a task, with no one attached, in glave
                                 running for you in the background, so it goes on when you
-                                leave; with --goal, work toward the goal (glave tasks --help)
+                                leave (glave tasks --help)
   glave tasks [stop <thread>]   list the tasks running and recently finished, or stop one
-  glave schedule add|list|rm    run a prompt or a goal as a task at set times
+  glave schedule add|list|rm    run a prompt as a task at set times
                                 (glave schedule --help)
   glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
                                 to the program that started glave
@@ -125,7 +119,7 @@ Options:
   --help             show this help
   --version          show the version
 
-A turn, --continue and --goal run in glave running for you in the background, started from
+A turn and --continue run in glave running for you in the background, started from
 a terminal when it is not running, and go on if the terminal closes; Ctrl-C stops the turn.
 With no one at the terminal and glave not running, they run in this command alone, and
 anything that would ask is declined.
@@ -250,17 +244,13 @@ pub(crate) struct Args {
     pub http: Option<SocketAddr>,
     /// Serve HTTPS of glave's own on this address, rather than port 443 of every address.
     pub https: Option<SocketAddr>,
-    /// Work toward this objective across turns, instead of running one turn.
-    pub goal: Option<String>,
-    /// Tokens the goal may use.
-    pub goal_budget: Option<u64>,
     /// The identity providers whose tokens sign clients in over HTTP.
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
     pub audience: Option<String>,
     /// The built web app to serve over HTTP, rather than the one built into glave or beside it.
     pub web: Option<PathBuf>,
-    /// Run the turn or goal as a task in the person's server, with no one attached.
+    /// Run the turn as a task in the person's server, with no one attached.
     pub background: bool,
     /// With `background`, tokens the turn may use.
     pub budget: Option<u64>,
@@ -283,9 +273,9 @@ impl Args {
         self.action == Action::Serve && !self.stdio
     }
 
-    /// Whether a turn or a goal was asked for.
+    /// Whether a turn was asked for.
     pub(crate) fn turn(&self) -> bool {
-        !self.prompt.is_empty() || self.goal.is_some()
+        !self.prompt.is_empty()
     }
 }
 
@@ -312,8 +302,6 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             "--worktree" => args.worktree = true,
             "--on" => args.on = Some(place(rest.next())?),
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
-            "--goal" => args.goal = Some(rest.next().ok_or("--goal needs an objective")?),
-            "--goal-budget" => args.goal_budget = Some(budget(rest.next())?),
             "--background" | "-b" => args.background = true,
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
             "--stdio" if serving => args.stdio = true,
@@ -350,7 +338,6 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
         transport(&args)?;
         args.action = Action::Serve;
     }
-    goal(&args)?;
     background(&args)?;
     settings_only(&args)?;
     Ok(args)
@@ -413,10 +400,8 @@ fn alone(args: &Args) -> Result<(), String> {
 
 /// Checks that a task has something to do, and a budget only with a task's turn.
 fn background(args: &Args) -> Result<(), String> {
-    if args.budget.is_some() && (!args.background || args.goal.is_some()) {
-        return Err(
-            "--budget is for a turn run with --background; a goal takes --goal-budget".into(),
-        );
+    if args.budget.is_some() && !args.background {
+        return Err("--budget is for a turn run with --background".into());
     }
     if !args.background {
         return Ok(());
@@ -424,8 +409,8 @@ fn background(args: &Args) -> Result<(), String> {
     if args.action != Action::Run {
         return Err("--background runs a task: not with this command".into());
     }
-    if args.prompt.is_empty() && args.goal.is_none() {
-        return Err("--background needs a prompt, or --goal <objective>".into());
+    if args.prompt.is_empty() {
+        return Err("--background needs a prompt".into());
     }
     if args.resume || args.events.is_some() {
         return Err("--background starts a new thread: not with --continue or --events".into());
@@ -440,30 +425,6 @@ fn tokens(flag: &str, value: Option<String>) -> Result<u64, String> {
         Ok(tokens) if tokens >= 1 => Ok(tokens),
         _ => Err(format!(
             "{flag} {value:?} is not a number of tokens: use 1 or more"
-        )),
-    }
-}
-
-/// Checks that a goal's flags come with `--goal`, and a goal with no prompt beside it.
-fn goal(args: &Args) -> Result<(), String> {
-    match &args.goal {
-        None if args.goal_budget.is_some() => Err("--goal-budget needs --goal <objective>".into()),
-        Some(objective) if objective.trim().is_empty() => Err("--goal needs an objective".into()),
-        Some(_) if !args.prompt.is_empty() => {
-            Err("give the goal's objective with --goal, and no prompt beside it".into())
-        }
-        Some(_) if args.action != Action::Run => Err("--goal runs a goal: not with serve".into()),
-        _ => Ok(()),
-    }
-}
-
-/// The value of `--goal-budget`: a whole number of tokens, at least one.
-fn budget(value: Option<String>) -> Result<u64, String> {
-    let value = value.ok_or("--goal-budget needs a number of tokens")?;
-    match value.parse::<u64>() {
-        Ok(tokens) if tokens >= 1 => Ok(tokens),
-        _ => Err(format!(
-            "--goal-budget {value:?} is not a number of tokens: use 1 or more"
         )),
     }
 }

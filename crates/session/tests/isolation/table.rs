@@ -387,16 +387,6 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "trust/answer",
             vec![json!({"thread": "@thread", "ask": "@ask", "answer": "trust"})],
         ),
-        (
-            "goal/start",
-            vec![
-                json!({"thread": "@thread"}),
-                json!({"thread": "@thread", "objective": "win"}),
-                json!({"thread": "@thread", "objective": "win", "background": true}),
-            ],
-        ),
-        ("goal/stop", on_thread()),
-        ("goal/get", on_thread()),
         ("tasks/list", vec![json!({})]),
         ("tasks/stop", on_thread()),
         ("command/list", on_thread()),
