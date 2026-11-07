@@ -83,6 +83,12 @@ where
         scope: &Scope,
         id: ThreadId,
     ) -> Result<Vec<Event>, HarnessError> {
+        // Boxed: its reads, a store's each, are large futures, and a load is awaited inside
+        // many, so unboxed it would grow every one of them on the stack that polls them.
+        Box::pin(self.load_now(scope, id)).await
+    }
+
+    async fn load_now(&self, scope: &Scope, id: ThreadId) -> Result<Vec<Event>, HarnessError> {
         let from = self.end_of(scope, id).await?;
         let end = self.between(scope, id, from, None).await?;
         let Some(from) = from.filter(|_| !end.is_empty()) else {
@@ -203,4 +209,32 @@ fn in_order(events: impl IntoIterator<Item = Event>) -> BTreeMap<Seq, Event> {
 /// Whether `event` is a message of the person's own.
 fn by_person(event: &Event) -> bool {
     matches!(&event.body, Body::MessageAdded(added) if super::by_person(added))
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_ports::InMemoryBlobs;
+    use glave_ports::testing::{FaultyLog, ScriptedModel};
+
+    use super::*;
+    use crate::approval::AllowAll;
+
+    type Held = Harness<ScriptedModel, FaultyLog, InMemoryBlobs, AllowAll>;
+
+    /// The size of what `call` returns, never calling it.
+    fn returned<F, Fut>(_: &F) -> usize
+    where
+        F: Fn(&'static Held, &'static Scope, ThreadId) -> Fut,
+    {
+        size_of::<Fut>()
+    }
+
+    /// A load is awaited inside many futures, a server's dispatch among them, which a debug
+    /// build polls on one thread's stack: boxed, it adds a pointer to each, never its reads,
+    /// whose futures are large on Postgres.
+    #[test]
+    fn loading_a_thread_costs_its_callers_a_pointer() {
+        let load = returned(&|harness, scope, id| harness.load(scope, id));
+        assert!(load <= 64, "a load's future holds {load} bytes");
+    }
 }
