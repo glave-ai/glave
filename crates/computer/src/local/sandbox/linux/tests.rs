@@ -210,11 +210,11 @@ impl Tmux {
                 .unwrap();
         }
         let socket = folder.join(format!("glave-test-{}", std::process::id()));
-        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         Self {
             socket,
             made,
-            _listener,
+            _listener: listener,
         }
     }
 }
