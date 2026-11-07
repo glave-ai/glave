@@ -6,13 +6,15 @@ use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{
-    Bytes, ComputerError, EntryKind, FileWrite, Stat, is_protected, refuse_protected,
+    Bytes, ComputerError, EntryKind, FileWrite, Sandbox, Stat, is_kept, is_protected,
+    refuse_protected,
 };
 use glave_ports::digest;
 use rustix::fs::FileType;
 
 use super::anchored::{Found, Root, count, open_to_read, resolve, shown};
 use super::replace::{make_folders, replace};
+use super::sandbox::kept_read_only;
 
 /// The largest file read or written in one call, so it fits in one message on the wire.
 pub(crate) const MAX_FILE: u64 = 20 * 1024 * 1024;
@@ -74,6 +76,16 @@ fn read_found(path: &str, found: &Found) -> Result<Vec<u8>, ComputerError> {
     Ok(content)
 }
 
+/// What `sandbox` keeps read-only for a write in `root`, as its commands are kept from it.
+fn keeps(root: &Path, sandbox: &Sandbox) -> Vec<PathBuf> {
+    let real = |path: &Option<PathBuf>| std::fs::canonicalize(path.as_ref()?).ok();
+    kept_read_only(
+        root,
+        real(&sandbox.home).as_deref(),
+        real(&sandbox.glave_home).as_deref(),
+    )
+}
+
 /// Checks every path first, so a refused path means nothing was written. Each file is
 /// replaced whole (`replace`), never written in place, through the folders its path resolved
 /// to; a file that asks to be protected is refused if those folders lead to a protected path.
@@ -94,12 +106,10 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
                 ));
             }
             let found = resolve(&root, &file.path)?;
-            if file.protect
-                && is_protected(
-                    root.path,
-                    &root.path.join(found.names.iter().collect::<PathBuf>()),
-                )
-            {
+            let landing = root.path.join(found.names.iter().collect::<PathBuf>());
+            if file.protect.as_ref().is_some_and(|sandbox| {
+                is_protected(root.path, &landing) || is_kept(&keeps(root.path, sandbox), &landing)
+            }) {
                 // The names are those of the folders already open, which the write goes
                 // through: no link swapped in later can change where it lands.
                 return Err(refuse_protected(&shown(&found.names)));

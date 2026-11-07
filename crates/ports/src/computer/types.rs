@@ -349,13 +349,14 @@ pub struct FileWrite {
     /// Relative to the workspace root.
     pub path: String,
     pub content: Bytes,
-    /// Refuse the write if the path the computer actually opens, links resolved, is one of the
-    /// protected paths ([`PROTECTED`](super::PROTECTED), compared by
-    /// [`is_protected`](super::is_protected)), with [`refuse_protected`](super::refuse_protected).
-    /// The harness asks for it in a sandbox; the check and the write are one lookup, so a
-    /// command swapping a folder for a link cannot slip a protected path in between.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub protect: bool,
+    /// The sandbox this write is under: refuse it if the path the computer actually opens, links
+    /// resolved, is one of the protected paths ([`PROTECTED`](super::PROTECTED), compared by
+    /// [`is_protected`](super::is_protected)) or what that sandbox keeps read-only wherever the
+    /// project is, with [`refuse_protected`](super::refuse_protected). The harness asks for it
+    /// in a sandbox; the check and the write are one lookup, so a command swapping a folder for
+    /// a link cannot slip a protected path in between.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protect: Option<Sandbox>,
 }
 
 impl FileWrite {
@@ -364,7 +365,7 @@ impl FileWrite {
         Self {
             path: path.into(),
             content,
-            protect: false,
+            protect: None,
         }
     }
 }

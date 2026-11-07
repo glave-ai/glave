@@ -5,7 +5,8 @@
 use super::super::helpers::{failed, run, run_quietly};
 use super::{Confinement, LINKED, WRITTEN, outside_unchanged, plain};
 use crate::computer::{
-    Command, ComputerError, Computers, FileWrite, Listing, is_protected, refuse_protected,
+    Command, ComputerError, Computers, FileWrite, Listing, Sandbox, SandboxLevel, is_protected,
+    refuse_protected,
 };
 use crate::conformance::{Verdict, ensure};
 
@@ -221,7 +222,12 @@ const GUARDED: &[u8] = b"GUARDED";
 /// A write that asks the computer to refuse protected paths.
 fn guarded(path: &str, content: &[u8]) -> FileWrite {
     FileWrite {
-        protect: true,
+        protect: Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: None,
+            glave_home: None,
+        }),
         ..plain(path, content)
     }
 }

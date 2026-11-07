@@ -21,6 +21,8 @@ mod toolchains;
 
 mod nested_repository;
 
+mod own_settings;
+
 fn enforced() -> bool {
     let available = sandbox_available();
     assert!(
