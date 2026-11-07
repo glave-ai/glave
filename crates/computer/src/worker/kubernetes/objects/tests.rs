@@ -254,12 +254,36 @@ fn without_the_network_glave_still_serves_on_its_socket_and_nothing_goes_in_or_o
     );
     let on = spec(true);
     let open = Shape { spec: &on, ..shape }.network_policy();
+    assert_eq!(open["spec"]["ingress"], json!([]));
+    let parsed: k8s_openapi::api::networking::v1::NetworkPolicy =
+        serde_json::from_value(open).unwrap();
+    assert!(parsed.spec.is_some());
+}
+
+#[test]
+fn a_worker_with_the_network_reaches_the_internet_and_nothing_inside() {
+    let labels = BTreeMap::new();
+    let on = spec(true);
+    let open = shape(&on, &labels).network_policy();
+    // Cloud metadata, then every network that is not the internet: other Pods, Services,
+    // glave's server and its database among them.
     assert_eq!(
         open["spec"]["egress"][0]["to"],
         json!([
             {"ipBlock": {
                 "cidr": "0.0.0.0/0",
-                "except": ["169.254.0.0/16", "100.100.100.200/32", "168.63.129.16/32"]
+                "except": [
+                    "169.254.0.0/16",
+                    "100.100.100.200/32",
+                    "168.63.129.16/32",
+                    "0.0.0.0/8",
+                    "10.0.0.0/8",
+                    "100.64.0.0/10",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "198.18.0.0/15",
+                    "240.0.0.0/4"
+                ]
             }},
             {"ipBlock": {
                 "cidr": "::/0",
@@ -269,15 +293,17 @@ fn without_the_network_glave_still_serves_on_its_socket_and_nothing_goes_in_or_o
                     "fd00:ec2::23/128",
                     "fd20:ce::254/128",
                     "fd00:a9fe:a9fe::1/128",
-                    "fd00:42::42/128"
+                    "fd00:42::42/128",
+                    "fc00::/7"
                 ]
             }}
         ])
     );
-    assert_eq!(open["spec"]["ingress"], json!([]));
-    let parsed: k8s_openapi::api::networking::v1::NetworkPolicy =
-        serde_json::from_value(open).unwrap();
-    assert!(parsed.spec.is_some());
+    assert_eq!(
+        open["spec"]["egress"],
+        person(&on, &labels).network_policy()["spec"]["egress"],
+        "a worker reaches what a person's computer does"
+    );
 }
 
 #[test]
