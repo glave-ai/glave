@@ -343,6 +343,17 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     } -> [Events],
+    /// Reads a thread back from its end, turn by turn, as a client opens it: its latest 20
+    /// turns, whole, before `before` (up to its end when absent), at most 5,000 events, in
+    /// order. `earlier`, when there is more before them, is the `before` that reads it. Read up
+    /// to its end with more before, the thread's latest choice of model and of effort come
+    /// first, each when it was made before these turns, since they still hold.
+    "thread/turns" => ThreadTurns {
+        thread: ThreadId,
+        /// Where the page ends, before this `seq`: the `earlier` of the page after it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        before: Option<Seq>,
+    } -> [Events],
     /// What a thread's replies drew on from the web, read from its log: for each reply whose
     /// turn read pages with `web_fetch` before it, those pages, in order.
     "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],

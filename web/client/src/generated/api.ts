@@ -2634,7 +2634,10 @@ export type ThreadEventsParams = {
 };
 
 export type ThreadEventsResult = {
+  /** Read back, the `before` of the turns before these, when there are any. */
+  readonly earlier?: Seq | null;
   readonly events: readonly (RawEvent)[];
+  /** Read forward, the `after` of the next page, when there may be one. */
   readonly next?: Seq | null;
 };
 
@@ -2762,6 +2765,20 @@ export type ThreadStepsParams = {
 /** A thread's turns in steps. */
 export type ThreadStepsResult = {
   readonly steps: ThreadSteps;
+};
+
+export type ThreadTurnsParams = {
+  /** Where the page ends, before this `seq`: the `earlier` of the page after it. */
+  readonly before?: Seq | null;
+  readonly thread: ThreadId;
+};
+
+export type ThreadTurnsResult = {
+  /** Read back, the `before` of the turns before these, when there are any. */
+  readonly earlier?: Seq | null;
+  readonly events: readonly (RawEvent)[];
+  /** Read forward, the `after` of the next page, when there may be one. */
+  readonly next?: Seq | null;
 };
 
 export type ThreadUnarchiveParams = {
@@ -2973,6 +2990,7 @@ export interface Methods {
   readonly "thread/sources": { readonly params: ThreadSourcesParams; readonly result: ThreadSourcesResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };
   readonly "thread/steps": { readonly params: ThreadStepsParams; readonly result: ThreadStepsResult };
+  readonly "thread/turns": { readonly params: ThreadTurnsParams; readonly result: ThreadTurnsResult };
   readonly "thread/unarchive": { readonly params: ThreadUnarchiveParams; readonly result: ThreadUnarchiveResult };
   readonly "thread/unwatch": { readonly params: ThreadUnwatchParams; readonly result: ThreadUnwatchResult };
   readonly "thread/watch": { readonly params: ThreadWatchParams; readonly result: ThreadWatchResult };

@@ -25,7 +25,9 @@
         data-testid="thread-items"
         glzStickToBottom
         [attr.aria-label]="copy.conversation"
+        [attr.aria-busy]="service.readingEarlier()"
         [(atBottom)]="atBottom"
+        (nearTop)="readEarlier()"
       >
         <div class="reading">
           @for (turn of turns(); track turn.key) {

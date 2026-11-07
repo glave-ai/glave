@@ -30,6 +30,7 @@ mod goal;
 mod gone;
 mod grouping;
 mod held;
+mod history;
 mod homes;
 pub mod http;
 mod hub;

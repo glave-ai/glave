@@ -778,7 +778,7 @@ describe('ThreadComponent with files', () => {
   it('reads the thread again in the person’s language once they choose another', async () => {
     const fake = session(HISTORY);
     const { root, fixture } = await open(fake);
-    expect(fake.paramsOf('thread/events')).toHaveLength(1);
+    expect(fake.paramsOf('thread/turns')).toHaveLength(1);
     // What the approval asks, as the server writes it in the language chosen now.
     const asked = { ...HISTORY[2], data: { ...HISTORY[2]?.data, ask: '[Ŕûñ ţĥîš? one]' } };
     fake.answer('thread/events', { events: [HISTORY[0], HISTORY[1], asked, HISTORY[3]] });
@@ -786,7 +786,7 @@ describe('ThreadComponent with files', () => {
     await fixture.whenStable();
     await settle();
     await fixture.whenStable();
-    expect(fake.paramsOf('thread/events')).toHaveLength(2);
+    expect(fake.paramsOf('thread/turns')).toHaveLength(2);
     const card = root.querySelector('[data-testid="thread-approval"]');
     expect(card?.querySelector('.summary')?.textContent).toContain('[Ŕûñ ţĥîš? one]');
   });

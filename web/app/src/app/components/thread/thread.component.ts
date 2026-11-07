@@ -59,8 +59,9 @@ import { TurnComponent } from '../turn/turn.component';
 /**
  * One thread: its bar across the top (title, project, the panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
- * receipt that opens to the steps, then what waits for the person), and after them what its
- * project asks the person to trust, while it asks; the reply streaming in as
+ * receipt that opens to the steps, then what waits for the person), its latest turns as it
+ * opens and those before them read in above, nothing moving, as the person goes back to them,
+ * and after them what its project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
  * model reads it; the composer pinned below it, usable while a turn runs, with what the agent
  * may do and the model in its quiet line, or in its place, when the project's folder isn't there
@@ -342,6 +343,11 @@ export class ThreadComponent {
 
   protected edit(steps: readonly string[]): void {
     void this.plans.edit(steps);
+  }
+
+  /** The person went back near the top: the turns before those shown are read in above. */
+  protected readEarlier(): void {
+    void this.service.readEarlier();
   }
 
   protected jumpToLatest(): void {

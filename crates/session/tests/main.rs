@@ -27,6 +27,7 @@ mod filters;
 mod goals;
 mod gone;
 mod grouping;
+mod history;
 mod homes;
 mod http;
 mod invites;
