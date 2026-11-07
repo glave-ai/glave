@@ -68,7 +68,11 @@ Tasks that compacted get a table of these per attempt, with their tokens and how
 The `unattended-*` tasks are one piece of work through several compactions with no one answering:
 each has a small `context_window`, long files (`unattended/pad.py` fills them as the task's setup)
 and a hidden grader on the result. They are in the hard tier and run as goals. `--no-goal` runs
-each goal's objective as one plain turn, so the same tasks measure what the goal's loop does:
+each goal's objective as one plain turn, so the same tasks measure what the goal's loop does;
+`unattended-every-request` is the one where stopping partway is the easy way out, the case goals
+exist for. Each also checks that a compaction was recorded, apart from its grader: a model that
+reads little may never fill the window, and then the attempt says so rather than passing on a
+premise it never met.
 
 ```sh
 cargo xtask eval --tier hard --only unattended --repeat 3
