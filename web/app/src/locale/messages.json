@@ -138,7 +138,7 @@
     "connectorAdd.useIt": "Use it",
     "connectors.accounts": "{{$COUNT}, plural, one {# account} other {# accounts}}",
     "connectors.add": "Add account",
-    "connectors.addLabel": "Add another {$NAME} account",
+    "connectors.addLabel": "Add account to {$NAME}",
     "connectors.again": "Sign in again",
     "connectors.called": "{$SERVICE} ({$ACCOUNT})",
     "connectors.cancel": "Cancel",

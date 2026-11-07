@@ -138,7 +138,7 @@
     "connectorAdd.useIt": "\u200f\u202eUse\u202c\u200f \u200f\u202eit\u202c\u200f",
     "connectors.accounts": "{{$COUNT}, plural, one {# \u200f\u202eaccount\u202c\u200f} other {# \u200f\u202eaccounts\u202c\u200f}}",
     "connectors.add": "\u200f\u202eAdd\u202c\u200f \u200f\u202eaccount\u202c\u200f",
-    "connectors.addLabel": "\u200f\u202eAdd\u202c\u200f \u200f\u202eanother\u202c\u200f {$NAME} \u200f\u202eaccount\u202c\u200f",
+    "connectors.addLabel": "\u200f\u202eAdd\u202c\u200f \u200f\u202eaccount\u202c\u200f \u200f\u202eto\u202c\u200f {$NAME}",
     "connectors.again": "\u200f\u202eSign\u202c\u200f \u200f\u202ein\u202c\u200f \u200f\u202eagain\u202c\u200f",
     "connectors.called": "{$SERVICE} \u200f\u202e(\u202c\u200f{$ACCOUNT}\u200f\u202e)\u202c\u200f",
     "connectors.cancel": "\u200f\u202eCancel\u202c\u200f",

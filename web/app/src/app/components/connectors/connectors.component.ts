@@ -579,7 +579,7 @@ export class ConnectorsComponent {
       tile: name,
       acts: !several,
       adds: status !== 'available',
-      addLabel: $localize`:@@connectors.addLabel:Add another ${name}:NAME: account`,
+      addLabel: $localize`:@@connectors.addLabel:Add account to ${name}:NAME:`,
       note: connector.replaced ?? null,
       noted: (connector.replaced ?? null) !== null,
     };

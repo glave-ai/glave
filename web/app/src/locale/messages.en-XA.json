@@ -138,7 +138,7 @@
     "connectorAdd.useIt": "[Ûšé îţ one]",
     "connectors.accounts": "[{{$COUNT}, plural, one {# åççöûñţ} other {# åççöûñţš}} one two]",
     "connectors.add": "[Åðð åççöûñţ one]",
-    "connectors.addLabel": "[Åðð åñöţĥéŕ {$NAME} åççöûñţ one two]",
+    "connectors.addLabel": "[Åðð åççöûñţ ţö {$NAME} one]",
     "connectors.again": "[Šîĝñ îñ åĝåîñ one]",
     "connectors.called": "[{$SERVICE} ({$ACCOUNT}) one]",
     "connectors.cancel": "[Çåñçéļ one]",
