@@ -447,12 +447,14 @@ pub fn message(id: u64, request: &Request) -> Value {
     message
 }
 
-/// A reply of `thread/events`, as a client reads it.
+/// A reply of `thread/events` or `thread/turns`, as a client reads it.
 #[derive(Deserialize)]
 struct EventsPage {
     events: Vec<glave_event::RawEvent>,
     #[serde(default)]
     next: Option<glave_event::Seq>,
+    #[serde(default)]
+    earlier: Option<glave_event::Seq>,
 }
 
 /// What a JSON-RPC response says, as a client reads it: the reply in its `result`, or its
@@ -477,6 +479,7 @@ pub fn outcome(response: &Value) -> Result<Reply, ApiError> {
             .map(|page| Reply::Events {
                 events: page.events,
                 next: page.next,
+                earlier: page.earlier,
             })
             .map_err(|e| {
                 ApiError::new(
@@ -549,7 +552,7 @@ mod tests {
         let event = r#"{"glave":1,"id":"0192f5c0-0000-7000-8000-000000000001","thread":"0192f5c0-0000-7000-8000-000000000002","seq":1,"at":"2026-10-01T00:00:00.000Z","type":"thread.renamed","v":1,"data":{"title":"Garden"}}"#;
         let page = format!(r#"{{"jsonrpc":"2.0","id":1,"result":{{"events":[{event}]}}}}"#);
         let response: Value = serde_json::from_str(&page).unwrap();
-        let Ok(Reply::Events { events, next }) = outcome(&response) else {
+        let Ok(Reply::Events { events, next, .. }) = outcome(&response) else {
             panic!("a page of events")
         };
         assert_eq!(next, None);

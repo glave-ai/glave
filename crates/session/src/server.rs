@@ -590,7 +590,11 @@ where
     ) -> Result<Reply, ApiError> {
         let (events, next) = self.page(thread, after, limit).await?;
         let events = events.into_iter().map(served).collect();
-        Ok(Reply::Events { events, next })
+        Ok(Reply::Events {
+            events,
+            next,
+            earlier: None,
+        })
     }
 
     /// Every event of `thread`, read page by page, each handed to `read` in order.

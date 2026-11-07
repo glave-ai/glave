@@ -328,6 +328,13 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         (
+            "thread/turns",
+            vec![
+                json!({"thread": "@thread"}),
+                json!({"thread": "@thread", "before": 2}),
+            ],
+        ),
+        (
             "thread/watch",
             vec![
                 json!({"thread": "@thread"}),

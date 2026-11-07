@@ -254,8 +254,12 @@ pub enum Reply {
     #[schemars(title = "Events")]
     Events {
         events: Vec<RawEvent>,
+        /// Read forward, the `after` of the next page, when there may be one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next: Option<Seq>,
+        /// Read back, the `before` of the turns before these, when there are any.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        earlier: Option<Seq>,
     },
     #[schemars(title = "Turn")]
     Turn { turn: TurnResult },

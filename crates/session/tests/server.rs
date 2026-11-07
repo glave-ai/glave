@@ -208,7 +208,7 @@ fn a_fresh_server_continues_a_thread_from_the_log_alone() {
         let (second, _) = again.build_on(&dir, sqlite(&database).await.log()).await;
         let reply = turn(&second, thread, "two").await.unwrap();
         assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));
-        let Reply::Events { events, next } = second
+        let Reply::Events { events, next, .. } = second
             .request(Request::ThreadEvents {
                 thread,
                 after: None,

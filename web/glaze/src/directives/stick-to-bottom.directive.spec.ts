@@ -7,9 +7,14 @@ import { GlzStickToBottomDirective } from './stick-to-bottom.directive';
   imports: [GlzStickToBottomDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div data-testid="list" glzStickToBottom [(atBottom)]="atBottom">
-      @for (line of lines(); track $index) {
-        <p>{{ line }}</p>
+    <div
+      data-testid="list"
+      glzStickToBottom
+      [(atBottom)]="atBottom"
+      (nearTop)="near.set(near() + 1)"
+    >
+      @for (line of lines(); track line) {
+        <p [attr.data-line]="line">{{ line }}</p>
       }
     </div>
   `,
@@ -17,6 +22,8 @@ import { GlzStickToBottomDirective } from './stick-to-bottom.directive';
 class HostComponent {
   readonly lines = signal(['one']);
   readonly atBottom = signal(true);
+  /** How many times the person was near the top. */
+  readonly near = signal(0);
   readonly stick = viewChild.required(GlzStickToBottomDirective);
 }
 
@@ -57,5 +64,44 @@ describe('GlzStickToBottomDirective', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.atBottom()).toBe(true);
     expect(list.scrollTop).toBe(1000);
+  });
+
+  it('keeps what the person reads in place while lines come in above it, and says they are near the top', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.lines.set(['three', 'four']);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const list = root.querySelector<HTMLElement>('[data-testid="list"]');
+    if (list === null) {
+      throw new Error('no list');
+    }
+    scrollBox(list);
+    // Laid out as a browser would: each line 100 high, one after another, under the scroll.
+    const at = (element: Element, top: number, height: number): void => {
+      Object.defineProperty(element, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ top, height }),
+      });
+    };
+    const layOut = (): void => {
+      at(list, 0, 200);
+      list.querySelectorAll('p').forEach((line, index) => {
+        at(line, index * 100 - list.scrollTop, 100);
+      });
+    };
+    list.scrollTop = 150;
+    layOut();
+    list.dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.atBottom()).toBe(false);
+    expect(fixture.componentInstance.near()).toBe(1);
+
+    fixture.componentInstance.lines.set(['one', 'two', 'three', 'four']);
+    fixture.detectChanges();
+    layOut();
+    await flushMutations();
+    // Two lines came in above: "four", which the person was reading, stays where it was.
+    expect(list.scrollTop).toBe(350);
+    expect(list.style.overflowAnchor).toBe('none');
   });
 });

@@ -33,36 +33,6 @@ function settled(): Promise<void> {
 }
 
 describe('ThreadService', () => {
-  it('reads every page of a thread', async () => {
-    const fake = new FakeSession().answer('thread/events', (params) =>
-      (params as { after?: number }).after === undefined
-        ? {
-            events: [
-              event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'a' }] }),
-            ],
-            next: 1,
-          }
-        : {
-            events: [
-              event(2, 'message.added', {
-                role: 'assistant',
-                parts: [{ type: 'text', text: 'b' }],
-              }),
-            ],
-          },
-    );
-    const service = make(fake);
-    await service.open('thread-1');
-    expect(service.turns().flatMap((turn) => turn.items.map((item) => item.kind))).toEqual([
-      'message',
-      'message',
-    ]);
-    expect(fake.paramsOf('thread/events')).toEqual([
-      { thread: 'thread-1' },
-      { thread: 'thread-1', after: 1 },
-    ]);
-  });
-
   it('streams a turn: the draft grows, then the recorded message replaces it', async () => {
     const fake = new FakeSession().answer('thread/events', { events: [] }).streams([
       {
@@ -753,10 +723,7 @@ describe('ThreadService', () => {
     await service.open('thread-1');
     watch.send(recorded(event(3, 'turn.started', {})));
     await settled();
-    expect(fake.paramsOf('thread/events')).toEqual([
-      { thread: 'thread-1' },
-      { thread: 'thread-1', after: 1 },
-    ]);
+    expect(fake.paramsOf('thread/events')).toEqual([{ thread: 'thread-1', after: 1 }]);
   });
 
   it('takes a turn’s end read after the server said it runs, coming back', async () => {

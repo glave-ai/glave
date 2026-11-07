@@ -104,7 +104,7 @@ export class FakeTurn {
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing, and
  * `thread/rename` the same thread with its new title, updated since;
  * `thread/sources`, no reply drew on the web; `thread/plan`, no plan; `thread/changes`, none;
- * `thread/steps`, no runs and no replies;
+ * `thread/steps`, no runs and no replies; `thread/turns`, as `thread/events` is answered;
  * `command/list`, nothing running; `credential/list`, nothing connected; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose; `memory/get`, memory on;
  * `appearance/get`, glave's plain look; `brand/get`, a brand that says nothing; `brand/logo/get`, none; `grouping/get`, by project, and `grouping/set`, the grouping asked for; `organization/list`,
@@ -178,7 +178,7 @@ export class FakeSession implements SessionClient {
 
   call<M extends Method>(method: M, params: Methods[M]['params']): Promise<Methods[M]['result']> {
     this.calls.push({ method, params });
-    const answer = this.answers.get(method) ?? unanswered(method, params);
+    const answer = this.answers.get(method) ?? this.alike(method) ?? unanswered(method, params);
     const value: unknown = typeof answer === 'function' ? answer(params) : answer;
     if (value instanceof ApiError) {
       return Promise.reject(value);
@@ -212,6 +212,14 @@ export class FakeSession implements SessionClient {
       yield note;
     }
     return this.turnResult as Methods[M]['result'];
+  }
+
+  /**
+   * How `method` is answered when no test said, alike another: `thread/turns`, as
+   * `thread/events` is, the thread's whole history in one page of turns.
+   */
+  private alike(method: Method): Answer | undefined {
+    return method === 'thread/turns' ? this.answers.get('thread/events') : undefined;
   }
 
   /** The params of the calls of `method`, in order. */

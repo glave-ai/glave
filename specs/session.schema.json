@@ -7879,6 +7879,17 @@
       },
       "result": {
         "properties": {
+          "earlier": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Read back, the `before` of the turns before these, when there are any."
+          },
           "events": {
             "items": {
               "$ref": "#/$defs/RawEvent"
@@ -7893,7 +7904,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Read forward, the `after` of the next page, when there may be one."
           }
         },
         "required": [
@@ -8247,6 +8259,67 @@
         },
         "required": [
           "steps"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/turns": {
+      "params": {
+        "properties": {
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the page ends, before this `seq`: the `earlier` of the page after it."
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "earlier": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Read back, the `before` of the turns before these, when there are any."
+          },
+          "events": {
+            "items": {
+              "$ref": "#/$defs/RawEvent"
+            },
+            "type": "array"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Read forward, the `after` of the next page, when there may be one."
+          }
+        },
+        "required": [
+          "events"
         ],
         "type": "object"
       },

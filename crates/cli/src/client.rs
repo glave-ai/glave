@@ -510,7 +510,7 @@ pub(crate) async fn export(
             after,
             limit: Some(5_000),
         };
-        let Reply::Events { events, next } = server.request(page).await? else {
+        let Reply::Events { events, next, .. } = server.request(page).await? else {
             anyhow::bail!("the server answered thread/events with something else");
         };
         for event in &events {

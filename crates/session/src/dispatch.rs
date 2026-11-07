@@ -303,6 +303,8 @@ where
                 after,
                 limit,
             } => self.events(thread, after, limit).await,
+            // Boxed, so the log's reads back never grow the future of every request.
+            Request::ThreadTurns { thread, before } => Box::pin(self.turns(thread, before)).await,
             Request::ThreadSources { thread } => self.sources(thread).await,
             Request::ThreadChanges { thread } => self.changes(thread).await,
             Request::ThreadSteps { thread } => self.steps(thread).await,

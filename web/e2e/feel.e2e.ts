@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
+import { LONG, LONG_TURNS } from './fake-long';
 import {
   type Felt,
   FEEL,
@@ -43,6 +44,27 @@ for (const opened of OPENED) {
     expectStill(await opening(page, opened.path, opened.shown));
   });
 }
+
+test('a thread of 10,000 events opens at its end soon, and the turns before come in above as the person goes back, nothing moving', async ({
+  page,
+}) => {
+  const opened = await opening(page, `/t/${LONG}`, 'thread-message');
+  const messages = byTestId(page, 'thread-message');
+  await expect(messages.last()).toContainText(`Step ${String(LONG_TURNS)} is done.`);
+  // Its latest 20 turns, each the person's message and the reply.
+  await expect(messages).toHaveCount(40);
+  expectShownSoon(opened);
+  expectStill(opened);
+  const items = byTestId(page, 'thread-items');
+  for (const back of [1, 2, 3]) {
+    await items.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect(messages).toHaveCount(40 * (back + 1));
+    await atRest(page);
+  }
+  expectStill(await feltOn(page));
+});
 
 for (const late of ['project/list', 'thread/list'] as const) {
   test(`nothing moves on opening a thread when ${late} answers late`, async ({ page }) => {

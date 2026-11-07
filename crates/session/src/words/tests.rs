@@ -159,6 +159,7 @@ fn an_approval_in_a_page_of_events_is_written_again_and_nothing_else() {
             event(2, "message.added", said),
         ],
         next: None,
+        earlier: None,
     });
     assert!(says(&page));
     translate(&mut page, Language::Accented);

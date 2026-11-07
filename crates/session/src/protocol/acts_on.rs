@@ -17,6 +17,7 @@ impl Request {
             | Self::ThreadRename { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
+            | Self::ThreadTurns { thread, .. }
             | Self::ThreadSources { thread }
             | Self::ThreadChanges { thread }
             | Self::ThreadSteps { thread }

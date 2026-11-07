@@ -23,9 +23,7 @@ import {
 } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
-import { lastCommandChange } from '../lib/commands';
-import { NO_DRAFT, applyUpdate, mergeEvents, stepsAfter, type Draft } from '../lib/conversation';
-import { lastChanging } from '../lib/files';
+import { NO_DRAFT, applyUpdate, stepsAfter, type Draft } from '../lib/conversation';
 import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
@@ -33,12 +31,11 @@ import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
-import { lastSourcing } from '../lib/sources';
 import { type Start, built, promptOf, sent, withFiles } from '../lib/starts';
-import { lastPlanning } from '../lib/plans';
 import { asks, latestStart, summaryRuns, threadTurns, turnRuns } from '../lib/turns';
 import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause, refused } from '../lib/watching';
 import { FirstTurnService } from './first-turn.service';
+import { History } from './history';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
 
@@ -55,8 +52,8 @@ export class ThreadService {
   private readonly projects = inject(ProjectsService);
   private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
-  private readonly events = signal<readonly RawEvent[]>([]);
-  private readonly reading = signal(false);
+  private readonly history = new History();
+  private readonly events = this.history.events;
   private readonly draft = signal<Draft>(NO_DRAFT);
   /** The steps the running turn takes now, in the server's words, as its live updates say. */
   private readonly doing = signal<readonly string[]>([]);
@@ -98,8 +95,10 @@ export class ThreadService {
   private readonly mac = onApple(this.document);
 
   readonly thread = this.id.asReadonly();
-  /** Whether the thread is being opened, its history read page by page. */
-  readonly opening = this.reading.asReadonly();
+  /** Whether the thread is being opened, its latest turns read. */
+  readonly opening = this.history.opening;
+  /** Whether the turns before those shown are being read, as the person goes back to them. */
+  readonly readingEarlier = this.history.readingBack;
   /**
    * The thread's summary: its own, as the server answered it here, or the side nav's copy when
    * newer (a rename or a turn elsewhere), the only one as it opens; `null` before either.
@@ -120,17 +119,14 @@ export class ThreadService {
    * the turn is the first recorded after it.
    */
   readonly askedAfter = this.afters.asReadonly();
-  /** The `seq` of the latest end of a call that can change files; `null` while it opens. */
-  readonly changing = computed(() => (this.opening() ? null : lastChanging(this.events())));
-  /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
-  readonly commandChange = computed(() => lastCommandChange(this.events()));
-  /**
-   * The `seq` of the latest end of a turn once the thread may have read a page (it called
-   * `web_fetch`), if it did; `null` while the thread opens, until its history is read.
-   */
-  readonly sourcing = computed(() => (this.opening() ? null : lastSourcing(this.events())));
-  /** The `seq` of the latest change to the thread's plan, if any; `null` while the thread opens. */
-  readonly planning = computed(() => (this.opening() ? null : lastPlanning(this.events())));
+  /** What the thread's changes to files are read again on (`History.changing`). */
+  readonly changing = this.history.changing;
+  /** What the commands it runs in the background are read again on (`History.commandChange`). */
+  readonly commandChange = this.history.commandChange;
+  /** What the sources its replies drew on are read again on (`History.sourcing`). */
+  readonly sourcing = this.history.sourcing;
+  /** What its plan is read again on (`History.planning`). */
+  readonly planning = this.history.planning;
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
@@ -205,13 +201,13 @@ export class ThreadService {
   }
 
   /**
-   * Opens `thread`: reads all its events, and what its project asks the person to trust, which
-   * opening it raises.
+   * Opens `thread`: reads its latest turns, and what its project asks the person to trust,
+   * which opening it raises.
    */
   async open(thread: ThreadId): Promise<void> {
     this.abortAll();
     this.id.set(thread);
-    this.events.set([]);
+    this.history.reset(thread);
     this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
@@ -225,11 +221,7 @@ export class ThreadService {
     this.asked.set(null);
     this.trustAnswered.set(null);
     this.own.set(null);
-    this.reading.set(true);
-    await this.readAll(thread);
-    if (this.id() === thread) {
-      this.reading.set(false);
-    }
+    await this.read(thread, () => this.history.latest(thread));
     // Read after the events: a turn they leave open runs only when the server says so, not
     // when glave stopped in the middle of it.
     const summary = await this.readAsk(thread);
@@ -367,11 +359,11 @@ export class ThreadService {
     }
   }
 
-  /** Reads what was recorded since the last event this view has. */
-  async catchUp(): Promise<void> {
-    const thread = this.id();
+  /** Reads what was recorded since the last event this view has, saying why it could not unless `quiet`. */
+  async catchUp(quiet = false): Promise<void> {
+    const [thread, from] = [this.id(), this.events().at(-1)?.seq];
     if (thread !== null) {
-      await this.readAll(thread, this.events().at(-1)?.seq);
+      await this.read(thread, () => this.history.after(thread, from), quiet);
     }
   }
 
@@ -499,7 +491,7 @@ export class ThreadService {
       // A thread's events are numbered without gaps: one missed between two streams is read.
       const newest = this.events().at(-1)?.seq;
       if (newest !== undefined && event.seq > newest + 1) {
-        void this.readAll(thread, newest, true);
+        void this.catchUp(true);
       }
       const added = this.add(event);
       if (drawn && event.type === 'message.added') {
@@ -631,7 +623,7 @@ export class ThreadService {
     }
     // The server's word first; a turn's start or end read after it says more.
     this.running.set(summaryRuns(summary, this.events()));
-    await this.readAll(thread, this.events().at(-1)?.seq, true);
+    await this.catchUp(true);
     if (this.following() > 0 || this.id() !== thread) {
       return;
     }
@@ -742,11 +734,9 @@ export class ThreadService {
    * send it: whether it is new. A turn runs from its start to its end.
    */
   private add(event: RawEvent): boolean {
-    const newest = this.events().at(-1)?.seq ?? 0;
-    if (event.seq <= newest && this.events().some((known) => known.seq === event.seq)) {
+    if (!this.history.add(event)) {
       return false;
     }
-    this.events.update((events) => mergeEvents(events, [event]));
     if (event.type === 'turn.started') {
       this.running.set(true);
       // A turn after the one the person stopped is not the one they stopped.
@@ -763,32 +753,34 @@ export class ThreadService {
     return true;
   }
 
-  /** Reads `thread`'s events after `from`, saying why it could not unless `quiet`. */
-  private async readAll(thread: ThreadId, from?: number, quiet = false): Promise<void> {
+  /** Reads the turns before those shown, saying why it could not. */
+  async readEarlier(): Promise<void> {
     try {
-      let after = from;
-      for (;;) {
-        const page = await this.session.call('thread/events', {
-          thread,
-          ...(after === undefined ? {} : { after }),
-        });
-        if (this.id() !== thread) {
-          return;
-        }
-        this.events.update((events) => mergeEvents(events, page.events));
-        if (page.events.some(asks)) {
-          this.firstTurns.forget(thread);
-        }
-        const turns = page.events.some(
-          (event) => event.type === 'turn.started' || event.type === 'turn.ended',
-        );
-        if (turns) {
-          this.running.set(turnRuns(this.events()));
-        }
-        if (page.next === undefined || page.next === null) {
-          return;
-        }
-        after = page.next;
+      await this.history.earlier();
+    } catch (error: unknown) {
+      this.failed.set(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Reads `thread`'s events as `reading` does, then what they say of a first turn sent here and
+   * of a turn running; says why it could not unless `quiet`.
+   */
+  private async read(
+    thread: ThreadId,
+    reading: () => Promise<readonly RawEvent[]>,
+    quiet = false,
+  ): Promise<void> {
+    try {
+      const read = await reading();
+      if (this.id() !== thread) {
+        return;
+      }
+      if (read.some(asks)) {
+        this.firstTurns.forget(thread);
+      }
+      if (read.some((event) => event.type === 'turn.started' || event.type === 'turn.ended')) {
+        this.running.set(turnRuns(this.events()));
       }
     } catch (error: unknown) {
       if (!quiet) {

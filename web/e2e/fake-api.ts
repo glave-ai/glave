@@ -16,6 +16,7 @@ import { type Awake, KEPT_AWAKE } from './fake-awake';
 import { KEPT_REMEMBERING, type Remembering } from './fake-remembering';
 import { changesOf } from './fake-changes';
 import { stepsOf } from './fake-steps';
+import { ABOUT_LONG } from './fake-long';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
 import { type Gated, gates } from './fake-gate';
@@ -628,6 +629,8 @@ const ANSWERS: Answers<Known> = {
   },
   'thread/sources': (params) => sourcesOf(params),
   'thread/events': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
+  // Each of these threads is short: its latest turns are all of it.
+  'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
   'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
   'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
   'thread/start': (params, { started }) => {
@@ -682,6 +685,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     background(method, params, commands) ??
     (gone === null ? undefined : answerFrom(ABOUT_GONE, method, params, gone)) ??
     (known.plan === null ? undefined : answerFrom(PLANNED, method, params, known.plan)) ??
+    answerFrom(ABOUT_LONG, method, params, null) ??
     answerFrom(ANSWERS, method, params, known) ??
     answerFrom(SIGN_IN, method, params, null) ??
     answerFrom(KEPT_AWAKE, method, params, known.awake) ??
