@@ -99,7 +99,13 @@ fn kept_but_the_rest_is_writable(project: &Project, relative: &str, real: &Path)
     ));
     assert!(said.contains("done"), "{said}");
     assert!(!holds_planted(&real.join("hooks")), "{said}");
-    assert!(!project.root.join("moved").exists(), "{said}");
+    // Not moved: Seatbelt refuses the rename, and across bubblewrap's mounts `mv` copies and
+    // cannot remove the original.
+    assert_eq!(
+        std::fs::read_to_string(real.join("config")).ok().as_deref(),
+        Some("[theirs]\n"),
+        "{said}"
+    );
     project.sandboxed(&format!("rm -rf {relative} ; echo done"));
     assert_eq!(
         std::fs::read_to_string(real.join("config")).unwrap(),
