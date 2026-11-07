@@ -53,10 +53,6 @@
   font-size: var(--glz-text-md);
 }
 
-.rows > app-service-row:first-child {
-  border-block-start-color: var(--glz-color-border);
-}
-
 .detail {
   display: flex;
   align-items: center;
@@ -68,57 +64,6 @@
   line-height: var(--glz-leading-tight);
 }
 
-.waiting {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glz-space-2);
-
-  .detail {
-    color: var(--glz-color-text-secondary);
-  }
-}
-
-.again {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: var(--glz-space-1);
-  font-size: var(--glz-text-sm);
-}
-
-.dot {
-  flex: none;
-  width: var(--glz-dot-size);
-  height: var(--glz-dot-size);
-  border-radius: var(--glz-radius-full);
-  background: var(--glz-color-success);
-}
-
-// A service's accounts, beneath its line when it has two or more, and for a project why its
-// account used everywhere else is not used there: each drawn only when it says something.
-.accounts {
-  display: flex;
-  flex-direction: column;
-}
-
-.note {
-  color: var(--glz-color-text-muted);
-  font-size: var(--glz-text-sm);
-}
-
-.accounts:not(.shown),
-.note:not(.shown),
-.dot:not(.shown) {
-  display: none;
-}
-
 .problem {
   color: var(--glz-color-danger);
-}
-
-// On a phone, a row's button is a finger's size.
-@media (width <= 48rem) {
-  .rows .action {
-    min-height: var(--glz-control-height-touch);
-  }
 }

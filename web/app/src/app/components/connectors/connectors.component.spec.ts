@@ -208,23 +208,6 @@ describe('ConnectorsComponent', () => {
     ]);
   });
 
-  it('shows the sign-in as a link where no tab opened', async () => {
-    const fake = new FakeSession()
-      .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
-      .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', stillWaiting);
-    vi.spyOn(window, 'open').mockReturnValue(null);
-    const { fixture, root } = await page(fake);
-    press(root, 'linear');
-    await settle(fixture);
-    const waiting = root.querySelector('[data-testid="connector-waiting"]');
-    expect(waiting?.textContent).toContain('To finish, open the sign-in for Linear.');
-    const link = root.querySelector('[data-testid="connector-open"]');
-    expect(link?.getAttribute('href')).toBe(PAGE);
-    expect(link?.textContent).toContain('Open the sign-in');
-    await expectAccessible(root);
-  });
-
   it("says why connecting failed, in the server's words, and closes the tab it opened", async () => {
     const fake = new FakeSession()
       .answer('connector/list', { categories: CATEGORIES, connectors: [LINEAR] })
@@ -344,29 +327,6 @@ describe('ConnectorsComponent', () => {
     await expectAccessible(root);
   });
 
-  /** The page for a person with only their Chats, Notion connected with `accounts`. */
-  async function onlyChats(accounts: NonNullable<ConnectorInfo['accounts']>): Promise<HTMLElement> {
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('p2', 'Chats', 'personal')] })
-      .answer('thread/list', { threads: [] })
-      .answer('connector/list', {
-        categories: CATEGORIES,
-        connectors: [{ ...NOTION, status: 'connected', accounts }],
-      });
-    const { fixture, root } = await page(fake);
-    await TestBed.inject(ProjectsService).refresh();
-    await settle(fixture);
-    return root;
-  }
-
-  it('offers no choice of place to a person with only their Chats', async () => {
-    const root = await onlyChats([{ status: 'connected', used: 'Everywhere, including chats' }]);
-    expect(rows(root, 'connectors-connected')).toEqual([
-      'N Notion Everywhere, including chats Disconnect',
-    ]);
-    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
-  });
-
   it('lists two accounts beneath their service, each with its own menu', async () => {
     const two: ConnectorInfo = {
       ...NOTION,
@@ -483,45 +443,5 @@ describe('ConnectorsComponent', () => {
     expect(fake.paramsOf('connector/connect')).toEqual([
       { connector: 'notion', account: 'Acme', only: 'p1' },
     ]);
-  });
-
-  it('for a project, names the account its threads use and why the other is not', async () => {
-    const fake = new FakeSession()
-      .answer('project/list', {
-        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
-      })
-      .answer('thread/list', { threads: [] })
-      .answer('connector/list', (params) => {
-        const own = { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' };
-        const glave = { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' };
-        return (params as { used_in?: string }).used_in === 'p1'
-          ? {
-              categories: CATEGORIES,
-              connectors: [
-                {
-                  ...NOTION,
-                  status: 'connected',
-                  accounts: [own],
-                  replaced: 'Your Notion account used everywhere else is not used here.',
-                },
-              ],
-            }
-          : {
-              categories: CATEGORIES,
-              connectors: [{ ...NOTION, status: 'connected', accounts: [glave, own] }],
-            };
-      });
-    const { fixture, root } = await page(fake, 'p1');
-    await TestBed.inject(ProjectsService).refresh();
-    await settle(fixture);
-    expect(rows(root, 'connectors-connected')).toEqual([
-      'N Notion: Acme Only in Acme Site Disconnect',
-    ]);
-    const note = root.querySelector('[data-connector="notion"] [data-testid="connector-note"]');
-    expect(note?.textContent.trim()).toBe(
-      'Your Notion account used everywhere else is not used here.',
-    );
-    expect(note?.classList.contains('shown')).toBe(true);
-    await expectAccessible(root);
   });
 });

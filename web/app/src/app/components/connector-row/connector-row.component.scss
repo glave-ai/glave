@@ -1,0 +1,65 @@
+// One connector on the Connections page: its line under its name, its accounts beneath it, and
+// what can be done with it at the row's end.
+:host(:first-child) app-service-row {
+  border-block-start-color: var(--glz-color-border);
+}
+
+.detail {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+}
+
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+
+  .detail {
+    color: var(--glz-color-text-secondary);
+  }
+}
+
+.again {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--glz-space-1);
+  font-size: var(--glz-text-sm);
+}
+
+.dot {
+  flex: none;
+  width: var(--glz-dot-size);
+  height: var(--glz-dot-size);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-success);
+}
+
+// A service's accounts, beneath its line when it has two or more.
+.accounts {
+  display: flex;
+  flex-direction: column;
+}
+
+// For a project, why its account used everywhere else is not used there.
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}
+
+// On a phone, a row's button is a finger's size.
+@media (width <= 48rem) {
+  :host .action {
+    min-height: var(--glz-control-height-touch);
+  }
+}

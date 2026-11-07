@@ -1,0 +1,109 @@
+<app-service-row
+  data-testid="connector"
+  [name]="row().name"
+  [tile]="connector().name"
+  [attr.data-connector]="connector().id"
+>
+  @if (problem(); as problem) {
+    <span class="detail problem" role="alert" data-testid="connector-problem">{{ problem }}</span>
+  } @else if (row().waiting) {
+    <span class="waiting" data-testid="connector-waiting">
+      <span class="detail">
+        <glz-icon class="glz-spin" [icon]="icons.waiting" />
+        {{ row().detail }}
+      </span>
+      @if (row().link; as link) {
+        <a
+          class="again"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="connector-open"
+          [href]="link"
+        >
+          {{ row().linkText }}
+          <glz-icon class="glz-mirrored" [icon]="icons.open" [label]="copy.newTab" />
+        </a>
+      }
+    </span>
+  } @else {
+    <span class="detail" data-testid="connector-detail">
+      @if (row().connected) {
+        <span class="dot" aria-hidden="true"></span>
+      }
+      <span dir="auto">{{ row().detail }}</span>
+    </span>
+    @if (note(); as note) {
+      <span class="note" data-testid="connector-note">{{ note }}</span>
+    }
+  }
+  @if (row().listed) {
+    <div class="accounts" role="list" data-testid="connector-accounts">
+      @for (beneath of row().accounts; track beneath.key) {
+        <app-connector-account
+          [service]="connector().name"
+          [account]="beneath.account"
+          [place]="beneath.place"
+          [places]="places()"
+          (picked)="picked(beneath.account, $event)"
+        />
+      }
+    </div>
+  }
+  @if (row().place; as place) {
+    <glz-menu-select
+      appServiceAction
+      quiet
+      testId="connector-place"
+      [label]="row().placeLabel"
+      [options]="places()"
+      [value]="place"
+      [disabled]="row().busy"
+      (valueChange)="move($event)"
+    />
+  }
+  @if (row().adds) {
+    <button
+      glzButton
+      appServiceAction
+      class="action"
+      size="sm"
+      variant="ghost"
+      data-testid="connector-add-account"
+      [disabled]="row().busy"
+      [attr.aria-label]="row().addLabel"
+      (click)="add()"
+    >
+      {{ copy.add }}
+    </button>
+  }
+  @if (row().acts) {
+    <button
+      glzButton
+      appServiceAction
+      class="action"
+      size="sm"
+      data-testid="connector-action"
+      [variant]="row().variant"
+      [disabled]="row().busy"
+      [attr.aria-label]="row().actionLabel"
+      (click)="act()"
+    >
+      {{ row().action }}
+    </button>
+  }
+  @if (row().again) {
+    <button
+      glzButton
+      appServiceAction
+      class="action"
+      size="sm"
+      variant="ghost"
+      data-testid="connector-disconnect"
+      [disabled]="row().busy"
+      [attr.aria-label]="row().disconnectLabel"
+      (click)="ask()"
+    >
+      {{ copy.disconnect }}
+    </button>
+  }
+</app-service-row>

@@ -57,3 +57,10 @@ export function connectionProblem(error: unknown): string {
   }
   return OWN.includes(error.code) ? somethingWrong() : sentence(error.message);
 }
+
+/** What an app waiting for its sign-in says, as the tab for it opened or not. */
+export function signInWaiting(name: string, opened: boolean): string {
+  return opened
+    ? $localize`:@@connections.signInWaiting:Finish signing in to ${name}:NAME: in the new tab.`
+    : $localize`:@@connections.signInToFinish:To finish, open the sign-in for ${name}:NAME:.`;
+}
