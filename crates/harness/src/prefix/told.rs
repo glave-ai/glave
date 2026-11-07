@@ -44,6 +44,9 @@ pub(crate) struct Told {
     pub(super) tools: BTreeMap<String, ToolSpec>,
     /// Those of a service someone connected, on offer now, by name.
     pub(super) connected: BTreeSet<String>,
+    /// The connectors whose servers could not list their tools: one that answers again is not
+    /// a connection turned on, and its tools wait for a new prefix (#1199).
+    pub(super) gone: BTreeSet<String>,
 }
 
 impl Told {
@@ -103,6 +106,16 @@ impl Told {
                 came.relisted.join(", ")
             ));
         }
+        if !came.back.is_empty() {
+            let back: Vec<String> = (came.back.iter()).map(|name| format!("`{name}`")).collect();
+            notes.push(format!(
+                "Tool servers that were not available when this conversation began answer \
+                 again: {}. Their tools are not available here yet: they will be once the \
+                 conversation is compacted, or in a new thread. If the person asks for them, \
+                 tell them so.",
+                back.join(", ")
+            ));
+        }
         if !came.waiting.is_empty() {
             let waiting: Vec<String> = (came.waiting.iter())
                 .map(|name| format!("`{name}`"))
@@ -141,6 +154,12 @@ impl Told {
                 continue;
             };
             let known = self.knows(connector);
+            // A server that answers again keeps the prefix as it is, whose prompt says it is
+            // not available.
+            if !known && !lists(name) && self.gone.contains(connector) {
+                came.back.insert(connector.to_owned());
+                continue;
+            }
             let through = searching && lists(&wrapper(connector));
             match (called.is_some(), known) {
                 (true, true) if lists(name) => came.relisted.push(format!("`{name}`")),
@@ -196,6 +215,8 @@ struct Came {
     relisted: Vec<String>,
     /// What waits for a new prefix, by name.
     waiting: Vec<String>,
+    /// The connectors of servers that answer again, whose tools wait for a new prefix.
+    back: BTreeSet<String>,
     /// Whether a connector it was never told of is among what waits.
     connection: bool,
 }

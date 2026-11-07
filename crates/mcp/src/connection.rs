@@ -34,7 +34,7 @@ use crate::reason::{failed, reason};
 pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
 
 /// What glave tells a server as it connects.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Opening {
     /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
     pub(crate) catalog: bool,

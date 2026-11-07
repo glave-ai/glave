@@ -42,6 +42,7 @@ impl Kept {
             memory: self.memory.is_some(),
             tools: Told::services(&self.tools),
             connected: std::collections::BTreeSet::new(),
+            gone: crate::toolset::gone_from(&self.system),
         };
         Prefix {
             model: self.model,

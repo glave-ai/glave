@@ -1,18 +1,19 @@
 //! One MCP server as a tool source. It starts in the background the moment it is made, so
 //! glave never waits for a server it has not asked anything yet; its first listing waits for it.
+//! One that fails to start is started again at a later ask, in the background (`again.rs`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use glave_event::{Arguments, ToolKind};
 use glave_ports::auth::Auth;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{
-    BoxFuture, Called, Cancellation, ServiceGiven, ToolError, ToolInfo, ToolOutput, ToolSource,
-    unless_cancelled,
+    BoxFuture, Called, Cancellation, Clock, ServiceGiven, ToolError, ToolInfo, ToolOutput,
+    ToolSource, unless_cancelled,
 };
 use glave_process::{Child, ProcessError, Processes, Program};
 use http::{HeaderName, HeaderValue};
@@ -23,6 +24,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
+use crate::again::Again;
 use crate::call::{Answerer, Waits};
 use crate::connection::{CANCELLED, Connection, Opening};
 use crate::reachable::Reachable;
@@ -91,10 +93,20 @@ enum State {
     Failed(McpError),
 }
 
+/// One start of a server, from its transport to its connection or why it failed.
+type Start = Arc<dyn Fn() -> BoxFuture<'static, State> + Send + Sync>;
+
+/// What a server says while it starts again, which nothing waits for.
+const STARTING_AGAIN: &str = "it failed to start, and is starting again";
+
 /// An MCP server: starting, started, or failed to start.
 pub struct McpServer {
     name: String,
-    state: watch::Receiver<State>,
+    state: Arc<watch::Sender<State>>,
+    /// How it starts again after a failure, when it can.
+    start: Option<Start>,
+    /// Its failed starts, and when it is next started again.
+    again: Mutex<Again>,
     /// The start in the background, until it is over or the server is closed.
     starting: Mutex<Option<JoinHandle<()>>>,
     /// A server's process, once started: stopped, with everything it started, when the
@@ -159,7 +171,9 @@ impl McpServer {
         }
         match config {
             ServerConfig::Stdio { command, args, env } => {
-                let program = program(command, args, env, environment, dir);
+                let (command, args, env) = (command.clone(), args.clone(), env.clone());
+                let (environment, dir) = (environment.clone(), dir.to_owned());
+                let program = move || program(&command, &args, &env, &environment, &dir);
                 Self::program(name, program, processes.clone(), root, limits)
             }
             ServerConfig::Http { url, headers } => {
@@ -190,32 +204,35 @@ impl McpServer {
     /// standard error dropped.
     fn program(
         name: &str,
-        mut program: Program,
+        program: impl Fn() -> Program + Send + Sync + 'static,
         processes: Processes,
         root: Option<PathBuf>,
         limits: Limits,
     ) -> Self {
         let owned = name.to_owned();
-        let transport = async move {
-            let mut child = processes.spawn(&mut program).await.map_err(|error| {
-                let message = match error {
-                    ProcessError::Start { program, source } => {
-                        format!("could not run {program}: {source}")
-                    }
-                    other => other.to_string(),
-                };
-                McpError::start(&owned, message)
-            })?;
-            let pipes = child.stdout.take().zip(child.stdin.take());
-            let pipes = pipes
-                .ok_or_else(|| McpError::start(&owned, "its input and output were not kept"))?;
-            Ok((pipes, Some(child)))
+        let transport = move || {
+            let (mut program, processes, owned) = (program(), processes.clone(), owned.clone());
+            async move {
+                let mut child = processes.spawn(&mut program).await.map_err(|error| {
+                    let message = match error {
+                        ProcessError::Start { program, source } => {
+                            format!("could not run {program}: {source}")
+                        }
+                        other => other.to_string(),
+                    };
+                    McpError::start(&owned, message)
+                })?;
+                let pipes = child.stdout.take().zip(child.stdin.take());
+                let pipes = pipes
+                    .ok_or_else(|| McpError::start(&owned, "its input and output were not kept"))?;
+                Ok((pipes, Some(child)))
+            }
         };
         let opening = Opening {
             catalog: false,
             root,
         };
-        Self::open(name, transport, limits, opening)
+        Self::open(name, transport, limits, opening, true)
     }
 
     /// A gateway's catalog at `url` (its `/mcp`), sent `headers` with every request: one
@@ -261,13 +278,12 @@ impl McpServer {
         let client = Signed::new(auth, limits.reachable).map_err(|error| {
             McpError::start(name, format!("could not make its client: {error}"))
         })?;
-        let transport = StreamableHttpClientTransport::with_client(client, config);
-        Ok(Self::open(
-            name,
-            async { Ok((transport, None)) },
-            limits,
-            opening,
-        ))
+        let transport = move || {
+            let transport =
+                StreamableHttpClientTransport::with_client(client.clone(), config.clone());
+            async { Ok((transport, None)) }
+        };
+        Ok(Self::open(name, transport, limits, opening, true))
     }
 
     /// Starts talking MCP over `transport`.
@@ -277,57 +293,81 @@ impl McpServer {
         E: std::error::Error + Send + Sync + 'static,
         A: 'static,
     {
-        let transport = async { Ok((transport, None)) };
-        Self::open(name, transport, limits, Opening::default())
+        // Given once, so started once.
+        let given = Mutex::new(Some(transport));
+        let owned = name.to_owned();
+        let transport = move || {
+            let taken = given.lock().unwrap_or_else(PoisonError::into_inner).take();
+            let given = taken.ok_or_else(|| McpError::start(&owned, "it was started once"));
+            async { given.map(|transport| (transport, None)) }
+        };
+        Self::open(name, transport, limits, Opening::default(), false)
     }
 
     /// Talks MCP over the transport `transport` makes, in the background, with the server's
-    /// process when it has one: kept while connected, and stopped if it never connects.
-    fn open<T, E, A>(
+    /// process when it has one: kept while connected, and stopped if it never connects. One that
+    /// fails is started again with a new transport, when `again` says it may be.
+    fn open<T, E, A, F>(
         name: &str,
-        transport: impl Future<Output = Result<(T, Option<Child>), McpError>> + Send + 'static,
+        transport: impl Fn() -> F + Send + Sync + 'static,
         limits: Limits,
         opening: Opening,
+        again: bool,
     ) -> Self
     where
         T: IntoTransport<RoleClient, E, A> + Send + 'static,
         E: std::error::Error + Send + Sync + 'static,
         A: 'static,
+        F: Future<Output = Result<(T, Option<Child>), McpError>> + Send + 'static,
     {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             let error = McpError::start(name, "glave started it outside its async runtime");
             return Self::failed(name, error, limits);
         };
-        let (sender, state) = watch::channel(State::Starting);
         let owned = name.to_owned();
         let process = Arc::new(Mutex::new(None));
         let held = Arc::clone(&process);
-        let starting = runtime.spawn(async move {
-            let opened = match transport.await {
-                Ok((transport, child)) => {
-                    let opened = Connection::open(&owned, transport, limits.startup, opening);
-                    let opened = opened.await;
-                    if opened.is_ok() {
-                        *held.lock().unwrap_or_else(PoisonError::into_inner) = child;
+        let start: Start = Arc::new(move || {
+            let (name, opening, held) = (owned.clone(), opening.clone(), Arc::clone(&held));
+            let transport = transport();
+            Box::pin(async move {
+                let opened = match transport.await {
+                    Ok((transport, child)) => {
+                        let opened = Connection::open(&name, transport, limits.startup, opening);
+                        let opened = opened.await;
+                        if opened.is_ok() {
+                            *held.lock().unwrap_or_else(PoisonError::into_inner) = child;
+                        }
+                        opened
                     }
-                    opened
+                    Err(error) => Err(error),
+                };
+                match opened {
+                    Ok(connection) => State::Ready(Arc::new(connection)),
+                    Err(err) => State::Failed(err),
                 }
-                Err(error) => Err(error),
-            };
-            sender.send_replace(match opened {
-                Ok(connection) => State::Ready(Arc::new(connection)),
-                Err(err) => State::Failed(err),
-            });
+            })
         });
+        let state = Arc::new(watch::Sender::new(State::Starting));
+        let starting = begin(&runtime, &state, &start);
         Self {
             name: name.to_owned(),
             state,
+            start: again.then_some(start),
+            again: Mutex::new(Again::default()),
             starting: Mutex::new(Some(starting)),
             process,
             waits: limits.waits(),
             untrusted: false,
             search: None,
         }
+    }
+
+    /// Times its starts again by `clock`, not the computer's.
+    #[must_use]
+    pub fn timed_by(mut self, clock: Arc<dyn Clock>) -> Self {
+        *self.again.get_mut().unwrap_or_else(PoisonError::into_inner) = Again::new(clock);
+        self
     }
 
     /// Marks the server's tool `tool` as its web search: each call is told to the person as
@@ -357,7 +397,9 @@ impl McpServer {
     fn failed(name: &str, error: McpError, limits: Limits) -> Self {
         Self {
             name: name.to_owned(),
-            state: watch::channel(State::Failed(error)).1,
+            state: Arc::new(watch::Sender::new(State::Failed(error))),
+            start: None,
+            again: Mutex::new(Again::default()),
             starting: Mutex::new(None),
             process: Arc::new(Mutex::new(None)),
             waits: limits.waits(),
@@ -381,29 +423,74 @@ impl McpServer {
         matches!(*self.state.borrow(), State::Starting)
     }
 
-    /// Waits until the server has started, or failed to.
+    /// Waits until the server has started, or failed to: the start under way, one started
+    /// again included.
     pub async fn started(&self) -> Result<(), McpError> {
-        self.connection().await.map(|_| ())
+        match self.settled().await {
+            State::Ready(_) => Ok(()),
+            State::Failed(error) => Err(error),
+            State::Starting => Err(McpError::start(&self.name, "it was closed")),
+        }
     }
 
-    /// The connection, once started.
-    pub(crate) async fn connection(&self) -> Result<Arc<Connection>, McpError> {
-        let mut state = self.state.clone();
+    /// How the start under way ends.
+    async fn settled(&self) -> State {
+        let mut state = self.state.subscribe();
         let settled = state
             .wait_for(|state| !matches!(state, State::Starting))
             .await
             .map(|state| state.clone());
-        match settled {
-            Ok(State::Ready(connection)) => Ok(connection),
-            Ok(State::Failed(error)) => Err(error),
-            Ok(State::Starting) | Err(_) => Err(McpError::start(&self.name, "it was closed")),
+        settled.unwrap_or(State::Starting)
+    }
+
+    fn again(&self) -> MutexGuard<'_, Again> {
+        self.again.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The connection, once started: its first start waited for, a start again never, and a
+    /// failed one started again when it is due.
+    pub(crate) async fn connection(&self) -> Result<Arc<Connection>, McpError> {
+        let now = self.state.borrow().clone();
+        let state = match now {
+            State::Starting if self.again().retrying() => {
+                return Err(McpError::start(&self.name, STARTING_AGAIN));
+            }
+            State::Starting => self.settled().await,
+            settled => settled,
+        };
+        match state {
+            State::Ready(connection) => Ok(connection),
+            State::Failed(error) => {
+                self.start_again_if_due();
+                Err(error)
+            }
+            State::Starting => Err(McpError::start(&self.name, "it was closed")),
         }
+    }
+
+    /// Starts the server again in the background, when it failed and its wait is over.
+    fn start_again_if_due(&self) {
+        let (Some(start), Ok(runtime)) = (&self.start, tokio::runtime::Handle::try_current())
+        else {
+            return;
+        };
+        // Decided and begun under the one lock, so two asks at once start it once.
+        let mut again = self.again();
+        let failed = matches!(*self.state.borrow(), State::Failed(_));
+        if !failed || !again.failed() {
+            return;
+        }
+        let starting = begin(&runtime, &self.state, start);
+        drop(again);
+        // The start before is over, since the server had failed.
+        *self.starting.lock().unwrap_or_else(PoisonError::into_inner) = Some(starting);
     }
 
     /// Stops the server: a start still under way is abandoned, and a started server has its
     /// input closed, then is stopped with everything it started if it has not exited within a
     /// few seconds.
     pub async fn close(&self) {
+        self.again().close();
         let starting = self
             .starting
             .lock()
@@ -414,6 +501,14 @@ impl McpServer {
             // Aborted or finished, it is over; dropping a start kills its process.
             let _ = starting.await;
         }
+        let closed = McpError::start(&self.name, "it was closed");
+        self.state.send_if_modified(|state| {
+            let starting = matches!(state, State::Starting);
+            if starting {
+                *state = State::Failed(closed);
+            }
+            starting
+        });
         let state = self.state.borrow().clone();
         if let State::Ready(connection) = state {
             connection.close().await;
@@ -538,6 +633,19 @@ impl McpServer {
             None => Called::Done(ToolOutput::text(true, CANCELLED)),
         }
     }
+}
+
+/// Begins `start` in the background on `runtime`, how it ends told through `state`.
+fn begin(
+    runtime: &tokio::runtime::Handle,
+    state: &Arc<watch::Sender<State>>,
+    start: &Start,
+) -> JoinHandle<()> {
+    state.send_replace(State::Starting);
+    let (state, start) = (Arc::clone(state), Arc::clone(start));
+    runtime.spawn(async move {
+        state.send_replace(start().await);
+    })
 }
 
 /// The program for a server, with only the environment it should have.

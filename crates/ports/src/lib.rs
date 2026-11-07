@@ -72,7 +72,8 @@ pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ServiceGiven,
-    ToolError, ToolFile, ToolInfo, ToolOutput, ToolSource, describe_call, unless_cancelled,
+    ToolError, ToolFile, ToolInfo, ToolOutput, ToolSource, describe_call, name_part,
+    unless_cancelled,
 };
 pub use view::{
     AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Standing, THREAD_VIEW_VERSION, TITLE_CHARS,

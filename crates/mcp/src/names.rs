@@ -1,33 +1,23 @@
 //! What an MCP tool is called to the model: `mcp__<server>__<tool>`, as Codex and Claude Code
 //! name them, so a tool's origin is plain and two servers' tools never collide.
 
+use glave_ports::name_part;
+
 /// The longest name a model API accepts for a tool.
 const MAX: usize = 128;
 
 /// The name the model sees for `tool` on `server`: anything outside `A-Za-z0-9_-` becomes `_`,
 /// and the whole is cut to 128 characters.
 pub fn exposed(server: &str, tool: &str) -> String {
-    let name = format!("mcp__{}__{}", clean(server), clean(tool));
+    let name = format!("mcp__{}__{}", name_part(server), name_part(tool));
     name.chars().take(MAX).collect()
 }
 
 /// The name the model sees for `tool` of a catalog a gateway serves, whose tools are already
 /// named `<server>__<tool>`: `mcp__<server>__<tool>`, as if the server were the person's own.
 pub fn catalog(tool: &str) -> String {
-    let name = format!("mcp__{}", clean(tool));
+    let name = format!("mcp__{}", name_part(tool));
     name.chars().take(MAX).collect()
-}
-
-fn clean(part: &str) -> String {
-    part.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
