@@ -128,15 +128,37 @@ pub struct ConnectorInfo {
     pub description: Told,
     /// The vendor's own page about it.
     pub docs: String,
+    /// Connected when an account of it is; to sign in to again when any account's sign-in no
+    /// longer works.
     pub status: ConnectorStatus,
-    /// Connected, the one project whose threads alone use it, the person's Chats among them:
-    /// none where every thread of theirs does.
+    /// The accounts of it connected, in the order connected: none when it is not. Listed for
+    /// one place (`used_in`), only the one its threads use.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<ConnectorAccount>,
+    /// Listed for one place, why the account of it used everywhere else is not used there, in
+    /// the caller's language: the place has one of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced: Option<Told>,
+}
+
+/// An account of a connector the caller connected (`specs/policy.md`, "Connections"): one
+/// service may have several, each named, each signed in to as itself. In one place, an account
+/// of its own takes the place of the one used everywhere, so a thread never has two.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConnectorAccount {
+    /// The person's name for it, unique among the service's accounts: `Acme`. None for one
+    /// never named, as a service's first account is until it has a second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The one project whose threads alone use it, the person's Chats among them: none where
+    /// every thread of theirs does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub only: Option<ProjectId>,
-    /// Connected, where it is used, in the caller's language: `Everywhere, including chats`,
-    /// `Only in Acme Site`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub used: Option<Told>,
+    /// Where it is used, in the caller's language: `Everywhere, including chats`, `Only in
+    /// Acme Site`.
+    pub used: Told,
+    /// Connected, or to sign in to again.
+    pub status: ConnectorStatus,
 }
 
 /// What a connector's tools hand back, as its vendor's docs say.

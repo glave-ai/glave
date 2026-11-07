@@ -17,6 +17,7 @@ mod meta;
 mod methods;
 mod models;
 mod notification;
+mod params;
 mod passkeys;
 mod people;
 mod plans;
@@ -45,8 +46,8 @@ pub use changes::{
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use connectors::{
-    ConnectorCategory, ConnectorCategoryId, ConnectorCompany, ConnectorInfo, ConnectorReturns,
-    ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
+    ConnectorAccount, ConnectorCategory, ConnectorCategoryId, ConnectorCompany, ConnectorInfo,
+    ConnectorReturns, ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
 };
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
@@ -58,6 +59,7 @@ pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};
 pub use models::{EndpointInfo, ModelInfo};
 pub use notification::{Notification, WatchEnd};
+pub use params::{Answer, Show};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
@@ -76,6 +78,7 @@ pub use told::Told;
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
 use methods::methods;
+use params::{given, is_false};
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
@@ -729,22 +732,33 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         used_in: Option<ProjectId>,
     } -> [Connectors],
-    /// Connects a connector: at once, or the sign-in page, then `connection/poll`. Its threads
-    /// use it everywhere, or only in `only`, a project of the caller's or their Chats.
+    /// Connects an account of a connector: at once, or the sign-in page, then
+    /// `connection/poll`. Its threads use it everywhere, or only in `only`, a project of the
+    /// caller's or their Chats. An `account` the service has already is connected again; a
+    /// second account takes a name of its own, and a place no other account of it is used in.
     "connector/connect" => ConnectorConnect {
         connector: String,
+        /// The person's name for the account: `Acme`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector, SignIn],
-    /// Uses a connected connector everywhere from now on, or only in `only`, a project of the
-    /// caller's or their Chats: threads elsewhere are refused its tools at once.
+    /// Uses an account of a connected connector everywhere from now on, or only in `only`, a
+    /// project of the caller's or their Chats: threads elsewhere are refused its tools at once.
     "connector/place" => ConnectorPlace {
         connector: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector],
-    /// Disconnects a connector, destroying its sign-in.
-    "connector/disconnect" => ConnectorDisconnect { connector: String } -> [Done],
+    /// Disconnects an account of a connector, destroying its sign-in.
+    "connector/disconnect" => ConnectorDisconnect {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+    } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for
@@ -756,45 +770,4 @@ methods! {
     /// `mcp.json` in glave's folder, and their threads may search from the next turn; off, it
     /// leaves them, unless they set it up there themselves. Only the person on this computer.
     "search/set" => SearchSet { on: bool } -> [Search],
-}
-
-#[expect(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "serde's skip_serializing_if"
-)]
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
-/// A field that is given, `null` included, as distinct from one left out, which its
-/// `#[serde(default)]` reads as `None`: `null` is `Some(None)`.
-fn given<'de, D, T>(field: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    T::deserialize(field).map(Some)
-}
-
-/// Which threads `thread/list` shows.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum Show {
-    /// Threads that are neither archived nor deleted.
-    #[default]
-    Active,
-    Archived,
-    /// Deleted threads, waiting for their content to be erased: for the operator that does it.
-    Deleted,
-}
-
-/// The person's answer to an approval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Answer {
-    AllowOnce,
-    AllowForThread,
-    Deny,
 }

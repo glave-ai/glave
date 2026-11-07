@@ -124,16 +124,19 @@ impl Connections for InMemory {
             let connected = self.connectors.lock().unwrap();
             Ok(OFFERED
                 .iter()
-                .map(|id| {
-                    let kept = connected.iter().find(|it| it.id == *id);
-                    let status = if kept.is_some() {
-                        ConnectorStatus::Connected
-                    } else {
-                        ConnectorStatus::Available
-                    };
-                    let only = None;
-                    let id = (*id).to_owned();
-                    (kept.cloned().unwrap_or(KeptConnector { id, only }), status)
+                .flat_map(|id| {
+                    let kept: Vec<_> = connected.iter().filter(|it| it.id == *id).collect();
+                    if kept.is_empty() {
+                        let none = KeptConnector {
+                            id: (*id).to_owned(),
+                            account: None,
+                            only: None,
+                        };
+                        return vec![(none, ConnectorStatus::Available)];
+                    }
+                    let connected =
+                        |it: &&KeptConnector| ((*it).clone(), ConnectorStatus::Connected);
+                    kept.iter().map(connected).collect()
                 })
                 .collect())
         })
@@ -154,7 +157,9 @@ impl Connections for InMemory {
                     None => Connecting::NoWayBack,
                 });
             }
-            self.connectors.lock().unwrap().push(connector);
+            let mut connected = self.connectors.lock().unwrap();
+            connected.retain(|it| !it.same_account(&connector));
+            connected.push(connector);
             Ok(Connecting::Connected)
         })
     }
@@ -162,18 +167,18 @@ impl Connections for InMemory {
     fn place(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
             let mut connected = self.connectors.lock().unwrap();
-            let kept = connected.iter_mut().find(|it| it.id == connector.id);
+            let kept = connected.iter_mut().find(|it| it.same_account(&connector));
             let kept = kept.ok_or_else(|| ApiError::new(code::NO_CREDENTIAL, "not connected"))?;
             *kept = connector;
             Ok(())
         })
     }
 
-    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
+    fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
             let mut connected = self.connectors.lock().unwrap();
             let before = connected.len();
-            connected.retain(|it| it.id != connector);
+            connected.retain(|it| !it.same_account(&connector));
             if connected.len() == before {
                 return Err(ApiError::new(code::NO_CREDENTIAL, "not connected"));
             }
@@ -193,7 +198,7 @@ fn docs() -> ConnectionInfo {
 }
 
 /// A server whose connections the fake keeps.
-async fn fresh(dir: &Path) -> (Tested, Arc<InMemory>) {
+pub(crate) async fn fresh(dir: &Path) -> (Tested, Arc<InMemory>) {
     let connections = Arc::new(InMemory::default());
     let mut setup = Setup::new(Vec::new());
     setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
@@ -544,7 +549,7 @@ fn the_catalog_s_connectors_say_their_company_categories_and_tags_and_are_listed
 }
 
 /// A request for every connector offered.
-fn all_connectors() -> Request {
+pub(crate) fn all_connectors() -> Request {
     Request::ConnectorList {
         company: None,
         category: None,
@@ -554,7 +559,7 @@ fn all_connectors() -> Request {
 }
 
 /// The ids of the connectors `listed` answers.
-fn ids_of(listed: &serde_json::Value) -> Vec<&str> {
+pub(crate) fn ids_of(listed: &serde_json::Value) -> Vec<&str> {
     let connectors = listed["result"]["connectors"].as_array().unwrap();
     connectors
         .iter()
@@ -588,6 +593,7 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
 
         let connect = |id: &str| Request::ConnectorConnect {
             connector: id.into(),
+            account: None,
             only: None,
         };
         let connected = web.call(&connect("deepwiki")).await;
@@ -621,91 +627,11 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
 
         let disconnect = Request::ConnectorDisconnect {
             connector: "deepwiki".into(),
+            account: None,
         };
         assert_eq!(web.call(&disconnect).await["result"], json!({}));
         let again = web.call(&disconnect).await;
         assert_eq!(again["error"]["code"], code::NO_CREDENTIAL, "{again}");
-        served.close().await;
-    });
-}
-
-#[test]
-fn a_connector_is_used_everywhere_or_only_in_one_place_of_the_caller_s() {
-    block_on!(async {
-        let token = LocalToken::new([7; 32]);
-        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let dir = folder("conn-connector-places");
-        let (tested, _) = fresh(&dir).await;
-        let served = serve_with(tested, signin, None).await;
-        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
-        let made = Request::ProjectCreate {
-            name: "Acme Site".into(),
-            folder: None,
-        };
-        let made = web.call(&made).await;
-        let acme: glave_ports::ProjectId =
-            serde_json::from_value(made["result"]["project"]["id"].clone()).unwrap();
-        let chat = Request::ThreadStart {
-            project: None,
-            worktree: None,
-            background: false,
-            computer: None,
-            model: None,
-            permissions: None,
-            effort: None,
-        };
-        let chat = web.call(&chat).await;
-        let chats: glave_ports::ProjectId =
-            serde_json::from_value(chat["result"]["thread"]["project"].clone()).unwrap();
-
-        let connect = Request::ConnectorConnect {
-            connector: "deepwiki".into(),
-            only: Some(acme),
-        };
-        let connected = web.call(&connect).await;
-        let connector = &connected["result"]["connector"];
-        assert_eq!(connector["used"], "Only in Acme Site", "{connected}");
-        assert_eq!(connector["only"], json!(acme));
-        let used_in = |project| Request::ConnectorList {
-            company: None,
-            category: None,
-            tag: None,
-            used_in: Some(project),
-        };
-        assert_eq!(ids_of(&web.call(&used_in(acme)).await), ["deepwiki"]);
-        let none: Vec<&str> = Vec::new();
-        assert_eq!(
-            ids_of(&web.call(&used_in(chats)).await),
-            none,
-            "not in Chats"
-        );
-
-        let place = |only| Request::ConnectorPlace {
-            connector: "deepwiki".into(),
-            only,
-        };
-        let placed = web.call(&place(None)).await;
-        let used = &placed["result"]["connector"]["used"];
-        assert_eq!(used, "Everywhere, including chats", "{placed}");
-        assert_eq!(ids_of(&web.call(&used_in(chats)).await), ["deepwiki"]);
-        let placed = web.call(&place(Some(chats))).await;
-        assert_eq!(placed["result"]["connector"]["used"], "Only in Chats");
-        let listed = web.call(&all_connectors()).await;
-        assert_eq!(listed["result"]["connectors"][1]["used"], "Only in Chats");
-        assert!(
-            listed["result"]["connectors"][0].get("used").is_none(),
-            "unconnected"
-        );
-
-        let nowhere = glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(7));
-        let refused = web.call(&place(Some(nowhere))).await;
-        assert_eq!(refused["error"]["code"], code::NO_PROJECT, "{refused}");
-        let unconnected = Request::ConnectorPlace {
-            connector: "linear".into(),
-            only: None,
-        };
-        let refused = web.call(&unconnected).await;
-        assert_eq!(refused["error"]["code"], code::NO_CREDENTIAL, "{refused}");
         served.close().await;
     });
 }

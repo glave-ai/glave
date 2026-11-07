@@ -7,6 +7,7 @@ What glave is made of, from an organization down to a thread, and where each par
 Decided, mostly not built. "Where the code disagrees" lists what changes, in the order it lands.
 
 - A thread's connected tools listed by connector past the list's room, and found with `tool_search` (#247): built.
+- A thread's connected tools of only its place's connections, a place's own account of a service in the place of the one used everywhere, so it never has two (#1219): built, the web app's accounts beneath a service to follow.
 
 ## The hierarchy
 

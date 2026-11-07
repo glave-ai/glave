@@ -37,7 +37,8 @@ pub(crate) const RENEW_BEFORE: i64 = 5 * 60;
 pub(crate) trait Renew: Send + 'static {
     type Kept: Clone + Send + Sync + 'static;
 
-    /// Where the sign-in is, to say in the log.
+    /// Where the sign-in is, and as which account when more than one is there: to say in the
+    /// log, and what renewals are spaced out by.
     fn url(&self) -> &str;
 
     /// The sign-in renewed with its refresh token, under a new id, while it is still kept;

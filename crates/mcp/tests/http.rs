@@ -149,6 +149,20 @@ fn a_bad_header_is_named_and_its_value_never_shown() {
 }
 
 #[test]
+fn a_call_to_a_named_account_s_server_names_the_account() {
+    block_on!(async {
+        let server = launch(&at("http://127.0.0.1:9/mcp", &[])).account(Some("Acme".into()));
+        let asked = arguments(json!({"amount": 5}));
+        assert_eq!(
+            server.describe("mcp__web__refund", &asked),
+            "mcp__web__refund (Acme) {\"amount\":5}",
+            "an approval says which account would act"
+        );
+        server.close().await;
+    });
+}
+
+#[test]
 fn a_hosted_search_offers_only_its_search_whose_calls_say_what_was_searched_and_are_untrusted() {
     let listening = Served::with(&["--results", "1. Tokio: https://tokio.rs"]);
     block_on!(async {

@@ -430,6 +430,42 @@
         }
       ]
     },
+    "ConnectorAccount": {
+      "description": "An account of a connector the caller connected (`specs/policy.md`, \"Connections\"): one\nservice may have several, each named, each signed in to as itself. In one place, an account\nof its own takes the place of the one used everywhere, so a thread never has two.",
+      "properties": {
+        "name": {
+          "description": "The person's name for it, unique among the service's accounts: `Acme`. None for one\nnever named, as a service's first account is until it has a second.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The one project whose threads alone use it, the person's Chats among them: none where\nevery thread of theirs does."
+        },
+        "status": {
+          "$ref": "#/$defs/ConnectorStatus",
+          "description": "Connected, or to sign in to again."
+        },
+        "used": {
+          "description": "Where it is used, in the caller's language: `Everywhere, including chats`, `Only in\nAcme Site`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "used",
+        "status"
+      ],
+      "type": "object"
+    },
     "ConnectorCategory": {
       "description": "A category of connectors.",
       "properties": {
@@ -514,6 +550,13 @@
     "ConnectorInfo": {
       "description": "A connector of glave's catalog the caller may connect (`specs/session.md`, \"Connectors\"):\nan official remote MCP server, hosted by its vendor.",
       "properties": {
+        "accounts": {
+          "description": "The accounts of it connected, in the order connected: none when it is not. Listed for\none place (`used_in`), only the one its threads use.",
+          "items": {
+            "$ref": "#/$defs/ConnectorAccount"
+          },
+          "type": "array"
+        },
         "categories": {
           "description": "Its categories, each one of the list's `categories`. The first is its home, where a\nclient that shows it once puts it.",
           "items": {
@@ -541,16 +584,12 @@
           "description": "The vendor's name for it, never translated: `Linear`.",
           "type": "string"
         },
-        "only": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ProjectId"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Connected, the one project whose threads alone use it, the person's Chats among them:\nnone where every thread of theirs does."
+        "replaced": {
+          "description": "Listed for one place, why the account of it used everywhere else is not used there, in\nthe caller's language: the place has one of its own.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "returns": {
           "$ref": "#/$defs/ConnectorReturns"
@@ -559,7 +598,8 @@
           "$ref": "#/$defs/ConnectorSignIn"
         },
         "status": {
-          "$ref": "#/$defs/ConnectorStatus"
+          "$ref": "#/$defs/ConnectorStatus",
+          "description": "Connected when an account of it is; to sign in to again when any account's sign-in no\nlonger works."
         },
         "tags": {
           "description": "Its tags, each one of the list's `tags`.",
@@ -571,13 +611,6 @@
         "url": {
           "description": "Its server's address.",
           "type": "string"
-        },
-        "used": {
-          "description": "Connected, where it is used, in the caller's language: `Everywhere, including chats`,\n`Only in Acme Site`.",
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
@@ -5136,6 +5169,13 @@
     "connector/connect": {
       "params": {
         "properties": {
+          "account": {
+            "description": "The person's name for the account: `Acme`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "connector": {
             "type": "string"
           },
@@ -5188,6 +5228,12 @@
     "connector/disconnect": {
       "params": {
         "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "connector": {
             "type": "string"
           }
@@ -5289,6 +5335,12 @@
     "connector/place": {
       "params": {
         "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "connector": {
             "type": "string"
           },
