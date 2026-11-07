@@ -12,20 +12,20 @@ use crate::payload::{
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
     CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
     ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
-    CreditsLimitSet, EffortChosen, FiltersSet, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    GroupingSet, HookRan, InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked,
-    LanguageSet, MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
-    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated,
-    ScheduleDeleted, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished,
-    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
-    connector, credential, credits, filters, gateway, goal, grouping, hook, instructions, language,
-    memory, message, model, passkey, people, plan, project, provider, remembering, secrets,
-    service, signup, standing, task, thread, tool, trust, turn, workspace,
+    CreditsLimitSet, EffortChosen, FiltersSet, GatewayToolCalled, GroupingSet, HookRan,
+    InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MailAsked,
+    MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied,
+    MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
+    PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet,
+    ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted,
+    SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
+    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
+    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
+    credits, filters, gateway, grouping, hook, instructions, language, memory, message, model,
+    passkey, people, plan, project, provider, remembering, secrets, service, signup, standing,
+    task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -59,9 +59,6 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (approval::DECIDED, 1),
     (service::ASKED, 1),
     (service::ANSWERED, 1),
-    (goal::SET, 1),
-    (goal::ENDED, 1),
-    (goal::RESUMED, 1),
     (plan::UPDATED, 1),
     (plan::APPROVED, 1),
     (workspace::BOUND, 1),
@@ -153,9 +150,6 @@ pub enum Body {
     ApprovalDecided(ApprovalDecided),
     ServiceAsked(ServiceAsked),
     ServiceAnswered(ServiceAnswered),
-    GoalSet(GoalSet),
-    GoalEnded(GoalEnded),
-    GoalResumed(GoalResumed),
     PlanUpdated(PlanUpdated),
     PlanApproved(PlanApproved),
     WorkspaceBound(WorkspaceBound),
@@ -256,10 +250,6 @@ pub fn encode<P: Payload>(header: Header, payload: &P) -> Result<RawEvent, Encod
 
 /// Decodes a stored event, upgrading an old payload version to the latest. Unknown types and
 /// newer versions come back as [`Body::Unknown`] with their bytes untouched.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one arm for each event type, all in one table"
-)]
 pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
     if raw.glave != ENVELOPE_VERSION {
         return Err(DecodeError::UnsupportedEnvelope {
@@ -309,9 +299,6 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         service::ANSWERED => {
             service::decode_answered(version, data).map(|r| r.map(Body::ServiceAnswered))
         }
-        goal::SET => goal::decode_set(version, data).map(|r| r.map(Body::GoalSet)),
-        goal::ENDED => goal::decode_ended(version, data).map(|r| r.map(Body::GoalEnded)),
-        goal::RESUMED => goal::decode_resumed(version, data).map(|r| r.map(Body::GoalResumed)),
         workspace::BOUND => workspace::decode(version, data).map(|r| r.map(Body::WorkspaceBound)),
         workspace::REMOVED => {
             workspace::decode_removed(version, data).map(|r| r.map(Body::WorkspaceRemoved))
@@ -375,9 +362,6 @@ impl Event {
             Body::ApprovalDecided(payload) => encode(header, payload),
             Body::ServiceAsked(payload) => encode(header, payload),
             Body::ServiceAnswered(payload) => encode(header, payload),
-            Body::GoalSet(payload) => encode(header, payload),
-            Body::GoalEnded(payload) => encode(header, payload),
-            Body::GoalResumed(payload) => encode(header, payload),
             Body::PlanUpdated(payload) => encode(header, payload),
             Body::PlanApproved(payload) => encode(header, payload),
             Body::WorkspaceBound(payload) => encode(header, payload),

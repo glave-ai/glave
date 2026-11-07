@@ -175,22 +175,18 @@ sentences! {
     NoFolderForWorktree = "no-folder-for-worktree"
         "there is no project folder here to make a worktree of: threads here work in a scratch folder of their own",
     BudgetOnlyInBackground = "budget-only-in-background"
-        "turn/start takes a budget only with background: true; for a turn you follow, use a goal",
+        "turn/start takes a budget only with background: true",
     ChangeStopped = "change-stopped" "the change stopped",
     RenameStopped = "rename-stopped" "the rename stopped",
     CompactionStopped = "compaction-stopped" "the compaction stopped",
     AnswerNotRecorded = "answer-not-recorded" "the answer was not recorded",
     PageGone = "page-gone"
         "that page of threads can't be found anymore; ask for the first page again",
-    NoGoal { thread: String } = "no-goal" "thread { $thread } has no active goal",
     NoPlan { thread: String } = "no-plan"
         "thread { $thread } has no plan waiting for approval: plan mode proposes one",
     NothingBuilt = "nothing-built" "a plan can't be built here: only Plan is allowed",
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
-    GoalInPlan = "goal-in-plan"
-        "a goal doesn't run in Plan, which stops at a plan for you to build: choose another mode for it",
-    GoalStopped = "goal-stopped" "stopping the goal stopped",
     NoCommand = "no-command" "that command is not running in this thread",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",

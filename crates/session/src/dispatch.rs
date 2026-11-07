@@ -2,7 +2,7 @@
 //! either at once with a reply or with a turn to follow. A transport carries the answer; it
 //! never decides what a method does.
 
-use glave_harness::{Change, DEFAULT_BUDGET, Goal};
+use glave_harness::Change;
 use glave_ports::memories::Control;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
@@ -26,8 +26,8 @@ use crate::words::Sentence;
 pub enum Answered {
     /// The reply, or why there is none.
     Reply(Result<Reply, ApiError>),
-    /// A turn, or a goal's turns, that someone follows: `turn/start` and `goal/start` without
-    /// `background`, when they start one. Its notifications, then how it ended.
+    /// A turn that someone follows: `turn/start` without `background`, when it starts one.
+    /// Its notifications, then how it ended.
     Stream(TurnStream),
     /// A thread watched (`thread/watch`): its notifications, until it ends.
     Watch(Watch),
@@ -76,7 +76,7 @@ where
         self.request_as(&Caller::default(), request).await
     }
 
-    /// Starts `request`, a turn or a goal someone follows, and streams it; a message sent
+    /// Starts `request`, a turn someone follows, and streams it; a message sent
     /// while a turn runs in its thread is queued to that turn instead, which this does not
     /// follow. Any other request is answered at once, so it is refused here.
     pub async fn start_streaming(
@@ -95,7 +95,7 @@ where
             Answered::Reply(reply) => Err(reply.err().unwrap_or_else(|| {
                 ApiError::new(
                     code::INVALID_PARAMS,
-                    format!("{method} answered at once: only a turn or goal it follows streams"),
+                    format!("{method} answered at once: only a turn it follows streams"),
                 )
             })),
         }
@@ -396,7 +396,7 @@ where
                     permissions,
                     effort,
                 };
-                let work = Work::Turn(prompt, choice);
+                let work = Work(prompt, choice);
                 self.start_task(caller, thread, work, budget, None)
                     .await
                     .map(|task| Reply::Task { task })
@@ -438,32 +438,6 @@ where
                 ask,
                 answer,
             } => self.answer_trust(caller, thread, &ask, answer).await,
-            Request::GoalStart {
-                thread,
-                objective,
-                budget,
-                background: false,
-                unattended,
-            } => {
-                let goal = goal(objective, budget);
-                let started = self.start_goal_as(traced, thread, goal, unattended);
-                return streamed(started.await);
-            }
-            Request::GoalStart {
-                thread,
-                objective,
-                budget,
-                background: true,
-                unattended: _,
-            } => {
-                let goal = goal(objective, budget);
-                let budget = goal.as_ref().map(|goal| goal.token_budget);
-                self.start_task(caller, thread, Work::Goal(goal), budget, None)
-                    .await
-                    .map(|task| Reply::Task { task })
-            }
-            Request::GoalStop { thread } => self.stop_goal(caller, thread).await,
-            Request::GoalGet { thread } => self.goal(thread).await.map(|goal| Reply::Goal { goal }),
             Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
             Request::CommandList { thread } => self.list_commands(thread).await,
@@ -474,14 +448,12 @@ where
                 project,
                 when,
                 prompt,
-                goal,
                 budget,
             } => {
                 let new = NewSchedule {
                     project,
                     when,
                     prompt,
-                    goal,
                     budget,
                 };
                 self.create_schedule(caller, new).await
@@ -642,14 +614,6 @@ where
             }
         })
     }
-}
-
-/// The goal `goal/start` sets: none to continue the thread's own.
-fn goal(objective: Option<String>, budget: Option<u64>) -> Option<Goal> {
-    objective.map(|objective| Goal {
-        objective,
-        token_budget: budget.unwrap_or(DEFAULT_BUDGET),
-    })
 }
 
 /// A turn's budget is enforced only for a turn that runs as a task: refused anywhere else

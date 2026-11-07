@@ -511,36 +511,3 @@ fn outside_plan_mode_the_checklist_is_kept_and_the_model_is_sent_the_same_ids() 
     assert_eq!((updates, plan), (0, None));
     assert_eq!(kept, without, "recording the plan changes no call's id");
 }
-
-#[test]
-fn a_goal_does_not_run_in_plan_mode_which_stops_at_a_plan() {
-    let dir = folder("plan-goal");
-    block_on!(async {
-        let log = InMemoryLog::new();
-        let (harness, seen) =
-            harness_seeing(&dir, vec![proposal()], NoOneToAsk, log, 1, planning()).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let goal = glave_harness::Goal {
-            objective: "add a --verbose flag".to_owned(),
-            token_budget: 1_000_000,
-        };
-        let caller = Caller::default();
-        let started = harness
-            .start_goal(&mut thread, goal, &caller, &Cancel::new(), &mut |_| {})
-            .await;
-        assert!(
-            matches!(started, Err(HarnessError::GoalInPlan(_))),
-            "{started:?}"
-        );
-        let continued = harness
-            .continue_goal(&mut thread, &caller, &Cancel::new(), &mut |_| {})
-            .await;
-        assert!(
-            matches!(continued, Err(HarnessError::GoalInPlan(_))),
-            "{continued:?}"
-        );
-        assert!(sent(&seen).is_empty(), "the model is never called");
-        let events = events(harness.log(), thread.id).await;
-        assert!(of_kind(&events, "goal.set").is_empty(), "no goal is set");
-    });
-}

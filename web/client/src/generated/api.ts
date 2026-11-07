@@ -534,23 +534,6 @@ export type FolderSource = {
  */
 export type Forge = "github" | "gitlab" | "gitea" | "bitbucket" | "other";
 
-/** A thread's latest goal and how far it has come. */
-export type GoalProgress = {
-  /** Why it ended; `None` while it is active. */
-  readonly ended?: GoalReason | null;
-  /** When it is paused, what the model needs from the person, in its words. */
-  readonly note?: string | null;
-  readonly objective: string;
-  readonly token_budget: number;
-  /** Tokens its turns have used so far. */
-  readonly tokens: number;
-  /** Turns it has run. */
-  readonly turns: number;
-};
-
-/** Why a goal ended. */
-export type GoalReason = "met" | "paused" | "stopped" | "budget" | "stalled";
-
 /**
  * A project whose folder isn't there anymore, on the computer it is checked out on, with the
  * sentence that says so.
@@ -1031,14 +1014,13 @@ export type RunningCommand = {
   readonly summary: string;
 };
 
-/** Identifies one schedule: a prompt or goal that runs as a task at set times. */
+/** Identifies one schedule: a prompt that runs as a task at set times. */
 export type ScheduleId = string;
 
 /** A schedule, as `schedule/list` shows it. */
 export type ScheduleInfo = {
   readonly budget: number;
   readonly created_at: At;
-  readonly goal?: boolean;
   /** When it last ran: the time that run was due. */
   readonly last?: At | null;
   /** When it runs next; absent once a one-off has run. */
@@ -1225,7 +1207,7 @@ export type TaskInfo = {
   readonly started_at: At;
   readonly status: TaskStatus;
   readonly thread: ThreadId;
-  /** The prompt or objective, shortened. */
+  /** The prompt, shortened. */
   readonly title: string;
   /** Tokens used so far, subagents' included. */
   readonly tokens: TokenCounts;
@@ -1925,39 +1907,6 @@ export type FolderListResult = {
   readonly refused?: string | null;
 };
 
-export type GoalGetParams = {
-  readonly thread: ThreadId;
-};
-
-/** The thread's latest goal, or `null`. */
-export type GoalGetResult = {
-  readonly goal?: GoalProgress | null;
-};
-
-export type GoalStartParams = {
-  /** Works toward the goal as a task, with no one attached: answered at once. */
-  readonly background?: boolean;
-  /** Tokens the goal may use; glave's default when absent. */
-  readonly budget?: number | null;
-  /** What to achieve, with how to verify it in the person's words. */
-  readonly objective?: string | null;
-  readonly thread: ThreadId;
-  /** No one answers its turns, as `turn/start`'s `unattended` says. */
-  readonly unattended?: boolean;
-};
-
-export type GoalStartResult = {
-  readonly turn: TurnResult;
-} | {
-  readonly task: TaskInfo;
-};
-
-export type GoalStopParams = {
-  readonly thread: ThreadId;
-};
-
-export type GoalStopResult = Readonly<Record<string, never>>;
-
 export type GroupingGetParams = Readonly<Record<string, never>>;
 
 /** How the caller's clients group their threads. */
@@ -2454,7 +2403,6 @@ export type RoleSetResult = {
 export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
   readonly budget: number;
-  readonly goal?: boolean;
   /** The project its runs are in, by default as `thread/start` picks one. */
   readonly project?: ProjectId | null;
   readonly prompt: string;
@@ -2921,9 +2869,6 @@ export interface Methods {
   readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };
   readonly "filters/set": { readonly params: FiltersSetParams; readonly result: FiltersSetResult };
   readonly "folder/list": { readonly params: FolderListParams; readonly result: FolderListResult };
-  readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
-  readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
-  readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
   readonly "grouping/get": { readonly params: GroupingGetParams; readonly result: GroupingGetResult };
   readonly "grouping/set": { readonly params: GroupingSetParams; readonly result: GroupingSetResult };
   readonly "invite/accept": { readonly params: InviteAcceptParams; readonly result: InviteAcceptResult };
@@ -3015,7 +2960,7 @@ export interface Methods {
 export type Method = keyof Methods;
 
 /** The methods that answer with server-sent events, unless run in the background. */
-export const STREAMING = ["goal/start", "plan/build", "thread/list/watch", "thread/watch", "turn/start"] as const;
+export const STREAMING = ["plan/build", "thread/list/watch", "thread/watch", "turn/start"] as const;
 
 export type StreamingMethod = (typeof STREAMING)[number];
 
@@ -3085,8 +3030,6 @@ export const ErrorCode = {
   NO_FILE: -32030,
   /** The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`) */
   NO_FOLDER: -32029,
-  /** The thread has no active goal (or, to resume, no paused one) */
-  NO_GOAL: -32007,
   /** The thread's model does not read images */
   NO_IMAGES: -32031,
   /** No such invite waits here: it was used, revoked or has expired, or it is another organization's */

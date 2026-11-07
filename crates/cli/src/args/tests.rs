@@ -208,34 +208,15 @@ fn policy_explain_is_a_command_that_takes_the_choice_flags() {
 }
 
 #[test]
-fn a_goal_takes_an_objective_and_optionally_a_budget() {
-    let goal = parse_words(&["--goal", "make cargo test pass"]).unwrap();
-    assert_eq!(goal.goal.as_deref(), Some("make cargo test pass"));
-    assert_eq!(goal.goal_budget, None);
-    let budgeted = parse_words(&["--goal", "x", "--goal-budget", "50000"]).unwrap();
-    assert_eq!(budgeted.goal_budget, Some(50_000));
-    let check = parse_words(&["--goal", "x", "--check", "cargo test"]);
-    assert!(check.is_err(), "there is no check command");
-    assert!(parse_words(&["--goal-budget", "5", "hi"]).is_err());
-    assert!(parse_words(&["--goal", "x", "--goal-budget", "0"]).is_err());
-    assert!(parse_words(&["--goal", "x", "and", "a", "prompt"]).is_err());
-    assert!(parse_words(&["--goal", " "]).is_err());
-    assert!(parse_words(&["serve", "--stdio", "--goal", "x"]).is_err());
-}
-
-#[test]
-fn background_takes_a_prompt_or_a_goal_and_a_budget_only_for_a_turn() {
+fn background_takes_a_prompt_and_a_budget() {
     let task = parse_words(&["-b", "--budget", "5000", "tidy", "up"]).unwrap();
     assert!(task.background);
     assert_eq!((task.budget, task.prompt.as_str()), (Some(5000), "tidy up"));
-    let goal = parse_words(&["--background", "--goal", "pass", "--goal-budget", "9"]).unwrap();
-    assert!(goal.background && goal.goal.is_some());
     assert!(parse_words(&["-b"]).is_err(), "nothing to do");
     assert!(
         parse_words(&["--budget", "5", "hi"]).is_err(),
         "only for a task"
     );
-    assert!(parse_words(&["-b", "--goal", "x", "--budget", "5"]).is_err());
     assert!(parse_words(&["-b", "--continue", "hi"]).is_err());
     assert!(parse_words(&["-b", "--budget", "0", "hi"]).is_err());
     assert!(parse_words(&["-b", "--sandbox", "off", "hi"]).is_err());

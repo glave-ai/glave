@@ -493,25 +493,6 @@ methods! {
         ask: String,
         answer: TrustChoice,
     } -> [Thread],
-    /// Sets a goal and works toward it across turns; without `objective`, continues the
-    /// thread's active goal, as after a restart, or resumes the one the model paused.
-    "goal/start" => GoalStart {
-        thread: ThreadId,
-        /// What to achieve, with how to verify it in the person's words.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        objective: Option<String>,
-        /// Tokens the goal may use; glave's default when absent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        budget: Option<u64>,
-        /// Works toward the goal as a task, with no one attached: answered at once.
-        #[serde(default, skip_serializing_if = "is_false")]
-        background: bool,
-        /// No one answers its turns, as `turn/start`'s `unattended` says.
-        #[serde(default, skip_serializing_if = "is_false")]
-        unattended: bool,
-    } -> [Turn, Task],
-    /// Stops the thread's active goal, cancelling its running turn.
-    "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// Replaces the steps of the thread's proposed plan with the person's, each to do, and
     /// answers with the plan: the model is told at its next turn, and builds from them. Only
     /// while a plan waits for approval, and not while a turn runs.
@@ -524,8 +505,6 @@ methods! {
     /// now on (or the highest mode the policy leaves, if lower), and starts the turn that
     /// builds it from the plan as it is, streamed as `turn/start` streams one.
     "plan/build" => PlanBuild { thread: ThreadId } -> [Turn],
-    /// The thread's latest goal and how far it has come.
-    "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
     /// Tasks running and recently finished in every project the caller owns, running first,
     /// then newest first.
     "tasks/list" => TasksList {
@@ -538,7 +517,7 @@ methods! {
     "command/list" => CommandList { thread: ThreadId } -> [Commands],
     /// Stops one of a thread's commands in the background, and everything it started.
     "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
-    /// Runs a prompt, or works toward a goal, as a task at set times, each run in a new thread
+    /// Runs a prompt as a task at set times, each run in a new thread
     /// working on a copy of its own.
     "schedule/create" => ScheduleCreate {
         /// The project its runs are in, by default as `thread/start` picks one.
@@ -546,8 +525,6 @@ methods! {
         project: Option<ProjectId>,
         when: When,
         prompt: String,
-        #[serde(default, skip_serializing_if = "is_false")]
-        goal: bool,
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
     } -> [Schedule],

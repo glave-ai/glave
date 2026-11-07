@@ -6,10 +6,9 @@ use std::collections::BTreeMap;
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Body, CommandEnded, CommandStarted, EffortChosen, Event,
-    GoalEnded, GoalResumed, GoalSet, MessageAdded, ModelChosen, Payload, PermissionsChosen,
-    PlanApproved, PlanUpdated, Seq, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadId,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallStarted, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, decode,
+    MessageAdded, ModelChosen, Payload, PermissionsChosen, PlanApproved, PlanUpdated, Seq,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadId, ThreadRenamed, ThreadStarted,
+    ThreadUnarchived, ToolCallStarted, TurnStarted, WorkspaceBound, WorkspaceRemoved, decode,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
@@ -21,7 +20,7 @@ use crate::judge::MOST_MESSAGES;
 const PAGE: usize = 1_000;
 
 /// What came before a thread's end that still decides how it goes on: how it started, where it
-/// works, its standing, title and choices, what the person allowed, its turns and its goal, its
+/// works, its standing, title and choices, what the person allowed, its turns, its
 /// commands in the background and its plan, and glave's own records, which call ids do not
 /// count (`bind::own_records`).
 const RECORDS: &[&str] = &[
@@ -43,9 +42,6 @@ const RECORDS: &[&str] = &[
     PlanUpdated::TYPE,
     PlanApproved::TYPE,
     ToolCallStarted::TYPE,
-    GoalSet::TYPE,
-    GoalEnded::TYPE,
-    GoalResumed::TYPE,
 ];
 
 /// What is read back from before a thread's end, and how many at a time.
@@ -76,8 +72,7 @@ where
     /// Thread `id`'s events as reading it again needs them, in order: every one from the
     /// `turn.started` at or before its latest compaction (all of them when it has none), and
     /// before that its records ([`RECORDS`]), the person's latest messages, which the judge
-    /// reads and the latest of which a compaction keeps, and every event of the turns a running
-    /// goal counts.
+    /// reads and the latest of which a compaction keeps.
     pub(crate) async fn load(
         &self,
         scope: &Scope,
@@ -90,7 +85,7 @@ where
 
     async fn load_now(&self, scope: &Scope, id: ThreadId) -> Result<Vec<Event>, HarnessError> {
         let from = self.end_of(scope, id).await?;
-        let end = self.between(scope, id, from, None).await?;
+        let end = self.from(scope, id, from).await?;
         let Some(from) = from.filter(|_| !end.is_empty()) else {
             return Ok(end);
         };
@@ -104,18 +99,6 @@ where
             });
             events.extend(in_order(messages.await?));
         }
-        let events: Vec<Event> = events.into_values().collect();
-        let Some(counted) = crate::goal::latest(&events)
-            .and_then(|(_, uncounted)| uncounted.first().copied())
-            .and_then(|at| events.get(at))
-            .map(|started| started.header.seq)
-            .filter(|seq| *seq < from)
-        else {
-            return Ok(events);
-        };
-        let mut events = in_order(events);
-        let turns = self.between(scope, id, Some(counted), Some(from)).await?;
-        events.extend(in_order(turns));
         Ok(events.into_values().collect())
     }
 
@@ -171,13 +154,12 @@ where
         }
     }
 
-    /// Thread `id`'s events from `from` (or its start) up to `to` (or its last), in order.
-    async fn between(
+    /// Thread `id`'s events from `from` (or its start), in order.
+    async fn from(
         &self,
         scope: &Scope,
         id: ThreadId,
         from: Option<Seq>,
-        to: Option<Seq>,
     ) -> Result<Vec<Event>, HarnessError> {
         let mut events = Vec::new();
         let mut after = from.and_then(|from| Seq::new(from.get().saturating_sub(1)).ok());
@@ -186,9 +168,6 @@ where
             let full = read.len() == PAGE;
             after = read.last().map(|event| event.seq).or(after);
             for raw in read {
-                if to.is_some_and(|to| raw.seq >= to) {
-                    return Ok(events);
-                }
                 events.push(decode(raw).map_err(|e| HarnessError::Event(e.to_string()))?);
             }
             if !full {

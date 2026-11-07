@@ -129,7 +129,7 @@ impl Lines {
         outcome(&response)
     }
 
-    /// Starts `request` (`turn/start` or `goal/start`) and follows it; refused, as over HTTP,
+    /// Starts `request` (`turn/start`) and follows it; refused, as over HTTP,
     /// when the server answers before the turn starts, or queued to a turn already running.
     pub(crate) async fn start(&self, request: &Request) -> Result<Sent<LinesTurn>, ApiError> {
         let (notes, items) = mpsc::channel(FOLLOW_AHEAD);

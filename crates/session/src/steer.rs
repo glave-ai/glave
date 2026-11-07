@@ -1,5 +1,5 @@
 //! Steering a running turn (`specs/session.md`, "Steering a turn"): a message sent while a turn
-//! or a goal's turns run is queued to that work, and the model reads it at its next call. The
+//! runs is queued to that work, and the model reads it at its next call. The
 //! choice is made under the threads' lock, the same lock the work's end takes to make the
 //! thread idle, so a message lands either in the running work or in a turn of its own after
 //! it, never in between.

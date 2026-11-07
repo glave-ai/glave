@@ -38,7 +38,7 @@ pub enum TurnItem {
 /// A turn's notifications, then its ending: a watch of its thread from where the turn began
 /// (what it records, its live updates and its subagents'), which ends with how the turn ended.
 pub struct TurnStream {
-    /// The model the turn, or the goal's first turn, goes to.
+    /// The model the turn goes to.
     pub(crate) model: String,
     thread: ThreadId,
     /// `None` when the turn had already ended before anyone followed it.

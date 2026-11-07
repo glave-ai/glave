@@ -96,7 +96,6 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
             asked: glave_event::Seq::new(1).unwrap(),
             answer: glave_event::ServiceAnswer::Declined,
         },
-        Request::GoalGet { thread },
         Request::ThreadArchive { thread },
         Request::ThreadDelete { thread },
         Request::TurnCancel { thread },
@@ -169,7 +168,6 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
                 project: None,
                 when: glave_event::When::Cron("0 9 * * *".into()),
                 prompt: "triage".into(),
-                goal: false,
                 budget: 1_000,
             })
             .await["result"]["schedule"]["schedule"]

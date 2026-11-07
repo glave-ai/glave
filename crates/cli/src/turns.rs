@@ -1,4 +1,4 @@
-//! A turn, a turn continuing the folder's thread (`-c`) and a goal, through the person's server
+//! A turn, or a turn continuing the folder's thread (`-c`), through the person's server
 //! (`specs/one-server.md`, "The CLI as a client"): the folder's project, asked about once when
 //! it is new; the thread; what its project asks to be trusted; then the turn, followed with the
 //! code that follows a server elsewhere. With no one at the terminal, nothing is asked: the
@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::bail;
-use glave_harness::{DEFAULT_BUDGET, Goal};
 use glave_ports::ProjectId;
 use glave_session::protocol::{NewFolder, Reply, Request, ThreadSummary, TrustAsk, TrustChoice};
 
@@ -38,7 +37,7 @@ pub(crate) enum Here {
     NoProject,
 }
 
-/// Runs the turn or goal `args` ask for through the person's server at `server`; `terminal`
+/// Runs the turn `args` ask for through the person's server at `server`; `terminal`
 /// says whether someone is at the terminal to ask and to answer.
 pub(crate) async fn run(
     args: &Args,
@@ -83,16 +82,7 @@ pub(crate) async fn run(
     };
     let shown = format!("permissions: {}", summary.permissions.name());
     let mut printer = Printer::new(&model, shown);
-    let code = match &args.goal {
-        Some(objective) => {
-            let goal = Goal {
-                objective: objective.clone(),
-                token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
-            };
-            Box::pin(client.goal(goal, &mut printer)).await
-        }
-        None => Box::pin(client.turn(&args.prompt, &mut printer)).await,
-    };
+    let code = Box::pin(client.turn(&args.prompt, &mut printer)).await;
     if let Some(path) = &args.events {
         crate::client::export(session, thread, path).await?;
     }

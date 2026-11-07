@@ -1,4 +1,4 @@
-//! glave's entry: its commands; `glave` alone opening the browser (`app.rs`); a turn or a goal
+//! glave's entry: its commands; `glave` alone opening the browser (`app.rs`); a turn
 //! through the person's server (`turns.rs`), or in this command's own process where none runs
 //! and no one is at the terminal (wired in `wiring.rs`); and serving the session API.
 
@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
 use glave_event::ThreadId;
-use glave_harness::{DEFAULT_BUDGET, Goal, Permissions, ProjectFolders as _};
+use glave_harness::{Permissions, ProjectFolders as _};
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::Protections;
 use glave_ports::{Holder, OsEntropy, ProjectId, SystemClock};
@@ -120,7 +120,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     if !turn {
         return crate::app::open(&args).await;
     }
-    // A turn or a goal goes to the person's server, started from the person's own terminal;
+    // A turn goes to the person's server, started from the person's own terminal;
     // where none runs and no one is at the terminal, a server here answers it, asking no one.
     if let Some(server) = crate::server::connect_or_start().await? {
         let terminal = crate::server::at_terminal();
@@ -175,7 +175,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Runs the turn or goal in this command's own process, answered by no one, and exports the
+/// Runs the turn in this command's own process, answered by no one, and exports the
 /// events when asked.
 async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
     let Wired {
@@ -213,15 +213,7 @@ async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
     };
     let shown = protections(choices, settled.protections, sandbox.as_ref());
     let mut printer = Printer::new(&model, shown);
-    let code = if let Some(objective) = &args.goal {
-        let goal = Goal {
-            objective: objective.clone(),
-            token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
-        };
-        client.goal(goal, &mut printer).await
-    } else {
-        client.turn(&args.prompt, &mut printer).await
-    };
+    let code = client.turn(&args.prompt, &mut printer).await;
     if let Some(path) = &args.events {
         crate::client::export(here, thread, path).await?;
     }

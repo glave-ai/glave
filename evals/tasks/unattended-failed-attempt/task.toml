@@ -11,8 +11,6 @@ permissions = "auto"
 # Small enough, with notes this long, that the imports compact several times.
 context_window = 12000
 max_steps = 80
-# A long-running goal's own limit; `--no-goal` runs the same instruction as one turn.
-goal = { budget = 500000 }
 setup = ["chmod +x tools/import", "python3 {task}/../../unattended/pad.py 10000"]
 # The premise apart from the result: a miss without a compaction tested nothing of it.
 checks = ["one_thread", { recorded = "thread.compacted" }]

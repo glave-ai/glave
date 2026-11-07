@@ -148,10 +148,6 @@ where
         if self.settings.plans || planning || thread.plan.plan.is_some() {
             set.offer_plan();
         }
-        // In every thread a person writes to, so that a goal starting changes no tools.
-        if !thread.delegated() {
-            set.offer_goal();
-        }
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }

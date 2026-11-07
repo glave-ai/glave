@@ -220,7 +220,7 @@ where
 
     /// Runs what the person sent too late for the turn that just ended (`ran`): a turn for the
     /// oldest message, the rest read at its first call, and so on until nothing waits, every
-    /// turn added up as a goal's are. When `ran` failed or was stopped, nothing more runs: what
+    /// turn added up. When `ran` failed or was stopped, nothing more runs: what
     /// waits is given back, and the inbox ends.
     pub async fn run_queued(
         &self,

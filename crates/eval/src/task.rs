@@ -73,8 +73,6 @@ pub struct Task {
     pub max_steps: Option<u32>,
     /// How every turn must end: completed, unless the task is about another ending.
     pub outcome: Outcome,
-    /// Run the instruction as a goal, worked toward across turns, rather than as one turn.
-    pub goal: Option<TaskGoal>,
     /// A correction sent while the first turn runs, for the model to read at its next call.
     pub steer: Option<Steer>,
     /// Whether the person builds the plan the instruction's turn proposed, as Build it does,
@@ -169,15 +167,6 @@ pub struct Seeded {
     pub days_ago: u32,
 }
 
-/// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the
-/// instruction's to say, in words.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TaskGoal {
-    /// Its token budget; glave's default when unset.
-    pub budget: Option<u64>,
-}
-
 /// How hard a task is: the fast tier runs on every change the model feels; the hard tier
 /// before releases and when comparing models.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -261,7 +250,6 @@ struct Glave {
     checks: Vec<Check>,
     max_steps: Option<u32>,
     outcome: Option<Outcome>,
-    goal: Option<TaskGoal>,
     steer: Option<Steer>,
     #[serde(default)]
     build: bool,
@@ -349,7 +337,6 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         timeout,
         max_steps: glave.max_steps,
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
-        goal: glave.goal,
         steer: glave.steer,
         build: glave.build,
         memory: glave.memory,

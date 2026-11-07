@@ -8,7 +8,6 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, bail};
 use glave_event::{At, ScheduleId, ThreadId, When};
-use glave_harness::DEFAULT_BUDGET;
 use glave_ports::ProjectId;
 use glave_session::protocol::{Reply, Request};
 use jiff::Timestamp;
@@ -31,20 +30,18 @@ Usage:
                               start one: the turn runs in glave running for you in the
                               background, on a worktree of its own (so the folder must be a
                               git repository with a commit), or a worker with
-                              on = \"cloud\", so you can close the terminal. With --goal it
-                              works toward the goal; --budget <tokens> stops the turn at
-                              that many tokens
+                              on = \"cloud\", so you can close the terminal; --budget
+                              <tokens> stops the turn at that many tokens
 
 Read a task's thread with `glave threads`, or continue it in a session with --continue.";
 
 pub(crate) const SCHEDULE_USAGE: &str = "\
-glave schedule: run a prompt or a goal as a task at set times
+glave schedule: run a prompt as a task at set times
 
 Usage:
-  glave schedule add \"<cron>\" <prompt> [--goal] [--budget <tokens>]
+  glave schedule add \"<cron>\" <prompt> [--budget <tokens>]
                               whenever the five-field cron expression (minute hour day
-                              month weekday, in UTC) matches; --goal works toward the
-                              prompt as a goal across turns
+                              month weekday, in UTC) matches
   glave schedule add --at <time> <prompt> [...]
                               once, at an RFC 3339 time such as 2026-10-11T09:00:00Z
   glave schedule list         the schedules, with when each runs next
@@ -161,7 +158,7 @@ async fn project_here(session: Session<'_>) -> anyhow::Result<Here> {
     Ok(here)
 }
 
-/// Starts `prompt` (or `args.goal`) as a task in a new thread of this folder's project, for
+/// Starts `prompt` as a task in a new thread of this folder's project, for
 /// `glave --background`: only in the person's server, since a task outlives this command.
 pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let Some(server) = crate::server::connect_or_start().await? else {
@@ -192,26 +189,17 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         bail!("glave answered thread/start with something else");
     };
     let thread = thread.id;
-    let request = match &args.goal {
-        Some(objective) => Request::GoalStart {
-            thread,
-            objective: Some(objective.clone()),
-            budget: args.goal_budget,
-            background: true,
-            unattended: false,
-        },
-        None => Request::TurnStart {
-            thread,
-            prompt: args.prompt.clone(),
-            background: true,
-            budget: args.budget,
-            meta: glave_session::protocol::Meta::default(),
-            model: None,
-            permissions: None,
-            effort: None,
-            unattended: false,
-            files: Vec::new(),
-        },
+    let request = Request::TurnStart {
+        thread,
+        prompt: args.prompt.clone(),
+        background: true,
+        budget: args.budget,
+        meta: glave_session::protocol::Meta::default(),
+        model: None,
+        permissions: None,
+        effort: None,
+        unattended: false,
+        files: Vec::new(),
     };
     let Reply::Task { task } = server.request(request).await? else {
         bail!("glave did not start a task");
@@ -259,11 +247,13 @@ async fn remove_schedule(server: &mut Reached, schedule: ScheduleId) -> anyhow::
     Ok(())
 }
 
+/// Tokens each run of a schedule may use when the person names no budget: none runs unbounded.
+const SCHEDULE_BUDGET: u64 = 1_000_000;
+
 /// `schedule/create` in `project` from the words after `glave schedule add`.
 fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Result<Request> {
     let mut when = None;
-    let mut goal = false;
-    let mut budget = DEFAULT_BUDGET;
+    let mut budget = SCHEDULE_BUDGET;
     let mut prompt = Vec::new();
     let mut rest = words.iter();
     while let Some(word) = rest.next() {
@@ -277,7 +267,6 @@ fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Res
                     .with_context(|| format!("--at {at:?} is not an RFC 3339 time"))?;
                 when = Some(When::At(At::from(at)));
             }
-            "--goal" => goal = true,
             "--budget" => {
                 let tokens = rest.next().context("--budget needs a number of tokens")?;
                 budget = tokens
@@ -300,7 +289,6 @@ fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Res
         project,
         when,
         prompt,
-        goal,
         budget,
     })
 }
@@ -328,7 +316,6 @@ mod tests {
         let Request::ScheduleCreate {
             when,
             prompt,
-            goal,
             budget,
             ..
         } = schedule_request(
@@ -340,28 +327,23 @@ mod tests {
             panic!("schedule/create");
         };
         assert_eq!(when, When::Cron("0 9 * * 1-5".into()));
-        assert_eq!(
-            (prompt.as_str(), goal, budget),
-            ("triage issues", false, 5000)
-        );
-        let Request::ScheduleCreate {
-            when, goal, budget, ..
-        } = schedule_request(
-            &words(&["--at", "2026-10-11T09:00:00Z", "--goal", "make it pass"]),
+        assert_eq!((prompt.as_str(), budget), ("triage issues", 5000));
+        let Request::ScheduleCreate { when, budget, .. } = schedule_request(
+            &words(&["--at", "2026-10-11T09:00:00Z", "make it pass"]),
             None,
         )
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!("schedule/create");
         };
         assert!(matches!(when, When::At(_)));
-        assert_eq!((goal, budget), (true, DEFAULT_BUDGET));
+        assert_eq!(budget, SCHEDULE_BUDGET);
         for wrong in [
             &["0 9 * * *"][..],
             &["--at", "tomorrow", "x"],
             &["0 9 * * *", "x", "--budget", "0"],
             &["0 9 * * *", "x", "--every"],
             &["0 9 * * *", "x", "--worktree"],
+            &["0 9 * * *", "x", "--goal"],
         ] {
             assert!(schedule_request(&words(wrong), None).is_err(), "{wrong:?}");
         }

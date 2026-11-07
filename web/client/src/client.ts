@@ -66,7 +66,7 @@ const ANSWERS_WITHIN_MS = 2 * 60_000;
 /**
  * How long the slow calls wait: those that ask a model (compacting, checking a provider), reach
  * another service (a git host, a connection), make a computer to work on or a folder, or send a
- * file; and a turn or goal to start, whose stream begins once it has.
+ * file; and a turn to start, whose stream begins once it has.
  */
 const SLOW_ANSWERS_WITHIN_MS = 15 * 60_000;
 
@@ -75,7 +75,6 @@ const SLOW: ReadonlySet<Method> = new Set<Method>([
   'connection/start',
   'credential/connect',
   'file/upload',
-  'goal/start',
   'project/create',
   'provider/connect',
   'provider/refresh',
@@ -128,8 +127,8 @@ export class GlaveClient {
   }
 
   /**
-   * Starts a turn or a goal and yields its notifications as they arrive; the generator returns
-   * the turn's result. Closing it early stops only this stream: the turn goes on in the server,
+   * Starts a turn and yields its notifications as they arrive; the generator returns the
+   * turn's result. Closing it early stops only this stream: the turn goes on in the server,
    * and `thread/events` or `thread/watch` pick it up again. It waits for the stream to begin as
    * `call` waits for an answer, and throws once the stream says nothing for a minute, as a lost
    * one does.
