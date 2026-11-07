@@ -71,10 +71,43 @@ fn across_a_pipe_a_computer_says_its_disk_and_the_worktrees_it_keeps() {
 /// write, so the client refuses it before sending anything: it fails closed.
 #[test]
 fn a_server_that_predates_protected_writes_is_refused() {
+    let refused = discovered(serde_json::json!({
+        "name": "glave-computer",
+        "version": env!("CARGO_PKG_VERSION"),
+        "protocols": ["2026-10-10.1"],
+    }));
+    assert!(
+        matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains(PROTOCOL)),
+        "{refused:?}"
+    );
+}
+
+/// Every computer glave reaches is one the server started, with the glave it chose, so one
+/// running another version (or saying none) is used, never refused: it takes the server's
+/// at its next start or wake, and the server's log says what to set meanwhile (#880).
+#[test]
+fn a_computer_running_another_glave_is_used_not_refused() {
+    let speaking = |version: Option<&str>| {
+        let mut info = serde_json::json!({"name": "glave-computer", "protocols": [PROTOCOL]});
+        if let Some(version) = version {
+            info["version"] = version.into();
+        }
+        discovered(info)
+    };
+    assert_eq!(speaking(Some(env!("CARGO_PKG_VERSION"))), Ok(()));
+    assert_eq!(speaking(Some("9.9.9")), Ok(()));
+    assert_eq!(speaking(None), Ok(()));
+}
+
+/// The protocol version this glave speaks.
+const PROTOCOL: &str = "2026-11-04";
+
+/// What checking a computer that answers `server/discover` with `info` says.
+fn discovered(info: serde_json::Value) -> Result<(), ComputerError> {
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
     block_on!(async {
         let (client, server) = tokio::io::duplex(64 * 1024);
-        let older = tokio::spawn(async move {
+        let answering = tokio::spawn(async move {
             let (read, mut write) = tokio::io::split(server);
             let mut lines = BufReader::new(read).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -82,7 +115,7 @@ fn a_server_that_predates_protected_writes_is_refused() {
                 let answer = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": request["id"],
-                    "result": {"name": "glave-computer", "protocols": ["2026-10-10.1"]},
+                    "result": info,
                 });
                 write
                     .write_all(format!("{answer}\n").as_bytes())
@@ -92,14 +125,11 @@ fn a_server_that_predates_protected_writes_is_refused() {
         });
         let (read, write) = tokio::io::split(client);
         let remote = RemoteComputers::connect(read, write);
-        let refused = remote.check_protocol().await;
-        assert!(
-            matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-11-04")),
-            "{refused:?}"
-        );
+        let checked = remote.check_protocol().await;
         drop(remote);
-        older.await.unwrap();
-    });
+        answering.await.unwrap();
+        checked
+    })
 }
 
 #[test]
