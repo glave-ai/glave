@@ -1,6 +1,9 @@
 @if (offered()) {
   <section class="glz-stack glz-gap-4" aria-labelledby="connectors-heading">
     <h2 id="connectors-heading" class="heading">{{ copy.heading }}</h2>
+    @if (here(); as here) {
+      <p class="detail" data-testid="connectors-here">{{ here }}</p>
+    }
     <label class="search">
       <glz-icon [icon]="icons.search" />
       <input
@@ -55,6 +58,18 @@
                   }
                   <span dir="auto">{{ row.detail }}</span>
                 </span>
+              }
+              @if (row.place; as place) {
+                <glz-menu-select
+                  appServiceAction
+                  quiet
+                  testId="connector-place"
+                  [label]="row.placeLabel"
+                  [options]="places()"
+                  [value]="place"
+                  [disabled]="row.busy"
+                  (valueChange)="move(row, $event)"
+                />
               }
               <button
                 glzButton

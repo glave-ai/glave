@@ -8,7 +8,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   GlzIconButtonComponent,
   GlzIconComponent,
@@ -39,6 +39,8 @@ import { UnloadedComponent } from '../unloaded/unloaded.component';
 
 /** What a project's menu does. */
 const RENAME = 'rename';
+/** The ⋯ action that opens what a project's threads connect to. */
+const CONNECTIONS = 'connections';
 
 /**
  * The person's threads in the side nav by project: each project with its threads, then their
@@ -93,7 +95,9 @@ export class ProjectsNavComponent {
   protected readonly lists = { projects: PROJECTS_LIST, chats: CHATS_LIST } as const;
   protected readonly projectActions: readonly GlzOption[] = [
     { value: RENAME, label: $localize`:@@projectsNav.rename:Rename` },
+    { value: CONNECTIONS, label: $localize`:@@projectsNav.connections:Connections` },
   ];
+  private readonly router = inject(Router);
   private readonly service = inject(ProjectsService);
   private readonly navLists = inject(NavListsService);
   /** The reader's locale, which the threads' times are written in and searched by. */
@@ -154,6 +158,9 @@ export class ProjectsNavComponent {
     if (action === RENAME) {
       this.renaming.set({ id: project.id, name: project.name });
       this.renameOpen.set(true);
+    } else if (action === CONNECTIONS) {
+      const queryParams = { project: project.id };
+      void this.router.navigate(['/settings/connections'], { queryParams });
     }
   }
 

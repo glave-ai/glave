@@ -1,5 +1,5 @@
 import { Service, inject, signal } from '@angular/core';
-import type { ConnectorCategory, ConnectorInfo, SignInLink } from '@glave/client';
+import type { ConnectorCategory, ConnectorInfo, ProjectId, SignInLink } from '@glave/client';
 
 import { connectionProblem } from '../lib/connections';
 import { onChange } from './changes.service';
@@ -9,6 +9,8 @@ import { SessionService } from './session.service';
 export interface Catalog {
   readonly categories: readonly ConnectorCategory[];
   readonly connectors: readonly ConnectorInfo[];
+  /** Those the threads of the project the list is for use, when it is for one. */
+  readonly here: readonly ConnectorInfo[] | null;
 }
 
 /**
@@ -28,19 +30,30 @@ export class ConnectorsService {
   readonly catalog = this.list.asReadonly();
   /** Why it could not be listed last, in the server's words. */
   readonly problem = this.failure.asReadonly();
+  /** The project the list is for: where a connector connected from it is used. */
+  private readonly forProject = signal<ProjectId | null>(null);
 
   constructor() {
     onChange('connections', () => void this.load());
   }
 
-  /** Lists the connectors; a list that fails keeps what was listed before, and says why. */
-  async load(): Promise<void> {
+  /**
+   * Lists the connectors, and with `project`, those its threads use; a list that fails keeps
+   * what was listed before, and says why.
+   */
+  async load(project: ProjectId | null = this.forProject()): Promise<void> {
+    this.forProject.set(project);
     this.answers += 1;
     const asked = this.answers;
     try {
-      const { categories, connectors } = await this.session.call('connector/list', {});
+      const [{ categories, connectors }, here] = await Promise.all([
+        this.session.call('connector/list', {}),
+        project === null
+          ? Promise.resolve(null)
+          : this.session.call('connector/list', { used_in: project }),
+      ]);
       if (asked === this.answers) {
-        this.list.set({ categories, connectors });
+        this.list.set({ categories, connectors, here: here?.connectors ?? null });
         this.failure.set(null);
       }
     } catch (error: unknown) {
@@ -51,11 +64,14 @@ export class ConnectorsService {
   }
 
   /**
-   * Connects the connector `id`: none once it is connected, as one that asks no one to sign in
-   * is at once; else the page where the person signs in, and the sign-in's flow.
+   * Connects the connector `id`, used only in the project the list is for, else everywhere:
+   * none once it is connected, as one that asks no one to sign in is at once; else the page
+   * where the person signs in, and the sign-in's flow.
    */
   async connect(id: string): Promise<SignInLink | null> {
-    const answer = await this.session.call('connector/connect', { connector: id });
+    const only = this.forProject();
+    const params = only === null ? { connector: id } : { connector: id, only };
+    const answer = await this.session.call('connector/connect', params);
     if ('sign_in' in answer) {
       return answer.sign_in;
     }
@@ -76,6 +92,13 @@ export class ConnectorsService {
       }
     }
     return false;
+  }
+
+  /** Uses the connector `id` only in `only`, a project or Chats, or everywhere, then lists again. */
+  async place(id: string, only: ProjectId | null): Promise<void> {
+    const params = only === null ? { connector: id } : { connector: id, only };
+    await this.session.call('connector/place', params);
+    await this.load();
   }
 
   /** Disconnects the connector `id`, destroying its sign-in, then lists them again. */

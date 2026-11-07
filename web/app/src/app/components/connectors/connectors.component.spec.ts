@@ -2,7 +2,9 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, type ConnectorInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { record } from '../../testing/fixtures';
 import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectorsComponent } from './connectors.component';
 
@@ -57,6 +59,20 @@ function rows(root: ParentNode, testId: string): readonly string[] {
   );
 }
 
+/** Opens the menu `testId` and picks its option that says `text`. */
+async function choose(
+  fixture: { whenStable(): Promise<unknown> },
+  testId: string,
+  text: string,
+): Promise<void> {
+  await settle(fixture);
+  document.querySelector<HTMLElement>(`[data-testid="${testId}-trigger"]`)?.click();
+  await fixture.whenStable();
+  const options = document.querySelectorAll<HTMLElement>(`[data-testid="${testId}-option"]`);
+  [...options].find((option) => option.textContent.includes(text))?.click();
+  await settle(fixture);
+}
+
 /** Presses the button of the connector `id`. */
 function press(root: ParentNode, id: string): void {
   root
@@ -64,7 +80,10 @@ function press(root: ParentNode, id: string): void {
     ?.dispatchEvent(new MouseEvent('click'));
 }
 
-async function page(fake: FakeSession): Promise<{
+async function page(
+  fake: FakeSession,
+  project: string | null = null,
+): Promise<{
   readonly fixture: { whenStable(): Promise<unknown>; detectChanges(): void };
   readonly root: HTMLElement;
   readonly said: string[];
@@ -72,6 +91,7 @@ async function page(fake: FakeSession): Promise<{
   const { said, provider } = announced();
   TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), provider] });
   const fixture = TestBed.createComponent(ConnectorsComponent);
+  fixture.componentRef.setInput('project', project);
   await settle(fixture);
   return { fixture, root: fixture.nativeElement as HTMLElement, said };
 }
@@ -241,6 +261,72 @@ describe('ConnectorsComponent', () => {
     document.querySelector<HTMLElement>('[data-testid="connectors-disconnect-ok"]')?.click();
     await settle(fixture);
     expect(fake.paramsOf('connector/disconnect')).toEqual([{ connector: 'linear' }]);
+    await expectAccessible(root);
+  });
+
+  it('says where each connected one is used, and moves it to one place or every place', async () => {
+    let only: string | null = null;
+    const used = (): ConnectorInfo => ({
+      ...NOTION,
+      status: 'connected',
+      ...(only === null
+        ? { used: 'Everywhere, including chats' }
+        : { only, used: 'Only in Acme Site' }),
+    });
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', () => ({ categories: CATEGORIES, connectors: [used()] }))
+      .answer('connector/place', (params) => {
+        only = (params as { only?: string }).only ?? null;
+        return { connector: used() };
+      });
+    const { fixture, root } = await page(fake);
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    expect(rows(root, 'connectors-connected')).toEqual([
+      'N Notion Everywhere, including chats Disconnect',
+    ]);
+    const place = root.querySelector('[data-testid="connector-place-trigger"]');
+    expect(place?.textContent).toContain('Where Notion is used');
+    await expectAccessible(root);
+    await choose(fixture, 'connector-place', 'Only in Acme Site');
+    expect(fake.paramsOf('connector/place')).toEqual([{ connector: 'notion', only: 'p1' }]);
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Only in Acme Site Disconnect']);
+    await choose(fixture, 'connector-place', 'Everywhere, including chats');
+    expect(fake.paramsOf('connector/place')).toEqual([
+      { connector: 'notion', only: 'p1' },
+      { connector: 'notion' },
+    ]);
+  });
+
+  it('for a project, lists what its threads use and connects one only there', async () => {
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', (params) =>
+        (params as { used_in?: string }).used_in === 'p1'
+          ? { categories: CATEGORIES, connectors: [{ ...NOTION, status: 'connected' }] }
+          : { categories: CATEGORIES, connectors: [DEEPWIKI, { ...NOTION, status: 'connected' }] },
+      )
+      .answer('connector/connect', { connector: { ...DEEPWIKI, status: 'connected' } });
+    openedTab();
+    const { fixture, root } = await page(fake, 'p1');
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    const heading = root.querySelector('[data-testid="connectors-connected"] h3');
+    expect(heading?.textContent).toBe('Used in Acme Site');
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion Connected Disconnect']);
+    expect(root.querySelector('[data-testid="connectors-here"]')?.textContent).toContain(
+      'Apps you connect here are used only in Acme Site.',
+    );
+    press(root, 'deepwiki');
+    await settle(fixture);
+    expect(fake.paramsOf('connector/connect')).toEqual([{ connector: 'deepwiki', only: 'p1' }]);
     await expectAccessible(root);
   });
 });
