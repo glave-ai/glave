@@ -367,16 +367,146 @@ describe('ConnectorsComponent', () => {
     expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
   });
 
-  it('says where each account of a service is used, by its name', async () => {
-    const root = await onlyChats([
-      { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
-      { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' },
+  it('lists two accounts beneath their service, each with its own menu', async () => {
+    const two: ConnectorInfo = {
+      ...NOTION,
+      status: 'connected',
+      accounts: [
+        { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+        { name: 'Acme', status: 'sign_in_again', only: 'p1', used: 'Only in Acme Site' },
+      ],
+    };
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', { categories: CATEGORIES, connectors: [two] })
+      .answer('connector/place', { connector: two })
+      .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
+      .answer('connection/poll', { connection: { url: PAGE, status: 'signed_in' } });
+    openedTab();
+    const { fixture, root } = await page(fake);
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    expect(rows(root, 'connectors-connected')).toEqual(['N Notion 2 accounts']);
+    const beneath = [...root.querySelectorAll('[data-testid="connector-account"]')].map((it) =>
+      [...it.querySelectorAll('.label, .used')].map((part) => part.textContent.trim()).join(' '),
+    );
+    expect(beneath).toEqual(['Glave Everywhere, including chats', 'Acme Only in Acme Site']);
+    expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
+    await expectAccessible(root);
+
+    const menus = root.querySelectorAll<HTMLElement>(
+      '[data-testid="connector-account-menu-trigger"]',
+    );
+    expect(menus[0]?.getAttribute('aria-label')).toBe('Options for Notion Glave');
+    const pick = async (at: number, text: string): Promise<void> => {
+      menus[at]?.click();
+      await fixture.whenStable();
+      const items = document.querySelectorAll<HTMLElement>(
+        '[data-testid="connector-account-menu-action"]',
+      );
+      [...items].find((item) => item.textContent.includes(text))?.click();
+      await settle(fixture);
+    };
+    await pick(0, 'Only in Acme Site');
+    expect(fake.paramsOf('connector/place')).toEqual([
+      { connector: 'notion', account: 'Glave', only: 'p1' },
     ]);
+    await pick(1, 'Sign in again');
+    expect(fake.paramsOf('connector/connect')).toEqual([
+      { connector: 'notion', account: 'Acme', only: 'p1' },
+    ]);
+    await pick(1, 'Disconnect');
+    const heading = document.querySelector('[data-testid="connectors-disconnect"] h2');
+    expect(heading?.textContent).toContain('Disconnect Notion (Acme)?');
+  });
+
+  it('adds another account of a service, named, where the page is', async () => {
+    const one: ConnectorInfo = {
+      ...NOTION,
+      status: 'connected',
+      accounts: [{ status: 'connected', used: 'Everywhere, including chats' }],
+    };
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', { categories: CATEGORIES, connectors: [one] })
+      .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
+      .answer('connection/poll', { connection: { url: PAGE, status: 'signed_in' } });
+    openedTab();
+    const { fixture, root } = await page(fake, 'p1');
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    root
+      .querySelector<HTMLElement>('[data-connector="notion"] [data-testid="connector-add-account"]')
+      ?.click();
+    await settle(fixture);
+    const dialog = document.querySelector('[data-testid="connector-add"]');
+    expect(dialog?.textContent).toContain('Connect Notion');
+    expect(dialog?.textContent).toContain('Already connected');
+    expect(dialog?.textContent).toContain('Sign in to another Notion account');
+    expect(dialog?.textContent).toContain('Nothing else can see it');
+    const done = document.querySelector<HTMLElement>('[data-testid="connector-add-done"]');
+    expect(done?.textContent.trim()).toBe('Sign in to Notion');
+    done?.click();
+    await settle(fixture);
+    const problem = document.querySelector('[data-testid="connector-add-problem"]');
+    expect(problem?.textContent).toContain('Give this account a name.');
+    expect(fake.paramsOf('connector/connect')).toEqual([]);
+    const name = document.querySelector<HTMLInputElement>('[data-testid="connector-add-name"]');
+    if (name === null) {
+      throw new Error('no name field');
+    }
+    name.value = ' Acme ';
+    name.dispatchEvent(new Event('input'));
+    done?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('connector/connect')).toEqual([
+      { connector: 'notion', account: 'Acme', only: 'p1' },
+    ]);
+  });
+
+  it('for a project, names the account its threads use and why the other is not', async () => {
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', (params) => {
+        const own = { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' };
+        const glave = { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' };
+        return (params as { used_in?: string }).used_in === 'p1'
+          ? {
+              categories: CATEGORIES,
+              connectors: [
+                {
+                  ...NOTION,
+                  status: 'connected',
+                  accounts: [own],
+                  replaced: 'Your Notion account used everywhere else is not used here.',
+                },
+              ],
+            }
+          : {
+              categories: CATEGORIES,
+              connectors: [{ ...NOTION, status: 'connected', accounts: [glave, own] }],
+            };
+      });
+    const { fixture, root } = await page(fake, 'p1');
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
     expect(rows(root, 'connectors-connected')).toEqual([
-      'N Notion Glave: Everywhere, including chats · Acme: Only in Acme Site Disconnect',
+      'N Notion: Acme Only in Acme Site Disconnect',
     ]);
-    const action = root.querySelector('[data-testid="connector-action"]');
-    expect(action?.getAttribute('aria-label')).toBe('Disconnect Notion (Glave)');
+    const note = root.querySelector('[data-connector="notion"] [data-testid="connector-note"]');
+    expect(note?.textContent.trim()).toBe(
+      'Your Notion account used everywhere else is not used here.',
+    );
+    expect(note?.classList.contains('shown')).toBe(true);
     await expectAccessible(root);
   });
 });

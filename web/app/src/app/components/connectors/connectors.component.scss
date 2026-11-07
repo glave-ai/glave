@@ -94,6 +94,24 @@
   background: var(--glz-color-success);
 }
 
+// A service's accounts, beneath its line when it has two or more, and for a project why its
+// account used everywhere else is not used there: each drawn only when it says something.
+.accounts {
+  display: flex;
+  flex-direction: column;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.accounts:not(.shown),
+.note:not(.shown),
+.dot:not(.shown) {
+  display: none;
+}
+
 .problem {
   color: var(--glz-color-danger);
 }

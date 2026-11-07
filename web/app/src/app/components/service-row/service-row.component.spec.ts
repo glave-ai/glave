@@ -31,4 +31,14 @@ describe('ServiceRowComponent', () => {
     expect(row?.lastElementChild?.textContent).toBe('Disconnect');
     await expectAccessible(root);
   });
+
+  it('takes its tile from the service when its name is an account of it', async () => {
+    const fixture = TestBed.createComponent(ServiceRowComponent);
+    fixture.componentRef.setInput('name', 'Stripe: Acme');
+    fixture.componentRef.setInput('tile', 'Stripe');
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('.tile')?.textContent.trim()).toBe('S');
+    expect(root.querySelector('.name')?.textContent).toBe('Stripe: Acme');
+  });
 });

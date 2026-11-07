@@ -1,0 +1,8 @@
+<span class="label" dir="auto" data-testid="connector-account-name">{{ name() }}</span>
+<span class="used" data-testid="connector-account-used">{{ account().used }}</span>
+<glz-menu-button
+  testId="connector-account-menu"
+  [label]="menuLabel()"
+  [actions]="actions()"
+  (action)="act($event)"
+/>
