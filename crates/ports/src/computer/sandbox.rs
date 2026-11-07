@@ -25,6 +25,15 @@ pub const PROTECTED: &[&str] = &[
     ".envrc",
 ];
 
+/// In the home folder: git's own settings, which every git the person runs reads, in every
+/// repository, whatever the project.
+const GIT_SETTINGS: &[&str] = &[".gitconfig", ".config/git"];
+
+/// git's own settings in the home folder `home`, as named.
+pub fn git_settings(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    GIT_SETTINGS.iter().map(move |name| home.join(name))
+}
+
 /// Whether `path` (resolved) is one of the project's protected paths. Compared the way a file
 /// system that ignores case compares names (macOS folders usually do), so `.GIT/hooks` is
 /// `.git/hooks`, and so is `.git/hook\u{17f}` with a long s, which APFS folds to `s`.
@@ -52,6 +61,13 @@ pub fn is_protected(root: &Path, path: &Path) -> bool {
         || PROTECTED
             .iter()
             .any(|protected| relative.starts_with(protected.to_lowercase()))
+}
+
+/// Whether `path` is one of `kept` or inside one, compared as [`is_protected`] compares names.
+pub fn is_kept(kept: &[PathBuf], path: &Path) -> bool {
+    let path = PathBuf::from(fold(&path.to_string_lossy()));
+    kept.iter()
+        .any(|kept| path.starts_with(fold(&kept.to_string_lossy())))
 }
 
 /// Why a change to a protected path is refused: the sentence after the path, as the model
@@ -142,11 +158,16 @@ mod tests {
         let json = serde_json::to_value(&plain).unwrap();
         assert!(json.get("protect").is_none(), "{json}");
         let guarded = FileWrite {
-            protect: true,
+            protect: Some(Sandbox {
+                level: SandboxLevel::Project,
+                network: false,
+                home: None,
+                glave_home: None,
+            }),
             ..plain
         };
         let json = serde_json::to_value(&guarded).unwrap();
-        assert_eq!(json["protect"], true);
+        assert_eq!(json["protect"]["level"], "project");
         assert_eq!(serde_json::from_value::<FileWrite>(json).unwrap(), guarded);
     }
 }

@@ -292,8 +292,14 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
             .await
             .unwrap()
     });
+    let guarded = glave_ports::computer::Sandbox {
+        level: glave_ports::computer::SandboxLevel::Project,
+        network: false,
+        home: None,
+        glave_home: None,
+    };
     let protected = |path: &str| FileWrite {
-        protect: true,
+        protect: Some(guarded.clone()),
         ..FileWrite::new(path, Bytes::new(b"PWNED"))
     };
     race(&work, &[".git/hooks", ".glave"], || {

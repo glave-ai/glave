@@ -2,14 +2,15 @@
 //! it in the person's accounts ledger, after they sign in to its server when it asks them to,
 //! that sign-in kept beside it; disconnecting it records that and removes the sign-in,
 //! destroying its token. Each is used everywhere, or only in one project of the person's, which
-//! they change at once. A policy narrows which are offered.
+//! they change at once. A second account of one, named, has a sign-in of its own. A policy
+//! narrows which are offered.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::PoisonError;
 
 use glave_mcp::address;
 use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorSignIn, ConnectorStatus, code};
-use glave_session::{Catalog, Connecting, Connector, KeptConnector};
+use glave_session::{Catalog, Connecting, Connector, KeptConnector, Placement};
 
 use super::{Connected, Remote, described};
 use crate::mcp::Offered;
@@ -26,9 +27,9 @@ impl Connected {
         offered.allows(id)
     }
 
-    /// The connectors offered here, each with whether it is connected, and where it is used:
-    /// one whose sign-in no longer works, or whose server asked for more, is to sign in to
-    /// again.
+    /// The connectors offered here: each account of one connected, with where it is used and
+    /// whether its sign-in works (one that no longer does, or whose server asked for more, is
+    /// to sign in to again), and each one not connected once.
     pub(super) async fn listed_connectors(
         &self,
     ) -> Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError> {
@@ -36,31 +37,37 @@ impl Connected {
         let accounts = self.accounts().await?;
         let none: BTreeMap<String, Remote> = BTreeMap::new();
         let offered = catalog.connectors.iter().filter(|it| self.offers(&it.id));
-        Ok(offered
-            .map(|connector| {
-                let kept = accounts.connector(&connector.id);
-                let connected = kept.is_some();
-                let url = address(&connector.url).unwrap_or_default();
-                let sign_in = accounts.connections.iter().find(|it| it.url == url);
-                let status = match (connected, connector.sign_in, sign_in) {
-                    (false, _, _) => ConnectorStatus::Available,
-                    (true, ConnectorSignIn::None, _) => ConnectorStatus::Connected,
-                    (true, ConnectorSignIn::Dcr, Some(sign_in)) => {
-                        let more = self.more.of(&url).is_some();
-                        match described(sign_in, &none, more).status {
-                            ConnectionStatus::SignedIn => ConnectorStatus::Connected,
-                            _ => ConnectorStatus::SignInAgain,
-                        }
+        let status = |connector: &Connector, kept: &KeptConnector| {
+            let url = address(&connector.url).unwrap_or_default();
+            let sign_in = accounts.sign_in(&url, kept.account.as_deref());
+            match (connector.sign_in, sign_in) {
+                (ConnectorSignIn::None, _) => ConnectorStatus::Connected,
+                (ConnectorSignIn::Dcr, Some(sign_in)) => {
+                    let more = self.more.of(&url, kept.account.as_deref()).is_some();
+                    match described(sign_in, &none, more).status {
+                        ConnectionStatus::SignedIn => ConnectorStatus::Connected,
+                        _ => ConnectorStatus::SignInAgain,
                     }
-                    (true, ConnectorSignIn::Dcr, None) => ConnectorStatus::SignInAgain,
-                };
-                let kept = kept.cloned().unwrap_or_else(|| KeptConnector {
+                }
+                (ConnectorSignIn::Dcr, None) => ConnectorStatus::SignInAgain,
+            }
+        };
+        let mut listed = Vec::new();
+        for connector in offered {
+            let before = listed.len();
+            for kept in accounts.accounts_of(&connector.id) {
+                listed.push((kept.clone(), status(connector, kept)));
+            }
+            if listed.len() == before {
+                let none = KeptConnector {
                     id: connector.id.clone(),
+                    account: None,
                     only: None,
-                });
-                (kept, status)
-            })
-            .collect())
+                };
+                listed.push((none, ConnectorStatus::Available));
+            }
+        }
+        Ok(listed)
     }
 
     /// Connects `kept`, to be used where it says: at once when it asks no one to sign in, else
@@ -78,7 +85,7 @@ impl Connected {
             .ok_or_else(|| unknown(id))?;
         match connector.sign_in {
             ConnectorSignIn::None => {
-                self.ledger.keep_connector(&kept, None).await?;
+                kept_there(self.ledger.keep_connector(&kept, None).await?, &kept)?;
                 Ok(Connecting::Connected)
             }
             ConnectorSignIn::Dcr => {
@@ -86,37 +93,48 @@ impl Connected {
                     return Ok(Connecting::NoWayBack);
                 };
                 let url = at(connector)?;
-                let name = connector.name.clone();
+                // A server of the person's own settings at its address is used in its stead,
+                // so another account of it would never run.
+                if kept.account.is_some() && self.remotes().await.contains_key(&url) {
+                    let said = format!(
+                        "your own settings name a server at {}'s address, which glave uses in \
+                         its place: remove it there to connect another account",
+                        connector.name
+                    );
+                    return Err(ApiError::new(code::INVALID_PARAMS, said));
+                }
+                let name = match &kept.account {
+                    Some(account) => format!("{} ({account})", connector.name),
+                    None => connector.name.clone(),
+                };
                 let link = self.sign_in(url, name, redirect, Some(kept)).await?;
                 Ok(Connecting::SignIn(link))
             }
         }
     }
 
-    /// Uses the connected connector `kept.id` where `kept` says from now on: the person's
+    /// Uses the connected account `kept` names where it says from now on: the person's
     /// servers are reconciled at the next turn, and threads elsewhere go without it.
     pub(super) async fn placing(&self, kept: KeptConnector) -> Result<(), ApiError> {
-        if !self.ledger.place_connector(&kept).await? {
-            return Err(not_connected(&kept.id));
-        }
-        Ok(())
+        kept_there(self.ledger.place_connector(&kept).await?, &kept)
     }
 
-    /// Disconnects the connector `id`, removing its sign-in, so its token is destroyed now.
-    pub(super) async fn disconnecting(&self, id: String) -> Result<(), ApiError> {
+    /// Disconnects the account `kept` names, removing its sign-in, so its token is destroyed
+    /// now.
+    pub(super) async fn disconnecting(&self, kept: KeptConnector) -> Result<(), ApiError> {
         let catalog = catalog()?;
         // One the catalog no longer has is disconnected all the same; a sign-in a server of
-        // the person's own settings uses stays theirs.
-        let url = catalog.connector(&id).and_then(|it| address(&it.url));
+        // the person's own settings uses stays theirs, and is never a named account's.
+        let url = catalog.connector(&kept.id).and_then(|it| address(&it.url));
         let theirs = match &url {
-            Some(url) => self.remotes().await.contains_key(url),
-            None => false,
+            Some(url) if kept.account.is_none() => self.remotes().await.contains_key(url),
+            _ => false,
         };
         let url = url.filter(|_| !theirs).unwrap_or_default();
-        if !self.ledger.remove_connector(&id, &url).await? {
-            return Err(not_connected(&id));
+        if !self.ledger.remove_connector(&kept, &url).await? {
+            return Err(not_connected(&kept));
         }
-        self.more.forget(&url);
+        self.more.forget(&url, kept.account.as_deref());
         self.kept().await?;
         Ok(())
     }
@@ -129,7 +147,7 @@ impl Connected {
         catalog
             .connectors
             .iter()
-            .filter(|it| accounts.connector(&it.id).is_some())
+            .filter(|it| accounts.accounts_of(&it.id).next().is_some())
             .filter_map(|it| address(&it.url))
             .collect()
     }
@@ -145,9 +163,33 @@ fn at(connector: &Connector) -> Result<String, ApiError> {
     address(&connector.url).ok_or_else(|| unknown(&connector.id))
 }
 
-/// The connector `id` is not connected.
-fn not_connected(id: &str) -> ApiError {
-    ApiError::new(code::NO_CREDENTIAL, format!("{id} is not connected here"))
+/// Whether `kept` was kept where it says, as `placement` says: refused, in plain words, when it
+/// is not connected or another account of its service is used there.
+pub(super) fn kept_there(placement: Placement, kept: &KeptConnector) -> Result<(), ApiError> {
+    match placement {
+        Placement::Placed => Ok(()),
+        Placement::NotConnected => Err(not_connected(kept)),
+        Placement::Taken => Err(ApiError::new(
+            code::INVALID_PARAMS,
+            format!(
+                "another {} account is used there already: use this one somewhere else, or move \
+                 that one first",
+                kept.id
+            ),
+        )),
+    }
+}
+
+/// The account `kept` names is not connected.
+fn not_connected(kept: &KeptConnector) -> ApiError {
+    let said = match &kept.account {
+        Some(account) => format!(
+            "no {} account called {account:?} is connected here",
+            kept.id
+        ),
+        None => format!("{} is not connected here", kept.id),
+    };
+    ApiError::new(code::NO_CREDENTIAL, said)
 }
 
 /// The connector `id` is not offered here, or not in the catalog.

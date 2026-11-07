@@ -65,12 +65,30 @@ interface Row {
   readonly disconnectLabel: string;
   /** Connected, where it is used: `everywhere`, or the project its threads alone use. */
   readonly place: string | null;
+  /** The account of it the row moves and disconnects: its first, by its name, none unnamed. */
+  readonly account: string | null;
+  /** What its moving and disconnecting call it: its name, with the account's when named. */
+  readonly called: string;
   /** The choice of where it is used, as screen readers name it. */
   readonly placeLabel: string;
 }
 
 /** The choice of where a connector is used that stands for every place. */
 const EVERYWHERE = 'everywhere';
+
+/**
+ * Where `connector`'s accounts are used, in the server's words: its one account's line, or each
+ * account by its name with its line.
+ */
+function used(connector: ConnectorInfo): string | null {
+  const accounts = connector.accounts ?? [];
+  if (accounts.length < 2) {
+    return accounts[0]?.used ?? null;
+  }
+  return accounts
+    .map(({ name, used: line }) => ((name ?? null) === null ? line : `${name ?? ''}: ${line}`))
+    .join(' · ');
+}
 
 /** A card of the page: its heading, and its connectors. */
 interface Section {
@@ -243,7 +261,7 @@ export class ConnectorsComponent {
     this.offered() && this.sections().length === 0 ? this.copy.noMatch : '',
   );
   protected readonly disconnectHeading = computed(() => {
-    const name = this.disconnecting()?.name ?? '';
+    const name = this.disconnecting()?.called ?? '';
     return $localize`:@@connectors.disconnectHeading:Disconnect ${name}:NAME:?`;
   });
 
@@ -271,7 +289,7 @@ export class ConnectorsComponent {
       return;
     }
     const only = place === EVERYWHERE ? null : place;
-    void this.busyWith(row.id, () => this.service.place(row.id, only));
+    void this.busyWith(row.id, () => this.service.place(row.id, row.account, only));
   }
 
   /** What the row's button does: disconnects, stops waiting, or connects. */
@@ -300,7 +318,7 @@ export class ConnectorsComponent {
       return;
     }
     await this.busyWith(row.id, async () => {
-      await this.service.disconnect(row.id);
+      await this.service.disconnect(row.id, row.account);
       this.moved(row.id, this.said(row.name, this.copy.disconnected));
     });
   }
@@ -420,6 +438,9 @@ export class ConnectorsComponent {
     const waited = this.waiting().get(id);
     const busy = this.working().has(id) && waited === undefined;
     const problem = this.problems().get(id) ?? null;
+    const [first] = connector.accounts ?? [];
+    const account = first?.name ?? null;
+    const called = account === null ? name : `${name} (${account})`;
     const base = {
       id,
       name,
@@ -430,14 +451,16 @@ export class ConnectorsComponent {
       waiting: false,
       link: null,
       linkText: '',
-      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
-      place: status === 'available' || !this.choosing() ? null : (connector.only ?? EVERYWHERE),
-      placeLabel: $localize`:@@connectors.placeLabel:Where ${name}:NAME: is used`,
+      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${called}:NAME:`,
+      place: status === 'available' || !this.choosing() ? null : (first?.only ?? EVERYWHERE),
+      placeLabel: $localize`:@@connectors.placeLabel:Where ${called}:NAME: is used`,
+      account,
+      called,
     };
     if (connected) {
       return {
         ...base,
-        detail: connector.used ?? this.copy.connected,
+        detail: used(connector) ?? this.copy.connected,
         action: busy ? this.copy.disconnecting : this.copy.disconnect,
         actionLabel: base.disconnectLabel,
         variant: 'ghost',

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{PROTECTED, SandboxLevel};
 
+use super::folders_leading_to;
 use super::secrets::{ENV_FILES, HOME_SECRETS, OTHER_SECRET_FILES, TEMPLATE_WORDS};
 
 const BASE: &str = include_str!("base.sbpl");
@@ -55,6 +56,8 @@ const NETWORK_RULES: &str = r#"; network: allowed
 pub(crate) struct Places {
     pub root: PathBuf,
     pub glave_home: Option<PathBuf>,
+    /// Read-only wherever the project is ([`kept_read_only`](super::kept_read_only)).
+    pub kept: Vec<PathBuf>,
     /// Hidden: the home folder's credential stores and whatever else the computer hides, and
     /// where links among them lead.
     pub hidden: Vec<PathBuf>,
@@ -112,8 +115,14 @@ fn reads(profile: &mut Profile, places: &Places) {
         } else {
             ""
         };
+        // Not a workspace that holds glave's folder, though: that's no worktree of glave's.
+        let workspace = if glave_home.starts_with(&places.root) {
+            ""
+        } else {
+            r#" (subpath (param "ROOT"))"#
+        };
         conditions.push(format!(
-            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")){cache}{on_path})"#
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))){workspace}{cache}{on_path})"#
         ));
         profile
             .params
@@ -202,6 +211,17 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
         .map(|path| places.root.join(path))
         .chain(NESTED_GIT.iter().map(|name| git.join(name)));
     unless(profile, &mut conditions, "PROTECTED", protected);
+    unless(
+        profile,
+        &mut conditions,
+        "KEPT",
+        places.kept.iter().cloned(),
+    );
+    for (index, folder) in folders_leading_to(&places.root, &places.kept).enumerate() {
+        let name = format!("KEPT_UP_{index}");
+        conditions.push(format!(r#"(require-not (literal (param "{name}")))"#));
+        profile.params.push((name, folder));
+    }
     allow_writes(profile, "the project", &conditions);
     if let Some(common) = &places.git_common {
         git_common_writes(profile, common, places.git_own.as_deref());
@@ -307,6 +327,7 @@ mod tests {
         Places {
             root: PathBuf::from("/Users/me/my.project"),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
+            kept: Vec::new(),
             hidden: home_secrets(Path::new("/Users/me")).collect(),
             cache: Some(PathBuf::from("/Users/me/.glave/sandbox-cache")),
             glave_on_path: Some(PathBuf::from("/Users/me/.glave/bin")),

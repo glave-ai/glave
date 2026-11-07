@@ -25,6 +25,11 @@ pub struct ConnectionConnected {
     /// The MCP server's address, as the person's settings name it:
     /// `https://mcp.example.com/mcp`.
     pub url: String,
+    /// The person's name for the account of a connector this signs in to, where they connected
+    /// more than one: none for their own server's, or a connector's account never named. One
+    /// sign-in is kept for each address and account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     #[serde(serialize_with = "crate::secret::serialize_exposed")]
     pub token: Secret,
     /// When the token expires, when the server said.

@@ -1,8 +1,9 @@
 //! The person's connections (`specs/session.md`, "Connections"): remote MCP servers they sign in to
 //! in the browser, as MCP's authorization says (`flows.rs`). Each sign-in is kept sealed in
-//! the accounts ledger under a key of its own, one for each server's address; its token is
-//! renewed before it expires and handed to the person's own servers at that address with each
-//! request (`tokens.rs`), never to a file, a command or the model. Their remote servers that
+//! the accounts ledger under a key of its own, one for each server's address and account (a
+//! connector's accounts the person named); its token is renewed before it expires and handed to
+//! the person's own servers at that address, as that account, with each request (`tokens.rs`),
+//! never to a file, a command or the model. Their remote servers that
 //! ask them to sign in, and are not signed in to, are listed beside the sign-ins. Web search is
 //! a connection too, under the hood, which the person turns on and off as a setting
 //! (`search.rs`), never listed among them. The connectors of glave's catalog are connected
@@ -64,8 +65,9 @@ pub(crate) struct Connected {
 /// What the person signed in to and connected: their servers start again when it changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Signed {
-    /// The addresses signed in to.
-    pub(crate) addresses: BTreeSet<String>,
+    /// The addresses signed in to, each with the account of a connector signed in to there
+    /// as, when the person named one.
+    pub(crate) addresses: BTreeSet<(String, Option<String>)>,
     /// The connectors of glave's catalog connected, and where each is used, in the order
     /// connected.
     pub(crate) connectors: Vec<KeptConnector>,
@@ -74,23 +76,26 @@ pub(crate) struct Signed {
 /// The most scopes kept for what one server asked for.
 const MORE_ASKED: usize = 32;
 
-/// What each server, by its address, asked for with `403 insufficient_scope` since the
-/// person last signed in to it, as MCP's step-up authorization says: the scopes a sign-in
-/// there asks for next, beside those it grants. One entry for each of the person's remote
-/// servers at most.
+/// What each server, by its address and the account signed in to there, asked for with `403
+/// insufficient_scope` since the person last signed in to it as that account, as MCP's step-up
+/// authorization says: the scopes a sign-in there asks for next, beside those it grants. One
+/// entry for each of the person's remote servers and accounts at most.
 #[derive(Clone, Default)]
-pub(super) struct MoreAsked(Arc<Mutex<BTreeMap<String, Vec<String>>>>);
+pub(super) struct MoreAsked(Arc<Mutex<BTreeMap<SignedAs, Vec<String>>>>);
+
+/// A server's address, and the account of a connector signed in to there as, when named.
+type SignedAs = (String, Option<String>);
 
 impl MoreAsked {
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Vec<String>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<SignedAs, Vec<String>>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The server at `url` asked for `scope`, which the sign-in there lacks: added to what it
-    /// asked for before, `MORE_ASKED` scopes at most.
-    pub(super) fn ask(&self, url: &str, scope: &str) {
+    /// The server at `url` asked `account` for `scope`, which the sign-in there lacks: added to
+    /// what it asked for before, `MORE_ASKED` scopes at most.
+    pub(super) fn ask(&self, url: &str, account: Option<&str>, scope: &str) {
         let mut asked = self.lock();
-        let scopes = asked.entry(url.to_owned()).or_default();
+        let scopes = asked.entry(signed_as(url, account)).or_default();
         for scope in scope.split_whitespace() {
             if scopes.len() < MORE_ASKED && !scopes.iter().any(|kept| kept == scope) {
                 scopes.push(scope.to_owned());
@@ -98,16 +103,21 @@ impl MoreAsked {
         }
     }
 
-    /// What the server at `url` asked for since the person last signed in to it.
-    pub(super) fn of(&self, url: &str) -> Option<Vec<String>> {
-        self.lock().get(url).cloned()
+    /// What the server at `url` asked for since the person last signed in to it as `account`.
+    pub(super) fn of(&self, url: &str, account: Option<&str>) -> Option<Vec<String>> {
+        self.lock().get(&signed_as(url, account)).cloned()
     }
 
-    /// The person signed in to the server at `url` again, or removed their sign-in there: what
-    /// it asked for is asked for no more.
-    pub(super) fn forget(&self, url: &str) {
-        self.lock().remove(url);
+    /// The person signed in to the server at `url` as `account` again, or removed that sign-in:
+    /// what it asked for is asked for no more.
+    pub(super) fn forget(&self, url: &str, account: Option<&str>) {
+        self.lock().remove(&signed_as(url, account));
     }
+}
+
+/// The server at `url` as `account`.
+fn signed_as(url: &str, account: Option<&str>) -> SignedAs {
+    (url.to_owned(), account.map(str::to_owned))
 }
 
 impl Connected {
@@ -159,7 +169,9 @@ impl Connected {
     pub(crate) async fn signed(&self) -> Signed {
         match self.accounts().await {
             Ok(accounts) => Signed {
-                addresses: accounts.connections.into_iter().map(|it| it.url).collect(),
+                addresses: (accounts.connections.into_iter())
+                    .map(|it| (it.url, it.account))
+                    .collect(),
                 connectors: accounts.connectors,
             },
             Err(error) => {
@@ -317,12 +329,16 @@ impl Connections for Connected {
                 kept.retain(|kept| kept.url != url);
             }
             // A connector's sign-in is listed with the connector (`connector/list`), unless the
-            // person's settings name a server of their own at its address.
+            // person's settings name a server of their own at its address; a named account's
+            // is always the connector's.
             let connectors = self.connector_addresses().await;
-            kept.retain(|kept| remotes.contains_key(&kept.url) || !connectors.contains(&kept.url));
+            kept.retain(|kept| {
+                kept.account.is_none()
+                    && (remotes.contains_key(&kept.url) || !connectors.contains(&kept.url))
+            });
             let mut listed: Vec<_> = kept
                 .iter()
-                .map(|kept| described(kept, &remotes, self.more.of(&kept.url).is_some()))
+                .map(|kept| described(kept, &remotes, self.more.of(&kept.url, None).is_some()))
                 .collect();
             let unkept = remotes
                 .into_iter()
@@ -343,7 +359,7 @@ impl Connections for Connected {
                     format!("nothing at {url} is signed in to here"),
                 ));
             }
-            self.more.forget(&url);
+            self.more.forget(&url, None);
             // Read again, so its tokens are destroyed now, a renewal of it not kept too.
             self.kept().await?;
             Ok(())
@@ -374,7 +390,7 @@ impl Connections for Connected {
         Box::pin(self.placing(connector))
     }
 
-    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
+    fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(self.disconnecting(connector))
     }
 }

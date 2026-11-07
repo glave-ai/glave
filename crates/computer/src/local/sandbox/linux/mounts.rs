@@ -17,7 +17,7 @@ use glave_ports::computer::{PROTECTED, SandboxLevel};
 
 use super::super::secrets::HOME_SECRETS;
 use super::names::SecretNames;
-use crate::local::sandbox::own_git_folder;
+use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
 /// Under the home folder, on Linux besides the common list: keyrings and browser profiles
 /// (cookies are credentials).
@@ -144,8 +144,13 @@ pub(super) fn plan(
         paths: Vec::new(),
         stand_ins: Arc::clone(stand_ins),
     };
+    // glave's own folder needs nothing here: it is emptied wherever the project is (below).
+    let kept = kept_read_only(&layout.root, layout.home.as_deref(), None);
+    let kept_whole =
+        kept.contains(&layout.root) || layout.glave_home.as_ref() == Some(&layout.root);
     match layout.level {
         SandboxLevel::ReadOnly => mounts.push(Mount::ReadOnly(layout.root.clone())),
+        SandboxLevel::Project if kept_whole => mounts.push(Mount::ReadOnly(layout.root.clone())),
         SandboxLevel::Project => {
             mounts.push(Mount::Writable(layout.root.clone()));
             let mut counts = stand_ins
@@ -156,7 +161,7 @@ pub(super) fn plan(
                 counts: &mut counts,
                 held: &mut held.paths,
             };
-            protect.project(layout)?;
+            protect.project(layout, &kept)?;
         }
     }
     mounts.extend(layout.glave_home.iter().cloned().map(Mount::Emptied));
@@ -188,7 +193,7 @@ struct Protect<'a> {
 }
 
 impl Protect<'_> {
-    fn project(&mut self, layout: &Layout) -> Result<(), String> {
+    fn project(&mut self, layout: &Layout, kept: &[PathBuf]) -> Result<(), String> {
         let git = layout.root.join(".git");
         match self.state(&git)? {
             State::Folder => {
@@ -201,6 +206,13 @@ impl Protect<'_> {
         }
         for path in PROTECTED.iter().filter(|path| !path.starts_with(".git/")) {
             self.protect(layout.root.join(path))?;
+        }
+        for folder in folders_leading_to(&layout.root, kept).filter(|folder| folder.is_dir()) {
+            // Its own mount point, so it cannot be moved with what is kept inside it.
+            self.mounts.push(Mount::Writable(folder));
+        }
+        for path in kept {
+            self.protect(path.clone())?;
         }
         if let Some(common) = &layout.git_common {
             self.mounts.push(Mount::Writable(common.clone()));
