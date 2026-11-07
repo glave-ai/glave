@@ -60,7 +60,6 @@ async fn create_in<L: EventLog + 'static>(
         project,
         when,
         prompt: "check the build".into(),
-        goal: false,
         budget,
     };
     match server.request(request).await {
@@ -363,7 +362,6 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             project: None,
             when: at_time("2026-10-10T10:05:00Z"),
             prompt: "check the build".into(),
-            goal: false,
             budget: 5_000,
         };
         let made = server.request_as(&grace, theirs).await;

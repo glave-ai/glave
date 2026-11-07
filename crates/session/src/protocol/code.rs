@@ -25,7 +25,6 @@ codes! {
     NO_APPROVAL = -32004, "No such approval is pending";
     CANCELLED = -32005, "The operation was cancelled";
     NO_QUESTION = -32006, "No such question is waiting";
-    NO_GOAL = -32007, "The thread has no active goal (or, to resume, no paused one)";
     PROMPT_BLOCKED = -32008, "A hook stopped the prompt";
     WORKSPACE = -32009, "The thread's workspace could not be opened";
     RUNNING_ELSEWHERE = -32011, "The thread is working on another server, which holds it";

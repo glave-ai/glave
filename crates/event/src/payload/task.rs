@@ -81,11 +81,8 @@ pub enum When {
 pub struct ScheduleCreated {
     pub schedule: ScheduleId,
     pub when: When,
-    /// The prompt each run starts with; with `goal`, the goal's objective.
+    /// The prompt each run starts with.
     pub prompt: String,
-    /// Whether each run works toward `prompt` as a goal across turns, rather than one turn.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub goal: bool,
     /// Tokens, in and out, each run may use, subagents' included. Required: no schedule runs
     /// unbounded.
     pub budget: u64,

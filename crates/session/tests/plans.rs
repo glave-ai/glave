@@ -2,8 +2,8 @@
 //! read with `thread/plan` as typed facts and a sentence, edited with `plan/edit`, and built
 //! with `plan/build`, which records the approval, runs the thread in Auto and streams the
 //! build; a fresh server reads the same plan from the log. Editing or building with no plan
-//! waiting is refused, and so is building where the policy leaves only Plan, an edit a plan
-//! cannot hold, and a goal in plan mode.
+//! waiting is refused, and so is building where the policy leaves only Plan and an edit a plan
+//! cannot hold.
 
 use glave_event::{PlanStatus, ThreadId};
 use glave_ports::Completion;
@@ -207,7 +207,7 @@ fn editing_or_building_with_no_plan_waiting_is_refused_saying_so() {
 }
 
 #[test]
-fn where_the_policy_leaves_only_plan_a_plan_is_proposed_and_never_built_nor_a_goal_run() {
+fn where_the_policy_leaves_only_plan_a_plan_is_proposed_and_never_built() {
     let dir = folder("plans-capped");
     block_on!(async {
         let mut setup = Setup::new(vec![plan(&[("Look", "pending")])]);
@@ -236,21 +236,6 @@ fn where_the_policy_leaves_only_plan_a_plan_is_proposed_and_never_built_nor_a_go
                 .to_string()
                 .starts_with("a plan has 1 to 64 steps"),
             "{blank:?}"
-        );
-        let goal = Request::GoalStart {
-            background: false,
-            thread,
-            objective: Some("add a --verbose flag".into()),
-            budget: None,
-            unattended: false,
-        };
-        let goal = refused(server.request(goal).await);
-        assert_eq!(goal.code, code::NOT_ALLOWED, "{goal:?}");
-        assert!(
-            goal.message
-                .to_string()
-                .starts_with("a goal doesn't run in Plan"),
-            "{goal:?}"
         );
         server.shutdown().await;
     });

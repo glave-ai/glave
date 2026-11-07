@@ -1,9 +1,8 @@
 //! A turn going on from its log once its wait was answered (`specs/one-server.md`, "An answer
 //! continues the turn"): the answered call runs or is declined, the calls after it in that
 //! response, which never started, run in order, and the turn's own loop goes on to the model.
-//! It is the turn's one code path, entered at "the rest of this response's calls"; a goal's turn
-//! goes on to the goal's next turns. Nothing of the turn is kept in memory meanwhile: what it did
-//! so far is read from the log.
+//! It is the turn's one code path, entered at "the rest of this response's calls". Nothing of the
+//! turn is kept in memory meanwhile: what it did so far is read from the log.
 
 use glave_event::{Body, Event, Permissions, TurnResult};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, read_all};
@@ -26,9 +25,8 @@ where
 {
     /// Goes on with `thread`'s turn from its log, once what it waits for was answered, or once
     /// `cancel` fired, which declines what waits: as the turn would have gone on had it never
-    /// stopped, for `caller`. A goal's turn goes on to the goal's next turns. A turn that waits
-    /// still, or again, stops again (`HarnessError::Waits`); refused (`HarnessError::NoTurn`)
-    /// when no turn is open there.
+    /// stopped, for `caller`. A turn that waits still, or again, stops again
+    /// (`HarnessError::Waits`); refused (`HarnessError::NoTurn`) when no turn is open there.
     pub async fn go_on(
         &self,
         thread: &mut Thread,
@@ -86,11 +84,7 @@ where
                     self.bring(thread).await?;
                     self.tools(thread).await
                 };
-                let goal = crate::goal::of_turn(thread, &events, open.started);
                 let summary = self.tallies(&thread.scope, thread.id, turn).await?;
-                if goal {
-                    crate::goal::going_on(thread, turn, &summary);
-                }
                 let step = Step {
                     toolset,
                     repeats: Repeats::default(),
@@ -109,16 +103,11 @@ where
                 let ended = ran.as_ref().ok();
                 let ended = ended.map(|turn| (turn.outcome, turn.model_calls, turn.tool_calls));
                 crate::telemetry::turn_ended(&span, began, ended);
-                Ok::<_, HarnessError>((goal, ran))
+                Ok::<_, HarnessError>(ran)
             }
             .await;
             (thread.model, thread.permissions) = chosen;
-            let (goal, ran) = carried?;
-            if !goal {
-                return ran;
-            }
-            crate::goal::stopped_running(thread);
-            self.pursue_after(thread, ran?, caller, cancel, live).await
+            carried?
         })
     }
 

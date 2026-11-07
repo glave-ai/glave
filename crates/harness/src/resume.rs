@@ -77,10 +77,6 @@ where
             asked: asked(&events),
             turns: turns_begun(&events),
             above: above(&events),
-            goal: self
-                .goal_in(&scope, id, &events)
-                .await?
-                .map(crate::goal::Pursuit::of),
             plan: crate::plan::Planning::of(&events),
             workspace,
             unnumbered: crate::bind::own_records(&events),
@@ -285,7 +281,7 @@ fn latest_request(events: &[Event]) -> Option<String> {
 }
 
 /// Whether a message is the person's own: not the model's, and not one glave wrote, such as
-/// a goal's continuation.
+/// a plan's build.
 fn by_person(added: &glave_event::MessageAdded) -> bool {
     added.role == glave_event::Role::User
         && added

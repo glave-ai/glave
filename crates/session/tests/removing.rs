@@ -418,7 +418,6 @@ fn someone_removed_has_their_schedules_deleted() {
             project: None,
             when: When::Cron("0 9 * * *".into()),
             prompt: "check the build".into(),
-            goal: false,
             budget: 5_000,
         };
         server.request_as(&ada, schedule).await.unwrap();
