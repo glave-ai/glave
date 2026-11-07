@@ -1,6 +1,6 @@
 import { ApiError, ErrorCode } from '@glave/client';
 
-import { connectionProblem, serviceHost, serviceName } from './connections';
+import { connectionProblem, serviceHost, serviceName, signInWaiting } from './connections';
 
 const DOCS = { url: 'https://mcp.docs.example.com/mcp', status: 'signed_out' } as const;
 
@@ -24,5 +24,10 @@ describe('connections', () => {
     expect(connectionProblem(new TypeError('Failed to fetch'))).toBe(
       'glave could not be reached. Try again.',
     );
+  });
+
+  it('says where to finish signing in, as the tab for it opened or not', () => {
+    expect(signInWaiting('Linear', true)).toBe('Finish signing in to Linear in the new tab.');
+    expect(signInWaiting('Linear', false)).toBe('To finish, open the sign-in for Linear.');
   });
 });

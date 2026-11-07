@@ -6,7 +6,6 @@ import {
   DestroyRef,
   ElementRef,
   Injector,
-  LOCALE_ID,
   afterNextRender,
   computed,
   effect,
@@ -15,150 +14,71 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import type { ConnectorAccount, ConnectorInfo, ProjectId } from '@glave/client';
-import {
-  type GlzButtonVariant,
-  GlzButtonComponent,
-  GlzConfirmDialogComponent,
-  GlzIconComponent,
-  type GlzMenuOption,
-  GlzMenuSelectComponent,
-} from '@glave/glaze';
-import { ExternalLink, LoaderCircle, Search } from 'lucide';
+import type { ConnectorInfo, ProjectId } from '@glave/client';
+import { GlzConfirmDialogComponent, GlzIconComponent, type GlzMenuOption } from '@glave/glaze';
+import { Search } from 'lucide';
 
-import { connectionProblem, openedTab, sentTo } from '../../lib/connections';
-import { plural } from '../../lib/plural';
+import { connectionProblem, openedTab, sentTo, signInWaiting } from '../../lib/connections';
 import { ConnectorsService } from '../../services/connectors.service';
 import { ProjectsService } from '../../services/projects.service';
-import {
-  type AccountAction,
-  ConnectorAccountComponent,
-} from '../connector-account/connector-account.component';
 import {
   type AccountChosen,
   ConnectorAddComponent,
 } from '../connector-add/connector-add.component';
+import {
+  type ConnectorAction,
+  ConnectorRowComponent,
+  EVERYWHERE,
+  type Waiting,
+} from '../connector-row/connector-row.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
-import { ServiceRowComponent } from '../service-row/service-row.component';
 
-/** A sign-in waiting for the person in the browser. */
-interface Waiting {
-  /** The vendor's sign-in page, once the server gave it. */
-  readonly link: string | null;
-  /** Whether a new tab is open at it: none where the browser opened none, or it was closed. */
-  readonly opened: boolean;
-}
-
-/** A connector as a row of the page shows it. */
-interface Row {
-  readonly id: string;
-  readonly name: string;
-  /** Whether it is connected, ready to use. */
-  readonly connected: boolean;
-  /** Whether it is connected but to be signed in to again. */
-  readonly again: boolean;
-  /** Whether it waits for the person to sign in to it in the browser. */
-  readonly waiting: boolean;
-  /** Whether it is being connected or disconnected. */
-  readonly busy: boolean;
-  /** The line under its name. */
-  readonly detail: string;
-  /** The sign-in's page, to open while it waits, once the server gave it, and the link's word. */
-  readonly link: string | null;
-  readonly linkText: string;
-  /** Why the last thing done with it failed, in the server's words. */
+/** A connector as its card lists it: the connector, and what the page is doing with it. */
+interface Listed {
+  readonly connector: ConnectorInfo;
+  readonly waiting: Waiting | null;
+  readonly working: boolean;
   readonly problem: string | null;
-  /** Its button's word, its name for screen readers, and how much it stands out. */
-  readonly action: string;
-  readonly actionLabel: string;
-  readonly variant: GlzButtonVariant;
-  /** Disconnect's name for screen readers, for a row to sign in to again. */
-  readonly disconnectLabel: string;
-  /** Connected, where it is used: `everywhere`, or the project its threads alone use. */
-  readonly place: string | null;
-  /** The account the row moves, signs in to again and disconnects, with one: by its name, none unnamed. */
-  readonly account: string | null;
-  /** Where that account is used alone, or none for everywhere. */
-  readonly only: ProjectId | null;
-  /** What its moving and disconnecting call it: its name, with the account's when named. */
-  readonly called: string;
-  /** The choice of where it is used, as screen readers name it. */
-  readonly placeLabel: string;
-  /** With two accounts or more, each beneath it, with its own menu; else none. */
-  readonly accounts: readonly Beneath[];
-  /** Whether it has accounts beneath it, and its tile's name, the service's own. */
-  readonly listed: boolean;
-  readonly tile: string;
-  /** Whether its own button shows: for one with two accounts or more, each account's menu acts. */
-  readonly acts: boolean;
-  /** Connected, its button to add another account, and that button's name for screen readers. */
-  readonly adds: boolean;
-  readonly addLabel: string;
-  /** For a project, why the account used everywhere else is not used here, in the server's words. */
-  readonly note: string | null;
-  readonly noted: boolean;
 }
 
-/** An account beneath its service, and its place as the menus' value. */
-interface Beneath {
-  readonly account: ConnectorAccount;
-  readonly place: string;
-  /** What tracks it among its service's accounts: its name, unique among them. */
-  readonly key: string;
-}
-
-/** What Disconnect asks about: an account of a connector, as the page calls it. */
-interface Disconnecting {
+/** What Disconnect or Rename asks about: an account of a connector, and what the dialog calls it. */
+interface Asked {
   readonly id: string;
-  readonly name: string;
   readonly account: string | null;
   readonly called: string;
 }
-
-/** The choice of where a connector is used that stands for every place. */
-const EVERYWHERE = 'everywhere';
 
 /** A card of the page: its heading, and its connectors. */
 interface Section {
   readonly id: string;
   readonly testId: string;
   readonly heading: string;
-  readonly rows: readonly Row[];
+  readonly rows: readonly Listed[];
 }
 
 /** `map` with `key` set to `value`, or without it when `value` is null. */
-function setTo<T>(
-  map: ReadonlyMap<string, T>,
-  key: string,
-  value: T | null,
-): ReadonlyMap<string, T> {
+function setTo<T>(map: ReadonlyMap<string, T>, key: string, value: T | null): Map<string, T> {
   const next = new Map(map);
   if (value === null) {
     next.delete(key);
-  } else {
-    next.set(key, value);
+    return next;
   }
-  return next;
+  return next.set(key, value);
 }
 
 /**
- * glave's connectors, on the Connections page: a search over them, those connected first, each
- * with where it is used, everywhere or only in one project or Chats, which the person changes
- * there, and Disconnect, which asks first; for a `project`, only those its threads use, and one
- * connected here is used only there; then the rest by category, each with Connect, which
- * connects one that asks no one to sign in at once, and otherwise opens its sign-in in a new tab
- * and waits until the server says it is done. Names, descriptions and categories are the
- * server's; the page writes only its own labels for a connector's status.
+ * glave's connectors, on the Connections page: a search over them, those connected first (for a
+ * `project`, only those its threads use, and one connected here is used only there), then the
+ * rest by category, each a row. It does what the person asks of a row: connects (in a new tab
+ * where a sign-in is needed, waiting until the server says it is done), moves, adds an account,
+ * renames, or disconnects, which asks first. Names, descriptions and categories are the server's.
  */
 @Component({
   selector: 'app-connectors',
   imports: [
-    ServiceRowComponent,
-    GlzButtonComponent,
     GlzConfirmDialogComponent,
     GlzIconComponent,
-    GlzMenuSelectComponent,
-    ConnectorAccountComponent,
+    ConnectorRowComponent,
     ConnectorAddComponent,
     RenameDialogComponent,
   ],
@@ -171,35 +91,24 @@ export class ConnectorsComponent {
     heading: $localize`:@@connectors.heading:Apps`,
     search: $localize`:@@connectors.search:Search apps`,
     connected: $localize`:@@connectors.connected:Connected`,
-    signInAgain: $localize`:@@connectors.signInAgain:Sign in again to keep using it`,
-    connect: $localize`:@@connectors.connect:Connect`,
-    connecting: $localize`:@@connectors.connecting:Connecting…`,
-    again: $localize`:@@connectors.again:Sign in again`,
-    cancel: $localize`:@@connectors.cancel:Cancel`,
     disconnect: $localize`:@@connectors.disconnect:Disconnect`,
-    disconnecting: $localize`:@@connectors.disconnecting:Disconnecting…`,
     disconnected: $localize`:@@connectors.disconnected:Disconnected`,
-    openAgain: $localize`:@@connectors.openAgain:Open it again`,
-    openSignIn: $localize`:@@connectors.openSignIn:Open the sign-in`,
-    newTab: $localize`:@@connectors.newTab:in a new tab`,
     disconnectText: $localize`:@@connectors.disconnectText:glave stops using it for you and forgets any sign-in to it. You can connect it again at any time.`,
     noMatch: $localize`:@@connectors.noMatch:No app matches that search.`,
     everywhere: $localize`:@@connectors.everywhere:Everywhere, including chats`,
     change: $localize`:@@connectors.change:Change`,
     thisProject: $localize`:@@connectors.thisProject:this project`,
     elsewhere: $localize`:@@connectors.elsewhere:Connected elsewhere`,
-    add: $localize`:@@connectors.add:Add account`,
   } as const;
   /** The project the page is for, whose threads alone use what is connected from it. */
   readonly project = input<ProjectId | null>(null);
-  protected readonly icons = { waiting: LoaderCircle, search: Search, open: ExternalLink } as const;
+  protected readonly icons = { search: Search } as const;
   private readonly service = inject(ConnectorsService);
   private readonly projects = inject(ProjectsService);
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
-  private readonly locale = inject(LOCALE_ID);
   /** What the person searches the connectors for. */
   protected readonly query = signal('');
   /** What stops each sign-in waiting, by the connector's id. */
@@ -211,19 +120,15 @@ export class ConnectorsComponent {
   /** Why the last thing done with a connector failed, by its id. */
   private readonly problems = signal<ReadonlyMap<string, string>>(new Map());
   /** The connector Disconnect asks about. */
-  private readonly disconnecting = signal<Disconnecting | null>(null);
+  private readonly disconnecting = signal<Asked | null>(null);
   protected readonly confirming = signal(false);
   /** The connector the add dialog is for, and whether it is open. */
   protected readonly adding = signal<ConnectorInfo | null>(null);
   protected readonly addOpen = signal(false);
   /** The account the rename dialog is for, by its connector and name, and whether it is open. */
-  protected readonly renaming = signal<{
-    readonly id: string;
-    readonly account: string | null;
-    readonly title: string;
-  } | null>(null);
+  protected readonly renaming = signal<Asked | null>(null);
   protected readonly renameOpen = signal(false);
-  protected readonly renameTitle = computed(() => this.renaming()?.title ?? '');
+  protected readonly renameTitle = computed(() => this.renaming()?.called ?? '');
 
   /** Where a connector can be used: everywhere, or only in one of the person's places. */
   // The button shows only "Change": the row's line says where it is used, in the server's words.
@@ -236,7 +141,7 @@ export class ConnectorsComponent {
     })),
   ]);
   /** Whether there is somewhere to choose: with only their Chats, a person sees no places. */
-  private readonly choosing = computed(() =>
+  protected readonly choosing = computed(() =>
     this.projects.projects().some(({ project }) => project.kind === 'project'),
   );
   /** The name of the project the page is for, once it is known. */
@@ -270,34 +175,26 @@ export class ConnectorsComponent {
     const found = catalog.connectors.filter(matches);
     const mine = catalog.connectors.filter((it) => it.status !== 'available');
     const here = catalog.here ?? mine;
-    const sections: Section[] = [
-      {
-        id: 'connectors-connected-heading',
-        testId: 'connectors-connected',
-        heading: this.connectedHeading(),
-        rows: here.filter(matches).map((it) => this.row(it)),
-      },
-      // For a project, those connected but used elsewhere, which its menu can bring here.
-      {
-        id: 'connectors-elsewhere-heading',
-        testId: 'connectors-elsewhere',
-        heading: this.copy.elsewhere,
-        rows: mine
-          .filter((it) => catalog.here !== null && !here.some((kept) => kept.id === it.id))
-          .filter(matches)
-          .map((it) => this.row(it)),
-      },
+    // For a project, those connected but used elsewhere, which its menu can bring here.
+    const elsewhere =
+      catalog.here === null ? [] : mine.filter((it) => !here.some((kept) => kept.id === it.id));
+    // For a project, the connected card is what its threads use.
+    const name = this.projectName();
+    const used =
+      this.project() === null
+        ? this.copy.connected
+        : $localize`:@@connectors.usedIn:Used in ${name}:PROJECT:`;
+    const sections = [
+      this.section('connected', used, here.filter(matches)),
+      this.section('elsewhere', this.copy.elsewhere, elsewhere.filter(matches)),
+      ...catalog.categories.map((category) =>
+        this.section(
+          category.id,
+          category.name,
+          found.filter((it) => it.categories[0] === category.id && it.status === 'available'),
+        ),
+      ),
     ];
-    for (const category of catalog.categories) {
-      sections.push({
-        id: `connectors-${category.id}-heading`,
-        testId: `connectors-${category.id}`,
-        heading: category.name,
-        rows: found
-          .filter((it) => it.categories[0] === category.id && it.status === 'available')
-          .map((it) => this.row(it)),
-      });
-    }
     return sections.filter((section) => section.rows.length > 0);
   });
   /** What the search says when it finds nothing; empty otherwise, its live region kept. */
@@ -327,43 +224,33 @@ export class ConnectorsComponent {
     }
   }
 
-  /** Uses `row`'s connector where `place` says from now on: everywhere, or one project. */
-  protected move(row: Row, place: string | null): void {
-    if (place === null || place === row.place) {
-      return;
+  /** Does what the person asked of `connector` on its row. */
+  protected acted(connector: ConnectorInfo, action: ConnectorAction): void {
+    const { id, name } = connector;
+    switch (action.kind) {
+      case 'connect':
+        void this.connect(id, name, action.account, action.only);
+        break;
+      case 'cancel':
+        this.stops.get(id)?.abort();
+        break;
+      case 'place':
+        void this.busyWith(id, () => this.service.place(id, action.account, action.only));
+        break;
+      case 'add':
+        // For a project, the dialog offers every account of it, not only the one used here.
+        this.adding.set(connector);
+        this.addOpen.set(true);
+        break;
+      case 'rename':
+        this.renaming.set({ id, account: action.account, called: action.called });
+        this.renameOpen.set(true);
+        break;
+      case 'disconnect':
+        this.disconnecting.set({ id, account: action.account, called: action.called });
+        this.confirming.set(true);
+        break;
     }
-    const only = place === EVERYWHERE ? null : place;
-    void this.busyWith(row.id, () => this.service.place(row.id, row.account, only));
-  }
-
-  /** What the row's button does: stops waiting, disconnects, or connects (again, where it is). */
-  protected act(row: Row): void {
-    if (row.busy) {
-      return;
-    }
-    if (row.waiting) {
-      this.stops.get(row.id)?.abort();
-    } else if (row.connected) {
-      this.ask(row);
-    } else if (row.again) {
-      void this.connect(row.id, row.name, row.account, row.only);
-    } else {
-      void this.connect(row.id, row.name);
-    }
-  }
-
-  /** Asks before disconnecting `target`, an account of a connector. */
-  protected ask(target: Disconnecting): void {
-    this.disconnecting.set(target);
-    this.confirming.set(true);
-  }
-
-  /** Opens the dialog that adds another account of `row`'s connector. */
-  protected addTo(row: Row): void {
-    const found = this.service.catalog()?.connectors.find((it) => it.id === row.id) ?? null;
-    // For a project, the dialog offers every account of it, not only the one used here.
-    this.adding.set(found);
-    this.addOpen.set(true);
   }
 
   /** Does what the dialog chose: uses an account connected already, or signs in to another. */
@@ -377,23 +264,6 @@ export class ConnectorsComponent {
       void this.busyWith(id, () => this.service.place(id, chosen.account, chosen.only));
     } else {
       void this.connect(id, name, chosen.account, chosen.only);
-    }
-  }
-
-  /** Does what was picked from the menu of `account`, beneath `row`. */
-  protected picked(row: Row, account: ConnectorAccount, action: AccountAction): void {
-    const name = account.name ?? null;
-    if (action.kind === 'place') {
-      const only = action.place === EVERYWHERE ? null : action.place;
-      void this.busyWith(row.id, () => this.service.place(row.id, name, only));
-    } else if (action.kind === 'again') {
-      void this.connect(row.id, row.name, name, account.only ?? null);
-    } else if (action.kind === 'rename') {
-      this.renaming.set({ id: row.id, account: name, title: name ?? row.name });
-      this.renameOpen.set(true);
-    } else {
-      const called = name === null ? row.name : this.called(row.name, name);
-      this.ask({ id: row.id, name: row.name, account: name, called });
     }
   }
 
@@ -448,7 +318,7 @@ export class ConnectorsComponent {
           }
           shown = sentTo(tab, link.url);
           this.waiting.update((waiting) => setTo(waiting, id, { link: link.url, opened: shown }));
-          void this.announcer.announce(this.waitingLine(name, shown));
+          void this.announcer.announce(signInWaiting(name, shown));
           if (await this.service.finish(link.flow, stop.signal)) {
             this.moved(id, this.said(name, this.copy.connected));
           }
@@ -512,122 +382,19 @@ export class ConnectorsComponent {
     );
   }
 
-  /** The connected card's heading: for a project, what its threads use. */
-  private connectedHeading(): string {
-    const name = this.projectName();
-    return this.project() === null
-      ? this.copy.connected
-      : $localize`:@@connectors.usedIn:Used in ${name}:PROJECT:`;
-  }
-
-  /** What the page calls the account `account` of `service` where it acts on it: `Stripe (Acme)`. */
-  private called(service: string, account: string): string {
-    return $localize`:@@connectors.called:${service}:SERVICE: (${account}:ACCOUNT:)`;
-  }
-
-  /** A row's title for the one account of `service` it shows, named: `Stripe: Acme`. */
-  private titled(service: string, account: string): string {
-    return $localize`:@@connectors.titled:${service}:SERVICE:: ${account}:ACCOUNT:`;
-  }
-
   /** What is said of the connector `name` now in the state `state`. */
   private said(name: string, state: string): string {
     return $localize`:@@connectors.said:${name}:NAME:, ${state}:STATE:`;
   }
 
-  /** What a row waiting for its sign-in says, as the tab for it opened or not. */
-  private waitingLine(name: string, opened: boolean): string {
-    return opened
-      ? $localize`:@@connectors.waiting:Finish signing in to ${name}:NAME: in the new tab.`
-      : $localize`:@@connectors.openToFinish:To finish, open the sign-in for ${name}:NAME:.`;
-  }
-
-  /** `connector` as a row: what it is, what it is doing, and what its button does. */
-  private row(connector: ConnectorInfo): Row {
-    const { id, name, status } = connector;
-    const connected = status === 'connected';
-    const again = status === 'sign_in_again';
-    const waited = this.waiting().get(id);
-    const busy = this.working().has(id) && waited === undefined;
-    const problem = this.problems().get(id) ?? null;
-    const all = connector.accounts ?? [];
-    const [first] = all;
-    const several = all.length > 1;
-    const account = first?.name ?? null;
-    const called = account === null ? name : this.called(name, account);
-    const base = {
-      id,
-      name: account === null || several ? name : this.titled(name, account),
-      connected,
-      again,
-      busy,
-      problem,
-      waiting: false,
-      link: null,
-      linkText: '',
-      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${called}:NAME:`,
-      place:
-        status === 'available' || several || !this.choosing() ? null : (first?.only ?? EVERYWHERE),
-      placeLabel: $localize`:@@connectors.placeLabel:Where ${called}:NAME: is used`,
-      account,
-      only: first?.only ?? null,
-      called,
-      accounts: several
-        ? all.map((it) => ({ account: it, place: it.only ?? EVERYWHERE, key: it.name ?? '' }))
-        : [],
-      listed: several,
-      tile: name,
-      acts: !several,
-      adds: status !== 'available',
-      addLabel: $localize`:@@connectors.addLabel:Add account to ${name}:NAME:`,
-      note: connector.replaced ?? null,
-      noted: (connector.replaced ?? null) !== null,
-    };
-    // A sign-in waiting shows first: a connected one's second account's, or one signed in again.
-    if (waited !== undefined) {
-      return {
-        ...base,
-        waiting: true,
-        acts: true,
-        // Its Cancel stops the sign-in; Disconnect would not know which account to take.
-        again: again && !several,
-        detail: this.waitingLine(name, waited.opened),
-        link: waited.link,
-        linkText: waited.opened ? this.copy.openAgain : this.copy.openSignIn,
-        action: this.copy.cancel,
-        actionLabel: $localize`:@@connectors.cancelLabel:Cancel connecting ${name}:NAME:`,
-        variant: 'secondary',
-      };
-    }
-    if (several) {
-      const count = all.length;
-      return {
-        ...base,
-        again: false,
-        detail: plural(
-          $localize`:@@connectors.accounts:{${count}:COUNT:, plural, one {# account} other {# accounts}}`,
-          this.locale,
-        ),
-        action: '',
-        actionLabel: '',
-        variant: 'ghost',
-      };
-    }
-    if (connected) {
-      return {
-        ...base,
-        detail: first?.used ?? this.copy.connected,
-        action: busy ? this.copy.disconnecting : this.copy.disconnect,
-        actionLabel: base.disconnectLabel,
-        variant: 'ghost',
-      };
-    }
-    return {
-      ...base,
-      detail: again ? this.copy.signInAgain : connector.description,
-      action: busy ? this.copy.connecting : again ? this.copy.again : this.copy.connect,
-      actionLabel: $localize`:@@connectors.connectLabel:Connect ${name}:NAME:`,
-      variant: 'secondary',
-    };
+  /** The card `key`, headed `heading`, listing `connectors` with what the page does with each. */
+  private section(key: string, heading: string, connectors: readonly ConnectorInfo[]): Section {
+    const rows = connectors.map((connector) => ({
+      connector,
+      waiting: this.waiting().get(connector.id) ?? null,
+      working: this.working().has(connector.id),
+      problem: this.problems().get(connector.id) ?? null,
+    }));
+    return { id: `connectors-${key}-heading`, testId: `connectors-${key}`, heading, rows };
   }
 }
