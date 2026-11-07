@@ -9,10 +9,9 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use glave_event::{
-    ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, Seq, ServiceAnswer,
-    ServiceAsked, ThreadId, decode,
+    ApprovalRequested, Body, CallId, Outcome, Seq, ServiceAnswer, ServiceAsked, ThreadId, decode,
 };
-use glave_harness::{Cancel, Goal, Permissions, Question};
+use glave_harness::{Cancel, Permissions, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
@@ -54,7 +53,7 @@ impl Session<'_> {
         }
     }
 
-    /// Starts `request`, a turn or a goal, and follows it; a message sent while a turn runs in
+    /// Starts `request`, a turn, and follows it; a message sent while a turn runs in
     /// its thread is queued to that turn instead.
     pub(crate) async fn start(&self, request: Request) -> Result<Sent<Following>, ApiError> {
         match self {
@@ -68,7 +67,7 @@ impl Session<'_> {
     }
 }
 
-/// A turn or a goal as it runs, here or elsewhere.
+/// A turn as it runs, here or elsewhere.
 pub(crate) enum Following {
     Here(TurnStream),
     Elsewhere(RemoteTurn),
@@ -114,7 +113,7 @@ impl Client<'_> {
             let interrupt = Cancel::new();
             let _ctrl_c = CtrlC::cancels(&interrupt);
             let started = self.server.start(next).await;
-            let (code, proposed) = self.follow(started, &interrupt, printer, false).await;
+            let (code, proposed) = self.follow(started, &interrupt, printer).await;
             if !proposed || code != ExitCode::SUCCESS {
                 return code;
             }
@@ -142,37 +141,7 @@ impl Client<'_> {
         }
     }
 
-    /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
-    /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
-    pub(crate) async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
-        self.report(printer);
-        let interrupt = Cancel::new();
-        let _ctrl_c = CtrlC::cancels(&interrupt);
-        let started = self
-            .server
-            .start(Request::GoalStart {
-                thread: self.thread,
-                objective: Some(goal.objective),
-                budget: Some(goal.token_budget),
-                background: false,
-                // With no one here, no one answers: what would ask is declined at once.
-                unattended: !self.asks,
-            })
-            .await;
-        let (code, _) = self.follow(started, &interrupt, printer, true).await;
-        let get = Request::GoalGet {
-            thread: self.thread,
-        };
-        match self.server.request(get).await {
-            Ok(Reply::Goal { goal: Some(goal) }) if goal.ended.is_some_and(GoalReason::met) => {
-                ExitCode::SUCCESS
-            }
-            _ if code == ExitCode::from(130) => code,
-            _ => ExitCode::FAILURE,
-        }
-    }
-
-    /// Follows a started turn, or a `goal`'s turns, to the end, cancelling it on `interrupt`.
+    /// Follows a started turn to the end, cancelling it on `interrupt`.
     /// A message queued to a turn already running is said to be, and is no failure. Also says
     /// whether it may have proposed a plan, which the server is asked about.
     async fn follow(
@@ -180,7 +149,6 @@ impl Client<'_> {
         started: Result<Sent<Following>, ApiError>,
         interrupt: &Cancel,
         printer: &mut Printer,
-        goal: bool,
     ) -> (ExitCode, bool) {
         let mut stream = match started {
             Ok(Sent::Started(stream)) => stream,
@@ -209,10 +177,7 @@ impl Client<'_> {
                 Some(TurnItem::Ended(ended)) => break Some(ended),
                 Some(TurnItem::Note(note)) => {
                     proposed |= proposes(self.thread, &note);
-                    if self
-                        .note(&note, &mut requested, printer, interrupt, goal)
-                        .await
-                    {
+                    if self.note(&note, &mut requested, printer, interrupt).await {
                         cancelling = self.cancel().await;
                     }
                 }
@@ -240,7 +205,7 @@ impl Client<'_> {
         (code, proposed)
     }
 
-    /// Shows one notification of a turn, or of a `goal`'s; answers an approval once it is
+    /// Shows one notification of a turn; answers an approval once it is
     /// pending, never one already decided, as one the judge let run. True when the person
     /// pressed Ctrl-C instead of answering.
     async fn note(
@@ -249,7 +214,6 @@ impl Client<'_> {
         requested: &mut Requested,
         printer: &mut Printer,
         interrupt: &Cancel,
-        goal: bool,
     ) -> bool {
         match note {
             // A turn the terminal follows is not a task, nor a list.
@@ -302,19 +266,6 @@ impl Client<'_> {
                     }
                     Body::ApprovalDecided(decision) => {
                         requested.remove(&(*thread, decision.call_id));
-                    }
-                    Body::GoalEnded(ended) => {
-                        printer.goal_ended(ended.reason, ended.tokens, ended.note.as_deref());
-                    }
-                    // A goal's continuation; glave's other words are the model's to read.
-                    Body::MessageAdded(added)
-                        if goal
-                            && added
-                                .author
-                                .as_ref()
-                                .is_some_and(|author| author.kind == PrincipalKind::Glave) =>
-                    {
-                        printer.status("\n· continuing toward the goal");
                     }
                     _ => {}
                 }

@@ -2,9 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{
-    Body, CallId, GoalReason, Nanos, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode,
-};
+use glave_event::{Body, CallId, Nanos, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode};
 
 /// The facts a task is graded on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,8 +23,6 @@ pub struct Trace {
     pub answer: String,
     /// Everything commands printed back: the output of every `bash` call.
     pub printed: String,
-    /// Why the last goal ended, if one did.
-    pub goal: Option<GoalReason>,
     /// How many times the conversation was restarted from a summary.
     pub compactions: u32,
     /// Tool calls that gave nothing new: the same tool with the same arguments and the same
@@ -59,7 +55,6 @@ impl Default for Trace {
             outcomes: Vec::new(),
             answer: String::new(),
             printed: String::new(),
-            goal: None,
             compactions: 0,
             repeated_steps: 0,
             asks: 0,
@@ -130,7 +125,6 @@ impl Trace {
                 };
             }
             Body::TurnEnded(ended) => self.outcomes.push(ended.outcome),
-            Body::GoalEnded(ended) => self.goal = Some(ended.reason),
             Body::ThreadCompacted(_) => self.compactions = self.compactions.saturating_add(1),
             Body::ApprovalRequested(asked)
                 if (asked.reason.as_ref()).is_none_or(|reason| reason.settled.is_none()) =>
@@ -202,7 +196,6 @@ mod tests {
                 outcomes: vec![Outcome::Completed],
                 answer: "Moved 214 files into 6 folders.".to_owned(),
                 printed: "README.md\nsrc\n".to_owned(),
-                goal: None,
                 compactions: 0,
                 repeated_steps: 0,
                 asks: 0,

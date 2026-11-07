@@ -237,19 +237,12 @@ impl From<&HarnessError> for ApiError {
                 },
             ),
             HarnessError::Cancelled => Self::new(code::CANCELLED, Sentence::Cancelled),
-            HarnessError::NoGoal(thread) => Self::new(
-                code::NO_GOAL,
-                Sentence::NoGoal {
-                    thread: thread.to_string(),
-                },
-            ),
             HarnessError::NoPlan(thread) => Self::new(
                 code::NO_PLAN,
                 Sentence::NoPlan {
                     thread: thread.to_string(),
                 },
             ),
-            HarnessError::GoalInPlan(_) => Self::new(code::NOT_ALLOWED, Sentence::GoalInPlan),
             HarnessError::Workspace(ComputerError::Refused(reason)) => {
                 Self::new(code::WORKSPACE, reason)
             }
@@ -520,7 +513,6 @@ mod tests {
         let call = || CallId::new("call_1").unwrap();
         let harness = [
             HarnessError::Archived(thread),
-            HarnessError::NoGoal(thread),
             HarnessError::NoTurn(thread),
             HarnessError::NoApproval(call()),
             HarnessError::NoQuestion(call()),

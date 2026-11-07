@@ -182,8 +182,6 @@ where
             return Ok(ToolOutput::text(true, question::NO_ONE));
         } else if step.toolset.is_question(&call.tool) {
             return self.put_questions(thread, call, cancel, live).await;
-        } else if step.toolset.is_goal(&call.tool) {
-            return Ok(crate::goal::update(thread, &call.arguments));
         } else if step.toolset.is_plan(&call.tool) {
             return Ok(self.update_plan(thread, call, step, cancel, live));
         } else if step.toolset.is_memory(&call.tool) {

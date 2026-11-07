@@ -1,4 +1,4 @@
-use glave_event::{GoalReason, Nanos};
+use glave_event::Nanos;
 
 use super::*;
 use crate::memory::MemoryUse;
@@ -258,22 +258,21 @@ fn numbers_read_easily() {
 }
 
 #[test]
-fn work_through_compaction_shows_its_compactions_tokens_repeats_and_goals() {
-    let compacted = |number: u32, compactions: u32, repeated: u32, goal: GoalReason| {
+fn work_through_compaction_shows_its_compactions_tokens_and_repeats() {
+    let compacted = |number: u32, compactions: u32, repeated: u32| {
         let mut attempt = attempt("long", "a/one", number, number == 1);
         attempt.compactions = compactions;
         attempt.repeated_steps = repeated;
-        attempt.goal = Some(goal);
         attempt
     };
     let attempts = vec![
-        compacted(1, 3, 1, GoalReason::Met),
-        compacted(2, 4, 0, GoalReason::Budget),
+        compacted(1, 3, 1),
+        compacted(2, 4, 0),
         attempt("short", "a/one", 1, true),
     ];
     let table = report(attempts).markdown(None);
     assert!(
-        table.contains("| long | one | 1/2 | 3.5 | 1,234 | 0.5 | Budget 1, Met 1 |"),
+        table.contains("| long | one | 1/2 | 3.5 | 1,234 | 0.5 |"),
         "{table}"
     );
     assert!(!table.contains("| short | one | 1/1 | 0.0"), "{table}");

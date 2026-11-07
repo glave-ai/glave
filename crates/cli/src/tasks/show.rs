@@ -40,9 +40,8 @@ pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     let next = schedule
         .next
         .map_or_else(|| "has run".to_owned(), |next| format!("next {next}"));
-    let goal = if schedule.goal { "goal: " } else { "" };
     format!(
-        "{}  {when}  {next}  budget {}  {goal}{}",
+        "{}  {when}  {next}  budget {}  {}",
         schedule.schedule,
         short(schedule.budget),
         schedule.prompt

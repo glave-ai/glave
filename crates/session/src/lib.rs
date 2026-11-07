@@ -26,7 +26,6 @@ mod errors;
 mod files;
 mod filters;
 mod folders;
-mod goal;
 mod gone;
 mod grouping;
 mod held;

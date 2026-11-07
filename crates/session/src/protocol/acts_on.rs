@@ -33,9 +33,6 @@ impl Request {
             | Self::QuestionAnswer { thread, .. }
             | Self::ServiceAnswer { thread, .. }
             | Self::TrustAnswer { thread, .. }
-            | Self::GoalStart { thread, .. }
-            | Self::GoalStop { thread }
-            | Self::GoalGet { thread }
             | Self::TasksStop { thread }
             | Self::CommandList { thread }
             | Self::CommandStop { thread, .. } => Some(*thread),

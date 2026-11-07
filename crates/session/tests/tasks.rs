@@ -1,4 +1,4 @@
-//! Tasks through the session API against a scripted model: a turn or goal started with
+//! Tasks through the session API against a scripted model: a turn started with
 //! `background` runs with no one attached, on a worktree of its own, and can be read
 //! afterwards; tasks run in every project, each on a copy of its own project's folder, and a
 //! folder that is not a repository, or a thread that works in its folder, is refused;
@@ -427,40 +427,6 @@ fn policy_limits_how_many_tasks_run_at_once() {
             refused.message
         );
         server.shutdown().await;
-    });
-}
-
-#[test]
-fn a_background_goal_runs_to_its_end() {
-    block_on!(async {
-        let setup = Setup::new(vec![
-            answer(None, Some(("update_goal", json!({"status": "complete"})))),
-            answer(Some("Done."), None),
-        ]);
-        let (server, _, _, _dir) = in_repository("task-goal", setup).await;
-        let thread = task_thread(&server).await;
-        let started = server
-            .request(Request::GoalStart {
-                thread,
-                objective: Some("say done".into()),
-                budget: Some(50_000),
-                background: true,
-                unattended: false,
-            })
-            .await
-            .unwrap();
-        let Reply::Task { task } = started else {
-            panic!("a task, not {started:?}");
-        };
-        assert_eq!(task.budget, Some(50_000));
-        settle(&server).await;
-        assert_eq!(tasks(&server).await[0].outcome, Some(Outcome::Completed));
-        let Reply::Goal { goal: Some(goal) } =
-            server.request(Request::GoalGet { thread }).await.unwrap()
-        else {
-            panic!("a goal");
-        };
-        assert!(!goal.active());
     });
 }
 

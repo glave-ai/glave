@@ -77,7 +77,7 @@ impl Remote {
         }
     }
 
-    /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`),
+    /// Answers `request`, which must not be one that streams (`turn/start`),
     /// within the time its kind may take: 2 minutes, or 15 for one that waits on a model,
     /// another service, a computer or a file.
     pub async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
@@ -93,7 +93,7 @@ impl Remote {
             .unwrap_or_else(|_| Err(self.late(request, limit)))
     }
 
-    /// Starts `request` (`turn/start` or `goal/start`) and follows it, once the server has
+    /// Starts `request` (`turn/start`) and follows it, once the server has
     /// started it within 15 minutes; a message sent while a turn runs in its thread is queued
     /// to that turn instead, which this does not follow.
     pub async fn start(&self, request: &Request) -> Result<Sent<RemoteTurn>, ApiError> {

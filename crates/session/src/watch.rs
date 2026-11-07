@@ -393,8 +393,8 @@ where
         Ok(Watch::new(thread, self.reader(scope), notes, after).until(access))
     }
 
-    /// A watch of `thread` from its latest event on, for a turn or a goal `caller` is about to
-    /// start there: what is recorded from now, and the live updates, until their sign-in ends.
+    /// A watch of `thread` from its latest event on, for a turn `caller` is about to start
+    /// there: what is recorded from now, and the live updates, until their sign-in ends.
     pub(crate) async fn watch_from_now(
         &self,
         caller: &Caller,

@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glave_computer::LocalComputers;
-use glave_event::{GoalReason, Nanos};
+use glave_event::Nanos;
 use glave_harness::{
-    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skill,
-    Skills, Workspace, agents_md, change_standing, find_skills, skill_folders,
+    Cancel, Change, Harness, Live, NoOneToAsk, Parts, Settings, Skill, Skills, Workspace,
+    agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
 use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -98,9 +98,6 @@ pub struct Attempt {
     /// Commands the sandbox may have blocked (`Trace::blocked`).
     #[serde(default)]
     pub blocked: u32,
-    /// Why the goal ended, when the attempt ran one and it ended.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub goal: Option<GoalReason>,
     /// How the task's probes went, when it has them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probes: Option<Probes>,
@@ -142,7 +139,6 @@ impl Attempt {
             repeated_steps: trace.repeated_steps,
             asks: trace.asks,
             blocked: trace.blocked,
-            goal: trace.goal,
             probes: None,
             memory: None,
         }
@@ -196,10 +192,7 @@ pub async fn attempt(
     });
     // Offered less than the task gives, it fails saying why, as a provider's error does.
     failures.extend((trace.missing.iter()).map(|why| format!("went without tools: {why}")));
-    // A goal's turns may end at the step limit and go on; its own checks grade how it ended.
-    if task.goal.is_none() {
-        failures.extend(ended(task.outcome, &trace.outcomes).err());
-    }
+    failures.extend(ended(task.outcome, &trace.outcomes).err());
     failures.extend(tested(setup, task, (&workspace, &environment), dir).await?);
     let last = (threads.last())
         .and_then(|thread| trace::parse(thread).ok())
@@ -473,9 +466,8 @@ async fn converse(
         // As a session does when it starts; saves and edits ask again while the thread runs.
         remembering.tidy_soon(scope);
         in_view.extend(remembering.in_view(scope).await?);
-        let goal = task.goal.as_ref().filter(|_| index == 0);
         let steer = task.steer.as_ref().filter(|_| index == 0);
-        let Some(thread) = conversation.thread(scope, &plan.turns, goal, steer).await? else {
+        let Some(thread) = conversation.thread(scope, &plan.turns, steer).await? else {
             break;
         };
         threads.push(events_of(&harness, scope, thread).await?);
@@ -563,13 +555,12 @@ impl Talk<'_> {
         Ok(())
     }
 
-    /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, with
-    /// `steer` sent while it runs, and gives the thread's id; `None` when it could not start.
+    /// Runs `turns` in a new thread in `scope`, with `steer` sent while the first runs, and
+    /// gives the thread's id; `None` when it could not start.
     async fn thread(
         &mut self,
         scope: Scope,
         turns: &[String],
-        goal: Option<&crate::task::TaskGoal>,
         steer: Option<&Steer>,
     ) -> Result<Option<glave_event::ThreadId>, EvalError> {
         let fail = |err: glave_harness::HarnessError| EvalError::Setup(err.to_string());
@@ -599,22 +590,9 @@ impl Talk<'_> {
                 }
                 note(transcript, live);
             };
-            let ran = match (goal, index) {
-                (Some(goal), 0) => {
-                    let goal = Goal {
-                        objective: prompt.clone(),
-                        token_budget: goal.budget.unwrap_or(DEFAULT_BUDGET),
-                    };
-                    harness
-                        .start_goal(&mut thread, goal, &Caller::default(), &cancel, &mut show)
-                        .await
-                }
-                _ => {
-                    harness
-                        .run_turn(&mut thread, prompt, &cancel, &mut show)
-                        .await
-                }
-            };
+            let ran = harness
+                .run_turn(&mut thread, prompt, &cancel, &mut show)
+                .await;
             // What was sent after the model's last call starts a turn of its own.
             let ran = harness
                 .run_queued(&mut thread, ran, &cancel, &mut show)

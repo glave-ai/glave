@@ -108,8 +108,7 @@ where
         self.run_hooks(thread, point, None, input, cancel).await
     }
 
-    /// Runs the `Stop` hooks once a turn has ended. They cannot keep it going: a goal does
-    /// that, with a check.
+    /// Runs the `Stop` hooks once a turn has ended. They cannot keep it going.
     pub(crate) async fn on_stop(
         &self,
         thread: &mut Thread,

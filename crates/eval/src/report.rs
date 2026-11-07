@@ -423,9 +423,6 @@ pub(crate) fn line(attempt: &Attempt) -> String {
             attempt.compactions, attempt.repeated_steps
         );
     }
-    if let Some(reason) = attempt.goal {
-        let _ = write!(line, " · goal {reason:?}");
-    }
     if let Some(probes) = &attempt.probes {
         let _ = write!(line, " · probes {}/{}", probes.passed, probes.of);
     }

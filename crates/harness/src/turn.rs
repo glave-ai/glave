@@ -7,7 +7,6 @@ use glave_ports::{
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
-use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::service::Round;
@@ -211,7 +210,7 @@ where
             self.compact_if_needed(thread, &mut step.toolset, &mut step.summary, cancel, live)
                 .await?;
             self.read_queued(thread, cancel, live).await?;
-            let last = self.last_step(thread, &step.summary);
+            let last = self.last_step(&step.summary);
             let choice = self.choice(thread, last).await?;
             let last = last.is_some();
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
@@ -294,17 +293,10 @@ where
         self.settings.max_steps.is_some_and(|max| calls >= max)
     }
 
-    /// Why the next step is the turn's last, if it is: the step cap, or a goal's spent budget.
-    fn last_step(&self, thread: &Thread, summary: &TurnResult) -> Option<&'static str> {
-        if self.capped(summary.model_calls.saturating_add(1)) {
-            return Some(STEP_LIMIT);
-        }
-        let goal = thread.goal.as_ref().filter(|goal| goal.running)?;
-        let used = goal
-            .progress
-            .tokens
-            .saturating_add(counted(&summary.tokens));
-        (used >= goal.progress.token_budget).then_some(BUDGET_SPENT)
+    /// Why the next step is the turn's last, if it is: the step cap.
+    fn last_step(&self, summary: &TurnResult) -> Option<&'static str> {
+        self.capped(summary.model_calls.saturating_add(1))
+            .then_some(STEP_LIMIT)
     }
 
     /// Tells the model something about the turn itself, as a recorded user message.

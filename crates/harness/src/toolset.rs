@@ -53,22 +53,19 @@ enum Own {
     Question,
     /// `agent`.
     Agent,
-    /// `update_goal`: in every thread a person, not an agent, writes to.
-    Goal,
     /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
 }
 
 impl Own {
     /// Every one of glave's own tools.
-    const ALL: [Self; 4] = [Self::Question, Self::Agent, Self::Goal, Self::Plan];
+    const ALL: [Self; 3] = [Self::Question, Self::Agent, Self::Plan];
 
     /// The tool's name.
     fn name(self) -> &'static str {
         match self {
             Self::Question => crate::question::QUESTION,
             Self::Agent => crate::subagent::AGENT,
-            Self::Goal => crate::goal::UPDATE_GOAL,
             Self::Plan => crate::plan::UPDATE_PLAN,
         }
     }
@@ -237,16 +234,6 @@ impl ToolSet {
         self.memory.contains(&name)
     }
 
-    /// Offers `update_goal` too.
-    pub(crate) fn offer_goal(&mut self) {
-        self.offer(Own::Goal, crate::goal::spec());
-    }
-
-    /// Whether `name` is `update_goal`, while it is on offer.
-    pub(crate) fn is_goal(&self, name: &str) -> bool {
-        self.offers(Own::Goal, name)
-    }
-
     /// Offers `update_plan` too. A subagent never gets it: the plan is its parent's.
     pub(crate) fn offer_plan(&mut self) {
         self.offer(Own::Plan, crate::plan::spec());
@@ -257,7 +244,7 @@ impl ToolSet {
         self.offers(Own::Plan, name)
     }
 
-    /// The tools a subagent has: these, less glave's own (`agent`, `question`, `update_goal`,
+    /// The tools a subagent has: these, less glave's own (`agent`, `question`,
     /// `update_plan` and memory's), and for an explorer only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;

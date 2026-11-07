@@ -1,5 +1,5 @@
-//! Tasks: a turn, or a goal's turns, run in a thread with no one attached, in any project its
-//! caller works in, always on a copy of the project's folder (a worktree, a worker or a scratch
+//! Tasks: a turn run in a thread with no one attached, in any project its caller works in,
+//! always on a copy of the project's folder (a worktree, a worker or a scratch
 //! folder), never in the folder itself. The server starts the work as it would for a client,
 //! answers its approvals "no one there" (in auto mode the judge still clears what the person
 //! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
@@ -13,7 +13,6 @@ use glave_event::{
     At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
     TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
-use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
@@ -36,13 +35,8 @@ pub struct TaskLimits {
     pub max_schedules: Option<usize>,
 }
 
-/// What a task does.
-pub(crate) enum Work {
-    /// One turn with this prompt, with the model and mode chosen with it, if any.
-    Turn(String, Choice),
-    /// A goal's turns: a new goal, or the thread's active or paused one.
-    Goal(Option<Goal>),
-}
+/// What a task does: one turn with this prompt, with the model and mode chosen with it, if any.
+pub(crate) struct Work(pub(crate) String, pub(crate) Choice);
 
 /// A task running in this server.
 #[derive(Debug, Clone)]
@@ -51,7 +45,6 @@ pub(crate) struct Running {
     project: Located,
     started: TaskStarted,
     at: At,
-    goal: bool,
     by: Option<PrincipalId>,
     tokens: TokenCounts,
     cost: Option<Money>,
@@ -127,31 +120,25 @@ where
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
         let project = self.may_start_task(caller, thread).await?.located();
-        let (title, goal) = match &work {
-            Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
-            Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
-            Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
-        };
+        let Work(prompt, choice) = work;
+        let title = title_from(&prompt).unwrap_or_default();
         self.inner.approvals.unattend(thread);
-        let stream = match work {
-            // A task's own turn never queues: one running in the thread refuses it.
-            Work::Turn(prompt, choice) => {
-                let message = Message {
-                    files: &[],
-                    prompt: &prompt,
-                    choice,
-                    queue: false,
-                    // Its thread is unattended for the whole task already.
-                    unattended: false,
-                };
-                self.start_turn_with(caller, thread, message, None).await
-            }
+        // A task's own turn never queues: one running in the thread refuses it.
+        let message = Message {
+            files: &[],
+            prompt: &prompt,
+            choice,
+            queue: false,
+            // Its thread is unattended for the whole task already.
+            unattended: false,
+        };
+        let stream = self
+            .start_turn_with(caller, thread, message, None)
+            .await
             .and_then(|sent| match sent {
                 Sent::Started(stream) => Ok(stream),
                 Sent::Queued(_) => Err(busy(thread)),
-            }),
-            Work::Goal(goal) => self.start_goal_as(caller, thread, goal, false).await,
-        };
+            });
         let mut stream = match stream {
             Ok(stream) => stream,
             Err(error) => {
@@ -173,7 +160,6 @@ where
             project,
             started: started.clone(),
             at: At::from(self.inner.harness.clock().now()),
-            goal,
             by: caller.person,
             tokens: TokenCounts::default(),
             cost: Some(Money {
@@ -228,7 +214,7 @@ where
     }
 
     /// Adds a model call the task recorded (its own or a subagent's) to its tally, and stops a
-    /// turn that has reached its budget. A goal keeps to its budget itself.
+    /// turn that has reached its budget.
     fn count(&self, thread: ThreadId, note: &Notification) {
         let Notification::Event { event, .. } = note else {
             return;
@@ -253,8 +239,7 @@ where
                 .zip(responded.cost)
                 .and_then(|(sum, cost)| sum.checked_add(cost.amount));
             let spent = running.tokens.input.saturating_add(running.tokens.output);
-            let over = !running.goal
-                && !running.over_budget
+            let over = !running.over_budget
                 && running.started.budget.is_some_and(|budget| spent >= budget);
             running.over_budget |= over;
             over
@@ -270,7 +255,7 @@ where
         caller: &Caller,
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
-        let goal = {
+        {
             let mut tasks = self.tasks();
             let Some(running) = tasks.get_mut(&thread) else {
                 return Err(ApiError::new(
@@ -282,11 +267,8 @@ where
             };
             running.stopped = true;
             running.stopped_by = caller.person.or(self.inner.person);
-            running.goal
-        };
-        if goal {
-            self.stop_goal(caller, thread).await?;
-        } else if let Some(mut finished) = self.cancel_busy(thread) {
+        }
+        if let Some(mut finished) = self.cancel_busy(thread) {
             let _ = finished.wait_for(|done| *done).await;
         }
         Ok(Reply::Done {})

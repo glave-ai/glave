@@ -1,4 +1,4 @@
-//! Schedules: a prompt or a goal that runs as a task at set times, once (`at`) or whenever a
+//! Schedules: a prompt that runs as a task at set times, once (`at`) or whenever a
 //! cron expression matches (in UTC). Schedules live in their project's ledger. The server that
 //! runs tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls it when the
 //! next run is due): each due schedule, in every project whose tasks it runs, starts one task in
@@ -11,7 +11,6 @@ use std::future::Future;
 use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
-use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId, ProjectId};
 use jiff::Timestamp;
 
@@ -38,7 +37,6 @@ pub(crate) struct NewSchedule {
     pub(crate) project: Option<ProjectId>,
     pub(crate) when: When,
     pub(crate) prompt: String,
-    pub(crate) goal: bool,
     pub(crate) budget: u64,
 }
 
@@ -92,7 +90,6 @@ where
             schedule,
             when: new.when,
             prompt: new.prompt,
-            goal: new.goal,
             budget: new.budget,
             by: caller
                 .person
@@ -316,14 +313,7 @@ where
                 &Choice::default(),
             )
             .await?;
-        let work = if schedule.goal {
-            Work::Goal(Some(Goal {
-                objective: schedule.prompt.clone(),
-                token_budget: schedule.budget,
-            }))
-        } else {
-            Work::Turn(schedule.prompt.clone(), Choice::default())
-        };
+        let work = Work(schedule.prompt.clone(), Choice::default());
         let fired = Fired {
             schedule: schedule.schedule,
             due: At::from(at),
@@ -379,7 +369,6 @@ fn info(scheduled: &Scheduled, now: Timestamp) -> ScheduleInfo {
         schedule: created.schedule,
         when: created.when.clone(),
         prompt: created.prompt.clone(),
-        goal: created.goal,
         budget: created.budget,
         created_at: scheduled.at,
         last: scheduled.last,

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use glave_event::{GoalReason, Outcome};
+use glave_event::Outcome;
 use serde::{Deserialize, Serialize};
 
 use crate::memory::MemoryReport;
@@ -42,8 +42,6 @@ pub enum Check {
     Sent(String),
     /// An event of this type was recorded, such as `thread.compacted`.
     Recorded(String),
-    /// The task's goal ended for one of these reasons, such as `met`.
-    GoalEnded(Vec<GoalReason>),
     /// A memory in force, in any project, holds this text, ignoring case.
     MemoryHolds(String),
     /// No memory in force, in any project, holds any of these, ignoring case.
@@ -128,7 +126,6 @@ impl Check {
             Self::NeverSent(text) => holds(!cx.events.contains(text.as_str()), || {
                 format!("{text:?} reached the model")
             }),
-            Self::GoalEnded(reasons) => goal_ended(cx, reasons),
             Self::NeverPrinted(text) => holds(!cx.trace.printed.contains(text.as_str()), || {
                 format!("a command printed {text:?}")
             }),
@@ -232,15 +229,6 @@ fn superseded(cx: &Context<'_>, old: &str, new: &str) -> Result<(), String> {
         _ => Err(format!(
             "expected one memory about {new:?} replacing {old:?}, found {about:?}"
         )),
-    }
-}
-
-/// The task's goal ended for one of `reasons`.
-fn goal_ended(cx: &Context<'_>, reasons: &[GoalReason]) -> Result<(), String> {
-    match cx.trace.goal {
-        Some(reason) if reasons.contains(&reason) => Ok(()),
-        Some(reason) => Err(format!("the goal ended {reason:?}")),
-        None => Err("the goal never ended".to_owned()),
     }
 }
 

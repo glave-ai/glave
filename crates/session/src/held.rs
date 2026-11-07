@@ -34,7 +34,7 @@ pub(crate) enum Slot {
         cancel: Cancel,
         finished: watch::Receiver<bool>,
         /// Where a message sent meanwhile waits for the model's next call, when the work is a
-        /// turn or a goal's turns (`steer.rs`).
+        /// turn (`steer.rs`).
         inbox: Option<Inbox>,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
@@ -474,10 +474,9 @@ fn to_let_go(
 /// What work on a thread is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Use {
-    /// Other work on the conversation, a compaction or recording a goal's end: refused in an
-    /// archived thread.
+    /// Other work on the conversation, such as a compaction: refused in an archived thread.
     Work,
-    /// A turn, or a goal's turns: refused in an archived thread, and messages sent while it
+    /// A turn: refused in an archived thread, and messages sent while it
     /// runs are queued to it.
     Steered,
     /// Changing whether the thread is shown.

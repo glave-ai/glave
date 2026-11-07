@@ -83,7 +83,6 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "read_mcp_resource",
             "agent",
             "update_plan",
-            "update_goal",
         ]
     );
     let system = said(&received[0].body, "system").join("\n");

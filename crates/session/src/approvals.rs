@@ -77,8 +77,8 @@ impl Approvals {
         self.unattended().remove(&thread);
     }
 
-    /// No one answers for `thread` while what this returns lives: a turn, or a goal's turns,
-    /// started with no one at its client.
+    /// No one answers for `thread` while what this returns lives: a turn started with no one
+    /// at its client.
     pub(crate) fn unattended_while(&self, thread: ThreadId) -> Unattended {
         self.unattend(thread);
         Unattended {

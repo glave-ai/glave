@@ -6,9 +6,7 @@ use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{
-    Currency, GoalReason, Money, Nanos, Outcome, OutsideSandbox, ServiceAsked, ServiceField,
-};
+use glave_event::{Currency, Money, Nanos, Outcome, OutsideSandbox, ServiceAsked, ServiceField};
 use glave_harness::Question;
 use glave_session::protocol::{PlanInfo, TurnResult, Update};
 
@@ -242,24 +240,6 @@ impl Printer {
     /// What the person can change to fix the error just shown.
     pub(crate) fn fix(&mut self, text: &str) {
         println!("  {} {text}", paint(self.color, YELLOW, "fix:"));
-        flush();
-    }
-
-    /// How a goal ended, the tokens its turns used, and, when paused, what the model needs.
-    pub(crate) fn goal_ended(&mut self, reason: GoalReason, tokens: u64, note: Option<&str>) {
-        let (word, color, why) = match reason {
-            GoalReason::Met => ("goal met", CYAN, "the model checked it is done"),
-            GoalReason::Paused => ("goal paused", YELLOW, note.unwrap_or("the model needs you")),
-            GoalReason::Stopped => ("goal stopped", YELLOW, "you stopped it"),
-            GoalReason::Budget => ("goal stopped", YELLOW, "its token budget ran out"),
-            GoalReason::Stalled => (
-                "goal stopped",
-                YELLOW,
-                "three turns in a row without a tool call",
-            ),
-        };
-        let detail = format!("{why} · {} tokens", thousands(tokens));
-        self.note(color, word, &detail);
         flush();
     }
 
