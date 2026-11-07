@@ -19,6 +19,9 @@ const DNS: u16 = 53;
 #[cfg(target_os = "linux")]
 const ACKNOWLEDGED_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
 
+// The kernel's own numbers, from linux/netlink.h, linux/rtnetlink.h and linux/fib_rules.h
+// (as linux-raw-sys has them). `RTN_PROHIBIT` is 8: 10 is `RTN_NAT`, which the kernel refuses
+// as an invalid argument.
 const RTM_NEWROUTE: u16 = 24;
 const RTM_NEWRULE: u16 = 32;
 const NLMSG_ERROR: u16 = 2;
@@ -29,7 +32,7 @@ const NLM_F_CREATE: u16 = 0x400;
 const RTA_DST: u16 = 1;
 const RTA_TABLE: u16 = 15;
 const RTPROT_STATIC: u8 = 4;
-const RTN_PROHIBIT: u8 = 10;
+const RTN_PROHIBIT: u8 = 8;
 const FR_ACT_TO_TBL: u8 = 1;
 const FRA_PRIORITY: u16 = 6;
 const FRA_TABLE: u16 = 15;
@@ -236,6 +239,16 @@ mod tests {
         let said: Vec<String> = routes.iter().map(|route| route.what.clone()).collect();
         assert_eq!(said.first().unwrap(), "169.254.0.0/16 is refused");
         let routes: Vec<Vec<u8>> = routes.into_iter().map(|route| route.message).collect();
+        // As `ip route add prohibit 169.254.0.0/16` sends it, numbers written out: a request
+        // to make a new route (24), and an rtmsg of IPv4 (2), /16, static (4), prohibit (8).
+        assert_eq!(
+            routes.first().unwrap().get(4..6).unwrap(),
+            24_u16.to_ne_bytes()
+        );
+        assert_eq!(
+            routes.first().unwrap().get(16..24).unwrap(),
+            [2, 16, 0, 0, 0, 4, 0, 8]
+        );
         assert_eq!(routes.len(), CLOUD_METADATA.len());
         for (message, network) in routes.iter().zip(CLOUD_METADATA) {
             let length = u32::from_ne_bytes(message.get(0..4).unwrap().try_into().unwrap());
