@@ -7,6 +7,7 @@
 use glave_event::{At, Principal, Secret, SignInClient};
 use glave_ports::ProjectId;
 use glave_ports::testing::{TempDir, fake_secret};
+use glave_session::protocol::ConnectorStatus;
 
 use super::*;
 use crate::accounts::Ledger;
@@ -25,6 +26,8 @@ fn signed_in(url: &str, token: &str, expires: Option<At>) -> ConnectionConnected
             client_id: "client".into(),
             scopes: Vec::new(),
         },
+        who: None,
+        unnamed: false,
         by: Principal::glave(),
     }
 }
@@ -231,8 +234,8 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
     runtime.block_on(async {
         let ledger = crate::accounts::in_memory().await.unwrap();
         let connected = connected(&ledger, &home, None);
-        let status = |listed: &[(KeptConnector, ConnectorStatus)], id: &str| {
-            listed.iter().find(|(it, _)| it.id == id).map(|(_, it)| *it)
+        let status = |listed: &[OfferedAccount], id: &str| {
+            (listed.iter().find(|it| it.connector.id == id)).map(|it| it.status)
         };
         let listed = connected.connectors().await.unwrap();
         assert_eq!(
@@ -242,14 +245,14 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
         assert_eq!(status(&listed, "linear"), Some(ConnectorStatus::Available));
 
         // One that asks no one to sign in is connected at once.
-        let done = connected.connect(everywhere("deepwiki"), None).await;
+        let done = connected.connect(everywhere("deepwiki"), false, None).await;
         let done = done.unwrap();
         assert_eq!(done, Connecting::Connected);
         // One that asks for a sign-in has nowhere to come back to without a redirect.
-        let nowhere = connected.connect(everywhere("linear"), None).await;
+        let nowhere = connected.connect(everywhere("linear"), false, None).await;
         let nowhere = nowhere.unwrap();
         assert_eq!(nowhere, Connecting::NoWayBack);
-        let unknown = connected.connect(everywhere("nothing"), None).await;
+        let unknown = connected.connect(everywhere("nothing"), false, None).await;
         let unknown = unknown.unwrap_err();
         assert_eq!(unknown.code, code::NO_SERVER);
 
@@ -308,9 +311,10 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
 
         connected.offer(Offered::Only(vec!["linear".into()]));
         let listed = connected.connectors().await.unwrap();
-        assert_eq!(listed, [(everywhere("linear"), ConnectorStatus::Available)]);
+        let available = OfferedAccount::new(everywhere("linear"), ConnectorStatus::Available);
+        assert_eq!(listed, [available]);
         let refused = connected
-            .connect(everywhere("deepwiki"), None)
+            .connect(everywhere("deepwiki"), false, None)
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NO_SERVER, "not offered");
@@ -338,13 +342,21 @@ fn two_accounts_of_a_connector_are_signed_in_to_asked_of_and_disconnected_apart(
         };
         let second = ConnectionConnected {
             account: acme.account.clone(),
+            who: Some("Acme Corp".into()),
             ..signed_in(url, &theirs, None)
         };
         ledger.keep_connector(&acme, Some(&second)).await.unwrap();
+        let listed = connected.connectors().await.unwrap();
+        let who: Vec<_> = (listed.iter())
+            .filter(|it| it.connector.id == "linear")
+            .map(|it| it.who.as_deref())
+            .collect();
+        assert_eq!(who, [None, Some("Acme Corp")], "who each is signed in as");
         let statuses = || async {
             let listed = connected.connectors().await.unwrap();
             (listed.into_iter())
-                .filter(|(it, _)| it.id == "linear")
+                .filter(|it| it.connector.id == "linear")
+                .map(|it| (it.connector, it.status))
                 .collect::<Vec<_>>()
         };
         let both = [
@@ -377,7 +389,7 @@ fn two_accounts_of_a_connector_are_signed_in_to_asked_of_and_disconnected_apart(
             account: Some("Beta".into()),
             ..acme.clone()
         };
-        let refused = connected.connect(beta, back).await.unwrap_err();
+        let refused = connected.connect(beta, false, back).await.unwrap_err();
         let said = refused.message.to_string();
         assert!(said.contains("your own settings"), "{said}");
         std::fs::remove_file(home.join(crate::mcp::FILE)).unwrap();
@@ -396,4 +408,57 @@ fn everywhere(id: &str) -> KeptConnector {
         account: None,
         only: None,
     }
+}
+
+#[test]
+fn another_account_left_unnamed_takes_a_name_no_account_goes_by_never_who() {
+    let runtime = glave_ports::testing::runtime().unwrap();
+    runtime.block_on(async {
+        let ledger = crate::accounts::in_memory().await.unwrap();
+        let url = "https://mcp.linear.app/mcp";
+        let named = |accounts: &Accounts, service: &str| {
+            let named = connectors::named_new(accounts, everywhere("linear"), url, service);
+            named.unwrap().account
+        };
+        let none = ledger.accounts().await.unwrap();
+        assert_eq!(named(&none, "Linear"), None, "the first stays unnamed");
+
+        // The first, unnamed, goes by the service's name; another goes by who, left unnamed.
+        let first = signed_in(url, &fake_secret("lin_"), None);
+        ledger
+            .keep_connector(&everywhere("linear"), Some(&first))
+            .await
+            .unwrap();
+        let second = KeptConnector {
+            account: Some("Linear 2".into()),
+            only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
+            ..everywhere("linear")
+        };
+        let signed = ConnectionConnected {
+            account: second.account.clone(),
+            who: Some("Linear 3".into()),
+            unnamed: true,
+            ..signed_in(url, &fake_secret("lin_"), None)
+        };
+        ledger.keep_connector(&second, Some(&signed)).await.unwrap();
+        let two = ledger.accounts().await.unwrap();
+        let shown = connectors::shown_names(&two, "linear", url, "Linear");
+        let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
+        assert_eq!(
+            shown,
+            ["linear", "linear 2", "linear 3"],
+            "what each goes by"
+        );
+        assert_eq!(named(&two, "Linear").as_deref(), Some("Linear 4"));
+        let long = "x".repeat(60);
+        let cut = named(&two, &long).unwrap();
+        assert_eq!(cut.chars().count(), 40);
+        assert!(cut.ends_with(" 2"), "{cut}");
+        let kept = KeptConnector {
+            account: Some("Mine".into()),
+            ..everywhere("linear")
+        };
+        let mine = connectors::named_new(&two, kept, url, "Linear").unwrap();
+        assert_eq!(mine.account.as_deref(), Some("Mine"), "a name given stays");
+    });
 }

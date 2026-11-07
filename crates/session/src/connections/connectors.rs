@@ -7,7 +7,7 @@
 
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId};
 
-use super::{Connecting, Connections};
+use super::{Connecting, Connections, OfferedAccount};
 use crate::accounts::KeptConnector;
 use crate::connectors::{Catalog, Connector, Narrowed};
 use crate::protocol::{
@@ -21,7 +21,7 @@ use crate::words::Sentence;
 const NAME: usize = 40;
 
 /// What the host offers: each account of a connector connected, and each connector not.
-type Offered = [(KeptConnector, ConnectorStatus)];
+type Offered = [OfferedAccount];
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -89,17 +89,17 @@ where
         offered: &Offered,
         used_in: Option<ProjectId>,
     ) -> Option<ConnectorInfo> {
-        let theirs: Vec<&(KeptConnector, ConnectorStatus)> = (offered.iter())
-            .filter(|(kept, _)| kept.id == connector.id)
+        let theirs: Vec<&OfferedAccount> = (offered.iter())
+            .filter(|it| it.connector.id == connector.id)
             .collect();
         theirs.first()?;
-        let mut connected: Vec<&(KeptConnector, ConnectorStatus)> = (theirs.into_iter())
-            .filter(|(_, status)| *status != ConnectorStatus::Available)
+        let mut connected: Vec<&OfferedAccount> = (theirs.into_iter())
+            .filter(|it| it.status != ConnectorStatus::Available)
             .collect();
         let mut replaced = None;
         if let Some(place) = used_in {
-            let own = connected.iter().find(|(kept, _)| kept.only == Some(place));
-            let everywhere = connected.iter().find(|(kept, _)| kept.only.is_none());
+            let own = connected.iter().find(|it| it.connector.only == Some(place));
+            let everywhere = connected.iter().find(|it| it.connector.only.is_none());
             if own.is_some() && everywhere.is_some() {
                 let service = connector.name.clone();
                 replaced = Some(Sentence::AccountReplaced { service }.into());
@@ -112,19 +112,29 @@ where
             accounts
                 if accounts
                     .iter()
-                    .any(|(_, it)| *it == ConnectorStatus::SignInAgain) =>
+                    .any(|it| it.status == ConnectorStatus::SignInAgain) =>
             {
                 ConnectorStatus::SignInAgain
             }
             _ => ConnectorStatus::Connected,
         };
         let mut accounts = Vec::with_capacity(connected.len());
-        for (kept, status) in connected {
+        for OfferedAccount {
+            connector: kept,
+            status,
+            who,
+            label,
+        } in connected
+        {
+            let signed_in = (who.clone()).map(|who| Sentence::SignedInAs { who }.into());
             accounts.push(ConnectorAccount {
                 name: kept.account.clone(),
                 only: kept.only,
                 used: self.used_where(caller, kept.only).await,
                 status: *status,
+                who: who.clone(),
+                signed_in,
+                label: label.clone(),
             });
         }
         Some(ConnectorInfo {
@@ -135,14 +145,24 @@ where
     }
 
     /// Answers `connector/connect`, for its threads everywhere or only in a project the
-    /// caller owns.
+    /// caller owns; `another`, a new account of a service connected already.
     pub(crate) async fn connect_connector(
         &self,
         caller: &Caller,
         connector: KeptConnector,
+        another: bool,
     ) -> Result<Reply, ApiError> {
-        let (connections, found, connector) = self.placeable(caller, connector, true).await?;
-        match connections.connect(connector, self.redirect()).await? {
+        let joining = if another {
+            Joining::Another
+        } else {
+            Joining::Connect
+        };
+        let (connections, found, connector) = self.placeable(caller, connector, joining).await?;
+        let another = another && connector.account.is_none();
+        match connections
+            .connect(connector, another, self.redirect())
+            .await?
+        {
             Connecting::Connected => Ok(Reply::Connector {
                 connector: self.as_now(caller, connections, &found).await?,
             }),
@@ -157,7 +177,8 @@ where
         caller: &Caller,
         connector: KeptConnector,
     ) -> Result<Reply, ApiError> {
-        let (connections, found, connector) = self.placeable(caller, connector, false).await?;
+        let (connections, found, connector) =
+            self.placeable(caller, connector, Joining::Place).await?;
         connections.place(connector).await?;
         Ok(Reply::Connector {
             connector: self.as_now(caller, connections, &found).await?,
@@ -196,13 +217,17 @@ where
             ..connector
         };
         let name = named(name)?;
-        let folded = |it: &Option<String>| it.as_ref().map(|name| name.to_lowercase());
+        // What the others go by where the person sees them: a name, who for one left unnamed,
+        // or the service's for the one never named.
+        let shown = |it: &OfferedAccount| {
+            let label = it.label.as_ref().or(it.connector.account.as_ref());
+            label.unwrap_or(&found.name).to_lowercase()
+        };
         let offered = connections.connectors().await?;
+        let wanted = name.as_ref().unwrap_or(&found.name).to_lowercase();
         let taken = (offered.iter())
-            .filter(|(kept, status)| *status != ConnectorStatus::Available && kept.id == found.id)
-            .any(|(kept, _)| {
-                !kept.same_account(&connector) && folded(&kept.account) == folded(&name)
-            });
+            .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
+            .any(|it| !it.connector.same_account(&connector) && shown(it) == wanted);
         if taken {
             let said = Sentence::AccountNameTaken {
                 service: found.name.clone(),
@@ -218,13 +243,13 @@ where
 
     /// The caller's connections, `connector`'s entry in the catalog and the account, its name
     /// tidied, once it is one glave has, its place, if it has one, a project the caller owns,
-    /// and no other account of the service is used there. `connecting` it, a new account of a
-    /// service that has one already takes a name.
+    /// and no other account of the service is used there. Connecting it, a new account of a
+    /// service that has one already takes a name, or is `Another`, named at its sign-in.
     async fn placeable(
         &self,
         caller: &Caller,
         connector: KeptConnector,
-        connecting: bool,
+        joining: Joining,
     ) -> Result<(&dyn Connections, Connector, KeptConnector), ApiError> {
         let connections = self.connections_for(caller)?;
         let found = built_in()?
@@ -236,8 +261,8 @@ where
         }
         let offered = connections.connectors().await?;
         let connected: Vec<&KeptConnector> = (offered.iter())
-            .filter(|(kept, status)| *status != ConnectorStatus::Available && kept.id == found.id)
-            .map(|(kept, _)| kept)
+            .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
+            .map(|it| &it.connector)
             .collect();
         // A name the service has, in any case, is that account's, as it was spelled.
         let account = named(connector.account)?.map(|name| {
@@ -252,12 +277,40 @@ where
             account,
             ..connector
         };
+        // Another account, unnamed, is none of those the service has.
+        let unnamed = joining == Joining::Another && connector.account.is_none();
         let (same, others): (Vec<_>, Vec<_>) =
-            (connected.into_iter()).partition(|kept| kept.same_account(&connector));
+            (connected.into_iter()).partition(|kept| !unnamed && kept.same_account(&connector));
         let service = found.name.clone();
-        if connecting && same.is_empty() && connector.account.is_none() && !others.is_empty() {
+        let connecting = joining != Joining::Place;
+        if connecting
+            && !unnamed
+            && same.is_empty()
+            && connector.account.is_none()
+            && !others.is_empty()
+        {
             let said = Sentence::AccountUnnamed { service };
             return Err(ApiError::new(code::INVALID_PARAMS, said));
+        }
+        // A new name another account goes by already, as the person sees it, is taken too.
+        let new = connector
+            .account
+            .as_ref()
+            .filter(|_| connecting && same.is_empty());
+        if let Some(name) = new.map(|name| name.to_lowercase()) {
+            let shown = (offered.iter())
+                .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
+                .any(|it| {
+                    let label = it.label.as_ref().or(it.connector.account.as_ref());
+                    label.unwrap_or(&found.name).to_lowercase() == name
+                });
+            if shown {
+                let said = Sentence::AccountNameTaken {
+                    service,
+                    name: connector.account.clone().unwrap_or_default(),
+                };
+                return Err(ApiError::new(code::INVALID_PARAMS, said));
+            }
         }
         if let Some(other) = others.iter().find(|other| other.only == connector.only) {
             let said = match other.only {
@@ -298,6 +351,17 @@ where
             Err(_) => Sentence::UsedOnlyInGone.into(),
         }
     }
+}
+
+/// What is asked of an account of a connector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Joining {
+    /// Connect it: an account the service has, again, or a new one by its name.
+    Connect,
+    /// Connect a new account of the service, named at its sign-in when no name is given.
+    Another,
+    /// Use it somewhere else.
+    Place,
 }
 
 /// An account's name as given, its ends trimmed: none when it is empty, and refused when it is

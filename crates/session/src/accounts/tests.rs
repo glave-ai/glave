@@ -203,6 +203,8 @@ fn connection(n: u128, url: &str, token: &str) -> ConnectionConnected {
             client_id: "client".into(),
             scopes: Vec::new(),
         },
+        who: None,
+        unnamed: false,
         by: Principal::glave(),
     }
 }
@@ -471,5 +473,30 @@ fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
             .map(|it| it.account.clone())
             .collect();
         assert_eq!(kept, [None], "one sign-in, under no name again");
+    });
+}
+
+#[test]
+fn who_an_account_is_signed_in_as_goes_with_its_sign_in() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.stripe.com";
+        let who = "ada@example.test";
+        let other = account("stripe", Some("Stripe 2"), Some(7));
+        let signed = ConnectionConnected {
+            account: other.account.clone(),
+            who: Some(who.into()),
+            unnamed: true,
+            ..connection(1, url, &fake_secret("mcp_"))
+        };
+        ledger.keep_connector(&other, Some(&signed)).await.unwrap();
+        assert_eq!(holding(&stored(&kit).await, who), 1, "on its sign-in alone");
+        assert!(!format!("{signed:?}").contains(who), "never in its Debug");
+
+        assert!(ledger.remove_connector(&other, url).await.unwrap());
+        ledger.accounts().await.unwrap();
+        let data = stored(&kit).await;
+        assert_eq!(holding(&data, who), 0, "no event holds it: {data:?}");
     });
 }

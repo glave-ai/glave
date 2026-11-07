@@ -41,12 +41,8 @@ interface Listed {
   readonly problem: string | null;
 }
 
-/** What Disconnect or Rename asks about: an account of a connector, and what the dialog calls it. */
-interface Asked {
-  readonly id: string;
-  readonly account: string | null;
-  readonly called: string;
-}
+/** What Disconnect or Rename asks about: an account of the connector `id`, as its row asked. */
+type Asked<K> = Extract<ConnectorAction, { kind: K }> & { readonly id: string };
 
 /** A card of the page: its heading, and its connectors. */
 interface Section {
@@ -96,7 +92,6 @@ export class ConnectorsComponent {
     disconnectText: $localize`:@@connectors.disconnectText:glave stops using it for you and forgets any sign-in to it. You can connect it again at any time.`,
     noMatch: $localize`:@@connectors.noMatch:No app matches that search.`,
     everywhere: $localize`:@@connectors.everywhere:Everywhere, including chats`,
-    change: $localize`:@@connectors.change:Change`,
     thisProject: $localize`:@@connectors.thisProject:this project`,
     elsewhere: $localize`:@@connectors.elsewhere:Connected elsewhere`,
   } as const;
@@ -120,24 +115,26 @@ export class ConnectorsComponent {
   /** Why the last thing done with a connector failed, by its id. */
   private readonly problems = signal<ReadonlyMap<string, string>>(new Map());
   /** The connector Disconnect asks about. */
-  private readonly disconnecting = signal<Asked | null>(null);
+  private readonly disconnecting = signal<Asked<'disconnect'> | null>(null);
   protected readonly confirming = signal(false);
   /** The connector the add dialog is for, and whether it is open. */
   protected readonly adding = signal<ConnectorInfo | null>(null);
   protected readonly addOpen = signal(false);
   /** The account the rename dialog is for, by its connector and name, and whether it is open. */
-  protected readonly renaming = signal<Asked | null>(null);
+  protected readonly renaming = signal<Asked<'rename'> | null>(null);
   protected readonly renameOpen = signal(false);
-  protected readonly renameTitle = computed(() => this.renaming()?.called ?? '');
+  /** What the rename dialog starts from, its heading and its note. */
+  protected readonly renameShown = computed(() => {
+    const it = this.renaming();
+    return { title: it?.called ?? '', heading: it?.heading ?? null, note: it?.note ?? null };
+  });
 
   /** Where a connector can be used: everywhere, or only in one of the person's places. */
-  // The button shows only "Change": the row's line says where it is used, in the server's words.
   protected readonly places = computed((): readonly GlzMenuOption[] => [
-    { value: EVERYWHERE, label: this.copy.everywhere, short: this.copy.change },
+    { value: EVERYWHERE, label: this.copy.everywhere },
     ...this.projects.projects().map(({ project }) => ({
       value: project.id,
       label: $localize`:@@connectors.onlyIn:Only in ${project.name}:PLACE:`,
-      short: this.copy.change,
     })),
   ]);
   /** Whether there is somewhere to choose: with only their Chats, a person sees no places. */
@@ -243,11 +240,11 @@ export class ConnectorsComponent {
         this.addOpen.set(true);
         break;
       case 'rename':
-        this.renaming.set({ id, account: action.account, called: action.called });
+        this.renaming.set({ id, ...action });
         this.renameOpen.set(true);
         break;
       case 'disconnect':
-        this.disconnecting.set({ id, account: action.account, called: action.called });
+        this.disconnecting.set({ id, ...action });
         this.confirming.set(true);
         break;
     }
@@ -263,7 +260,7 @@ export class ConnectorsComponent {
     if (chosen.existing) {
       void this.busyWith(id, () => this.service.place(id, chosen.account, chosen.only));
     } else {
-      void this.connect(id, name, chosen.account, chosen.only);
+      void this.connect(id, name, chosen.account, chosen.only, true);
     }
   }
 
@@ -299,6 +296,7 @@ export class ConnectorsComponent {
     name: string,
     account: string | null = null,
     only?: ProjectId | null,
+    another = false,
   ): Promise<void> {
     this.stops.get(id)?.abort();
     const stop = new AbortController();
@@ -309,7 +307,7 @@ export class ConnectorsComponent {
       id,
       async () => {
         try {
-          const link = await this.service.connect(id, account, only);
+          const link = await this.service.connect(id, account, only, another);
           if (link === null || stop.signal.aborted) {
             if (link === null) {
               this.moved(id, this.said(name, this.copy.connected));
@@ -370,13 +368,11 @@ export class ConnectorsComponent {
         if (focused !== null && focused !== this.document.body) {
           return;
         }
-        // A service with two accounts or more has no button of its own: its Add account takes it.
-        const row = `[data-connector="${id}"]`;
-        const host = this.host.nativeElement;
-        const button =
-          host.querySelector<HTMLElement>(`${row} [data-testid="connector-action"]`) ??
-          host.querySelector<HTMLElement>(`${row} [data-testid="connector-add-account"]`);
-        button?.focus();
+        // Its one button: its own, its menu once connected, or with two accounts its Add account.
+        const button = ['connector-action', 'connector-menu-trigger', 'connector-add-account']
+          .map((it) => `[data-connector="${id}"] [data-testid="${it}"]`)
+          .join(', ');
+        this.host.nativeElement.querySelector<HTMLElement>(button)?.focus();
       },
       { injector: this.injector },
     );

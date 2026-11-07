@@ -203,9 +203,11 @@ impl<L: EventLog> AccountLedger<L> {
                 }
                 let mut events = vec![Event::ConnectorRenamed(new.clone(), kept.account.clone())];
                 if let Some(sign_in) = accounts.sign_in(url, kept.account.as_deref()) {
+                    // Named by the person now: who no longer stands in its name's place.
                     let moved = ConnectionConnected {
                         connection: fresh,
                         account: new.account.clone(),
+                        unnamed: false,
                         ..sign_in.clone()
                     };
                     events.extend(replaced(accounts, &moved));

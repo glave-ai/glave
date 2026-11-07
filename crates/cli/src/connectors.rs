@@ -125,22 +125,35 @@ fn line(connector: &ConnectorInfo) -> String {
 }
 
 /// Prints a connector connected: its id, its name and where it is used, or, with more than
-/// one account, how many, then each account by its handle with where it is used.
+/// one account, how many, then each account by its handle with where it is used; each with who
+/// it is signed in as, where its service said.
 fn connected_lines(connector: &ConnectorInfo, places: &Places) {
     match connector.accounts.as_slice() {
         [one] => {
             let (handle, name) = (handle(connector, one), &connector.name);
-            println!("  {handle:<26} {name}: {}", one.used);
+            println!("  {handle:<26} {name}: {}", about(one));
             again(connector, one, places);
         }
         accounts => {
             let (id, name, count) = (&connector.id, &connector.name, accounts.len());
             println!("  {id:<26} {name}: {count} accounts");
             for labelled in accounts {
-                println!("    {:<24} {}", handle(connector, labelled), labelled.used);
+                println!(
+                    "    {:<24} {}",
+                    handle(connector, labelled),
+                    about(labelled)
+                );
                 again(connector, labelled, places);
             }
         }
+    }
+}
+
+/// Where the account `labelled` is used, then who it is signed in as, where its service said.
+fn about(labelled: &ConnectorAccount) -> String {
+    match &labelled.signed_in {
+        Some(signed_in) => format!("{} · {signed_in}", labelled.used),
+        None => labelled.used.to_string(),
     }
 }
 
@@ -216,6 +229,7 @@ async fn used(server: &mut Reached, handle: &str, place: &str, adding: bool) -> 
     let (connector, label) = labelled(handle);
     let request = if adding {
         Request::ConnectorConnect {
+            another: false,
             connector,
             account: label,
             only,
@@ -241,6 +255,7 @@ async fn used(server: &mut Reached, handle: &str, place: &str, adding: bool) -> 
 /// Connects the connector `id` for every thread, signing in to it in the browser when it asks.
 pub(crate) async fn connect(server: &mut Reached, id: &str) -> anyhow::Result<()> {
     let request = Request::ConnectorConnect {
+        another: false,
         connector: id.to_owned(),
         account: None,
         only: None,
@@ -281,4 +296,30 @@ async fn disconnect(server: &mut Reached, handle: &str) -> anyhow::Result<()> {
     server.request(request).await?;
     println!("Disconnected {handle}: its sign-in is destroyed.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_session::protocol::ConnectorStatus;
+
+    use super::*;
+
+    #[test]
+    fn an_account_says_where_it_is_used_and_who_it_is_signed_in_as() {
+        let mut account = ConnectorAccount {
+            name: Some("Acme".into()),
+            only: None,
+            used: "Everywhere, including chats".into(),
+            status: ConnectorStatus::Connected,
+            who: None,
+            signed_in: None,
+            label: None,
+        };
+        assert_eq!(about(&account), "Everywhere, including chats");
+        account.signed_in = Some("Signed in as Acme Corp".into());
+        assert_eq!(
+            about(&account),
+            "Everywhere, including chats · Signed in as Acme Corp"
+        );
+    }
 }

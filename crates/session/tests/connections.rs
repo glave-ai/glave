@@ -16,7 +16,9 @@ use glave_session::protocol::{
     ConnectorTagId, Reply, Request, SearchInfo, SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, Connecting, Connections, KeptConnector, Returned, Searching};
+use glave_session::{
+    Answering, Connecting, Connections, KeptConnector, OfferedAccount, Returned, Searching,
+};
 use serde_json::json;
 
 use crate::conformance::{Client, OverHttp};
@@ -43,6 +45,11 @@ pub(crate) struct InMemory {
 
 /// The connectors the fake offers: one that asks no one to sign in, and one that asks.
 const OFFERED: [&str; 2] = ["deepwiki", "linear"];
+
+/// Who the fake signs another account in as, which, left unnamed, it names as the host does
+/// (`OTHER`) and shows as who in its name's place.
+pub(crate) const WHO: &str = "Acme Corp";
+const OTHER: &str = "DeepWiki 2";
 
 impl Connections for InMemory {
     fn start(
@@ -119,7 +126,7 @@ impl Connections for InMemory {
         })
     }
 
-    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<OfferedAccount>, ApiError>> {
         Box::pin(async move {
             let connected = self.connectors.lock().unwrap();
             Ok(OFFERED
@@ -132,10 +139,16 @@ impl Connections for InMemory {
                             account: None,
                             only: None,
                         };
-                        return vec![(none, ConnectorStatus::Available)];
+                        return vec![OfferedAccount::new(none, ConnectorStatus::Available)];
                     }
-                    let connected =
-                        |it: &&KeptConnector| ((*it).clone(), ConnectorStatus::Connected);
+                    let connected = |it: &&KeptConnector| {
+                        let other = (it.account.as_deref() == Some(OTHER)).then(|| WHO.to_owned());
+                        OfferedAccount {
+                            who: other.clone(),
+                            label: other,
+                            ..OfferedAccount::new((*it).clone(), ConnectorStatus::Connected)
+                        }
+                    };
                     kept.iter().map(connected).collect()
                 })
                 .collect())
@@ -145,9 +158,18 @@ impl Connections for InMemory {
     fn connect(
         &self,
         connector: KeptConnector,
+        another: bool,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
         Box::pin(async move {
+            let connector = if another {
+                KeptConnector {
+                    account: Some(OTHER.to_owned()),
+                    ..connector
+                }
+            } else {
+                connector
+            };
             if connector.id == "linear" {
                 return Ok(match redirect {
                     Some(_) => Connecting::SignIn(SignInLink {
@@ -609,6 +631,7 @@ fn the_catalog_s_connectors_are_listed_in_the_caller_s_language_connected_and_di
             connector: id.into(),
             account: None,
             only: None,
+            another: false,
         };
         let connected = web.call(&connect("deepwiki")).await;
         assert_eq!(

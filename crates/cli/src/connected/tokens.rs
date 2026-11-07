@@ -172,6 +172,8 @@ impl Renew for ConnectionRenewal {
                 expires: expires(granted.lasts),
                 refresh: granted.refresh,
                 client: granted.client,
+                // A renewal seldom says again who it is for: what the sign-in said stays.
+                who: granted.who.or_else(|| current.who.clone()),
                 ..current.clone()
             }),
             Err(SignInError::Unreachable { message, .. }) => {

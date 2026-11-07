@@ -43,6 +43,9 @@ export class RenameDialogComponent {
   readonly kind = input<Renamed>('thread');
   /** Its title or name now, which the field starts with. */
   readonly title = input('');
+  /** The dialog's heading, where the page has its own, and a note under the field. */
+  readonly heading = input<string | null>(null);
+  readonly note = input<string | null>(null);
   /** Whether the dialog is open. */
   readonly open = model(false);
   readonly renamed = output<string>();
@@ -72,6 +75,7 @@ export class RenameDialogComponent {
     },
   };
   protected readonly naming = computed(() => this.namings[this.kind()]);
+  protected readonly headed = computed(() => this.heading() ?? this.naming().heading);
   protected readonly limit = computed(() => this.naming().limit);
   protected readonly hint = computed(() => {
     const limit = this.limit();

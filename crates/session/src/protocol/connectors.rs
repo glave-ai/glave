@@ -159,6 +159,18 @@ pub struct ConnectorAccount {
     pub used: Told,
     /// Connected, or to sign in to again.
     pub status: ConnectorStatus,
+    /// Who it is signed in as, in the service's words, where it said: `Acme Corp`. The
+    /// caller's own: shown only to them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
+    /// The same, in the caller's language: `Signed in as Acme Corp`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_in: Option<Told>,
+    /// What a client shows where its name would go, when not `name`: who it is signed in as,
+    /// for one the person left unnamed, whose `name` is glave's (`Notion 2`). `name` still
+    /// names it in calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// What a connector's tools hand back, as its vendor's docs say.

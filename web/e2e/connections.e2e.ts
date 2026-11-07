@@ -199,7 +199,9 @@ test('a second account of an app is added and named, each beneath it with its ow
   await deepwiki.getByTestId('connector-action').click();
   const connected = byTestId(page, 'connectors-connected').locator('[data-connector="deepwiki"]');
   await expect(connected).toContainText('Everywhere, including chats');
-  await connected.getByTestId('connector-add-account').click();
+  // Its one account's menu adds another.
+  await connected.getByTestId('connector-menu-trigger').click();
+  await byTestId(page, 'connector-menu-action').getByText('Add another DeepWiki account').click();
   const dialog = byTestId(page, 'connector-add');
   await expect(dialog).toContainText('Sign in to another DeepWiki account');
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -236,7 +238,8 @@ test('a second account of an app is added and named, each beneath it with its ow
   await expect(connected.getByTestId('connector-detail')).toContainText(
     'Everywhere, including chats',
   );
-  await connected.getByTestId('connector-action').click();
+  await connected.getByTestId('connector-menu-trigger').click();
+  await byTestId(page, 'connector-menu-action').getByText('Disconnect').click();
   await byTestId(page, 'connectors-disconnect-ok').click();
   await expect(deepwiki.getByTestId('connector-action')).toHaveText('Connect');
   expect(problems()).toEqual([]);

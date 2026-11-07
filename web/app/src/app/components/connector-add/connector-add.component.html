@@ -11,7 +11,7 @@
           (valueChange)="choseAccount($event)"
         >
           @for (each of had(); track each.value) {
-            <glz-radio [value]="each.value" [hint]="copy.already">{{ each.label }}</glz-radio>
+            <glz-radio [value]="each.value" [hint]="each.hint">{{ each.label }}</glz-radio>
           }
           <glz-radio [value]="another">{{ anotherLabel() }}</glz-radio>
         </glz-radio-group>
@@ -24,6 +24,7 @@
             autocomplete="off"
             [maxLength]="longest"
             data-testid="connector-add-name"
+            [placeholder]="namePlaceholder()"
             [value]="name()"
             (input)="typed($event)"
           />
