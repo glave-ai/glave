@@ -181,27 +181,96 @@ fn bubblewrap_refuses_a_protected_path_that_is_a_link() {
     );
 }
 
+/// A process pool whose children Python's forkserver starts, which listens on a Unix socket in
+/// the command's temp folder.
+const POOL: &str = "import multiprocessing as m
+if __name__ == '__main__':
+    m.set_start_method('forkserver')
+    with m.Pool(2) as pool:
+        print('pooled', sum(pool.map(abs, [-1, -2])))
+";
+
+/// A Unix socket listening where tmux's servers do (`/tmp/tmux-<uid>`), removed when dropped,
+/// with the folder if this made it.
+struct Tmux {
+    socket: PathBuf,
+    made: Option<PathBuf>,
+    _listener: std::os::unix::net::UnixListener,
+}
+
+impl Tmux {
+    fn listen() -> Self {
+        use std::os::unix::fs::DirBuilderExt as _;
+        let folder = PathBuf::from(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()));
+        let made = (!folder.exists()).then(|| folder.clone());
+        if made.is_some() {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&folder)
+                .unwrap();
+        }
+        let socket = folder.join(format!("glave-test-{}", std::process::id()));
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        Self {
+            socket,
+            made,
+            _listener,
+        }
+    }
+}
+
+impl Drop for Tmux {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.socket);
+        if let Some(folder) = &self.made {
+            let _ = std::fs::remove_dir(folder);
+        }
+    }
+}
+
+/// A command connecting to the Unix socket at `socket`, which prints `connected` if it can.
+fn connect(socket: &Path) -> String {
+    format!(
+        "python3 -c \"import socket; s = socket.socket(socket.AF_UNIX); s.connect('{}'); print('connected')\"",
+        socket.display()
+    )
+}
+
+/// Without the network no Unix socket on the machine is reached. With it, a command makes its
+/// own (a process pool works) and reaches one elsewhere, as Codex lets it, but not where the
+/// person's daemons listen, which is hidden. `ptrace` is refused either way.
 #[test]
-fn bubblewrap_blocks_unix_sockets_and_ptrace() {
+fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_blocks_ptrace() {
     if !bubblewrap() {
         return;
     }
     let dir = scratch("seccomp");
     let socket = dir.join("outside.sock");
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let connect = format!(
-        "python3 -c \"import socket; s = socket.socket(socket.AF_UNIX); s.connect('{}'); print('connected')\"",
-        socket.display()
-    );
-    for network in [false, true] {
-        let (_, said) = run(&dir, Some((SandboxLevel::Project, network)), None, &connect).unwrap();
-        assert!(!said.contains("connected"), "network {network}: {said}");
-    }
-    let (_, open) = run(&dir, None, None, &connect).unwrap();
+    let tmux = Tmux::listen();
+    std::fs::write(dir.join("project/pool.py"), POOL).unwrap();
+    let sandboxed = |network: bool, script: &str| {
+        run(&dir, Some((SandboxLevel::Project, network)), None, script)
+            .unwrap()
+            .1
+    };
+    let (_, open) = run(&dir, None, None, &connect(&socket)).unwrap();
     assert!(open.contains("connected"), "{open}");
+    let (_, open) = run(&dir, None, None, &connect(&tmux.socket)).unwrap();
+    assert!(open.contains("connected"), "control, tmux's: {open}");
+
+    let offline = sandboxed(false, &connect(&socket));
+    assert!(!offline.contains("connected"), "{offline}");
+    let online = sandboxed(true, &connect(&socket));
+    assert!(online.contains("connected"), "{online}");
+    let daemon = sandboxed(true, &connect(&tmux.socket));
+    assert!(!daemon.contains("connected"), "tmux's: {daemon}");
+    let pool = sandboxed(true, "python3 pool.py");
+    assert_eq!(pool.trim(), "pooled 3");
+
     let ptrace =
         "python3 -c \"import ctypes; print('ptrace', ctypes.CDLL(None).ptrace(0, 0, 0, 0))\"";
-    let (_, said) = run(&dir, Some((SandboxLevel::Project, true)), None, ptrace).unwrap();
+    let said = sandboxed(true, ptrace);
     assert!(said.contains("ptrace -1"), "{said}");
 }
 

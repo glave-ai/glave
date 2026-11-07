@@ -3,7 +3,7 @@
 //! started, and at a timeout stopped too, or kept running in the background when it asks.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,11 +59,37 @@ const CACHES: &[(&str, &str)] = &[
 /// environment sets [`TOOLCHAINS_IN_SANDBOX`] (glave's computer image does) has its sandboxed
 /// commands keep them in the sandbox cache like the rest, so they build without asking: nothing
 /// planted there reaches a command outside the sandbox. That computer gives up what Cargo's home
-/// outside it holds, which a laptop can't (`CACHES`): its settings, tools and crates.
+/// outside it holds, which a laptop can't (`CACHES`): its settings and crates, though its tools
+/// still run, after the sandbox's own (`cargo_bin_on_path`).
 const TOOLCHAINS: &[(&str, &str)] = &[("CARGO_HOME", "cargo"), ("RUSTUP_HOME", "rustup")];
 
 /// The variable of the computer's own environment that says so, as `1`.
 const TOOLCHAINS_IN_SANDBOX: &str = "GLAVE_SANDBOX_TOOLCHAINS";
+
+/// `PATH` with the sandbox's Cargo home's `bin` just before Cargo's own, where `PATH` names
+/// that (`~/.cargo/bin`): a tool `cargo install` adds in the sandbox runs by its name there, and
+/// one added outside it still does. Nothing outside the sandbox looks in the sandbox's.
+fn cargo_bin_on_path(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsString> {
+    // The last of each, as the command's environment takes it.
+    let named = |wanted: &str| {
+        environment
+            .iter()
+            .rev()
+            .find(|(name, _)| name == wanted)
+            .map(|(_, value)| value)
+    };
+    let own = Path::new(named("HOME")?).join(".cargo/bin");
+    let folders: Vec<PathBuf> = std::env::split_paths(named("PATH")?).collect();
+    if !folders.contains(&own) {
+        return None;
+    }
+    let sandbox = caches.join("cargo/bin");
+    let folders = folders.into_iter().flat_map(|folder| {
+        let before = (folder == own).then(|| sandbox.clone());
+        before.into_iter().chain([folder])
+    });
+    std::env::join_paths(folders).ok()
+}
 
 /// Maven has no variable for its repository, only a property, passed through `MAVEN_OPTS`,
 /// which is split at projects: a cache folder with a project in its path is left out.
@@ -273,6 +299,10 @@ fn bash(
     };
     let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
     let caches = sandbox.map(|(launch, prepared)| prepared.caches(launch));
+    let toolchains = opened
+        .environment
+        .iter()
+        .any(|(name, value)| name == TOOLCHAINS_IN_SANDBOX && value == "1");
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
@@ -282,10 +312,6 @@ fn bash(
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
         .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
         .envs(caches.iter().flat_map(|caches| {
-            let toolchains = opened
-                .environment
-                .iter()
-                .any(|(name, value)| name == TOOLCHAINS_IN_SANDBOX && value == "1");
             CACHES
                 .iter()
                 .chain(toolchains.then_some(TOOLCHAINS).into_iter().flatten())
@@ -303,6 +329,26 @@ fn bash(
                 .iter()
                 .map(|(name, value)| (name, value))
         }))
+        .envs(
+            caches
+                .as_deref()
+                .filter(|_| toolchains)
+                .and_then(|caches| {
+                    // The credential helper's `PATH`, when it has one, is the one to add to.
+                    let environment: Vec<(OsString, OsString)> = opened
+                        .environment
+                        .iter()
+                        .chain(
+                            offered
+                                .iter()
+                                .flat_map(|offered| offered.environment.iter()),
+                        )
+                        .cloned()
+                        .collect();
+                    cargo_bin_on_path(&environment, caches)
+                })
+                .map(|path| ("PATH", path)),
+        )
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")

@@ -10,6 +10,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - A worker's `save` hands its credential to nothing its commands planted (#1198; `computers.md`, "Workers").
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
 - Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*).
+- On Linux, commands with the network make Unix sockets, the person's daemons' hidden (#1118, *Unix sockets on Linux*); on a computer that keeps Rust's homes in the sandbox cache, a tool `cargo install` adds there runs by its name.
 
 ## Why on by default
 
@@ -148,7 +149,16 @@ Secrets are hidden by **location** in the home folder and by **name** in the pro
 
 ### Network
 
-On by default; off with `--no-network`, `network = false` or an organization's `[sandbox] network = false`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. On or off, Unix sockets stay unreachable on Linux (seccomp), and on macOS `docker.sock` and the ssh agent's socket are outside the profile's network rules. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or to cloud metadata (*Cloud metadata*, below).
+On by default; off with `--no-network`, `network = false` or an organization's `[sandbox] network = false`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. On macOS `docker.sock` and the ssh agent's socket stay outside the profile's network rules with the network on too; on Linux, with it on, the places where daemons listen are hidden instead (*Unix sockets on Linux*). A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or to cloud metadata (*Cloud metadata*, below).
+
+**Unix sockets on Linux.** Decided 2026-11-07 (#1118). With the network on, commands may make Unix sockets under bubblewrap, so what talks to itself over one works: Python's `multiprocessing` forkserver (`compileall -j`, and any pool in Python 3.14, where it is the default), test servers, language servers. seccomp sees a socket's family, never the address it connects to, so a filter can't tell a program's own socket from the machine's. What it opened, and how each is kept:
+
+- **Sockets in files** are reached by their paths, so bubblewrap hides the places daemons listen, whether the network is on or not: the user's runtime folder whole (`$XDG_RUNTIME_DIR`: the session bus, through which systemd starts anything outside the sandbox, the keyring's and gpg's agents, rootless Docker and Podman, editors' servers), `/run/docker.sock`, `/run/podman`, `/run/dbus` (the system bus, which asks only that its caller be the person at the computer), the X server's `/tmp/.X11-unix`, tmux's `/tmp/tmux-<uid>`, the ssh agent's socket (`$SSH_AUTH_SOCK`), and glave's own: the person's server's where it is outside glave's folder (`/tmp/glave-<uid>`), and a computer's in a Pod (`/opt/glave/glave.sock`). A daemon listening elsewhere is reachable, as one on loopback is; one that starts after a command does is not hidden from it.
+- **Abstract sockets** have no path and belong to the network namespace, which a command with the network shares with the computer: one with the network reaches those (an X server's `@/tmp/.X11-unix/X0` on a desktop), as it reaches loopback. On a cloud computer the Pod's namespace has none. What would keep them out is a namespace of the command's own, which comes with the outbound proxy (#643, *Cloud metadata*), or Landlock's scope (Linux 6.12 on, not under gVisor).
+- **Without the network** nothing changes: Unix sockets may be made but nothing may connect, bind or listen, so a pool fails there, and that is the network off a thread gets once it has read something untrusted (#1156).
+- **Landlock**, which cannot hide a socket, keeps the old rule: with the network, internet sockets only.
+
+Codex allows every Unix socket with the network on (its filter refuses only `AF_VSOCK` there) and masks its own app server's socket folder by a mount; Claude Code gives commands a network namespace of their own always and refuses Unix sockets by seccomp unless `allowAllUnixSockets`, so pools fail there by default.
 
 **Loopback stays reachable** with the network on: dev servers, test databases and a project's own services listen there, and tests must reach them. The cost: a sandboxed command can also reach whatever else listens on this computer's loopback (another program's local API), and the `web-exfil` eval's sink is on loopback.
 
@@ -200,7 +210,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 }
 ```
 
-**The seccomp filter** (Codex's, built with Firecracker's `seccompiler`): `ptrace`, `process_vm_readv`/`writev` and `io_uring` (which opens sockets without `socket`) fail with `EPERM`. With the network off only Unix sockets may be made, and nothing may connect, bind, listen, accept or send to an address, so no Unix socket on the machine is reachable either. With it on, only internet sockets may be made: as on macOS, `docker.sock` and the ssh agent stay out of reach. On x86-64 the same rules cover the x32 numbers of those calls.
+**The seccomp filter** (Codex's, built with Firecracker's `seccompiler`): `ptrace`, `process_vm_readv`/`writev` and `io_uring` (which opens sockets without `socket`) fail with `EPERM`. With the network off only Unix sockets may be made, and nothing may connect, bind, listen, accept or send to an address, so no Unix socket on the machine is reachable either. With it on, internet and Unix sockets may be made, and the places daemons listen are hidden (*Unix sockets on Linux*); netlink and every other family stay refused. On x86-64 the same rules cover the x32 numbers of those calls.
 
 ### On a person's computer
 
@@ -216,7 +226,7 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 **Measured on CI's `kind` job under gVisor** (`worker/kubernetes/home/sandboxed.rs`, on glave's image, nonroot, read-only root, no capabilities, across the protocol, 2026-10-31):
 
 - Every wall holds, the looks at glave's token, folder and process each with a control outside the sandbox: writes beside the project and in glave's folders refused; a key in the home, a project's `.env` and glave's token hidden; git hooks and config, and `.glave`, read-only; committing works; the `read-only` level writes nothing.
-- The network off: an internet socket, a netlink socket and glave's own Unix socket each refused with `EPERM`, `curl` and loopback failing. The network on: the internet and loopback reached, glave's socket and netlink refused.
+- The network off: an internet socket, a netlink socket and glave's own Unix socket each refused with `EPERM`, `curl` and loopback failing. The network on: the internet and loopback reached, glave's socket and netlink refused. Since #1118 glave's socket is hidden instead, and a Unix socket of the command's own and a process pool work.
 - `ptrace` and `io_uring` refused with `EPERM`; no capabilities; only the sandbox's own processes in sight.
 - What it costs, in two runs, each number including a round trip across the protocol: an empty command 25 and 15 ms outside it, 71 and 56 ms in it; `git status` 26 ms against 72 ms; compiling Python's library 1.57 s against 1.72 s, 9% more.
 
@@ -232,8 +242,7 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 
 **Gaps, named** (#1118):
 
-- With the network on, commands can't make Unix sockets (the filter's rule on every Linux). So Python's `multiprocessing` forkserver fails (`compileall -j`, and any pool in Python 3.14, where it's the default), and so does anything else that talks over one to itself.
-- Its sandboxed commands don't see Rust set up outside the sandbox: a toolchain, `~/.cargo/config.toml` or a tool in `~/.cargo/bin` put there by a command let out, or by Full access, is not theirs, and a tool `cargo install` adds in the sandbox isn't on `PATH`.
+- Its sandboxed commands don't see Rust's toolchains, crates and `~/.cargo/config.toml` set up outside the sandbox, by a command let out or by Full access; a tool in `~/.cargo/bin` they do run, after one `cargo install` added in the sandbox, which goes first on their `PATH` (#1118). Making Rust's real homes writable instead was weighed and refused: `~/.cargo/bin` is on the computer's `PATH` before the system's, so a command could plant a `git` there that glave's own git, outside the sandbox, would run.
 - GKE Sandbox itself is not measured: `kind` runs the same `runsc`, on another platform.
 
 **Landlock, the fallback**, where bubblewrap is missing or cannot start, for a program that names a helper (the `glave` binary names itself): `glave __glave-sandbox <plan> -- bash -c …` starts a session of its own, restricts itself with Landlock (ABI 3 at least, for truncation; newer rights where the kernel has them) and the same seccomp filter, then `exec`s the command. No `unsafe` in glave: the helper restricts its own process through safe crates. It is weaker, so it covers only `read-only`:
@@ -256,7 +265,7 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 
 ## Tests
 
-- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked (and reads of what else the computer is told to hide), the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and on Linux in CI's `sandbox-linux` job, and fail rather than skip where CI expects the sandbox (`GLAVE_REQUIRE_SANDBOX`). On Linux the same tests run under bubblewrap, plus protected paths moved, removed or not there yet, a protected link refused, Unix sockets and `ptrace` blocked; and, before bubblewrap is installed, the Landlock tests (`GLAVE_REQUIRE_LANDLOCK`, the built `glave` as helper): reads, writes and the network at `read-only`, and `project` refused.
+- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked (and reads of what else the computer is told to hide), the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and on Linux in CI's `sandbox-linux` job, and fail rather than skip where CI expects the sandbox (`GLAVE_REQUIRE_SANDBOX`). On Linux the same tests run under bubblewrap, plus protected paths moved, removed or not there yet, a protected link refused, Unix sockets unreachable without the network and with it a process pool working while tmux's place stays hidden, and `ptrace` blocked; and, before bubblewrap is installed, the Landlock tests (`GLAVE_REQUIRE_LANDLOCK`, the built `glave` as helper): reads, writes and the network at `read-only`, and `project` refused.
 - Live tasks run in the sandbox, as glave does by default: the eval runner gives every task Auto with the network unless the task says otherwise (`permissions = …`, `network = false`), so the whole suite measures the default. Where this computer has no sandbox, those tasks run as glave would there, asking (so with no one to ask, nothing runs); a task that tests the sandbox itself (`sandboxed = true`) is left out. Each attempt starts as a fresh computer would: an empty Cargo home of its own, and this computer's own crate downloads (Cargo's `registry` and `git`) hidden from its commands, which could otherwise build offline what a fresh computer would have to download (#823). Escapes must be blocked, and each run is checked to have actually attempted the escape; everyday work must still pass:
   - `escape-write`: write outside the project with a command.
   - `escape-network`: fetch a web page with the network off.
@@ -282,12 +291,12 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 - **Granting a folder** to a thread, so commands may write it without leaving the sandbox (#307).
 - **A domain allowlist** for the network, through a filtering proxy, which also withholds cloud metadata from commands (*Cloud metadata*).
 
-## How others do it (checked 2026-10-08; Linux 2026-10-11)
+## How others do it (checked 2026-10-08; Linux 2026-10-11; Unix sockets 2026-11-07)
 
 | | Default | Mechanism | Protected inside the project | Reads of `~/.ssh` |
 | --- | --- | --- | --- | --- |
-| Codex | on (`workspace-write` in version-controlled folders) | Seatbelt; on Linux bubblewrap (the first `bwrap` on `PATH` outside the working folder, else a bundled one) + `--unshare-user/pid/net` + seccomp (no `ptrace`, `io_uring`, non-Unix sockets, connect/bind/send); missing protected paths get a `/dev/null` stand-in; Landlock kept only as a legacy option, refused for filesystem-restricted policies | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
-| Claude Code | off | Seatbelt; on Linux bubblewrap + `socat`, network through a domain-filtering proxy, an optional seccomp filter blocking Unix sockets; documents the same Ubuntu AppArmor profile | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
+| Codex | on (`workspace-write` in version-controlled folders) | Seatbelt; on Linux bubblewrap (the first `bwrap` on `PATH` outside the working folder, else a bundled one) + `--unshare-user/pid/net` + seccomp (no `ptrace`, `io_uring`, non-Unix sockets, connect/bind/send; with the network on, only `AF_VSOCK` refused); missing protected paths get a `/dev/null` stand-in; Landlock kept only as a legacy option, refused for filesystem-restricted policies | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
+| Claude Code | off | Seatbelt; on Linux bubblewrap + `socat`, network through a domain-filtering proxy, its own network namespace always, and seccomp refusing Unix sockets unless `allowAllUnixSockets`; documents the same Ubuntu AppArmor profile | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
 | Gemini CLI | off | Seatbelt profiles on macOS; on Linux a container: Docker, Podman, gVisor (`runsc`) or LXC | | |
 | OpenCode | none | none (permission rules only) | | |
 

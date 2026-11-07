@@ -33,6 +33,16 @@ const LINUX_HOME_SECRETS: &[&str] = &[
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
 const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
 
+/// Where the system's daemons and the person's X server listen: `docker.sock` is root on the
+/// machine, Podman's socket the same for its user, and the system bus asks only that its caller
+/// be the person at the computer.
+const DAEMONS: &[&str] = &[
+    "/run/docker.sock",
+    "/run/podman",
+    "/run/dbus",
+    "/tmp/.X11-unix",
+];
+
 /// Inside a git folder: what runs code later, and the folders of other worktrees and of
 /// submodules, whose own hooks and config would.
 const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktrees", "modules"];
@@ -62,6 +72,8 @@ pub(super) struct Layout {
     pub(super) glave_on_path: Option<PathBuf>,
     /// The user's runtime folder (`$XDG_RUNTIME_DIR`).
     pub(super) runtime: Option<PathBuf>,
+    /// Where the person's daemons listen ([`daemons`]), hidden whole from bubblewrap's commands.
+    pub(super) daemons: Vec<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
     pub(super) names: SecretNames,
@@ -162,7 +174,13 @@ pub(super) fn plan(
     mounts.extend(layout.glave_home.iter().cloned().map(Mount::Emptied));
     mounts.extend(layout.cache.iter().cloned().map(Mount::Writable));
     mounts.extend(layout.glave_on_path.iter().cloned().map(Mount::ReadOnly));
-    hide_places(layout, &mut mounts);
+    for real in outermost(
+        hidden_places(layout)
+            .into_iter()
+            .chain(daemon_places(layout)),
+    ) {
+        hide(&real, &mut mounts);
+    }
     mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
     // A folder's mount before those inside it, which it would otherwise lie over: glave's
     // folder holds the cache, and the workspace when it is a thread's worktree there, and is
@@ -251,12 +269,54 @@ impl Protect<'_> {
     }
 }
 
-/// Credential folders and files in the home folder, and whatever else the computer hides,
-/// wherever their links lead.
-fn hide_places(layout: &Layout, mounts: &mut Vec<Mount>) {
-    for real in hidden_places(layout) {
-        hide(&real, mounts);
+/// Where the person's daemons listen, which a command that may make Unix sockets, as one with
+/// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], tmux's
+/// servers (`/tmp/tmux-<uid>`), the ssh agent `agent` names, and the user's runtime folder
+/// whole, which holds the session bus (through which systemd starts anything outside the
+/// sandbox), the keyring's and gpg's agents, rootless Docker's and Podman's sockets and
+/// editors' servers. Hidden whether the network is on or not: one view of the machine.
+pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) -> Vec<PathBuf> {
+    DAEMONS
+        .iter()
+        .map(PathBuf::from)
+        .chain([PathBuf::from(format!("/tmp/tmux-{uid}"))])
+        .chain(agent.map(Path::to_path_buf))
+        .chain(runtime.map(Path::to_path_buf))
+        .collect()
+}
+
+/// The real paths of the daemons' places that exist, except one that holds a place commands
+/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders.
+fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
+    let used: Vec<&Path> = [&layout.root, &layout.base]
+        .into_iter()
+        .chain(layout.home.iter())
+        .chain(layout.shared_tmp.iter())
+        .chain(layout.cache.iter())
+        .chain(layout.git_common.iter())
+        .map(PathBuf::as_path)
+        .collect();
+    layout
+        .daemons
+        .iter()
+        .filter_map(|place| std::fs::canonicalize(place).ok())
+        .filter(|real| !used.iter().any(|used| used.starts_with(real)))
+        .collect()
+}
+
+/// `places` without those inside another of them: hiding the outer one hides them already, and
+/// no stand-in could be made inside its stand-in.
+fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut places: Vec<PathBuf> = places.into_iter().collect();
+    places.sort();
+    places.dedup();
+    let mut kept: Vec<PathBuf> = Vec::new();
+    for place in places {
+        if !kept.iter().any(|outer| place.starts_with(outer)) {
+            kept.push(place);
+        }
     }
+    kept
 }
 
 /// The real paths of the home folder's credential folders and files, and of whatever else the
