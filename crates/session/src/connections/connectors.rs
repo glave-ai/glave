@@ -196,17 +196,26 @@ where
         if let Some(project) = connector.only {
             self.owned(caller, project).await?;
         }
+        let offered = connections.connectors().await?;
+        let connected: Vec<&KeptConnector> = (offered.iter())
+            .filter(|(kept, status)| *status != ConnectorStatus::Available && kept.id == found.id)
+            .map(|(kept, _)| kept)
+            .collect();
+        // A name the service has, in any case, is that account's, as it was spelled.
+        let account = named(connector.account)?.map(|name| {
+            let had = (connected.iter()).find_map(|kept| {
+                kept.account
+                    .as_ref()
+                    .filter(|it| it.to_lowercase() == name.to_lowercase())
+            });
+            had.cloned().unwrap_or(name)
+        });
         let connector = KeptConnector {
-            account: named(connector.account)?,
+            account,
             ..connector
         };
-        let offered = connections.connectors().await?;
-        let connected = offered
-            .iter()
-            .filter(|(kept, status)| *status != ConnectorStatus::Available && kept.id == found.id)
-            .map(|(kept, _)| kept);
         let (same, others): (Vec<_>, Vec<_>) =
-            connected.partition(|kept| kept.same_account(&connector));
+            (connected.into_iter()).partition(|kept| kept.same_account(&connector));
         let service = found.name.clone();
         if connecting && same.is_empty() && connector.account.is_none() && !others.is_empty() {
             let said = Sentence::AccountUnnamed { service };
@@ -214,18 +223,16 @@ where
         }
         if let Some(other) = others.iter().find(|other| other.only == connector.only) {
             let said = match other.only {
-                None => Some(Sentence::AccountTakenEverywhere { service }),
-                // An account used only in a project that is gone is used nowhere.
-                Some(project) => {
-                    (self.owned(caller, project).await.ok()).map(|place| Sentence::AccountTakenIn {
+                None => Sentence::AccountTakenEverywhere { service },
+                Some(project) => match self.owned(caller, project).await {
+                    Ok(place) => Sentence::AccountTakenIn {
                         service,
                         place: place.name,
-                    })
-                }
+                    },
+                    Err(_) => Sentence::AccountTakenGone { service },
+                },
             };
-            if let Some(said) = said {
-                return Err(ApiError::new(code::INVALID_PARAMS, said));
-            }
+            return Err(ApiError::new(code::INVALID_PARAMS, said));
         }
         Ok((connections, found, connector))
     }

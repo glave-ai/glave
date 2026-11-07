@@ -13,7 +13,7 @@ use glave_ports::testing::{CountingEntropy, ManualClock, fake_secret};
 use glave_ports::{EventLog as _, OrgId, ProjectId, Scope, block_on};
 use glave_store_sqlite::{SqliteLog, Store};
 
-use super::{AccountLedger, KeptConnector};
+use super::{AccountLedger, KeptConnector, Placement};
 
 /// 2026-10-03, in milliseconds.
 const START: i64 = 1_791_000_000_000;
@@ -326,15 +326,12 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         assert_eq!(accounts.connections, [sign_in]);
 
         // Used only in one place, it keeps its place among the connected.
-        assert!(
-            ledger
-                .place_connector(&kept("docs", Some(7)))
-                .await
-                .unwrap()
-        );
+        let placed = ledger.place_connector(&kept("docs", Some(7))).await;
+        assert_eq!(placed.unwrap(), Placement::Placed);
         let moved = [kept("docs", Some(7)), kept("tracker", None)];
         assert_eq!(ledger.accounts().await.unwrap().connectors, moved);
-        assert!(!ledger.place_connector(&kept("other", None)).await.unwrap());
+        let other = ledger.place_connector(&kept("other", None)).await;
+        assert_eq!(other.unwrap(), Placement::NotConnected);
         ledger.place_connector(&kept("docs", None)).await.unwrap();
 
         assert!(
@@ -392,6 +389,23 @@ fn two_accounts_of_one_service_are_each_signed_in_to_and_disconnected_apart() {
             (signed(None), signed(Some("Acme"))),
             (Some(first.connection), Some(second.connection)),
             "the second sign-in replaced no other"
+        );
+        let beta = account("stripe", Some("Beta"), Some(7));
+        let refused = ledger.keep_connector(&beta, None).await.unwrap();
+        assert_eq!(
+            refused,
+            Placement::Taken,
+            "never two of a service in one place"
+        );
+        let moved = account("stripe", None, Some(7));
+        let refused = ledger.place_connector(&moved).await.unwrap();
+        assert_eq!(refused, Placement::Taken);
+        let nowhere = account("stripe", Some("Zed"), None);
+        let refused = ledger.place_connector(&nowhere).await.unwrap();
+        assert_eq!(refused, Placement::NotConnected);
+        assert_eq!(
+            ledger.accounts().await.unwrap().connectors,
+            [glave.clone(), acme.clone()]
         );
 
         assert!(ledger.remove_connector(&acme, url).await.unwrap());

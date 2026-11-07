@@ -99,6 +99,17 @@ pub struct KeptConnector {
     pub only: Option<ProjectId>,
 }
 
+/// How keeping an account of a connector where it says went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
+    /// Kept there.
+    Placed,
+    /// It is not connected: nothing changed.
+    NotConnected,
+    /// Another account of the service is used there: nothing changed.
+    Taken,
+}
+
 impl KeptConnector {
     /// Whether this is the account `other` names: the same connector, the same name.
     pub fn same_account(&self, other: &Self) -> bool {
@@ -108,10 +119,30 @@ impl KeptConnector {
 
 impl Accounts {
     /// The account of a connector `connector` names, when it is connected, wherever it is used.
-    pub fn connector(&self, connector: &KeptConnector) -> Option<&KeptConnector> {
+    pub(crate) fn connector(&self, connector: &KeptConnector) -> Option<&KeptConnector> {
         self.connectors
             .iter()
             .find(|kept| kept.same_account(connector))
+    }
+
+    /// Another account of `connector`'s service used where `connector` says, which no two
+    /// accounts of one service are (`specs/policy.md`, "Connections").
+    fn taken(&self, connector: &KeptConnector) -> bool {
+        self.connectors.iter().any(|kept| {
+            kept.id == connector.id
+                && kept.account != connector.account
+                && kept.only == connector.only
+        })
+    }
+
+    /// Takes `kept` as connected, where it says: one used elsewhere now keeps its place among
+    /// the connected.
+    fn placed(&mut self, kept: KeptConnector) {
+        let had = self.connectors.iter_mut().find(|it| it.same_account(&kept));
+        match had {
+            Some(had) => had.only = kept.only,
+            None => self.connectors.push(kept),
+        }
     }
 
     /// The accounts of the connector `id` connected, in the order connected.
@@ -365,39 +396,51 @@ impl<L: EventLog> AccountLedger<L> {
     /// Records `connector`, an account of a connector of glave's catalog, as connected and used
     /// where it says, unless it is already, there; and keeps `sign_in`, the person's sign-in to
     /// its server as that account, when it asks for one, replacing any kept for the same server
-    /// and account.
+    /// and account; nothing, `Taken`, while another account of the service is used there.
     pub async fn keep_connector(
         &self,
         connector: &KeptConnector,
         sign_in: Option<&ConnectionConnected>,
-    ) -> Result<(), AccountsError> {
-        self.append(|accounts| {
-            let mut events = Vec::new();
-            if accounts.connector(connector) != Some(connector) {
-                events.push(Event::ConnectorConnected(connector.clone()));
-            }
-            if let Some(sign_in) = sign_in {
-                events.push(Event::ConnectionConnected(sign_in.clone()));
-                events.extend(replaced(accounts, sign_in));
-            }
-            (!events.is_empty()).then_some((events, ()))
-        })
-        .await?;
-        Ok(())
+    ) -> Result<Placement, AccountsError> {
+        let kept = self
+            .append(|accounts| {
+                if accounts.taken(connector) {
+                    return Some((Vec::new(), Placement::Taken));
+                }
+                let mut events = Vec::new();
+                if accounts.connector(connector) != Some(connector) {
+                    events.push(Event::ConnectorConnected(connector.clone()));
+                }
+                if let Some(sign_in) = sign_in {
+                    events.push(Event::ConnectionConnected(sign_in.clone()));
+                    events.extend(replaced(accounts, sign_in));
+                }
+                Some((events, Placement::Placed))
+            })
+            .await?;
+        Ok(kept.unwrap_or(Placement::Placed))
     }
 
     /// Uses the account of a connector `connector` names where it says from now on, while it is
-    /// connected: false, changing nothing, when it is not.
-    pub async fn place_connector(&self, connector: &KeptConnector) -> Result<bool, AccountsError> {
+    /// connected and no other account of the service is used there.
+    pub async fn place_connector(
+        &self,
+        connector: &KeptConnector,
+    ) -> Result<Placement, AccountsError> {
         let placed = self
             .append(|accounts| {
-                let kept = accounts.connector(connector)?;
+                let Some(kept) = accounts.connector(connector) else {
+                    return Some((Vec::new(), Placement::NotConnected));
+                };
+                if accounts.taken(connector) {
+                    return Some((Vec::new(), Placement::Taken));
+                }
                 let moved =
                     (kept != connector).then(|| Event::ConnectorConnected(connector.clone()));
-                Some((moved.into_iter().collect(), ()))
+                Some((moved.into_iter().collect(), Placement::Placed))
             })
             .await?;
-        Ok(placed.is_some())
+        Ok(placed.unwrap_or(Placement::NotConnected))
     }
 
     /// Records the account of a connector `connector` names as disconnected and removes its
@@ -656,22 +699,11 @@ impl Read {
                     self.unerased.push(removed.connection.as_uuid());
                 }
             }
-            Body::ConnectorConnected(connected) => {
-                let kept = KeptConnector {
-                    id: connected.connector,
-                    account: connected.account,
-                    only: connected.only.map(ProjectId::from_uuid),
-                };
-                // Used elsewhere now, it keeps its place among the connected.
-                let had = accounts
-                    .connectors
-                    .iter_mut()
-                    .find(|it| it.same_account(&kept));
-                match had {
-                    Some(had) => had.only = kept.only,
-                    None => accounts.connectors.push(kept),
-                }
-            }
+            Body::ConnectorConnected(connected) => accounts.placed(KeptConnector {
+                id: connected.connector,
+                account: connected.account,
+                only: connected.only.map(ProjectId::from_uuid),
+            }),
             Body::ConnectorDisconnected(disconnected) => {
                 accounts.connectors.retain(|kept| {
                     kept.id != disconnected.connector || kept.account != disconnected.account

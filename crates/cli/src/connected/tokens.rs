@@ -55,10 +55,15 @@ impl Connected {
         let mut current = self.kept_for(url, account).await?;
         if left(&current).is_some_and(|left| left < RENEW_BEFORE) && current.refresh.is_some() {
             let renewing = |fresh| {
+                let at = match account {
+                    Some(account) => format!("{url} ({account})"),
+                    None => url.to_owned(),
+                };
                 let job = ConnectionRenewal {
                     ledger: self.ledger.clone(),
                     current: current.clone(),
                     reachable: self.reachable,
+                    at,
                 };
                 Some(Renewing { job, fresh })
             };
@@ -115,7 +120,9 @@ impl RequestSigner for Signer {
     }
 
     fn insufficient(&self, scope: &str) {
-        self.connected.more.ask(&self.url, scope);
+        self.connected
+            .more
+            .ask(&self.url, self.account.as_deref(), scope);
     }
 }
 
@@ -124,13 +131,16 @@ struct ConnectionRenewal {
     ledger: Ledger,
     current: ConnectionConnected,
     reachable: Reachable,
+    /// The server's address, and the account it signs in as when named: one account's
+    /// renewal there waits for no other's.
+    at: String,
 }
 
 impl Renew for ConnectionRenewal {
     type Kept = ConnectionConnected;
 
     fn url(&self) -> &str {
-        &self.current.url
+        &self.at
     }
 
     async fn renewed(&self) -> Result<ConnectionConnected, Ended<ConnectionConnected>> {

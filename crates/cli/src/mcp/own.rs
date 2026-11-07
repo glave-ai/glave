@@ -368,7 +368,7 @@ impl Servers {
     /// service; every other place has only those used everywhere.
     pub(crate) fn tools(&self) -> OwnTools {
         let running = self.lock();
-        let placed = |place: Option<ProjectId>| -> Placed {
+        let of_place = |place: Option<ProjectId>| -> Placed {
             let here = serving(&running.servers, place);
             let servers: Vec<Arc<McpServer>> = (self.catalog.iter().cloned())
                 .chain(here.iter().map(|(_, server)| Arc::clone(server)))
@@ -390,9 +390,9 @@ impl Servers {
             .collect();
         let catalog = glave_session::Catalog::built_in().map(|it| it.connectors);
         let connectors = catalog.unwrap_or_default().into_iter().map(|it| it.id);
-        let everywhere = OwnTools::new(placed(None), connectors.collect());
+        let everywhere = OwnTools::new(of_place(None), connectors.collect());
         places.into_iter().fold(everywhere, |tools, place| {
-            tools.with_place(place, placed(Some(place)))
+            tools.with_place(place, of_place(Some(place)))
         })
     }
 
@@ -430,17 +430,17 @@ impl Servers {
 
 /// Of `servers`, those the threads of `place` use, in order: a connector's account the place
 /// has of its own in the place of the one used everywhere, so a thread never has two of one
-/// service; else the first.
+/// service; of two alike, which the ledger never keeps, the first, as `connector/list` says.
 fn serving<T>(servers: &[(Wanted, T)], place: Option<ProjectId>) -> Vec<&(Wanted, T)> {
     let connector = |wanted: &Wanted| matches!(wanted.from, From::Connector { .. });
+    let own = |wanted: &Wanted| place.is_some() && wanted.from == (From::Connector { only: place });
     let mut here: Vec<&(Wanted, T)> = Vec::new();
     for entry in servers.iter().filter(|(it, _)| it.used_in(place)) {
         let wanted = &entry.0;
         let same = (here.iter_mut())
             .find(|(had, _)| connector(wanted) && connector(had) && had.name == wanted.name);
-        let own = place.is_some() && wanted.from == (From::Connector { only: place });
         match same {
-            Some(had) if own => *had = entry,
+            Some(had) if own(wanted) && !own(&had.0) => *had = entry,
             Some(_) => {}
             None => here.push(entry),
         }
@@ -599,10 +599,15 @@ mod tests {
             (server("mine", "mine"), "mine"),
             (account(None, None), "glave"),
             (account(Some("Acme"), acme), "acme"),
+            (account(Some("Beta"), acme), "beta"),
         ];
         let used =
             |place| -> Vec<&str> { serving(&servers, place).iter().map(|(_, it)| *it).collect() };
-        assert_eq!(used(acme), ["mine", "acme"], "never two of one service");
+        assert_eq!(
+            used(acme),
+            ["mine", "acme"],
+            "never two of one service, the first of two alike"
+        );
         assert_eq!(used(other), ["mine", "glave"]);
         assert_eq!(used(None), ["mine", "glave"]);
     }

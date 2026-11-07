@@ -67,6 +67,8 @@ interface Row {
   readonly place: string | null;
   /** The account of it the row moves and disconnects: its first, by its name, none unnamed. */
   readonly account: string | null;
+  /** What its moving and disconnecting call it: its name, with the account's when named. */
+  readonly called: string;
   /** The choice of where it is used, as screen readers name it. */
   readonly placeLabel: string;
 }
@@ -259,7 +261,7 @@ export class ConnectorsComponent {
     this.offered() && this.sections().length === 0 ? this.copy.noMatch : '',
   );
   protected readonly disconnectHeading = computed(() => {
-    const name = this.disconnecting()?.name ?? '';
+    const name = this.disconnecting()?.called ?? '';
     return $localize`:@@connectors.disconnectHeading:Disconnect ${name}:NAME:?`;
   });
 
@@ -437,6 +439,8 @@ export class ConnectorsComponent {
     const busy = this.working().has(id) && waited === undefined;
     const problem = this.problems().get(id) ?? null;
     const [first] = connector.accounts ?? [];
+    const account = first?.name ?? null;
+    const called = account === null ? name : `${name} (${account})`;
     const base = {
       id,
       name,
@@ -447,10 +451,11 @@ export class ConnectorsComponent {
       waiting: false,
       link: null,
       linkText: '',
-      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${name}:NAME:`,
+      disconnectLabel: $localize`:@@connectors.disconnectLabel:Disconnect ${called}:NAME:`,
       place: status === 'available' || !this.choosing() ? null : (first?.only ?? EVERYWHERE),
-      placeLabel: $localize`:@@connectors.placeLabel:Where ${name}:NAME: is used`,
-      account: first?.name ?? null,
+      placeLabel: $localize`:@@connectors.placeLabel:Where ${called}:NAME: is used`,
+      account,
+      called,
     };
     if (connected) {
       return {

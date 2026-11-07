@@ -390,6 +390,8 @@ describe('ConnectorsComponent', () => {
     expect(rows(root, 'connectors-connected')).toEqual([
       'N Notion Glave: Everywhere, including chats · Acme: Only in Acme Site Disconnect',
     ]);
+    const action = root.querySelector('[data-testid="connector-action"]');
+    expect(action?.getAttribute('aria-label')).toBe('Disconnect Notion (Glave)');
     await expectAccessible(root);
   });
 });

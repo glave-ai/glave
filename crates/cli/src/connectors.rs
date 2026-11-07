@@ -5,6 +5,7 @@
 //! `glave connectors use <id> <where>` changes where it is used; `glave connectors add` connects
 //! another account of one, named, for one place. An account is `<id>:<name>` (`stripe:Acme`).
 
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use anyhow::bail;
@@ -27,7 +28,8 @@ Usage:
   glave connectors add <id>:<name> <project>
                                           connect another account of one, called <name>, used
                                           only in that project: there it takes the place of
-                                          the one used everywhere
+                                          the one used everywhere. Also signs in to one again,
+                                          where it is used
   glave connectors disconnect <id>        disconnect one, destroying its sign-in
 
 <id> is an app's, or one account's as <id>:<name> (stripe:Acme). Connect one with
@@ -45,7 +47,7 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
                 let place = place.join(" ");
                 reach::with(async |server| used(server, id, &place, false).await).await
             }
-            ["add", id, place @ ..] if id.contains(':') && !place.is_empty() => {
+            ["add", id, place @ ..] if !place.is_empty() => {
                 let place = place.join(" ");
                 reach::with(async |server| used(server, id, &place, true).await).await
             }
@@ -85,8 +87,9 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
     if mine.is_empty() {
         println!("  none yet");
     }
+    let places = places(server, &connectors).await?;
     for connector in mine {
-        connected_lines(connector);
+        connected_lines(connector, &places);
     }
     for category in &categories {
         let rest: Vec<&ConnectorInfo> = connectors
@@ -118,22 +121,42 @@ fn line(connector: &ConnectorInfo) -> String {
 
 /// Prints a connector connected: its id, its name and where it is used, or, with more than
 /// one account, how many, then each account by its handle with where it is used.
-fn connected_lines(connector: &ConnectorInfo) {
+fn connected_lines(connector: &ConnectorInfo, places: &Places) {
     match connector.accounts.as_slice() {
-        [one] if one.name.is_none() => {
-            let (id, name) = (&connector.id, &connector.name);
-            println!("  {id:<26} {name}: {}", one.used);
-            again(connector, one);
+        [one] => {
+            let (handle, name) = (handle(connector, one), &connector.name);
+            println!("  {handle:<26} {name}: {}", one.used);
+            again(connector, one, places);
         }
         accounts => {
             let (id, name, count) = (&connector.id, &connector.name, accounts.len());
             println!("  {id:<26} {name}: {count} accounts");
             for account in accounts {
                 println!("    {:<24} {}", handle(connector, account), account.used);
-                again(connector, account);
+                again(connector, account, places);
             }
         }
     }
+}
+
+/// The person's projects' names, by their ids, for saying how to sign in again where an
+/// account is used: none when no account needs it.
+type Places = BTreeMap<ProjectId, String>;
+
+/// The names of the person's projects, when an account of `connectors` is to be signed in to
+/// again, which its line says how to do where it is used.
+async fn places(server: &mut Reached, connectors: &[ConnectorInfo]) -> anyhow::Result<Places> {
+    let again = (connectors.iter().flat_map(|it| &it.accounts))
+        .any(|it| it.status == ConnectorStatus::SignInAgain);
+    if !again {
+        return Ok(Places::new());
+    }
+    let Reply::Projects { projects, .. } =
+        server.request(Request::ProjectList { limit: None }).await?
+    else {
+        bail!("glave answered project/list with something else");
+    };
+    Ok(projects.into_iter().map(|it| (it.id, it.name)).collect())
 }
 
 /// How an account is named in these commands: `stripe`, or `stripe:Acme`.
@@ -144,16 +167,20 @@ fn handle(connector: &ConnectorInfo, account: &ConnectorAccount) -> String {
     }
 }
 
-/// Says how to sign in to `account` again, when its sign-in no longer works.
-fn again(connector: &ConnectorInfo, account: &ConnectorAccount) {
+/// Says how to sign in to `account` again, where it is used, when its sign-in no longer works.
+fn again(connector: &ConnectorInfo, account: &ConnectorAccount, places: &Places) {
     if account.status != ConnectorStatus::SignInAgain {
         return;
     }
     let handle = handle(connector, account);
-    match account.name {
-        Some(_) => println!("      sign in again with glave connectors add {handle} <where>"),
-        None => println!("      sign in again with glave connect {handle}"),
-    }
+    let place = match account.only {
+        None => "everywhere".to_owned(),
+        Some(project) => match places.get(&project) {
+            Some(name) => format!("{name:?}"),
+            None => "<where>".to_owned(),
+        },
+    };
+    println!("      sign in again with glave connectors add {handle} {place}");
 }
 
 /// The project called `place` (their Chats among them), or none for everywhere.
@@ -195,7 +222,8 @@ async fn used(server: &mut Reached, handle: &str, place: &str, adding: bool) -> 
     };
     match server.request(request).await? {
         Reply::Connector { connector } => {
-            connected_lines(&connector);
+            let places = places(server, std::slice::from_ref(&connector)).await?;
+            connected_lines(&connector, &places);
             Ok(())
         }
         Reply::SignIn { sign_in } => signed_in(server, &sign_in).await,

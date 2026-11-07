@@ -10,7 +10,7 @@ use std::sync::PoisonError;
 
 use glave_mcp::address;
 use glave_session::protocol::{ApiError, ConnectionStatus, ConnectorSignIn, ConnectorStatus, code};
-use glave_session::{Catalog, Connecting, Connector, KeptConnector};
+use glave_session::{Catalog, Connecting, Connector, KeptConnector, Placement};
 
 use super::{Connected, Remote, described};
 use crate::mcp::Offered;
@@ -43,7 +43,7 @@ impl Connected {
             match (connector.sign_in, sign_in) {
                 (ConnectorSignIn::None, _) => ConnectorStatus::Connected,
                 (ConnectorSignIn::Dcr, Some(sign_in)) => {
-                    let more = self.more.of(&url).is_some();
+                    let more = self.more.of(&url, kept.account.as_deref()).is_some();
                     match described(sign_in, &none, more).status {
                         ConnectionStatus::SignedIn => ConnectorStatus::Connected,
                         _ => ConnectorStatus::SignInAgain,
@@ -85,7 +85,7 @@ impl Connected {
             .ok_or_else(|| unknown(id))?;
         match connector.sign_in {
             ConnectorSignIn::None => {
-                self.ledger.keep_connector(&kept, None).await?;
+                kept_there(self.ledger.keep_connector(&kept, None).await?, &kept)?;
                 Ok(Connecting::Connected)
             }
             ConnectorSignIn::Dcr => {
@@ -93,6 +93,16 @@ impl Connected {
                     return Ok(Connecting::NoWayBack);
                 };
                 let url = at(connector)?;
+                // A server of the person's own settings at its address is used in its stead,
+                // so another account of it would never run.
+                if kept.account.is_some() && self.remotes().await.contains_key(&url) {
+                    let said = format!(
+                        "your own settings name a server at {}'s address, which glave uses in \
+                         its place: remove it there to connect another account",
+                        connector.name
+                    );
+                    return Err(ApiError::new(code::INVALID_PARAMS, said));
+                }
                 let name = match &kept.account {
                     Some(account) => format!("{} ({account})", connector.name),
                     None => connector.name.clone(),
@@ -106,10 +116,7 @@ impl Connected {
     /// Uses the connected account `kept` names where it says from now on: the person's
     /// servers are reconciled at the next turn, and threads elsewhere go without it.
     pub(super) async fn placing(&self, kept: KeptConnector) -> Result<(), ApiError> {
-        if !self.ledger.place_connector(&kept).await? {
-            return Err(not_connected(&kept));
-        }
-        Ok(())
+        kept_there(self.ledger.place_connector(&kept).await?, &kept)
     }
 
     /// Disconnects the account `kept` names, removing its sign-in, so its token is destroyed
@@ -127,7 +134,7 @@ impl Connected {
         if !self.ledger.remove_connector(&kept, &url).await? {
             return Err(not_connected(&kept));
         }
-        self.more.forget(&url);
+        self.more.forget(&url, kept.account.as_deref());
         self.kept().await?;
         Ok(())
     }
@@ -154,6 +161,23 @@ pub(crate) fn catalog() -> Result<Catalog, ApiError> {
 /// `connector`'s address, as glave keeps addresses.
 fn at(connector: &Connector) -> Result<String, ApiError> {
     address(&connector.url).ok_or_else(|| unknown(&connector.id))
+}
+
+/// Whether `kept` was kept where it says, as `placement` says: refused, in plain words, when it
+/// is not connected or another account of its service is used there.
+pub(super) fn kept_there(placement: Placement, kept: &KeptConnector) -> Result<(), ApiError> {
+    match placement {
+        Placement::Placed => Ok(()),
+        Placement::NotConnected => Err(not_connected(kept)),
+        Placement::Taken => Err(ApiError::new(
+            code::INVALID_PARAMS,
+            format!(
+                "another {} account is used there already: use this one somewhere else, or move \
+                 that one first",
+                kept.id
+            ),
+        )),
+    }
 }
 
 /// The account `kept` names is not connected.

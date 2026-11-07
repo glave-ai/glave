@@ -102,7 +102,7 @@ impl Connected {
             .await
             .map(|kept| kept.client.scopes);
         let mut more = granted.unwrap_or_default();
-        more.extend(self.more.of(&url).unwrap_or_default());
+        more.extend(self.more.of(&url, account).unwrap_or_default());
         let (signin, page) = SignIn::start(&url, &name, &redirect, &more, self.reachable)
             .await
             .map_err(|error| refused(&error, &name))?;
@@ -266,14 +266,15 @@ impl Trade {
             by: Principal::person(self.ledger.person()),
         };
         match &self.connector {
+            // Another account of it may have been put in its place while the person signed in.
             Some(connector) => {
-                self.ledger
-                    .keep_connector(connector, Some(&connection))
-                    .await?;
+                let placed = self.ledger.keep_connector(connector, Some(&connection));
+                super::connectors::kept_there(placed.await?, connector)?;
             }
             None => self.ledger.keep_connection(&connection).await?,
         }
-        self.more.forget(&connection.url);
+        self.more
+            .forget(&connection.url, connection.account.as_deref());
         Ok(ConnectionInfo {
             url: connection.url,
             name: Some(self.name),

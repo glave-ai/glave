@@ -130,8 +130,8 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         web.call(&connect(Some(" Glave "), None)).await;
         let unnamed = refused(&web.call(&connect(None, Some(acme))).await);
         assert!(unnamed.contains("name this account"), "{unnamed}");
-        let taken = refused(&web.call(&connect(Some("Acme"), None)).await);
-        assert!(taken.contains("used everywhere already"), "{taken}");
+        let in_use = refused(&web.call(&connect(Some("Acme"), None)).await);
+        assert!(in_use.contains("used everywhere already"), "{in_use}");
         let long = "a".repeat(41);
         let shape = refused(&web.call(&connect(Some(&long), Some(acme))).await);
         assert!(shape.contains("40 characters"), "{shape}");
@@ -158,8 +158,8 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         assert_eq!(deepwiki["accounts"][0]["name"], "Glave", "{in_chats}");
         assert!(deepwiki.get("replaced").is_none());
 
-        let taken = refused(&web.call(&place(Some("Glave"), Some(acme))).await);
-        assert!(taken.contains("only in Acme Site already"), "{taken}");
+        let in_use = refused(&web.call(&place(Some("Glave"), Some(acme))).await);
+        assert!(in_use.contains("only in Acme Site already"), "{in_use}");
         let disconnect = Request::ConnectorDisconnect {
             connector: "deepwiki".into(),
             account: Some("Acme".into()),

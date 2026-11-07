@@ -202,7 +202,7 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
         assert_eq!(status(&listed, docs), ConnectionStatus::AsksMore);
         assert_eq!(status(&listed, tracker), ConnectionStatus::SignedIn);
         assert_eq!(
-            connected.more.of(docs),
+            connected.more.of(docs, None),
             Some(
                 ["files:write", "files:read", "admin"]
                     .map(str::to_owned)
@@ -211,13 +211,13 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
             "everything asked for, for the next sign-in there"
         );
 
-        connected.more.forget(docs);
+        connected.more.forget(docs, None);
         let listed = connected.list().await.unwrap();
         assert_eq!(status(&listed, docs), ConnectionStatus::SignedIn);
         connected.signer(tracker, None).insufficient("admin");
         connected.remove(tracker.to_owned()).await.unwrap();
         assert_eq!(
-            connected.more.of(tracker),
+            connected.more.of(tracker, None),
             None,
             "forgotten with its sign-in"
         );
@@ -278,56 +278,11 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
             "listed as a connector, not a connection"
         );
 
-        connected.more.ask(url, "admin");
+        connected.more.ask(url, None, "admin");
         let listed = connected.connectors().await.unwrap();
         assert_eq!(
             status(&listed, "linear"),
             Some(ConnectorStatus::SignInAgain)
-        );
-
-        connected.more.forget(url);
-
-        // A second account, named, signed in to apart: each sends only its own token.
-        let acme = KeptConnector {
-            account: Some("Acme".into()),
-            only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
-            ..everywhere("linear")
-        };
-        let theirs = fake_secret("lin_");
-        let acme_sign_in = ConnectionConnected {
-            account: acme.account.clone(),
-            ..signed_in(url, &theirs, None)
-        };
-        ledger
-            .keep_connector(&acme, Some(&acme_sign_in))
-            .await
-            .unwrap();
-        let listed = connected.connectors().await.unwrap();
-        let linear: Vec<_> = listed.iter().filter(|(it, _)| it.id == "linear").collect();
-        assert_eq!(
-            linear,
-            [
-                &(everywhere("linear"), ConnectorStatus::Connected),
-                &(acme.clone(), ConnectorStatus::Connected)
-            ]
-        );
-        let sent = |account| connected.token(url, account);
-        let sent = (sent(None).await, sent(Some("Acme")).await);
-        let sent = (sent.0.unwrap(), sent.1.unwrap());
-        assert_eq!(
-            (sent.0.expose(), sent.1.expose()),
-            (token.as_str(), theirs.as_str())
-        );
-        assert!(
-            connected.list().await.unwrap().is_empty(),
-            "nor is a named one"
-        );
-        connected.disconnect(acme.clone()).await.unwrap();
-        let signed = connected.signed().await;
-        assert_eq!(
-            signed.addresses,
-            [(url.to_owned(), None)].into(),
-            "the other's stays"
         );
 
         connected.disconnect(everywhere("linear")).await.unwrap();
@@ -359,6 +314,78 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NO_SERVER, "not offered");
+    });
+}
+
+#[test]
+fn two_accounts_of_a_connector_are_signed_in_to_asked_of_and_disconnected_apart() {
+    let home = TempDir::new("conn-accounts").unwrap();
+    let runtime = glave_ports::testing::runtime().unwrap();
+    runtime.block_on(async {
+        let ledger = crate::accounts::in_memory().await.unwrap();
+        let connected = connected(&ledger, &home, None);
+        let url = "https://mcp.linear.app/mcp";
+        let (token, theirs) = (fake_secret("lin_"), fake_secret("lin_"));
+        let first = signed_in(url, &token, None);
+        ledger
+            .keep_connector(&everywhere("linear"), Some(&first))
+            .await
+            .unwrap();
+        let acme = KeptConnector {
+            account: Some("Acme".into()),
+            only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
+            ..everywhere("linear")
+        };
+        let second = ConnectionConnected {
+            account: acme.account.clone(),
+            ..signed_in(url, &theirs, None)
+        };
+        ledger.keep_connector(&acme, Some(&second)).await.unwrap();
+        let statuses = || async {
+            let listed = connected.connectors().await.unwrap();
+            (listed.into_iter())
+                .filter(|(it, _)| it.id == "linear")
+                .collect::<Vec<_>>()
+        };
+        let both = [
+            (everywhere("linear"), ConnectorStatus::Connected),
+            (acme.clone(), ConnectorStatus::Connected),
+        ];
+        assert_eq!(statuses().await, both);
+        let sent = |account| connected.token(url, account);
+        let (one, two) = (sent(None).await.unwrap(), sent(Some("Acme")).await.unwrap());
+        assert_eq!(
+            (one.expose(), two.expose()),
+            (token.as_str(), theirs.as_str())
+        );
+        let none = connected.list().await.unwrap();
+        assert!(none.is_empty(), "a named one is no connection either");
+
+        connected.more.ask(url, Some("Acme"), "admin");
+        let asked = statuses().await;
+        let asked: Vec<_> = asked.iter().map(|(_, status)| *status).collect();
+        assert_eq!(
+            asked,
+            [ConnectorStatus::Connected, ConnectorStatus::SignInAgain],
+            "one account's server asking for more asks nothing of the other"
+        );
+
+        let mine = format!(r#"{{"mcpServers": {{"mine": {{"url": "{url}"}}}}}}"#);
+        std::fs::write(home.join(crate::mcp::FILE), mine).unwrap();
+        let back = Some("http://127.0.0.1:1/connect/callback".to_owned());
+        let beta = KeptConnector {
+            account: Some("Beta".into()),
+            ..acme.clone()
+        };
+        let refused = connected.connect(beta, back).await.unwrap_err();
+        let said = refused.message.to_string();
+        assert!(said.contains("your own settings"), "{said}");
+        std::fs::remove_file(home.join(crate::mcp::FILE)).unwrap();
+
+        connected.disconnect(acme).await.unwrap();
+        let signed = connected.signed().await;
+        let left = [(url.to_owned(), None)].into();
+        assert_eq!(signed.addresses, left, "the other's sign-in stays");
     });
 }
 
