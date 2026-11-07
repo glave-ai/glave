@@ -94,16 +94,30 @@ export class ConnectorsService {
     return false;
   }
 
-  /** Uses the connector `id` only in `only`, a project or Chats, or everywhere, then lists again. */
-  async place(id: string, only: ProjectId | null): Promise<void> {
-    const params = only === null ? { connector: id } : { connector: id, only };
-    await this.session.call('connector/place', params);
+  /**
+   * Uses the account `account` of the connector `id` (none: the one never named) only in
+   * `only`, a project or Chats, or everywhere, then lists again.
+   */
+  async place(id: string, account: string | null, only: ProjectId | null): Promise<void> {
+    await this.session.call('connector/place', {
+      connector: id,
+      ...named(account),
+      ...(only === null ? {} : { only }),
+    });
     await this.load();
   }
 
-  /** Disconnects the connector `id`, destroying its sign-in, then lists them again. */
-  async disconnect(id: string): Promise<void> {
-    await this.session.call('connector/disconnect', { connector: id });
+  /**
+   * Disconnects the account `account` of the connector `id` (none: the one never named),
+   * destroying its sign-in, then lists them again.
+   */
+  async disconnect(id: string, account: string | null = null): Promise<void> {
+    await this.session.call('connector/disconnect', { connector: id, ...named(account) });
     await this.load();
   }
+}
+
+/** An account's name as a call's parameters: none for the one never named. */
+function named(account: string | null): { readonly account?: string } {
+  return account === null ? {} : { account };
 }

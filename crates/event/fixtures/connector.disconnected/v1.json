@@ -1,1 +1,1 @@
-{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000067","thread":"00000000-0000-7000-8000-000000000002","seq":8,"at":"2026-10-15T09:25:00.000Z","type":"connector.disconnected","v":1,"data":{"connector":"linear","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11"}}}
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000067","thread":"00000000-0000-7000-8000-000000000002","seq":8,"at":"2026-10-15T09:25:00.000Z","type":"connector.disconnected","v":1,"data":{"connector":"linear","account":"Acme","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11"}}}

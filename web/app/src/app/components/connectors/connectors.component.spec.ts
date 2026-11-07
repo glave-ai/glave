@@ -269,9 +269,11 @@ describe('ConnectorsComponent', () => {
     const used = (): ConnectorInfo => ({
       ...NOTION,
       status: 'connected',
-      ...(only === null
-        ? { used: 'Everywhere, including chats' }
-        : { only, used: 'Only in Acme Site' }),
+      accounts: [
+        only === null
+          ? { status: 'connected', used: 'Everywhere, including chats' }
+          : { status: 'connected', only, used: 'Only in Acme Site' },
+      ],
     });
     const fake = new FakeSession()
       .answer('project/list', {
@@ -316,7 +318,11 @@ describe('ConnectorsComponent', () => {
               connectors: [
                 DEEPWIKI,
                 { ...NOTION, status: 'connected' },
-                { ...LINEAR, status: 'connected', only: 'p3', used: 'Only in Beta' },
+                {
+                  ...LINEAR,
+                  status: 'connected',
+                  accounts: [{ status: 'connected', only: 'p3', used: 'Only in Beta' }],
+                },
               ],
             },
       )
@@ -344,7 +350,13 @@ describe('ConnectorsComponent', () => {
       .answer('thread/list', { threads: [] })
       .answer('connector/list', {
         categories: CATEGORIES,
-        connectors: [{ ...NOTION, status: 'connected', used: 'Everywhere, including chats' }],
+        connectors: [
+          {
+            ...NOTION,
+            status: 'connected',
+            accounts: [{ status: 'connected', used: 'Everywhere, including chats' }],
+          },
+        ],
       });
     const { fixture, root } = await page(fake);
     await TestBed.inject(ProjectsService).refresh();
@@ -353,5 +365,31 @@ describe('ConnectorsComponent', () => {
       'N Notion Everywhere, including chats Disconnect',
     ]);
     expect(root.querySelector('[data-testid="connector-place-trigger"]')).toBeNull();
+  });
+
+  it('says where each account of a service is used, by its name', async () => {
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [record('p2', 'Chats', 'personal')] })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', {
+        categories: CATEGORIES,
+        connectors: [
+          {
+            ...NOTION,
+            status: 'connected',
+            accounts: [
+              { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+              { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' },
+            ],
+          },
+        ],
+      });
+    const { fixture, root } = await page(fake);
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    expect(rows(root, 'connectors-connected')).toEqual([
+      'N Notion Glave: Everywhere, including chats · Acme: Only in Acme Site Disconnect',
+    ]);
+    await expectAccessible(root);
   });
 });

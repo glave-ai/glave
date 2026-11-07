@@ -19,6 +19,7 @@ use glave_mcp::{Limits, McpServer, Reachable};
 use glave_ports::ProjectId;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
+use glave_session::KeptConnector;
 
 use super::{FILE, Offered, environment, mine_untrusted, turned_on};
 use crate::connected::{Connected, Signed};
@@ -32,8 +33,10 @@ pub(crate) struct Wanted {
     name: String,
     config: ServerConfig,
     untrusted: bool,
-    /// Whether the person is signed in at its address.
+    /// Whether the person is signed in at its address, as its account.
     signed_in: bool,
+    /// For a connector's account the person named, its name: it signs in as that account.
+    account: Option<String>,
     from: From,
 }
 
@@ -55,6 +58,7 @@ impl Wanted {
             && self.config == other.config
             && self.untrusted == other.untrusted
             && self.signed_in == other.signed_in
+            && self.account == other.account
             && connector(self) == connector(other)
     }
 
@@ -123,20 +127,21 @@ pub(crate) async fn wanted(
             .with_context(|| format!("in {}", path.display()))?
     };
     let chose = |id: &str| chosen.is_none_or(|chosen| chosen.value.iter().any(|it| it == id));
-    let connectors = connectors.into_iter().filter(|(id, _, _)| chose(id));
+    let connectors = connectors.into_iter().filter(|(_, kept)| chose(&kept.id));
     let configs = configs
         .into_iter()
-        .map(|(name, config)| (name, config, From::Settings));
-    let connectors =
-        connectors.map(|(name, config, only)| (name, config, From::Connector { only }));
+        .map(|(name, config)| (name, config, None, From::Settings));
+    let connectors = connectors.map(|(config, kept)| {
+        let from = From::Connector { only: kept.only };
+        (kept.id, config, kept.account, from)
+    });
     Ok(configs
         .chain(connectors)
-        .map(|(name, config, from)| {
+        .map(|(name, config, account, from)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
             let signed_in = match &config {
-                ServerConfig::Http { url, .. } => {
-                    glave_mcp::address(url).is_some_and(|url| signed.addresses.contains(&url))
-                }
+                ServerConfig::Http { url, .. } => glave_mcp::address(url)
+                    .is_some_and(|url| signed.addresses.contains(&(url, account.clone()))),
                 ServerConfig::Stdio { .. } => false,
             };
             Wanted {
@@ -144,20 +149,21 @@ pub(crate) async fn wanted(
                 config,
                 untrusted,
                 signed_in,
+                account,
                 from,
             }
         })
         .collect())
 }
 
-/// The connectors of glave's catalog `signed` holds that `constraints` offer, by their ids, as
-/// remote servers, each with the one project it is used in alone, in the order of their ids:
-/// none the person's `own` servers already name, or are at the address of.
+/// The accounts of the connectors of glave's catalog `signed` holds that `constraints` offer,
+/// each as a remote server, with where it is used, in the order of their ids, then the order
+/// connected: none the person's `own` servers already name, or are at the address of.
 fn connectors(
     own: &BTreeMap<String, ServerConfig>,
     signed: &Signed,
     constraints: &Constraints,
-) -> Vec<(String, ServerConfig, Option<ProjectId>)> {
+) -> Vec<(ServerConfig, KeptConnector)> {
     let Ok(catalog) = glave_session::Catalog::built_in() else {
         return Vec::new();
     };
@@ -169,22 +175,22 @@ fn connectors(
             ServerConfig::Stdio { .. } => None,
         })
         .collect();
-    let kept = |id: &str| signed.connectors.iter().find(|it| it.id == id);
-    let mut connectors: Vec<(String, ServerConfig, Option<ProjectId>)> = catalog
+    let mut connectors: Vec<(ServerConfig, KeptConnector)> = catalog
         .connectors
         .into_iter()
         .filter(|it| offered.allows(&it.id) && !own.contains_key(&it.id))
         .filter(|it| glave_mcp::address(&it.url).is_some_and(|url| !theirs.contains(&url)))
-        .filter_map(|it| {
-            let only = kept(&it.id)?.only;
+        .flat_map(|it| {
             let config = ServerConfig::Http {
                 url: it.url,
                 headers: BTreeMap::new(),
             };
-            Some((it.id, config, only))
+            (signed.connectors.iter())
+                .filter(move |kept| kept.id == it.id)
+                .map(move |kept| (config.clone(), kept.clone()))
         })
         .collect();
-    connectors.sort_by(|one, other| one.0.cmp(&other.0));
+    connectors.sort_by(|one, other| one.1.id.cmp(&other.1.id));
     connectors
 }
 
@@ -257,7 +263,9 @@ impl Servers {
         };
         let server = match (&wanted.config, &self.connected) {
             (ServerConfig::Http { url, headers }, Some(connected)) => {
-                let server = McpServer::remote(name, url, headers, connected.signer(url), limits);
+                let signer = connected.signer(url, wanted.account.as_deref());
+                let server = McpServer::remote(name, url, headers, signer, limits)
+                    .account(wanted.account.clone());
                 match connected.search_at(url) {
                     Some(search) => server.searching_with(search.tool),
                     None => server,
@@ -355,14 +363,13 @@ impl Servers {
 
     /// The servers as tool sources, for the threads of each place: the catalog first, then
     /// those used there in the order of their names, then their resources. A place with
-    /// connectors of its own has them beside those used everywhere; every other place has
-    /// only those.
+    /// connectors of its own has them beside those used everywhere, its own account of a
+    /// service in the place of the one used everywhere, so a thread never has two of one
+    /// service; every other place has only those used everywhere.
     pub(crate) fn tools(&self) -> OwnTools {
         let running = self.lock();
-        let used_in = |place: Option<ProjectId>| -> Placed {
-            let here: Vec<&(Wanted, Arc<McpServer>)> = (running.servers.iter())
-                .filter(|(wanted, _)| wanted.used_in(place))
-                .collect();
+        let placed = |place: Option<ProjectId>| -> Placed {
+            let here = serving(&running.servers, place);
             let servers: Vec<Arc<McpServer>> = (self.catalog.iter().cloned())
                 .chain(here.iter().map(|(_, server)| Arc::clone(server)))
                 .collect();
@@ -383,9 +390,9 @@ impl Servers {
             .collect();
         let catalog = glave_session::Catalog::built_in().map(|it| it.connectors);
         let connectors = catalog.unwrap_or_default().into_iter().map(|it| it.id);
-        let everywhere = OwnTools::new(used_in(None), connectors.collect());
+        let everywhere = OwnTools::new(placed(None), connectors.collect());
         places.into_iter().fold(everywhere, |tools, place| {
-            tools.with_place(place, used_in(Some(place)))
+            tools.with_place(place, placed(Some(place)))
         })
     }
 
@@ -419,6 +426,26 @@ impl Servers {
         let retired = std::mem::take(&mut self.lock().retired);
         super::close(&[self.all(), retired].concat()).await;
     }
+}
+
+/// Of `servers`, those the threads of `place` use, in order: a connector's account the place
+/// has of its own in the place of the one used everywhere, so a thread never has two of one
+/// service; else the first.
+fn serving<T>(servers: &[(Wanted, T)], place: Option<ProjectId>) -> Vec<&(Wanted, T)> {
+    let connector = |wanted: &Wanted| matches!(wanted.from, From::Connector { .. });
+    let mut here: Vec<&(Wanted, T)> = Vec::new();
+    for entry in servers.iter().filter(|(it, _)| it.used_in(place)) {
+        let wanted = &entry.0;
+        let same = (here.iter_mut())
+            .find(|(had, _)| connector(wanted) && connector(had) && had.name == wanted.name);
+        let own = place.is_some() && wanted.from == (From::Connector { only: place });
+        match same {
+            Some(had) if own => *had = entry,
+            Some(_) => {}
+            None => here.push(entry),
+        }
+    }
+    here
 }
 
 #[cfg(test)]
@@ -470,14 +497,22 @@ mod tests {
         }}"#;
         std::fs::write(home.join(FILE), servers).unwrap();
         let project = ProjectId::from_uuid(uuid::Uuid::from_u128(7));
+        let sentry = "https://mcp.sentry.dev/mcp".to_owned();
+        let mut connectors: Vec<KeptConnector> = ["sentry", "deepwiki", "linear", "notion"]
+            .map(|id| KeptConnector {
+                id: id.to_owned(),
+                account: None,
+                only: (id == "deepwiki").then_some(project),
+            })
+            .into();
+        connectors.push(KeptConnector {
+            id: "sentry".to_owned(),
+            account: Some("Acme".to_owned()),
+            only: Some(project),
+        });
         let signed = Signed {
-            addresses: BTreeSet::from(["https://mcp.sentry.dev/mcp".to_owned()]),
-            connectors: ["sentry", "deepwiki", "linear", "notion"]
-                .map(|id| glave_session::KeptConnector {
-                    id: id.to_owned(),
-                    only: (id == "deepwiki").then_some(project),
-                })
-                .into(),
+            addresses: BTreeSet::from([(sentry, None)]),
+            connectors,
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -494,10 +529,14 @@ mod tests {
         let (all, signed_in, from) = names("version = 1\n", None);
         assert_eq!(
             all,
-            ["linear", "mine", "deepwiki", "sentry"],
-            "a name or an address of mcp.json's is its own"
+            ["linear", "mine", "deepwiki", "sentry", "sentry"],
+            "a name or an address of mcp.json's is its own; each account of one starts"
         );
-        assert_eq!(signed_in, [false, false, false, true]);
+        assert_eq!(
+            signed_in,
+            [false, false, false, true, false],
+            "signed in to as each account apart"
+        );
         let only = |only| From::Connector { only };
         assert_eq!(
             from,
@@ -505,7 +544,8 @@ mod tests {
                 From::Settings,
                 From::Settings,
                 only(Some(project)),
-                only(None)
+                only(None),
+                only(Some(project))
             ],
             "used where it was put"
         );
@@ -513,7 +553,10 @@ mod tests {
             value: vec!["sentry".to_owned()],
             from: glave_config::policy::Source::Default,
         };
-        assert_eq!(names("version = 1\n", Some(&chosen)).0, ["sentry"]);
+        assert_eq!(
+            names("version = 1\n", Some(&chosen)).0,
+            ["sentry", "sentry"]
+        );
         let unconnected = Chosen {
             value: vec!["todoist".to_owned()],
             from: glave_config::policy::Source::Default,
@@ -539,8 +582,29 @@ mod tests {
             },
             untrusted: false,
             signed_in: false,
+            account: None,
             from: From::Settings,
         }
+    }
+
+    #[test]
+    fn a_place_s_own_account_of_a_service_takes_the_place_of_the_one_used_everywhere() {
+        let [acme, other] = [7, 8].map(|n| Some(ProjectId::from_uuid(uuid::Uuid::from_u128(n))));
+        let account = |name: Option<&str>, only| Wanted {
+            account: name.map(str::to_owned),
+            from: From::Connector { only },
+            ..server("stripe", "stripe")
+        };
+        let servers = [
+            (server("mine", "mine"), "mine"),
+            (account(None, None), "glave"),
+            (account(Some("Acme"), acme), "acme"),
+        ];
+        let used =
+            |place| -> Vec<&str> { serving(&servers, place).iter().map(|(_, it)| *it).collect() };
+        assert_eq!(used(acme), ["mine", "acme"], "never two of one service");
+        assert_eq!(used(other), ["mine", "glave"]);
+        assert_eq!(used(None), ["mine", "glave"]);
     }
 
     #[test]

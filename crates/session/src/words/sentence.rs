@@ -489,6 +489,16 @@ sentences! {
     UsedEverywhere = "used-everywhere" "Everywhere, including chats",
     UsedOnlyIn { place: String } = "used-only-in" "Only in { $place }",
     UsedOnlyInGone = "used-only-in-gone" "Only in a project that is gone",
+    AccountUnnamed { service: String } = "account-unnamed"
+        "you have { $service } connected already: name this account, such as for the company it's for, to tell the two apart",
+    AccountNameShape { most: usize } = "account-name-shape"
+        "an account's name is a few words, { $most } characters at most",
+    AccountTakenEverywhere { service: String } = "account-taken-everywhere"
+        "another { $service } account is used everywhere already: use this one only in one place, or move that one first",
+    AccountTakenIn { service: String, place: String } = "account-taken-in"
+        "another { $service } account is used only in { $place } already: use this one somewhere else, or move that one first",
+    AccountReplaced { service: String } = "account-replaced"
+        "Your { $service } account used everywhere else is not used here: this one takes its place.",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",
     SearchNotHere = "search-not-here"
         "web search is set up by whoever runs this server, not from here",

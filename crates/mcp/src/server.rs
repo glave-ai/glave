@@ -107,6 +107,9 @@ pub struct McpServer {
     /// The model's name for the server's tool that searches the web, when it has one: each
     /// call is told to the person as what was searched.
     search: Option<String>,
+    /// The person's name for the account of the service it is signed in to, when they named
+    /// one: each call, and an approval of it, names it.
+    account: Option<String>,
 }
 
 impl McpServer {
@@ -327,6 +330,7 @@ impl McpServer {
             waits: limits.waits(),
             untrusted: false,
             search: None,
+            account: None,
         }
     }
 
@@ -349,6 +353,15 @@ impl McpServer {
         self
     }
 
+    /// Names `account`, the person's name for the account of the service it is signed in to,
+    /// in each call's line, so an approval says which account would act: `mcp__stripe__refund
+    /// (Acme) {…}`.
+    #[must_use]
+    pub fn account(mut self, account: Option<String>) -> Self {
+        self.account = account;
+        self
+    }
+
     /// Whether the server is marked untrusted.
     pub fn is_untrusted(&self) -> bool {
         self.untrusted
@@ -363,6 +376,7 @@ impl McpServer {
             waits: limits.waits(),
             untrusted: false,
             search: None,
+            account: None,
         }
     }
 
@@ -616,9 +630,12 @@ impl ToolSource for McpServer {
     }
 
     fn describe(&self, name: &str, arguments: &Arguments) -> String {
-        match &self.search {
-            Some(search) if search == name => searched(arguments),
-            _ => glave_ports::describe_call(name, arguments),
+        match (&self.search, &self.account) {
+            (Some(search), _) if search == name => searched(arguments),
+            (_, Some(account)) => {
+                glave_ports::describe_call(&format!("{name} ({account})"), arguments)
+            }
+            (_, None) => glave_ports::describe_call(name, arguments),
         }
     }
 

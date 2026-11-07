@@ -16,6 +16,7 @@ fn signed_in(url: &str, token: &str, expires: Option<At>) -> ConnectionConnected
     ConnectionConnected {
         connection: crate::credentials::new_id().unwrap(),
         url: url.to_owned(),
+        account: None,
         token: Secret::new(token),
         expires,
         refresh: None,
@@ -151,7 +152,7 @@ fn each_server_is_sent_only_its_own_sign_in() {
             let connected = &connected;
             async move {
                 connected
-                    .token(url)
+                    .token(url, None)
                     .await
                     .map(|token| token.expose().to_owned())
             }
@@ -189,9 +190,11 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
             ledger.keep_connection(&connection).await.unwrap();
         }
         connected
-            .signer(docs)
+            .signer(docs, None)
             .insufficient("files:write files:read");
-        connected.signer(docs).insufficient("admin files:write");
+        connected
+            .signer(docs, None)
+            .insufficient("admin files:write");
         let status = |listed: &[ConnectionInfo], url: &str| {
             listed.iter().find(|kept| kept.url == url).unwrap().status
         };
@@ -211,7 +214,7 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
         connected.more.forget(docs);
         let listed = connected.list().await.unwrap();
         assert_eq!(status(&listed, docs), ConnectionStatus::SignedIn);
-        connected.signer(tracker).insufficient("admin");
+        connected.signer(tracker, None).insufficient("admin");
         connected.remove(tracker.to_owned()).await.unwrap();
         assert_eq!(
             connected.more.of(tracker),
@@ -282,8 +285,56 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
             Some(ConnectorStatus::SignInAgain)
         );
 
-        connected.disconnect("linear".into()).await.unwrap();
-        let again = connected.disconnect("linear".into()).await.unwrap_err();
+        connected.more.forget(url);
+
+        // A second account, named, signed in to apart: each sends only its own token.
+        let acme = KeptConnector {
+            account: Some("Acme".into()),
+            only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
+            ..everywhere("linear")
+        };
+        let theirs = fake_secret("lin_");
+        let acme_sign_in = ConnectionConnected {
+            account: acme.account.clone(),
+            ..signed_in(url, &theirs, None)
+        };
+        ledger
+            .keep_connector(&acme, Some(&acme_sign_in))
+            .await
+            .unwrap();
+        let listed = connected.connectors().await.unwrap();
+        let linear: Vec<_> = listed.iter().filter(|(it, _)| it.id == "linear").collect();
+        assert_eq!(
+            linear,
+            [
+                &(everywhere("linear"), ConnectorStatus::Connected),
+                &(acme.clone(), ConnectorStatus::Connected)
+            ]
+        );
+        let sent = |account| connected.token(url, account);
+        let sent = (sent(None).await, sent(Some("Acme")).await);
+        let sent = (sent.0.unwrap(), sent.1.unwrap());
+        assert_eq!(
+            (sent.0.expose(), sent.1.expose()),
+            (token.as_str(), theirs.as_str())
+        );
+        assert!(
+            connected.list().await.unwrap().is_empty(),
+            "nor is a named one"
+        );
+        connected.disconnect(acme.clone()).await.unwrap();
+        let signed = connected.signed().await;
+        assert_eq!(
+            signed.addresses,
+            [(url.to_owned(), None)].into(),
+            "the other's stays"
+        );
+
+        connected.disconnect(everywhere("linear")).await.unwrap();
+        let again = connected
+            .disconnect(everywhere("linear"))
+            .await
+            .unwrap_err();
         assert_eq!(again.code, code::NO_CREDENTIAL);
         let accounts = ledger.accounts().await.unwrap();
         assert_eq!(accounts.connectors, [everywhere("deepwiki")]);
@@ -315,6 +366,7 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
 fn everywhere(id: &str) -> KeptConnector {
     KeptConnector {
         id: id.to_owned(),
+        account: None,
         only: None,
     }
 }

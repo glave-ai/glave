@@ -17,6 +17,7 @@ mod choices;
 mod commands;
 mod conformance;
 mod connections;
+mod connector_places;
 mod credentials;
 mod credits;
 mod discover;

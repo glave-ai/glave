@@ -45,8 +45,8 @@ pub use changes::{
 };
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use connectors::{
-    ConnectorCategory, ConnectorCategoryId, ConnectorCompany, ConnectorInfo, ConnectorReturns,
-    ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
+    ConnectorAccount, ConnectorCategory, ConnectorCategoryId, ConnectorCompany, ConnectorInfo,
+    ConnectorReturns, ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
 };
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use credits::{CreditsAccount, CreditsInfo, PersonSpent};
@@ -725,22 +725,33 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         used_in: Option<ProjectId>,
     } -> [Connectors],
-    /// Connects a connector: at once, or the sign-in page, then `connection/poll`. Its threads
-    /// use it everywhere, or only in `only`, a project of the caller's or their Chats.
+    /// Connects an account of a connector: at once, or the sign-in page, then
+    /// `connection/poll`. Its threads use it everywhere, or only in `only`, a project of the
+    /// caller's or their Chats. An `account` the service has already is connected again; a
+    /// second account takes a name of its own, and a place no other account of it is used in.
     "connector/connect" => ConnectorConnect {
         connector: String,
+        /// The person's name for the account: `Acme`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector, SignIn],
-    /// Uses a connected connector everywhere from now on, or only in `only`, a project of the
-    /// caller's or their Chats: threads elsewhere are refused its tools at once.
+    /// Uses an account of a connected connector everywhere from now on, or only in `only`, a
+    /// project of the caller's or their Chats: threads elsewhere are refused its tools at once.
     "connector/place" => ConnectorPlace {
         connector: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         only: Option<ProjectId>,
     } -> [Connector],
-    /// Disconnects a connector, destroying its sign-in.
-    "connector/disconnect" => ConnectorDisconnect { connector: String } -> [Done],
+    /// Disconnects an account of a connector, destroying its sign-in.
+    "connector/disconnect" => ConnectorDisconnect {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+    } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for

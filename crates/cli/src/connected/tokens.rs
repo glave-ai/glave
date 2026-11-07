@@ -20,22 +20,28 @@ use crate::credentials::new_id;
 use crate::credentials::renewing::{Ended, RENEW_BEFORE, Renew, Renewing};
 
 impl Connected {
-    /// What signs each request to the person's server at `url` in: their sign-in there, as it
-    /// is when the request goes out.
-    pub(crate) fn signer(self: &Arc<Self>, url: &str) -> Auth {
+    /// What signs each request to the person's server at `url` in: their sign-in there as
+    /// `account`, a connector's account they named, or none, as it is when the request goes
+    /// out.
+    pub(crate) fn signer(self: &Arc<Self>, url: &str, account: Option<&str>) -> Auth {
         match address(url) {
             Some(url) => Auth::Changing(Arc::new(Signer {
                 connected: Arc::clone(self),
                 url,
+                account: account.map(str::to_owned),
             })),
             None => Auth::None,
         }
     }
 
-    /// The sign-in kept for the server at `url`, if one is.
-    pub(super) async fn kept_for(&self, url: &str) -> Option<ConnectionConnected> {
-        match self.kept().await {
-            Ok(kept) => kept.into_iter().find(|kept| kept.url == url),
+    /// The sign-in kept for the server at `url` as `account`, if one is.
+    pub(super) async fn kept_for(
+        &self,
+        url: &str,
+        account: Option<&str>,
+    ) -> Option<ConnectionConnected> {
+        match self.accounts().await {
+            Ok(accounts) => accounts.sign_in(url, account).cloned(),
             Err(error) => {
                 tracing::warn!("could not read the sign-in to {url}: {}", error.message);
                 None
@@ -43,10 +49,10 @@ impl Connected {
         }
     }
 
-    /// The token for a request to the server at `url`, renewed first when it is about to
-    /// expire; none without a sign-in that still works.
-    pub(super) async fn token(&self, url: &str) -> Option<Secret> {
-        let mut current = self.kept_for(url).await?;
+    /// The token for a request to the server at `url` as `account`, renewed first when it is
+    /// about to expire; none without a sign-in that still works.
+    pub(super) async fn token(&self, url: &str, account: Option<&str>) -> Option<Secret> {
+        let mut current = self.kept_for(url, account).await?;
         if left(&current).is_some_and(|left| left < RENEW_BEFORE) && current.refresh.is_some() {
             let renewing = |fresh| {
                 let job = ConnectionRenewal {
@@ -57,7 +63,7 @@ impl Connected {
                 Some(Renewing { job, fresh })
             };
             let unkept = self.renewals.wait(current.connection, renewing).await;
-            let kept = self.kept_for(url).await?;
+            let kept = self.kept_for(url, account).await?;
             // A renewal glave could not keep serves while the ledger holds what it renewed.
             current = match unkept {
                 Some(fresh) if kept.connection == current.connection => fresh,
@@ -80,6 +86,8 @@ fn left(connection: &ConnectionConnected) -> Option<i64> {
 struct Signer {
     connected: Arc<Connected>,
     url: String,
+    /// The account of a connector it signs in as, when the person named one.
+    account: Option<String>,
 }
 
 impl RequestSigner for Signer {
@@ -88,7 +96,10 @@ impl RequestSigner for Signer {
         _request: &'a Outgoing<'a>,
     ) -> BoxFuture<'a, Result<Vec<Header>, AuthError>> {
         Box::pin(async move {
-            let token = self.connected.token(&self.url).await;
+            let token = self
+                .connected
+                .token(&self.url, self.account.as_deref())
+                .await;
             Ok(token
                 .map(|token| Header {
                     name: "authorization".to_owned(),

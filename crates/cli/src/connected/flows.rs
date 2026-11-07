@@ -96,7 +96,11 @@ impl Connected {
     ) -> Result<SignInLink, ApiError> {
         // As MCP's step-up authorization says: what the sign-in it replaces grants, and what
         // the server asked for since, so nothing granted before is lost.
-        let granted = self.kept_for(&url).await.map(|kept| kept.client.scopes);
+        let account = connector.as_ref().and_then(|it| it.account.as_deref());
+        let granted = self
+            .kept_for(&url, account)
+            .await
+            .map(|kept| kept.client.scopes);
         let mut more = granted.unwrap_or_default();
         more.extend(self.more.of(&url).unwrap_or_default());
         let (signin, page) = SignIn::start(&url, &name, &redirect, &more, self.reachable)
@@ -254,6 +258,7 @@ impl Trade {
         let connection = ConnectionConnected {
             connection: new_id().map_err(|e| ApiError::internal(&e))?,
             url: self.url,
+            account: self.connector.as_ref().and_then(|it| it.account.clone()),
             token: granted.token,
             expires: expires(granted.lasts),
             refresh: granted.refresh,

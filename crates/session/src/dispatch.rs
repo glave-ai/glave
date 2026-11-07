@@ -589,21 +589,36 @@ where
                 };
                 self.list_connectors(caller, &narrowed, used_in).await
             }
-            Request::ConnectorConnect { connector, only } => {
+            Request::ConnectorConnect {
+                connector,
+                account,
+                only,
+            } => {
                 let connector = KeptConnector {
                     id: connector,
+                    account,
                     only,
                 };
                 self.connect_connector(caller, connector).await
             }
-            Request::ConnectorPlace { connector, only } => {
+            Request::ConnectorPlace {
+                connector,
+                account,
+                only,
+            } => {
                 let connector = KeptConnector {
                     id: connector,
+                    account,
                     only,
                 };
                 self.place_connector(caller, connector).await
             }
-            Request::ConnectorDisconnect { connector } => {
+            Request::ConnectorDisconnect { connector, account } => {
+                let connector = KeptConnector {
+                    id: connector,
+                    account,
+                    only: None,
+                };
                 self.disconnect_connector(caller, connector).await
             }
         })

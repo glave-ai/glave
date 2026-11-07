@@ -4,16 +4,17 @@
 //! hands their tokens to the servers; the server decides who may ask, and is where the browser
 //! comes back to. The connectors of glave's catalog (`connectors.rs`) are connected the same
 //! way, by their ids, and listed with the catalog's words in the caller's language, each with
-//! where the person's threads use it: everywhere, or only in one project of theirs.
+//! where the person's threads use it: everywhere, or only in one project of theirs
+//! (`connections/connectors.rs`).
+
+mod connectors;
 
 use glave_event::Secret;
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, ProjectId};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::accounts::KeptConnector;
-use crate::connectors::{Catalog, Narrowed};
 use crate::protocol::{
-    ApiError, ConnectionInfo, ConnectorCategory, ConnectorCategoryId, ConnectorInfo,
-    ConnectorStatus, ConnectorTag, ConnectorTagId, Reply, SearchInfo, SignInLink, Told, code,
+    ApiError, ConnectionInfo, ConnectorStatus, Reply, SearchInfo, SignInLink, Told, code,
 };
 use crate::providers::theirs;
 use crate::server::Server;
@@ -88,23 +89,25 @@ pub trait Connections: Send + Sync {
     /// Turns web search on or off in the person's own settings: how it is then.
     fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
 
-    /// The connectors of glave's catalog the person may connect here, in any order, each with
-    /// whether it is connected and, when it is, where their threads use it.
+    /// The connectors of glave's catalog the person may connect here, in any order: each
+    /// account of one connected, with whether its sign-in works and where their threads use
+    /// it, and each one not connected once, as `Available`.
     fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>>;
 
-    /// Connects `connector`, of glave's catalog, to be used where it says: at once when it
-    /// asks no one to sign in, else by signing in, the browser to come back to `redirect`.
+    /// Connects `connector`, an account of a connector of glave's catalog, to be used where it
+    /// says: at once when it asks no one to sign in, else by signing in as that account, the
+    /// browser to come back to `redirect`.
     fn connect(
         &self,
         connector: KeptConnector,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>>;
 
-    /// Uses the connected connector `connector.id` where `connector` says from now on.
+    /// Uses the connected account `connector` names where it says from now on.
     fn place(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>>;
 
-    /// Disconnects the connector `connector`, destroying its sign-in.
-    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>>;
+    /// Disconnects the account `connector` names, wherever it is used, destroying its sign-in.
+    fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>>;
 }
 
 /// How connecting a connector went.
@@ -175,154 +178,6 @@ where
             Some(sign_in) => Ok(Reply::SignIn { sign_in }),
             None => Err(self.no_way_back()),
         }
-    }
-
-    /// Answers `connector/list`: the catalog's connectors the host offers that have what the
-    /// caller narrowed by, in its order, and the companies, categories and tags they have;
-    /// `used_in` a project of the caller's, only those connected that its threads use.
-    pub(crate) async fn list_connectors(
-        &self,
-        caller: &Caller,
-        narrowed: &Narrowed,
-        used_in: Option<ProjectId>,
-    ) -> Result<Reply, ApiError> {
-        let offered = self.connections_for(caller)?.connectors().await?;
-        if let Some(project) = used_in {
-            self.owned(caller, project).await?;
-        }
-        let catalog = built_in()?;
-        let found = |id: &str| offered.iter().find(|(it, _)| it.id == id);
-        let mut connectors = Vec::new();
-        for connector in catalog.connectors.iter().filter(|it| narrowed.has(it)) {
-            let Some((kept, status)) = found(&connector.id) else {
-                continue;
-            };
-            let connected = *status != ConnectorStatus::Available;
-            let here = connected && kept.only.is_none_or(|only| Some(only) == used_in);
-            if used_in.is_some() && !here {
-                continue;
-            }
-            let mut info = info(connector, *status);
-            if connected {
-                info.only = kept.only;
-                info.used = Some(self.used_where(caller, kept.only).await);
-            }
-            connectors.push(info);
-        }
-        let companies = catalog
-            .companies
-            .iter()
-            .filter(|company| connectors.iter().any(|it| it.company == company.id))
-            .cloned()
-            .collect();
-        let categories = ConnectorCategoryId::ALL
-            .iter()
-            .filter(|id| connectors.iter().any(|it| it.categories.contains(id)))
-            .map(|id| ConnectorCategory {
-                id: *id,
-                name: id.told(),
-            })
-            .collect();
-        let tags = ConnectorTagId::ALL
-            .iter()
-            .filter(|id| connectors.iter().any(|it| it.tags.contains(id)))
-            .map(|id| ConnectorTag {
-                id: *id,
-                name: id.told(),
-            })
-            .collect();
-        Ok(Reply::Connectors {
-            companies,
-            categories,
-            tags,
-            connectors,
-        })
-    }
-
-    /// Answers `connector/connect`, for its threads everywhere or only in a project the
-    /// caller owns.
-    pub(crate) async fn connect_connector(
-        &self,
-        caller: &Caller,
-        connector: KeptConnector,
-    ) -> Result<Reply, ApiError> {
-        let (connections, found) = self.placeable(caller, &connector).await?;
-        let only = connector.only;
-        match connections.connect(connector, self.redirect()).await? {
-            Connecting::Connected => Ok(Reply::Connector {
-                connector: self.placed(caller, &found, only).await,
-            }),
-            Connecting::SignIn(sign_in) => Ok(Reply::SignIn { sign_in }),
-            Connecting::NoWayBack => Err(self.no_way_back()),
-        }
-    }
-
-    /// Answers `connector/place`: the connector, used where it now is.
-    pub(crate) async fn place_connector(
-        &self,
-        caller: &Caller,
-        connector: KeptConnector,
-    ) -> Result<Reply, ApiError> {
-        let (connections, found) = self.placeable(caller, &connector).await?;
-        let only = connector.only;
-        connections.place(connector).await?;
-        Ok(Reply::Connector {
-            connector: self.placed(caller, &found, only).await,
-        })
-    }
-
-    /// The caller's connections and `connector`'s entry in the catalog, once it is one glave
-    /// has and its place, if it has one, a project the caller owns.
-    async fn placeable(
-        &self,
-        caller: &Caller,
-        connector: &KeptConnector,
-    ) -> Result<(&dyn Connections, crate::connectors::Connector), ApiError> {
-        let connections = self.connections_for(caller)?;
-        let found = built_in()?
-            .connector(&connector.id)
-            .cloned()
-            .ok_or_else(|| no_connector(&connector.id))?;
-        if let Some(project) = connector.only {
-            self.owned(caller, project).await?;
-        }
-        Ok((connections, found))
-    }
-
-    /// `connector`, connected and used everywhere, or `only` in one project.
-    async fn placed(
-        &self,
-        caller: &Caller,
-        connector: &crate::connectors::Connector,
-        only: Option<ProjectId>,
-    ) -> ConnectorInfo {
-        ConnectorInfo {
-            only,
-            used: Some(self.used_where(caller, only).await),
-            ..info(connector, ConnectorStatus::Connected)
-        }
-    }
-
-    /// Where a connection the caller's threads use everywhere, or `only` in one project, is
-    /// used, in one line: the project by its name, which may be gone.
-    async fn used_where(&self, caller: &Caller, only: Option<ProjectId>) -> Told {
-        let Some(project) = only else {
-            return Sentence::UsedEverywhere.into();
-        };
-        match self.owned(caller, project).await {
-            Ok(found) => Sentence::UsedOnlyIn { place: found.name }.into(),
-            Err(_) => Sentence::UsedOnlyInGone.into(),
-        }
-    }
-
-    /// Answers `connector/disconnect`.
-    pub(crate) async fn disconnect_connector(
-        &self,
-        caller: &Caller,
-        connector: String,
-    ) -> Result<Reply, ApiError> {
-        self.connections_for(caller)?.disconnect(connector).await?;
-        Ok(Reply::Done {})
     }
 
     /// Answers `connection/poll`.
@@ -409,40 +264,6 @@ where
     pub(crate) fn reached_at(&self, here: Option<String>) {
         let _ = self.inner.reached.set(here);
     }
-}
-
-/// The catalog glave was built with: one that does not read is glave's own fault.
-fn built_in() -> Result<Catalog, ApiError> {
-    Catalog::built_in().map_err(|error| ApiError::internal(&error))
-}
-
-/// The connector `connector` as a client sees it.
-fn info(connector: &crate::connectors::Connector, status: ConnectorStatus) -> ConnectorInfo {
-    ConnectorInfo {
-        id: connector.id.clone(),
-        name: connector.name.clone(),
-        company: connector.company.clone(),
-        url: connector.url.clone(),
-        categories: connector.categories.clone(),
-        tags: connector.tags.clone(),
-        returns: connector.returns,
-        sign_in: connector.sign_in,
-        description: connector.told(),
-        docs: connector.docs.clone(),
-        status,
-        only: None,
-        used: None,
-    }
-}
-
-/// glave offers no connector called `connector`.
-fn no_connector(connector: &str) -> ApiError {
-    ApiError::new(
-        code::NO_SERVER,
-        Sentence::NoConnector {
-            connector: connector.to_owned(),
-        },
-    )
 }
 
 #[cfg(test)]

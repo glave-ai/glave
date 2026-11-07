@@ -4,7 +4,9 @@
 //! at its address; disconnecting it records `connector.disconnected` and removes that sign-in,
 //! destroying its token. Both are content-free: the connector is named by its id in the catalog.
 //! Where its threads use it is recorded with it: everywhere, or only in one project, which may be
-//! the person's Chats; connecting it again records where it is used now, in place of before.
+//! the person's Chats; connecting it again records where it is used now, in place of before. A
+//! person may connect one service more than once, each account named (`Acme`), and each
+//! account's sign-in is its own.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -22,6 +24,10 @@ pub(crate) const DISCONNECTED: &str = "connector.disconnected";
 pub struct ConnectorConnected {
     /// Its id in the catalog: `linear`.
     pub connector: String,
+    /// The person's name for this account of it, `Acme`, where they have more than one: none
+    /// for one they never named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     /// The one project whose threads alone use it, the person's Chats among them: none where
     /// every thread of theirs does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,6 +42,10 @@ pub struct ConnectorConnected {
 pub struct ConnectorDisconnected {
     /// Its id in the catalog.
     pub connector: String,
+    /// The account of it disconnected, by the person's name for it: none for the one never
+    /// named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     /// Who disconnected it.
     pub by: Principal,
 }

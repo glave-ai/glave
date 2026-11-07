@@ -194,6 +194,7 @@ fn connection(n: u128, url: &str, token: &str) -> ConnectionConnected {
     ConnectionConnected {
         connection: credential(n),
         url: url.into(),
+        account: None,
         token: Secret::new(token),
         expires: None,
         refresh: Some(Secret::new(fake_secret("mcr_"))),
@@ -304,10 +305,7 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         let kit = kit();
         let ledger = &kit.ledger;
         let url = "https://mcp.example.com/mcp";
-        let kept = |id: &str, only: Option<u128>| KeptConnector {
-            id: id.to_owned(),
-            only: only.map(|n| ProjectId::from_uuid(uuid(n))),
-        };
+        let kept = |id: &str, only: Option<u128>| account(id, None, only);
         ledger
             .keep_connector(&kept("docs", None), None)
             .await
@@ -339,8 +337,18 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         assert!(!ledger.place_connector(&kept("other", None)).await.unwrap());
         ledger.place_connector(&kept("docs", None)).await.unwrap();
 
-        assert!(ledger.remove_connector("tracker", url).await.unwrap());
-        assert!(!ledger.remove_connector("tracker", url).await.unwrap());
+        assert!(
+            ledger
+                .remove_connector(&kept("tracker", None), url)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !ledger
+                .remove_connector(&kept("tracker", None), url)
+                .await
+                .unwrap()
+        );
         let accounts = ledger.accounts().await.unwrap();
         assert_eq!(
             (accounts.connectors, accounts.connections),
@@ -348,5 +356,49 @@ fn a_connector_is_kept_with_its_sign_in_and_disconnecting_it_erases_the_token() 
         );
         let data = stored(&kit).await;
         assert_eq!(holding(&data, &token), 0, "its key is destroyed: {data:?}");
+    });
+}
+
+/// The account `account` of the connector `id`, used only in the project `only`, or everywhere.
+fn account(id: &str, account: Option<&str>, only: Option<u128>) -> KeptConnector {
+    KeptConnector {
+        id: id.to_owned(),
+        account: account.map(str::to_owned),
+        only: only.map(|n| ProjectId::from_uuid(uuid(n))),
+    }
+}
+
+#[test]
+fn two_accounts_of_one_service_are_each_signed_in_to_and_disconnected_apart() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.stripe.com";
+        let glave = account("stripe", None, None);
+        let acme = account("stripe", Some("Acme"), Some(7));
+        let (one, two) = (fake_secret("mcp_"), fake_secret("mcp_"));
+        let first = connection(1, url, &one);
+        let second = ConnectionConnected {
+            account: Some("Acme".into()),
+            ..connection(2, url, &two)
+        };
+        ledger.keep_connector(&glave, Some(&first)).await.unwrap();
+        ledger.keep_connector(&acme, Some(&second)).await.unwrap();
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(accounts.connectors, [glave.clone(), acme.clone()]);
+        assert_eq!(accounts.accounts_of("stripe").count(), 2);
+        let signed = |account| accounts.sign_in(url, account).map(|it| it.connection);
+        assert_eq!(
+            (signed(None), signed(Some("Acme"))),
+            (Some(first.connection), Some(second.connection)),
+            "the second sign-in replaced no other"
+        );
+
+        assert!(ledger.remove_connector(&acme, url).await.unwrap());
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(accounts.connectors, [glave]);
+        assert_eq!(accounts.connections, [first], "the other account's stays");
+        let data = stored(&kit).await;
+        assert_eq!(holding(&data, &two), 0, "its key is destroyed: {data:?}");
     });
 }

@@ -1,8 +1,9 @@
 //! The person's connections (`specs/session.md`, "Connections"): remote MCP servers they sign in to
 //! in the browser, as MCP's authorization says (`flows.rs`). Each sign-in is kept sealed in
-//! the accounts ledger under a key of its own, one for each server's address; its token is
-//! renewed before it expires and handed to the person's own servers at that address with each
-//! request (`tokens.rs`), never to a file, a command or the model. Their remote servers that
+//! the accounts ledger under a key of its own, one for each server's address and account (a
+//! connector's accounts the person named); its token is renewed before it expires and handed to
+//! the person's own servers at that address, as that account, with each request (`tokens.rs`),
+//! never to a file, a command or the model. Their remote servers that
 //! ask them to sign in, and are not signed in to, are listed beside the sign-ins. Web search is
 //! a connection too, under the hood, which the person turns on and off as a setting
 //! (`search.rs`), never listed among them. The connectors of glave's catalog are connected
@@ -64,8 +65,9 @@ pub(crate) struct Connected {
 /// What the person signed in to and connected: their servers start again when it changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Signed {
-    /// The addresses signed in to.
-    pub(crate) addresses: BTreeSet<String>,
+    /// The addresses signed in to, each with the account of a connector signed in to there
+    /// as, when the person named one.
+    pub(crate) addresses: BTreeSet<(String, Option<String>)>,
     /// The connectors of glave's catalog connected, and where each is used, in the order
     /// connected.
     pub(crate) connectors: Vec<KeptConnector>,
@@ -159,7 +161,9 @@ impl Connected {
     pub(crate) async fn signed(&self) -> Signed {
         match self.accounts().await {
             Ok(accounts) => Signed {
-                addresses: accounts.connections.into_iter().map(|it| it.url).collect(),
+                addresses: (accounts.connections.into_iter())
+                    .map(|it| (it.url, it.account))
+                    .collect(),
                 connectors: accounts.connectors,
             },
             Err(error) => {
@@ -317,9 +321,13 @@ impl Connections for Connected {
                 kept.retain(|kept| kept.url != url);
             }
             // A connector's sign-in is listed with the connector (`connector/list`), unless the
-            // person's settings name a server of their own at its address.
+            // person's settings name a server of their own at its address; a named account's
+            // is always the connector's.
             let connectors = self.connector_addresses().await;
-            kept.retain(|kept| remotes.contains_key(&kept.url) || !connectors.contains(&kept.url));
+            kept.retain(|kept| {
+                kept.account.is_none()
+                    && (remotes.contains_key(&kept.url) || !connectors.contains(&kept.url))
+            });
             let mut listed: Vec<_> = kept
                 .iter()
                 .map(|kept| described(kept, &remotes, self.more.of(&kept.url).is_some()))
@@ -374,7 +382,7 @@ impl Connections for Connected {
         Box::pin(self.placing(connector))
     }
 
-    fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
+    fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(self.disconnecting(connector))
     }
 }

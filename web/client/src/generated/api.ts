@@ -152,6 +152,31 @@ export type ConnectionInfo = {
 /** Whether the person is signed in, and the sign-in still works. */
 export type ConnectionStatus = "signed_in" | "asks_more" | "expired" | "signed_out";
 
+/**
+ * An account of a connector the caller connected (`specs/policy.md`, "Connections"): one
+ * service may have several, each named, each signed in to as itself. In one place, an account
+ * of its own takes the place of the one used everywhere, so a thread never has two.
+ */
+export type ConnectorAccount = {
+  /**
+   * The person's name for it, unique among the service's accounts: `Acme`. None for one
+   * never named, as a service's first account is until it has a second.
+   */
+  readonly name?: string | null;
+  /**
+   * The one project whose threads alone use it, the person's Chats among them: none where
+   * every thread of theirs does.
+   */
+  readonly only?: ProjectId | null;
+  /** Connected, or to sign in to again. */
+  readonly status: ConnectorStatus;
+  /**
+   * Where it is used, in the caller's language: `Everywhere, including chats`, `Only in
+   * Acme Site`.
+   */
+  readonly used: string;
+};
+
 /** A category of connectors. */
 export type ConnectorCategory = {
   readonly id: ConnectorCategoryId;
@@ -178,6 +203,11 @@ export type ConnectorCompany = {
  */
 export type ConnectorInfo = {
   /**
+   * The accounts of it connected, in the order connected: none when it is not. Listed for
+   * one place (`used_in`), only the one its threads use.
+   */
+  readonly accounts?: readonly (ConnectorAccount)[];
+  /**
    * Its categories, each one of the list's `categories`. The first is its home, where a
    * client that shows it once puts it.
    */
@@ -196,22 +226,21 @@ export type ConnectorInfo = {
   /** The vendor's name for it, never translated: `Linear`. */
   readonly name: string;
   /**
-   * Connected, the one project whose threads alone use it, the person's Chats among them:
-   * none where every thread of theirs does.
+   * Listed for one place, why the account of it used everywhere else is not used there, in
+   * the caller's language: the place has one of its own.
    */
-  readonly only?: ProjectId | null;
+  readonly replaced?: string | null;
   readonly returns: ConnectorReturns;
   readonly sign_in: ConnectorSignIn;
+  /**
+   * Connected when an account of it is; to sign in to again when any account's sign-in no
+   * longer works.
+   */
   readonly status: ConnectorStatus;
   /** Its tags, each one of the list's `tags`. */
   readonly tags: readonly (ConnectorTagId)[];
   /** Its server's address. */
   readonly url: string;
-  /**
-   * Connected, where it is used, in the caller's language: `Everywhere, including chats`,
-   * `Only in Acme Site`.
-   */
-  readonly used?: string | null;
 };
 
 /** What a connector's tools hand back, as its vendor's docs say. */
@@ -1674,6 +1703,8 @@ export type ConnectionStartResult = {
 };
 
 export type ConnectorConnectParams = {
+  /** The person's name for the account: `Acme`. */
+  readonly account?: string | null;
   readonly connector: string;
   readonly only?: ProjectId | null;
 };
@@ -1685,6 +1716,7 @@ export type ConnectorConnectResult = {
 };
 
 export type ConnectorDisconnectParams = {
+  readonly account?: string | null;
   readonly connector: string;
 };
 
@@ -1713,6 +1745,7 @@ export type ConnectorListResult = {
 };
 
 export type ConnectorPlaceParams = {
+  readonly account?: string | null;
   readonly connector: string;
   readonly only?: ProjectId | null;
 };
