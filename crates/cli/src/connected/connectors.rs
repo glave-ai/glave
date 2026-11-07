@@ -57,9 +57,12 @@ impl Connected {
             let before = listed.len();
             let url = address(&connector.url).unwrap_or_default();
             for kept in accounts.accounts_of(&connector.id) {
-                let who = accounts.sign_in(&url, kept.account.as_deref());
+                let sign_in = accounts.sign_in(&url, kept.account.as_deref());
+                let who = sign_in.and_then(|it| it.who.clone());
+                let label = (sign_in.filter(|it| it.unnamed)).and_then(|it| it.who.clone());
                 listed.push(OfferedAccount {
-                    who: who.and_then(|it| it.who.clone()),
+                    who,
+                    label,
                     ..OfferedAccount::new(kept.clone(), status(connector, kept))
                 });
             }
@@ -93,7 +96,8 @@ impl Connected {
         match connector.sign_in {
             ConnectorSignIn::None => {
                 let kept = if another {
-                    named_new(&self.accounts().await?, kept, None, &connector.name)
+                    let url = address(&connector.url).unwrap_or_default();
+                    named_new(&self.accounts().await?, kept, &url, &connector.name)?
                 } else {
                     kept
                 };
@@ -197,44 +201,59 @@ impl Connected {
     }
 }
 
-/// A new account of `kept`'s service, which the person left unnamed, named as `who` it is
-/// signed in as, where the service said, else as `service` and a number (`Notion 2`): unique
-/// among the service's accounts in any case, a number added when another has the name, and a
-/// name's length at most. One the person named keeps its name, as does the service's first,
-/// unnamed, when nothing says who it is.
+/// What each account of the connector `id` at `url` goes by where the person sees it, in lower
+/// case: its name, and who it is signed in as for one they left unnamed; and `service`'s name,
+/// which the one never named goes by, in any case.
+pub(super) fn shown_names(
+    accounts: &Accounts,
+    id: &str,
+    url: &str,
+    service: &str,
+) -> BTreeSet<String> {
+    let mut shown = BTreeSet::from([service.to_lowercase()]);
+    for kept in accounts.accounts_of(id) {
+        shown.extend(kept.account.as_ref().map(|name| name.to_lowercase()));
+        let sign_in = accounts.sign_in(url, kept.account.as_deref());
+        let label = sign_in
+            .filter(|it| it.unnamed)
+            .and_then(|it| it.who.as_ref());
+        shown.extend(label.map(|who| who.to_lowercase()));
+    }
+    shown
+}
+
+/// A new account of `kept`'s service at `url`, which the person left unnamed, named so glave
+/// tells it apart: `service` and the first number no account goes by (`Notion 2`), within a
+/// name's length. Never as who it is signed in as: a name outlives its sign-in in the ledger,
+/// so who stays on the sign-in alone, and clients show it in the name's place. One the person
+/// named keeps its name, and the first of its service stays unnamed, as a first is.
 pub(super) fn named_new(
     accounts: &Accounts,
     kept: KeptConnector,
-    who: Option<&str>,
+    url: &str,
     service: &str,
-) -> KeptConnector {
-    let first_of_its = accounts.accounts_of(&kept.id).next().is_none();
-    if kept.account.is_some() || (first_of_its && who.is_none()) {
-        return kept;
+) -> Result<KeptConnector, ApiError> {
+    if kept.account.is_some() || accounts.accounts_of(&kept.id).next().is_none() {
+        return Ok(kept);
     }
-    let taken: BTreeSet<String> = (accounts.accounts_of(&kept.id))
-        .filter_map(|it| it.account.as_ref())
-        .map(|name| name.to_lowercase())
-        .collect();
-    let (base, first) = match who.map(str::trim).filter(|it| !it.is_empty()) {
-        Some(who) => (who, 1),
-        None => (service, 2),
-    };
-    // Each number one more than the last, until one is free: no more than there are accounts.
-    let named = (first..=first + taken.len()).map(|n| {
-        let number = if n == 1 {
-            String::new()
-        } else {
-            format!(" {n}")
-        };
-        let room = NAME.saturating_sub(number.chars().count());
-        let cut: String = base.chars().take(room).collect();
-        format!("{}{number}", cut.trim_end())
-    });
-    let account = named
-        .into_iter()
-        .find(|name| !taken.contains(&name.to_lowercase()));
-    KeptConnector { account, ..kept }
+    let shown = shown_names(accounts, &kept.id, url, service);
+    // Each number one more than the last until one is free: no more than are taken.
+    let account = (2..=shown.len() + 2)
+        .map(|n| {
+            let number = format!(" {n}");
+            let room = NAME.saturating_sub(number.chars().count());
+            let cut: String = service.chars().take(room).collect();
+            format!("{}{number}", cut.trim_end())
+        })
+        .find(|name| !shown.contains(&name.to_lowercase()))
+        .ok_or_else(|| {
+            let said = format!("glave could not name another {service} account: give it a name");
+            ApiError::new(code::INVALID_PARAMS, said)
+        })?;
+    Ok(KeptConnector {
+        account: Some(account),
+        ..kept
+    })
 }
 
 /// The longest name an account takes, in characters, as the session API holds names.

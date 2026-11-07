@@ -123,6 +123,7 @@ where
             connector: kept,
             status,
             who,
+            label,
         } in connected
         {
             let signed_in = (who.clone()).map(|who| Sentence::SignedInAs { who }.into());
@@ -133,6 +134,7 @@ where
                 status: *status,
                 who: who.clone(),
                 signed_in,
+                label: label.clone(),
             });
         }
         Some(ConnectorInfo {
@@ -215,14 +217,17 @@ where
             ..connector
         };
         let name = named(name)?;
-        let folded = |it: &Option<String>| it.as_ref().map(|name| name.to_lowercase());
+        // What the others go by where the person sees them: a name, who for one left unnamed,
+        // or the service's for the one never named.
+        let shown = |it: &OfferedAccount| {
+            let label = it.label.as_ref().or(it.connector.account.as_ref());
+            label.unwrap_or(&found.name).to_lowercase()
+        };
         let offered = connections.connectors().await?;
+        let wanted = name.as_ref().unwrap_or(&found.name).to_lowercase();
         let taken = (offered.iter())
             .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
-            .any(|it| {
-                !it.connector.same_account(&connector)
-                    && folded(&it.connector.account) == folded(&name)
-            });
+            .any(|it| !it.connector.same_account(&connector) && shown(it) == wanted);
         if taken {
             let said = Sentence::AccountNameTaken {
                 service: found.name.clone(),
@@ -286,6 +291,26 @@ where
         {
             let said = Sentence::AccountUnnamed { service };
             return Err(ApiError::new(code::INVALID_PARAMS, said));
+        }
+        // A new name another account goes by already, as the person sees it, is taken too.
+        let new = connector
+            .account
+            .as_ref()
+            .filter(|_| connecting && same.is_empty());
+        if let Some(name) = new.map(|name| name.to_lowercase()) {
+            let shown = (offered.iter())
+                .filter(|it| it.status != ConnectorStatus::Available && it.connector.id == found.id)
+                .any(|it| {
+                    let label = it.label.as_ref().or(it.connector.account.as_ref());
+                    label.unwrap_or(&found.name).to_lowercase() == name
+                });
+            if shown {
+                let said = Sentence::AccountNameTaken {
+                    service,
+                    name: connector.account.clone().unwrap_or_default(),
+                };
+                return Err(ApiError::new(code::INVALID_PARAMS, said));
+            }
         }
         if let Some(other) = others.iter().find(|other| other.only == connector.only) {
             let said = match other.only {

@@ -133,6 +133,7 @@
     "connectorAdd.nameHint": "[Šûçĥ åš ţĥé çöɱþåñý îţ'š ƒöŕ. one two]",
     "connectorAdd.nameIt": "[Ñåɱé îţ (öþţîöñåļ) one two]",
     "connectorAdd.namePlaceholder": "[Ƒŕöɱ ýöûŕ {$SERVICE} šîĝñ-îñ, šûçĥ åš Åçɱé Çöŕþ one two three]",
+    "connectorAdd.namePlainPlaceholder": "[Šûçĥ åš Åçɱé Çöŕþ one two]",
     "connectorAdd.nothingElse": "[Ñöţĥîñĝ éļšé çåñ šéé îţ one two]",
     "connectorAdd.onlyIn": "[Öñļý îñ {$PLACE} one]",
     "connectorAdd.signIn": "[Šîĝñ îñ ţö {$SERVICE} one]",

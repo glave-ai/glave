@@ -166,6 +166,11 @@ pub struct ConnectorAccount {
     /// The same, in the caller's language: `Signed in as Acme Corp`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signed_in: Option<Told>,
+    /// What a client shows where its name would go, when not `name`: who it is signed in as,
+    /// for one the person left unnamed, whose `name` is glave's (`Notion 2`). `name` still
+    /// names it in calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// What a connector's tools hand back, as its vendor's docs say.

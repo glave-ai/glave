@@ -7,6 +7,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use glave_event::seen;
 use serde_json::{Map, Value};
 
 /// The longest name kept for who a sign-in is, in characters: anything longer is cut there.
@@ -46,15 +47,16 @@ fn claims(token: &str) -> Option<Map<String, Value>> {
     }
 }
 
-/// `text` on one line, its runs of space one, without control characters, at most [`LONGEST`].
+/// `text` on one line, its runs of space one, with only the letters a person sees (no control
+/// or format character: no bidirectional override or isolate, no zero-width mark, so it can't
+/// dress itself as another name), at most [`LONGEST`].
 fn tidy(text: &str) -> String {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let line: String = words
-        .join(" ")
+    let shown: String = text
         .chars()
-        .filter(|it| !it.is_control())
+        .filter(|it| it.is_whitespace() || seen(*it))
         .collect();
-    line.chars().take(LONGEST).collect()
+    let words: Vec<&str> = shown.split_whitespace().collect();
+    words.join(" ").chars().take(LONGEST).collect()
 }
 
 #[cfg(test)]
@@ -101,6 +103,12 @@ mod tests {
         assert_eq!(
             signed_in_as(&json!({"id_token": blank})).as_deref(),
             Some("ada")
+        );
+        let turned = token(&json!({"name": "Ada\u{202E}ecalevoL\u{200B} \u{2066}Corp\u{2069}"}));
+        assert_eq!(
+            signed_in_as(&json!({"id_token": turned})).as_deref(),
+            Some("AdaecalevoL Corp"),
+            "no override, isolate or zero-width mark"
         );
         let long = "x".repeat(200);
         let cut = signed_in_as(&json!({"workspace_name": long})).unwrap_or_default();

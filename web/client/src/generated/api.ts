@@ -159,6 +159,12 @@ export type ConnectionStatus = "signed_in" | "asks_more" | "expired" | "signed_o
  */
 export type ConnectorAccount = {
   /**
+   * What a client shows where its name would go, when not `name`: who it is signed in as,
+   * for one the person left unnamed, whose `name` is glave's (`Notion 2`). `name` still
+   * names it in calls.
+   */
+  readonly label?: string | null;
+  /**
    * The person's name for it, unique among the service's accounts: `Acme`. None for one
    * never named, as a service's first account is until it has a second.
    */

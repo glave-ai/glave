@@ -433,6 +433,13 @@
     "ConnectorAccount": {
       "description": "An account of a connector the caller connected (`specs/policy.md`, \"Connections\"): one\nservice may have several, each named, each signed in to as itself. In one place, an account\nof its own takes the place of the one used everywhere, so a thread never has two.",
       "properties": {
+        "label": {
+          "description": "What a client shows where its name would go, when not `name`: who it is signed in as,\nfor one the person left unnamed, whose `name` is glave's (`Notion 2`). `name` still\nnames it in calls.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "The person's name for it, unique among the service's accounts: `Acme`. None for one\nnever named, as a service's first account is until it has a second.",
           "type": [

@@ -27,6 +27,7 @@ fn signed_in(url: &str, token: &str, expires: Option<At>) -> ConnectionConnected
             scopes: Vec::new(),
         },
         who: None,
+        unnamed: false,
         by: Principal::glave(),
     }
 }
@@ -410,46 +411,54 @@ fn everywhere(id: &str) -> KeptConnector {
 }
 
 #[test]
-fn another_account_left_unnamed_is_named_as_who_it_is_signed_in_as() {
+fn another_account_left_unnamed_takes_a_name_no_account_goes_by_never_who() {
     let runtime = glave_ports::testing::runtime().unwrap();
     runtime.block_on(async {
         let ledger = crate::accounts::in_memory().await.unwrap();
         let url = "https://mcp.linear.app/mcp";
-        let named = |accounts: &Accounts, who: Option<&str>| {
-            connectors::named_new(accounts, everywhere("linear"), who, "Linear").account
+        let named = |accounts: &Accounts, service: &str| {
+            let named = connectors::named_new(accounts, everywhere("linear"), url, service);
+            named.unwrap().account
         };
         let none = ledger.accounts().await.unwrap();
-        assert_eq!(named(&none, None), None, "a first, unnamed, says nothing");
-        assert_eq!(
-            named(&none, Some(" Acme Corp ")).as_deref(),
-            Some("Acme Corp")
-        );
+        assert_eq!(named(&none, "Linear"), None, "the first stays unnamed");
 
+        // The first, unnamed, goes by the service's name; another goes by who, left unnamed.
         let first = signed_in(url, &fake_secret("lin_"), None);
         ledger
             .keep_connector(&everywhere("linear"), Some(&first))
             .await
             .unwrap();
-        let acme = KeptConnector {
-            account: Some("acme corp".into()),
+        let second = KeptConnector {
+            account: Some("Linear 2".into()),
             only: Some(ProjectId::from_uuid(uuid::Uuid::from_u128(8))),
             ..everywhere("linear")
         };
-        ledger.keep_connector(&acme, None).await.unwrap();
+        let signed = ConnectionConnected {
+            account: second.account.clone(),
+            who: Some("Linear 3".into()),
+            unnamed: true,
+            ..signed_in(url, &fake_secret("lin_"), None)
+        };
+        ledger.keep_connector(&second, Some(&signed)).await.unwrap();
         let two = ledger.accounts().await.unwrap();
-        assert_eq!(named(&two, None).as_deref(), Some("Linear 2"));
+        let shown = connectors::shown_names(&two, "linear", url, "Linear");
+        let shown: Vec<&str> = shown.iter().map(String::as_str).collect();
         assert_eq!(
-            named(&two, Some("Acme Corp")).as_deref(),
-            Some("Acme Corp 2")
+            shown,
+            ["linear", "linear 2", "linear 3"],
+            "what each goes by"
         );
+        assert_eq!(named(&two, "Linear").as_deref(), Some("Linear 4"));
         let long = "x".repeat(60);
-        let cut = named(&two, Some(&long)).unwrap();
+        let cut = named(&two, &long).unwrap();
         assert_eq!(cut.chars().count(), 40);
+        assert!(cut.ends_with(" 2"), "{cut}");
         let kept = KeptConnector {
             account: Some("Mine".into()),
             ..everywhere("linear")
         };
-        let mine = connectors::named_new(&two, kept, Some("Acme Corp"), "Linear");
+        let mine = connectors::named_new(&two, kept, url, "Linear").unwrap();
         assert_eq!(mine.account.as_deref(), Some("Mine"), "a name given stays");
     });
 }

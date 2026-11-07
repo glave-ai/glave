@@ -313,6 +313,7 @@ mod tests {
             status: ConnectorStatus::Connected,
             who: None,
             signed_in: None,
+            label: None,
         };
         assert_eq!(about(&account), "Everywhere, including chats");
         account.signed_in = Some("Signed in as Acme Corp".into());

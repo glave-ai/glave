@@ -129,6 +129,9 @@ pub struct OfferedAccount {
     pub status: ConnectorStatus,
     /// The person's own, shown only to them: `Acme Corp`.
     pub who: Option<String>,
+    /// What it goes by where its name would go, when not its name: who it is signed in as, for
+    /// one the person left unnamed.
+    pub label: Option<String>,
 }
 
 impl OfferedAccount {
@@ -138,6 +141,7 @@ impl OfferedAccount {
             connector,
             status,
             who: None,
+            label: None,
         }
     }
 }

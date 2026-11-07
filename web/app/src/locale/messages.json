@@ -133,6 +133,7 @@
     "connectorAdd.nameHint": "Such as the company it's for.",
     "connectorAdd.nameIt": "Name it (optional)",
     "connectorAdd.namePlaceholder": "From your {$SERVICE} sign-in, such as Acme Corp",
+    "connectorAdd.namePlainPlaceholder": "Such as Acme Corp",
     "connectorAdd.nothingElse": "Nothing else can see it",
     "connectorAdd.onlyIn": "Only in {$PLACE}",
     "connectorAdd.signIn": "Sign in to {$SERVICE}",

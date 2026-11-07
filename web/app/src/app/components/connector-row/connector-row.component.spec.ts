@@ -232,4 +232,36 @@ describe('ConnectorRowComponent', () => {
     expect(line(plain.root)).toBe('N Notion Only in Acme Site');
     expect(plain.root.querySelector('[data-testid="connector-note"]')).toBeNull();
   });
+
+  it("starts naming one from who it is signed in as, within a name's length", async () => {
+    const who = 'An Organization Whose Name Runs Well Past Forty Letters';
+    const accounts = [
+      { status: 'connected', used: 'Everywhere, including chats', who, signed_in: who },
+    ] as const;
+    const { acted, menu } = await drawn({ ...NOTION, status: 'connected', accounts });
+    pick(await menu(), 'Name this account');
+    const [renaming] = acted;
+    const called = renaming?.kind === 'rename' ? renaming.called : '';
+    expect(called).toBe(who.slice(0, 40).trim());
+    expect(called.length).toBeLessThanOrEqual(40);
+  });
+
+  it('goes by who for an account the person left unnamed, its name still addressing it', async () => {
+    const accounts = [
+      { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+      {
+        name: 'Notion 2',
+        status: 'connected',
+        only: 'p1',
+        used: 'Only in Acme Site',
+        who: 'Acme Corp',
+        signed_in: 'Signed in as Acme Corp',
+        label: 'Acme Corp',
+      },
+    ] as const;
+    const { root } = await drawn({ ...NOTION, status: 'connected', accounts });
+    const names = [...root.querySelectorAll('[data-testid="connector-account-name"]')];
+    expect(names.map((it) => it.textContent.trim())).toEqual(['Glave', 'Acme Corp']);
+    expect(root.textContent).not.toContain('Notion 2');
+  });
 });

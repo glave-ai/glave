@@ -110,14 +110,17 @@ export class ConnectorAddComponent {
   /** What an empty name becomes, as the field says before anything is typed. */
   protected readonly namePlaceholder = computed(() => {
     const service = this.service();
-    return $localize`:@@connectorAdd.namePlaceholder:From your ${service}:SERVICE: sign-in, such as Acme Corp`;
+    // Only a sign-in says who an account is.
+    return this.connector()?.sign_in === 'dcr'
+      ? $localize`:@@connectorAdd.namePlaceholder:From your ${service}:SERVICE: sign-in, such as Acme Corp`
+      : $localize`:@@connectorAdd.namePlainPlaceholder:Such as Acme Corp`;
   });
   /** Each account connected, by its name or the service's. */
   protected readonly had = computed((): readonly Had[] =>
     (this.connector()?.accounts ?? []).map((it, index) => ({
       value: String(index),
       name: it.name ?? null,
-      label: it.name ?? this.service(),
+      label: it.label ?? it.name ?? this.service(),
       hint: it.signed_in ?? this.copy.already,
     })),
   );

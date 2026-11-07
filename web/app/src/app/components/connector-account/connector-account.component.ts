@@ -46,8 +46,13 @@ export class ConnectorAccountComponent {
     rename: $localize`:@@connectorAccount.rename:Rename`,
     disconnect: $localize`:@@connectorAccount.disconnect:Disconnect`,
   } as const;
-  /** What the account goes by: its name, or the service's for the one never named. */
-  protected readonly name = computed(() => this.account().name ?? this.service());
+  /**
+   * What the account goes by: who it is signed in as for one the person left unnamed, its name,
+   * or the service's for the one never named.
+   */
+  protected readonly name = computed(
+    () => this.account().label ?? this.account().name ?? this.service(),
+  );
   protected readonly menuLabel = computed(() => {
     const service = this.service();
     const name = this.name();

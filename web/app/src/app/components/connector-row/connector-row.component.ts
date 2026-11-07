@@ -18,7 +18,7 @@ import {
 } from '@glave/glaze';
 import { ExternalLink, LoaderCircle } from 'lucide';
 
-import { signInWaiting } from '../../lib/connections';
+import { ACCOUNT_NAME_LIMIT, signInWaiting } from '../../lib/connections';
 import { plural } from '../../lib/plural';
 import {
   type AccountAction,
@@ -234,7 +234,8 @@ export class ConnectorRowComponent {
     } else if (action.kind === 'rename') {
       this.acted.emit(this.renaming(account, false));
     } else {
-      const called = name === null ? service : this.called(service, name);
+      const shown = account.label ?? name;
+      const called = shown === null ? service : this.called(service, shown);
       this.acted.emit({ kind: 'disconnect', account: name, called });
     }
   }
@@ -247,7 +248,9 @@ export class ConnectorRowComponent {
   private renaming(account: ConnectorAccount, one: boolean): ConnectorAction {
     const service = this.connector().name;
     const name = account.name ?? null;
-    const filled = name === null && (account.who ?? null) !== null;
+    const label = account.label ?? null;
+    // Who it is signed in as stands in for a name the person never gave.
+    const filled = label !== null || (name === null && (account.who ?? null) !== null);
     let note: string | null = null;
     if (one && filled) {
       note = $localize`:@@connectorRow.filledOne:Filled in from your ${service}:SERVICE: sign-in. Shown when you add a second ${service}:SERVICE: account.`;
@@ -259,8 +262,9 @@ export class ConnectorRowComponent {
     const heading = one
       ? $localize`:@@connectorRow.nameHeading:Name this ${service}:SERVICE: account`
       : null;
-    const called = name ?? account.who ?? service;
-    return { kind: 'rename', account: name, called, heading, note };
+    // The field starts within the name's length, though who can be longer.
+    const prefill = (label ?? name ?? account.who ?? service).slice(0, ACCOUNT_NAME_LIMIT);
+    return { kind: 'rename', account: name, called: prefill.trim(), heading, note };
   }
 
   /** Its one account's menu: each other place, naming it, adding another, and disconnecting. */
@@ -300,10 +304,12 @@ export class ConnectorRowComponent {
     const [first] = all;
     const several = all.length > 1;
     const account = first?.name ?? null;
-    const called = account === null ? name : this.called(name, account);
+    // What it goes by: who for one the person left unnamed, else its name.
+    const shown = first?.label ?? account;
+    const called = shown === null ? name : this.called(name, shown);
     const base = {
       // Named only beside another account: where the project's own takes the place of another.
-      name: account === null || several || this.note() === null ? name : this.titled(name, account),
+      name: shown === null || several || this.note() === null ? name : this.titled(name, shown),
       connected,
       again,
       busy,

@@ -17,8 +17,9 @@ pub(crate) const CONNECTED: &str = "connection.connected";
 pub(crate) const REMOVED: &str = "connection.removed";
 
 /// A connection was signed in to: the token its authorization server granted the person, and what
-/// renewing it needs. Sealed under the connection's own key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// renewing it needs. Sealed under the connection's own key. Its `Debug` shows neither token,
+/// nor who.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectionConnected {
     pub connection: CredentialId,
@@ -44,11 +45,33 @@ pub struct ConnectionConnected {
     pub refresh: Option<Secret>,
     pub client: SignInClient,
     /// Who the person signed in as, in the service's words, where its authorization server
-    /// said: `Acme Corp`. The person's own, shown only to them, never logged.
+    /// said: `Acme Corp`. The person's own, shown only to them, never logged, and kept only
+    /// here, under the connection's key, so it goes with the sign-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub who: Option<String>,
+    /// Whether the person left its account unnamed: its `account` is glave's (`Notion 2`), and
+    /// clients show `who` where its name would go.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unnamed: bool,
     /// Who connected it.
     pub by: Principal,
+}
+
+impl std::fmt::Debug for ConnectionConnected {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConnectionConnected")
+            .field("connection", &self.connection)
+            .field("url", &self.url)
+            .field("account", &self.account)
+            .field("token", &self.token)
+            .field("expires", &self.expires)
+            .field("refresh", &self.refresh)
+            .field("client", &self.client)
+            .field("unnamed", &self.unnamed)
+            .field("by", &self.by)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The authorization server a sign-in went through, and the client glave registered there:

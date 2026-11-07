@@ -106,4 +106,13 @@ describe('ConnectorAddComponent', () => {
     await fixture.whenStable();
     expect(chosen).toEqual([{ existing: false, account: null, only: 'p1' }]);
   });
+
+  it('says a sign-in names it only for a service that has one', async () => {
+    const fixture = TestBed.createComponent(ConnectorAddComponent);
+    fixture.componentRef.setInput('connector', { ...STRIPE, sign_in: 'none' });
+    fixture.componentRef.setInput('open', true);
+    await fixture.whenStable();
+    const name = byTestId<HTMLInputElement>('connector-add-name');
+    expect(name?.placeholder).toBe('Such as Acme Corp');
+  });
 });

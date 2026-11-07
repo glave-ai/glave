@@ -137,7 +137,7 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         let shape = refused(&web.call(&connect(Some(&long), Some(acme))).await);
         assert!(shape.contains("40 characters"), "{shape}");
 
-        // Another, left unnamed, is named as it is kept: as who it is signed in as.
+        // Another, left unnamed, is named as it is kept, and goes by who it is signed in as.
         let another = Request::ConnectorConnect {
             connector: "deepwiki".into(),
             account: None,
@@ -148,14 +148,24 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         let accounts = &joined["result"]["connector"]["accounts"];
         assert_eq!(
             accounts[1],
-            json!({"name": "Acme Corp", "only": chats, "used": "Only in Chats",
+            json!({"name": "DeepWiki 2", "only": chats, "used": "Only in Chats",
                    "status": "connected", "who": "Acme Corp",
-                   "signed_in": "Signed in as Acme Corp"}),
+                   "signed_in": "Signed in as Acme Corp", "label": "Acme Corp"}),
             "{joined}"
         );
+        // What it goes by is taken, as is the service's name the one never named goes by.
+        let rename_to = |name: &str| Request::ConnectorRename {
+            connector: "deepwiki".into(),
+            account: Some("Glave".into()),
+            name: Some(name.into()),
+        };
+        let taken = refused(&web.call(&rename_to("acme corp")).await);
+        assert!(taken.contains("called acme corp already"), "{taken}");
+        let joining = refused(&web.call(&connect(Some("Acme Corp"), Some(acme))).await);
+        assert!(joining.contains("called Acme Corp already"), "{joining}");
         let disconnect = Request::ConnectorDisconnect {
             connector: "deepwiki".into(),
-            account: Some("Acme Corp".into()),
+            account: Some("DeepWiki 2".into()),
         };
         web.call(&disconnect).await;
 

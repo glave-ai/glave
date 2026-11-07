@@ -271,15 +271,19 @@ impl Trade {
             .finish(code.expose(), issuer)
             .await
             .map_err(|error| refused(&error, &self.name))?;
-        let connector = match self.connector {
+        // Another, unnamed, goes by who it is signed in as, where no other account goes by that.
+        let (connector, unnamed) = match self.connector {
             Some(kept) if self.another => {
                 let accounts = self.ledger.accounts().await?;
-                let who = granted.who.as_deref();
-                Some(super::connectors::named_new(
-                    &accounts, kept, who, &self.name,
-                ))
+                let shown =
+                    super::connectors::shown_names(&accounts, &kept.id, &self.url, &self.name);
+                let named = super::connectors::named_new(&accounts, kept, &self.url, &self.name)?;
+                let who = granted.who.as_deref().map(str::to_lowercase);
+                let free = who.is_some_and(|who| !shown.contains(&who));
+                let unnamed = named.account.is_some() && free;
+                (Some(named), unnamed)
             }
-            other => other,
+            other => (other, false),
         };
         let connection = ConnectionConnected {
             connection: new_id().map_err(|e| ApiError::internal(&e))?,
@@ -290,6 +294,7 @@ impl Trade {
             refresh: granted.refresh,
             client: granted.client,
             who: granted.who,
+            unnamed,
             by: Principal::person(self.ledger.person()),
         };
         match &connector {

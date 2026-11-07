@@ -46,9 +46,10 @@ pub(crate) struct InMemory {
 /// The connectors the fake offers: one that asks no one to sign in, and one that asks.
 const OFFERED: [&str; 2] = ["deepwiki", "linear"];
 
-/// Who the fake signs another account in as, unnamed, which it is named after, as the host
-/// names one from its sign-in.
+/// Who the fake signs another account in as, which, left unnamed, it names as the host does
+/// (`OTHER`) and shows as who in its name's place.
 pub(crate) const WHO: &str = "Acme Corp";
+const OTHER: &str = "DeepWiki 2";
 
 impl Connections for InMemory {
     fn start(
@@ -140,9 +141,13 @@ impl Connections for InMemory {
                         };
                         return vec![OfferedAccount::new(none, ConnectorStatus::Available)];
                     }
-                    let connected = |it: &&KeptConnector| OfferedAccount {
-                        who: (it.account.as_deref() == Some(WHO)).then(|| WHO.to_owned()),
-                        ..OfferedAccount::new((*it).clone(), ConnectorStatus::Connected)
+                    let connected = |it: &&KeptConnector| {
+                        let other = (it.account.as_deref() == Some(OTHER)).then(|| WHO.to_owned());
+                        OfferedAccount {
+                            who: other.clone(),
+                            label: other,
+                            ..OfferedAccount::new((*it).clone(), ConnectorStatus::Connected)
+                        }
                     };
                     kept.iter().map(connected).collect()
                 })
@@ -159,7 +164,7 @@ impl Connections for InMemory {
         Box::pin(async move {
             let connector = if another {
                 KeptConnector {
-                    account: Some(WHO.to_owned()),
+                    account: Some(OTHER.to_owned()),
                     ..connector
                 }
             } else {
