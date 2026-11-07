@@ -30,6 +30,7 @@ Usage:
                                           only in that project: there it takes the place of
                                           the one used everywhere. Also signs in to one again,
                                           where it is used
+  glave connectors rename <id> <name>     call an account of one <name> from now on
   glave connectors disconnect <id>        disconnect one, destroying its sign-in
 
 <id> is an app's, or one account's as <id>:<name> (stripe:Acme). Connect one with
@@ -50,6 +51,10 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
             ["add", id, place @ ..] if !place.is_empty() => {
                 let place = place.join(" ");
                 reach::with(async |server| used(server, id, &place, true).await).await
+            }
+            ["rename", id, label @ ..] if !label.is_empty() => {
+                let label = label.join(" ");
+                reach::with(async |server| renamed(server, id, &label).await).await
             }
             _ => bail!("unexpected words\n\n{USAGE}"),
         }
@@ -248,6 +253,22 @@ pub(crate) async fn connect(server: &mut Reached, id: &str) -> anyhow::Result<()
         Reply::SignIn { sign_in } => signed_in(server, &sign_in).await,
         _ => bail!("glave answered connector/connect with something else"),
     }
+}
+
+/// Calls the account `handle` names `label` from now on.
+async fn renamed(server: &mut Reached, handle: &str, label: &str) -> anyhow::Result<()> {
+    let (connector, current) = labelled(handle);
+    let request = Request::ConnectorRename {
+        connector,
+        account: current,
+        name: Some(label.to_owned()),
+    };
+    let Reply::Connector { connector } = server.request(request).await? else {
+        bail!("glave answered connector/rename with something else");
+    };
+    let places = places(server, std::slice::from_ref(&connector)).await?;
+    connected_lines(&connector, &places);
+    Ok(())
 }
 
 /// Disconnects the account `handle` names.

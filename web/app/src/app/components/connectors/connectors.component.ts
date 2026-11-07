@@ -38,6 +38,7 @@ import {
   type AccountChosen,
   ConnectorAddComponent,
 } from '../connector-add/connector-add.component';
+import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ServiceRowComponent } from '../service-row/service-row.component';
 
 /** A sign-in waiting for the person in the browser. */
@@ -157,6 +158,7 @@ function setTo<T>(
     GlzMenuSelectComponent,
     ConnectorAccountComponent,
     ConnectorAddComponent,
+    RenameDialogComponent,
   ],
   templateUrl: './connectors.component.html',
   styleUrl: './connectors.component.scss',
@@ -212,6 +214,14 @@ export class ConnectorsComponent {
   /** The connector the add dialog is for, and whether it is open. */
   protected readonly adding = signal<ConnectorInfo | null>(null);
   protected readonly addOpen = signal(false);
+  /** The account the rename dialog is for, by its connector and name, and whether it is open. */
+  protected readonly renaming = signal<{
+    readonly id: string;
+    readonly account: string | null;
+    readonly title: string;
+  } | null>(null);
+  protected readonly renameOpen = signal(false);
+  protected readonly renameTitle = computed(() => this.renaming()?.title ?? '');
 
   /** Where a connector can be used: everywhere, or only in one of the person's places. */
   // The button shows only "Change": the row's line says where it is used, in the server's words.
@@ -376,9 +386,21 @@ export class ConnectorsComponent {
       void this.busyWith(row.id, () => this.service.place(row.id, name, only));
     } else if (action.kind === 'again') {
       void this.connect(row.id, row.name, name, account.only ?? null);
+    } else if (action.kind === 'rename') {
+      this.renaming.set({ id: row.id, account: name, title: name ?? row.name });
+      this.renameOpen.set(true);
     } else {
       const called = name === null ? row.name : `${row.name} (${name})`;
       this.ask({ id: row.id, name: row.name, account: name, called });
+    }
+  }
+
+  /** Gives the account the rename dialog is for `name`. */
+  protected renamed(name: string): void {
+    const renaming = this.renaming();
+    if (renaming !== null) {
+      const { id, account } = renaming;
+      void this.busyWith(id, () => this.service.rename(id, account, name));
     }
   }
 

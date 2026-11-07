@@ -185,6 +185,20 @@ impl Connections for InMemory {
             Ok(())
         })
     }
+
+    fn rename(
+        &self,
+        connector: KeptConnector,
+        name: Option<String>,
+    ) -> BoxFuture<'_, Result<(), ApiError>> {
+        Box::pin(async move {
+            let mut connected = self.connectors.lock().unwrap();
+            let kept = connected.iter_mut().find(|it| it.same_account(&connector));
+            let kept = kept.ok_or_else(|| ApiError::new(code::NO_CREDENTIAL, "not connected"))?;
+            kept.account = name;
+            Ok(())
+        })
+    }
 }
 
 /// The person's server `docs`, signed in to.

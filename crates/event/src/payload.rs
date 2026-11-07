@@ -56,7 +56,7 @@ pub use certificate::{AcmeRegistered, CertificateIssued};
 pub use chosen::{EffortChosen, ModelChosen, Permissions, PermissionsChosen};
 pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use connection::{ConnectionConnected, ConnectionRemoved, SignInClient};
-pub use connector::{ConnectorConnected, ConnectorDisconnected};
+pub use connector::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use credits::{CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet};
 pub use filters::{Filters, FiltersSet, Hides, MaxPrice, Serve, Sort};

@@ -108,6 +108,14 @@ pub trait Connections: Send + Sync {
 
     /// Disconnects the account `connector` names, wherever it is used, destroying its sign-in.
     fn disconnect(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>>;
+
+    /// Calls the account `connector` names `name` from now on (none: unnamed), its sign-in
+    /// with it.
+    fn rename(
+        &self,
+        connector: KeptConnector,
+        name: Option<String>,
+    ) -> BoxFuture<'_, Result<(), ApiError>>;
 }
 
 /// How connecting a connector went.

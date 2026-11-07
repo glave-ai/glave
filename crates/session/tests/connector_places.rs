@@ -172,3 +172,55 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         served.close().await;
     });
 }
+
+/// `connector/rename` of DeepWiki's `account` to `name`.
+fn rename(account: Option<&str>, name: Option<&str>) -> Request {
+    Request::ConnectorRename {
+        connector: "deepwiki".into(),
+        account: account.map(str::to_owned),
+        name: name.map(str::to_owned),
+    }
+}
+
+#[test]
+fn an_account_is_named_and_renamed_to_a_name_no_other_of_the_service_has() {
+    block_on!(async {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let dir = folder("conn-connector-rename");
+        let (tested, _) = fresh(&dir).await;
+        let served = serve_with(tested, signin, None).await;
+        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
+        let (acme, _) = places(&mut web).await;
+
+        web.call(&connect(None, None)).await;
+        let named = web.call(&rename(None, Some(" Glave "))).await;
+        let accounts = &named["result"]["connector"]["accounts"];
+        assert_eq!(
+            accounts[0]["name"], "Glave",
+            "the first account, named: {named}"
+        );
+        web.call(&connect(Some("Acme"), Some(acme))).await;
+
+        let taken = web.call(&rename(Some("Glave"), Some("acme"))).await;
+        assert_eq!(taken["error"]["code"], code::INVALID_PARAMS, "{taken}");
+        let said = taken["error"]["message"].as_str().unwrap();
+        assert!(said.contains("is called acme already"), "{said}");
+        let long = "a".repeat(41);
+        let shape = web.call(&rename(Some("Glave"), Some(&long))).await;
+        assert_eq!(shape["error"]["code"], code::INVALID_PARAMS, "{shape}");
+        let unnamed = web.call(&rename(Some("Acme"), None)).await;
+        let names: Vec<_> = (unnamed["result"]["connector"]["accounts"]
+            .as_array()
+            .unwrap())
+        .iter()
+        .map(|it| it.get("name").cloned())
+        .collect();
+        assert_eq!(
+            names,
+            [Some(json!("Glave")), None],
+            "named no more: {unnamed}"
+        );
+        served.close().await;
+    });
+}

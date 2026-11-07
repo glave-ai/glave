@@ -499,6 +499,8 @@ sentences! {
         "another { $service } account is used only in { $place } already: use this one somewhere else, or move that one first",
     AccountTakenGone { service: String } = "account-taken-gone"
         "another { $service } account is used only in a project that is gone: disconnect that one first",
+    AccountNameTaken { service: String, name: String } = "account-name-taken"
+        "another of your { $service } accounts is called { $name } already: give this one another name",
     AccountReplaced { service: String } = "account-replaced"
         "Your { $service } account used everywhere else is not used here: this one takes its place.",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",

@@ -6,17 +6,19 @@ import { GlzMenuButtonComponent, type GlzOption } from '@glave/glaze';
 export type AccountAction =
   | { readonly kind: 'place'; readonly place: string }
   | { readonly kind: 'again' }
+  | { readonly kind: 'rename' }
   | { readonly kind: 'disconnect' };
 
 /** The menu's value for signing in again and for disconnecting, beside each place's own. */
 const AGAIN = '\u0000again';
 const DISCONNECT = '\u0000disconnect';
+const RENAME = '\u0000rename';
 
 /**
  * One account of a connected service, beneath the service on the Connections page when it has
  * two or more: its name, where it is used in the server's words, and its own menu, which moves
  * it to another of the person's places, signs in to it again when its sign-in no longer works,
- * or disconnects it.
+ * renames it, or disconnects it.
  */
 @Component({
   selector: 'app-connector-account',
@@ -39,6 +41,7 @@ export class ConnectorAccountComponent {
 
   protected readonly copy = {
     again: $localize`:@@connectorAccount.again:Sign in again`,
+    rename: $localize`:@@connectorAccount.rename:Rename`,
     disconnect: $localize`:@@connectorAccount.disconnect:Disconnect`,
   } as const;
   /** What the account goes by: its name, or the service's for the one never named. */
@@ -54,12 +57,15 @@ export class ConnectorAccountComponent {
     ...(this.account().status === 'sign_in_again'
       ? [{ value: AGAIN, label: this.copy.again }]
       : []),
+    { value: RENAME, label: this.copy.rename },
     { value: DISCONNECT, label: this.copy.disconnect },
   ]);
 
   protected act(value: string): void {
     if (value === AGAIN) {
       this.picked.emit({ kind: 'again' });
+    } else if (value === RENAME) {
+      this.picked.emit({ kind: 'rename' });
     } else if (value === DISCONNECT) {
       this.picked.emit({ kind: 'disconnect' });
     } else {

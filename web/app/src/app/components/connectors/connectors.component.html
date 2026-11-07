@@ -146,6 +146,12 @@
 @if (problem(); as problem) {
   <p class="detail problem" role="alert" data-testid="connectors-problem">{{ problem }}</p>
 }
+<app-rename-dialog
+  kind="account"
+  [title]="renameTitle()"
+  [(open)]="renameOpen"
+  (renamed)="renamed($event)"
+/>
 <app-connector-add
   [connector]="adding()"
   [here]="project()"

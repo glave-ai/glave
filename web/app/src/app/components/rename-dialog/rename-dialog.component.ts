@@ -22,11 +22,16 @@ import { plural } from '../../lib/plural';
 
 /** The longest title `thread/rename` takes, and the longest name a project is given. */
 const TITLE_LIMIT = 200;
+/** The longest name `connector/rename` gives an account. */
+const ACCOUNT_LIMIT = 40;
 
-/** What is renamed: a thread, by its title, or a project, by its name. */
-export type Renamed = 'thread' | 'project';
+/** What is renamed: a thread, by its title, a project or an app's account, by its name. */
+export type Renamed = 'thread' | 'project' | 'account';
 
-/** A dialog to give a thread a new title, or a project a new name; `renamed` emits it, trimmed. */
+/**
+ * A dialog to give a thread a new title, or a project or an app's account a new name;
+ * `renamed` emits it, trimmed.
+ */
 @Component({
   selector: 'app-rename-dialog',
   imports: [GlzButtonComponent, GlzDialogComponent, GlzFormFieldComponent, GlzInputDirective],
@@ -43,32 +48,43 @@ export class RenameDialogComponent {
   readonly open = model(false);
   readonly renamed = output<string>();
 
+  private readonly locale = inject(LOCALE_ID);
   protected readonly copy = {
-    hint: plural(
-      $localize`:@@renameDialog.hint:{${TITLE_LIMIT}:LIMIT:, plural, one {Up to # character} other {Up to # characters}}`,
-      inject(LOCALE_ID),
-    ),
     cancel: $localize`:@@renameDialog.cancel:Cancel`,
     save: $localize`:@@renameDialog.save:Save`,
   } as const;
   private readonly namings: Readonly<
-    Record<Renamed, { readonly heading: string; readonly label: string }>
+    Record<Renamed, { readonly heading: string; readonly label: string; readonly limit: number }>
   > = {
     thread: {
       heading: $localize`:@@renameDialog.threadHeading:Rename the thread`,
       label: $localize`:@@renameDialog.threadLabel:Title`,
+      limit: TITLE_LIMIT,
     },
     project: {
       heading: $localize`:@@renameDialog.projectHeading:Rename the project`,
       label: $localize`:@@renameDialog.projectLabel:Name`,
+      limit: TITLE_LIMIT,
+    },
+    account: {
+      heading: $localize`:@@renameDialog.accountHeading:Rename the account`,
+      label: $localize`:@@renameDialog.accountLabel:Name`,
+      limit: ACCOUNT_LIMIT,
     },
   };
   protected readonly naming = computed(() => this.namings[this.kind()]);
-  protected readonly limit = TITLE_LIMIT;
+  protected readonly limit = computed(() => this.naming().limit);
+  protected readonly hint = computed(() => {
+    const limit = this.limit();
+    return plural(
+      $localize`:@@renameDialog.hint:{${limit}:LIMIT:, plural, one {Up to # character} other {Up to # characters}}`,
+      this.locale,
+    );
+  });
   protected readonly draft = signal('');
   private readonly trimmed = computed(() => this.draft().trim());
   protected readonly invalid = computed(
-    () => this.trimmed() === '' || this.trimmed().length > TITLE_LIMIT,
+    () => this.trimmed() === '' || this.trimmed().length > this.limit(),
   );
 
   constructor() {

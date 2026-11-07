@@ -119,6 +119,27 @@ impl Connected {
         kept_there(self.ledger.place_connector(&kept).await?, &kept)
     }
 
+    /// Calls the account `kept` names `name` from now on, its sign-in kept under the new name
+    /// (a sign-in it shares with a server of the person's own settings stays theirs too); the
+    /// person's servers are reconciled at the next turn.
+    pub(super) async fn renaming(
+        &self,
+        kept: KeptConnector,
+        name: Option<String>,
+    ) -> Result<(), ApiError> {
+        let catalog = catalog()?;
+        let url = catalog.connector(&kept.id).and_then(|it| address(&it.url));
+        let url = url.unwrap_or_default();
+        let shared = kept.account.is_none() && self.remotes().await.contains_key(&url);
+        let renamed = self
+            .ledger
+            .rename_connector(&kept, name.as_deref(), &url, shared);
+        kept_there(renamed.await?, &kept)?;
+        self.more.forget(&url, kept.account.as_deref());
+        self.kept().await?;
+        Ok(())
+    }
+
     /// Disconnects the account `kept` names, removing its sign-in, so its token is destroyed
     /// now.
     pub(super) async fn disconnecting(&self, kept: KeptConnector) -> Result<(), ApiError> {
@@ -174,6 +195,13 @@ pub(super) fn kept_there(placement: Placement, kept: &KeptConnector) -> Result<(
             format!(
                 "another {} account is used there already: use this one somewhere else, or move \
                  that one first",
+                kept.id
+            ),
+        )),
+        Placement::NameTaken => Err(ApiError::new(
+            code::INVALID_PARAMS,
+            format!(
+                "another {} account has that name already: give this one another",
                 kept.id
             ),
         )),

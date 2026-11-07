@@ -114,6 +114,12 @@ export class ConnectorsService {
     await this.load();
   }
 
+  /** Calls the account `account` of the connector `id` `name` from now on, then lists again. */
+  async rename(id: string, account: string | null, name: string): Promise<void> {
+    await this.session.call('connector/rename', { connector: id, ...named(account), name });
+    await this.load();
+  }
+
   /**
    * Disconnects the account `account` of the connector `id` (none: the one never named),
    * destroying its sign-in, then lists them again.

@@ -53,8 +53,14 @@ describe('ConnectorAccountComponent', () => {
     list.append(root);
     await expectAccessible(list);
     await pick('Everywhere');
+    await pick('Rename');
     await pick('Disconnect');
-    expect(picked).toEqual([{ kind: 'place', place: 'everywhere' }, { kind: 'disconnect' }]);
+    const kinds = [
+      { kind: 'place', place: 'everywhere' },
+      { kind: 'rename' },
+      { kind: 'disconnect' },
+    ];
+    expect(picked).toEqual(kinds);
   });
 
   it('goes by the service for the account never named, and offers signing in again', async () => {

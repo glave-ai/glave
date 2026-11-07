@@ -11,15 +11,13 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, ConnectionConnected, ConnectionRemoved, ConnectorConnected, ConnectorDisconnected,
+    AccountRenamed, At, Body, ConnectionConnected, ConnectionRemoved, ConnectorDisconnected,
     CredentialConnected, CredentialId, CredentialRemoved, EncodeError, EventId, Header,
     InvalidValue, Principal, PrincipalId, ProviderConnected, ProviderId, ProviderRemoved, RawEvent,
     Secret, SecretAdded, SecretRemoved, Seq, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
-use glave_ports::{
-    Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, ProjectId, Scope,
-};
+use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -85,71 +83,7 @@ pub struct Accounts {
     renamed: Vec<(CredentialId, CredentialId)>,
 }
 
-/// An account of a connector of glave's catalog the person connected, and where their threads
-/// use it (`specs/policy.md`, "Connections").
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct KeptConnector {
-    /// Its id in the catalog.
-    pub id: String,
-    /// The person's name for this account of it, `Acme`: none for one never named. Each of a
-    /// service's accounts has a name of its own.
-    pub account: Option<String>,
-    /// The one project whose threads alone use it, their Chats among them: none where every
-    /// thread of theirs does.
-    pub only: Option<ProjectId>,
-}
-
-/// How keeping an account of a connector where it says went.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Placement {
-    /// Kept there.
-    Placed,
-    /// It is not connected: nothing changed.
-    NotConnected,
-    /// Another account of the service is used there: nothing changed.
-    Taken,
-}
-
-impl KeptConnector {
-    /// Whether this is the account `other` names: the same connector, the same name.
-    pub fn same_account(&self, other: &Self) -> bool {
-        self.id == other.id && self.account == other.account
-    }
-}
-
 impl Accounts {
-    /// The account of a connector `connector` names, when it is connected, wherever it is used.
-    pub(crate) fn connector(&self, connector: &KeptConnector) -> Option<&KeptConnector> {
-        self.connectors
-            .iter()
-            .find(|kept| kept.same_account(connector))
-    }
-
-    /// Another account of `connector`'s service used where `connector` says, which no two
-    /// accounts of one service are (`specs/policy.md`, "Connections").
-    fn taken(&self, connector: &KeptConnector) -> bool {
-        self.connectors.iter().any(|kept| {
-            kept.id == connector.id
-                && kept.account != connector.account
-                && kept.only == connector.only
-        })
-    }
-
-    /// Takes `kept` as connected, where it says: one used elsewhere now keeps its place among
-    /// the connected.
-    fn placed(&mut self, kept: KeptConnector) {
-        let had = self.connectors.iter_mut().find(|it| it.same_account(&kept));
-        match had {
-            Some(had) => had.only = kept.only,
-            None => self.connectors.push(kept),
-        }
-    }
-
-    /// The accounts of the connector `id` connected, in the order connected.
-    pub fn accounts_of<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a KeptConnector> {
-        self.connectors.iter().filter(move |kept| kept.id == id)
-    }
-
     /// The sign-in kept for the server at `url` as `account`: none names the person's own
     /// server's, or a connector's account never named.
     pub fn sign_in(&self, url: &str, account: Option<&str>) -> Option<&ConnectionConnected> {
@@ -393,81 +327,6 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
-    /// Records `connector`, an account of a connector of glave's catalog, as connected and used
-    /// where it says, unless it is already, there; and keeps `sign_in`, the person's sign-in to
-    /// its server as that account, when it asks for one, replacing any kept for the same server
-    /// and account; nothing, `Taken`, while another account of the service is used there.
-    pub async fn keep_connector(
-        &self,
-        connector: &KeptConnector,
-        sign_in: Option<&ConnectionConnected>,
-    ) -> Result<Placement, AccountsError> {
-        let kept = self
-            .append(|accounts| {
-                if accounts.taken(connector) {
-                    return Some((Vec::new(), Placement::Taken));
-                }
-                let mut events = Vec::new();
-                if accounts.connector(connector) != Some(connector) {
-                    events.push(Event::ConnectorConnected(connector.clone()));
-                }
-                if let Some(sign_in) = sign_in {
-                    events.push(Event::ConnectionConnected(sign_in.clone()));
-                    events.extend(replaced(accounts, sign_in));
-                }
-                Some((events, Placement::Placed))
-            })
-            .await?;
-        Ok(kept.unwrap_or(Placement::Placed))
-    }
-
-    /// Uses the account of a connector `connector` names where it says from now on, while it is
-    /// connected and no other account of the service is used there.
-    pub async fn place_connector(
-        &self,
-        connector: &KeptConnector,
-    ) -> Result<Placement, AccountsError> {
-        let placed = self
-            .append(|accounts| {
-                let Some(kept) = accounts.connector(connector) else {
-                    return Some((Vec::new(), Placement::NotConnected));
-                };
-                if accounts.taken(connector) {
-                    return Some((Vec::new(), Placement::Taken));
-                }
-                let moved =
-                    (kept != connector).then(|| Event::ConnectorConnected(connector.clone()));
-                Some((moved.into_iter().collect(), Placement::Placed))
-            })
-            .await?;
-        Ok(placed.unwrap_or(Placement::NotConnected))
-    }
-
-    /// Records the account of a connector `connector` names as disconnected and removes its
-    /// sign-in to its server at `url`, which is erased when the accounts are next read. False
-    /// when it was not connected.
-    pub async fn remove_connector(
-        &self,
-        connector: &KeptConnector,
-        url: &str,
-    ) -> Result<bool, AccountsError> {
-        let removed = self
-            .append(|accounts| {
-                accounts.connector(connector)?;
-                let mut events = vec![Event::ConnectorDisconnected(connector.clone())];
-                events.extend(
-                    accounts
-                        .connections
-                        .iter()
-                        .filter(|kept| kept.url == url && kept.account == connector.account)
-                        .map(|kept| Event::ConnectionRemoved(kept.connection)),
-                );
-                Some((events, ()))
-            })
-            .await?;
-        Ok(removed.is_some())
-    }
-
     /// Keeps the secret `name` under a key of its own. False, keeping
     /// nothing, when a secret of that name is kept already.
     pub(crate) async fn add_secret(
@@ -625,14 +484,9 @@ impl<L: EventLog> AccountLedger<L> {
             Event::ConnectionRemoved(connection) => {
                 encode(header, &ConnectionRemoved { connection, by })?
             }
-            Event::ConnectorConnected(KeptConnector { id, account, only }) => {
-                let connected = ConnectorConnected {
-                    connector: id,
-                    account,
-                    only: only.map(ProjectId::as_uuid),
-                    by,
-                };
-                encode(header, &connected)?
+            Event::ConnectorConnected(kept) => encode(header, &kept.connected(None, by))?,
+            Event::ConnectorRenamed(kept, from) => {
+                encode(header, &kept.connected(Some(AccountRenamed { from }), by))?
             }
             Event::ConnectorDisconnected(KeptConnector { id, account, .. }) => {
                 let disconnected = ConnectorDisconnected {
@@ -699,11 +553,7 @@ impl Read {
                     self.unerased.push(removed.connection.as_uuid());
                 }
             }
-            Body::ConnectorConnected(connected) => accounts.placed(KeptConnector {
-                id: connected.connector,
-                account: connected.account,
-                only: connected.only.map(ProjectId::from_uuid),
-            }),
+            Body::ConnectorConnected(connected) => accounts.placed(connected),
             Body::ConnectorDisconnected(disconnected) => {
                 accounts.connectors.retain(|kept| {
                     kept.id != disconnected.connector || kept.account != disconnected.account
@@ -738,6 +588,8 @@ enum Event {
     ConnectionRemoved(CredentialId),
     /// An account of a connector of glave's catalog connected, or used elsewhere.
     ConnectorConnected(KeptConnector),
+    /// An account of a connector renamed, and what it was called.
+    ConnectorRenamed(KeptConnector, Option<String>),
     /// An account of a connector disconnected, wherever it was used.
     ConnectorDisconnected(KeptConnector),
     SecretAdded(SecretAdded),
@@ -756,6 +608,10 @@ fn replaced<'a>(
         .filter(|kept| kept.url == connection.url && kept.account == connection.account)
         .map(|kept| Event::ConnectionRemoved(kept.connection))
 }
+
+mod connectors;
+
+pub use connectors::{KeptConnector, Placement};
 
 #[cfg(test)]
 mod tests;

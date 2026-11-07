@@ -1755,6 +1755,17 @@ export type ConnectorPlaceResult = {
   readonly connector: ConnectorInfo;
 };
 
+export type ConnectorRenameParams = {
+  readonly account?: string | null;
+  readonly connector: string;
+  readonly name?: string | null;
+};
+
+/** A connector, as it was connected. */
+export type ConnectorRenameResult = {
+  readonly connector: ConnectorInfo;
+};
+
 export type CredentialConnectParams = {
   /** The token, sent once and never answered back. */
   readonly token: Secret;
@@ -2867,6 +2878,7 @@ export interface Methods {
   readonly "connector/disconnect": { readonly params: ConnectorDisconnectParams; readonly result: ConnectorDisconnectResult };
   readonly "connector/list": { readonly params: ConnectorListParams; readonly result: ConnectorListResult };
   readonly "connector/place": { readonly params: ConnectorPlaceParams; readonly result: ConnectorPlaceResult };
+  readonly "connector/rename": { readonly params: ConnectorRenameParams; readonly result: ConnectorRenameResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };

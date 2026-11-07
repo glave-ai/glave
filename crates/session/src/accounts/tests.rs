@@ -416,3 +416,53 @@ fn two_accounts_of_one_service_are_each_signed_in_to_and_disconnected_apart() {
         assert_eq!(holding(&data, &two), 0, "its key is destroyed: {data:?}");
     });
 }
+
+#[test]
+fn an_account_renamed_keeps_its_place_and_its_sign_in_under_its_new_name() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.stripe.com";
+        let first = account("stripe", None, None);
+        let acme = account("stripe", Some("Acme"), Some(7));
+        let token = fake_secret("mcp_");
+        ledger
+            .keep_connector(&first, Some(&connection(1, url, &token)))
+            .await
+            .unwrap();
+        ledger.keep_connector(&acme, None).await.unwrap();
+
+        let renamed = ledger
+            .rename_connector(&first, Some("Glave"), url, false)
+            .await;
+        assert_eq!(renamed.unwrap(), Placement::Placed);
+        let accounts = ledger.accounts().await.unwrap();
+        let glave = account("stripe", Some("Glave"), None);
+        assert_eq!(
+            accounts.connectors,
+            [glave.clone(), acme.clone()],
+            "in its place"
+        );
+        let signed = accounts
+            .sign_in(url, Some("Glave"))
+            .map(|it| it.token.expose().to_owned());
+        assert_eq!(
+            signed.as_deref(),
+            Some(token.as_str()),
+            "its sign-in, renamed"
+        );
+        assert!(
+            accounts.sign_in(url, None).is_none(),
+            "and no longer under no name"
+        );
+
+        let taken = ledger
+            .rename_connector(&glave, Some("Acme"), url, false)
+            .await;
+        assert_eq!(taken.unwrap(), Placement::NameTaken);
+        let gone = ledger
+            .rename_connector(&first, Some("Zed"), url, false)
+            .await;
+        assert_eq!(gone.unwrap(), Placement::NotConnected);
+    });
+}

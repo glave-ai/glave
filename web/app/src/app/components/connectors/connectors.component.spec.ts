@@ -383,6 +383,7 @@ describe('ConnectorsComponent', () => {
       .answer('thread/list', { threads: [] })
       .answer('connector/list', { categories: CATEGORIES, connectors: [two] })
       .answer('connector/place', { connector: two })
+      .answer('connector/rename', { connector: two })
       .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', { connection: { url: PAGE, status: 'signed_in' } });
     openedTab();
@@ -417,6 +418,20 @@ describe('ConnectorsComponent', () => {
     await pick(1, 'Sign in again');
     expect(fake.paramsOf('connector/connect')).toEqual([
       { connector: 'notion', account: 'Acme', only: 'p1' },
+    ]);
+    await pick(1, 'Rename');
+    const named = document.querySelector<HTMLInputElement>('[data-testid="rename-input"]');
+    expect(named?.value).toBe('Acme');
+    if (named === null) {
+      throw new Error('no name field');
+    }
+    named.value = 'Acme Corp';
+    named.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    document.querySelector<HTMLElement>('[data-testid="rename-save"]')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('connector/rename')).toEqual([
+      { connector: 'notion', account: 'Acme', name: 'Acme Corp' },
     ]);
     await pick(1, 'Disconnect');
     const heading = document.querySelector('[data-testid="connectors-disconnect"] h2');

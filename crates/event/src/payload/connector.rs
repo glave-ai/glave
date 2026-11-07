@@ -32,8 +32,21 @@ pub struct ConnectorConnected {
     /// every thread of theirs does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub only: Option<Uuid>,
+    /// When the person renamed an account, what it was called: it takes that one's place among
+    /// the connected, under its new name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed: Option<AccountRenamed>,
     /// Who connected it.
     pub by: Principal,
+}
+
+/// The account a `connector.connected` renamed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccountRenamed {
+    /// Its name before: none for the one never named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// A connector of glave's catalog was disconnected.
