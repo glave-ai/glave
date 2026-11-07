@@ -211,18 +211,26 @@ impl Watcher {
     }
 
     /// Starts watching the threads `caller` sees in `project`, or in every project they own,
-    /// those updated since `after` first. Over a connection the caller is the person on this
-    /// computer.
+    /// those updated since `after` first, every setting before them for a client back from
+    /// `away`. Over a connection the caller is the person on this computer.
     pub(crate) async fn watch_list(
         &mut self,
         caller: &Caller,
         project: Option<ProjectId>,
         after: Option<At>,
+        away: bool,
     ) {
-        let request = Request::ThreadListWatch { project, after };
+        let request = Request::ThreadListWatch {
+            project,
+            after,
+            away,
+        };
         match self {
             Self::InProcess(server, watch) => {
-                let watched = server.watch_list(caller, project, after).await.unwrap();
+                let watched = server
+                    .watch_list(caller, project, after, away)
+                    .await
+                    .unwrap();
                 *watch = Some(InProcess::List(watched));
             }
             Self::Lines(lines) => lines.watching = Some(lines.send(&request).await),

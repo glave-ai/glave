@@ -105,7 +105,8 @@ export function followLists(host: ListsHost, stop: AbortSignal): Following {
  * Watches the lists from the newest update they hold, once read (`read` says they just were):
  * each thread's summary as the server says it changes. With nothing listed, from when they were
  * read. Cut off, it reads them again and comes back from there, waiting longer each time; it
- * ends once `signal` aborts or the tab is signed out.
+ * ends once `signal` aborts or the tab is signed out. A watch that comes back, after the tab was
+ * hidden or cut off, says it was away, and the server tells it every setting may have changed.
  */
 async function watchLists(
   host: ListsHost,
@@ -125,11 +126,12 @@ async function watchLists(
     if (!fresh || host.error() !== null) {
       await host.refresh();
     }
+    const away = !fresh;
     fresh = false;
     const began = Date.now();
     const after = newestUpdate(host.lists()) ?? readAt;
     try {
-      const watch = host.session.stream('thread/list/watch', { after }, signal);
+      const watch = host.session.stream('thread/list/watch', { after, away }, signal);
       for (let next = await watch.next(); !next.done; next = await watch.next()) {
         take(host, next.value, lacked);
         wait = FIRST_RETRY_MS;

@@ -146,7 +146,7 @@ fn someone_removed_has_their_watches_end_at_once_and_comes_back_only_by_an_invit
         let server = organization(&dir).await;
         let ada = signed_in("ada");
         server.request_as(&ada, list()).await.unwrap();
-        let mut watching = server.watch_list(&ada, None, None).await.unwrap();
+        let mut watching = server.watch_list(&ada, None, None, false).await.unwrap();
         let owner = Caller::default();
         let (came, removed) = tokio::join!(watching.next(), remove(&server, &owner, "ada"));
         removed.unwrap();
@@ -246,7 +246,7 @@ fn a_watch_on_another_server_on_the_store_ends_within_seconds_of_their_removal()
         let ada = signed_in("ada");
         one.request_as(&ada, list()).await.unwrap();
         two.request_as(&ada, list()).await.unwrap();
-        let mut watching = two.watch_list(&ada, None, None).await.unwrap();
+        let mut watching = two.watch_list(&ada, None, None, false).await.unwrap();
 
         // Time stands still but for what waits, so this says how long it took, however busy
         // the machine is.

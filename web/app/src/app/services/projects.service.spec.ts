@@ -238,7 +238,9 @@ describe('ProjectsService', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const projects = TestBed.inject(ProjectsService);
     await following(projects);
-    expect(fake.paramsOf('thread/list/watch')).toEqual([{ after: '2026-10-11T10:05:00.000Z' }]);
+    expect(fake.paramsOf('thread/list/watch')).toEqual([
+      { after: '2026-10-11T10:05:00.000Z', away: false },
+    ]);
     const at = '2026-10-11T10:06:00.000Z';
     watch.send(changed(thread('t1', 'Plan', { status: 'running', updated_at: at })));
     await settled();
@@ -309,7 +311,11 @@ describe('ProjectsService', () => {
       expect(fake.paramsOf('project/list')).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(1);
       expect(fake.paramsOf('project/list')).toHaveLength(2);
-      expect(fake.paramsOf('thread/list/watch')).toHaveLength(2);
+      // Back from being cut off, it says it was away, so it hears of every setting again.
+      expect(fake.paramsOf('thread/list/watch')).toEqual([
+        { after: '2026-10-11T10:05:00.000Z', away: false },
+        { after: '2026-10-11T10:05:00.000Z', away: true },
+      ]);
       // Signed out, it stops.
       again.fail(new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'signed out' }));
       await vi.advanceTimersByTimeAsync(60_000);
@@ -342,8 +348,9 @@ describe('ProjectsService', () => {
       shown('visible');
       await settled();
       expect(fake.paramsOf('project/list')).toHaveLength(3);
-      // With nothing listed, from when the lists were read.
-      const from = { after: expect.stringMatching(/Z$/u) as unknown };
+      // With nothing listed, from when the lists were read; each back from away, so it hears
+      // of every setting again.
+      const from = { after: expect.stringMatching(/Z$/u) as unknown, away: true };
       expect(fake.paramsOf('thread/list/watch')).toEqual([from, from]);
     } finally {
       Reflect.deleteProperty(document, 'visibilityState');
