@@ -157,12 +157,13 @@ impl Connections for InMemory {
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
         Box::pin(async move {
-            let connector = match another {
-                true => KeptConnector {
+            let connector = if another {
+                KeptConnector {
                     account: Some(WHO.to_owned()),
                     ..connector
-                },
-                false => connector,
+                }
+            } else {
+                connector
             };
             if connector.id == "linear" {
                 return Ok(match redirect {

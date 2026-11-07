@@ -23,9 +23,7 @@ use glave_event::{ConnectionConnected, PrincipalId};
 use glave_mcp::{Reachable, address};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
-use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, SignInLink, code,
-};
+use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
 use glave_session::{
     Accounts, Connecting, Connections, KeptConnector, OfferedAccount, Returned, Searching,
 };

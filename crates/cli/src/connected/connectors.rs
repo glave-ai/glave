@@ -92,9 +92,10 @@ impl Connected {
             .ok_or_else(|| unknown(id))?;
         match connector.sign_in {
             ConnectorSignIn::None => {
-                let kept = match another {
-                    true => named_new(&self.accounts().await?, kept, None, &connector.name),
-                    false => kept,
+                let kept = if another {
+                    named_new(&self.accounts().await?, kept, None, &connector.name)
+                } else {
+                    kept
                 };
                 kept_there(self.ledger.keep_connector(&kept, None).await?, &kept)?;
                 Ok(Connecting::Connected)

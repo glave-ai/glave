@@ -7,6 +7,7 @@
 use glave_event::{At, Principal, Secret, SignInClient};
 use glave_ports::ProjectId;
 use glave_ports::testing::{TempDir, fake_secret};
+use glave_session::protocol::ConnectorStatus;
 
 use super::*;
 use crate::accounts::Ledger;
