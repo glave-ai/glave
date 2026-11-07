@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events';
+
 import { type Page } from '@playwright/test';
 
 import { fakeApi } from './fake-api';
@@ -59,4 +61,67 @@ test('as a page is left, WebKit refusing a call of the session API is no problem
   await actAsLeft(page, '/settings');
   await page.reload();
   expect([...new Set(problems().slice(left.length))]).toEqual(left);
+});
+
+/** The address a stand-in WebKit page is at, and its session API's. */
+const HERE = 'http://127.0.0.1:4000/';
+
+/**
+ * A WebKit page as `watchForProblems` hears it, its events sent in whatever order a test names:
+ * Playwright hands over a page's errors and its navigations on channels of their own, in no
+ * promised order.
+ */
+class Heard extends EventEmitter {
+  private address = 'about:blank';
+  private readonly frame = {};
+
+  url(): string {
+    return this.address;
+  }
+
+  mainFrame(): object {
+    return this.frame;
+  }
+
+  context(): object {
+    return { browser: () => ({ browserType: () => ({ name: () => 'webkit' }) }) };
+  }
+
+  /** Its main frame asks for `HERE`, as a first load or a leaving does. */
+  navigates(): void {
+    this.emit('request', {
+      isNavigationRequest: () => true,
+      frame: () => this.frame,
+      url: () => HERE,
+    });
+  }
+
+  /** The page at `HERE` has loaded. */
+  loaded(): void {
+    this.address = HERE;
+    this.emit('domcontentloaded');
+  }
+
+  /** WebKit's error for a call of the session API it refused, split as Playwright hands it. */
+  refused(): void {
+    const error = new Error('/127.0.0.1:4000/ due to access control checks.');
+    error.name = 'Fetch API cannot load http';
+    error.stack = `Fetch API cannot load ${HERE} due to access control checks.\n    at post`;
+    this.emit('pageerror', error);
+  }
+}
+
+test('a refusal heard before the page is left, or after the next has loaded, is no problem once it is left', () => {
+  const page = new Heard();
+  const problems = watchForProblems(page as unknown as Page);
+  page.navigates();
+  page.loaded();
+  page.refused();
+  // Nothing has left the page yet, so nothing explains the refusal.
+  expect(problems()).toHaveLength(1);
+  // The page is left, and the next one loads, before the leaving's refusal is heard (#208).
+  page.navigates();
+  page.loaded();
+  page.refused();
+  expect(problems()).toEqual([]);
 });
