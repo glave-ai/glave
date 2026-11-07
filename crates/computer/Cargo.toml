@@ -44,8 +44,8 @@ regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
 # Process calls on Linux: the Landlock helper's own session and the user id that names the
-# sandbox's folder and tmux's.
-rustix = { workspace = true, features = ["process"] }
+# sandbox's folder and tmux's; rtnetlink, for a Docker worker's routes that refuse cloud metadata.
+rustix = { workspace = true, features = ["net", "process"] }
 # TLS between the harness and a worker (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true

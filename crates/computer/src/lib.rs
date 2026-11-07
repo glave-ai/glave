@@ -12,6 +12,7 @@
 mod cancel;
 mod disk;
 pub mod environment;
+mod fence;
 mod local;
 mod remote;
 mod serve;
@@ -25,6 +26,7 @@ pub mod worktrees;
 pub use cancel::CancelSwitch;
 pub use disk::{Keeper, Largest};
 pub use environment::{EnvironmentError, Found, read_environment};
+pub use fence::fence;
 pub use local::{LocalComputers, ask_repository, glave_on_path, sandbox_available, sandbox_helper};
 pub use remote::RemoteComputers;
 pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};

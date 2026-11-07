@@ -376,7 +376,7 @@ impl Workspace {
         let writes: Vec<FileWrite> = files
             .iter()
             .map(|(path, content)| FileWrite {
-                protect: self.sandbox.is_some(),
+                protect: self.sandbox.clone(),
                 ..FileWrite::new(*path, Bytes::new(*content))
             })
             .collect();

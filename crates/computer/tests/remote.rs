@@ -94,7 +94,7 @@ fn a_server_that_predates_protected_writes_is_refused() {
         let remote = RemoteComputers::connect(read, write);
         let refused = remote.check_protocol().await;
         assert!(
-            matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-31")),
+            matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-11-04")),
             "{refused:?}"
         );
         drop(remote);

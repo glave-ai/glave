@@ -247,7 +247,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, Strin
     let rereadable = layout
         .glave_home
         .iter()
-        .filter(|glave_home| layout.root.starts_with(glave_home))
+        .filter(|glave_home| layout.root.starts_with(glave_home) && layout.root != **glave_home)
         .map(|_| layout.root.clone())
         .chain(layout.cache.iter().cloned())
         .chain(layout.glave_on_path.iter().cloned())

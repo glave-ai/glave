@@ -28,8 +28,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `on_timeout` on a command, and the `backgrounded` and `idle` endings. `2026-10-28` added
 /// `command/ended`, how a command in the background ended, waited for without reading it.
 /// `2026-10-31` added `disk` and `largest` to `computer/status`, and `computer/worktrees` and
-/// `computer/free_worktree`, which a server frees room with.
-pub(crate) const PROTOCOL: &str = "2026-10-31";
+/// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
+/// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
+pub(crate) const PROTOCOL: &str = "2026-11-04";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

@@ -26,7 +26,8 @@ pub use glave_event::Forge;
 pub use limits::{Isolation, Limits};
 pub use refusal::{Reason, Refusal};
 pub use sandbox::{
-    PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
+    PROTECTED, Sandbox, SandboxLevel, git_settings, is_kept, is_protected, is_protected_refusal,
+    refuse_protected,
 };
 pub use types::{
     Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, DiskUse, Ending, Entry,

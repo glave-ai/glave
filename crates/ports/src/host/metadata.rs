@@ -46,6 +46,16 @@ impl Network {
         }
     }
 
+    /// The block's first address.
+    pub fn address(self) -> IpAddr {
+        self.address
+    }
+
+    /// How many of its first bits every address in the block shares.
+    pub fn prefix(self) -> u8 {
+        self.prefix
+    }
+
     /// Whether this is a block of IPv4 addresses.
     pub fn is_ipv4(self) -> bool {
         self.address.is_ipv4()
@@ -62,9 +72,9 @@ impl fmt::Display for Network {
 /// Where clouds serve a machine's credentials and setup data to any process on it that asks,
 /// checked on 2026-10-25 against each cloud's documents, the source beside each. Withheld from
 /// the agent where glave decides where its connections go: workers' network policy on
-/// Kubernetes, `web_fetch` and remote MCP servers; not yet from commands in this machine's
-/// sandbox, whose rules cannot name an address. glave's own process still reaches them, for its own credentials
-/// (`specs/sandbox.md`, "Cloud metadata"). A single address stays single where the block
+/// Kubernetes, the routes of workers on Docker, `web_fetch` and remote MCP servers; not yet
+/// from commands in this machine's sandbox, whose rules cannot name an address. glave's own
+/// process still reaches them, for its own credentials (`specs/sandbox.md`, "Cloud metadata"). A single address stays single where the block
 /// around it is someone else's.
 pub const CLOUD_METADATA: [Network; 9] = [
     // IPv4 link-local. The metadata service at 169.254.169.254 on AWS, Google Cloud, Azure,

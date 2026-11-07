@@ -6,7 +6,8 @@
 //! `glave.test=<run>` (CI sweeps the run by it) and `glave.test.case=<id>`, one per test, so
 //! each test checks that it left nothing behind without seeing the tests running beside it.
 //! `GLAVE_TEST_WORKER_GLAVE` (a Linux glave) and `GLAVE_TEST_WORKER_IMAGE` (an image with bash
-//! and git, pinned) add the whole path: a real worker reached over TLS.
+//! and git, pinned) add the whole path: a real worker reached over TLS, cloud metadata
+//! refused in it.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
@@ -30,8 +31,9 @@ const IMAGE: &str =
 /// The stub that runs where glave would: it says how it was started and what it holds, then
 /// echoes its input back, like a server answering on its standard output.
 const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\nls -l /opt/glave/tls/key.pem\ncat\n";
-/// A stub that only waits, as a TLS server would, so its port stays published.
-const WAITS: &[u8] = b"#!/bin/sh\nexec sleep 300\n";
+/// A stub that only waits, as a TLS server would, so its port stays published; run as the
+/// fence (`computer fence`), it ends at once.
+const WAITS: &[u8] = b"#!/bin/sh\n[ \"$2\" = fence ] && exit 0\nexec sleep 300\n";
 /// A stub that waits for its input to end, as a worker's glave serving TLS does.
 const UNTIL_INPUT_ENDS: &[u8] = b"#!/bin/sh\ncat >/dev/null\n";
 
@@ -324,8 +326,21 @@ async fn reaped(docker: &Docker, case: &str) {
     assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
 }
 
+/// What a worker says of each address: UDP "connects" with no packet sent, so whether the
+/// route refuses an address shows at once and the same anywhere, on a cloud or off one.
+const PROBE: &str = "for at in 169.254.169.254/80 169.254.170.2/80 100.100.100.200/80 \
+     168.63.129.16/80 168.63.129.16/53 192.0.2.1/80; do \
+     if (exec 3<>/dev/udp/${at%/*}/${at#*/}) 2>&1 | grep -q 'Permission denied'; \
+     then echo \"$at refused\"; else echo \"$at open\"; fi; done";
+
+/// What [`PROBE`] says in a worker with the network on: every metadata address refused, but
+/// DNS to Azure's resolver and everywhere else open.
+const PROBED: &str = "169.254.169.254/80 refused\n169.254.170.2/80 refused\n\
+     100.100.100.200/80 refused\n168.63.129.16/80 refused\n168.63.129.16/53 open\n\
+     192.0.2.1/80 open";
+
 #[test]
-fn a_real_worker_runs_a_command_over_tls() {
+fn a_real_worker_runs_a_command_over_tls_kept_from_cloud_metadata() {
     let Some((docker, case)) = docker() else {
         return;
     };
@@ -351,26 +366,27 @@ fn a_real_worker_runs_a_command_over_tls() {
             path: "/tmp".into(),
         };
         let opened = workers.open(made.id, &sources).await;
-        let ran = match &opened {
-            Ok(opened) => {
-                let output = super::super::route::Tail::default();
-                workers
-                    .run(
-                        opened.id,
-                        &Command::new("uname -s"),
-                        &output,
-                        &CancelSwitch::default(),
-                    )
-                    .await
-                    .map(|finished| (finished.ending, output.text(100)))
-            }
-            Err(error) => Err(error.clone()),
-        };
+        let mut ran = Vec::new();
+        for line in ["uname -s", PROBE] {
+            ran.push(match &opened {
+                Ok(opened) => {
+                    let output = super::super::route::Tail::default();
+                    workers
+                        .run(
+                            opened.id,
+                            &Command::new(line),
+                            &output,
+                            &CancelSwitch::default(),
+                        )
+                        .await
+                        .map(|finished| (finished.ending, output.text(1000)))
+                }
+                Err(error) => Err(error.clone()),
+            });
+        }
         workers.destroy(made.id).await.unwrap();
-        assert_eq!(
-            ran.unwrap(),
-            (Ending::Exited { code: 0 }, "Linux".to_owned())
-        );
+        let exited = |said: &str| Ok((Ending::Exited { code: 0 }, said.to_owned()));
+        assert_eq!(ran, [exited("Linux"), exited(PROBED)]);
         assert_eq!(left_behind(&docker, &case).await, Vec::<String>::new());
     });
 }
