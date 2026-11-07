@@ -13,12 +13,13 @@ use glave_ports::{
     Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ToolError, ToolInfo, ToolOutput,
     ToolSpec, spoken, unless_cancelled,
 };
+use rmcp::ClientHandler as _;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, JsonObject,
-    MetaObject, Prompt, ProtocolVersion, ReadResourceRequestParams, RequestMetaObject, Resource,
-    ResourceContents, Tool,
+    MetaObject, Prompt, ReadResourceRequestParams, RequestMetaObject, Resource, ResourceContents,
+    Tool,
 };
-use rmcp::service::{ClientLifecycleMode, ClientServiceExt as _, Peer, RoleClient, RunningService};
+use rmcp::service::{ClientServiceExt as _, Peer, RoleClient, RunningService};
 use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
@@ -27,7 +28,7 @@ use crate::call::{Answerer, Ran, Unanswered, Waits, call};
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
-use crate::probe::Probed;
+use crate::probe::probe;
 use crate::reason::{failed, reason};
 
 /// What the model is told when the person cancels the turn mid-call.
@@ -65,8 +66,8 @@ pub(crate) struct Connection {
 
 impl Connection {
     /// Connects over `transport` within `limit`, speaking MCP 2026-07-28 without a handshake,
-    /// or the 2025-11-25 handshake with servers that predate it or are slow to say
-    /// (`probe.rs`), as `opening` says.
+    /// or the 2025-11-25 handshake with servers that predate it (`probe.rs`), as `opening`
+    /// says.
     pub(crate) async fn open<T, E, A>(
         name: &str,
         transport: T,
@@ -77,18 +78,19 @@ impl Connection {
         T: IntoTransport<RoleClient, E, A>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let lifecycle = ClientLifecycleMode::Auto {
-            preferred_versions: vec![ProtocolVersion::V_2026_07_28],
-            legacy_version: Some(ProtocolVersion::V_2025_11_25),
-        };
         let stale = Arc::new(AtomicBool::new(false));
         let client = Arc::new(Client::new(Arc::clone(&stale), opening.root.as_deref()));
-        let transport = Probed::new(transport.into_transport());
-        let serving = Arc::clone(&client).serve_with_lifecycle(transport, lifecycle);
+        let serving = async {
+            let (transport, lifecycle) = probe(transport.into_transport(), &client.get_info())
+                .await
+                .map_err(|err| reason(&err))?;
+            let serving = Arc::clone(&client).serve_with_lifecycle(transport, lifecycle);
+            serving.await.map_err(|err| reason(&err))
+        };
         let started = tokio::time::timeout(limit, serving);
         let service = match started.await {
             Ok(Ok(service)) => service,
-            Ok(Err(err)) => return Err(McpError::start(name, reason(&err))),
+            Ok(Err(reason)) => return Err(McpError::start(name, reason)),
             Err(_) => {
                 return Err(McpError::start(
                     name,
