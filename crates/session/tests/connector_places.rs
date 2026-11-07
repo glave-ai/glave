@@ -137,38 +137,6 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         let shape = refused(&web.call(&connect(Some(&long), Some(acme))).await);
         assert!(shape.contains("40 characters"), "{shape}");
 
-        // Another, left unnamed, is named as it is kept, and goes by who it is signed in as.
-        let another = Request::ConnectorConnect {
-            connector: "deepwiki".into(),
-            account: None,
-            only: Some(chats),
-            another: true,
-        };
-        let joined = web.call(&another).await;
-        let accounts = &joined["result"]["connector"]["accounts"];
-        assert_eq!(
-            accounts[1],
-            json!({"name": "DeepWiki 2", "only": chats, "used": "Only in Chats",
-                   "status": "connected", "who": "Acme Corp",
-                   "signed_in": "Signed in as Acme Corp", "label": "Acme Corp"}),
-            "{joined}"
-        );
-        // What it goes by is taken, as is the service's name the one never named goes by.
-        let rename_to = |name: &str| Request::ConnectorRename {
-            connector: "deepwiki".into(),
-            account: Some("Glave".into()),
-            name: Some(name.into()),
-        };
-        let taken = refused(&web.call(&rename_to("acme corp")).await);
-        assert!(taken.contains("called acme corp already"), "{taken}");
-        let joining = refused(&web.call(&connect(Some("Acme Corp"), Some(acme))).await);
-        assert!(joining.contains("called Acme Corp already"), "{joining}");
-        let disconnect = Request::ConnectorDisconnect {
-            connector: "deepwiki".into(),
-            account: Some("DeepWiki 2".into()),
-        };
-        web.call(&disconnect).await;
-
         let connected = web.call(&connect(Some("Acme"), Some(acme))).await;
         let accounts = &connected["result"]["connector"]["accounts"];
         assert_eq!(
@@ -202,6 +170,58 @@ fn a_second_account_is_named_and_takes_the_place_of_the_everywhere_one_in_its_ow
         let accounts = &listed["result"]["connectors"][1]["accounts"];
         assert_eq!(accounts.as_array().unwrap().len(), 1, "{listed}");
         assert_eq!(accounts[0]["name"], "Glave");
+        served.close().await;
+    });
+}
+
+#[test]
+fn another_account_left_unnamed_goes_by_who_it_is_signed_in_as_which_no_other_takes() {
+    block_on!(async {
+        let token = LocalToken::new([7; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let dir = folder("conn-connector-another");
+        let (tested, _) = fresh(&dir).await;
+        let served = serve_with(tested, signin, None).await;
+        let mut web = Web::new(&served, Some(token.reveal().to_owned()));
+        let (acme, chats) = places(&mut web).await;
+        let refused = |answer: &serde_json::Value| {
+            assert_eq!(answer["error"]["code"], code::INVALID_PARAMS, "{answer}");
+            answer["error"]["message"].as_str().unwrap().to_owned()
+        };
+        web.call(&connect(Some("Glave"), None)).await;
+
+        // Another, left unnamed, is named as it is kept, and goes by who it is signed in as.
+        let another = Request::ConnectorConnect {
+            connector: "deepwiki".into(),
+            account: None,
+            only: Some(chats),
+            another: true,
+        };
+        let joined = web.call(&another).await;
+        let accounts = &joined["result"]["connector"]["accounts"];
+        assert_eq!(
+            accounts[1],
+            json!({"name": "DeepWiki 2", "only": chats, "used": "Only in Chats",
+                   "status": "connected", "who": "Acme Corp",
+                   "signed_in": "Signed in as Acme Corp", "label": "Acme Corp"}),
+            "{joined}"
+        );
+        // What it goes by is taken, for a rename and a new name alike.
+        let rename_to = |name: &str| Request::ConnectorRename {
+            connector: "deepwiki".into(),
+            account: Some("Glave".into()),
+            name: Some(name.into()),
+        };
+        let goes_by = refused(&web.call(&rename_to("acme corp")).await);
+        assert!(goes_by.contains("called acme corp already"), "{goes_by}");
+        let joining = refused(&web.call(&connect(Some("Acme Corp"), Some(acme))).await);
+        assert!(joining.contains("called Acme Corp already"), "{joining}");
+        let disconnect = Request::ConnectorDisconnect {
+            connector: "deepwiki".into(),
+            account: Some("DeepWiki 2".into()),
+        };
+        web.call(&disconnect).await;
+
         served.close().await;
     });
 }
