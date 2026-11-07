@@ -8,7 +8,7 @@ use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
 use super::run_temp::RunTemp;
-use super::{Launch, Reached, Temps, failed, own_git_folder, resolved};
+use super::{Launch, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -62,14 +62,25 @@ impl Enforcer {
             }
             None => None,
         };
-        let secrets: Vec<PathBuf> = match resolved(sandbox.home.as_deref()).await {
-            Some(home) => home_secrets(&home).collect(),
+        let home = resolved(sandbox.home.as_deref()).await;
+        let secrets: Vec<PathBuf> = match &home {
+            Some(home) => home_secrets(home).collect(),
             None => Vec::new(),
         };
         let hidden = hidden(secrets.into_iter().chain(also_hidden.iter().cloned())).await;
+        let glave_home = resolved(sandbox.glave_home.as_deref()).await;
+        let kept = {
+            let (root, glave_home) = (root.to_owned(), glave_home.clone());
+            tokio::task::spawn_blocking(move || {
+                kept_read_only(&root, home.as_deref(), glave_home.as_deref())
+            })
+            .await
+            .map_err(|error| ComputerError::Failed(error.to_string()))?
+        };
         let places = Places {
             root: root.to_owned(),
-            glave_home: resolved(sandbox.glave_home.as_deref()).await,
+            glave_home,
+            kept,
             hidden,
             cache: reached.cache.map(Path::to_path_buf),
             glave_on_path: resolved(reached.glave_on_path).await,
