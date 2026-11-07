@@ -523,6 +523,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             vec![json!({"connector": "deepwiki", "only": "@project"})],
         ),
         ("connector/disconnect", vec![json!({"connector": "linear"})]),
+        (
+            "connector/rename",
+            vec![json!({"connector": "deepwiki", "name": "Acme"})],
+        ),
         ("search/get", vec![json!({}), json!({"usage": true})]),
         ("search/set", vec![json!({"on": true})]),
     ]
