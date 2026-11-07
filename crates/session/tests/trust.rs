@@ -457,7 +457,7 @@ fn a_list_watch_hears_threads_ask_and_every_one_stop_once_the_project_is_trusted
         let repository = Arc::new(Repository::default());
         let (server, _) = serving(&dir, &repository, 0, Answering::Clients).await;
         let mut watch = server
-            .watch_list(&Caller::default(), None, None)
+            .watch_list(&Caller::default(), None, None, false)
             .await
             .unwrap();
         let start = || server.request(thread_start(scope().project()));

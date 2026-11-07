@@ -320,8 +320,12 @@ where
             // A watch belongs to the connection it was asked on, which ends it (`rpc.rs`); in
             // the server there is nothing to end.
             Request::ThreadUnwatch { .. } => Ok(Reply::Done {}),
-            Request::ThreadListWatch { project, after } => {
-                return match self.watch_list(caller, project, after).await {
+            Request::ThreadListWatch {
+                project,
+                after,
+                away,
+            } => {
+                return match self.watch_list(caller, project, after, away).await {
                     Ok(watch) => Answered::List(watch),
                     Err(refused) => Answered::Reply(Err(refused)),
                 };

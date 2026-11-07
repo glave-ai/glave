@@ -2662,6 +2662,11 @@ export type ThreadListWatchParams = {
    * read from the threads view, oldest first. Only what changes from now when absent.
    */
   readonly after?: At | null;
+  /**
+   * Whether the client was away (hidden, or cut off) since it read its settings: each is
+   * told first (`settings/changed`), as any may have changed, and it reads them again.
+   */
+  readonly away?: boolean;
   /** The project whose threads to follow: every project the caller owns when absent. */
   readonly project?: ProjectId | null;
 };

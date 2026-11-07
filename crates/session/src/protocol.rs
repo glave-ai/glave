@@ -381,6 +381,10 @@ methods! {
         /// read from the threads view, oldest first. Only what changes from now when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         after: Option<At>,
+        /// Whether the client was away (hidden, or cut off) since it read its settings: each is
+        /// told first (`settings/changed`), as any may have changed, and it reads them again.
+        #[serde(default, skip_serializing_if = "is_false")]
+        away: bool,
     } -> [Watched],
     /// Ends this connection's watch of a list, which then answers its request. Over HTTP,
     /// closing its stream ends it.
@@ -737,14 +741,10 @@ methods! {
     "connector/place" => ConnectorPlace {
         connector: String,
         #[serde(default)] account: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        only: Option<ProjectId>,
+        #[serde(default)] only: Option<ProjectId>,
     } -> [Connector],
     /// Disconnects an account of a connector, destroying its sign-in.
-    "connector/disconnect" => ConnectorDisconnect {
-        connector: String,
-        #[serde(default)] account: Option<String>,
-    } -> [Done],
+    "connector/disconnect" => ConnectorDisconnect { connector: String, #[serde(default)] account: Option<String> } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for

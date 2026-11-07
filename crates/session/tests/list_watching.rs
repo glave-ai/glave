@@ -2,31 +2,28 @@
 //! comes the moment it runs, waits for the person, goes on, ends, is renamed or deleted; with
 //! `after`, what changed since comes first and nothing older; a watcher far behind still hears
 //! the latest; a subagent's wait is its parent's; a removed project's threads are heard
-//! archived; nobody hears of threads in another person's projects; and a person's change of a
-//! setting is heard in the organization it was made in, and an organization's brand by everyone
-//! in it.
+//! archived; and nobody hears of threads in another person's projects. What a list's watch says
+//! of settings is in `list_settings.rs`.
 
 use std::sync::Arc;
 
-use glave_event::{Accent, At, Body, OrgRole, Secret, ThreadId, decode};
-use glave_ports::testing::{HUNG, ManualClock, Outbox};
+use glave_event::{At, Body, ThreadId, decode};
+use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, ProjectId, Standing};
 use glave_session::protocol::{
-    Answer, Grouping, Notification, Reply, Request, Setting, Status, ThreadSummary, Update, code,
+    Answer, Notification, Reply, Request, Status, ThreadSummary, Update, code,
 };
 use glave_session::signin::person;
 use glave_session::{Answering, TurnItem};
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
-use crate::signups::{serve, signed_up};
 use crate::support::following::*;
-use crate::support::web::{Served, Web, asked, elsewhere};
 use crate::support::*;
 
 /// Reads `watcher` until it is sent a summary of `thread` that `wanted` takes: that one. Every
 /// summary sent meanwhile is kept in `heard`.
-async fn hear(
+pub(crate) async fn hear(
     watcher: &mut Watcher,
     thread: ThreadId,
     heard: &mut Vec<ThreadSummary>,
@@ -50,14 +47,14 @@ async fn hear(
 
 /// A time before anything the test servers record.
 /// Bea, whom a host embedding the server calls for.
-fn bea() -> Caller {
+pub(crate) fn bea() -> Caller {
     Caller {
         person: Some(person("https://id.example.com", "bea").unwrap()),
         ..Caller::default()
     }
 }
 
-fn long_ago() -> At {
+pub(crate) fn long_ago() -> At {
     At::try_from("2026-01-01T00:00:00.000Z".to_owned()).unwrap()
 }
 
@@ -87,7 +84,7 @@ fn a_list_watch_hears_a_turn_run_wait_for_the_person_go_on_end_and_the_thread_go
             // From long ago, so whether the watch begins before the thread or after it, the
             // thread is heard of: what was recorded first comes from the threads view.
             watcher
-                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .watch_list(&Caller::default(), None, Some(long_ago()), false)
                 .await;
             let thread = start(&server, false).await;
             hear(&mut watcher, thread, &mut heard, |s| s.turns == 0).await;
@@ -155,7 +152,7 @@ fn from_after_what_changed_since_comes_first_and_nothing_older() {
             let mut watcher = over.watcher().await;
             let mut heard = Vec::new();
             watcher
-                .watch_list(&Caller::default(), None, Some(after))
+                .watch_list(&Caller::default(), None, Some(after), false)
                 .await;
             // What changed since, oldest first: the thread deleted last comes last.
             hear(&mut watcher, gone, &mut heard, |s| {
@@ -199,7 +196,7 @@ fn a_list_watcher_far_behind_still_hears_what_it_missed() {
             // the transport buffers may keep it from falling behind, and it must hear it all
             // the same.
             watcher
-                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .watch_list(&Caller::default(), None, Some(long_ago()), false)
                 .await;
             let rename = |thread, title: String| Request::ThreadRename { thread, title };
             server
@@ -243,12 +240,12 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
             let mut watcher = over.watcher().await;
             let mut heard = Vec::new();
             watcher
-                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .watch_list(&Caller::default(), None, Some(long_ago()), false)
                 .await;
             // Named, her project is not there for them.
             if kind == Kind::InProcess {
                 let refused = server
-                    .watch_list(&Caller::default(), Some(theirs), None)
+                    .watch_list(&Caller::default(), Some(theirs), None, false)
                     .await
                     .err()
                     .unwrap();
@@ -271,248 +268,6 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
 }
 
 #[test]
-fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
-    block_on!(async {
-        for kind in KINDS {
-            let name = format!("list-settings-{kind:?}").to_lowercase();
-            let dir = folder(&name);
-            let server = server(&dir, Vec::new(), Answering::Clients).await;
-            let mut over = Over::new(kind, &server, &name).await;
-            let bea = bea();
-            let mut watcher = over.watcher().await;
-            // From long ago, so the thread is heard of whether the watch begins before it or
-            // after it; heard, the watch follows from there.
-            watcher
-                .watch_list(&Caller::default(), None, Some(long_ago()))
-                .await;
-            let first = start(&server, false).await;
-            hear(&mut watcher, first, &mut Vec::new(), |_| true).await;
-            let grouped = || Request::GroupingSet {
-                grouping: Grouping::Status,
-            };
-            server.request_as(&bea, grouped()).await.unwrap();
-            server.request(grouped()).await.unwrap();
-            server.request(Request::GroupingGet {}).await.unwrap();
-            let chosen = Request::LanguageSet {
-                language: Some("en-XA".into()),
-            };
-            server.request(chosen).await.unwrap();
-            let second = start(&server, false).await;
-            let mut settings = Vec::new();
-            loop {
-                match watcher.next().await {
-                    Said::Note(Notification::SettingsChanged { setting }) => settings.push(setting),
-                    Said::Note(Notification::Changed { summary, .. }) if summary.id == second => {
-                        break;
-                    }
-                    Said::Note(_) => {}
-                    Said::Answer(answer) => panic!("the watch ended: {answer}"),
-                }
-            }
-            assert_eq!(
-                settings,
-                [Setting::Grouping, Setting::Language],
-                "{kind:?}: their own changes, once each; not another person's, nor a read"
-            );
-            over.close().await;
-        }
-    });
-}
-
-/// Ada, signed up, and the session and ids of her two organizations: the first her own, the
-/// second one she joined by Carol's invite.
-async fn ada_in_two_organizations(served: &Served, outbox: &Outbox) -> (String, String, String) {
-    let mut carol = signed_up(served, outbox, "carol@example.com").await;
-    ada_invited_by(&mut carol, served, outbox).await
-}
-
-/// [`ada_in_two_organizations`], the second the organization of `carol`, its admin.
-async fn ada_invited_by(
-    carol: &mut Web,
-    served: &Served,
-    outbox: &Outbox,
-) -> (String, String, String) {
-    let mut ada = signed_up(served, outbox, "ada@example.com").await;
-    let invite = Request::InviteCreate {
-        role: OrgRole::Member,
-        email: None,
-    };
-    let invited = asked(carol, &invite).await;
-    let accept = Request::InviteAccept {
-        code: Secret::new(invited["code"].as_str().unwrap()),
-    };
-    changed(&mut ada, &accept).await;
-    let listed = asked(&mut ada, &Request::OrganizationList {}).await;
-    let id = |at: usize| {
-        listed["organizations"][at]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    (ada.token.clone().unwrap(), id(0), id(1))
-}
-
-/// Asks `request` of `web`, which must answer it: refused, a watch waiting to hear of it would
-/// wait on.
-async fn changed(web: &mut Web, request: &Request) {
-    let answer = asked(web, request).await;
-    assert!(answer.is_object(), "{request:?}: {answer}");
-}
-
-/// Watches the threads list of whoever `web` is, and the organization it names.
-async fn watching(web: Web) -> Watcher {
-    let mut watcher = Watcher::Http(web, None);
-    watcher.watch_list(&Caller::default(), None, None).await;
-    watcher
-}
-
-/// Reads `watcher` until it names `last`: each setting it named, `last` too. Those told together
-/// come in the order of [`Setting`], so one told before `last` that sorts after it would go
-/// unread: `last` is the latest of what a test tells.
-async fn settings_until(watcher: &mut Watcher, last: Setting) -> Vec<Setting> {
-    let heard = tokio::time::timeout(HUNG, async {
-        let mut settings = Vec::new();
-        loop {
-            match watcher.next().await {
-                Said::Note(Notification::SettingsChanged { setting }) => {
-                    settings.push(setting);
-                    if setting == last {
-                        return settings;
-                    }
-                }
-                Said::Note(other) => panic!("only settings changed, not {other:?}"),
-                Said::Answer(answer) => panic!("the watch ended: {answer}"),
-            }
-        }
-    });
-    heard.await.unwrap()
-}
-
-/// A client of `session` that names `org` as the one it works in.
-fn working_in(served: &Served, session: &str, org: &str) -> Web {
-    elsewhere(served, Some(session.to_owned())).working_in(org)
-}
-
-/// The change of a setting a test tells last: see [`settings_until`].
-fn language_chosen() -> Request {
-    Request::LanguageSet {
-        language: Some("en-XA".into()),
-    }
-}
-
-#[test]
-fn a_setting_changed_in_one_organization_is_heard_only_in_that_one() {
-    block_on!(async {
-        let dir = folder("list-setting-organizations");
-        let outbox = Arc::new(Outbox::default());
-        let served = serve(&dir, true, &outbox).await;
-        let (session, own, joined) = ada_in_two_organizations(&served, &outbox).await;
-        let grouped = Request::GroupingSet {
-            grouping: Grouping::Status,
-        };
-        let naming_none = || elsewhere(&served, Some(session.clone()));
-        let client = |org: &str| working_in(&served, &session, org);
-        for (watch, here, there) in [
-            (client(&own), &own, &joined),
-            (client(&joined), &joined, &own),
-            // Naming none, she works in the first she joined.
-            (naming_none(), &own, &joined),
-        ] {
-            let mut watcher = watching(watch).await;
-            changed(&mut client(there), &grouped).await;
-            changed(&mut client(here), &language_chosen()).await;
-            assert_eq!(
-                settings_until(&mut watcher, Setting::Language).await,
-                [Setting::Language],
-                "watching in {here}, the change in {there} is not heard"
-            );
-        }
-        served.close().await;
-    });
-}
-
-#[test]
-fn a_name_changed_in_one_organization_is_heard_in_all_of_them() {
-    block_on!(async {
-        let dir = folder("list-name-organizations");
-        let outbox = Arc::new(Outbox::default());
-        let served = serve(&dir, true, &outbox).await;
-        let (session, own, joined) = ada_in_two_organizations(&served, &outbox).await;
-        let client = |org: &str| working_in(&served, &session, org);
-        let mut watcher = watching(client(&own)).await;
-        let named = Request::PersonName { name: "Ada".into() };
-        changed(&mut client(&joined), &named).await;
-        changed(&mut client(&own), &language_chosen()).await;
-        assert_eq!(
-            settings_until(&mut watcher, Setting::Language).await,
-            [Setting::Passkeys, Setting::Language],
-            "her name and passkeys are hers wherever she works"
-        );
-        served.close().await;
-    });
-}
-
-#[test]
-fn a_brand_changed_is_heard_by_everyone_in_its_organization_and_nobody_else() {
-    block_on!(async {
-        let dir = folder("list-brand-organization");
-        let outbox = Arc::new(Outbox::default());
-        let served = serve(&dir, true, &outbox).await;
-        let mut carol = signed_up(&served, &outbox, "carol@example.com").await;
-        let (session, own, carols) = ada_invited_by(&mut carol, &served, &outbox).await;
-        let dave = signed_up(&served, &outbox, "dave@example.com").await;
-        let of = |person: &Web| elsewhere(&served, person.token.clone());
-        let ada = |org: &str| working_in(&served, &session, org);
-        let mut admin = watching(of(&carol)).await;
-        let mut member = watching(ada(&carols)).await;
-        let mut elsewhere_too = watching(ada(&own)).await;
-        let mut outsider = watching(of(&dave)).await;
-
-        let branded = Request::BrandSet {
-            name: Some("Carol's".into()),
-            logo: None,
-            accent: Accent::Plain,
-            locked: false,
-        };
-        changed(&mut carol, &branded).await;
-        for (mut client, watcher, told, who) in [
-            (of(&carol), &mut admin, true, "another tab of the admin"),
-            (ada(&carols), &mut member, true, "a member"),
-            (ada(&own), &mut elsewhere_too, false, "the member elsewhere"),
-            (of(&dave), &mut outsider, false, "someone in another"),
-        ] {
-            changed(&mut client, &language_chosen()).await;
-            let expected: &[Setting] = if told {
-                &[Setting::Brand, Setting::Language]
-            } else {
-                &[Setting::Language]
-            };
-            assert_eq!(
-                settings_until(watcher, Setting::Language).await,
-                expected,
-                "{who}"
-            );
-        }
-        // What the member reads again is what the admin kept.
-        let read = asked(&mut ada(&carols), &Request::AppearanceGet {}).await;
-        assert_eq!(read["organization"]["name"], "Carol's");
-
-        // A person's own accent stays theirs, in the same organization.
-        let accent = Request::AppearanceSet {
-            accent: Some(Accent::Plain),
-        };
-        changed(&mut ada(&carols), &accent).await;
-        changed(&mut of(&carol), &language_chosen()).await;
-        assert_eq!(
-            settings_until(&mut admin, Setting::Language).await,
-            [Setting::Language],
-            "a member's accent is not told to anyone else"
-        );
-        served.close().await;
-    });
-}
-
-#[test]
 fn removing_a_project_is_heard_by_whoever_watches_it() {
     block_on!(async {
         for kind in KINDS {
@@ -528,10 +283,10 @@ fn removing_a_project_is_heard_by_whoever_watches_it() {
             // after it, it is heard: what was recorded first comes from the threads view.
             let (mut every, mut named) = (over.watcher().await, over.watcher().await);
             every
-                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .watch_list(&Caller::default(), None, Some(long_ago()), false)
                 .await;
             named
-                .watch_list(&Caller::default(), Some(project), Some(long_ago()))
+                .watch_list(&Caller::default(), Some(project), Some(long_ago()), false)
                 .await;
             let removed = server.request(Request::ProjectRemove { project }).await;
             assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
@@ -570,7 +325,9 @@ fn a_childs_wait_is_its_parents_and_both_are_heard() {
         let mut over = Over::new(Kind::InProcess, &server, "list-subagent").await;
         let mut watcher = over.watcher().await;
         let mut heard = Vec::new();
-        watcher.watch_list(&Caller::default(), None, None).await;
+        watcher
+            .watch_list(&Caller::default(), None, None, false)
+            .await;
         let parent = start(&server, false).await;
         let mut stream = stream_turn(&server, parent, "touch it", None)
             .await
@@ -622,10 +379,12 @@ fn a_connection_of_lines_watches_each_list_once_until_it_unwatches_it() {
             let all = Request::ThreadListWatch {
                 project: None,
                 after: None,
+                away: false,
             };
             let home = Request::ThreadListWatch {
                 project: Some(scope().project()),
                 after: None,
+                away: false,
             };
             let watching = lines.send(&all).await;
             let again = lines.send(&all).await;
@@ -668,6 +427,7 @@ fn over_http_each_summary_carries_its_update_time_as_its_id() {
         let watch = Request::ThreadListWatch {
             project: None,
             after: Some(long_ago()),
+            away: false,
         };
         let (message, _) = web.message(&watch);
         let mut response = web.open(&message, Some("thread/list/watch")).await;

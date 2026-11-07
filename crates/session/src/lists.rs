@@ -116,12 +116,14 @@ where
 {
     /// Follows the threads `caller` sees in `project`, or in every project they own: the
     /// summary of each thread updated since `after` from the threads view first, then each
-    /// thread's as it changes, until the caller's sign-in ends or the watch is dropped.
+    /// thread's as it changes, until the caller's sign-in ends or the watch is dropped. A client
+    /// that was `away` is told first that every setting of theirs may have changed.
     pub async fn watch_list(
         &self,
         caller: &Caller,
         project: Option<ProjectId>,
         after: Option<At>,
+        away: bool,
     ) -> Result<ListWatch, ApiError> {
         let now = At::from(self.inner.harness.clock().now());
         let mut scopes = BTreeMap::new();
@@ -147,7 +149,12 @@ where
             statuses: BTreeMap::new(),
             queue: VecDeque::new(),
             queued: BTreeSet::new(),
-            settings: BTreeSet::new(),
+            // Nothing records when a setting changed, so a client back from away hears them all.
+            settings: if away {
+                BTreeSet::from(Setting::ALL)
+            } else {
+                BTreeSet::new()
+            },
             access,
             seen: after.unwrap_or(now),
             tail: now,

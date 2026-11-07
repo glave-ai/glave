@@ -129,7 +129,10 @@ fn a_list_watch_ends_when_its_browser_signs_out() {
     block_on!(async {
         let dir = folder("ended-list");
         let (server, browser) = signed_in(&dir, Vec::new()).await;
-        let mut list = server.watch_list(&browser, None, None).await.unwrap();
+        let mut list = server
+            .watch_list(&browser, None, None, false)
+            .await
+            .unwrap();
         let (came, signed_out) = tokio::join!(
             list.next(),
             server.request_as(&browser, Request::SigninEnd {})
