@@ -50,11 +50,29 @@ s = socket.socket(); s.bind(("127.0.0.1", 0)); s.listen(1)
 c = socket.socket(); c.connect(s.getsockname()); print("reached")
 "#;
 
+/// A Unix socket of its own in its temp folder, listened on and reached from the same command.
+const OWN_SOCKET: &str = r#"
+import os, socket
+path = os.path.join(os.environ["TMPDIR"], "own.sock")
+s = socket.socket(socket.AF_UNIX); s.bind(path); s.listen(1)
+c = socket.socket(socket.AF_UNIX); c.connect(path); print("reached")
+"#;
+
+/// A process pool whose children Python's forkserver starts, over a Unix socket.
+const POOL: &str = r#"
+import multiprocessing as m
+m.set_start_method("forkserver")
+with m.Pool(2) as pool:
+    print("pooled", sum(pool.map(abs, [-1, -2])))
+"#;
+
 /// What a check should come to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Comes {
     /// It exits 0, printing this.
     Prints(&'static str),
+    /// It exits 0, printing something that starts with this.
+    Starts(&'static str),
     /// It does not exit 0.
     Fails,
 }
@@ -187,7 +205,9 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("online: the internet", online.clone(), internet, Comes::Prints("connected")),
             ("online: curl", online.clone(), "curl -s -m 20 -o /dev/null https://1.1.1.1 && echo fetched".into(), Comes::Prints("fetched")),
             ("online: loopback", online.clone(), py(LOOPBACK, ""), Comes::Prints("reached")),
-            ("online: glave's socket", online.clone(), unix, Comes::Prints("refused 1")),
+            // Unix sockets may be made, and glave's is hidden.
+            ("online: glave's socket", online.clone(), unix, Comes::Starts("refused")),
+            ("online: a Unix socket of its own", online.clone(), py(OWN_SOCKET, ""), Comes::Prints("reached")),
             ("online: a netlink socket", online.clone(), netlink, Comes::Prints("refused 1")),
             // What the filter refuses always; each errno is EPERM (1).
             ("ptrace", offline.clone(), py(SYSCALL, "101"), Comes::Prints("-1 1")),
@@ -203,6 +223,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             let answer = run(&computers, project.id, sandbox, &script).await;
             let holds = match (&answer, comes) {
                 (Ok(Ok(text)), Comes::Prints(wanted)) => text == wanted,
+                (Ok(Ok(text)), Comes::Starts(wanted)) => text.starts_with(wanted),
                 (Ok(Err(_)), Comes::Fails) => true,
                 _ => false,
             };
@@ -230,6 +251,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 cost.push(format!("{what}, {under}: {} ms, {ended}", took.as_millis()));
             }
         }
+        let pool = py(POOL, "");
         // Everyday work in the sandbox: each must pass with no one to ask.
         for (what, script, comes) in [
             (
@@ -257,6 +279,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 "cargo new -q --vcs none dep 2>&1 && cd dep && cargo add -q itoa 2>&1 && cargo build -q 2>&1 && echo built",
                 "built",
             ),
+            ("a process pool", pool.as_str(), "pooled 3"),
             (
                 "a compiler",
                 "printf 'int main(){return 0;}' > a.c && cc a.c -o a.out && ./a.out && echo compiled",

@@ -249,9 +249,10 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         glave: home.clone(),
         largest: largest.clone(),
     };
-    // The token a computer on a socket serves with is its own, and no command's to read.
+    // The token a computer on a socket serves with is its own, and no command's to read; nor is
+    // the socket, which a sandboxed command with the network may otherwise reach.
     let hidden: Vec<PathBuf> = match &transport {
-        Transport::Socket(_, folder, _) => vec![folder.clone()],
+        Transport::Socket(path, folder, _) => vec![folder.clone(), path.clone()],
         Transport::Stdio | Transport::Tcp(_) | Transport::Tls(..) => Vec::new(),
     };
     let computers = crate::helpers::with_sandbox_helper(

@@ -91,6 +91,11 @@ impl Enforcer {
             cache: reached.cache.map(Path::to_path_buf),
             glave_on_path: resolved(reached.glave_on_path).await,
             runtime: resolved(Some(runtime_folder().as_path())).await,
+            daemons: mounts::daemons(
+                Some(&runtime_folder()),
+                rustix::process::getuid().as_raw(),
+                ssh_agent().as_deref(),
+            ),
             git_common,
             names,
         };
@@ -165,6 +170,13 @@ fn runtime_folder() -> PathBuf {
         })
 }
 
+/// The ssh agent's socket, where `$SSH_AUTH_SOCK` names one.
+fn ssh_agent() -> Option<PathBuf> {
+    std::env::var_os("SSH_AUTH_SOCK")
+        .map(PathBuf::from)
+        .filter(|socket| socket.is_absolute())
+}
+
 /// bubblewrap if it starts here; otherwise Landlock if the level allows it and the kernel and
 /// program have it; otherwise a refusal saying why and what to install.
 async fn choose(
@@ -178,7 +190,12 @@ async fn choose(
         .flatten()
         .map(Path::to_path_buf)
         .collect();
-    let network = sandbox.network;
+    // With the network, Unix sockets too: the mounts hide the person's daemons' (`mounts.rs`).
+    let sockets = if sandbox.network {
+        seccomp::Sockets::InternetAndUnix
+    } else {
+        seccomp::Sockets::Offline
+    };
     let tried = tokio::task::spawn_blocking(move || {
         let writable: Vec<&Path> = writable.iter().map(PathBuf::as_path).collect();
         let Some(bwrap) = bubblewrap::find(&writable) else {
@@ -187,7 +204,7 @@ async fn choose(
         let offline = bubblewrap::starts(&bwrap).map_err(|said| {
             format!("bubblewrap ({}) cannot start here: {said}", bwrap.display())
         })?;
-        let filter = seccomp::program(network)?;
+        let filter = seccomp::program(sockets)?;
         Ok((bwrap, offline, seccomp::bytes(&filter)))
     })
     .await

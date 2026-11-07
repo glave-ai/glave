@@ -29,7 +29,13 @@ pub(in crate::local::sandbox) fn helper(args: &[OsString]) -> String {
     if let Err(error) = landlocked::restrict(&plan) {
         return error;
     }
-    if let Err(error) = seccomp::apply(plan.network) {
+    // Landlock cannot hide the person's daemons' sockets, so with the network, internet ones only.
+    let sockets = if plan.network {
+        seccomp::Sockets::Internet
+    } else {
+        seccomp::Sockets::Offline
+    };
+    if let Err(error) = seccomp::apply(sockets) {
         return error;
     }
     glave_process::Program::new(program)

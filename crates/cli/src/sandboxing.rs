@@ -91,9 +91,16 @@ pub(crate) async fn workspace(
 /// The workspace in `folder` on this computer, without a sandbox yet, its commands asking for
 /// the network when they have none if `asks`.
 async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::Result<Workspace> {
-    let computer = identity::computer(&home::folder()?).await?;
+    let glave_home = home::folder()?;
+    let computer = identity::computer(&glave_home).await?;
+    // The person's server's socket, which a sandboxed command with the network could reach
+    // where its path, too long, moved it out of glave's hidden folder (`/tmp/glave-<uid>`).
+    let socket = crate::server::socket_path()
+        .ok()
+        .filter(|socket| !socket.starts_with(&glave_home));
     let computers = LocalComputers::for_here(std::env::vars_os())
         .known_as(computer)
+        .with_hidden(socket)
         .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
         .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
         .with_projects(home::projects()?)
