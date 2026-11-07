@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import type { GlzOption } from '../../lib/options';
@@ -13,10 +13,12 @@ import { GlzMenuButtonComponent } from './menu-button.component';
     testId="more"
     label="Options for Atlas"
     [actions]="actions"
+    [disabled]="disabled()"
     (action)="pick($event)"
   />`,
 })
 class HostComponent {
+  readonly disabled = signal(false);
   readonly actions: readonly GlzOption[] = [
     { value: 'rename', label: 'Rename' },
     { value: 'remove', label: 'Remove' },
@@ -97,5 +99,27 @@ describe('GlzMenuButtonComponent', () => {
     expect(document.activeElement).toBe(button);
     expect(fixture.componentInstance.picked).toEqual([]);
     await expectAccessible(root);
+  });
+
+  it('opens nothing while disabled, and opens again once it is not', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.disabled.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const button = trigger(root);
+    expect(button.disabled).toBe(true);
+    await expectAccessible(root);
+    button.click();
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(fixture.componentInstance.picked).toEqual([]);
+
+    fixture.componentInstance.disabled.set(false);
+    await fixture.whenStable();
+    expect(button.disabled).toBe(false);
+    button.click();
+    await fixture.whenStable();
+    expect(shown('more-action')).toHaveLength(2);
   });
 });

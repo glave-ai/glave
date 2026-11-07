@@ -36,6 +36,8 @@ export class ConnectorAccountComponent {
   readonly places = input<readonly GlzOption[]>([]);
   /** Its place's value: `everywhere`, or the project its threads alone use. */
   readonly place = input.required<string>();
+  /** Whether a call for its service runs: its menu opens nothing until it ends. */
+  readonly busy = input(false);
   /** Picked from its menu. */
   readonly picked = output<AccountAction>();
 

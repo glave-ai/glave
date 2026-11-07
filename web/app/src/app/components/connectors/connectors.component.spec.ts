@@ -396,6 +396,51 @@ describe('ConnectorsComponent', () => {
     expect(heading?.textContent).toContain('Disconnect Notion (Acme)?');
   });
 
+  it("holds its accounts' menus while a call for them runs, so none is sent twice", async () => {
+    const two: ConnectorInfo = {
+      ...NOTION,
+      status: 'connected',
+      accounts: [
+        { name: 'Glave', status: 'connected', used: 'Everywhere, including chats' },
+        { name: 'Acme', status: 'connected', only: 'p1', used: 'Only in Acme Site' },
+      ],
+    };
+    const fake = new FakeSession()
+      .answer('project/list', {
+        projects: [record('p1', 'Acme Site'), record('p2', 'Chats', 'personal')],
+      })
+      .answer('thread/list', { threads: [] })
+      .answer('connector/list', { categories: CATEGORIES, connectors: [two] });
+    const placed = fake.held('connector/place');
+    const { fixture, root } = await page(fake);
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    const menus = (): readonly HTMLButtonElement[] => [
+      ...root.querySelectorAll<HTMLButtonElement>('[data-testid="connector-account-menu-trigger"]'),
+    ];
+    const pick = async (at: number, text: string): Promise<void> => {
+      menus()[at]?.click();
+      await fixture.whenStable();
+      const items = document.querySelectorAll<HTMLElement>(
+        '[data-testid="connector-account-menu-action"]',
+      );
+      [...items].find((item) => item.textContent.includes(text))?.click();
+      await settle(fixture);
+    };
+    await pick(1, 'Everywhere');
+    expect(menus().map((menu) => menu.disabled)).toEqual([true, true]);
+    await pick(1, 'Everywhere');
+    await pick(0, 'Disconnect');
+    expect(document.querySelector('[data-testid="connector-account-menu-action"]')).toBeNull();
+    expect(fake.paramsOf('connector/place')).toEqual([{ connector: 'notion', account: 'Acme' }]);
+    await expectAccessible(root);
+
+    placed({ connector: two });
+    await settle(fixture);
+    expect(menus().map((menu) => menu.disabled)).toEqual([false, false]);
+    expect(fake.paramsOf('connector/place')).toHaveLength(1);
+  });
+
   it('adds another account of a service, named, where the page is', async () => {
     const one: ConnectorInfo = {
       ...NOTION,

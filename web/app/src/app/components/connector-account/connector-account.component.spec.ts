@@ -10,7 +10,10 @@ const PLACES = [
 ];
 
 /** The account `account` drawn, and what its menu says it picked. */
-async function drawn(account: ConnectorAccount): Promise<{
+async function drawn(
+  account: ConnectorAccount,
+  busy = false,
+): Promise<{
   readonly root: HTMLElement;
   readonly picked: AccountAction[];
   readonly pick: (text: string) => Promise<void>;
@@ -20,6 +23,7 @@ async function drawn(account: ConnectorAccount): Promise<{
   fixture.componentRef.setInput('account', account);
   fixture.componentRef.setInput('places', PLACES);
   fixture.componentRef.setInput('place', account.only ?? 'everywhere');
+  fixture.componentRef.setInput('busy', busy);
   const picked: AccountAction[] = [];
   fixture.componentInstance.picked.subscribe((it) => picked.push(it));
   await fixture.whenStable();
@@ -90,5 +94,18 @@ describe('ConnectorAccountComponent', () => {
     list.append(root);
     await expectAccessible(list);
     list.remove();
+  });
+
+  it('opens no menu while a call for its service runs', async () => {
+    const { root, picked, pick } = await drawn(
+      { name: 'Acme', status: 'connected', used: 'Everywhere, including chats' },
+      true,
+    );
+    const menu = root.querySelector<HTMLButtonElement>(
+      '[data-testid="connector-account-menu-trigger"]',
+    );
+    expect(menu?.disabled).toBe(true);
+    await pick('Disconnect');
+    expect(picked).toEqual([]);
   });
 });

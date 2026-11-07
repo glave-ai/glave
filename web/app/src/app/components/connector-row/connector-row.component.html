@@ -44,6 +44,7 @@
           [account]="beneath.account"
           [place]="beneath.place"
           [places]="places()"
+          [busy]="row().busy"
           (picked)="picked(beneath.account, $event)"
         />
       }
@@ -58,6 +59,7 @@
         testId="connector-menu"
         [label]="row().menuLabel"
         [actions]="row().menu"
+        [disabled]="row().busy"
         (action)="chose($event)"
       />
     </span>

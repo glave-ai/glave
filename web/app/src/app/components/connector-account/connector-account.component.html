@@ -9,5 +9,6 @@
   testId="connector-account-menu"
   [label]="menuLabel()"
   [actions]="actions()"
+  [disabled]="busy()"
   (action)="act($event)"
 />
