@@ -7939,6 +7939,10 @@
             ],
             "description": "The latest `updated_at` the client has: the threads updated since are sent first,\nread from the threads view, oldest first. Only what changes from now when absent."
           },
+          "away": {
+            "description": "Whether the client was away (hidden, or cut off) since it read its settings: each is\ntold first (`settings/changed`), as any may have changed, and it reads them again.",
+            "type": "boolean"
+          },
           "project": {
             "anyOf": [
               {

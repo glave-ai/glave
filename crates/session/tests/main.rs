@@ -32,6 +32,7 @@ mod invites;
 mod isolation;
 mod languages;
 mod leases;
+mod list_settings;
 mod list_watching;
 mod listing;
 mod local;
