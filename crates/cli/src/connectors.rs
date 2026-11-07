@@ -56,8 +56,8 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
     })
 }
 
-/// The connector and the account `handle` names: `stripe`, or `stripe:Acme`.
-fn account(handle: &str) -> (String, Option<String>) {
+/// The connector, and the label of its account, `handle` names: `stripe`, or `stripe:Acme`.
+fn labelled(handle: &str) -> (String, Option<String>) {
     match handle.split_once(':') {
         Some((id, name)) => (id.to_owned(), Some(name.to_owned())),
         None => (handle.to_owned(), None),
@@ -131,9 +131,9 @@ fn connected_lines(connector: &ConnectorInfo, places: &Places) {
         accounts => {
             let (id, name, count) = (&connector.id, &connector.name, accounts.len());
             println!("  {id:<26} {name}: {count} accounts");
-            for account in accounts {
-                println!("    {:<24} {}", handle(connector, account), account.used);
-                again(connector, account, places);
+            for labelled in accounts {
+                println!("    {:<24} {}", handle(connector, labelled), labelled.used);
+                again(connector, labelled, places);
             }
         }
     }
@@ -159,21 +159,23 @@ async fn places(server: &mut Reached, connectors: &[ConnectorInfo]) -> anyhow::R
     Ok(projects.into_iter().map(|it| (it.id, it.name)).collect())
 }
 
-/// How an account is named in these commands: `stripe`, or `stripe:Acme`.
-fn handle(connector: &ConnectorInfo, account: &ConnectorAccount) -> String {
-    match &account.name {
-        Some(name) => format!("{}:{name}", connector.id),
+/// How an account is named in these commands, by the label the person gave it: `stripe`, or
+/// `stripe:Acme`.
+fn handle(connector: &ConnectorInfo, labelled: &ConnectorAccount) -> String {
+    match &labelled.name {
+        Some(label) => format!("{}:{label}", connector.id),
         None => connector.id.clone(),
     }
 }
 
-/// Says how to sign in to `account` again, where it is used, when its sign-in no longer works.
-fn again(connector: &ConnectorInfo, account: &ConnectorAccount, places: &Places) {
-    if account.status != ConnectorStatus::SignInAgain {
+/// Says how to sign in to the account `labelled` again, where it is used, when its sign-in no
+/// longer works.
+fn again(connector: &ConnectorInfo, labelled: &ConnectorAccount, places: &Places) {
+    if labelled.status != ConnectorStatus::SignInAgain {
         return;
     }
-    let handle = handle(connector, account);
-    let place = match account.only {
+    let handle = handle(connector, labelled);
+    let place = match labelled.only {
         None => "everywhere".to_owned(),
         Some(project) => match places.get(&project) {
             Some(name) => format!("{name:?}"),
@@ -206,17 +208,17 @@ async fn place_called(server: &mut Reached, place: &str) -> anyhow::Result<Optio
 /// `place`; `adding` it, connects it first, signing in to it in the browser when it asks.
 async fn used(server: &mut Reached, handle: &str, place: &str, adding: bool) -> anyhow::Result<()> {
     let only = place_called(server, place).await?;
-    let (connector, account) = account(handle);
+    let (connector, label) = labelled(handle);
     let request = if adding {
         Request::ConnectorConnect {
             connector,
-            account,
+            account: label,
             only,
         }
     } else {
         Request::ConnectorPlace {
             connector,
-            account,
+            account: label,
             only,
         }
     };
@@ -250,8 +252,11 @@ pub(crate) async fn connect(server: &mut Reached, id: &str) -> anyhow::Result<()
 
 /// Disconnects the account `handle` names.
 async fn disconnect(server: &mut Reached, handle: &str) -> anyhow::Result<()> {
-    let (connector, account) = account(handle);
-    let request = Request::ConnectorDisconnect { connector, account };
+    let (connector, label) = labelled(handle);
+    let request = Request::ConnectorDisconnect {
+        connector,
+        account: label,
+    };
     server.request(request).await?;
     println!("Disconnected {handle}: its sign-in is destroyed.");
     Ok(())
