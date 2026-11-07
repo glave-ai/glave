@@ -7,7 +7,8 @@
 //! label that nothing is left behind, Secrets included (there are none to leave).
 //! `GLAVE_TEST_WORKER_GLAVE` (a Linux glave) and `GLAVE_TEST_WORKER_IMAGE` (an image with bash
 //! and git, pinned) add the whole path: real workers, with a network and without, reached
-//! through bridges to glave's socket.
+//! through bridges to glave's socket, the one with a network reaching the internet but no
+//! other Pod.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
@@ -287,8 +288,33 @@ fn a_runtime_class_is_required_of_the_cluster_and_nothing_is_left_when_it_is_mis
     });
 }
 
+/// The IP of a Pod that is not the test's and listens on TCP: a CoreDNS Pod, at its metrics
+/// port, which no policy of the cluster's keeps anything from.
+async fn another_pod(cluster: &Kubernetes) -> String {
+    let dns: Api<Pod> = Api::namespaced(cluster.client.clone(), "kube-system");
+    let pods = dns
+        .list(&ListParams::default().labels("k8s-app=kube-dns"))
+        .await
+        .unwrap();
+    let ip = pods
+        .items
+        .iter()
+        .find_map(|pod| pod.status.as_ref().and_then(|status| status.pod_ip.clone()));
+    format!("{}/9153", ip.unwrap())
+}
+
+/// What a worker with the network says of `pod` (another Pod's IP and port) and of the
+/// internet: each reached or not within 5 seconds, as a fact, so a failure shows which.
+fn reach(pod: &str) -> String {
+    format!(
+        "reach() {{ timeout 5 bash -c \"</dev/tcp/$1\" 2>/dev/null \
+         && echo reached || echo refused; }}; echo \"pod=$(reach {pod})\"; echo \"internet=$(reach 1.1.1.1/443)\""
+    )
+}
+
 /// A real worker, from `GLAVE_TEST_WORKER_GLAVE` and `GLAVE_TEST_WORKER_IMAGE`, with the
-/// network or without, running `uname -s` and answering.
+/// network or without, running `uname -s` and answering; with the network, it reaches the
+/// internet but not another Pod in the cluster.
 async fn real(cluster: &Kubernetes, image: &str, network: Network) {
     // With a runtime class, policy may require one, and the Pod runs under it.
     let limits = Limits {
@@ -317,28 +343,36 @@ async fn real(cluster: &Kubernetes, image: &str, network: Network) {
     let sources = Sources::Folder {
         path: "/tmp".into(),
     };
+    let mut lines = vec!["uname -s".to_owned()];
+    if network == Network::On {
+        lines.push(reach(&another_pod(cluster).await));
+    }
     let opened = workers.open(made.id, &sources).await;
-    let ran = match &opened {
-        Ok(opened) => {
-            let output = super::super::route::Tail::default();
-            workers
-                .run(
-                    opened.id,
-                    &Command::new("uname -s"),
-                    &output,
-                    &CancelSwitch::default(),
-                )
-                .await
-                .map(|finished| (finished.ending, output.text(100)))
-        }
-        Err(error) => Err(error.clone()),
-    };
+    let mut ran = Vec::new();
+    for line in &lines {
+        ran.push(match &opened {
+            Ok(opened) => {
+                let output = super::super::route::Tail::default();
+                workers
+                    .run(
+                        opened.id,
+                        &Command::new(line),
+                        &output,
+                        &CancelSwitch::default(),
+                    )
+                    .await
+                    .map(|finished| (finished.ending, output.text(100)))
+            }
+            Err(error) => Err(error.clone()),
+        });
+    }
     workers.destroy(made.id).await.unwrap();
-    assert_eq!(
-        ran.unwrap(),
-        (Ending::Exited { code: 0 }, "Linux".to_owned()),
-        "{network:?}"
-    );
+    let exited = |said: &str| Ok((Ending::Exited { code: 0 }, said.to_owned()));
+    let mut wanted = vec![exited("Linux")];
+    if network == Network::On {
+        wanted.push(exited("pod=refused\ninternet=reached"));
+    }
+    assert_eq!(ran, wanted, "{network:?}");
 }
 
 #[test]

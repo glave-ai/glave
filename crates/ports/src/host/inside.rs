@@ -1,7 +1,8 @@
 //! The addresses that are not the internet: private and shared networks, where a cluster's
 //! Pods, its servers and a company's own services live. Refused, beside the cloud metadata
 //! addresses, wherever glave fences a computer off from everything but the internet: a
-//! person's computer on Kubernetes (`specs/computers.md`, decision 12).
+//! person's computer and a worker on Kubernetes (`specs/computers.md`, decision 12 and
+//! "Kubernetes").
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
