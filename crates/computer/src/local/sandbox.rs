@@ -28,7 +28,7 @@ use unsupported as platform;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, Sandbox};
+use glave_ports::computer::{ComputerError, Sandbox, git_settings};
 
 use run_temp::RunTemp;
 
@@ -183,6 +183,96 @@ async fn resolved(path: Option<&Path>) -> Option<PathBuf> {
         Some(path) => tokio::fs::canonicalize(path).await.ok(),
         None => None,
     }
+}
+
+/// What a write in `root` could change that makes code run for everything the person does: git's
+/// settings and every link on the way to them, followed even where the end isn't there yet, and
+/// on request glave's own folder, when `root` holds it (one inside it is a thread's worktree, and
+/// stays writable). A project inside what is kept is kept whole. Blocking: it follows links.
+pub(crate) fn kept_read_only(
+    root: &Path,
+    home: Option<&Path>,
+    glave_home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut kept: Vec<PathBuf> = home
+        .into_iter()
+        .flat_map(git_settings)
+        .flat_map(|named| on_the_way_to(&named))
+        .filter_map(|place| {
+            if place.starts_with(root) {
+                Some(place)
+            } else {
+                root.starts_with(&place).then(|| root.to_owned())
+            }
+        })
+        .collect();
+    kept.extend(
+        glave_home
+            .filter(|home| home.starts_with(root))
+            .map(Path::to_path_buf),
+    );
+    kept.sort();
+    kept.dedup();
+    kept
+}
+
+/// The most links followed on the way to one path, as an operating system limits them.
+const MOST_LINKS: usize = 40;
+
+/// Each link on the way to `path` and where it ends, followed one name at a time: removing a
+/// link on the way, or making what it points to, changes what `path` is as surely as writing it.
+fn on_the_way_to(path: &Path) -> Vec<PathBuf> {
+    let mut places = Vec::new();
+    let mut reached = PathBuf::new();
+    let mut names: Vec<OsString> = path
+        .components()
+        .rev()
+        .map(|name| name.as_os_str().to_owned())
+        .collect();
+    let mut links = 0;
+    while let Some(name) = names.pop() {
+        if name == ".." {
+            reached.pop();
+            continue;
+        }
+        let next = reached.join(&name);
+        match std::fs::read_link(&next) {
+            Ok(target) if links < MOST_LINKS => {
+                links += 1;
+                places.push(next);
+                if target.is_absolute() {
+                    reached = PathBuf::new();
+                }
+                names.extend(
+                    target
+                        .components()
+                        .rev()
+                        .map(|name| name.as_os_str().to_owned()),
+                );
+            }
+            _ => reached = next,
+        }
+    }
+    places.push(reached);
+    places
+}
+
+/// The folders between `root` and each of `kept`, which would carry what is kept along if moved:
+/// a rename is judged by its two paths, not by what the moved folder holds.
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+pub(crate) fn folders_leading_to<'a>(
+    root: &'a Path,
+    kept: &'a [PathBuf],
+) -> impl Iterator<Item = PathBuf> + 'a {
+    let mut folders: Vec<PathBuf> = kept
+        .iter()
+        .flat_map(|kept| kept.ancestors().skip(1))
+        .filter(|folder| folder.starts_with(root) && *folder != root)
+        .map(Path::to_path_buf)
+        .collect();
+    folders.sort();
+    folders.dedup();
+    folders.into_iter()
 }
 
 /// A worktree's own folder in its repository's shared git folder, from the `gitdir:` line

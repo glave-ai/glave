@@ -8,6 +8,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 
 - glave's own git doesn't run what a repository nested in the project names (#1193).
 - A worker's `save` hands its credential to nothing its commands planted (#1198; `computers.md`, "Workers").
+- git's settings and glave's folder stay read-only however the project is set up (#1201).
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
 - Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*).
 
@@ -101,7 +102,13 @@ The project folder; a temp folder of each command's own, which it sees as `TMPDI
 - `.glave/`, even before it exists: glave's own project settings. (A 2026 CVE created a missing agent settings file from inside a sandbox to plant hooks.)
 - Files tools run commands from: `.mcp.json`, `.vscode/`, `.idea/`, `.envrc`.
 
+- Wherever the project is: git's own settings, `~/.gitconfig` and `~/.config/git`, where they are or where a link leads them, and glave's own folder when the project holds it (one inside it, a thread's worktree, stays writable). A project inside git's settings is read-only whole. What runs from them runs in every repository the person has, so *Dotfiles*, below.
+
 The rest of `.git` stays writable, so committing, staging and branching work. (Codex makes all of `.git` read-only; Claude Code protects hooks and config, as here.)
+
+**Dotfiles** (#1201; `invariants.md`, 31). A project may be `~/.config`, or a dotfiles repository git's settings link into (`~/.config/git` to `~/dotfiles/git/.config/git`, GNU Stow's layout), and everything else in it works as in any project. Changing git's settings there is one command let out of the sandbox, which asks each time (*Letting one command out*), or Full access; a thread's worktree of such a repository changes its own copy freely. Why not refuse such a project, as the home folder is: it would be fewer lines, but it would take dotfiles from the person, with no way back; following links it would refuse every project holding where they lead (`~/code`, for dotfiles in `~/code/dotfiles`); and it is asked only when a project is made, so it misses a link made later. The sandbox sees the real paths where the write happens, on every computer that runs it.
+
+Not closed: a config file `include.path` or `core.hooksPath` names in the project, which glave doesn't read git's settings to find; `XDG_CONFIG_HOME` or `GIT_CONFIG_GLOBAL` elsewhere than the home folder, as the credential stores' list goes by the home folder too. On Linux, a link inside the project on the way to git's settings refuses its commands, saying so, as any protected path that is a link does, since a link can't be a mount point; the way there is a project at where it leads. On macOS the list is made once per workspace and sandbox, so a link made by `stow` after a command ran isn't seen until the next. A project holding what else starts programs (`~/.config/fish`, `~/Library/LaunchAgents`) can write those: its own choice of folder, not yet covered. A project inside glave's folder (`~/.glave/skills`) stays writable, like a worktree there. glave's own file tools still read a project at or holding glave's folder, secret-named files apart: invariant 23 covers commands. With no sandbox (Full access, `sandbox = false` in a Pod that is the wall) nothing is kept. While commands run in a project at `~/.config`, Linux shows an empty `~/.config/git` if there was none.
 
 **Repositories inside the project** (#1193). Only a workspace's own `.git` is protected. A command may write the config and hooks of any other repository in a folder it can write: one nested in the project, or in `/tmp`, including one that is another project's folder. So glave's own git on the person's machine does not trust a repository to name a program:
 
@@ -117,7 +124,6 @@ The same on Seatbelt, bubblewrap and Landlock, which is why it lives here and no
 
 - The person's own git in such a folder (their terminal, an editor that runs `git status` on opening it), which runs what is planted there; so does a command they let out of the sandbox (*Letting one command out*), and Full access. A `Makefile` or `package.json` a command wrote runs too.
 - A race: blanking reads the config, then git reads it again. A command still running that adds a filter between the two wins it, in 20 of 60 tries with a tight loop in a review's test. Running `status` and the checkout inside the sandbox would close it, at the cost of git-lfs's fetching, which needs sign-ins the sandbox hides.
-- A project made at `~/.config` can write git's own global config, which glave's git takes for the person's.
 
 **A thread's worktree** (`computers.md`): the writable set is the worktree folder and its repository's shared git folder (`git rev-parse --git-common-dir`), where its commits go, and nothing else. The shared folder's `hooks/`, `config`, `config.worktree`, `worktrees/` and `modules/` stay read-only, except the worktree's own folder in `worktrees/`, where its index, `HEAD` and logs go; that folder's hooks, config and `modules/` stay read-only, and neither it nor the shared folder can be renamed or replaced. So a commit works but nothing is planted that runs in another checkout. The main checkout's files and other threads' worktrees stay unwritable (#130). The worktree lives under `~/.glave/worktrees`, so the read rule for glave's own data below excepts the workspace itself.
 
