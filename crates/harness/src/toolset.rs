@@ -8,6 +8,7 @@
 mod connectors;
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::sync::Arc;
 
 use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
@@ -73,10 +74,24 @@ impl Own {
     }
 }
 
+/// The sources a turn's tools were gathered from, in order, which its calls go to.
+#[derive(Clone, Default)]
+struct Sources(Vec<Arc<dyn ToolSource>>);
+
+impl fmt::Debug for Sources {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} sources", self.0.len())
+    }
+}
+
 /// The tools of one turn.
 #[derive(Debug, Clone)]
 pub(crate) struct ToolSet {
     pub(crate) specs: Vec<ToolSpec>,
+    sources: Sources,
+    /// The person's connections, by their servers' names, that are not used where the thread
+    /// works: a call to one its prefix lists is told so.
+    pub(crate) away: Vec<String>,
     /// The system prompt for the turn: glave's own, then any notes from the sources.
     pub(crate) system: String,
     by_name: HashMap<String, (usize, ToolInfo)>,
@@ -102,6 +117,8 @@ impl ToolSet {
     pub(crate) async fn gather(sources: &[Arc<dyn ToolSource>], system: &str) -> Self {
         let mut set = Self {
             specs: Vec::new(),
+            sources: Sources(sources.to_vec()),
+            away: Vec::new(),
             system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
@@ -259,6 +276,8 @@ impl ToolSet {
         };
         Self {
             specs: self.specs.iter().filter(kept).cloned().collect(),
+            sources: self.sources.clone(),
+            away: self.away.clone(),
             // A child neither reads nor writes memory, and proposes no plan: in plan mode its
             // tools are refused as its parent's are.
             system: [crate::plan::PLAN_MODE, MEMORY_RULE]
@@ -308,6 +327,11 @@ impl ToolSet {
         self
     }
 
+    /// The source at `index`, as the tools were gathered.
+    pub(crate) fn source(&self, index: usize) -> Option<Arc<dyn ToolSource>> {
+        self.sources.0.get(index).cloned()
+    }
+
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.
     pub(crate) fn get(&self, name: &str) -> Option<(usize, &ToolInfo)> {
         let found = self
@@ -317,11 +341,19 @@ impl ToolSet {
         Some((found.0, &found.1))
     }
 
-    /// What a call of `name` is told when no source runs it: that its source isn't answering,
-    /// when it is listed, else that there is no such tool, and which there are.
+    /// What a call of `name` is told when no source runs it: that it is not connected here,
+    /// when it is listed and of one of the person's connections not used where the thread
+    /// works; that its source isn't answering, when it is listed otherwise; else that there is
+    /// no such tool, and which there are.
     pub(crate) fn not_found(&self, name: &str) -> String {
         let listed = |spec: &&ToolSpec| spec.name.eq_ignore_ascii_case(name.trim());
+        let away = |spec: &ToolSpec| {
+            let connector = connector_of(&spec.name);
+            let connector = connector.or_else(|| connector_called(&spec.name));
+            connector.is_some_and(|connector| self.is_away(connector))
+        };
         match self.specs.iter().find(listed) {
+            Some(spec) if away(spec) => not_connected_here(&spec.name),
             Some(spec) => connectors::not_available(&spec.name),
             None => format!(
                 "There is no tool named {name:?}. The tools are {}.",
@@ -330,7 +362,22 @@ impl ToolSet {
         }
     }
 
+    /// Whether `connector` is one of the person's connections not used where the thread works.
+    fn is_away(&self, connector: &str) -> bool {
+        self.away.iter().any(|it| it == connector)
+    }
+
     pub(crate) fn names(&self) -> Vec<&str> {
         self.specs.iter().map(|spec| spec.name.as_str()).collect()
     }
+}
+
+/// What a call of `name`, of one of the person's connections not used where the thread works,
+/// is told.
+fn not_connected_here(name: &str) -> String {
+    format!(
+        "{name:?} is not connected here: the person disconnected its service, or uses it only in \
+         another project or in their chats. Nothing ran. Tell them so rather than trying again; \
+         they can connect it here from their connections."
+    )
 }

@@ -196,7 +196,7 @@ pub(crate) async fn wire(
         web: crate::project_folders::web_offered(&choices.web.value)?,
         skills: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
-        own: servers.sources(),
+        own: servers.tools(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,

@@ -19,6 +19,7 @@ mod cancel;
 mod checks;
 mod compaction;
 mod computers;
+mod connection_places;
 mod faults;
 mod files;
 mod goals;

@@ -486,6 +486,9 @@ sentences! {
         "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
     NoConnector { connector: String } = "no-connector"
         "glave offers no connector called { $connector } here",
+    UsedEverywhere = "used-everywhere" "Everywhere, including chats",
+    UsedOnlyIn { place: String } = "used-only-in" "Only in { $place }",
+    UsedOnlyInGone = "used-only-in-gone" "Only in a project that is gone",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",
     SearchNotHere = "search-not-here"
         "web search is set up by whoever runs this server, not from here",

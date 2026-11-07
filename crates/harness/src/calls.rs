@@ -210,7 +210,7 @@ where
         let Some((index, info)) = tools.get(&call.tool) else {
             return Ok(ToolOutput::text(true, tools.not_found(&call.tool)));
         };
-        let Some(source) = self.source_for(thread, index) else {
+        let Some(source) = self.source_for(thread, tools, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };
         let name = info.spec.name.as_str();

@@ -445,7 +445,7 @@ impl ToolSet {
     fn missing_from(&self, connector: &str, tool: &str) -> String {
         let has_any = (self.catalog.iter()).any(|name| connector_of(name) == Some(connector));
         if !has_any {
-            return not_available(&wrapper(connector));
+            return self.unavailable(connector);
         }
         format!(
             "Nothing ran: {connector} has no tool called {tool:?}. Find the one you need with \
@@ -505,10 +505,21 @@ impl ToolSet {
         ToolOutput::text(false, found_text(&found))
     }
 
+    /// What a call of `connector`'s listed tool is told when none of its tools is on offer:
+    /// that it is not connected here, when it is one of the person's used elsewhere.
+    fn unavailable(&self, connector: &str) -> String {
+        let name = wrapper(connector);
+        if self.is_away(connector) {
+            super::not_connected_here(&name)
+        } else {
+            not_available(&name)
+        }
+    }
+
     /// What a search of `connector`'s tools is told when it has none on offer.
     fn no_connector(&self, connector: &str) -> String {
         if self.wrapper_of(&wrapper(connector)).is_some() {
-            return not_available(&wrapper(connector));
+            return self.unavailable(connector);
         }
         let mut known: Vec<&str> = Vec::new();
         for name in self.catalog.iter().filter_map(|name| connector_of(name)) {

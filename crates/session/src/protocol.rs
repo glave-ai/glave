@@ -720,9 +720,25 @@ methods! {
         category: Option<ConnectorCategoryId>,
         #[serde(default)]
         tag: Option<ConnectorTagId>,
+        /// Only those connected that the threads of this project use, the person's Chats
+        /// among them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        used_in: Option<ProjectId>,
     } -> [Connectors],
-    /// Connects a connector: at once, or the sign-in page, then `connection/poll`.
-    "connector/connect" => ConnectorConnect { connector: String } -> [Connector, SignIn],
+    /// Connects a connector: at once, or the sign-in page, then `connection/poll`. Its threads
+    /// use it everywhere, or only in `only`, a project of the caller's or their Chats.
+    "connector/connect" => ConnectorConnect {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        only: Option<ProjectId>,
+    } -> [Connector, SignIn],
+    /// Uses a connected connector everywhere from now on, or only in `only`, a project of the
+    /// caller's or their Chats: threads elsewhere are refused its tools at once.
+    "connector/place" => ConnectorPlace {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        only: Option<ProjectId>,
+    } -> [Connector],
     /// Disconnects a connector, destroying its sign-in.
     "connector/disconnect" => ConnectorDisconnect { connector: String } -> [Done],
     /// Whether the person's agent may search the web, and, never theirs to choose, why.

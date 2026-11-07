@@ -5,6 +5,7 @@
 //! is listed as asking until the person signs in there again.
 
 use glave_event::{At, Principal, Secret, SignInClient};
+use glave_ports::ProjectId;
 use glave_ports::testing::{TempDir, fake_secret};
 
 use super::*;
@@ -227,8 +228,8 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
     runtime.block_on(async {
         let ledger = crate::accounts::in_memory().await.unwrap();
         let connected = connected(&ledger, &home, None);
-        let status = |listed: &[(String, ConnectorStatus)], id: &str| {
-            listed.iter().find(|(it, _)| it == id).map(|(_, it)| *it)
+        let status = |listed: &[(KeptConnector, ConnectorStatus)], id: &str| {
+            listed.iter().find(|(it, _)| it.id == id).map(|(_, it)| *it)
         };
         let listed = connected.connectors().await.unwrap();
         assert_eq!(
@@ -238,12 +239,15 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
         assert_eq!(status(&listed, "linear"), Some(ConnectorStatus::Available));
 
         // One that asks no one to sign in is connected at once.
-        let done = connected.connect("deepwiki".into(), None).await.unwrap();
+        let done = connected.connect(everywhere("deepwiki"), None).await;
+        let done = done.unwrap();
         assert_eq!(done, Connecting::Connected);
         // One that asks for a sign-in has nowhere to come back to without a redirect.
-        let nowhere = connected.connect("linear".into(), None).await.unwrap();
+        let nowhere = connected.connect(everywhere("linear"), None).await;
+        let nowhere = nowhere.unwrap();
         assert_eq!(nowhere, Connecting::NoWayBack);
-        let unknown = connected.connect("nothing".into(), None).await.unwrap_err();
+        let unknown = connected.connect(everywhere("nothing"), None).await;
+        let unknown = unknown.unwrap_err();
         assert_eq!(unknown.code, code::NO_SERVER);
 
         // A sign-in kept for one, as a finished sign-in keeps it.
@@ -251,7 +255,7 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
         let token = fake_secret("lin_");
         let sign_in = signed_in(url, &token, None);
         ledger
-            .keep_connector("linear", Some(&sign_in))
+            .keep_connector(&everywhere("linear"), Some(&sign_in))
             .await
             .unwrap();
         let listed = connected.connectors().await.unwrap();
@@ -261,7 +265,10 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
         );
         assert_eq!(status(&listed, "linear"), Some(ConnectorStatus::Connected));
         let signed = connected.signed().await;
-        assert_eq!(signed.connectors, ["deepwiki", "linear"]);
+        assert_eq!(
+            signed.connectors,
+            [everywhere("deepwiki"), everywhere("linear")]
+        );
         let connections = connected.list().await.unwrap();
         assert!(
             connections.is_empty(),
@@ -279,16 +286,35 @@ fn a_connector_is_connected_listed_and_disconnected_with_its_sign_in() {
         let again = connected.disconnect("linear".into()).await.unwrap_err();
         assert_eq!(again.code, code::NO_CREDENTIAL);
         let accounts = ledger.accounts().await.unwrap();
-        assert_eq!(accounts.connectors, ["deepwiki"]);
+        assert_eq!(accounts.connectors, [everywhere("deepwiki")]);
         assert!(accounts.connections.is_empty(), "its sign-in went with it");
+
+        // Used only in one project from now on, and only while connected.
+        let project = ProjectId::from_uuid(uuid::Uuid::from_u128(7));
+        let only = KeptConnector {
+            only: Some(project),
+            ..everywhere("deepwiki")
+        };
+        connected.place(only.clone()).await.unwrap();
+        assert_eq!(connected.signed().await.connectors, [only]);
+        let gone = connected.place(everywhere("linear")).await.unwrap_err();
+        assert_eq!(gone.code, code::NO_CREDENTIAL, "not connected");
 
         connected.offer(Offered::Only(vec!["linear".into()]));
         let listed = connected.connectors().await.unwrap();
-        assert_eq!(listed, [("linear".to_owned(), ConnectorStatus::Available)]);
+        assert_eq!(listed, [(everywhere("linear"), ConnectorStatus::Available)]);
         let refused = connected
-            .connect("deepwiki".into(), None)
+            .connect(everywhere("deepwiki"), None)
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NO_SERVER, "not offered");
     });
+}
+
+/// The connector `id`, used everywhere.
+fn everywhere(id: &str) -> KeptConnector {
+    KeptConnector {
+        id: id.to_owned(),
+        only: None,
+    }
 }

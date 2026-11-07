@@ -89,7 +89,7 @@ Usage:
                                 tool sign in as you (glave connect --help)
   glave connections [remove <id> | <name>]
                                 list your connections and git hosts, or remove one
-  glave connectors [disconnect <id>]
+  glave connectors [use <id> <where> | disconnect <id>]
                                 list the apps glave can work in for you, or disconnect one;
                                 connect one with glave connect <id>
   glave search [on | off]       whether glave may search the web for you, or turn it on or off

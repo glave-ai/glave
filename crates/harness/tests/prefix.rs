@@ -1,7 +1,8 @@
 //! A thread's prefix (`specs/invariants.md`, 27): every model call of a thread opens with the
 //! same system prompt and tools, byte for byte, whatever changes between its turns; what
-//! changed reaches the model at the end, in a note. Only a compaction and another model make a
-//! new prefix.
+//! changed reaches the model at the end, in a note. Only a compaction, another model and a
+//! connection of the person's turned on (`connection_places.rs`) make a new prefix: a server of
+//! their own settings waits.
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -10,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, Permissions, StopReason};
 use glave_harness::{
-    AllowAll, ApprovalRequest, Approver, Cancel, Decision, Defaults, Harness, Skills, Thread,
-    find_skills, skill_folders,
+    AllowAll, ApprovalRequest, Approver, Cancel, Decision, Defaults, Harness, OwnTools, Skills,
+    Thread, find_skills, skill_folders,
 };
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::settings::Protections;
@@ -126,7 +127,10 @@ async fn change_everything(harness: &Held, thread: &mut Thread, world: &World, p
         .await
         .unwrap();
     world.project.trust();
-    harness.set_own_tools(vec![Arc::new(tool("mcp__mail__send", "Sent."))]);
+    harness.set_own_tools(OwnTools::everywhere(vec![Arc::new(tool(
+        "mcp__mail__send",
+        "Sent.",
+    ))]));
     let web = Arc::new(tool("web_fetch", "A page.")) as Arc<dyn ToolSource>;
     harness.set_defaults(Defaults {
         web: Some(web),
@@ -179,8 +183,8 @@ fn told_at_the_end(requests: &[ModelRequest]) {
     for told in [
         "Accounts the person connected",
         "Plan mode:",
-        "`mcp__docs__search`",
         "`mcp__mail__send`",
+        "`mcp__docs__search`",
         "`web_fetch`",
         "release-notes",
     ] {

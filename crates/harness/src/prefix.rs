@@ -1,8 +1,10 @@
 //! A thread's prefix: the system prompt and tools its model calls open with, the same bytes
 //! from its first call on, so the provider's prompt cache keeps matching and the conversation
 //! is never billed again in full (owner, 2026-11-05; `specs/invariants.md`, 27). Only a
-//! compaction, which restarts the conversation, and another model, which shares none of the
-//! cache, make a new one; a thread read again from the log keeps the one its log recorded.
+//! compaction, which restarts the conversation, another model, which shares none of the cache,
+//! and a connection of the person's turned on for the thread's place, whose tools it lacks
+//! (owner, 2026-11-06), make a new one, once; a thread read again from the log keeps the one
+//! its log recorded.
 //! What changes meanwhile reaches the model at the end of the conversation instead, in one note
 //! that opens the turn's message, as Claude Code and OpenCode send a `<system-reminder>` and
 //! Codex its context updates (`told.rs`). A tool whose source stops answering stays listed.
@@ -113,11 +115,14 @@ where
         }
     }
 
-    /// The tools on offer now in `thread`, from every source: the harness's, then its
-    /// project's; and what they would tell the model of what can change.
+    /// The tools on offer now in `thread`, from every source: the harness's, the person's own
+    /// used where it works, then its project's; and what they would tell the model of what can
+    /// change.
     async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told) {
-        let sources = self.sources_for(thread);
+        let (own, away) = self.own_for(thread);
+        let sources = self.sources_with(thread, &own.sources);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
+        set.away = away;
         let mut signed_in = None;
         if let Some(credentials) = self.workspace_for(thread).credentials() {
             signed_in = crate::prompt::signed_in(&credentials.hosts().await);

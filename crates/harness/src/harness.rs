@@ -31,6 +31,7 @@ use crate::homes::{Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
+use crate::own_tools::{OwnTools, Placed};
 use crate::plan::Planning;
 use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
@@ -81,9 +82,9 @@ pub struct Harness<P, L, B, A> {
     /// The skills on this computer and glave's own (`with_skills`).
     pub(crate) skills: Option<Arc<Skills>>,
     /// The person's own tools, such as their MCP servers', offered after the other sources to
-    /// their threads alone: they run with the person's sign-ins. None by default; the host
-    /// replaces them when the person's settings change.
-    pub(crate) own: RwLock<Vec<Arc<dyn ToolSource>>>,
+    /// their threads alone, in the places they use them: they run with the person's sign-ins.
+    /// None by default; the host replaces them when the person's settings change.
+    pub(crate) own: RwLock<OwnTools>,
     /// What threads run with where neither they nor their projects choose: the settings' and
     /// the workspace's at first, then the host's. Each turn takes them as it starts.
     pub(crate) defaults: RwLock<Arc<Defaults>>,
@@ -419,18 +420,18 @@ where
         self
     }
 
-    /// Offers the tools of `sources`, the person's own, to the threads of the person the
-    /// harness works for alone, after its other sources.
+    /// Offers the tools of `own`, the person's own, to the threads of the person the harness
+    /// works for alone, each in the places they use it, after its other sources.
     #[must_use]
-    pub fn with_own_tools(self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
-        self.set_own_tools(sources);
+    pub fn with_own_tools(self, own: OwnTools) -> Self {
+        self.set_own_tools(own);
         self
     }
 
-    /// Offers the tools of `sources` as the person's own in place of those before, from each
+    /// Offers the tools of `own` as the person's own in place of those before, from each
     /// thread's next turn on: a turn already running keeps the tools it started with.
-    pub fn set_own_tools(&self, sources: Vec<Arc<dyn ToolSource>>) {
-        *self.own.write().unwrap_or_else(PoisonError::into_inner) = sources;
+    pub fn set_own_tools(&self, own: OwnTools) {
+        *self.own.write().unwrap_or_else(PoisonError::into_inner) = own;
     }
 
     /// Runs `hooks` at their points of the turns of the person the harness works for.
@@ -445,12 +446,28 @@ where
     /// the harness's other sources, the person's own when the thread is theirs, then its
     /// project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
+        self.sources_with(thread, &self.own_for(thread).0.sources)
+    }
+
+    /// The person's own tools for `thread`, when it is theirs: those of the place it works in,
+    /// and the connections they may connect that are not among them.
+    pub(crate) fn own_for(&self, thread: &Thread) -> (Placed, Vec<String>) {
+        if !self.trusting(thread.for_) {
+            return (Placed::default(), Vec::new());
+        }
+        let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
+        own.of(thread.scope.project())
+    }
+
+    /// [`Harness::sources_for`], with `own` as the person's own.
+    pub(crate) fn sources_with(
+        &self,
+        thread: &Thread,
+        own: &[Arc<dyn ToolSource>],
+    ) -> Vec<Arc<dyn ToolSource>> {
         let mut sources = self.sources.clone();
-        let builtins = crate::builtins::BUILTINS;
-        if let (Some(source), Some(own)) =
-            (sources.get_mut(builtins), self.source_for(thread, builtins))
-        {
-            *source = own;
+        if let Some(source) = sources.get_mut(crate::builtins::BUILTINS) {
+            *source = self.builtins_for(thread);
         }
         if let Some(web) = thread.brought.web.as_ref().or(thread.defaults.web.as_ref()) {
             let after = crate::builtins::BUILTINS
@@ -471,10 +488,7 @@ where
                 own: own.filter(|_| self.trusting(thread.for_)),
             }));
         }
-        if self.trusting(thread.for_) {
-            let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
-            sources.extend(own.iter().cloned());
-        }
+        sources.extend(own.iter().cloned());
         sources.extend(thread.brought.tools.iter().cloned());
         sources
     }

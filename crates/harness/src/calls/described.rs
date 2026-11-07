@@ -36,7 +36,7 @@ where
             return crate::subagent::describe(arguments);
         }
         let described = tools.get(name).and_then(|(index, info)| {
-            let source = self.source_for(thread, index)?;
+            let source = self.source_for(thread, tools, index)?;
             Some(source.describe(&info.spec.name, arguments))
         });
         described.unwrap_or_else(|| describe_call(name, arguments))
@@ -54,7 +54,9 @@ where
         }
         tools
             .get(name)
-            .and_then(|(index, info)| Some(self.source_for(thread, index)?.kind(&info.spec.name)))
+            .and_then(|(index, info)| {
+                Some(self.source_for(thread, tools, index)?.kind(&info.spec.name))
+            })
             .unwrap_or_default()
     }
 }

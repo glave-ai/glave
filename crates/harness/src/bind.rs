@@ -18,6 +18,7 @@ use crate::builtins::{BUILTINS, Builtins};
 use crate::harness::{Harness, HarnessError, Invalid, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
+use crate::toolset::ToolSet;
 
 /// The most workspaces kept open for the commands in them after their threads were let go:
 /// more than a computer keeps commands in the background for, across its workspaces.
@@ -318,17 +319,27 @@ where
         thread.workspace.as_ref().unwrap_or(&self.workspace)
     }
 
-    /// The tool source at `index` for `thread`, as [`Harness::tools`] numbers them: the
-    /// built-in tools on its workspace, with its commands in the background, else the source
-    /// [`Harness::sources_for`] lists there.
-    pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
+    /// The tool source at `index` of `tools`, for `thread`: the built-in tools on its
+    /// workspace, with its commands in the background, else the source `tools` was gathered
+    /// from there, so a source added or put away meanwhile never takes another's calls.
+    pub(crate) fn source_for(
+        &self,
+        thread: &Thread,
+        tools: &ToolSet,
+        index: usize,
+    ) -> Option<Arc<dyn ToolSource>> {
         match index {
-            BUILTINS => Some(Arc::new(Builtins {
-                workspace: Arc::clone(self.workspace_for(thread)),
-                commands: Arc::clone(&thread.commands),
-                room: self.tool_room(thread),
-            })),
-            _ => self.sources_for(thread).get(index).cloned(),
+            BUILTINS => Some(self.builtins_for(thread)),
+            _ => tools.source(index),
         }
+    }
+
+    /// The built-in tools on `thread`'s workspace, with its commands in the background.
+    pub(crate) fn builtins_for(&self, thread: &Thread) -> Arc<dyn ToolSource> {
+        Arc::new(Builtins {
+            workspace: Arc::clone(self.workspace_for(thread)),
+            commands: Arc::clone(&thread.commands),
+            room: self.tool_room(thread),
+        })
     }
 }

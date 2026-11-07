@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, StopReason};
-use glave_harness::{AllowAll, Decision};
+use glave_harness::{AllowAll, Decision, OwnTools};
 use glave_ports::{
     BoxFuture, Cancellation, Completion, Effect, InMemoryLog, InMemoryTools, ModelRequest,
     ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
@@ -133,18 +133,22 @@ fn a_crowd_of_connected_tools_is_searched_and_called_through_its_connector_on_on
         let approver = Answers::new(&[Decision::AllowOnce]);
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, approver, log, 1, asking()).await;
-        harness.set_own_tools(vec![Arc::clone(&github) as Arc<dyn ToolSource>]);
+        harness.set_own_tools(OwnTools::everywhere(vec![
+            Arc::clone(&github) as Arc<dyn ToolSource>
+        ]));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "what does tool 7 say about 4120?").await;
         // A connection turned on: the prefix is made again, once, and the model told.
         let jira = connection("jira", 3);
-        harness.set_own_tools(vec![
+        harness.set_own_tools(OwnTools::everywhere(vec![
             Arc::clone(&github) as Arc<dyn ToolSource>,
             Arc::clone(&jira) as Arc<dyn ToolSource>,
-        ]);
+        ]));
         turn(&harness, &mut thread, "and jira?").await;
         // Turned off: its calls are refused at once, the prefix as it was.
-        harness.set_own_tools(vec![Arc::clone(&github) as Arc<dyn ToolSource>]);
+        harness.set_own_tools(OwnTools::everywhere(vec![
+            Arc::clone(&github) as Arc<dyn ToolSource>
+        ]));
         turn(&harness, &mut thread, "jira again").await;
 
         one_prefix_made_again_once(&seen.lock().unwrap());
@@ -194,7 +198,9 @@ fn a_call_that_does_not_fit_the_real_tool_is_shown_its_parameters_and_runs_nothi
         ];
         let log = InMemoryLog::new();
         let (harness, _) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
-        harness.set_own_tools(vec![Arc::clone(&github) as Arc<dyn ToolSource>]);
+        harness.set_own_tools(OwnTools::everywhere(vec![
+            Arc::clone(&github) as Arc<dyn ToolSource>
+        ]));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "look up 4120").await;
         let outputs = outputs(harness.log(), thread.id).await;
@@ -219,14 +225,16 @@ fn connected_tools_that_fit_stay_listed_and_one_turned_on_is_listed_at_once() {
         ];
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
-        harness.set_own_tools(vec![Arc::clone(&github) as Arc<dyn ToolSource>]);
+        harness.set_own_tools(OwnTools::everywhere(vec![
+            Arc::clone(&github) as Arc<dyn ToolSource>
+        ]));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "hello").await;
         let slack = connection("slack", 2);
-        harness.set_own_tools(vec![
+        harness.set_own_tools(OwnTools::everywhere(vec![
             Arc::clone(&github) as Arc<dyn ToolSource>,
             Arc::clone(&slack) as Arc<dyn ToolSource>,
-        ]);
+        ]));
         turn(&harness, &mut thread, "post it").await;
         // As after a restart: the prefix the log kept, and no note again.
         let mut again = harness.resume_thread(scope(), thread.id).await.unwrap();
@@ -264,7 +272,9 @@ fn a_thread_read_again_keeps_its_connectors_and_calls_through_them() {
         ];
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
-        harness.set_own_tools(vec![Arc::clone(&github) as Arc<dyn ToolSource>]);
+        harness.set_own_tools(OwnTools::everywhere(vec![
+            Arc::clone(&github) as Arc<dyn ToolSource>
+        ]));
         let thread = {
             let mut thread = harness.start_thread(scope()).await.unwrap();
             turn(&harness, &mut thread, "hello").await;
@@ -292,7 +302,7 @@ async fn turns_with(
     let (harness, seen) = harness_seeing(dir, answers, AllowAll, log, 1, settings()).await;
     let mut thread = None;
     for tools in own {
-        harness.set_own_tools(tools);
+        harness.set_own_tools(OwnTools::everywhere(tools));
         let thread = match &mut thread {
             Some(thread) => thread,
             None => thread.insert(harness.start_thread(scope()).await.unwrap()),
@@ -388,7 +398,7 @@ fn a_connection_down_at_the_first_call_works_once_it_answers_on_a_prefix_made_on
         let answers = vec![done("Jira is down."), done("Jira is back."), done("Still.")];
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
-        harness.set_own_tools(own());
+        harness.set_own_tools(OwnTools::everywhere(own()));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "jira?").await;
         jira.down.store(false, Ordering::SeqCst);

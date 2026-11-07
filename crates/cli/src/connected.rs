@@ -25,7 +25,7 @@ use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{
     ApiError, ConnectionInfo, ConnectionStatus, ConnectorStatus, SignInLink, code,
 };
-use glave_session::{Accounts, Connecting, Connections, Returned, Searching};
+use glave_session::{Accounts, Connecting, Connections, KeptConnector, Returned, Searching};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -66,8 +66,9 @@ pub(crate) struct Connected {
 pub(crate) struct Signed {
     /// The addresses signed in to.
     pub(crate) addresses: BTreeSet<String>,
-    /// The connectors of glave's catalog connected, by their ids, in the order connected.
-    pub(crate) connectors: Vec<String>,
+    /// The connectors of glave's catalog connected, and where each is used, in the order
+    /// connected.
+    pub(crate) connectors: Vec<KeptConnector>,
 }
 
 /// The most scopes kept for what one server asked for.
@@ -357,16 +358,20 @@ impl Connections for Connected {
         Box::pin(self.searching_set(on))
     }
 
-    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(String, ConnectorStatus)>, ApiError>> {
+    fn connectors(&self) -> BoxFuture<'_, Result<Vec<(KeptConnector, ConnectorStatus)>, ApiError>> {
         Box::pin(self.listed_connectors())
     }
 
     fn connect(
         &self,
-        connector: String,
+        connector: KeptConnector,
         redirect: Option<String>,
     ) -> BoxFuture<'_, Result<Connecting, ApiError>> {
         Box::pin(self.connecting(connector, redirect))
+    }
+
+    fn place(&self, connector: KeptConnector) -> BoxFuture<'_, Result<(), ApiError>> {
+        Box::pin(self.placing(connector))
     }
 
     fn disconnect(&self, connector: String) -> BoxFuture<'_, Result<(), ApiError>> {
