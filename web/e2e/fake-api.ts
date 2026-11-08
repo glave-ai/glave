@@ -13,6 +13,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
 import { type Awake, KEPT_AWAKE } from './fake-awake';
+import { KEPT_PUSH, type Pushed, pushing } from './fake-push';
 import { KEPT_REMEMBERING, type Remembering } from './fake-remembering';
 import { changesOf } from './fake-changes';
 import { stepsOf } from './fake-steps';
@@ -592,6 +593,8 @@ interface Known {
   readonly awake: Awake;
   readonly grouped: Grouped;
   readonly remembering: Remembering;
+  /** The browsers it pushes to, when it pushes. */
+  readonly push: Pushed | null;
 }
 
 /** The calls the fake answers that are not turns, nor any other fake's. */
@@ -684,6 +687,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     return asked;
   }
   return (
+    (known.push === null ? undefined : answerFrom(KEPT_PUSH, method, params, known.push)) ??
     (known.panel ? answerFrom(ABOUT_VERBOSE, method, params, null) : undefined) ??
     background(method, params, commands) ??
     (gone === null ? undefined : answerFrom(ABOUT_GONE, method, params, gone)) ??
@@ -707,7 +711,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
  * with something in every section of its panel; with `account`, a GitHub account connected; with
  * `gone`, playground, a project whose folder isn't there anymore. How the person's threads are
  * grouped is kept in `grouped`, which two pages share as one server, and whether glave
- * remembers for them in `remembering`.
+ * remembers for them in `remembering`. With `push`, the server pushes notifications.
  */
 export async function fakeApi(
   page: Page,
@@ -721,6 +725,7 @@ export async function fakeApi(
     gone = false,
     grouped = { grouping: 'project' },
     remembering = { on: true, never: null },
+    push = false,
   }: {
     readonly trust?: boolean;
     readonly commands?: boolean;
@@ -731,6 +736,7 @@ export async function fakeApi(
     readonly gone?: boolean;
     readonly grouped?: Grouped;
     readonly remembering?: Remembering;
+    readonly push?: boolean;
   } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
@@ -749,6 +755,7 @@ export async function fakeApi(
     awake: { on: true },
     grouped,
     remembering,
+    push: push ? pushing() : null,
   };
   const lists = new FakeLists((method, params) => answer(method, params, known));
   await page.route('**/*', async (route: Route) => {

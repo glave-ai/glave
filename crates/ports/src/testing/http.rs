@@ -17,6 +17,8 @@ pub struct Received {
     /// Header names in lower case.
     pub headers: BTreeMap<String, String>,
     pub body: String,
+    /// The body as it was sent, for one that is not text, such as an encrypted push.
+    pub bytes: Vec<u8>,
 }
 
 /// A fake server on 127.0.0.1, serving its answers on a thread of its own.
@@ -194,6 +196,7 @@ pub(super) fn read(stream: &TcpStream) -> io::Result<Received> {
         path,
         headers,
         body: String::from_utf8_lossy(&body).into_owned(),
+        bytes: body,
     })
 }
 

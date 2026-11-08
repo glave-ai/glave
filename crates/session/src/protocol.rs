@@ -23,6 +23,7 @@ mod people;
 mod plans;
 mod projects;
 mod providers;
+mod push;
 mod reply;
 mod secrets;
 mod settings;
@@ -33,8 +34,8 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, Money, OrgRole, PrincipalId,
-    ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
+    At, CallId, CredentialId, EventId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
+    PrincipalId, ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::computer::{CommandId, ComputerId};
 use glave_ports::{OrgId, ProjectId};
@@ -65,6 +66,7 @@ pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite}
 pub use plans::PlanInfo;
 pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
+pub use push::{PushDevice, PushInfo, PushSubscription};
 pub use reply::{
     AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
     Status, ThreadSummary,
@@ -93,6 +95,16 @@ methods! {
     /// Chooses whether the person's own computer is kept awake while glave works, from the
     /// next work on. Only the person on this computer, and only where it is theirs to choose.
     "awake/set" => AwakeSet { on: bool } -> [Awake],
+    /// Whether the server tells the caller's browsers when glave needs them (Web Push): the key
+    /// to subscribe with, the kinds they want, and their browsers, `endpoint`'s marked current.
+    "push/get" => PushGet { #[serde(default)] endpoint: Option<String> } -> [Push],
+    /// Keeps a browser's push subscription, made with `push/get`'s key: from now on it is told
+    /// what the caller wants to hear of. One endpoint is kept once, under its latest name.
+    "push/subscribe" => PushSubscribe { #[serde(flatten)] browser: PushSubscription } -> [Push],
+    /// Forgets one of the caller's browsers; one forgotten already answers as it is.
+    "push/remove" => PushRemove { device: EventId } -> [Push],
+    /// Chooses whether what waits for the caller, and tasks' ends, are pushed to them.
+    "push/set" => PushSet { waiting: bool, finished: bool } -> [Push],
     /// The language the caller chose to read glave's own sentences in, if they chose one.
     "language/get" => LanguageGet {} -> [Language],
     /// Chooses the language glave's own sentences are written in for the caller, as a BCP 47

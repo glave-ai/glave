@@ -150,6 +150,8 @@ pub(crate) struct Setup {
     pub accounts: Option<Arc<glave_session::signin::Accounts>>,
     /// Where its email goes; with none, it sends none.
     pub mail: Option<Arc<dyn glave_ports::Mailer>>,
+    /// What pushes its notifications; with none, it pushes none.
+    pub push: Option<Arc<glave_push::Pusher>>,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Whether it takes sign-ups.
@@ -237,6 +239,7 @@ impl Setup {
             browsers: None,
             accounts: None,
             mail: None,
+            push: None,
             origin: None,
             signup: false,
             forwarded: None,
@@ -384,6 +387,7 @@ impl Setup {
             browsers: self.browsers,
             accounts: self.accounts,
             mail: self.mail,
+            push: self.push,
             origin: self.origin,
             signup: self.signup,
             forwarded: self.forwarded,

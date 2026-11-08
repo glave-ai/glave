@@ -1,0 +1,30 @@
+// Takes no room where it draws nothing.
+:host {
+  display: contents;
+}
+
+// One quiet strip across the top of the thread, ruled off from the conversation: the line,
+// then its two buttons at the end, and under them what came of turning it on.
+.banner {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-2) var(--glz-space-3);
+  padding: var(--glz-inset-strip);
+  border-bottom: var(--glz-border-width) solid var(--glz-color-border);
+  background: var(--glz-surface-sunken);
+}
+
+.offer {
+  flex: 1;
+  min-width: 0;
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  flex-basis: 100%;
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}

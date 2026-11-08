@@ -6,8 +6,8 @@
 use std::future::Future;
 
 use glave_event::{
-    AppearanceSet, At, AwakeSet, Body, FiltersSet, GroupingSet, LanguageSet, MemorySet, Payload,
-    RawEvent, Seq, ThreadId, decode,
+    AppearanceSet, At, AwakeSet, Body, FiltersSet, GroupingSet, LanguageSet, MemorySet,
+    NotificationsSet, Payload, RawEvent, Seq, ThreadId, decode,
 };
 use thiserror::Error;
 
@@ -52,8 +52,9 @@ pub enum Reserved {
     /// `…0008`: the person's own settings ([`SETTINGS`]): whether their computer is kept awake
     /// while glave works on it (`awake.set`), the language they read glave in (`language.set`),
     /// how their clients group their threads (`grouping.set`), whether glave remembers for them
-    /// (`memory.set`), their filters among a router's providers (`filters.set`) and their accent
-    /// (`appearance.set`), in their personal project.
+    /// (`memory.set`), their filters among a router's providers (`filters.set`), their accent
+    /// (`appearance.set`) and which notifications they want (`notifications.set`), in their
+    /// personal project.
     Settings,
     /// `…0009`: the organization's people (`person.joined`) and their roles (`role.set`), in
     /// the organization's own scope ([`Scope::of_organization`]), no project's.
@@ -72,11 +73,15 @@ pub enum Reserved {
     /// `…000d`: the organization's name, logo and accent (`brand.set`), in its own scope
     /// ([`Scope::of_organization`]), read for everyone in it.
     Brand,
+    /// `…000e`: push notifications: in the organization's own scope ([`Scope::of_organization`]),
+    /// the key its server signs them with (`push.key.made`); in a person's personal project, the
+    /// browsers that take theirs (`push.subscribed`, `push.unsubscribed`).
+    Push,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -91,6 +96,7 @@ impl Reserved {
         Self::Instructions,
         Self::Credits,
         Self::Brand,
+        Self::Push,
     ];
 
     /// The ledger's id, the same in every project.
@@ -110,6 +116,7 @@ impl Reserved {
             Self::Instructions => 11,
             Self::Credits => 12,
             Self::Brand => 13,
+            Self::Push => 14,
         };
         ThreadId::reserved(number)
     }
@@ -122,13 +129,14 @@ impl Reserved {
 
 /// The settings ledger's events, each one a choice of the person's whose latest counts. A
 /// writer numbers its event after the latest of any of them.
-pub const SETTINGS: [&str; 6] = [
+pub const SETTINGS: [&str; 7] = [
     AwakeSet::TYPE,
     LanguageSet::TYPE,
     GroupingSet::TYPE,
     MemorySet::TYPE,
     FiltersSet::TYPE,
     AppearanceSet::TYPE,
+    NotificationsSet::TYPE,
 ];
 
 /// Why a stream could not be read or written.

@@ -76,7 +76,7 @@ where
     }
 
     /// The caller's choice and its language, if they chose one the server writes in.
-    async fn chosen_language(
+    pub(crate) async fn chosen_language(
         &self,
         caller: &Caller,
     ) -> Result<Option<(String, Language)>, ApiError> {

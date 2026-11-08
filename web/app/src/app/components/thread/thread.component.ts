@@ -50,6 +50,7 @@ import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PermissionsComponent } from '../permissions/permissions.component';
+import { PushBannerComponent } from '../push-banner/push-banner.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
@@ -87,6 +88,7 @@ import { TurnComponent } from '../turn/turn.component';
     MessageTextComponent,
     ModelPickerComponent,
     PermissionsComponent,
+    PushBannerComponent,
     RenameDialogComponent,
     ThreadFilesComponent,
     ThreadHeaderComponent,

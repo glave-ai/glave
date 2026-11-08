@@ -22,6 +22,7 @@ import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { AppearanceComponent } from '../appearance/appearance.component';
 import { AwakeComponent } from '../awake/awake.component';
+import { NotificationsComponent } from '../notifications/notifications.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
@@ -29,15 +30,16 @@ import { WebSearchComponent } from '../web-search/web-search.component';
 /**
  * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove), connections (what is
  * connected, and the page where they are) and memory (its own page), whether glave may search
- * the web, the passkeys that sign the person in where glave is reached from elsewhere, whether
- * their own computer stays awake while glave works, the server, signing this browser or every
- * other out.
+ * the web, the passkeys that sign the person in where glave is reached from elsewhere, the
+ * notifications pushed to their browsers, whether their own computer stays awake while glave
+ * works, the server, signing this browser or every other out.
  */
 @Component({
   selector: 'app-settings',
   imports: [
     AppearanceComponent,
     AwakeComponent,
+    NotificationsComponent,
     PasskeysComponent,
     PageHeaderComponent,
     WebSearchComponent,

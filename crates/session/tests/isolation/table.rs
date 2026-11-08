@@ -188,6 +188,29 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // Whether the server's own computer stays awake: no one's id to name.
         ("awake/get", vec![json!({})]),
         ("awake/set", vec![json!({"on": false})]),
+        // The caller's own browsers and kinds of notification: a browser is looked for only
+        // among the caller's own, by an id of its own ledger's.
+        (
+            "push/get",
+            vec![json!({}), json!({"endpoint": "https://push.example.net/x"})],
+        ),
+        (
+            "push/subscribe",
+            vec![json!({
+                "endpoint": "https://push.example.net/x",
+                "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+                "auth": "BTBZMqHH6r4Tts7J_aSIgg",
+                "device": "Firefox",
+            })],
+        ),
+        (
+            "push/remove",
+            vec![json!({"device": "0192f5c0-0000-7000-8000-00000000f00d"})],
+        ),
+        (
+            "push/set",
+            vec![json!({"waiting": false, "finished": true})],
+        ),
         // The caller's own language: no one else's to name.
         ("language/get", vec![json!({})]),
         (

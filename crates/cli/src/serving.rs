@@ -18,12 +18,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use glave_config::policy::{Choices, EmailFile};
+use glave_config::policy::{Choices, Constraints, EmailFile};
 use glave_event::PrincipalId;
 use glave_event::Secret;
 use glave_mail::{Smtp, SmtpSettings};
 use glave_ports::host::{PublicOrigin, is_loopback};
 use glave_ports::{Clock, Mailer, SystemClock};
+use glave_push::Pusher;
 use glave_session::http::{Files, Listeners, Site};
 use glave_session::protocol::{Reply, Request, SignInWay};
 use glave_session::signin::{Accounts, Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
@@ -294,6 +295,27 @@ pub(crate) fn mail(choices: &Choices) -> anyhow::Result<Option<Arc<dyn Mailer>>>
     Ok(Some(Arc::new(Smtp::new(settings)?)))
 }
 
+/// Where push services may reach whoever runs a server with no public origin over HTTPS: VAPID
+/// asks every push to name someone.
+const PUSH_CONTACT: &str = "https://github.com/glave-ai/glave";
+
+/// What tells people's browsers when glave needs them (Web Push), naming the server's public
+/// `origin` as who to contact about its pushes where it is `https`; none where a policy turns
+/// that off.
+pub(crate) fn push(
+    origin: Option<&PublicOrigin>,
+    constraints: &Constraints,
+) -> anyhow::Result<Option<Arc<Pusher>>> {
+    if constraints.push_off().is_some() {
+        return Ok(None);
+    }
+    let contact = origin
+        .map(PublicOrigin::as_str)
+        .filter(|origin| origin.starts_with("https://"));
+    let pusher = Pusher::new(contact.unwrap_or(PUSH_CONTACT))?;
+    Ok(Some(Arc::new(pusher)))
+}
+
 /// The browsers of `person`, the local person, in `store`, signed in by the server whose id the
 /// store keeps, reached from elsewhere at `origin` if anywhere, their passkeys keeping the
 /// handle the root derives for them.
@@ -474,6 +496,20 @@ fn here(bound: SocketAddr) -> SocketAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gateway::tests::constraints;
+
+    #[test]
+    fn notifications_are_pushed_unless_a_policy_turns_them_off() {
+        let off = constraints("version = 1\n[notifications]\npush = false\n");
+        assert!(push(None, &off).unwrap().is_none());
+        let on = constraints("version = 1\n");
+        assert!(push(None, &on).unwrap().is_some());
+        // Reached at a public origin, over HTTPS or on this computer alone.
+        for origin in ["https://glave.example.com", "http://localhost"] {
+            let origin = PublicOrigin::parse(origin).unwrap();
+            assert!(push(Some(&origin), &on).unwrap().is_some(), "{origin}");
+        }
+    }
 
     #[test]
     fn a_port_is_free_here_only_at_both_loopback_addresses_and_stays_held() {

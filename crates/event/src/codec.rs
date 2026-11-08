@@ -15,17 +15,18 @@ use crate::payload::{
     CreditsLimitSet, EffortChosen, FiltersSet, GatewayToolCalled, GroupingSet, HookRan,
     InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MailAsked,
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied,
-    MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
-    PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet,
-    ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted,
-    SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
-    connector, credential, credits, filters, fork, gateway, grouping, hook, instructions, language,
-    memory, message, model, passkey, people, plan, project, provider, remembering, secrets,
-    service, signup, standing, task, thread, tool, trust, turn, workspace,
+    MessageAdded, ModelChosen, ModelResponded, NotificationsSet, PasskeyAdded, PasskeyRemoved,
+    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
+    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushKeyMade,
+    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SecretAdded,
+    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
+    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
+    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
+    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
+    credits, filters, fork, gateway, grouping, hook, instructions, language, memory, message,
+    model, passkey, people, plan, project, provider, push, remembering, secrets, service, signup,
+    standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -119,6 +120,10 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credits::ADDED, 1),
     (credits::LIMIT_SET, 1),
     (credits::CHARGED, 1),
+    (push::KEY_MADE, 1),
+    (push::SUBSCRIBED, 1),
+    (push::UNSUBSCRIBED, 1),
+    (push::SET, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -199,6 +204,10 @@ pub enum Body {
     AppearanceSet(AppearanceSet),
     BrandSet(BrandSet),
     MemorySet(MemorySet),
+    NotificationsSet(NotificationsSet),
+    PushKeyMade(PushKeyMade),
+    PushSubscribed(PushSubscribed),
+    PushUnsubscribed(PushUnsubscribed),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
     PersonRemoved(PersonRemoved),
@@ -413,6 +422,10 @@ impl Event {
             Body::AppearanceSet(payload) => encode(header, payload),
             Body::BrandSet(payload) => encode(header, payload),
             Body::MemorySet(payload) => encode(header, payload),
+            Body::NotificationsSet(payload) => encode(header, payload),
+            Body::PushKeyMade(payload) => encode(header, payload),
+            Body::PushSubscribed(payload) => encode(header, payload),
+            Body::PushUnsubscribed(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
             Body::PersonRemoved(payload) => encode(header, payload),
@@ -546,7 +559,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
         _ => [people::decode, signup::decode, credits::decode]
             .into_iter()
-            .chain([appearance::decode, secrets::decode])
+            .chain([appearance::decode, secrets::decode, push::decode])
             .find_map(|decode| decode(kind, version, data)),
     }
 }

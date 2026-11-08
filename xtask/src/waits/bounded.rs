@@ -286,6 +286,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "keeping the computer awake while work runs, for as long as the server does",
     ),
     (
+        "crates/session/src/notify.rs",
+        "match needs.recv().await {",
+        1,
+        "what needs people, heard until the server drops what pushes it; each push is sent \
+         within glave-push's own limit",
+    ),
+    (
         "crates/memory/src/client.rs",
         "while let Some((ledger, person)) = asked.recv().await {",
         1,

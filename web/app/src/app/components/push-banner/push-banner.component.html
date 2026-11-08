@@ -1,0 +1,29 @@
+@if (shown()) {
+  <div class="banner" data-testid="push-banner">
+    <p class="offer">{{ copy.offer }}</p>
+    <div class="glz-row glz-gap-2">
+      <button
+        glzButton
+        variant="primary"
+        size="sm"
+        data-testid="push-banner-on"
+        [disabled]="busy()"
+        (click)="turnOn()"
+      >
+        {{ copy.turnOn }}
+      </button>
+      <button
+        glzButton
+        variant="ghost"
+        size="sm"
+        data-testid="push-banner-not-now"
+        (click)="notNow()"
+      >
+        {{ copy.notNow }}
+      </button>
+    </div>
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="push-banner-problem">{{ problem }}</p>
+    }
+  </div>
+}

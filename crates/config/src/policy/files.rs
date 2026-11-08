@@ -457,6 +457,16 @@ pub struct PolicyFile {
     pub memory: MemoryRules,
     #[serde(default)]
     pub placement: PlacementRules,
+    #[serde(default)]
+    pub notifications: NotificationRules,
+}
+
+/// `[notifications]`: what reaches people's devices from the server.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationRules {
+    /// Whether the server pushes notifications to people's browsers (Web Push).
+    pub push: Option<bool>,
 }
 
 /// `[tasks]`: what one person may run with no one attached, and keep scheduled.

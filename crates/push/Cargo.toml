@@ -1,0 +1,38 @@
+[package]
+name = "glave-push"
+description = "glave's Web Push: a notification to one of a person's browsers through its push service, signed with VAPID and encrypted as RFC 8291 says"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Keys and tokens as Web Push writes them: base64url without padding.
+base64.workspace = true
+# The key's private half, kept sealed by whoever stores it.
+glave-event.workspace = true
+# Which addresses a push service may be at (`host::reachable`).
+glave-ports.workspace = true
+# The server's VAPID key made from the operating system's randomness.
+getrandom.workspace = true
+jiff.workspace = true
+# VAPID's ES256 signature, on the curve the encryption uses.
+p256.workspace = true
+# Sending to the push service, on the HTTP stack glave already uses.
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "time"] }
+# Reading a subscription's endpoint (already in the tree, under reqwest).
+url.workspace = true
+# RFC 8291's encryption of each message to the browser's keys.
+web-push-native.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+
+[lints]
+workspace = true

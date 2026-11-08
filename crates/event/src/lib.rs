@@ -68,6 +68,7 @@ pub use payload::{
     InviteAccepted, InviteCreated, InviteRevoked, OrgRole, PersonJoined, PersonRemoved, Profile,
     RoleSet,
 };
+pub use payload::{NotificationsSet, PushKeyMade, PushSubscribed, PushUnsubscribed};
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{SecretAdded, SecretRemoved};

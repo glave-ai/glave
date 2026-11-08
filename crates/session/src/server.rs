@@ -47,6 +47,7 @@ use crate::thought::served;
 use crate::trust::{Asks, ProjectTrust};
 use crate::words::Sentence;
 use glave_ports::stream::Reserved;
+use glave_push::Pusher;
 
 /// The most events or threads one page returns.
 pub(crate) const MAX_PAGE: usize = 5_000;
@@ -116,6 +117,9 @@ pub struct Wiring<P, L, B> {
     pub browsers: Option<Arc<Browsers>>,
     /// Where its email goes out, where the deployment sends any.
     pub mail: Option<Arc<dyn Mailer>>,
+    /// What tells people's browsers when glave needs them (Web Push); none where it tells them
+    /// nothing, as where its policy turns that off.
+    pub push: Option<Arc<Pusher>>,
     /// The glave accounts it keeps for people other than the local person, where its
     /// organization has none of a company's login and people reach it at a public origin.
     pub accounts: Option<Arc<Accounts>>,
@@ -160,7 +164,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// starts off or empty: the system clock and the operating system's randomness; no
     /// `web_fetch`, other tools, hooks, workers, identity provider, memory, model accounts, git
     /// hosts, connections, rereading, project folders, trust, browsers or worktrees to let go
-    /// of; no limit on tasks;
+    /// of; no limit on tasks; no notifications pushed;
     /// only the settings' own model and mode; threads in their project's folder rather than a
     /// worktree; reached only on its own computer, which it does not keep awake; leases in its
     /// own memory. An embedder names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
@@ -199,6 +203,7 @@ impl<P, L, B> Wiring<P, L, B> {
             browsers: None,
             accounts: None,
             mail: None,
+            push: None,
             origin: None,
             signup: false,
             forwarded: None,
@@ -297,6 +302,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) browsers: Option<Arc<Browsers>>,
     /// Where its email goes out, where it sends any.
     pub(crate) mail: Option<Arc<dyn Mailer>>,
+    /// What tells people's browsers when glave needs them, where it tells them.
+    pub(crate) push: Option<Arc<Pusher>>,
     /// The glave accounts it keeps, where it keeps any.
     pub(crate) accounts: Option<Arc<Accounts>>,
     /// The accounts being made by invites (`joining.rs`).
@@ -354,7 +361,6 @@ where
     ) -> Self {
         let hub = Arc::new(Hub::default());
         let approvals = Approvals::new(answering, Arc::clone(&hub));
-        let person = settings.person;
         let catalog = crate::models::catalog(&settings.model, wiring.models);
         let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
         let leases = wiring.leases.unwrap_or_else(|| in_memory_leases(&clock));
@@ -382,6 +388,7 @@ where
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
+                person: harness.settings().person,
                 harness,
                 worker: wiring.workers.map(|on| (on.project, on.environment)),
                 identity_provider: wiring.identity_provider,
@@ -392,7 +399,6 @@ where
                 git_hosts: wiring.git_hosts,
                 connections: wiring.connections,
                 reached: OnceLock::new(),
-                person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
                 people: Arc::new(Mutex::new(crate::people::Peoples::default())),
@@ -413,6 +419,7 @@ where
                 browsers: wiring.browsers,
                 accounts: wiring.accounts,
                 mail: wiring.mail,
+                push: wiring.push,
                 joinings: Mutex::new(crate::joining::Joinings::default()),
                 signup: wiring.signup,
                 forwarded: wiring.forwarded,

@@ -18,7 +18,7 @@
     "lint": "eslint . && stylelint \"**/*.{css,scss}\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p client && tsc -p tsconfig.all.json",
+    "typecheck": "tsc -p client && tsc -p tsconfig.all.json && tsc -p app/tsconfig.worker.json",
     "knip": "knip",
     "e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test -c e2e/playwright.config.ts",
     "e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium webkit --only-shell",
