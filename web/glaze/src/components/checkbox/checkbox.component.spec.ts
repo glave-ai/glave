@@ -59,6 +59,17 @@ class TouchHostComponent {
   readonly touched = signal(false);
 }
 
+@Component({
+  imports: [GlzCheckboxComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<glz-checkbox testId="checkbox" hint="So it touches nothing else" [(checked)]="on"
+    >Work on a copy</glz-checkbox
+  >`,
+})
+class HintHostComponent {
+  readonly on = signal(false);
+}
+
 function box(root: HTMLElement): HTMLInputElement {
   const input = root.querySelector<HTMLInputElement>('[data-testid="checkbox-input"]');
   if (input === null) {
@@ -106,6 +117,19 @@ describe('GlzCheckboxComponent', () => {
     const input = box(fixture.nativeElement);
     expect(input.indeterminate).toBe(true);
     expect(input.disabled).toBe(true);
+  });
+
+  it('is named by its label and described by its hint, a line under it', async () => {
+    const fixture = TestBed.createComponent(HintHostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const input = box(root);
+    const hint = root.querySelector('.hint');
+    expect(hint?.textContent).toBe('So it touches nothing else');
+    expect(input.getAttribute('aria-describedby')).toBe(hint?.id);
+    const label = input.getAttribute('aria-labelledby') ?? '';
+    expect(document.getElementById(label)?.textContent).toBe('Work on a copy');
+    await expectAccessible(root);
   });
 
   it('binds a model and says when it is touched', async () => {

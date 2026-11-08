@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::{Largest, LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
-use glave_harness::Homes;
+use glave_harness::{Homes, Skill, SkillSource, Skills};
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, DiskSpace, DiskUse, Home, Sandbox, SandboxLevel, Sources,
     WorkspaceId, WorkspaceInfo,
@@ -22,8 +22,6 @@ use glave_session::Answering;
 
 use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
-
-use glave_harness::{Skill, SkillSource, Skills};
 
 use crate::support::*;
 
@@ -382,6 +380,7 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
         let Reply::Project {
             project,
             folder: Some(folder),
+            ..
         } = made
         else {
             panic!("a project with its folder, not {made:?}")
@@ -520,6 +519,7 @@ pub(crate) async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project
     let Reply::Project {
         project,
         folder: Some(folder),
+        ..
     } = reply
     else {
         panic!("a project with its folder, not {reply:?}")

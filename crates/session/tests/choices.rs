@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glave_event::{Opened, ThreadId};
 use glave_harness::{Brought, ProjectFolders, Settled};
 use glave_ports::{BoxFuture, Caller, InMemoryLog, ProjectId};
-use glave_session::protocol::{ModelInfo, NewFolder, Reply, Request};
+use glave_session::protocol::{Copies, ModelInfo, NewFolder, Reply, Request};
 use glave_session::signin::person;
 
 use crate::support::*;
@@ -85,6 +85,14 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             .await;
 
         let here = Caller::default();
+        // What `project/get` says a new chat does follows the same choice.
+        let got = Request::ProjectGet {
+            project: scope().project(),
+        };
+        let Reply::Project { copies, .. } = server.request_as(&here, got).await.unwrap() else {
+            panic!("a project");
+        };
+        assert_eq!(copies, Some(Copies { by_default: true }));
         let ours = start_as(&server, &here, scope().project()).await;
         let (place, _) = opened(&server, ours).await;
         assert!(

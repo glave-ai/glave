@@ -295,6 +295,18 @@ export type ContextUse = {
 };
 
 /**
+ * A new chat in a project may work on a separate copy of its folder, a git worktree on a branch
+ * of its own, which touches neither the folder nor other chats.
+ */
+export type Copies = {
+  /**
+   * Whether it does unless `thread/start` says: the project's own `worktree` choice for the
+   * person on this computer, else the server's.
+   */
+  readonly by_default: boolean;
+};
+
+/**
  * Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git
  * host (`credential.connected`), a connection (`connection.connected`) or a secret
  * (`secret.added`).
@@ -2283,6 +2295,13 @@ export type ProjectCreateParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectCreateResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2307,6 +2326,13 @@ export type ProjectFolderSetParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectFolderSetResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2318,6 +2344,13 @@ export type ProjectGetParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectGetResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2346,6 +2379,13 @@ export type ProjectRenameParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectRenameResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;

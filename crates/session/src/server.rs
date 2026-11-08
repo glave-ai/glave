@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU8;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
@@ -541,20 +541,8 @@ where
         background: bool,
     ) -> Result<Place, ApiError> {
         let project = scope.project();
-        let own = self.inner.worktree.load(Ordering::Relaxed);
         let found = self.folder_to_start_in(scope.located()).await?;
-        // The project's own choice, for the person here, is nearer than the server's; one on a
-        // person's own computer is not read on the server's disk.
-        let copies = match &found {
-            Some((folder, false)) if self.is_theirs(caller) => self
-                .inner
-                .harness
-                .settled(std::path::Path::new(folder))
-                .await
-                .worktree
-                .unwrap_or(own),
-            _ => own,
-        };
+        let copies = self.copies_by_default(caller, found.as_ref()).await;
         let folder = found.map(|(folder, _)| folder);
         Ok(match (folder, worktree, &self.inner.worker) {
             (None, Some(true), _) => {

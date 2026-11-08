@@ -961,6 +961,19 @@
       ],
       "type": "object"
     },
+    "Copies": {
+      "description": "A new chat in a project may work on a separate copy of its folder, a git worktree on a branch\nof its own, which touches neither the folder nor other chats.",
+      "properties": {
+        "by_default": {
+          "description": "Whether it does unless `thread/start` says: the project's own `worktree` choice for the\nperson on this computer, else the server's.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "by_default"
+      ],
+      "type": "object"
+    },
     "CredentialId": {
       "description": "Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git\nhost (`credential.connected`), a connection (`connection.connected`) or a secret\n(`secret.added`).",
       "format": "uuid",
@@ -6742,6 +6755,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6820,6 +6844,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6857,6 +6892,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6952,6 +6998,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {

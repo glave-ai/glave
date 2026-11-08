@@ -123,6 +123,7 @@ where
         Ok(Reply::Project {
             project: found,
             folder: Some(folder),
+            copies: None,
         })
     }
 

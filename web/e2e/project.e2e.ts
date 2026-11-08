@@ -18,10 +18,32 @@ test('a project’s page, where glave run in its folder opens, starts a thread i
     await expectAccessible(page);
   }
 
+  // Its folder is a git repository, so a chat may work on a separate copy of it.
+  const separate = byTestId(page, 'home-separate-input');
+  await expect(separate).not.toBeChecked();
+  await expect(separate).toHaveAccessibleName('Work on a separate copy');
+  await expect(separate).toHaveAccessibleDescription(
+    "so it doesn't touch your folder or other chats",
+  );
+  await separate.check();
   await byTestId(page, 'home-composer-input').fill('What changed today?');
   await byTestId(page, 'home-composer-input').press('Enter');
   await expect(page).toHaveURL(/\/t\//u);
   const started = api.requests.filter(({ method }) => method === 'thread/start');
-  expect(started.at(-1)?.params['project']).toBe(PROJECT.id);
+  expect(started.at(-1)?.params).toMatchObject({ project: PROJECT.id, worktree: true });
+  expect(problems()).toEqual([]);
+});
+
+test('a chat in the Chats has no separate copy to offer', async ({ page }) => {
+  const problems = watchForProblems(page);
+  const api = await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  await expect(byTestId(page, 'home-where-trigger')).toContainText('A chat');
+  await expect(byTestId(page, 'home-separate')).toHaveCount(0);
+  await byTestId(page, 'home-composer-input').fill('Dinner ideas?');
+  await byTestId(page, 'home-composer-input').press('Enter');
+  await expect(page).toHaveURL(/\/t\//u);
+  const started = api.requests.filter(({ method }) => method === 'thread/start');
+  expect(started.at(-1)?.params).not.toHaveProperty('worktree');
   expect(problems()).toEqual([]);
 });

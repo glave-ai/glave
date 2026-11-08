@@ -6,6 +6,16 @@
 
 @include choice.choice;
 
+.text {
+  display: flex;
+  flex-direction: column;
+}
+
+.hint {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
 .mark {
   position: relative;
   border-radius: var(--glz-radius-mark);

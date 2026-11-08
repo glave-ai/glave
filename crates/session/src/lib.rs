@@ -17,6 +17,7 @@ mod choice;
 pub mod client;
 mod connections;
 mod connectors;
+mod copies;
 mod credentials;
 mod credits;
 mod cron;
