@@ -1,18 +1,12 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
 import type { WorkspaceBound } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
-import { fakeMedia } from '@glave/glaze/testing/media';
 
-import { ChangedFilesService } from '../../services/changed-files.service';
-import { CommandsService } from '../../services/commands.service';
 import { PanelService } from '../../services/panel.service';
-import { PlanService } from '../../services/plan.service';
-import { ProjectsService } from '../../services/projects.service';
-import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { command, event, record, thread } from '../../testing/fixtures';
+import { FakeSession } from '../../testing/fake-session';
+import { command, event, thread } from '../../testing/fixtures';
+import { drawn, openForPanel } from '../../testing/thread-panel';
 import { ThreadPanelComponent } from './thread-panel.component';
 
 /** A turn that changed a file and keeps a dev server running. */
@@ -59,34 +53,10 @@ async function render(
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadPanelComponent>>;
 }> {
-  localStorage.clear();
-  fake
-    .answer('thread/events', { events })
-    .answer('project/list', { projects: [record('project-1', 'glave')], gone: [] })
-    .answer('thread/list', { threads: [] });
-  fakeMedia(narrow);
-  TestBed.configureTestingModule({
-    providers: [
-      ...provideFakeSession(fake),
-      provideRouter([]),
-      ThreadService,
-      CommandsService,
-      ChangedFilesService,
-      PlanService,
-      ThreadPanelService,
-    ],
-  });
-  await TestBed.inject(ProjectsService).refresh();
-  await TestBed.inject(ThreadService).open('thread-1');
+  await openForPanel(fake, events, { narrow });
   const fixture = TestBed.createComponent(ThreadPanelComponent);
-  await settle(fixture);
+  await drawn(fixture);
   return { root: fixture.nativeElement as HTMLElement, fixture };
-}
-
-async function settle(fixture: { whenStable: () => Promise<unknown> }): Promise<void> {
-  await fixture.whenStable();
-  await new Promise((resolve) => setTimeout(resolve));
-  await fixture.whenStable();
 }
 
 function tabs(root: HTMLElement): readonly HTMLButtonElement[] {
@@ -136,7 +106,7 @@ describe('ThreadPanelComponent', () => {
     const { root, fixture } = await render(fake, WORKED);
     expect(tabs(root).map((tab) => tab.textContent.trim())).toEqual(['Overview']);
     give({ changes: { files: FILES, turns: [], note: '' } });
-    await settle(fixture);
+    await drawn(fixture);
     tabs(root)[1]?.click();
     await fixture.whenStable();
     expect(tabs(root)[1]?.ariaSelected).toBe('true');
@@ -161,7 +131,7 @@ describe('ThreadPanelComponent', () => {
     stop?.focus();
     expect(document.activeElement).toBe(stop);
     stop?.click();
-    await settle(fixture);
+    await drawn(fixture);
     expect(root.querySelector('[data-testid="command-stop"]')).toBeNull();
     expect(document.activeElement).toBe(root.querySelector('[data-testid="panel-heading"]'));
   });
