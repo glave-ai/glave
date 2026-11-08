@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import type { ChangedFile } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzCountDirective,
@@ -18,6 +19,14 @@ import { CommandListComponent } from '../command-list/command-list.component';
 
 /** Where the Connections page is. */
 const CONNECTIONS = '/settings/connections';
+
+/** What files changed: lines added and removed, in figures and words, and how many files. */
+interface Changed {
+  readonly added: number;
+  readonly removed: number;
+  readonly label: string;
+  readonly files: string;
+}
 
 /** One line of where the thread works: a fact, and what it adds, quieter. */
 interface Where {
@@ -119,7 +128,7 @@ export class ThreadOverviewComponent {
         GitBranch,
         $localize`:@@threadOverview.branch:Branch`,
         opened.kind === 'worktree' ? opened.branch : null,
-        $localize`:@@threadOverview.copy:a separate copy`,
+        $localize`:@@threadOverview.separateCopy:a separate copy`,
       ),
       ...line(
         'at',
@@ -137,46 +146,66 @@ export class ThreadOverviewComponent {
     }
     const used = new Intl.NumberFormat(this.locale, { style: 'percent' }).format(percent / 100);
     const compacting = this.facts.compacting();
+    // Not while a turn runs, which compacts on its own as it needs to. Drawn unavailable rather
+    // than disabled, so a press on it never loses the keyboard's place.
+    const waits = compacting || this.thread.busy();
     return {
       percent,
       used: $localize`:@@threadOverview.used:${used}:PERCENT: used`,
-      // Not while a turn runs, which compacts on its own as it needs to.
-      waits: compacting || this.thread.busy(),
+      waits: waits ? 'true' : null,
       action: compacting
         ? $localize`:@@threadOverview.compacting:Compacting…`
         : $localize`:@@threadOverview.compact:Compact now`,
       problem: this.facts.compactProblem(),
     };
   });
-  /** How many of its project's apps need signing in again, and where that is done. */
+  /**
+   * How many of its project's apps need signing in again, and where that is done: Connections
+   * for the project, or for a chat, Connections itself, which names no project.
+   */
   protected readonly signIns = computed(() => {
     const count = this.facts.signInAgain();
     const project = this.thread.summary()?.project ?? null;
     if (count === 0 || project === null) {
       return null;
     }
+    const named = this.projects.project(project)?.kind === 'project';
     return {
       text: plural(
         $localize`:@@threadOverview.signIn:{${count}:COUNT:, plural, one {# needs signing in again} other {# need signing in again}}`,
         this.locale,
       ),
       link: CONNECTIONS,
-      query: { project },
+      query: named ? { project } : {},
     };
   });
+  /** The lines and files it changed, once there are some. */
+  protected readonly changes = computed(() => this.changed(this.facts.files()));
   /**
-   * The lines and files it changed, once there are some; until they are read, the room of the
-   * files its turns' ends recorded, unseen, nothing counted.
+   * Until those are read, the room of the files its turns' ends recorded, nothing counted: drawn
+   * unseen apart from them, so the counts show at once when they come, never counting up there.
    */
-  protected readonly changes = computed(() => {
-    const files = this.facts.files();
-    const room = files.length === 0 ? this.facts.room() : [];
-    const shown = files.length === 0 ? room : files;
-    if (shown.length === 0) {
+  protected readonly room = computed(() =>
+    this.facts.files().length === 0 ? this.changed(this.facts.room()) : null,
+  );
+
+  /** Whether it keeps commands running in the background. */
+  protected readonly running = computed(() => this.facts.running() > 0);
+
+  /** Compacts its context now, unless it waits. */
+  protected compact(): void {
+    if (this.context()?.waits === null) {
+      void this.facts.compact();
+    }
+  }
+
+  /** What `files` changed, in lines and files, or `null` for none. */
+  private changed(files: readonly ChangedFile[]): Changed | null {
+    if (files.length === 0) {
       return null;
     }
-    const count = shown.length;
-    const { added, removed } = totalLines(shown);
+    const count = files.length;
+    const { added, removed } = totalLines(files);
     return {
       added,
       removed,
@@ -185,15 +214,6 @@ export class ThreadOverviewComponent {
         $localize`:@@threadOverview.files:{${count}:COUNT:, plural, one {# file} other {# files}}`,
         this.locale,
       ),
-      room: room.length > 0,
     };
-  });
-
-  /** Whether it keeps commands running in the background. */
-  protected readonly running = computed(() => this.facts.running() > 0);
-
-  /** Compacts its context now. */
-  protected compact(): void {
-    void this.facts.compact();
   }
 }

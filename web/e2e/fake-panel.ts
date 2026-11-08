@@ -10,8 +10,9 @@ import { type Answers, WORKSPACE, bound, call, done, event } from './fake-record
 
 /**
  * A coding thread with something in every section of its panel (`fakeApi`'s `panel`): it works
- * on a separate copy, read a page, was given a screenshot, changed two files, builds a plan and
- * keeps the tests running, and an app its project uses needs signing in again.
+ * on a separate copy, changed two files, builds a plan and keeps the tests running, and an app
+ * its project uses needs signing in again; it also read a page, which its reply cites, and was
+ * given a screenshot.
  */
 export const VERBOSE = '01900000-0000-7000-8000-000000000131';
 

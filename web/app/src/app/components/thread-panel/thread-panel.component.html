@@ -27,10 +27,13 @@
 >
   @for (tab of tabs(); track tab.key) {
     <glz-tab [label]="tab.label">
-      @if (tab.overview) {
-        <app-thread-overview />
-      } @else {
-        <app-thread-files [files]="facts.files()" [note]="facts.note()" />
+      @switch (tab.key) {
+        @case ('overview') {
+          <app-thread-overview />
+        }
+        @case ('changes') {
+          <app-thread-files [files]="facts.files()" [note]="facts.note()" />
+        }
       }
     </glz-tab>
   }

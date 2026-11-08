@@ -29,7 +29,6 @@
     <section class="section" data-testid="panel-context-section">
       <div class="head">
         <h3 class="heading">{{ copy.context }}</h3>
-        <span class="detail" data-testid="panel-context">{{ context.used }}</span>
         <meter
           class="meter"
           min="0"
@@ -39,11 +38,13 @@
           [attr.aria-label]="copy.context"
           [attr.aria-valuetext]="context.used"
         ></meter>
+        <span class="detail" data-testid="panel-context">{{ context.used }}</span>
         <button
           glzButton
           size="sm"
+          class="end"
           data-testid="panel-compact"
-          [disabled]="context.waits"
+          [attr.aria-disabled]="context.waits"
           (click)="compact()"
         >
           {{ context.action }}
@@ -69,8 +70,7 @@
     </section>
   }
   @if (changes(); as changes) {
-    <!-- Its room, unseen, until what changed is read: nothing below it moves as that comes in. -->
-    <section class="section" data-testid="panel-changes" [class.room]="changes.room">
+    <section class="section" data-testid="panel-changes">
       <div class="head">
         <h3 class="heading">{{ copy.changes }}</h3>
         <span class="counts" aria-hidden="true"
@@ -80,6 +80,18 @@
         <span class="glz-visually-hidden">{{ changes.label }}</span>
       </div>
       <p class="detail" data-testid="panel-changes-count">{{ changes.files }}</p>
+    </section>
+  } @else if (room(); as room) {
+    <!-- Its room, unseen, until what changed is read: nothing below it moves as that comes in. -->
+    <section class="section room" data-testid="panel-changes-room">
+      <div class="head">
+        <h3 class="heading">{{ copy.changes }}</h3>
+        <span class="counts"
+          ><span class="plus">{{ room.added }}</span
+          ><span class="minus">{{ room.removed }}</span></span
+        >
+      </div>
+      <p class="detail">{{ room.files }}</p>
     </section>
   }
   @if (running()) {

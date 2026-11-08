@@ -64,7 +64,7 @@ describe('ThreadFilesComponent', () => {
     expect([diff?.tabIndex, diff?.getAttribute('role'), diff?.ariaLabel]).toEqual([
       0,
       'region',
-      'notes.md',
+      'Edited every match notes.md, change 2',
     ]);
     await expectAccessible(root);
   });

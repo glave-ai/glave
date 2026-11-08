@@ -13,7 +13,7 @@
         <div class="change" data-testid="file-change">
           <p class="note">{{ change.note }}</p>
           <!-- Reached by the keyboard, so its long lines scroll without a pointer. -->
-          <div class="diff" tabindex="0" role="region" [attr.aria-label]="file.path">
+          <div class="diff" tabindex="0" role="region" [attr.aria-label]="change.label">
             @for (line of change.lines; track $index) {
               <code class="line" [class]="line.kind"
                 ><span class="sign">{{ line.sign }}</span

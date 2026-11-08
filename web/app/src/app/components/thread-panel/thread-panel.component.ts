@@ -32,8 +32,6 @@ type Tab = 'overview' | 'changes';
 interface Shown {
   readonly key: Tab;
   readonly label: string;
-  /** Whether it is Overview, the one every thread has. */
-  readonly overview: boolean;
 }
 
 /** The tab a thread opens on. */
@@ -97,8 +95,8 @@ export class ThreadPanelComponent {
   protected readonly tabs = computed((): readonly Shown[] => {
     const changes = this.facts.files().length > 0;
     return [
-      { key: 'overview', label: this.copy.overview, overview: true },
-      ...(changes ? [{ key: 'changes', label: this.copy.changes, overview: false } as const] : []),
+      { key: 'overview', label: this.copy.overview },
+      ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
     ];
   });
   /** The tab chosen, by what it shows: Overview again in each thread. */
@@ -146,9 +144,14 @@ export class ThreadPanelComponent {
     }
   }
 
+  /**
+   * Shows the tab at `index`. What had the keyboard's place in the tab before goes with it on
+   * purpose: the place stays where the person pressed, never moved to the heading.
+   */
   protected choose(index: number): void {
     const tab = this.tabs()[index];
     if (tab !== undefined) {
+      this.last = null;
       this.chosen.set(tab.key);
     }
   }

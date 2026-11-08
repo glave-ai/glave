@@ -35,16 +35,17 @@
   font-size: var(--glz-text-md);
 }
 
-// A section said in one line: its heading at the start, what it says after it, at the end.
+// A section said in one line: its heading, then what it says, from the start of the line, so
+// nothing in it moves as a number in it grows; an action at its end.
 .head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--glz-space-1) var(--glz-space-3);
+}
 
-  .heading {
-    flex: 1;
-  }
+.end {
+  margin-inline-start: auto;
 }
 
 .lines {

@@ -4,6 +4,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { PanelService } from '../../services/panel.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession } from '../../testing/fake-session';
 import { command, event, thread } from '../../testing/fixtures';
@@ -136,6 +137,40 @@ describe('ThreadPanelComponent', () => {
     await drawn(fixture);
     expect(root.querySelector('[data-testid="command-stop"]')).toBeNull();
     expect(document.activeElement).toBe(root.querySelector('[data-testid="panel-heading"]'));
+  });
+
+  it('gives it to its heading too when Compact now takes the context away, never on a tab’s move', async () => {
+    const fake = worked().answer('thread/get', {
+      thread: thread('thread-1', 'Add --verbose', {
+        workspace: FOLDER,
+        context: { percent: 82, tokens: 104_960, window: 128_000 },
+      }),
+    });
+    const { root, fixture } = await render(fake, WORKED);
+    const compact = root.querySelector<HTMLButtonElement>('[data-testid="panel-compact"]');
+    compact?.focus();
+    compact?.click();
+    await drawn(fixture);
+    // Compacted, the thread says nothing of its context until its next call.
+    fake.answer('thread/list', {
+      threads: [
+        thread('thread-1', 'Add --verbose', {
+          workspace: FOLDER,
+          updated_at: '2026-10-11T10:30:00.000Z',
+        }),
+      ],
+    });
+    await TestBed.inject(ProjectsService).refresh();
+    await drawn(fixture);
+    expect(root.querySelector('[data-testid="panel-compact"]')).toBeNull();
+    const heading = root.querySelector('[data-testid="panel-heading"]');
+    expect(document.activeElement).toBe(heading);
+    // Moving to another tab, as a press on it does in Safari, which focuses no button, leaves
+    // the keyboard's place where it was.
+    root.querySelector<HTMLButtonElement>('[data-testid="command-stop"]')?.focus();
+    tabs(root)[1]?.click();
+    await drawn(fixture);
+    expect(document.activeElement).not.toBe(heading);
   });
 
   it('as a sheet, shows its heading and closes', async () => {

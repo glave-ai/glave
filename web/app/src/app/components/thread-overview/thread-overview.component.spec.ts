@@ -5,7 +5,7 @@ import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { ProjectsService } from '../../services/projects.service';
 import { FakeSession } from '../../testing/fake-session';
-import { command, event, thread } from '../../testing/fixtures';
+import { command, event, record, thread } from '../../testing/fixtures';
 import { drawn, openForPanel } from '../../testing/thread-panel';
 import { ThreadOverviewComponent } from './thread-overview.component';
 
@@ -180,10 +180,10 @@ describe('ThreadOverviewComponent', () => {
       changed: ['src/args.rs', 'src/main.rs'],
     });
     const { root, fixture } = await render(fake, [...WORKED.slice(0, -1), ended]);
-    const kept = root.querySelector<HTMLElement>('[data-testid="panel-changes"]');
-    expect(kept?.classList).toContain('room');
+    const kept = root.querySelector<HTMLElement>('[data-testid="panel-changes-room"]');
+    expect(kept?.textContent).toContain('2 files');
     expect(getComputedStyle(kept ?? root).visibility).toBe('hidden');
-    expect(texts(root, 'panel-changes-count')).toEqual(['2 files']);
+    expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
     await expectAccessible(root);
     give({
       changes: {
@@ -194,8 +194,10 @@ describe('ThreadOverviewComponent', () => {
     });
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
-    expect(kept?.classList).not.toContain('room');
+    // In a section of its own, which shows its counts at once rather than counting up to them.
+    expect(root.querySelector('[data-testid="panel-changes-room"]')).toBeNull();
     expect(texts(root, 'panel-changes-count')).toEqual(['1 file']);
+    expect(root.querySelector('[data-testid="panel-changes"] .plus')?.textContent).toBe('+3');
   });
 
   it('names the point a clone is at, and a folder worked in place as no branch', async () => {
@@ -245,12 +247,41 @@ describe('ThreadOverviewComponent', () => {
     const give = fake.held('thread/compact');
     button()?.click();
     await fixture.whenStable();
-    expect([button()?.textContent.trim(), button()?.disabled]).toEqual(['Compacting…', true]);
+    const waits = (): readonly unknown[] => [
+      button()?.textContent.trim(),
+      button()?.getAttribute('aria-disabled'),
+    ];
+    expect(waits()).toEqual(['Compacting…', 'true']);
     expect(root.querySelector('[data-testid="panel-compact-problem"]')).toBeNull();
+    // Pressed again meanwhile, it asks nothing more.
+    button()?.click();
+    expect(fake.paramsOf('thread/compact')).toHaveLength(2);
     give({ before_tokens: 49_920, after_tokens: 8_000 });
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
-    expect([button()?.textContent.trim(), button()?.disabled]).toEqual(['Compact now', false]);
+    expect(waits()).toEqual(['Compact now', null]);
+  });
+
+  it('waits to compact while a turn runs, which compacts on its own as it needs to', async () => {
+    const fake = worked({ status: 'running' });
+    const { root } = await render(fake, WORKED.slice(0, -1));
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="panel-compact"]');
+    expect(button?.getAttribute('aria-disabled')).toBe('true');
+    button?.click();
+    expect(fake.paramsOf('thread/compact')).toEqual([]);
+  });
+
+  it('leads a chat to Connections itself, which names no project', async () => {
+    const fake = worked({ project: 'chats' });
+    const { root, fixture } = await render(fake, WORKED);
+    fake.answer('project/list', {
+      projects: [record('project-1', 'glave'), record('chats', 'Personal', 'personal')],
+      gone: [],
+    });
+    await TestBed.inject(ProjectsService).refresh();
+    await fixture.whenStable();
+    const link = root.querySelector<HTMLAnchorElement>('[data-testid="panel-sign-in"]');
+    expect(link?.getAttribute('href')).toBe('/settings/connections');
   });
 
   it('shows only what the thread has', async () => {
