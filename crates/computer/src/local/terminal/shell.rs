@@ -23,10 +23,18 @@ pub(super) fn winsize(size: TerminalSize) -> rustix::termios::Winsize {
     }
 }
 
-/// A new pseudo-terminal of `size`: the side glave holds, the side its shell runs in, and that
-/// side's name. Both are closed for every program glave starts as they are made, never a moment
-/// after, so no command started meanwhile holds them.
-pub(super) fn pseudo_terminal(size: TerminalSize) -> std::io::Result<(OwnedFd, OwnedFd, String)> {
+/// A pseudo-terminal: the side glave holds, the side its shell runs in, and on macOS that side's
+/// name, by which the processes in it are found there.
+pub(super) struct Pty {
+    pub(super) master: OwnedFd,
+    pub(super) terminal: OwnedFd,
+    #[cfg(target_os = "macos")]
+    pub(super) name: String,
+}
+
+/// A new pseudo-terminal of `size`. Both its sides are closed for every program glave starts as
+/// they are made, never a moment after, so no command started meanwhile holds them.
+pub(super) fn pseudo_terminal(size: TerminalSize) -> std::io::Result<Pty> {
     use rustix::fs::{Mode, OFlags};
     use rustix::pty::{grantpt, ptsname, unlockpt};
     let master = controlling_side()?;
@@ -36,7 +44,12 @@ pub(super) fn pseudo_terminal(size: TerminalSize) -> std::io::Result<(OwnedFd, O
     let flags = OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC;
     let terminal = rustix::fs::open(name.as_c_str(), flags, Mode::empty())?;
     rustix::termios::tcsetwinsize(&master, winsize(size))?;
-    Ok((master, terminal, name.to_string_lossy().into_owned()))
+    Ok(Pty {
+        master,
+        terminal,
+        #[cfg(target_os = "macos")]
+        name: name.to_string_lossy().into_owned(),
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -87,7 +100,7 @@ pub(super) fn login_shell(environment: &[(OsString, OsString)]) -> Result<PathBu
     let shell = named("SHELL")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute() && path.is_file())
-        .or_else(|| account_shell(named("USER").or_else(|| named("LOGNAME"))))
+        .or_else(|| account_shell(environment))
         .unwrap_or_else(|| PathBuf::from("/bin/sh"));
     let opens_none = shell
         .file_name()
@@ -107,7 +120,7 @@ pub(super) fn login_shell(environment: &[(OsString, OsString)]) -> Result<PathBu
 
 /// The account's own shell, from the user database: its line in `/etc/passwd` on Linux.
 #[cfg(target_os = "linux")]
-fn account_shell(_user: Option<OsString>) -> Option<PathBuf> {
+fn account_shell(_environment: &[(OsString, OsString)]) -> Option<PathBuf> {
     let uid = rustix::process::getuid().as_raw().to_string();
     let accounts = std::fs::read_to_string("/etc/passwd").ok()?;
     passwd_shell(&accounts, &uid)
@@ -129,8 +142,11 @@ const DSCL_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(
 
 /// The account's own shell, from the user database: Directory Services on macOS.
 #[cfg(target_os = "macos")]
-fn account_shell(user: Option<OsString>) -> Option<PathBuf> {
-    let user = user?;
+fn account_shell(environment: &[(OsString, OsString)]) -> Option<PathBuf> {
+    let user = environment
+        .iter()
+        .find(|(name, _)| name == "USER" || name == "LOGNAME")
+        .map(|(_, user)| user.clone())?;
     let mut dscl = glave_process::Program::new("/usr/bin/dscl");
     dscl.arg(".")
         .arg("-read")
@@ -144,7 +160,7 @@ fn account_shell(user: Option<OsString>) -> Option<PathBuf> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn account_shell(_user: Option<OsString>) -> Option<PathBuf> {
+fn account_shell(_environment: &[(OsString, OsString)]) -> Option<PathBuf> {
     None
 }
 

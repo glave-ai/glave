@@ -27,15 +27,22 @@ pub fn terminal_helper(args: &[OsString]) -> Option<String> {
     if let Err(error) = rustix::process::ioctl_tiocsctty(std::io::stdin()) {
         return Some(format!("could not take the terminal as its own: {error}"));
     }
-    let tty = rustix::termios::ttyname(std::io::stdin(), Vec::new())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
     // It stays the session's leader while the shell runs, so the shell's jobs keep the terminal
     // and are found by it once the shell exits, then ended with it.
     let ran = glave_process::Program::new(shell)
         .args(arguments)
         .status_blocking();
-    super::session::Session::new(rustix::process::getpid(), tty).end_others();
+    let leader = rustix::process::getpid();
+    #[cfg(target_os = "macos")]
+    let session = super::session::Session::new(
+        leader,
+        rustix::termios::ttyname(std::io::stdin(), Vec::new())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    #[cfg(not(target_os = "macos"))]
+    let session = super::session::Session::new(leader);
+    session.end_others();
     match ran {
         Ok(_) => Some(String::new()),
         Err(error) => Some(error.to_string()),

@@ -187,7 +187,8 @@ impl Terminals {
         };
         let shell = shell::login_shell(start.environment)?;
         let _place = self.hold(owner)?;
-        let (master, terminal, tty) = shell::pseudo_terminal(size).map_err(failed)?;
+        let pty = shell::pseudo_terminal(size).map_err(failed)?;
+        let (master, terminal) = (pty.master, pty.terminal);
         let mut program = Program::new(helper);
         program
             .arg(TERMINAL_HELPER_ARG)
@@ -213,7 +214,10 @@ impl Terminals {
         let input = pipe::Sender::from_owned_fd_unchecked(master).map_err(failed)?;
         let shared = Arc::new(Shared {
             input,
-            session: Session::new(leader, tty),
+            #[cfg(target_os = "macos")]
+            session: Session::new(leader, pty.name),
+            #[cfg(not(target_os = "macos"))]
+            session: Session::new(leader),
             printed: Mutex::new(Ring::new(TERMINAL_KEPT)),
             changed: Notify::new(),
             hang_up: Notify::new(),
