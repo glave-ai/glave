@@ -403,15 +403,6 @@ impl Computers for Waking {
         })
     }
 
-    /// As [`Computers::open`]: what it plans asks the computer nothing.
-    fn reopen<'a>(
-        &'a self,
-        computer: ComputerId,
-        sources: &'a Sources,
-    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        self.open(computer, sources)
-    }
-
     fn open_with_credential<'a>(
         &'a self,
         computer: ComputerId,
@@ -429,6 +420,15 @@ impl Computers for Waking {
                 .await?;
             self.opened_now(computer, home, opened)
         })
+    }
+
+    /// As [`Computers::open`]: what it plans asks the computer nothing.
+    fn reopen<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        self.open(computer, sources)
     }
 
     /// Closed where it is open, and forgotten; one never opened, or opened on a computer that
