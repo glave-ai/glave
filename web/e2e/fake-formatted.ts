@@ -87,7 +87,8 @@ const FILES: readonly ChangedFile[] = [
 export const ABOUT_FORMATTED: Answers<ThreadSummary> = {
   'thread/get': (params, summary) =>
     params.thread === FORMATTED ? { thread: summary } : undefined,
-  'command/list': (params) => (params.thread === FORMATTED ? { commands: [WATCHING] } : undefined),
+  'command/list': (params) =>
+    params.thread === FORMATTED ? { commands: [WATCHING], previews: [] } : undefined,
   'thread/changes': (params) =>
     params.thread === FORMATTED
       ? {
