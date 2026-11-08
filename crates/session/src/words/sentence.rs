@@ -541,6 +541,18 @@ sentences! {
     AwakeWithNothing = "awake-with-nothing"
         "This computer can't be kept awake while glave works: its system has nothing for it.",
 
+    // Notifications on the person's devices.
+    NoPush = "no-push" "This server sends no notifications.",
+    PushRefused { reason: String } = "push-refused"
+        "this browser's notifications can't be turned on: { $reason }",
+    DeviceUnnamed = "device-unnamed" "give the browser a name, in at most 80 characters",
+    PushWaiting { title: String } = "push-waiting" "Needs you: { $title }",
+    PushWaitingUntitled = "push-waiting-untitled" "glave needs you",
+    PushDone { title: String } = "push-done" "Done: { $title }",
+    PushDoneUntitled = "push-done-untitled" "A task is done",
+    PushNotDone { title: String } = "push-not-done" "Didn't finish: { $title }",
+    PushNotDoneUntitled = "push-not-done-untitled" "A task didn't finish",
+
     // Signing a browser in.
     LinkSpent = "link-spent"
         "that sign-in link was used already or has expired: open glave again for a new one",

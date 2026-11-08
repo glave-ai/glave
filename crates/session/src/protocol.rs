@@ -23,6 +23,7 @@ mod people;
 mod plans;
 mod projects;
 mod providers;
+mod push;
 mod reply;
 mod secrets;
 mod settings;
@@ -65,6 +66,7 @@ pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite}
 pub use plans::PlanInfo;
 pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
+pub use push::{PushDevice, PushInfo, PushSubscription};
 pub use reply::{
     AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
     Status, ThreadSummary,
@@ -93,6 +95,15 @@ methods! {
     /// Chooses whether the person's own computer is kept awake while glave works, from the
     /// next work on. Only the person on this computer, and only where it is theirs to choose.
     "awake/set" => AwakeSet { on: bool } -> [Awake],
+    /// Whether the server tells the caller's browsers when glave needs them (Web Push): the key
+    /// to subscribe with and their browsers, `endpoint`'s marked current.
+    "push/get" => PushGet { #[serde(default)] endpoint: Option<String> } -> [Push],
+    /// Keeps a browser's push subscription, made with `push/get`'s key: from now on it is told
+    /// what needs the caller. One endpoint is kept once, under its latest name, and as one
+    /// person's: subscribing it moves it from anyone else's.
+    "push/subscribe" => PushSubscribe { #[serde(flatten)] browser: PushSubscription } -> [Push],
+    /// Forgets one of the caller's browsers; one forgotten already answers as it is.
+    "push/remove" => PushRemove { device: CredentialId } -> [Push],
     /// The language the caller chose to read glave's own sentences in, if they chose one.
     "language/get" => LanguageGet {} -> [Language],
     /// Chooses the language glave's own sentences are written in for the caller, as a BCP 47

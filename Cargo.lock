@@ -1872,6 +1872,7 @@ dependencies = [
  "glave-process",
  "glave-provider-anthropic",
  "glave-provider-openai",
+ "glave-push",
  "glave-session",
  "glave-store-postgres",
  "glave-store-sqlite",
@@ -2342,6 +2343,7 @@ dependencies = [
  "glave-mcp",
  "glave-memory",
  "glave-ports",
+ "glave-push",
  "glave-store-postgres",
  "glave-store-sqlite",
  "glave-web",
@@ -2357,6 +2359,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tokio-postgres",
@@ -2365,6 +2368,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "uuid",
+ "web-push-native",
 ]
 
 [[package]]

@@ -347,6 +347,30 @@ fn the_strictest_judge_sandbox_and_mcp_rules_win() {
 }
 
 #[test]
+fn push_is_off_only_where_a_policy_turns_it_off() {
+    let off = Constraints::of(&[
+        policy_at(ORG, "version = 1\n[notifications]\npush = true\n"),
+        policy_at(
+            PROJECT_POLICY,
+            "version = 1\n[notifications]\npush = false\n",
+        ),
+    ]);
+    let rule = off.push_off().unwrap();
+    assert_eq!(rule.from, Path::new(PROJECT_POLICY));
+    assert_eq!(rule.kind.to_string(), "[notifications] push = false");
+    let on = Constraints::of(&[policy_at(
+        ORG,
+        "version = 1\n[notifications]\npush = true\n",
+    )]);
+    assert!(on.push_off().is_none());
+    let typo = files::policy(
+        "version = 1\n[notifications]\npushes = false\n",
+        Path::new(ORG),
+    );
+    assert!(typo.unwrap_err().to_string().contains("pushes"));
+}
+
+#[test]
 fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
     let rules = Constraints::of(&[
         policy_at(ORG, "version = 1\n[budget]\nperson_per_day_usd = 20\n"),

@@ -72,11 +72,16 @@ pub enum Reserved {
     /// `…000d`: the organization's name, logo and accent (`brand.set`), in its own scope
     /// ([`Scope::of_organization`]), read for everyone in it.
     Brand,
+    /// `…000e`: push notifications: in the server's own organization's scope
+    /// ([`Scope::of_organization`]), the key every push on the store is signed with
+    /// (`push.key.made`); in a person's personal project, the browsers that take theirs
+    /// (`push.subscribed`, `push.unsubscribed`).
+    Push,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -91,6 +96,7 @@ impl Reserved {
         Self::Instructions,
         Self::Credits,
         Self::Brand,
+        Self::Push,
     ];
 
     /// The ledger's id, the same in every project.
@@ -110,6 +116,7 @@ impl Reserved {
             Self::Instructions => 11,
             Self::Credits => 12,
             Self::Brand => 13,
+            Self::Push => 14,
         };
         ThreadId::reserved(number)
     }

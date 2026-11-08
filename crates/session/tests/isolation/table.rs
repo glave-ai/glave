@@ -45,10 +45,12 @@ pub(super) enum Kind {
     /// An invite's code. Whoever holds it joins the organization that made it, so within one
     /// organization it proves nothing: it is checked across organizations only.
     InviteCode,
+    /// A browser that takes a person's notifications.
+    Device,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 18] = [
+    pub(super) const ALL: [Self; 19] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -67,6 +69,7 @@ impl Kind {
         Self::Person,
         Self::Invite,
         Self::InviteCode,
+        Self::Device,
     ];
 
     /// How a template writes it.
@@ -90,6 +93,7 @@ impl Kind {
             Self::Person => "@person",
             Self::Invite => "@invite",
             Self::InviteCode => "@invite_code",
+            Self::Device => "@device",
         }
     }
 
@@ -110,7 +114,7 @@ impl Kind {
             Self::Schedule => Some("ScheduleId"),
             Self::Memory => Some("MemoryId"),
             Self::Provider => Some("ProviderId"),
-            Self::Credential => Some("CredentialId"),
+            Self::Credential | Self::Device => Some("CredentialId"),
             Self::Computer => Some("ComputerId"),
             Self::Person => Some("PrincipalId"),
             Self::Invite => Some("InviteId"),
@@ -147,6 +151,7 @@ impl Kind {
             Self::Person => uuid(0xdead_000a),
             Self::Invite => uuid(0xdead_000b),
             Self::InviteCode => "1".repeat(64),
+            Self::Device => uuid(0xdead_000c),
             Self::Files => String::new(),
         })
     }
@@ -188,6 +193,24 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // Whether the server's own computer stays awake: no one's id to name.
         ("awake/get", vec![json!({})]),
         ("awake/set", vec![json!({"on": false})]),
+        // The caller's own browsers: one is looked for only among the caller's own.
+        (
+            "push/get",
+            vec![
+                json!({}),
+                json!({"endpoint": "https://fcm.googleapis.com/fcm/send/x"}),
+            ],
+        ),
+        (
+            "push/subscribe",
+            vec![json!({
+                "endpoint": "https://fcm.googleapis.com/fcm/send/x",
+                "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+                "auth": "BTBZMqHH6r4Tts7J_aSIgg",
+                "device": "Firefox",
+            })],
+        ),
+        ("push/remove", vec![json!({"device": "@device"})]),
         // The caller's own language: no one else's to name.
         ("language/get", vec![json!({})]),
         (
