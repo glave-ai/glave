@@ -98,6 +98,10 @@ pub struct Attempt {
     /// Commands the sandbox may have blocked (`Trace::blocked`).
     #[serde(default)]
     pub blocked: u32,
+    /// Calls of `compact` in a task that never asks for compaction: false alarms
+    /// (`Trace::compacts`, `[glave] asks_to_compact`).
+    #[serde(default)]
+    pub unasked_compacts: u32,
     /// How the task's probes went, when it has them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probes: Option<Probes>,
@@ -139,6 +143,7 @@ impl Attempt {
             repeated_steps: trace.repeated_steps,
             asks: trace.asks,
             blocked: trace.blocked,
+            unasked_compacts: 0,
             probes: None,
             memory: None,
         }
@@ -219,6 +224,11 @@ pub async fn attempt(
         failures,
         probes,
         memory: memory.usage,
+        unasked_compacts: if task.asks_to_compact {
+            0
+        } else {
+            trace.compacts
+        },
         ..Attempt::graded(&task.name, model, number, &trace, seconds)
     })
 }

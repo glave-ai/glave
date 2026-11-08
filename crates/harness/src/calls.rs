@@ -19,6 +19,7 @@ use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::children::Ran;
+use crate::compaction::compact_asked;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
@@ -184,6 +185,8 @@ where
             return self.put_questions(thread, call, cancel, live).await;
         } else if step.toolset.is_plan(&call.tool) {
             return Ok(self.update_plan(thread, call, step, cancel, live));
+        } else if step.toolset.is_compact(&call.tool) {
+            return Ok(compact_asked(call, step, live));
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
