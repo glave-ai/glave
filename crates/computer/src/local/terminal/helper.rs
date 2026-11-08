@@ -35,11 +35,7 @@ pub fn terminal_helper(args: &[OsString]) -> Option<String> {
     let ran = glave_process::Program::new(shell)
         .args(arguments)
         .status_blocking();
-    super::session::Session {
-        leader: rustix::process::getpid(),
-        tty,
-    }
-    .end_others();
+    super::session::Session::new(rustix::process::getpid(), tty).end_others();
     match ran {
         Ok(_) => Some(String::new()),
         Err(error) => Some(error.to_string()),

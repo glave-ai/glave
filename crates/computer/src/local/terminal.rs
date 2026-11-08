@@ -96,7 +96,7 @@ impl Drop for Terminal {
     fn drop(&mut self) {
         if !self.shared.ended.load(Ordering::SeqCst) {
             let session = &self.shared.session;
-            let _ = kill_process_group(session.leader, Signal::HUP);
+            let _ = kill_process_group(session.leader(), Signal::HUP);
             for member in session.members_now() {
                 let _ = kill_process(member, Signal::KILL);
             }
@@ -213,7 +213,7 @@ impl Terminals {
         let input = pipe::Sender::from_owned_fd_unchecked(master).map_err(failed)?;
         let shared = Arc::new(Shared {
             input,
-            session: Session { leader, tty },
+            session: Session::new(leader, tty),
             printed: Mutex::new(Ring::new(TERMINAL_KEPT)),
             changed: Notify::new(),
             hang_up: Notify::new(),
