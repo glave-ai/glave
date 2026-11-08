@@ -126,6 +126,42 @@ fn a_fork_copies_its_history_but_what_is_the_other_threads_own() {
 }
 
 #[test]
+fn a_forks_commands_are_numbered_after_every_one_its_history_names() {
+    let command = || {
+        Body::CommandStarted(glave_event::CommandStarted {
+            command: uuid::Uuid::nil(),
+            workspace: uuid::Uuid::nil(),
+            call_id: glave_event::CallId::new("call_2").unwrap(),
+            script: "npm run dev".into(),
+            moved: false,
+        })
+    };
+    let forked = Body::ThreadForked(ThreadForked {
+        from: ForkPoint {
+            thread: header(1).thread,
+            seq: Seq::FIRST,
+        },
+        files: ForkFiles::Same,
+        told: "Forked here.".into(),
+        commands: 2,
+    });
+    let events = vec![
+        event(1, started(None)),
+        event(2, forked),
+        event(3, command()),
+    ];
+    assert_eq!(
+        commands_used(&events),
+        3,
+        "two before its own fork, and one after"
+    );
+    assert!(
+        !copied(&events[1]),
+        "an earlier fork's record told of another folder"
+    );
+}
+
+#[test]
 fn every_blob_an_event_names_is_found_in_it() {
     let turn = event(2, turn_started()).to_raw().unwrap();
     assert_eq!(blobs_named(&turn), [Sha256::new(HEX).unwrap()]);

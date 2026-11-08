@@ -153,6 +153,7 @@ fn a_fork_counts_only_what_its_own_calls_used() {
         },
         files: ForkFiles::Same,
         told: "Forked here.".into(),
+        commands: 0,
     };
     let events = vec![
         started(),

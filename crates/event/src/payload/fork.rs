@@ -25,6 +25,18 @@ pub struct ThreadForked {
     /// What the person is told of it, recorded in English and written again in the reader's
     /// language from `files`.
     pub told: String,
+    /// How many commands in the background the copies started: the fork's own are numbered
+    /// after them, so a number in its history never names one of the fork's. Absent is none.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub commands: u32,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if"
+)]
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 /// The point in another thread that a fork continues from.

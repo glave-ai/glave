@@ -2,12 +2,14 @@
 //! history up to a point between its turns and goes on from there, the other untouched; its
 //! model calls open with the other's prefix, byte for byte, so the cache still matches
 //! (`specs/invariants.md`, 27); it says plainly that files are not rewound, and where it works;
-//! it counts its own receipts; what its copies name outlives the other; and a point within a
-//! turn is refused.
+//! it counts its own receipts; its calls and commands are numbered after its copies', and none
+//! of the other's commands are its; what its copies name outlives the other; and a point
+//! within a turn is refused.
 
 use glave_event::{Body, ForkFiles, Opened, OriginKind, Part, Permissions, Seq, ThreadId, decode};
 use glave_ports::{BlobStore, Completion, InMemoryLog, ModelRequest};
 use glave_session::protocol::{ApiError, Meta, Reply, Request, ThreadSummary, code};
+use serde_json::json;
 
 use crate::support::*;
 
@@ -296,6 +298,118 @@ fn a_fork_point_within_a_turn_or_past_the_end_is_refused_and_nothing_is_made() {
             panic!("threads");
         };
         assert_eq!(threads.len(), 1, "no fork was made");
+        server.shutdown().await;
+    });
+}
+
+/// The ids of `thread`'s tool calls, in order.
+async fn call_ids(server: &Tested, thread: ThreadId) -> Vec<String> {
+    events(server, thread)
+        .await
+        .into_iter()
+        .filter_map(|raw| match decode(raw).unwrap().body {
+            Body::ToolCallRequested(requested) => Some(requested.call_id.as_str().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_fork_numbers_its_calls_as_the_original_would_have() {
+    let dir = folder("forks-calls");
+    block_on!(async {
+        let look = || answer(None, Some(("glob", json!({"pattern": "*.md"}))));
+        let answers = vec![
+            look(),
+            answer(Some("None."), None),
+            look(),
+            answer(Some("Still none."), None),
+            look(),
+            answer(Some("None again."), None),
+        ];
+        let (server, _seen) = setup(answers).build(&dir).await;
+        let original = start(&server, false).await;
+        turn(&server, original, "any notes?").await.unwrap();
+        turn(&server, original, "look again").await.unwrap();
+        let first_ended = seqs_of(&server, original, "turn.ended").await[0];
+        let forked = fork(&server, original, Some(first_ended)).await.unwrap();
+        turn(&server, forked.id, "look once more").await.unwrap();
+        let theirs = call_ids(&server, original).await;
+        assert_eq!(theirs.len(), 2);
+        assert_ne!(theirs[0], theirs[1]);
+        assert_eq!(
+            call_ids(&server, forked.id).await,
+            theirs,
+            "the copy's, then the id the original's next call had"
+        );
+        server.shutdown().await;
+    });
+}
+
+/// A command that never ends by itself, so only a stop ends it.
+const SERVES: &str = "tail -f /dev/null";
+
+/// The commands `thread` keeps in the background.
+async fn running(server: &Tested, thread: ThreadId) -> Vec<glave_harness::RunningCommand> {
+    match server
+        .request(Request::CommandList { thread })
+        .await
+        .unwrap()
+    {
+        Reply::Commands { commands } => commands,
+        other => panic!("commands, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_fork_keeps_none_of_the_original_s_commands_and_numbers_its_own_after_them() {
+    let dir = folder("forks-commands");
+    block_on!(async {
+        let serve = || {
+            let started = json!({"command": SERVES, "background": true});
+            answer(None, Some(("bash", started)))
+        };
+        let answers = vec![
+            serve(),
+            answer(Some("It runs."), None),
+            serve(),
+            answer(Some("It runs here too."), None),
+        ];
+        let (server, _seen) = setup(answers).build(&dir).await;
+        let original = start(&server, false).await;
+        turn(&server, original, "start the server").await.unwrap();
+        let forked = fork(&server, original, None).await.unwrap();
+        assert_eq!(
+            running(&server, forked.id).await,
+            [],
+            "the original's runs for it alone"
+        );
+        turn(&server, forked.id, "start it again").await.unwrap();
+        let results: Vec<String> = events(&server, forked.id)
+            .await
+            .into_iter()
+            .filter_map(|raw| match decode(raw).unwrap().body {
+                Body::ToolCallCompleted(done) => Some(format!("{:?}", done.output)),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            results[0].contains("Started command 1 in the background"),
+            "{results:?}"
+        );
+        assert!(
+            results[1].contains("Started command 2 in the background"),
+            "after the copy's command 1: {results:?}"
+        );
+        for thread in [original, forked.id] {
+            let kept = running(&server, thread).await;
+            assert_eq!(kept.len(), 1, "{kept:?}");
+            let stop = Request::CommandStop {
+                thread,
+                command: kept[0].id,
+            };
+            server.request(stop).await.unwrap();
+        }
         server.shutdown().await;
     });
 }

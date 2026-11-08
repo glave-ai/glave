@@ -92,6 +92,7 @@ mod tests {
                 },
                 files,
                 told: told(files),
+                commands: 0,
             };
             let header = Header {
                 id: EventId::new(at, [2; 10]).unwrap(),

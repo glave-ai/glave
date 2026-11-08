@@ -63,12 +63,13 @@ where
         } else {
             ForkFiles::Other
         };
-        let copies = events
+        let copies: Vec<Event> = events
             .into_iter()
             .take_while(|event| event.header.seq <= at)
-            .filter(copied);
+            .collect();
+        let commands = commands_used(&copies);
         let mut named = BTreeSet::new();
-        for copy in copies {
+        for copy in copies.into_iter().filter(copied) {
             let header = Header {
                 id: EventId::new(self.clock.now(), self.entropy.bytes()?)?,
                 thread: thread.id,
@@ -88,6 +89,7 @@ where
             },
             files,
             told: (fork.told)(files),
+            commands,
         };
         let seam = staged.len();
         self.stage(&thread, &mut staged, &forked)?;
@@ -97,7 +99,7 @@ where
             self.blobs.release(&scope, thread.id).await?;
             return Err(error);
         }
-        self.carry(&mut thread, &history).await;
+        self.carry(&mut thread, &history, commands).await;
         Ok(thread)
     }
 
@@ -119,24 +121,12 @@ where
     }
 
     /// Takes into `thread`, just started, what its history says of how it goes on, as reading
-    /// it again from its log would: its conversation and prefix, what the person asked and
-    /// allowed, its turns, plan and choices, what it has read, and what memory showed it.
-    async fn carry(&self, thread: &mut Thread, history: &[Event]) {
+    /// it again from its log would; its commands are numbered after the `commands` its copies
+    /// started.
+    async fn carry(&self, thread: &mut Thread, history: &[Event], commands: u32) {
         thread.messages = crate::conversation::conversation(history);
-        thread.allowed = crate::resume::allowed_for_thread(history);
-        thread.request = crate::resume::latest_request(history);
-        thread.asked = crate::resume::asked(history);
-        thread.turns = crate::resume::turns_begun(history);
-        thread.plan = crate::plan::Planning::of(history);
-        thread.unnumbered = crate::bind::own_records(history);
-        thread.untrusted = crate::resume::read_untrusted(history);
-        thread.read_secret = crate::resume::read_secret(history);
-        thread.model = crate::chosen::chosen_in(history);
-        thread.permissions = crate::chosen::permissions_in(history);
-        thread.effort = crate::chosen::effort_in(history);
-        // Boxed: reading a blob back is a large future, as on a resume.
-        thread.prefix = Box::pin(self.prefix_kept(&thread.scope, history)).await;
-        self.rebuild_memory(thread, history).await;
+        self.take_history(thread, history).await;
+        thread.commands.numbered_after(commands);
     }
 }
 
@@ -177,7 +167,8 @@ fn between_turns(events: &[Event], at: Option<Seq>) -> Result<Seq, Invalid> {
 
 /// Whether a fork copies `event` of the thread it comes from: everything but what is the
 /// other's own, which the fork has its own of or none: its start, where it works, whether it
-/// is shown, and its commands in the background. All but its start are glave's own records,
+/// is shown, its commands in the background (whose ids would reach the other's), and where it
+/// was itself forked, which told of another folder. All but its start are glave's own records,
 /// which call ids do not count, so the fork's next calls are numbered as the other's would be.
 fn copied(event: &Event) -> bool {
     !matches!(
@@ -190,7 +181,18 @@ fn copied(event: &Event) -> bool {
             | Body::ThreadDeleted(_)
             | Body::CommandStarted(_)
             | Body::CommandEnded(_)
+            | Body::ThreadForked(_)
     )
+}
+
+/// How many numbers `events` gave commands in the background, which the model's history names
+/// them by: one for each started, after those a fork's start says came before them.
+fn commands_used(events: &[Event]) -> u32 {
+    events.iter().fold(0, |used, event| match &event.body {
+        Body::ThreadForked(forked) => used.max(forked.commands),
+        Body::CommandStarted(_) => used.saturating_add(1),
+        _ => used,
+    })
 }
 
 /// Where the latest `workspace.bound` of `events` says the thread works, if anywhere.

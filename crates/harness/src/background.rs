@@ -61,6 +61,7 @@ impl Commands {
                 Body::CommandEnded(ended) => {
                     commands.restore_end(CommandId::from_uuid(ended.command), &ended.ending);
                 }
+                Body::ThreadForked(forked) => commands.numbered_after(forked.commands),
                 _ => {}
             }
         }
