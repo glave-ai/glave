@@ -1,12 +1,11 @@
-// The line naming where it is, then the screen, filling what is left of the tab.
+// The line naming where it is, then the screen, filling what is left of the tab, whose panel
+// gives it its insets.
 :host {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: var(--glz-space-2);
+  block-size: 100%;
   min-block-size: 0;
-  padding-block: var(--glz-inset-pane-block);
-  padding-inline: var(--glz-inset-pane-inline);
 }
 
 .head {

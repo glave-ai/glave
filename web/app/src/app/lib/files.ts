@@ -45,6 +45,17 @@ export function lineCounts(added: number, removed: number, locale: string): Line
   };
 }
 
+/** The lines `files` added and removed, all of them together. */
+export function totalLines(files: readonly ChangedFile[]): {
+  readonly added: number;
+  readonly removed: number;
+} {
+  return {
+    added: files.reduce((sum, file) => sum + file.added, 0),
+    removed: files.reduce((sum, file) => sum + file.removed, 0),
+  };
+}
+
 /** The mark before each line of a change, so colour is never the only sign of what it is. */
 export const SIGNS: Readonly<Record<LineKind, string>> = { same: ' ', removed: '-', added: '+' };
 

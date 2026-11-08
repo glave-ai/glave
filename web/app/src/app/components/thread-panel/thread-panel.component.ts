@@ -2,83 +2,73 @@ import {
   ChangeDetectionStrategy,
   Component,
   DOCUMENT,
-  type ElementRef,
-  LOCALE_ID,
-  type TemplateRef,
-  afterRenderEffect,
+  ElementRef,
+  afterEveryRender,
   computed,
   inject,
+  linkedSignal,
   output,
   viewChild,
 } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import type { ThreadId } from '@glave/client';
 import {
-  GlzButtonComponent,
-  GlzCardComponent,
   GlzIconButtonComponent,
   GlzIconComponent,
-  type GlzIconData,
-  GlzPlanCardComponent,
   GlzTabComponent,
   GlzTabsComponent,
 } from '@glave/glaze';
-import { File, Folder, GitBranch, GitCommitHorizontal, Globe, Laptop, X } from 'lucide';
+import { X } from 'lucide';
 
-import { modes } from '../../lib/modes';
-import { plural } from '../../lib/plural';
-import { spent } from '../../lib/results';
 import { PanelService } from '../../services/panel.service';
-import { ProjectsService } from '../../services/projects.service';
 import { ServerService } from '../../services/server.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
-import { CommandListComponent } from '../command-list/command-list.component';
 import { TerminalTabComponent } from '../terminal-tab/terminal-tab.component';
-import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
+import { ThreadFilesComponent } from '../thread-files/thread-files.component';
+import { ThreadOverviewComponent } from '../thread-overview/thread-overview.component';
 
-/** One part of the line saying where the thread works. */
-interface Part {
-  readonly key: string;
-  readonly icon: GlzIconData;
-  /** What it is, for screen readers. */
+/** The panel's tabs, each by what it shows. */
+type Tab = 'overview' | 'terminal' | 'changes';
+
+/** A tab as the panel shows it. */
+interface Shown {
+  readonly key: Tab;
   readonly label: string;
-  readonly text: string;
 }
 
+/** The tab a thread opens on. */
+const FIRST: Tab = 'overview';
+
 /**
- * One column of the open thread's facts, beside it: a line saying where it works (the computer,
- * the project's folder, its full path a press away, a worktree's branch or the point a clone is
- * at, the mode), then each section only when it has something: its plan, in the server's
- * sentence, its steps ticking off (the conversation's card is where a proposal is built); the
- * files it changed, as a turn's card shows them, each opening its changes in full, their room
- * kept as the thread opens until they are read; its commands running in the background, each
- * with Stop; the pages its replies drew on, each opening in a new tab, and the files the person
- * attached; and how full its context is and what it has cost. Where the server says the
- * person may open terminals here, those facts are its Overview tab, beside a Terminal tab: their
- * own shell in its folder, loaded only once that tab shows.
+ * The open thread's panel, beside it: tabs, each only once it has something to show, in this
+ * order: Overview, the thread at a glance, which it opens on (`app-thread-overview`); then, where
+ * the server says the person opens terminals and the thread works in a project's folder, the
+ * Terminal, their own shell there (`app-terminal-tab`); then the files it changed, in full. The tab chosen is this view's to remember, and each thread opens on
+ * Overview again.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
- * the page; its sections are a level below. When Stop takes the last command away with the
- * keyboard's place, that place goes to the heading, or, when the panel goes, `gone` says so.
+ * the page; its sections are a level below. When what had the keyboard's place goes from it, as
+ * Stop takes the last command away or Compact now the context's section, that place goes to the
+ * heading, or, when the panel goes, `gone` says so.
  */
 @Component({
   selector: 'app-thread-panel',
   imports: [
-    CommandListComponent,
-    GlzButtonComponent,
-    GlzCardComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
-    GlzPlanCardComponent,
     GlzTabComponent,
     GlzTabsComponent,
-    NgTemplateOutlet,
     TerminalTabComponent,
-    TurnChangesComponent,
+    ThreadFilesComponent,
+    ThreadOverviewComponent,
   ],
   templateUrl: './thread-panel.component.html',
   styleUrl: './thread-panel.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[class.sheet]': 'narrow()' },
+  host: {
+    '[class.sheet]': 'narrow()',
+    '(focusin)': 'focused($event)',
+    '(focusout)': 'left($event)',
+  },
 })
 export class ThreadPanelComponent {
   /** The panel has nothing left to show, and the keyboard's place went with what was there. */
@@ -87,157 +77,61 @@ export class ThreadPanelComponent {
   protected readonly copy = {
     heading: $localize`:@@threadPanel.heading:This thread`,
     close: $localize`:@@threadPanel.close:Close the panel`,
-    where: $localize`:@@threadPanel.where:Where it works`,
-    computer: $localize`:@@threadPanel.computer:Computer`,
-    folder: $localize`:@@threadPanel.folder:Folder`,
-    branch: $localize`:@@threadPanel.branch:Branch`,
-    at: $localize`:@@threadPanel.at:Checked out at`,
-    mode: $localize`:@@threadPanel.mode:Mode`,
-    plan: $localize`:@@threadPanel.plan:Plan`,
-    changes: $localize`:@@threadPanel.changes:Changes`,
-    review: $localize`:@@threadPanel.review:Review all changes`,
-    running: $localize`:@@threadPanel.running:Running`,
-    sources: $localize`:@@threadPanel.sources:Sources and files`,
-    newTab: $localize`:@@threadPanel.newTab:(opens in a new tab)`,
-    attached: $localize`:@@threadPanel.attached:you attached`,
-    spent: $localize`:@@threadPanel.spent:Context and cost`,
-    context: $localize`:@@threadPanel.context:Context`,
-    cost: $localize`:@@threadPanel.cost:Cost so far`,
-    tools: $localize`:@@threadPanel.tools:This thread's tools`,
+    tabs: $localize`:@@threadPanel.tabs:What this thread shows`,
     overview: $localize`:@@threadPanel.overview:Overview`,
     terminal: $localize`:@@threadPanel.terminal:Terminal`,
-    between: ' · ',
+    changes: $localize`:@@threadPanel.changes:Changes`,
   } as const;
-  protected readonly icons = { close: X, folder: Folder, page: Globe, file: File } as const;
+  protected readonly icons = { close: X } as const;
   private readonly panel = inject(PanelService);
   protected readonly facts = inject(ThreadPanelService);
   private readonly thread = inject(ThreadService);
-  private readonly projects = inject(ProjectsService);
   private readonly server = inject(ServerService);
-  private readonly locale = inject(LOCALE_ID);
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   /** Whether the panel is a sheet over the page, which shows its heading and a close button. */
   protected readonly narrow = this.panel.narrow;
   /** Beside the page, the heading is for screen readers alone. */
   protected readonly beside = computed(() => !this.narrow());
-  /** Whether the last command was there as the panel last drew, so its going can be seen. */
-  private ran = false;
+  /** What last had the keyboard's place in the panel. */
+  private last: Element | null = null;
 
-  /**
-   * Whether the facts are kept from sight, their room kept too, while the thread's project isn't
-   * known: its name goes in the middle of the line saying where it works, and may make the line
-   * wrap, so nothing moves if they come in together.
-   */
-  protected readonly reading = computed(() => {
-    const summary = this.thread.summary();
-    return (
-      summary !== null &&
-      this.projects.project(summary.project) === undefined &&
-      !this.projects.loaded()
-    );
+  /** The tabs it has now, in order, each with its label. */
+  protected readonly tabs = computed((): readonly Shown[] => {
+    const changes = this.facts.files().length > 0;
+    const terminal = this.server.terminals() && this.facts.workspace() !== null;
+    return [
+      { key: 'overview', label: this.copy.overview },
+      ...(terminal ? [{ key: 'terminal', label: this.copy.terminal } as const] : []),
+      ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
+    ];
   });
-  /** Where it works, as its summary says, in one line: the folder apart, a press away. */
-  protected readonly where = computed(() => {
-    const workspace = this.facts.workspace();
-    const summary = this.thread.summary();
-    const computer = this.thread.place();
-    if (workspace === null || summary === null || computer === null) {
-      return null;
-    }
-    const opened = workspace.opened;
-    const project = this.projects.project(summary.project);
-    const mode = modes()[summary.permissions];
-    const part = (
-      key: string,
-      icon: GlzIconData,
-      label: string,
-      text: string | null,
-    ): readonly Part[] => (text === null ? [] : [{ key, icon, label, text }]);
-    return {
-      // The project's own name, as the server names it, and where its tools act in full.
-      folder: project?.kind === 'project' ? { name: project.name, path: workspace.root } : null,
-      before: part('computer', Laptop, this.copy.computer, computer),
-      after: [
-        ...part(
-          'branch',
-          GitBranch,
-          this.copy.branch,
-          opened.kind === 'worktree' ? opened.branch : null,
-        ),
-        ...part(
-          'at',
-          GitCommitHorizontal,
-          this.copy.at,
-          opened.kind === 'clone' ? (opened.at ?? null) : null,
-        ),
-        ...part('mode', mode.icon, this.copy.mode, mode.text),
-      ],
-    };
+  /** The tab chosen, by what it shows: Overview again in each thread. */
+  private readonly chosen = linkedSignal<ThreadId | null, Tab>({
+    source: this.thread.thread,
+    computation: () => FIRST,
   });
-  /** Whether it has a Terminal tab: the server lets the person open one, in a folder of theirs. */
-  protected readonly terminal = computed(
-    () => this.server.terminals() && this.facts.workspace() !== null,
+  /** Where the chosen tab is among those it has, or the first's when it has it no longer. */
+  protected readonly selected = computed(() =>
+    Math.max(
+      0,
+      this.tabs().findIndex((tab) => tab.key === this.chosen()),
+    ),
   );
-  private readonly overview = viewChild.required<TemplateRef<unknown>>('overview');
-  private readonly tabbed = viewChild.required<TemplateRef<unknown>>('tabbed');
-  /** The facts alone, or beside a Terminal tab where there is one. */
-  protected readonly shown = computed(() => (this.terminal() ? this.tabbed() : this.overview()));
-  /** The files it changed, once there are some. */
-  protected readonly changes = computed(() => {
-    const files = this.facts.files();
-    return files.length === 0 ? null : files;
-  });
-  /** Until those are known, the files whose room is kept, unseen; else `null`. */
-  protected readonly room = computed(() => {
-    const room = this.facts.room();
-    return room.length === 0 ? null : room;
-  });
-  protected readonly running = computed(() => {
-    const count = this.facts.running();
-    return count === 0 ? null : new Intl.NumberFormat(this.locale).format(count);
-  });
-  protected readonly sources = computed(() => {
-    const pages = this.facts.pages();
-    const attached = this.facts.attached();
-    return pages.length === 0 && attached.length === 0 ? null : { pages, attached };
-  });
-  /** How full its context is and what it has cost, once it has run a turn. */
-  protected readonly spent = computed(() => {
-    const summary = this.thread.summary();
-    const percent = summary?.context?.percent ?? null;
-    if (summary === null || (summary.turns === 0 && percent === null)) {
-      return null;
-    }
-    const turns = summary.turns;
-    const used = new Intl.NumberFormat(this.locale, { style: 'percent' }).format(
-      (percent ?? 0) / 100,
-    );
-    return {
-      context:
-        percent === null
-          ? null
-          : { percent, used: $localize`:@@threadPanel.used:${used}:PERCENT: used` },
-      cost: [
-        spent({ cost: summary.cost ?? null, estimated: summary.estimated ?? false }, this.locale),
-        plural(
-          $localize`:@@threadPanel.turns:{${turns}:COUNT:, plural, one {# turn} other {# turns}}`,
-          this.locale,
-        ),
-      ].join(this.copy.between),
-    };
-  });
 
   constructor() {
-    // Stop takes the last command away, and the keyboard's place with it: the place goes to the
-    // panel's heading, or, when the panel has nothing left, to whoever holds the panel.
-    afterRenderEffect(() => {
-      const runs = this.facts.running() > 0;
-      const lost = this.ran && !runs && this.document.activeElement === this.document.body;
-      this.ran = runs;
+    // What had the keyboard's place went from the panel as it drew: the place goes to its
+    // heading, or, when the panel has nothing left, to whoever holds the panel.
+    afterEveryRender(() => {
+      const lost =
+        this.last !== null &&
+        !this.last.isConnected &&
+        this.document.activeElement === this.document.body;
       if (!lost) {
         return;
       }
+      this.last = null;
       if (this.facts.shown()) {
         this.heading().nativeElement.focus();
       } else {
@@ -246,12 +140,31 @@ export class ThreadPanelComponent {
     });
   }
 
-  protected close(): void {
-    this.panel.setShowing(false);
+  protected focused(event: FocusEvent): void {
+    this.last = event.target instanceof Element ? event.target : null;
   }
 
-  /** Shows every change the thread made in full. */
-  protected reviewAll(): void {
-    this.facts.showChanges(null, null);
+  /** The keyboard's place moved on to something outside the panel: nothing of it is lost. */
+  protected left(event: FocusEvent): void {
+    const to = event.relatedTarget;
+    if (to instanceof Node && !this.host.nativeElement.contains(to)) {
+      this.last = null;
+    }
+  }
+
+  /**
+   * Shows the tab at `index`. What had the keyboard's place in the tab before goes with it on
+   * purpose: the place stays where the person pressed, never moved to the heading.
+   */
+  protected choose(index: number): void {
+    const tab = this.tabs()[index];
+    if (tab !== undefined) {
+      this.last = null;
+      this.chosen.set(tab.key);
+    }
+  }
+
+  protected close(): void {
+    this.panel.setShowing(false);
   }
 }

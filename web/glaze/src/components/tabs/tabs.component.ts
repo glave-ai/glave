@@ -8,7 +8,6 @@ import {
   type ElementRef,
   Injector,
   type TemplateRef,
-  booleanAttribute,
   computed,
   contentChildren,
   inject,
@@ -39,8 +38,7 @@ interface ShownTab {
 /**
  * Tabs: a row of `<glz-tab>`s and the panel of the one selected. The ARIA tabs pattern:
  * arrow keys move between tabs and select them, Home and End jump to the ends, and Tab moves
- * into the panel. `selected` is the selected tab's index, bound two ways; `fill` makes them fill
- * what holds them.
+ * into the panel. `selected` is the selected tab's index, bound two ways.
  *
  * ```html
  * <glz-tabs label="Thread details" [(selected)]="tab">
@@ -55,7 +53,7 @@ interface ShownTab {
   templateUrl: './tabs.component.html',
   styleUrl: './tabs.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()', '[class.fill]': 'fill()' },
+  host: { '[attr.data-testid]': 'testId()' },
 })
 export class GlzTabsComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
@@ -66,11 +64,6 @@ export class GlzTabsComponent {
   readonly selected = model(0);
   /** Names the tab list for screen readers. */
   readonly label = input.required<string>();
-  /**
-   * Whether the tabs fill what holds them, their panel taking the room the list leaves, with no
-   * inset of its own, as a side panel's do: what is in it lays itself out in that room.
-   */
-  readonly fill = input(false, { transform: booleanAttribute });
 
   private readonly id = injectId('glz-tabs');
   private readonly tabs = contentChildren(GlzTabComponent);

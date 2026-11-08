@@ -1,10 +1,6 @@
 <section class="card" [attr.data-testid]="testId()" [attr.aria-labelledby]="headingId">
   <div class="head">
-    @if (third()) {
-      <h3 class="heading" [id]="headingId">{{ title() }}</h3>
-    } @else {
-      <h2 class="heading" [id]="headingId">{{ title() }}</h2>
-    }
+    <h2 class="heading" [id]="headingId">{{ copy.heading }}</h2>
     <span class="count" [attr.data-testid]="ids().count">{{ count() }}</span>
     <span class="counts" aria-hidden="true"
       ><span class="plus" [glzCount]="total().added" [glzCountFormat]="marks.added"></span
@@ -31,5 +27,4 @@
       {{ more }}
     </button>
   }
-  <div class="foot"><ng-content select="[appTurnChangesFoot]" /></div>
 </section>

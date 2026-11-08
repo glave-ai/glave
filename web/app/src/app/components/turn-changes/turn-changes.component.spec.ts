@@ -13,11 +13,10 @@ const FILES: readonly ChangedFile[] = [
 ];
 
 /** What the turn's card asked to show in full, in order: whose files, and which. */
-let shown: (readonly [readonly ChangedFile[] | null, string | null])[] = [];
+let shown: (readonly [readonly ChangedFile[], string | null])[] = [];
 
 async function mount(
   files: readonly ChangedFile[],
-  inputs: Readonly<Record<string, unknown>> = {},
 ): Promise<ComponentFixture<TurnChangesComponent>> {
   shown = [];
   TestBed.configureTestingModule({
@@ -25,7 +24,7 @@ async function mount(
       {
         provide: ThreadPanelService,
         useValue: {
-          showChanges: (files: readonly ChangedFile[] | null, path: string | null) =>
+          showChanges: (files: readonly ChangedFile[], path: string | null) =>
             shown.push([files, path]),
         },
       },
@@ -33,18 +32,12 @@ async function mount(
   });
   const fixture = TestBed.createComponent(TurnChangesComponent);
   fixture.componentRef.setInput('files', files);
-  for (const [name, value] of Object.entries(inputs)) {
-    fixture.componentRef.setInput(name, value);
-  }
   await fixture.whenStable();
   return fixture;
 }
 
-async function render(
-  files: readonly ChangedFile[],
-  inputs: Readonly<Record<string, unknown>> = {},
-): Promise<HTMLElement> {
-  const fixture = await mount(files, inputs);
+async function render(files: readonly ChangedFile[]): Promise<HTMLElement> {
+  const fixture = await mount(files);
   return fixture.nativeElement as HTMLElement;
 }
 
@@ -116,14 +109,6 @@ describe('TurnChangesComponent', () => {
       [FILES, 'crates/computer/src/local/worktree/lock.rs'],
       [FILES, null],
     ]);
-  });
-
-  it('serves the panel under its own heading, a level down, with its own test hooks', async () => {
-    const root = await render(FILES, { heading: 'Changes', level: 3, testId: 'panel-changes' });
-    expect(root.querySelector('h3')?.textContent).toBe('Changes');
-    expect(root.querySelector('h2')).toBeNull();
-    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(3);
-    expect(root.querySelector('[data-testid="turn-changes"]')).toBeNull();
   });
 
   it('says nothing of more files when they all fit', async () => {

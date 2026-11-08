@@ -59,6 +59,13 @@ describe('ThreadFilesComponent', () => {
       [false, '+Hi'],
     ]);
     expect(root.querySelector('[data-testid="files-note"]')?.textContent).toBe(NOTE);
+    // Each diff is reached by the keyboard, so its long lines scroll in a narrow panel too.
+    const diff = changes?.[1]?.querySelector<HTMLElement>('.diff');
+    expect([diff?.tabIndex, diff?.getAttribute('role'), diff?.ariaLabel]).toEqual([
+      0,
+      'region',
+      'Edited every match notes.md, change 2',
+    ]);
     await expectAccessible(root);
   });
 
