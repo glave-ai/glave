@@ -106,10 +106,10 @@ fn a_summary_whose_reasoning_took_its_room_is_asked_again_with_less_and_both_cou
         assert_eq!(purposes(&sent), [main, summary, summary, main]);
         assert_eq!(sent[1].effort, None, "the thread's own, as its calls send");
         assert_eq!(sent[2].effort.as_deref(), Some("low"));
-        assert_eq!(
-            sent[2].messages, sent[1].messages,
-            "asked the same otherwise"
-        );
+        let (first, again) = (&sent[1].messages, &sent[2].messages);
+        assert_eq!(first[..first.len() - 1], again[..again.len() - 1]);
+        let asked = text_of(again.last().unwrap());
+        assert!(asked.contains("under 1000 words"), "and for fewer: {asked}");
         assert!(text_of(&sent[3].messages[0]).contains("big.txt repeats marigold."));
         assert_eq!(ended.model_calls, 4, "the failed summary counts");
         assert_eq!(ended.tokens.input, 400, "and so does what it used");
@@ -152,6 +152,28 @@ fn a_summary_that_calls_a_tool_is_asked_again_without_tools_and_a_cut_one_for_fe
         let asked = |at: usize| text_of(sent[at].messages.last().unwrap());
         assert!(asked(1).contains("under 2000 words"), "{}", asked(1));
         assert!(asked(2).contains("under 1000 words"), "{}", asked(2));
+        assert_eq!(sent[2].effort, None, "it did not reason");
+    });
+}
+
+#[test]
+fn a_summary_cut_off_twice_stands_in_with_what_it_wrote() {
+    block_on!(async {
+        let cut = |text: &str| answer(Some(text), vec![], StopReason::MaxTokens);
+        let answers = vec![
+            Ok(reads("big.txt")),
+            Ok(cut("1. Request: what is in it")),
+            Ok(cut("1. Request: what is in big.txt. 2. Done: read it")),
+            Ok(said("It repeats marigold.")),
+        ];
+        let Ran { sent, shown, .. } = run("summary-cut-twice", answers).await;
+        assert_eq!(sent.len(), 4);
+        let restart = text_of(&sent[3].messages[0]);
+        assert!(restart.contains("2. Done: read it"), "{restart}");
+        assert!(
+            !(shown.iter()).any(|live| matches!(live, Live::CompactionFailed(_))),
+            "{shown:?}"
+        );
     });
 }
 

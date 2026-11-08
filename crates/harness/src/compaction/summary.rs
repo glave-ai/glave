@@ -89,21 +89,20 @@ impl Unusable {
     }
 
     /// `request` changed for the one more try: less reasoning when reasoning took the room,
-    /// no tools when it called one, half the words when it wrote past the cap.
+    /// half the words when it was cut off, no tools when it called one.
     fn adjust(self, request: &mut ModelRequest, words: u32, memory: bool) {
-        match self {
-            Self::Cut { reasoned: true } | Self::ReasoningOnly => {
-                request.effort = Some(LEAST_EFFORT.to_owned());
-            }
-            Self::CalledTool => request.tools.clear(),
-            Self::Cut { reasoned: false } => {
-                if let Some(Message::User { parts }) = request.messages.last_mut() {
-                    *parts = vec![Part::Text {
-                        text: instruction(words / 2, memory),
-                    }];
-                }
-            }
-            Self::Empty => {}
+        if matches!(self, Self::Cut { reasoned: true } | Self::ReasoningOnly) {
+            request.effort = Some(LEAST_EFFORT.to_owned());
+        }
+        if matches!(self, Self::Cut { .. })
+            && let Some(Message::User { parts }) = request.messages.last_mut()
+        {
+            *parts = vec![Part::Text {
+                text: instruction(words / 2, memory),
+            }];
+        }
+        if self == Self::CalledTool {
+            request.tools.clear();
         }
     }
 
@@ -170,7 +169,9 @@ where
 
     /// `thread`'s summary and its text. An answer that cannot stand in for the conversation is
     /// recorded at once, its reason logged, and asked for once more as [`Unusable`] says; one
-    /// that still cannot fails. Every call is counted in `spent`, what it used too.
+    /// that still cannot fails, but for one cut off again with words in it, which stands in as
+    /// the best there is, as any cut summary did before. Every call is counted in `spent`, what
+    /// it used too.
     pub(super) async fn summary(
         &self,
         thread: &mut Thread,
@@ -188,6 +189,10 @@ where
             let Some(unusable) = Unusable::of(&completion, &text) else {
                 return Ok((completion, text));
             };
+            if tried && matches!(unusable, Unusable::Cut { .. }) && !text.trim().is_empty() {
+                tracing::warn!("a summary was cut off twice: what it wrote stands in");
+                return Ok((completion, text));
+            }
             tracing::warn!(
                 reason = ?unusable,
                 stop = ?completion.stop,
