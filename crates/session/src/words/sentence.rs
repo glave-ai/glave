@@ -543,9 +543,12 @@ sentences! {
 
     // Notifications on the person's devices.
     NoPush = "no-push" "This server sends no notifications.",
-    PushRefused { reason: String } = "push-refused"
-        "this browser's notifications can't be turned on: { $reason }",
-    DeviceUnnamed = "device-unnamed" "give the browser a name, in at most 80 characters",
+    PushServiceRefused = "push-service-refused"
+        "this browser's notifications can't be turned on: glave pushes only to the browsers' own push services",
+    PushKeysRefused = "push-keys-refused"
+        "this browser's notifications can't be turned on: its keys aren't what Web Push makes. Turn them off and on again",
+    DeviceUnnamed { most: usize } = "device-unnamed"
+        "give the browser a name, in at most { $most } characters",
     PushWaiting { title: String } = "push-waiting" "Needs you: { $title }",
     PushWaitingUntitled = "push-waiting-untitled" "glave needs you",
     PushDone { title: String } = "push-done" "Done: { $title }",

@@ -34,8 +34,8 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, Money, OrgRole, PrincipalId,
-    ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
+    At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
+    PrincipalId, ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::computer::{CommandId, ComputerId};
 use glave_ports::{OrgId, ProjectId};
@@ -103,7 +103,7 @@ methods! {
     /// person's: subscribing it moves it from anyone else's.
     "push/subscribe" => PushSubscribe { #[serde(flatten)] browser: PushSubscription } -> [Push],
     /// Forgets one of the caller's browsers; one forgotten already answers as it is.
-    "push/remove" => PushRemove { device: CredentialId } -> [Push],
+    "push/remove" => PushRemove { device: DeviceId } -> [Push],
     /// The language the caller chose to read glave's own sentences in, if they chose one.
     "language/get" => LanguageGet {} -> [Language],
     /// Chooses the language glave's own sentences are written in for the caller, as a BCP 47

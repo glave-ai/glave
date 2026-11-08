@@ -12,11 +12,11 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use glave_event::{Body, CallId, Principal, PushSubscribed, Secret, ThreadId, decode};
+use glave_event::{Body, CallId, PushSubscribed, Secret, ThreadId, decode};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::FakeHttp;
-use glave_ports::{Caller, Completion, EventLog, Projects, Scope};
+use glave_ports::{Caller, Completion, EventLog, Scope};
 use glave_push::Pusher;
 use glave_session::protocol::{
     Answer, Notification, PushDevice, PushInfo, PushSubscription, Reply, Request, ServerInfo,
@@ -31,6 +31,8 @@ use web_push_native::p256::elliptic_curve::sec1::ToEncodedPoint as _;
 use web_push_native::{Auth, decrypt};
 
 use crate::support::*;
+
+mod sessions;
 
 /// How long a test waits for a push to reach the push service on this computer.
 const PUSHED_WITHIN: Duration = Duration::from_secs(30);
@@ -333,7 +335,11 @@ fn what_waits_is_pushed_to_each_browser_and_one_gone_is_forgotten() {
             let said = said.unwrap();
             assert_eq!(said["text"], "Needs you: fix the login");
             assert_eq!(said["thread"], thread.to_string());
-            assert_eq!(said.as_object().unwrap().len(), 2, "nothing more: {said}");
+            // The organization it is in, so tapping it opens it there; and what waits, which
+            // replaces the thread's last notification.
+            assert_eq!(said["org"], scope().org().to_string());
+            assert_eq!(said["kind"], "waiting");
+            assert_eq!(said.as_object().unwrap().len(), 4, "nothing more: {said}");
             // The browser whose push service said it is gone is forgotten, once its answer is in.
             forgotten(&server, &me, &["Safari on iPhone"]).await;
             allow(&server, &me, thread, approval).await;
@@ -368,6 +374,7 @@ fn a_task_s_end_is_pushed() {
             let said = phone.read(pushed(&mut heard).await.1);
             assert_eq!(said["text"], "Done: tidy the notes");
             assert_eq!(said["thread"], task.to_string());
+            assert_eq!(said["kind"], "ended", "a task's end always alerts");
             settle(&server).await;
         }))
         .await;
@@ -415,23 +422,13 @@ fn what_needs_one_person_is_pushed_to_their_browsers_alone() {
 }
 
 #[test]
-fn a_browser_is_whoever_subscribed_it_last_and_reading_makes_nothing() {
+fn a_browser_is_whoever_subscribed_it_last() {
     let dir = folder("push-moved");
     block_on!(async {
         let mut setup = Setup::new(Vec::new());
         setup.identity_provider = true;
-        let (server, store) = pushing_server(setup, &dir).await;
-        let (ada, alan, grace) = (signed_in("ada"), signed_in("alan"), signed_in("grace"));
-        // Looking makes no project for someone who has none.
-        assert_eq!(devices(&server, &grace, None).await, Vec::new());
-        let owner = Principal::person(id("grace"));
-        let theirs = store
-            .projects()
-            .list(scope().org(), &owner, 8)
-            .await
-            .unwrap();
-        assert!(theirs.is_empty(), "{theirs:?}");
-
+        let (server, _store) = pushing_server(setup, &dir).await;
+        let (ada, alan) = (signed_in("ada"), signed_in("alan"));
         let browser = Browser::new(10);
         let shared = "https://web.push.apple.com/QGx-shared";
         subscribe(&server, &ada, &browser, shared).await;

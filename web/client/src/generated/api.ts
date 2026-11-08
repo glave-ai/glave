@@ -382,6 +382,12 @@ export type DeviceCode = {
   readonly url: string;
 };
 
+/**
+ * Identifies one browser or device that takes a person's notifications
+ * (`push.subscribed`), sealed under a key of its own.
+ */
+export type DeviceId = string;
+
 /** One line of a change. */
 export type DiffLine = {
   readonly kind: LineKind;
@@ -942,7 +948,7 @@ export type PushDevice = {
   /** It is the browser that asked: `push/get`'s `endpoint` is its subscription's. */
   readonly current?: boolean;
   /** What `push/remove` names it by. */
-  readonly id: CredentialId;
+  readonly id: DeviceId;
   /** What the person knows it as: "Safari on iPhone". */
   readonly name: string;
 };
@@ -2477,7 +2483,7 @@ export type PushGetResult = {
 };
 
 export type PushRemoveParams = {
-  readonly device: CredentialId;
+  readonly device: DeviceId;
 };
 
 /** Whether the person's browsers are told when glave needs them, and which. */
@@ -2487,7 +2493,8 @@ export type PushRemoveResult = {
 
 /**
  * A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),
- * and what the person knows the browser as.
+ * and what the person knows the browser as. Its `Debug` says neither its endpoint nor its
+ * secret.
  */
 export type PushSubscribeParams = {
   /** The secret it shares with the server, in base64url. */

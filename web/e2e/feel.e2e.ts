@@ -13,7 +13,7 @@ import {
   forgetFelt,
   watchFeel,
 } from './feel';
-import { SIGNED_IN, atRest, byTestId, expect, hold, test } from './support';
+import { SIGNED_IN, atRest, builtChunk, byTestId, expect, hold, test } from './support';
 
 // Run in Chromium alone, one at a time once the rest of the run is done (playwright.config.ts,
 // the `feel` project): WebKit, as Safari, reports neither layout shifts nor event timings, nor
@@ -102,6 +102,34 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   held.letGo();
   await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
   await expect(byTestId(page, 'panel-running')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
+
+test('nothing moves on opening a thread when the switch over the threads comes in just before a frame is drawn', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  // The switch's code, known by the component it defines, stays on its way until the threads
+  // are drawn, then runs to its end in an animation frame: Angular puts its block in the page
+  // as that frame is about to be drawn, and binds it only at its next change detection.
+  const code = builtChunk((each) => /\bas GroupByComponent\}/u.test(each));
+  let letGo = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  await page.route(`**/${code}`, async (route) => {
+    await held;
+    const response = await route.fetch();
+    const late = 'await new Promise((ran) => requestAnimationFrame(ran));';
+    await route.fulfill({ response, body: `${late}\n${await response.text()}` });
+  });
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'nav-thread').first()).toBeVisible();
+  await atRest(page);
+  letGo();
+  await expect(byTestId(page, 'nav-group')).toBeVisible();
   await atRest(page);
   expectStill(await feltOn(page));
 });

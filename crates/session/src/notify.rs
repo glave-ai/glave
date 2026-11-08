@@ -13,7 +13,7 @@ use glave_event::{Outcome, Payload as _, ServiceAsked, ThreadId};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 use glave_push::{Message, Sent, Urgency};
 use tokio::sync::broadcast::error::RecvError;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 
 use crate::protocol::{ApiError, Notification, Update};
 use crate::push::Pushing;
@@ -70,6 +70,15 @@ impl Need {
         }
     }
 
+    /// What the worker is told it is: what waits, which replaces the thread's last
+    /// notification, or a task's end, which always alerts.
+    fn kind(self) -> &'static str {
+        match self {
+            Self::Waiting { .. } => "waiting",
+            Self::Ended { .. } => "ended",
+        }
+    }
+
     fn thread(self) -> ThreadId {
         match self {
             Self::Waiting { thread } | Self::Ended { thread, .. } => thread,
@@ -112,6 +121,15 @@ impl Need {
     }
 }
 
+/// Says why a push of a need, `done` now, did not get through.
+fn told(done: Option<Result<Result<(), ApiError>, JoinError>>) {
+    match done {
+        Some(Ok(Err(error))) => tracing::warn!(%error, "a notification could not be pushed"),
+        Some(Err(error)) => tracing::warn!(%error, "a notification's push stopped"),
+        Some(Ok(Ok(()))) | None => {}
+    }
+}
+
 /// `title`, cut to [`TITLE_CHARS`] with an ellipsis where it is longer.
 fn shortened(title: &str) -> String {
     let mut chars = title.chars();
@@ -142,7 +160,7 @@ where
                 heard = needs.recv() => match heard {
                     Ok(need) => {
                         if pushes.len() >= AT_ONCE {
-                            pushes.join_next().await;
+                            told(pushes.join_next().await);
                         }
                         let (server, pushing) = (self.clone(), Arc::clone(&pushing));
                         pushes.spawn(async move { server.push(&pushing, need).await });
@@ -152,11 +170,7 @@ where
                     }
                     Err(RecvError::Closed) => return std::future::pending().await,
                 },
-                Some(done) = pushes.join_next(), if !pushes.is_empty() => {
-                    if let Ok(Err(error)) = done {
-                        tracing::warn!(%error, "a notification could not be pushed");
-                    }
-                }
+                done = pushes.join_next(), if !pushes.is_empty() => told(done),
             }
         }
     }
@@ -180,9 +194,7 @@ where
             org: Some(scope.org()),
             ..Caller::default()
         };
-        let Some(personal) = self.personal_if_any(&caller).await? else {
-            return Ok(());
-        };
+        let (_, personal) = self.personal_project(&caller).await?;
         let devices = self.devices(&personal, self.person_of(&caller)?).await?;
         if devices.is_empty() {
             return Ok(());
@@ -192,7 +204,12 @@ where
             .chosen_language(&caller)
             .await?
             .map_or(Language::English, |(_, language)| language);
-        let text = serde_json::json!({ "text": say(language, &sentence), "thread": thread });
+        let text = serde_json::json!({
+            "text": say(language, &sentence),
+            "thread": thread,
+            "org": scope.org(),
+            "kind": need.kind(),
+        });
         let text: Arc<str> = Arc::from(text.to_string());
         let now = self.inner.harness.clock().now();
         let mut sends = JoinSet::new();
@@ -212,7 +229,8 @@ where
             match sent {
                 Ok((_, Ok(Sent::Taken))) => {}
                 Ok((device, Ok(Sent::Gone))) => {
-                    // One that can't be forgotten now is tried again at its next push.
+                    // One that can't be forgotten now is forgotten at its next push: its push
+                    // service says it is gone again, or its count of refusals still stands.
                     if let Err(error) = self.forget_device(&personal, device, true).await {
                         tracing::warn!(%error, "a gone browser could not be forgotten");
                     }

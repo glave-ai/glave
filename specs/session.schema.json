@@ -1121,6 +1121,11 @@
       ],
       "type": "object"
     },
+    "DeviceId": {
+      "description": "Identifies one browser or device that takes a person's notifications\n(`push.subscribed`), sealed under a key of its own.",
+      "format": "uuid",
+      "type": "string"
+    },
     "DiffLine": {
       "description": "One line of a change.",
       "properties": {
@@ -2665,7 +2670,7 @@
           "type": "boolean"
         },
         "id": {
-          "$ref": "#/$defs/CredentialId",
+          "$ref": "#/$defs/DeviceId",
           "description": "What `push/remove` names it by."
         },
         "name": {
@@ -7247,7 +7252,7 @@
       "params": {
         "properties": {
           "device": {
-            "$ref": "#/$defs/CredentialId"
+            "$ref": "#/$defs/DeviceId"
           }
         },
         "required": [
@@ -7271,7 +7276,7 @@
     },
     "push/subscribe": {
       "params": {
-        "description": "A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),\nand what the person knows the browser as.",
+        "description": "A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),\nand what the person knows the browser as. Its `Debug` says neither its endpoint nor its\nsecret.",
         "properties": {
           "auth": {
             "$ref": "#/$defs/Secret",
