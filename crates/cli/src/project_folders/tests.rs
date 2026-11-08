@@ -110,6 +110,7 @@ async fn timed(
         clock: Box::new(clock),
         processes: Processes::unrecorded(),
         reachable: glave_mcp::Reachable::default(),
+        reads: crate::mcp::ProjectEnvironment::default(),
         trust: Trust::in_memory().await.unwrap().1,
     };
     ProjectFolders::new(home.to_owned(), own, true)
@@ -321,6 +322,9 @@ fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
     });
 }
 
+/// What the model is told of a server `docs` that needs what a project's file can't give it.
+const NEEDS: &str = "MCP server docs is off: a project's settings can't fill in what it needs.";
+
 #[test]
 fn a_project_s_remote_server_that_needs_a_variable_stays_off_and_says_so() {
     let needs = r#""docs": {"url": "http://127.0.0.1:9/mcp", "headers": {"X-Key": "${HOME}"}}"#;
@@ -337,15 +341,13 @@ fn a_project_s_remote_server_that_needs_a_variable_stays_off_and_says_so() {
             .unwrap();
         let aside = projects.set_aside(&project).await;
         assert_eq!(aside.len(), 1, "{aside:?}");
-        assert!(
-            aside[0].starts_with("MCP server docs is off: it needs HOME from this computer"),
-            "{aside:?}"
-        );
+        assert!(aside[0].starts_with(NEEDS), "{aside:?}");
+        assert!(!aside[0].contains("HOME"), "not its name: {aside:?}");
         assert!(told.contains(&aside[0]), "the model is told too: {told}");
         let value = crate::mcp::environment().remove("HOME").unwrap_or_default();
         assert!(
             value.is_empty() || !told.contains(&value),
-            "its name, never its value"
+            "never its value"
         );
     });
 }
@@ -362,15 +364,13 @@ fn a_project_s_program_that_needs_a_variable_stays_off_only_where_people_sign_in
         assert!(!brought.tools.is_empty(), "started on the person's own");
         assert_eq!(projects.set_aside(&project).await, Vec::<String>::new());
 
-        projects.reachable = glave_mcp::Reachable::OnlyPublic;
+        projects.reads = crate::mcp::ProjectEnvironment::Withheld;
         let brought = projects.brought(&project, project_id()).await;
         assert!(brought.tools.is_empty(), "never started");
         let aside = projects.set_aside(&project).await;
         assert_eq!(aside.len(), 1, "{aside:?}");
-        assert!(
-            aside[0].starts_with("MCP server docs is off: it needs HOME from this computer"),
-            "{aside:?}"
-        );
+        assert!(aside[0].starts_with(NEEDS), "{aside:?}");
+        assert!(!aside[0].contains("HOME"), "not its name: {aside:?}");
         let told = projects
             .for_folder(&project, Some(&project), true)
             .await

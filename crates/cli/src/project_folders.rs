@@ -12,7 +12,7 @@ mod settle;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
@@ -65,6 +65,8 @@ pub(crate) struct Own {
     pub processes: Processes,
     /// The addresses a project's remote server may be at.
     pub reachable: glave_mcp::Reachable,
+    /// What a program in a project's file has its variables filled from.
+    pub reads: crate::mcp::ProjectEnvironment,
     /// What the person decided about each project.
     pub trust: Trust,
 }
@@ -94,6 +96,8 @@ pub(crate) struct ProjectFolders {
     processes: Processes,
     /// The addresses a project's remote server may be at.
     reachable: glave_mcp::Reachable,
+    /// What a program in a project's file has its variables filled from.
+    reads: crate::mcp::ProjectEnvironment,
     /// Who answers what a project asks: the person from an app, or no one.
     answer: Answer,
     /// Projects' servers, most recently used last; and those that were replaced or put away
@@ -126,6 +130,7 @@ impl ProjectFolders {
             clock: own.clock,
             processes: own.processes,
             reachable: own.reachable,
+            reads: own.reads,
             answer: if later { Answer::Later } else { Answer::NoOne },
             running: Mutex::new(Running::default()),
             tidying: Mutex::new(None),
@@ -259,29 +264,27 @@ impl ProjectFolders {
                 )
             });
         let needing = self.needing(outcome);
-        let needs =
-            needing
-                .iter()
-                .filter(|(name, _)| !self.is_taken(name))
-                .map(|(name, variables)| {
-                    format!(
-                        "MCP server {name} is off: it needs {} from this computer, and a project's \
-                     settings can't pass those on; in the person's own settings it can have \
-                     them",
-                        variables.join(", ")
-                    )
-                });
+        let needs = needing
+            .iter()
+            .filter(|name| !self.is_taken(name))
+            .map(|name| {
+                format!(
+                    "MCP server {name} is off: a project's settings can't fill in what it needs. \
+                     It can run from the person's own tool servers, with what it needs written \
+                     in"
+                )
+            });
         taken.chain(needs).collect()
     }
 
     /// The servers of `outcome` left off since they name variables a project's file can't read
-    /// here, each with those names: a remote server's always, a program's only where the file
-    /// reads none of the environment.
-    fn needing(&self, outcome: &Outcome) -> BTreeMap<String, Vec<String>> {
+    /// here: a remote server always, a program only where the file reads none of the
+    /// environment.
+    fn needing(&self, outcome: &Outcome) -> BTreeSet<String> {
         use glave_ports::settings::mcp::{withheld, withheld_from_programs};
         let text = trust::mcp_json(&outcome.servers);
         let mut needing = withheld(&text).unwrap_or_default();
-        if !crate::mcp::project_reads_environment(self.reachable) {
+        if self.reads == crate::mcp::ProjectEnvironment::Withheld {
             needing.extend(withheld_from_programs(&text).unwrap_or_default());
         }
         needing
@@ -348,7 +351,8 @@ impl ProjectFolders {
         let constraints = &base.loaded.constraints;
         let start = |servers: &BTreeMap<String, String>| {
             let processes = &self.processes;
-            crate::mcp::start_project(servers, root, constraints, processes, self.reachable)
+            let (reachable, reads) = (self.reachable, self.reads);
+            crate::mcp::start_project(servers, root, constraints, processes, reachable, reads)
         };
         let (sources, closing) = self.lock().sources(root, trusted, now, start);
         servers::close(closing).await;
@@ -367,7 +371,7 @@ impl ProjectFolders {
         let servers: BTreeMap<String, String> = outcome
             .servers
             .iter()
-            .filter(|(name, _)| !self.is_taken(name) && !needing.contains_key(*name))
+            .filter(|(name, _)| !self.is_taken(name) && !needing.contains(*name))
             .filter(|(name, _)| chosen.is_none_or(|chosen| chosen.contains(name)))
             .map(|(name, definition)| (name.clone(), definition.clone()))
             .collect();

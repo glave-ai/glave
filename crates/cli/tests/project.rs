@@ -145,8 +145,8 @@ fn a_project_s_remote_server_is_sent_nothing_from_glave_s_environment() {
     assert!(results[0].contains("x-key: []"), "{results:?}");
     let told = said(&received[0].body, "user").join("\n");
     assert!(
-        told.contains("MCP server needs is off") && told.contains(NAME),
-        "the model is told which server is off and why: {told}"
+        told.contains("MCP server needs is off") && !told.contains(NAME),
+        "the model is told which server is off, not what it names: {told}"
     );
     let everything = format!("{shown}{}", received[1].body);
     assert!(!everything.contains(&value), "the value goes nowhere");
@@ -206,8 +206,8 @@ fn where_people_sign_in_from_elsewhere_a_project_s_program_reads_nothing_of_the_
         "{tools:?}"
     );
     assert!(
-        told.contains("MCP server needs is off") && told.contains("GLAVE_TEST_PROGRAM_VALUE"),
-        "the model is told which server is off and why: {told}"
+        told.contains("MCP server needs is off") && !told.contains("GLAVE_TEST_PROGRAM_VALUE"),
+        "the model is told which server is off, not what it names: {told}"
     );
 }
 
