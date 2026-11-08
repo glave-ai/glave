@@ -289,6 +289,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) refreshing: Mutex<Option<JoinHandle<()>>>,
     /// The commands in the background of the threads held here, watched (`background.rs`).
     pub(crate) watched: Mutex<crate::background::Watched>,
+    /// Each thread's terminals open for its person (`terminals.rs`).
+    pub(crate) terminals: Mutex<crate::terminals::Kept>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
     /// Where what a project asks to be trusted is read, and the person's yes kept.
@@ -407,6 +409,7 @@ where
                 tasks: Mutex::new(Vec::new()),
                 refreshing: Mutex::new(None),
                 watched: Mutex::new(HashMap::new()),
+                terminals: Mutex::new(BTreeMap::new()),
                 keyed: Keyed::default(),
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),

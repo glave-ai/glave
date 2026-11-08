@@ -164,6 +164,7 @@ where
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                     invites,
+                    terminals: self.opens_terminals(caller),
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
@@ -440,6 +441,32 @@ where
             } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
+            Request::TerminalOpen { thread, size } => {
+                self.open_terminal(caller, thread, size).await
+            }
+            Request::TerminalList { thread } => Ok(self.list_terminals(thread)),
+            Request::TerminalWrite {
+                thread,
+                terminal,
+                input,
+            } => self.write_terminal(thread, terminal, &input).await,
+            Request::TerminalRead {
+                thread,
+                terminal,
+                from,
+                wait_ms,
+            } => {
+                let wait = std::time::Duration::from_millis(wait_ms);
+                self.read_terminal(thread, terminal, from, wait).await
+            }
+            Request::TerminalResize {
+                thread,
+                terminal,
+                size,
+            } => self.resize_terminal(thread, terminal, size).await,
+            Request::TerminalClose { thread, terminal } => {
+                self.close_terminal(thread, terminal).await
+            }
             Request::CommandList { thread } => self.list_commands(thread).await,
             Request::CommandStop { thread, command } => {
                 self.stop_command(caller, thread, command).await

@@ -35,7 +35,13 @@ impl Request {
             | Self::TrustAnswer { thread, .. }
             | Self::TasksStop { thread }
             | Self::CommandList { thread }
-            | Self::CommandStop { thread, .. } => Some(*thread),
+            | Self::CommandStop { thread, .. }
+            | Self::TerminalOpen { thread, .. }
+            | Self::TerminalList { thread }
+            | Self::TerminalWrite { thread, .. }
+            | Self::TerminalRead { thread, .. }
+            | Self::TerminalResize { thread, .. }
+            | Self::TerminalClose { thread, .. } => Some(*thread),
             _ => None,
         }
     }

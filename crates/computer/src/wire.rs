@@ -5,8 +5,9 @@
 //! its own, `credentials/request`, which the caller answers on the same connection.
 
 use glave_ports::computer::{
-    Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment,
-    FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
+    Bytes, Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost,
+    Environment, FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, TerminalId,
+    TerminalSize, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -30,7 +31,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `2026-10-31` added `disk` and `largest` to `computer/status`, and `computer/worktrees` and
 /// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
 /// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
-pub(crate) const PROTOCOL: &str = "2026-11-04";
+/// `2026-11-07` added a person's terminals: `terminal/open`, `terminal/write`, `terminal/read`,
+/// `terminal/resize` and `terminal/close`.
+pub(crate) const PROTOCOL: &str = "2026-11-07";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -111,6 +114,39 @@ pub(crate) enum Request {
     /// Answered with the workspace's `commands` in the background.
     #[serde(rename = "command/list")]
     Commands { workspace: WorkspaceId },
+    /// Answered with the `terminal` it opened.
+    #[serde(rename = "terminal/open")]
+    TerminalOpen {
+        computer: ComputerId,
+        folder: String,
+        size: TerminalSize,
+    },
+    #[serde(rename = "terminal/write")]
+    TerminalWrite {
+        computer: ComputerId,
+        terminal: TerminalId,
+        input: Bytes,
+    },
+    /// Waits up to `wait_ms` for something printed from `from` before answering.
+    #[serde(rename = "terminal/read")]
+    TerminalRead {
+        computer: ComputerId,
+        terminal: TerminalId,
+        from: u64,
+        #[serde(default)]
+        wait_ms: u64,
+    },
+    #[serde(rename = "terminal/resize")]
+    TerminalResize {
+        computer: ComputerId,
+        terminal: TerminalId,
+        size: TerminalSize,
+    },
+    #[serde(rename = "terminal/close")]
+    TerminalClose {
+        computer: ComputerId,
+        terminal: TerminalId,
+    },
     #[serde(rename = "files/read")]
     Read {
         workspace: WorkspaceId,
@@ -162,6 +198,11 @@ impl Request {
             Self::Ended { .. } => "command/ended",
             Self::Stop { .. } => "command/stop",
             Self::Commands { .. } => "command/list",
+            Self::TerminalOpen { .. } => "terminal/open",
+            Self::TerminalWrite { .. } => "terminal/write",
+            Self::TerminalRead { .. } => "terminal/read",
+            Self::TerminalResize { .. } => "terminal/resize",
+            Self::TerminalClose { .. } => "terminal/close",
             Self::Read { .. } => "files/read",
             Self::Write { .. } => "files/write",
             Self::List { .. } => "files/list",
@@ -191,6 +232,11 @@ const METHODS: &[&str] = &[
     "command/ended",
     "command/stop",
     "command/list",
+    "terminal/open",
+    "terminal/write",
+    "terminal/read",
+    "terminal/resize",
+    "terminal/close",
     "files/read",
     "files/write",
     "files/list",

@@ -6,7 +6,7 @@ use glave_event::{
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::RunningCommand;
-use glave_ports::computer::DiskUse;
+use glave_ports::computer::{DiskUse, Screenful, TerminalId};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -71,6 +71,19 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
+    /// Whether the caller may open terminals of their own in their threads' folders: their
+    /// shell, on their own computer, never on the server's for anyone but the person it works
+    /// for (`specs/session.md`, "Terminals").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub terminals: bool,
+}
+
+/// A terminal open in a thread: the caller's own shell, in the thread's folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TerminalInfo {
+    pub id: TerminalId,
+    /// The folder its shell started in, as its computer names it.
+    pub folder: String,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never
@@ -365,6 +378,13 @@ pub enum Reply {
     SignIn { sign_in: SignInLink },
     #[schemars(title = "Commands")]
     Commands { commands: Vec<RunningCommand> },
+    #[schemars(title = "Terminal")]
+    Terminal { terminal: TerminalInfo },
+    #[schemars(title = "Terminals")]
+    Terminals { terminals: Vec<TerminalInfo> },
+    /// What a terminal printed, from where it was read.
+    #[schemars(title = "Screen")]
+    Screen { screen: Screenful },
     #[schemars(title = "Device")]
     Device { device: DeviceCode },
     /// A sign-in in the browser still waiting for the person.

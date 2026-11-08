@@ -188,6 +188,15 @@ sentences! {
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
     NoCommand = "no-command" "that command is not running in this thread",
+    NoTerminal = "no-terminal" "that terminal is not open in this thread",
+    TerminalNotTheirs = "terminal-not-theirs"
+        "A terminal opens only on your own computer: this thread works on this server's, where only its owner may have one.",
+    TerminalOnWorker = "terminal-on-worker"
+        "A terminal opens only on your own computer, not on one started for a single task.",
+    TerminalsInThread { most: u64 } = "terminals-in-thread"
+        "this thread already has { $most } terminals open; close one first",
+    TerminalFailed { reason: String } = "terminal-failed"
+        "the terminal could not be reached: { $reason }",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
     Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",

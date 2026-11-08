@@ -53,6 +53,24 @@ pub struct WorkspaceId(Uuid);
 #[serde(transparent)]
 pub struct CommandId(Uuid);
 
+/// Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by
+/// the computer it runs on).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct TerminalId(Uuid);
+
 macro_rules! uuid_id {
     ($id:ident) => {
         impl $id {
@@ -76,6 +94,7 @@ macro_rules! uuid_id {
 uuid_id!(ComputerId);
 uuid_id!(WorkspaceId);
 uuid_id!(CommandId);
+uuid_id!(TerminalId);
 
 /// Whether a computer can do work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

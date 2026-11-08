@@ -337,6 +337,11 @@ impl<C: Computers + 'static> Connection<C> {
             | Request::Ended { .. }
             | Request::Stop { .. }
             | Request::Commands { .. }) => self.background(request).await,
+            request @ (Request::TerminalOpen { .. }
+            | Request::TerminalWrite { .. }
+            | Request::TerminalRead { .. }
+            | Request::TerminalResize { .. }
+            | Request::TerminalClose { .. }) => self.terminal(request).await,
             Request::Read { workspace, path } => reply(
                 computers
                     .read(workspace, &path)
@@ -393,6 +398,49 @@ impl<C: Computers + 'static> Connection<C> {
             other => Err(wire::failure(
                 code::INVALID_REQUEST,
                 &format!("{} is not about commands in the background", other.method()),
+            )),
+        }
+    }
+
+    /// Answers a request about a person's terminals.
+    async fn terminal(&self, request: Request) -> Result<Value, Value> {
+        let computers = &*self.computers;
+        match request {
+            Request::TerminalOpen {
+                computer,
+                folder,
+                size,
+            } => reply(
+                computers
+                    .open_terminal(computer, &folder, size)
+                    .await
+                    .map(|terminal| json!({"terminal": terminal})),
+            ),
+            Request::TerminalWrite {
+                computer,
+                terminal,
+                input,
+            } => reply(computers.write_terminal(computer, terminal, &input).await),
+            Request::TerminalRead {
+                computer,
+                terminal,
+                from,
+                wait_ms,
+            } => {
+                let wait = Duration::from_millis(wait_ms);
+                reply(computers.read_terminal(computer, terminal, from, wait).await)
+            }
+            Request::TerminalResize {
+                computer,
+                terminal,
+                size,
+            } => reply(computers.resize_terminal(computer, terminal, size).await),
+            Request::TerminalClose { computer, terminal } => {
+                reply(computers.close_terminal(computer, terminal).await)
+            }
+            other => Err(wire::failure(
+                code::INVALID_REQUEST,
+                &format!("{} is not about terminals", other.method()),
             )),
         }
     }

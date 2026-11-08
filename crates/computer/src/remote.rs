@@ -10,7 +10,8 @@ use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
     CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed, GitCredential,
     GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved,
-    Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalSize, WorkspaceId,
+    WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -391,7 +392,9 @@ fn deadline(request: &Request) -> Duration {
         Request::Run { command, .. } => command
             .timeout_secs
             .map_or(SLOW, |secs| Duration::from_secs(secs).saturating_add(GRACE)),
-        Request::Output { wait_ms, .. } | Request::Ended { wait_ms, .. } => {
+        Request::Output { wait_ms, .. }
+        | Request::Ended { wait_ms, .. }
+        | Request::TerminalRead { wait_ms, .. } => {
             QUICK.max(Duration::from_millis(*wait_ms).saturating_add(GRACE))
         }
         Request::Create { .. }
@@ -579,6 +582,80 @@ impl Computers for RemoteComputers {
             let listed: Listed = self.typed(&request).await?;
             Ok(listed.commands)
         })
+    }
+
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Opened {
+            terminal: TerminalId,
+        }
+        let folder = folder.to_owned();
+        let request = Request::TerminalOpen {
+            computer,
+            folder,
+            size,
+        };
+        Box::pin(async move { Ok(self.typed::<Opened>(&request).await?.terminal) })
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let input = input.clone();
+        let request = Request::TerminalWrite {
+            computer,
+            terminal,
+            input,
+        };
+        Box::pin(async move { self.call(&request).await.map(drop) })
+    }
+
+    fn read_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
+        let wait_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX);
+        let request = Request::TerminalRead {
+            computer,
+            terminal,
+            from,
+            wait_ms,
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn resize_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        size: TerminalSize,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        let request = Request::TerminalResize {
+            computer,
+            terminal,
+            size,
+        };
+        Box::pin(async move { self.call(&request).await.map(drop) })
+    }
+
+    fn close_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        let request = Request::TerminalClose { computer, terminal };
+        Box::pin(async move { self.call(&request).await.map(drop) })
     }
 
     fn read<'a>(
