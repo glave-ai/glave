@@ -128,6 +128,26 @@ describe('AdminBrandComponent', () => {
     expect(fake.paramsOf('brand/set')).toEqual([{ logo: 'abc', accent: 'plain', locked: false }]);
   });
 
+  it('gives focus to Upload a logo once the logo is removed, with nothing going wrong', async () => {
+    const errors = vi.spyOn(console, 'error');
+    onTestFinished(() => {
+      errors.mockRestore();
+    });
+    const { root, settle } = await render(
+      new FakeSession().answer('brand/logo/upload', { sha256: 'abc' }),
+    );
+    const file = byId(root, 'brand-logo-file') as HTMLInputElement;
+    Object.defineProperty(file, 'files', { value: [new File(['x'], 'logo.png')] });
+    file.dispatchEvent(new Event('change'));
+    await settle();
+    byId(root, 'brand-logo-remove')?.focus();
+    byId(root, 'brand-logo-remove')?.click();
+    await settle();
+    expect(byId(root, 'brand-logo-remove')).toBeNull();
+    expect(document.activeElement).toBe(byId(root, 'brand-logo-pick'));
+    expect(errors).not.toHaveBeenCalled();
+  });
+
   describe('when another admin changes the brand', () => {
     const THEIRS = { name: 'Theirs', logo: 'def', accent: TEAL, locked: true };
     const heard = (): void => {
