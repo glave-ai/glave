@@ -78,16 +78,21 @@ fn the_log_passes_the_search_conformance_suite() {
     assert_eq!(block_on!(conformance::search(&store.log())), Ok(()));
 }
 
-#[test]
-fn the_search_index_holds_no_word_in_the_clear() {
-    let (_dir, path) = temp_db("search");
+/// A store in a new file the search conformance suite ran on, and the file opened raw.
+fn searched(name: &str) -> (TempDir, rusqlite::Connection) {
+    let (dir, path) = temp_db(name);
     block_on!(async {
         let store = Store::open(&path, file_keys(&path), objects())
             .await
             .unwrap();
         assert_eq!(conformance::search(&store.log()).await, Ok(()));
     });
-    let raw = rusqlite::Connection::open(&path).unwrap();
+    (dir, rusqlite::Connection::open(&path).unwrap())
+}
+
+#[test]
+fn the_search_index_holds_no_word_in_the_clear() {
+    let (_dir, raw) = searched("search");
     let terms: Vec<String> = raw
         .prepare("SELECT terms FROM event_search")
         .unwrap()
@@ -286,6 +291,31 @@ fn a_file_of_the_schema_before_gains_the_directory_and_keeps_its_data() {
         })
         .unwrap();
     assert_eq!(kept, "yes", "what the file held is kept");
+}
+
+/// A deleted chat leaves no row in the search index, so even its words' hashes go, and every
+/// other thread keeps its own (`conformance::search` deletes one of its threads).
+#[test]
+fn a_deleted_chat_leaves_no_row_in_the_search_index() {
+    let (_dir, raw) = searched("deleted");
+    let count = |sql: &str| -> i64 { raw.query_row(sql, [], |row| row.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT COUNT(*) FROM events WHERE type = 'thread.deleted'"),
+        1
+    );
+    assert_eq!(
+        count(
+            "SELECT COUNT(*) FROM event_search WHERE thread IN
+             (SELECT thread FROM events WHERE type = 'thread.deleted')"
+        ),
+        0,
+        "no row of the deleted chat's events remains"
+    );
+    assert_eq!(
+        count("SELECT COUNT(DISTINCT thread) FROM event_search"),
+        2,
+        "the other threads keep theirs"
+    );
 }
 
 #[test]

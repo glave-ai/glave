@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::host::{CLOUD_METADATA, INSIDE, Network};
+use glave_ports::host::{CLOUD_METADATA, INSIDE};
 use serde_json::{Value, json};
 
 use super::super::backend::{STARTED_BY, Spec};
@@ -304,17 +304,16 @@ impl Shape<'_> {
 
     /// The worker's NetworkPolicy: nothing comes in (the harness arrives through an exec
     /// through the API server, which no policy sees), and nothing goes out unless
-    /// the worker has the network, which then reaches anywhere but where clouds serve their
-    /// machines' credentials ([`CLOUD_METADATA`]), and for a person's computer anything that is
-    /// not the internet ([`INSIDE`]); DNS on port 53 is still allowed.
+    /// the worker has the network, which then reaches the internet alone: never where clouds
+    /// serve their machines' credentials ([`CLOUD_METADATA`]), nor anything that is not the
+    /// internet ([`INSIDE`]), so no other Pod, server or database in the cluster, for a worker
+    /// and a person's computer alike; DNS on port 53 is still allowed.
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
-            // A person's computer reaches nothing inside the cluster either.
-            let inside: &[Network] = if self.home.is_some() { &INSIDE } else { &[] };
             let except = |v4: bool| -> Vec<String> {
                 CLOUD_METADATA
                     .iter()
-                    .chain(inside)
+                    .chain(&INSIDE)
                     .filter(|network| network.is_ipv4() == v4)
                     .map(ToString::to_string)
                     .collect()
