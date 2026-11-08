@@ -15,7 +15,7 @@ use glave_computer::{
 };
 use glave_ports::auth::Secret;
 use glave_ports::computer::{Command, ComputerError, ComputerId, Computers, Environment, Freed};
-use glave_ports::testing::any_secret;
+use glave_ports::testing::{SocketPath, any_secret};
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -322,7 +322,8 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         .build()
         .unwrap();
     runtime.block_on(async {
-        let listener = listen_socket(&dir.join("glave.sock")).unwrap();
+        let socket = SocketPath::new(&dir, "glave.sock").unwrap();
+        let listener = listen_socket(&socket).unwrap();
         let busy = Arc::new(AtomicBool::new(true));
         let running = Arc::clone(&busy);
         let idle = Idle {
@@ -373,7 +374,7 @@ fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_b
             Duration::from_secs(600),
         )
         .unwrap();
-        let socket = dir.join("glave.sock");
+        let socket = SocketPath::new(&dir, "glave.sock").unwrap();
         // A bridge opened before the computer serves waits for its socket: it runs, finds
         // none, and tries again.
         let (first, carried) = bridged(&socket);
@@ -424,7 +425,8 @@ fn a_bridge_with_no_computer_to_reach_says_so() {
         .unwrap();
     runtime.block_on(async {
         let (input, output) = (tokio::io::empty(), tokio::io::sink());
-        let refused = bridge(&dir.join("glave.sock"), input, output).await;
+        let socket = SocketPath::new(&dir, "glave.sock").unwrap();
+        let refused = bridge(&socket, input, output).await;
         let message = refused.unwrap_err().to_string();
         assert!(message.contains("within 30 seconds"), "{message}");
     });

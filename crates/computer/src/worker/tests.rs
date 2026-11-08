@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use glave_ports::block_on;
 use glave_ports::computer::{Bytes, Glob, Image, Isolation, Network, Save};
-use glave_ports::testing::{ManualClock, TempDir};
+use glave_ports::testing::{ManualClock, SocketPath, TempDir};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -44,6 +44,8 @@ struct InProcess {
     /// Whether every worker serves on a Unix socket, reached through bridges, as on
     /// Kubernetes.
     bridged: bool,
+    /// The socket each worker serving on one listens at.
+    sockets: Mutex<std::collections::BTreeMap<String, SocketPath>>,
 }
 
 impl InProcess {
@@ -57,6 +59,7 @@ impl InProcess {
             renewing_fails: std::sync::atomic::AtomicBool::new(false),
             labelled: Mutex::default(),
             bridged: false,
+            sockets: Mutex::default(),
         }
     }
 
@@ -78,7 +81,9 @@ impl InProcess {
     ) -> (Link, JoinHandle<()>) {
         std::fs::create_dir_all(&self.copies).unwrap();
         std::fs::write(self.token_file(name), spec.token.to_file()).unwrap();
-        let listener = listen_socket(&self.socket(name)).unwrap();
+        let socket = SocketPath::new(&self.copies, &format!("{name}.sock")).unwrap();
+        let listener = listen_socket(&socket).unwrap();
+        self.sockets.lock().unwrap().insert(name.to_owned(), socket);
         let tokens = crate::Tokens::file(self.token_file(name));
         let task = tokio::spawn(async move {
             let _ = serve_socket(computers, listener, tokens, None, None).await;
@@ -87,7 +92,12 @@ impl InProcess {
     }
 
     fn socket(&self, name: &str) -> PathBuf {
-        self.copies.join(format!("{name}.sock"))
+        self.sockets
+            .lock()
+            .unwrap()
+            .get(name)
+            .unwrap()
+            .to_path_buf()
     }
 
     /// A new bridge into the worker `name`, a connection the test can cut.
