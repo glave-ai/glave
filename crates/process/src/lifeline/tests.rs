@@ -1,8 +1,7 @@
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::time::Instant;
 
-use glave_ports::testing::{HUNG, TempDir};
+use glave_ports::testing::{HUNG, TempDir, new_script};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 use super::*;
@@ -21,8 +20,7 @@ fn fake_helper(folder: &Path) -> PathBuf {
     let script = folder.join("helper");
     let ready = String::from_utf8(READY.to_vec()).unwrap();
     let text = format!("{STARTS}printf '{ready}'\nexec cat > \"${{0%/*}}/told-$$\"\n");
-    std::fs::write(&script, text).unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    new_script(&script, text).unwrap();
     script
 }
 
@@ -56,8 +54,7 @@ fn stopping_helper(folder: &Path) -> PathBuf {
         "{STARTS}mkdir \"${{0%/*}}/stopped\" 2>/dev/null && first=1\nprintf '{ready}'\n\
          [ -n \"$first\" ] && kill -STOP $$\nexec cat > \"${{0%/*}}/told-$$\"\n"
     );
-    std::fs::write(&script, text).unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    new_script(&script, text).unwrap();
     script
 }
 
@@ -381,8 +378,7 @@ fn a_program_whose_glave_is_killed_before_it_holds_it_never_runs() {
         String::from_utf8(READY.to_vec()).unwrap()
     );
     let helper = folder.join("helper");
-    std::fs::write(&helper, script).unwrap();
-    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    new_script(&helper, script).unwrap();
     std::fs::write(folder.join("go"), "").unwrap();
     let pids = |name: &str| -> Vec<i32> {
         let text = std::fs::read_to_string(folder.join(name)).unwrap_or_default();

@@ -2,13 +2,12 @@
 //! to run it under plain git and shown not to under glave's, on any platform, since no sandbox
 //! is involved. That a sandboxed command can write these files is shown in the sandbox's tests.
 
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 use std::process::Stdio;
 
 use glave_ports::block_on;
 use glave_ports::computer::{Computers, Environment, Sources, WorkspaceInfo};
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{TempDir, new_script};
 use glave_process::Program;
 
 use super::*;
@@ -71,7 +70,7 @@ fn planted() -> Planted {
     std::fs::create_dir_all(&repo).unwrap();
     let ran = dir.join("ran");
     let program = dir.join("program");
-    executable(&program, &format!("#!/bin/sh\n: > '{}'\n", ran.display()));
+    new_script(&program, format!("#!/bin/sh\n: > '{}'\n", ran.display())).unwrap();
     let planted = Planted {
         dir,
         repo,
@@ -108,11 +107,6 @@ fn planted() -> Planted {
         ],
     );
     planted
-}
-
-fn executable(path: &Path, text: &str) {
-    std::fs::write(path, text).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 impl Planted {
@@ -235,10 +229,11 @@ impl Planted {
 #[test]
 fn a_hook_in_the_repository_s_own_folder_never_runs() {
     let planted = planted();
-    executable(
+    new_script(
         &planted.repo.join(".git/hooks/post-checkout"),
-        &format!("#!/bin/sh\n'{}'\n", planted.program.display()),
-    );
+        format!("#!/bin/sh\n'{}'\n", planted.program.display()),
+    )
+    .unwrap();
     planted.plain_git_runs_it();
     planted.glave_s_git_runs_nothing();
 }
@@ -248,10 +243,11 @@ fn a_folder_of_hooks_the_config_names_never_runs() {
     let planted = planted();
     let hooks = planted.dir.join("hooks");
     std::fs::create_dir_all(&hooks).unwrap();
-    executable(
+    new_script(
         &hooks.join("post-checkout"),
-        &format!("#!/bin/sh\n'{}'\n", planted.program.display()),
-    );
+        format!("#!/bin/sh\n'{}'\n", planted.program.display()),
+    )
+    .unwrap();
     planted.config("core.hooksPath", &hooks.to_string_lossy());
     planted.plain_git_runs_it();
     planted.glave_s_git_runs_nothing();
@@ -457,8 +453,7 @@ fn a_repository_s_settings_are_named_by_scope_and_only_those_that_name_a_program
 fn git_that_never_finishes_is_stopped_at_its_limit_saying_so() {
     let dir = TempDir::new("git-hangs").unwrap();
     let git = dir.join("git");
-    std::fs::write(&git, "#!/bin/sh\nexec sleep 300\n").unwrap();
-    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    new_script(&git, "#!/bin/sh\nexec sleep 300\n").unwrap();
     // This git first, and the system's own folders after it, where `sleep` is.
     let mut path = dir.as_os_str().to_owned();
     path.push(":/usr/bin:/bin");
