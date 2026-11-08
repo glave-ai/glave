@@ -20,7 +20,6 @@
         [panel]="facts.shown()"
         (rename)="startRename()"
       />
-      <app-push-banner />
       <section
         class="items"
         data-testid="thread-items"
@@ -31,6 +30,7 @@
         (nearTop)="readEarlier()"
       >
         <div class="reading">
+          <app-push-banner />
           @for (turn of turns(); track turn.key) {
             <app-turn [turn]="turn" />
           }

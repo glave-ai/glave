@@ -192,6 +192,12 @@ export class SessionService {
     this.inviteLink.set(takeCode(place, 'invite'));
     this.signupLink.set(takeCode(place, 'signup'));
     this.recoverLink.set(takeCode(place, 'recover'));
+    // A link to a thread in another of the person's organizations works there (`#org=`).
+    const organization = takeCode(place, 'org');
+    const kept = readSession(this.storage);
+    if (organization !== null && kept !== null) {
+      keepSession(this.storage, { ...kept, organization });
+    }
     try {
       this.take(await this.client.call('server/discover', {}));
     } catch {

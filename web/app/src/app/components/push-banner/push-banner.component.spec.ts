@@ -24,6 +24,12 @@ function find(root: ParentNode, testId: string): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
 }
 
+/** Whether the banner is dismissed: there, unseen, and out of reach. */
+function gone(root: ParentNode): boolean {
+  const banner = find(root, 'push-banner');
+  return banner !== null && getComputedStyle(banner).visibility === 'hidden' && banner.inert;
+}
+
 describe('PushBannerComponent', () => {
   afterEach(() => {
     localStorage.clear();
@@ -41,20 +47,22 @@ describe('PushBannerComponent', () => {
     await expectAccessible(root);
   });
 
-  it('takes no room in the thread, shown or not', async () => {
+  it('keeps its room once dismissed, unseen, so nothing under it moves', async () => {
+    // How it lies on the page the end-to-end test measures; here, what keeps it in its place.
     const { fixture, root } = await render(new FakePushBrowser('default'));
-    expect(root.getBoundingClientRect().height).toBe(0);
-    expect(getComputedStyle(find(root, 'push-banner') ?? root).position).toBe('absolute');
+    const room = root.querySelector<HTMLElement>('.room');
+    expect(getComputedStyle(room ?? root).position).toBe('sticky');
     find(root, 'push-banner-not-now')?.click();
     await settle(fixture);
-    expect(root.getBoundingClientRect().height).toBe(0);
+    expect(root.querySelector('.room')).toBe(room);
+    expect(gone(root)).toBe(true);
   });
 
   it('remembers Not now in this browser', async () => {
     const { fixture, root } = await render(new FakePushBrowser('default'));
     find(root, 'push-banner-not-now')?.click();
     await settle(fixture);
-    expect(find(root, 'push-banner')).toBeNull();
+    expect(gone(root)).toBe(true);
     TestBed.resetTestingModule();
     const again = await render(new FakePushBrowser('default'));
     expect(find(again.root, 'push-banner')).toBeNull();
@@ -74,7 +82,7 @@ describe('PushBannerComponent', () => {
     expect(fake.paramsOf('push/subscribe')).toEqual([
       { endpoint: ENDPOINT, p256dh: 'browser-key', auth: 'browser-auth', device: 'A browser' },
     ]);
-    expect(find(root, 'push-banner')).toBeNull();
+    expect(gone(root)).toBe(true);
   });
 
   it('goes once the person says no, subscribing nothing', async () => {
@@ -83,7 +91,7 @@ describe('PushBannerComponent', () => {
     const { fixture, root } = await render(browser, true, fake);
     find(root, 'push-banner-on')?.click();
     await settle(fixture);
-    expect(find(root, 'push-banner')).toBeNull();
+    expect(gone(root)).toBe(true);
     expect(browser.registered).toEqual([]);
     expect(fake.paramsOf('push/subscribe')).toEqual([]);
   });

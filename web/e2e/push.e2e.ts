@@ -6,6 +6,7 @@ import {
   byTestId,
   expect,
   expectAccessible,
+  overlaps,
   served,
   signInCode,
   test,
@@ -28,12 +29,33 @@ type Asking = Window & { asked?: number };
  * Stands in for what a headless browser lacks: a person not yet asked about notifications (a
  * headless Chromium says they refused), who says yes when asked, counted in `asked`; and the
  * browser's push service, which a headless browser does not reach, so a subscription is made at
- * once, as `subscription`, and nothing leaves the computer. The page's own script, its service
- * worker and the server's Content Security Policy are the real ones.
+ * once, as `subscription`, and nothing leaves the computer. Where the browser has no Push API,
+ * as Playwright's WebKit has none, it stands in the API's names too, so the page offers
+ * notifications as Safari does. The page's own script, its service worker and the server's
+ * Content Security Policy are the real ones.
  */
 function standIns(subscription: typeof SUBSCRIPTION): void {
   const page = window as Asking;
   page.asked = 0;
+  const missing = (name: string, value: unknown): void => {
+    if (!(name in window)) {
+      Object.defineProperty(window, name, { configurable: true, writable: true, value });
+    }
+  };
+  // Constructors whose methods are stood in below, as the browser's own would be.
+  missing('PushManager', function PushManager() {
+    // Made by the browser alone.
+  });
+  missing('Notification', function Notification() {
+    // Shown by the browser alone.
+  });
+  if (!('serviceWorker' in navigator)) {
+    const workers = Object.assign(new EventTarget(), {
+      getRegistration: () => Promise.resolve(undefined),
+      register: () => Promise.reject(new Error('no service workers here')),
+    });
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: workers });
+  }
   let permission: NotificationPermission = 'default';
   Object.defineProperty(Notification, 'permission', { configurable: true, get: () => permission });
   Notification.requestPermission = () => {
@@ -63,33 +85,32 @@ function standIns(subscription: typeof SUBSCRIPTION): void {
 }
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`a thread offers notifications, asking nothing until Turn on, and Not now is remembered (${colorScheme})`, async ({
+  test(`a thread offers notifications above its first lines, asking nothing until Turn on, and Not now is remembered (${colorScheme})`, async ({
     page,
-    browserName,
   }) => {
-    test.skip(browserName === 'webkit', "Playwright's WebKit has no Push API to stand in for");
     await page.emulateMedia({ colorScheme });
     await page.addInitScript(standIns, SUBSCRIPTION);
     await fakeApi(page);
     const push = await fakePush(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     const banner = byTestId(page, 'push-banner');
-    const items = byTestId(page, 'thread-items');
+    const first = byTestId(page, 'thread-items').locator('app-turn').first();
     await expect(banner).toContainText(
       'Get a notification when glave needs you, even with this tab closed.',
     );
-    await expect(items).toBeVisible();
-    // The page asked the browser nothing as it opened.
+    await expect(first).toBeVisible();
+    // The page asked the browser nothing as it opened, and the offer covers none of the thread.
     expect(await page.evaluate(() => (window as Asking).asked)).toBe(0);
+    expect(overlaps(await banner.boundingBox(), await first.boundingBox())).toBe(false);
     await expectAccessible(page);
-    // It floats over the conversation: going, it moves nothing.
-    const before = await items.boundingBox();
+    // Going, it keeps its room: nothing moves.
+    const before = await first.boundingBox();
     await byTestId(page, 'push-banner-not-now').click();
     await expect(banner).toBeHidden();
-    expect(await items.boundingBox()).toEqual(before);
+    expect(await first.boundingBox()).toEqual(before);
     await page.reload();
-    await expect(items).toBeVisible();
-    await expect(banner).toBeHidden();
+    await expect(first).toBeVisible();
+    await expect(banner).toHaveCount(0);
     expect(await page.evaluate(() => (window as Asking).asked)).toBe(0);
     expect(push.calls).not.toContain('push/subscribe');
   });
@@ -99,7 +120,10 @@ test('Turn on registers glave’s worker under its own policy, and the real serv
   page,
   browserName,
 }) => {
-  test.skip(browserName === 'webkit', "Playwright's WebKit has no Push API to stand in for");
+  test.skip(
+    browserName === 'webkit',
+    "Playwright's WebKit has no push service to subscribe through",
+  );
   await page.addInitScript(standIns, SUBSCRIPTION);
   const glave = served(PUSH);
   await page.goto(`${glave}/#code=${await signInCode(PUSH)}`);

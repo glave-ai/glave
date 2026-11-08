@@ -33,6 +33,8 @@ export class FakePushBrowser {
   readonly registered: string[] = [];
   readonly made: PushSubscriptionOptionsInit[] = [];
   readonly unsubscribed: string[] = [];
+  /** Called as the browser is unsubscribed, before it says so. */
+  onUnsubscribe: (() => void) | null = null;
   private subscription: PushSubscription | null = null;
   readonly browser: PushBrowser;
 
@@ -77,6 +79,7 @@ export class FakePushBrowser {
       options: { applicationServerKey: key instanceof Uint8Array ? key.buffer : null },
       toJSON: () => ({ endpoint: ENDPOINT, keys: { p256dh: 'browser-key', auth: 'browser-auth' } }),
       unsubscribe: () => {
+        this.onUnsubscribe?.();
         this.unsubscribed.push(ENDPOINT);
         this.subscription = null;
         return Promise.resolve(true);
