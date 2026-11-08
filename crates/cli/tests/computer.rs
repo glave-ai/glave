@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
-use glave_ports::testing::{SocketPath, TempDir, any_secret, first_start};
+use glave_ports::testing::{SocketPath, TempDir, any_secret, read_program};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
 use crate::support::Lifeline;
@@ -52,7 +52,7 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
     let key = any_secret();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         let home = dir.join("home");
         let env = [
@@ -103,7 +103,7 @@ fn a_worker_s_glave_serving_tls_ends_when_its_input_does() {
     let now = SystemTime::from(SystemClock.now());
     let token = Token::mint(now, Duration::from_mins(10)).unwrap();
     std::fs::write(tls.join("token"), token.to_file()).unwrap();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         let mut child = tokio::process::Command::new(GLAVE)
             .args(["computer", "serve", "--tls", "127.0.0.1:0"])
@@ -133,7 +133,7 @@ fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
     let socket = SocketPath::new(&dir, "glave.sock").unwrap();
     // Each glave ends with the test, however it ends.
     let lifeline = Lifeline::new(&dir);
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     let glave = || {
         let mut command = tokio::process::Command::new(GLAVE);
         command.env(Lifeline::VARIABLE, &lifeline.path);

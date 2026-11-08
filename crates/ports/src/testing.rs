@@ -37,7 +37,7 @@ pub use model::{Answer, ScriptedModel, Seen};
 pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
 pub use outbox::Outbox;
 pub use output::Captured;
-pub use process::{HUNG, Running, first_start, new_script};
+pub use process::{HUNG, Running, new_script, read_program};
 pub use scripted::{ScriptedHttp, Written};
 pub use secret::{any_secret, fake_secret};
 pub use socket::SocketPath;

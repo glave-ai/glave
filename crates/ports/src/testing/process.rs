@@ -3,8 +3,8 @@
 use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::path::Path;
+use std::process::{Child, Command, Output};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
@@ -13,40 +13,29 @@ use std::time::{Duration, Instant};
 /// test runner's own limit, so the test says what the program printed.
 pub const HUNG: Duration = Duration::from_secs(90);
 
-/// Reads `program` and the test's own program to their ends, then starts `program` once, so a
-/// test's limit on what it does next never counts either being read from a busy drive (a
-/// program's first start reads itself, a page at each first touch, #1089) or macOS checking
-/// `program`, new to it after a build (see [`new_script`]). It has no limit of its own but the
-/// test runner's, since how long it takes says nothing of the programs.
-pub fn first_start(program: &str) -> io::Result<()> {
-    for read in [PathBuf::from(program), std::env::current_exe()?] {
+/// Reads `program` and the test's own program to their ends, so a test's limit on what it does
+/// next never counts either being read from a busy drive: a program's first start reads itself,
+/// a page at each first touch (#1089). It has no limit of its own but the test runner's, since
+/// how long it takes says nothing of the programs.
+pub fn read_program(program: &str) -> io::Result<()> {
+    for read in [std::path::PathBuf::from(program), std::env::current_exe()?] {
         io::copy(&mut std::fs::File::open(read)?, &mut io::sink())?;
     }
-    start_once(Path::new(program))
+    Ok(())
 }
 
 /// Makes a script at `path` holding `text`, ready to run, having run none of it. macOS checks
 /// a file the first time it runs, and holds that run until it is done: tens of seconds on a
 /// loaded machine, which is not what a test's limit is there to measure (#1305). So a script
-/// that does nothing runs here first, with no limit but the test runner's, and `text` then goes
-/// into that same file, which macOS does not check again, whatever the new text.
+/// that does nothing runs here first, waited for to its end, since starting it returns before
+/// the check is over, with no limit but the test runner's; `text` then goes into that same
+/// file, which macOS does not check again, whatever the new text. The programs a build makes
+/// are checked before the tests start (`xtask/src/nextest.rs`).
 pub fn new_script(path: &Path, text: impl AsRef<[u8]>) -> io::Result<()> {
     std::fs::write(path, "#!/bin/sh\n")?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
-    start_once(path)?;
+    Command::new(path).status()?;
     std::fs::write(path, text)
-}
-
-/// Starts `program`, telling it only to say how it is used, and waits for it to end: the start
-/// itself returns before macOS's check is over.
-fn start_once(program: &Path) -> io::Result<()> {
-    Command::new(program)
-        .arg("--help")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(drop)
 }
 
 /// A program a test started, killed and waited for when this drops, so a test that fails, or
@@ -182,6 +171,8 @@ fn everything(pipe: Option<impl Read>, into: &Mutex<Vec<u8>>) -> io::Result<()> 
 
 #[cfg(test)]
 mod tests {
+    use std::process::Stdio;
+
     use super::*;
     use crate::testing::TempDir;
 

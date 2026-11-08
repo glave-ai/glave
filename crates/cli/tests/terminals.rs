@@ -14,7 +14,7 @@ use glave_ports::computer::{
     Bytes, ComputerError, ComputerId, Computers, Environment, Home, Screenful, Sources, TerminalId,
     TerminalSize,
 };
-use glave_ports::testing::{TempDir, first_start};
+use glave_ports::testing::{TempDir, read_program};
 use glave_ports::{block_on, conformance};
 use glave_process::Processes;
 use glave_provider_openai::fake::FakeServer;
@@ -46,7 +46,7 @@ fn this_machine_opens_terminals_with_glave_as_their_starter_directly_and_through
     let dir = TempDir::new("terminals-here").unwrap();
     let folder = dir.join("work");
     std::fs::create_dir_all(&folder).unwrap();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         let tied = Processes::unrecorded().with_lifeline(GLAVE).await.unwrap();
         for processes in [Processes::unrecorded(), tied] {
@@ -86,7 +86,7 @@ fn the_binary_serves_terminals_across_the_protocol() {
     let dir = TempDir::new("terminals-served").unwrap();
     let folder = dir.join("work");
     std::fs::create_dir_all(&folder).unwrap();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         let (mut child, remote, computer) = served_in(&dir).await;
         let verdict = conformance::terminals(&remote, computer, &folder.to_string_lossy()).await;
@@ -151,7 +151,7 @@ fn a_person_s_computer_finds_its_terminals_as_it_is_awake_and_never_wakes_to_say
     let dir = TempDir::new("terminals-waking").unwrap();
     let folder = dir.join("work");
     std::fs::create_dir_all(&folder).unwrap();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         let computers = LocalComputers::new(dir.join("copies"), shell_in(&dir)).with_helper(GLAVE);
         let computers: Arc<dyn Computers> = Arc::new(computers);
@@ -257,7 +257,7 @@ fn a_terminal_s_jobs_end_however_glave_ends() {
     let dir = TempDir::new("terminals-killed").unwrap();
     let folder = dir.join("work");
     std::fs::create_dir_all(&folder).unwrap();
-    first_start(GLAVE).unwrap();
+    read_program(GLAVE).unwrap();
     block_on!(async {
         for (how, said) in [(Signal::KILL, "SIGKILL"), (Signal::TERM, "SIGTERM")] {
             let (mut child, remote, computer) = served_in(&dir).await;
