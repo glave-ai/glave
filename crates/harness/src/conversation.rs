@@ -41,6 +41,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
             });
         }
         Body::ThreadStarted(_)
+        | Body::ThreadForked(_)
         | Body::TurnStarted(_)
         | Body::ModelResponded(_)
         | Body::TurnEnded(_)

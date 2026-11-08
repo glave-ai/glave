@@ -50,8 +50,6 @@ where
         let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
         let messages = conversation(&events);
-        // Boxed: reading a blob back is a large future, and a resume runs inside many.
-        let prefix = Box::pin(self.prefix_kept(&scope, &events)).await;
         // On a person's own computer, reached again only at a turn: what the thread opened
         // with, kept in its log, until a turn finds the computer awake and reads them there.
         let instructions = if crate::homes::at_home(bound.as_ref()).is_some() {
@@ -71,25 +69,25 @@ where
             id,
             next_seq,
             messages,
-            allowed: allowed_for_thread(&events),
+            allowed: HashSet::new(),
             measured: None,
-            request: latest_request(&events),
-            asked: asked(&events),
-            turns: turns_begun(&events),
+            request: None,
+            asked: Vec::new(),
+            turns: 0,
             above: above(&events),
-            plan: crate::plan::Planning::of(&events),
+            plan: crate::plan::Planning::default(),
             workspace,
-            unnumbered: crate::bind::own_records(&events),
+            unnumbered: 0,
             note: None,
             standing: crate::standing::standing_after(glave_ports::Standing::Active, &events),
             removed: false,
-            untrusted: read_untrusted(&events),
-            read_secret: read_secret(&events),
+            untrusted: false,
+            read_secret: false,
             memory: crate::memory::MemoryState::default(),
             for_,
-            model: crate::chosen::chosen_in(&events),
-            permissions: crate::chosen::permissions_in(&events),
-            effort: crate::chosen::effort_in(&events),
+            model: None,
+            permissions: None,
+            effort: None,
             instructions,
             project,
             brought: std::sync::Arc::default(),
@@ -99,10 +97,31 @@ where
             opened: self.opened(&scope, id, &events).await?,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
-            prefix,
+            prefix: crate::prefix::Prefixed::None,
         };
-        self.rebuild_memory(&mut thread, &events).await;
+        self.take_history(&mut thread, &events).await;
         Ok(thread)
+    }
+
+    /// Takes into `thread` what `events`, its history, say of how it goes on, as a thread read
+    /// again from its log or forked from another goes on: what the person asked and allowed,
+    /// its turns, plan and choices, what it has read, the prefix its calls open with and what
+    /// memory showed it. Its conversation, and where it works, are its caller's to set.
+    pub(crate) async fn take_history(&self, thread: &mut Thread, events: &[Event]) {
+        thread.allowed = allowed_for_thread(events);
+        thread.request = latest_request(events);
+        thread.asked = asked(events);
+        thread.turns = turns_begun(events);
+        thread.plan = crate::plan::Planning::of(events);
+        thread.unnumbered = crate::bind::own_records(events);
+        thread.untrusted = read_untrusted(events);
+        thread.read_secret = read_secret(events);
+        thread.model = crate::chosen::chosen_in(events);
+        thread.permissions = crate::chosen::permissions_in(events);
+        thread.effort = crate::chosen::effort_in(events);
+        // Boxed: reading a blob back is a large future, and a resume runs inside many.
+        thread.prefix = Box::pin(self.prefix_kept(&thread.scope, events)).await;
+        self.rebuild_memory(thread, events).await;
     }
 
     /// Closes what a turn left open in thread `id`, as its log has it now, when it does not

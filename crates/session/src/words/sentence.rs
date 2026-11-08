@@ -213,6 +213,14 @@ sentences! {
     PromptFailed { reason: String } = "prompt-failed"
         "the command's text could not be had from its server: { $reason }",
     TitleLength { most: usize } = "title-length" "a title is 1 to { $most } characters, not only spaces",
+    ForkedInPlace = "forked-in-place"
+        "Forked here from an earlier thread. Files aren't rewound: this thread works in the same folder, with them as they are now.",
+    ForkedElsewhere = "forked-elsewhere"
+        "Forked here from an earlier thread. Files aren't rewound: this thread works in another folder, without the earlier thread's changes.",
+    ForkPoint = "fork-point"
+        "a thread is forked only between its turns, and that point is within one or past its end",
+    ForkSubagent = "fork-subagent"
+        "a subagent's thread is not forked on its own: fork the thread that started it",
     QueueFull { most: usize } = "queue-full"
         "{ $most } messages are already waiting for the model to read them: wait until it has, or stop it",
     RecordsBusy = "records-busy" "glave's records kept changing while it wrote to them; try again",

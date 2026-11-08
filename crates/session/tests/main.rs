@@ -24,6 +24,7 @@ mod discover;
 mod durable;
 mod files;
 mod filters;
+mod forks;
 mod gone;
 mod grouping;
 mod history;
