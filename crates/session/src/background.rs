@@ -1,16 +1,18 @@
 //! A thread's commands in the background, for its clients (`specs/session.md`, "Commands in the
-//! background"): `command/list` answers those running, and `command/stop` stops one for the
-//! person who asks, whether a turn holds the thread or not. What either finds ended is recorded
+//! background"): `command/list` answers those running, with where each listens for the person
+//! whose computer it is, on it, and `command/stop` stops one for the person who asks, whether a turn holds the thread or not. What either finds ended is recorded
 //! at once when the thread is idle, else by its turn's next record. Each thread held here has
 //! its commands watched, so one that ends however it ends (by itself, or killed by another
 //! command) is recorded as it does, and its clients hear of it.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, PoisonError, Weak};
 
 use glave_event::{Principal, ThreadId};
-use glave_harness::Commands;
+use glave_harness::{Commands, RunningCommand};
 use glave_ports::computer::CommandId;
+use glave_ports::host::PublicOrigin;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -51,9 +53,13 @@ where
         }
     }
 
-    /// Answers `command/list`: none for a thread whose project's folder isn't there anymore,
-    /// where nothing runs.
-    pub(crate) async fn list_commands(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    /// Answers `command/list` for `caller`: none for a thread whose project's folder isn't there
+    /// anymore, where nothing runs.
+    pub(crate) async fn list_commands(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
         let commands = match self.commands_of(thread).await {
             Err(refused) if crate::gone::is_gone(&refused) => {
                 return Ok(Reply::Commands {
@@ -62,9 +68,35 @@ where
             }
             commands => commands?,
         };
-        let running = commands.running_now().await;
+        let mut running = commands.running_now().await;
         self.record_commands(thread).await;
+        self.add_ports(caller, &commands, &mut running).await;
         Ok(Reply::Commands { commands: running })
+    }
+
+    /// Gives each of `running` the ports it listens on, where `caller` reaches them: only then
+    /// is it looked for, as finding them reads every process's sockets, and only of commands on
+    /// the server's own computer, whose loopback is the one they reach.
+    async fn add_ports(
+        &self,
+        caller: &Caller,
+        commands: &Commands,
+        running: &mut [RunningCommand],
+    ) {
+        let theirs = self.computer_is_theirs(caller.person);
+        let origin = self.inner.origin.as_ref();
+        if !reached_here(origin, self.inner.homes.is_some(), theirs) {
+            return;
+        }
+        let here = self.inner.harness.workspace().info().computer;
+        let listening = commands.listening(here).await;
+        for command in running {
+            if let Some((_, at)) = listening.iter().find(|(id, _)| *id == command.id) {
+                let mut ports: Vec<u16> = at.iter().map(SocketAddr::port).collect();
+                ports.dedup();
+                command.ports = ports;
+            }
+        }
     }
 
     /// Answers `command/stop`.
@@ -189,5 +221,36 @@ async fn record_endings<P, L, B>(
             return;
         };
         Server { inner }.record_ended(thread).await;
+    }
+}
+
+/// Whether where commands on this computer listen reaches a caller: the server is reached at
+/// this computer alone (it has no public origin, or this computer's own `localhost`), people
+/// have no computers of their own elsewhere, and this computer is the caller's (`theirs`: the
+/// person it works for), as it is for a terminal (`specs/sandbox.md`, "Whose computer").
+fn reached_here(origin: Option<&PublicOrigin>, homes: bool, theirs: bool) -> bool {
+    origin.is_none_or(PublicOrigin::on_this_computer) && !homes && theirs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn where_commands_listen_reaches_the_person_on_this_computer_alone() {
+        let public = PublicOrigin::parse("https://glave.example.com");
+        let shared = PublicOrigin::parse("http://localhost:4180");
+        assert!(reached_here(None, false, true));
+        assert!(reached_here(shared.as_ref(), false, true));
+        assert!(!reached_here(None, false, false), "not someone else's");
+        assert!(!reached_here(shared.as_ref(), false, false));
+        assert!(
+            !reached_here(public.as_ref(), false, true),
+            "a browser elsewhere"
+        );
+        assert!(
+            !reached_here(None, true, true),
+            "a computer of their own elsewhere"
+        );
     }
 }

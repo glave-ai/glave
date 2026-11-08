@@ -1,0 +1,50 @@
+@if (shown()) {
+  <glz-card data-testid="notifications">
+    <h2 glzCardHeader>{{ copy.heading }}</h2>
+    <p class="details">{{ copy.lead }}</p>
+    @if (homeScreen()) {
+      <p class="details" data-testid="notifications-home-screen">{{ copy.homeScreen }}</p>
+    } @else if (unsupported()) {
+      <p class="details" data-testid="notifications-unsupported">{{ copy.unsupported }}</p>
+    } @else if (blocked()) {
+      <p class="details" data-testid="notifications-blocked">{{ copy.blocked }}</p>
+    } @else {
+      <div class="row">
+        <p data-testid="notifications-state">{{ state() }}</p>
+        <button
+          glzButton
+          data-testid="notifications-switch"
+          [disabled]="busy()"
+          (click)="switchHere()"
+        >
+          {{ toggle() }}
+        </button>
+      </div>
+    }
+    @if (listed()) {
+      <div class="glz-stack" role="group" aria-labelledby="notifications-devices">
+        <p id="notifications-devices" class="title">{{ copy.devices }}</p>
+        @for (device of devices(); track device.id) {
+          <div class="row" data-testid="notifications-device">
+            <div class="glz-stack glz-gap-half">
+              <p>{{ device.name }}</p>
+              <p class="details">{{ device.detail }}</p>
+            </div>
+            <button
+              glzButton
+              data-testid="notifications-remove"
+              [attr.aria-label]="device.removeLabel"
+              [disabled]="busy()"
+              (click)="remove(device.id)"
+            >
+              {{ copy.remove }}
+            </button>
+          </div>
+        }
+      </div>
+    }
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="notifications-problem">{{ problem }}</p>
+    }
+  </glz-card>
+}

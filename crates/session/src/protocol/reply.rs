@@ -6,7 +6,7 @@ use glave_event::{
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::RunningCommand;
-use glave_ports::computer::DiskUse;
+use glave_ports::computer::{DiskUse, Screenful, TerminalInfo};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -15,9 +15,9 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
-    Told, TrustAsk, WatchEnd,
+    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources, ScheduleInfo,
+    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -71,6 +71,10 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
+    /// Whether it tells people's browsers when glave needs them (`push/get`), so a client
+    /// offers that only where it does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub push: bool,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never
@@ -176,6 +180,11 @@ pub struct ThreadSummary {
     /// the server last found it so; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk: Option<Box<DiskShort>>,
+    /// Whether its person may open terminals of their own in its folder: their shell, on their
+    /// own computer, so never on a worker, nor on the server's for anyone but the person it
+    /// works for; never once it is put away (`specs/session.md`, "Terminals").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub terminals: bool,
 }
 
 /// A person's computer short of room, more than 90% of its disk used and nothing more glave can
@@ -371,6 +380,13 @@ pub enum Reply {
     SignIn { sign_in: SignInLink },
     #[schemars(title = "Commands")]
     Commands { commands: Vec<RunningCommand> },
+    #[schemars(title = "Terminal")]
+    Terminal { terminal: TerminalInfo },
+    #[schemars(title = "Terminals")]
+    Terminals { terminals: Vec<TerminalInfo> },
+    /// What a terminal printed, from where it was read.
+    #[schemars(title = "Screen")]
+    Screen { screen: Screenful },
     #[schemars(title = "Device")]
     Device { device: DeviceCode },
     /// A sign-in in the browser still waiting for the person.
@@ -482,6 +498,9 @@ pub enum Reply {
     /// Whether glave remembers for the person.
     #[schemars(title = "Remembering")]
     Remembering { remembering: RememberingInfo },
+    /// Whether the person's browsers are told when glave needs them, and which.
+    #[schemars(title = "Push")]
+    Push { push: PushInfo },
     /// Whether the person's agent may search the web.
     #[schemars(title = "Search")]
     Search { search: SearchInfo },

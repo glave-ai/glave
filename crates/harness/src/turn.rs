@@ -7,6 +7,7 @@ use glave_ports::{
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
+use crate::compaction::Asked;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::service::Round;
@@ -46,6 +47,8 @@ pub(crate) struct Step {
     pub(crate) round: Option<Round>,
     /// Whether the model proposed a plan in this turn, in plan mode: the turn ends with it.
     pub(crate) proposed: bool,
+    /// The compaction the person asked for in this turn, if they did (`compaction/asked.rs`).
+    pub(crate) compact: Asked,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -168,6 +171,7 @@ where
             answered: None,
             round: None,
             proposed: false,
+            compact: Asked::No,
         };
         self.steps(thread, step, &[], cancel, live).await
     }
@@ -207,7 +211,7 @@ where
             if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;
             }
-            self.compact_if_needed(thread, &mut step.toolset, &mut step.summary, cancel, live)
+            self.compact_if_needed(thread, &mut step, cancel, live)
                 .await?;
             self.read_queued(thread, cancel, live).await?;
             let last = self.last_step(&step.summary);

@@ -226,7 +226,25 @@ pub(crate) fn harness_with<L: EventLog, A: Approver>(
     seed: u64,
     settings: Settings,
 ) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
-    let script = ScriptedModel::new(answers);
+    scripted(
+        workspace,
+        ScriptedModel::new(answers),
+        approver,
+        log,
+        seed,
+        settings,
+    )
+}
+
+/// Like `harness_with`, answering as `script` does.
+pub(crate) fn scripted<L: EventLog, A: Approver>(
+    workspace: Workspace,
+    script: ScriptedModel,
+    approver: A,
+    log: L,
+    seed: u64,
+    settings: Settings,
+) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
     let requests = script.seen();
     let parts = Parts {
         provider: script,
@@ -404,6 +422,10 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::AppearanceSet(_) => "appearance.set",
             Body::BrandSet(_) => "brand.set",
             Body::MemorySet(_) => "memory.set",
+            Body::PushKeyMade(_) => "push.key.made",
+            Body::PushSubscribed(_) => "push.subscribed",
+            Body::PushUnsubscribed(_) => "push.unsubscribed",
+            Body::PushClaimed(_) => "push.claimed",
             Body::PersonJoined(_) => "person.joined",
             Body::RoleSet(_) => "role.set",
             Body::PersonRemoved(_) => "person.removed",

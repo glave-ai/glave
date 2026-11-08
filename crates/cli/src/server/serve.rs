@@ -1,6 +1,7 @@
 //! Serving as the person's server, once it holds the lock: the session API on the person's
 //! socket and over HTTP, with what runs in it on its own (`specs/one-server.md`): the tasks a
-//! server before it left running recorded as interrupted, the scheduler, and the daily work
+//! server before it left running recorded as interrupted, the scheduler, what needs people
+//! pushed to their browsers, and the daily work
 //! (this machine's worktrees checked, the blobs no thread refers to swept, memory tidied and its
 //! keys rotated). Until `SIGTERM` or
 //! `SIGINT` (`glave server stop`, Ctrl-C in the foreground, logging out); then it takes no new
@@ -135,6 +136,7 @@ pub(crate) async fn run(
         std::future::pending::<()>().await;
     });
     let mut removals = Box::pin(server.follow_removals());
+    let mut notifications = Box::pin(server.push_notifications());
     let mut daily = Box::pin(daily.run());
     let mut certificates = Box::pin(crate::serving::keep_https(reach));
     let mut clients = JoinSet::new();
@@ -149,6 +151,7 @@ pub(crate) async fn run(
             },
             () = &mut scheduler => {}
             () = &mut removals => {}
+            () = &mut notifications => {}
             () = &mut daily => {}
             () = &mut certificates => {}
             _ = tick.tick() => {

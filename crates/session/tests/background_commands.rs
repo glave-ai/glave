@@ -26,20 +26,6 @@ fn starts_a_server() -> Vec<glave_ports::Completion> {
     ]
 }
 
-async fn listed<L: glave_ports::EventLog + 'static>(
-    server: &Tested<L>,
-    thread: glave_event::ThreadId,
-) -> Vec<glave_harness::RunningCommand> {
-    match server
-        .request(Request::CommandList { thread })
-        .await
-        .unwrap()
-    {
-        Reply::Commands { commands } => commands,
-        other => panic!("commands, not {other:?}"),
-    }
-}
-
 #[test]
 fn a_command_is_listed_while_it_runs_and_stopped_by_the_person() {
     let dir = folder("bg-api");

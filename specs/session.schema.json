@@ -1121,6 +1121,11 @@
       ],
       "type": "object"
     },
+    "DeviceId": {
+      "description": "Identifies one browser or device that takes a person's notifications\n(`push.subscribed`), sealed under a key of its own.",
+      "format": "uuid",
+      "type": "string"
+    },
     "DiffLine": {
       "description": "One line of a change.",
       "properties": {
@@ -2654,6 +2659,80 @@
         }
       ]
     },
+    "PushDevice": {
+      "description": "A browser that takes the person's notifications.",
+      "properties": {
+        "added": {
+          "$ref": "#/$defs/At"
+        },
+        "current": {
+          "description": "It is the browser that asked: `push/get`'s `endpoint` is its subscription's.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/DeviceId",
+          "description": "What `push/remove` names it by."
+        },
+        "name": {
+          "description": "What the person knows it as: \"Safari on iPhone\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "added"
+      ],
+      "type": "object"
+    },
+    "PushInfo": {
+      "description": "Whether the server tells the person's browsers when glave needs them.",
+      "oneOf": [
+        {
+          "description": "It sends none here, and `reason`, why.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It sends them: when something waits for the person (an approval, a question, a service's\nask) and when a task of theirs finishes or fails.",
+          "properties": {
+            "devices": {
+              "description": "The browsers that take their notifications, the latest first.",
+              "items": {
+                "$ref": "#/$defs/PushDevice"
+              },
+              "type": "array"
+            },
+            "key": {
+              "description": "The key a browser subscribes with (`applicationServerKey`), in base64url.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "offered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "devices"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Question": {
       "additionalProperties": false,
       "description": "One question.",
@@ -2892,6 +2971,16 @@
           "$ref": "#/$defs/CommandId",
           "description": "Which command, for `command/stop`."
         },
+        "ports": {
+          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer.",
+          "items": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
         "started_at": {
           "anyOf": [
             {
@@ -2969,6 +3058,33 @@
         "prompt",
         "budget",
         "created_at"
+      ],
+      "type": "object"
+    },
+    "Screenful": {
+      "description": "What a read of a terminal answers: what it printed from `from`, the offset of the first\nbyte, up to `next`, the offset to read from next. A `from` past the offset asked for says\nthe bytes between were dropped, the computer keeping only the latest [`TERMINAL_KEPT`].\n`ended` once its shell has ended and all it printed has been read.",
+      "properties": {
+        "ended": {
+          "type": "boolean"
+        },
+        "from": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "output",
+        "next"
       ],
       "type": "object"
     },
@@ -3136,6 +3252,10 @@
           },
           "type": "array"
         },
+        "push": {
+          "description": "Whether it tells people's browsers when glave needs them (`push/get`), so a client\noffers that only where it does.",
+          "type": "boolean"
+        },
         "role": {
           "anyOf": [
             {
@@ -3272,6 +3392,11 @@
         {
           "const": "language",
           "description": "The language the server writes its own sentences to them in (`language/get`): what a\nclient shows of the server's words, an approval's included, it reads again.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "The browsers that take their notifications (`push/get`).",
           "type": "string"
         }
       ]
@@ -3557,6 +3682,54 @@
         }
       ]
     },
+    "TerminalId": {
+      "description": "Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by\nthe computer it runs on).",
+      "format": "uuid",
+      "type": "string"
+    },
+    "TerminalInfo": {
+      "description": "A terminal open on a computer, as its listing shows it.",
+      "properties": {
+        "ended": {
+          "description": "Whether its shell has ended; it stays until it is closed.",
+          "type": "boolean"
+        },
+        "folder": {
+          "description": "The folder its shell started in, as its computer names it.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/TerminalId"
+        }
+      },
+      "required": [
+        "id",
+        "folder"
+      ],
+      "type": "object"
+    },
+    "TerminalSize": {
+      "description": "How many columns and rows a terminal shows.",
+      "properties": {
+        "cols": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "type": "object"
+    },
     "ThreadChanges": {
       "description": "The files a thread changed, and each turn's.",
       "properties": {
@@ -3709,6 +3882,10 @@
         },
         "status": {
           "$ref": "#/$defs/Status"
+        },
+        "terminals": {
+          "description": "Whether its person may open terminals of their own in its folder: their shell, on their\nown computer, so never on a worker, nor on the server's for anyone but the person it\nworks for; never once it is put away (`specs/session.md`, \"Terminals\").",
+          "type": "boolean"
         },
         "title": {
           "description": "The title the person gave it, else the first line of their first message.",
@@ -4612,6 +4789,10 @@
     "NO_SIGN_IN": {
       "code": -32013,
       "message": "No valid sign-in (network transports)"
+    },
+    "NO_TERMINAL": {
+      "code": -32038,
+      "message": "No such terminal is open in this thread"
     },
     "NO_THREAD": {
       "code": -32001,
@@ -7133,6 +7314,102 @@
       },
       "streams": false
     },
+    "push/get": {
+      "params": {
+        "properties": {
+          "endpoint": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "push/remove": {
+      "params": {
+        "properties": {
+          "device": {
+            "$ref": "#/$defs/DeviceId"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "push/subscribe": {
+      "params": {
+        "description": "A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),\nand what the person knows the browser as. Its `Debug` says neither its endpoint nor its\nsecret.",
+        "properties": {
+          "auth": {
+            "$ref": "#/$defs/Secret",
+            "description": "The secret it shares with the server, in base64url."
+          },
+          "device": {
+            "description": "What the person knows it as: \"Safari on iPhone\".",
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Where its push service takes pushes for it.",
+            "type": "string"
+          },
+          "p256dh": {
+            "description": "Its public key, in base64url.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth",
+          "device"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "question/answer": {
       "params": {
         "properties": {
@@ -7634,6 +7911,176 @@
         },
         "required": [
           "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/close": {
+      "params": {
+        "properties": {
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/list": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "terminals": {
+            "items": {
+              "$ref": "#/$defs/TerminalInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "terminals"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/open": {
+      "params": {
+        "properties": {
+          "size": {
+            "$ref": "#/$defs/TerminalSize"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "size"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "terminal": {
+            "$ref": "#/$defs/TerminalInfo"
+          }
+        },
+        "required": [
+          "terminal"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/read": {
+      "params": {
+        "properties": {
+          "from": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          },
+          "wait_ms": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "from"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "What a terminal printed, from where it was read.",
+        "properties": {
+          "screen": {
+            "$ref": "#/$defs/Screenful"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/resize": {
+      "params": {
+        "properties": {
+          "size": {
+            "$ref": "#/$defs/TerminalSize"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "size"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/write": {
+      "params": {
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "input"
         ],
         "type": "object"
       },

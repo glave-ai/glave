@@ -2,6 +2,7 @@
 //! what a computer answers about them, and the bounds every computer keeps, the same on this
 //! machine and across the wire.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,16 @@ pub struct Background {
     /// How it ended; `None` while it runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<Ending>,
+}
+
+/// Where a command still running in the background listens (`command/listening`): each TCP
+/// address its processes listen on that the computer's own loopback reaches, a loopback address
+/// or every address (`0.0.0.0`, `::`), as the system says it was bound, so its family says how
+/// to reach it; by port, then address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Listening {
+    pub command: CommandId,
+    pub at: Vec<SocketAddr>,
 }
 
 #[expect(

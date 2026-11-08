@@ -5,8 +5,9 @@
 //! [`glave_ports::computer::IDLE`]; when the
 //! command exits by itself, it stops whatever the command left running. Dropping the registry
 //! drops every watcher, and with it each command's `Child`, which kills its group, so nothing
-//! outlives this machine's computers.
+//! outlives this machine's computers. Where each one running listens is found when asked.
 
+mod listening;
 mod unread;
 
 use std::collections::HashMap;
@@ -14,9 +15,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, MAX_BACKGROUND,
-    MAX_WAIT, Printed, Refusal, WorkspaceId,
+    Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, Listening,
+    MAX_BACKGROUND, MAX_WAIT, Printed, Refusal, WorkspaceId,
 };
+use glave_process::Processes;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -57,6 +59,8 @@ struct Entry {
     workspace: WorkspaceId,
     script: String,
     started: Instant,
+    /// Its process group, by its leader's id, where the system gave one.
+    group: Option<u32>,
     shared: Arc<Shared>,
     watcher: JoinHandle<()>,
 }
@@ -153,6 +157,7 @@ impl Backgrounds {
             return Err(Box::new(spawned));
         }
         let started = spawned.started;
+        let group = spawned.child.id();
         let (ended, _) = watch::channel(None);
         let shared = Arc::new(Shared {
             unread: Mutex::new(Unread::default()),
@@ -173,6 +178,7 @@ impl Backgrounds {
                 workspace,
                 script,
                 started,
+                group,
                 shared,
                 watcher,
             },
@@ -287,6 +293,31 @@ impl Backgrounds {
             .collect();
         listed.sort_by_key(|(started, _)| *started);
         listed.into_iter().map(|(_, listed)| listed).collect()
+    }
+
+    /// Where the commands still running in `workspace` listen, oldest first, each one's
+    /// processes looked at through `processes`, which may run a program to see them.
+    pub(crate) async fn listening(
+        &self,
+        workspace: WorkspaceId,
+        processes: &Processes,
+    ) -> Vec<Listening> {
+        let mut running: Vec<(Instant, CommandId, u32)> = self
+            .held()
+            .iter()
+            .filter(|(_, entry)| entry.workspace == workspace && entry.shared.ended().is_none())
+            .filter_map(|(id, entry)| Some((entry.started, *id, entry.group?)))
+            .collect();
+        running.sort_by_key(|(started, ..)| *started);
+        let groups: Vec<u32> = running.iter().map(|(.., group)| *group).collect();
+        let mut found = listening::addresses(&groups, processes).await;
+        running
+            .into_iter()
+            .filter_map(|(_, command, group)| {
+                let at = found.remove(&group)?;
+                Some(Listening { command, at })
+            })
+            .collect()
     }
 
     /// Stops every command `which` picks by its computer and workspace, then forgets them: a

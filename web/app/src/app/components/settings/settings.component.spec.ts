@@ -3,9 +3,12 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { keyBytes } from '../../lib/push';
 import { SessionService } from '../../services/session.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS } from '../../testing/fixtures';
+import { settle } from '../../testing/links';
+import { ENDPOINT, FakePushBrowser, KEY, device, offered, pushingTab } from '../../testing/push';
 
 const SERVER = {
   name: 'glave',
@@ -64,6 +67,29 @@ describe('SettingsComponent', () => {
     expect(fake.paramsOf('signin/end')).toEqual([{}]);
     expect(TestBed.inject(SessionService).signedIn()).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('stops this browser’s notifications before it signs out, so no one after sees them', async () => {
+    const browser = new FakePushBrowser('granted');
+    browser.holding(keyBytes(KEY));
+    const fake = new FakeSession()
+      .answer('provider/list', { providers: [] })
+      .answer('credential/list', { credentials: [] })
+      .answer('push/get', { push: offered([device('d1', 'A browser', true)]) })
+      .answer('push/remove', { push: offered() });
+    await pushingTab(fake, browser.browser, true, [provideRouter([])]);
+    // What Settings reads of the server once the tab is signed in.
+    fake.answer('server/discover', { ...SERVER, push: true });
+    vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await settle(fixture);
+    const root: HTMLElement = fixture.nativeElement;
+    root.querySelector<HTMLButtonElement>('[data-testid="settings-sign-out"]')?.click();
+    await settle(fixture);
+    expect(browser.unsubscribed).toEqual([ENDPOINT]);
+    const methods = fake.calls.map((call) => call.method);
+    expect(methods.slice(methods.indexOf('push/remove'))).toEqual(['push/remove', 'signin/end']);
+    expect(fake.paramsOf('push/remove')).toEqual([{ device: 'd1' }]);
   });
 
   it("lists the model accounts by service, never a key's ending, and removes one once confirmed", async () => {

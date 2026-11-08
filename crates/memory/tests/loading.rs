@@ -225,10 +225,18 @@ fn compaction_rebuilds_the_start_with_everything_known_and_folds_the_notes() {
             .compact(&mut thread, &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        let summary_request = seen.lock().unwrap()[2].clone();
+        let (before, summary_request) = {
+            let seen = seen.lock().unwrap();
+            (seen[1].clone(), seen[2].clone())
+        };
         assert!(
-            !format!("{:?}", summary_request.messages).contains("# Memory"),
-            "the summary is asked for without memory, so it never stores a memory's text"
+            summary_request.messages.starts_with(&before.messages),
+            "the summary is sent memory as the calls are, so the provider's cache holds"
+        );
+        let instruction = user_texts(summary_request.messages.last().unwrap());
+        assert!(
+            instruction[0].contains("Leave out the memories the <MEMORY> block holds"),
+            "and is asked to keep no memory's text, which opens the restarted conversation"
         );
         harness
             .run_turn(&mut thread, "third", &Cancel::new(), &mut |_| {})

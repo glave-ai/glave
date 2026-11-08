@@ -164,6 +164,7 @@ where
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                     invites,
+                    push: self.inner.push.is_some(),
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
@@ -190,6 +191,9 @@ where
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
+            Request::PushGet { endpoint } => self.push_info(caller, endpoint.as_deref()).await,
+            Request::PushSubscribe { browser } => self.subscribe(caller, browser).await,
+            Request::PushRemove { device } => self.remove_device(caller, device).await,
             Request::LanguageGet {} => self.language(caller).await,
             Request::LanguageSet { language } => self.set_language(caller, language).await,
             Request::GroupingGet {} => self.grouping(caller).await,
@@ -441,7 +445,37 @@ where
             } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
-            Request::CommandList { thread } => self.list_commands(thread).await,
+            Request::TerminalOpen { thread, size } => {
+                self.open_terminal(caller, thread, size).await
+            }
+            Request::TerminalList { thread } => self.list_terminals(caller, thread).await,
+            Request::TerminalWrite {
+                thread,
+                terminal,
+                input,
+            } => {
+                self.write_terminal(caller, thread, (terminal, &input))
+                    .await
+            }
+            Request::TerminalRead {
+                thread,
+                terminal,
+                from,
+                wait_ms,
+            } => {
+                let wait = std::time::Duration::from_millis(wait_ms);
+                self.read_terminal(caller, thread, (terminal, from), wait)
+                    .await
+            }
+            Request::TerminalResize {
+                thread,
+                terminal,
+                size,
+            } => self.resize_terminal(caller, thread, (terminal, size)).await,
+            Request::TerminalClose { thread, terminal } => {
+                self.close_terminal(caller, thread, terminal).await
+            }
+            Request::CommandList { thread } => self.list_commands(caller, thread).await,
             Request::CommandStop { thread, command } => {
                 self.stop_command(caller, thread, command).await
             }

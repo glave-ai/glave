@@ -382,6 +382,12 @@ export type DeviceCode = {
   readonly url: string;
 };
 
+/**
+ * Identifies one browser or device that takes a person's notifications
+ * (`push.subscribed`), sealed under a key of its own.
+ */
+export type DeviceId = string;
+
 /** One line of a change. */
 export type DiffLine = {
   readonly kind: LineKind;
@@ -936,6 +942,29 @@ export type ProviderInfo = {
 /** Which service a model account is with. */
 export type ProviderKind = "openai" | "anthropic" | "openrouter" | "compatible";
 
+/** A browser that takes the person's notifications. */
+export type PushDevice = {
+  readonly added: At;
+  /** It is the browser that asked: `push/get`'s `endpoint` is its subscription's. */
+  readonly current?: boolean;
+  /** What `push/remove` names it by. */
+  readonly id: DeviceId;
+  /** What the person knows it as: "Safari on iPhone". */
+  readonly name: string;
+};
+
+/** Whether the server tells the person's browsers when glave needs them. */
+export type PushInfo = {
+  readonly kind: "never";
+  readonly reason: string;
+} | {
+  /** The browsers that take their notifications, the latest first. */
+  readonly devices: readonly (PushDevice)[];
+  /** The key a browser subscribes with (`applicationServerKey`), in base64url. */
+  readonly key: string;
+  readonly kind: "offered";
+};
+
 /** One question. */
 export type Question = {
   /** Whether more than one choice may be picked. */
@@ -1030,6 +1059,11 @@ export type RunningCommand = {
   readonly command: string;
   /** Which command, for `command/stop`. */
   readonly id: CommandId;
+  /**
+   * The TCP ports it listens on, lowest first, where the caller reaches this computer's
+   * loopback: looked for only then, and on the server's own computer.
+   */
+  readonly ports?: readonly (number)[];
   /** When it started, once the thread has recorded it. */
   readonly started_at?: At | null;
   /** What it is doing, in plain words. */
@@ -1050,6 +1084,19 @@ export type ScheduleInfo = {
   readonly prompt: string;
   readonly schedule: ScheduleId;
   readonly when: When;
+};
+
+/**
+ * What a read of a terminal answers: what it printed from `from`, the offset of the first
+ * byte, up to `next`, the offset to read from next. A `from` past the offset asked for says
+ * the bytes between were dropped, the computer keeping only the latest [`TERMINAL_KEPT`].
+ * `ended` once its shell has ended and all it printed has been read.
+ */
+export type Screenful = {
+  readonly ended?: boolean;
+  readonly from: number;
+  readonly next: number;
+  readonly output: string;
 };
 
 /** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
@@ -1129,6 +1176,11 @@ export type ServerInfo = {
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
   /**
+   * Whether it tells people's browsers when glave needs them (`push/get`), so a client
+   * offers that only where it does.
+   */
+  readonly push?: boolean;
+  /**
    * The caller's role in the organization, when there is one and they signed in: so a
    * client shows admin screens only to its Admins and Owners. Absent on a server with no
    * organization, where the one person may do everything.
@@ -1159,7 +1211,7 @@ export type ServiceAnswer = {
  * A person's own settings or connections, and their organization's brand, by what a client
  * reads to show them.
  */
-export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "brand" | "awake" | "memory" | "passkeys" | "language";
+export type Setting = "providers" | "credentials" | "connections" | "secrets" | "search" | "grouping" | "filters" | "appearance" | "brand" | "awake" | "memory" | "passkeys" | "language" | "push";
 
 /** The accent as it is drawn, in each of light and dark. */
 export type Shades = {
@@ -1241,6 +1293,27 @@ export type TaskKind = "agent";
 /** Whether a task is still going. */
 export type TaskStatus = "running" | "finished" | "elsewhere";
 
+/**
+ * Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by
+ * the computer it runs on).
+ */
+export type TerminalId = string;
+
+/** A terminal open on a computer, as its listing shows it. */
+export type TerminalInfo = {
+  /** Whether its shell has ended; it stays until it is closed. */
+  readonly ended?: boolean;
+  /** The folder its shell started in, as its computer names it. */
+  readonly folder: string;
+  readonly id: TerminalId;
+};
+
+/** How many columns and rows a terminal shows. */
+export type TerminalSize = {
+  readonly cols: number;
+  readonly rows: number;
+};
+
 /** The files a thread changed, and each turn's. */
 export type ThreadChanges = {
   /**
@@ -1314,6 +1387,12 @@ export type ThreadSummary = {
   readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
+  /**
+   * Whether its person may open terminals of their own in its folder: their shell, on their
+   * own computer, so never on a worker, nor on the server's for anyone but the person it
+   * works for; never once it is put away (`specs/session.md`, "Terminals").
+   */
+  readonly terminals?: boolean;
   /** The title the person gave it, else the first line of their first message. */
   readonly title?: string | null;
   /** Tokens its own model calls used. */
@@ -2439,6 +2518,45 @@ export type ProviderRemoveParams = {
 
 export type ProviderRemoveResult = Readonly<Record<string, never>>;
 
+export type PushGetParams = {
+  readonly endpoint?: string | null;
+};
+
+/** Whether the person's browsers are told when glave needs them, and which. */
+export type PushGetResult = {
+  readonly push: PushInfo;
+};
+
+export type PushRemoveParams = {
+  readonly device: DeviceId;
+};
+
+/** Whether the person's browsers are told when glave needs them, and which. */
+export type PushRemoveResult = {
+  readonly push: PushInfo;
+};
+
+/**
+ * A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),
+ * and what the person knows the browser as. Its `Debug` says neither its endpoint nor its
+ * secret.
+ */
+export type PushSubscribeParams = {
+  /** The secret it shares with the server, in base64url. */
+  readonly auth: Secret;
+  /** What the person knows it as: "Safari on iPhone". */
+  readonly device: string;
+  /** Where its push service takes pushes for it. */
+  readonly endpoint: string;
+  /** Its public key, in base64url. */
+  readonly p256dh: string;
+};
+
+/** Whether the person's browsers are told when glave needs them, and which. */
+export type PushSubscribeResult = {
+  readonly push: PushInfo;
+};
+
 export type QuestionAnswerParams = {
   readonly answers: readonly (string)[];
   readonly question: CallId;
@@ -2620,6 +2738,58 @@ export type TasksStopParams = {
 };
 
 export type TasksStopResult = Readonly<Record<string, never>>;
+
+export type TerminalCloseParams = {
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalCloseResult = Readonly<Record<string, never>>;
+
+export type TerminalListParams = {
+  readonly thread: ThreadId;
+};
+
+export type TerminalListResult = {
+  readonly terminals: readonly (TerminalInfo)[];
+};
+
+export type TerminalOpenParams = {
+  readonly size: TerminalSize;
+  readonly thread: ThreadId;
+};
+
+export type TerminalOpenResult = {
+  readonly terminal: TerminalInfo;
+};
+
+export type TerminalReadParams = {
+  readonly from: number;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+  readonly wait_ms?: number;
+};
+
+/** What a terminal printed, from where it was read. */
+export type TerminalReadResult = {
+  readonly screen: Screenful;
+};
+
+export type TerminalResizeParams = {
+  readonly size: TerminalSize;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalResizeResult = Readonly<Record<string, never>>;
+
+export type TerminalWriteParams = {
+  readonly input: string;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalWriteResult = Readonly<Record<string, never>>;
 
 export type ThreadArchiveParams = {
   readonly thread: ThreadId;
@@ -2984,6 +3154,9 @@ export interface Methods {
   readonly "provider/list": { readonly params: ProviderListParams; readonly result: ProviderListResult };
   readonly "provider/refresh": { readonly params: ProviderRefreshParams; readonly result: ProviderRefreshResult };
   readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
+  readonly "push/get": { readonly params: PushGetParams; readonly result: PushGetResult };
+  readonly "push/remove": { readonly params: PushRemoveParams; readonly result: PushRemoveResult };
+  readonly "push/subscribe": { readonly params: PushSubscribeParams; readonly result: PushSubscribeResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
   readonly "recovery/start": { readonly params: RecoveryStartParams; readonly result: RecoveryStartResult };
   readonly "role/set": { readonly params: RoleSetParams; readonly result: RoleSetResult };
@@ -3006,6 +3179,12 @@ export interface Methods {
   readonly "signup/start": { readonly params: SignupStartParams; readonly result: SignupStartResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
+  readonly "terminal/close": { readonly params: TerminalCloseParams; readonly result: TerminalCloseResult };
+  readonly "terminal/list": { readonly params: TerminalListParams; readonly result: TerminalListResult };
+  readonly "terminal/open": { readonly params: TerminalOpenParams; readonly result: TerminalOpenResult };
+  readonly "terminal/read": { readonly params: TerminalReadParams; readonly result: TerminalReadResult };
+  readonly "terminal/resize": { readonly params: TerminalResizeParams; readonly result: TerminalResizeResult };
+  readonly "terminal/write": { readonly params: TerminalWriteParams; readonly result: TerminalWriteResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };
   readonly "thread/changes": { readonly params: ThreadChangesParams; readonly result: ThreadChangesResult };
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
@@ -3131,6 +3310,8 @@ export const ErrorCode = {
   NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
+  /** No such terminal is open in this thread */
+  NO_TERMINAL: -32038,
   /** No such thread */
   NO_THREAD: -32001,
   /** No such ask waits: the project changed since, or asks nothing now */

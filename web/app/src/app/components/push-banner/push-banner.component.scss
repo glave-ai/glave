@@ -1,0 +1,44 @@
+// Nothing of its own where it draws nothing.
+:host {
+  display: contents;
+}
+
+// The conversation's first item, above its first lines: it sticks at the top as the thread
+// scrolls under it, and keeps its room once dismissed, so nothing moves.
+.room {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding-block-start: var(--glz-space-2);
+}
+
+// One quiet strip in the conversation's column: the line, then its two buttons at the end, and
+// under them what came of turning it on.
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-2) var(--glz-space-3);
+  padding: var(--glz-inset-strip);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-raised);
+  box-shadow: var(--glz-elevation-2);
+}
+
+.gone {
+  visibility: hidden;
+}
+
+.offer {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  flex-basis: 100%;
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}

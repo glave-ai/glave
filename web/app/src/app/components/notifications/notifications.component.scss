@@ -1,0 +1,16 @@
+@use '../page';
+
+// Its card alone takes a place in the page's column, so where the server pushes nothing it
+// takes none.
+:host {
+  display: contents;
+}
+
+// What a line is about at its start, what to do with it at its end.
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-3);
+  padding-block: var(--glz-space-2);
+}

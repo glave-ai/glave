@@ -48,5 +48,6 @@ mod starter;
 mod subagents;
 mod tasks;
 mod telemetry;
+mod terminals;
 mod threads;
 mod turns;

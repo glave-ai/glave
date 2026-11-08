@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
+use crate::compaction::Asked;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::toolset::ToolSet;
@@ -92,6 +93,7 @@ where
                     answered: open.asked,
                     round: open.round,
                     proposed: false,
+                    compact: Asked::No,
                 };
                 let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());
                 let began = std::time::Instant::now();
