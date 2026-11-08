@@ -692,6 +692,8 @@
     "tasks.heading": "Tasks",
     "tasks.intro": "Work running with no one attached: started in the background, or by a schedule.",
     "tasks.refresh": "Refresh",
+    "terminalScreen.prompt": "Terminal input",
+    "terminalScreen.tooMuch": "Too much printed to read aloud",
     "terminalTab.another": "Open another terminal",
     "terminalTab.close": "Close this terminal",
     "terminalTab.ended": "This shell has ended. Close it, or open another.",

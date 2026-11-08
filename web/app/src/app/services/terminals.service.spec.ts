@@ -103,4 +103,37 @@ describe('TerminalsService', () => {
     expect(service.opening()).toBe(false);
     expect(service.problem()).toBe('A terminal opens only on your own computer.');
   });
+
+  it('reads again a while after a read fails, saying why meanwhile, and not while hidden', async () => {
+    let reads = 0;
+    const fake = new FakeSession().answer('terminal/read', () => {
+      reads += 1;
+      if (reads === 1) {
+        throw new Error('unreachable');
+      }
+      return { screen: { from: 0, next: 0, output: '', ended: true } };
+    });
+    const service = await opened(fake);
+    vi.useFakeTimers();
+    const following = service.follow('t1', () => undefined, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(service.problem()).toBe('Something went wrong. Try again in a moment.');
+    expect(reads).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await following;
+    vi.useRealTimers();
+    expect(reads).toBe(2);
+    expect(service.problem()).toBeNull();
+    expect(service.ended()).toBe(false);
+
+    // Hidden, it waits to be shown again before it reads.
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const stop = new AbortController();
+    const waiting = service.follow('t1', () => undefined, stop.signal);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(reads).toBe(2);
+    stop.abort();
+    await waiting;
+    hidden.mockRestore();
+  });
 });
