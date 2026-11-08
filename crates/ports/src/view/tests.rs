@@ -1,6 +1,7 @@
 use glave_event::{
-    EventId, Header, MessageAdded, Origin, OriginKind, Part, Producer, Role, ThreadRenamed,
-    ThreadStarted, encode,
+    Cost, Currency, EventId, ForkFiles, ForkPoint, Header, MessageAdded, ModelRef, ModelResponded,
+    Nanos, Origin, OriginKind, Part, Producer, Role, StopReason, ThreadForked, ThreadRenamed,
+    ThreadStarted, Usage, encode,
 };
 use uuid::Uuid;
 
@@ -26,7 +27,6 @@ fn started() -> RawEvent {
             name: "glave".into(),
             version: "0".into(),
         },
-        fork: None,
         parent: None,
         for_: None,
         agent: None,
@@ -110,6 +110,64 @@ fn a_rename_wins_over_the_first_message_and_later_ones() {
     let view = ThreadView::fold(None, &events).unwrap();
     assert_eq!(view.title_seq, Seq::new(3).ok());
     assert_eq!(title_of(&events[2]).as_deref(), Some("Release"));
+}
+
+/// A model call at `seq` that used `input` tokens and cost a cent, with `usage` estimated or not.
+fn responded(seq: u64, input: u64, estimated: bool) -> RawEvent {
+    let counts = TokenCounts {
+        input,
+        ..TokenCounts::default()
+    };
+    let payload = ModelResponded {
+        model: ModelRef {
+            provider: "test".into(),
+            name: "model".into(),
+        },
+        response_id: None,
+        stop: StopReason::EndTurn,
+        provider_stop: None,
+        usage: Usage::new(counts, estimated, None).unwrap(),
+        cost: Some(Cost {
+            amount: Money {
+                nanos: Nanos::new(10_000_000),
+                currency: Currency::USD,
+            },
+            price_list: "test".into(),
+        }),
+        route: None,
+        target: None,
+        service: None,
+        reasoning_stripped: false,
+        upstream: None,
+        effort: None,
+    };
+    encode(header(seq), &payload).unwrap()
+}
+
+#[test]
+fn a_fork_counts_only_what_its_own_calls_used() {
+    let forked = ThreadForked {
+        from: ForkPoint {
+            thread: header(1).thread,
+            seq: Seq::new(9).unwrap(),
+        },
+        files: ForkFiles::Same,
+        told: "Forked here.".into(),
+    };
+    let events = vec![
+        started(),
+        responded(2, 1_000, true),
+        encode(header(3), &forked).unwrap(),
+        responded(4, 30, false),
+    ];
+    let view = ThreadView::fold(None, &events).unwrap();
+    assert_eq!(
+        view.tokens.input, 30,
+        "the copies' tokens are the other thread's"
+    );
+    assert_eq!(view.cost.map(|cost| cost.nanos.get()), Some(10_000_000));
+    assert!(!view.estimated, "only the copies were estimated");
+    assert_eq!(view.context.map(|last| last.tokens), Some(30));
 }
 
 #[test]

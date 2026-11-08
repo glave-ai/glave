@@ -209,7 +209,7 @@ fn dangling_calls(events: &[Event]) -> Vec<ToolCall> {
 /// The person's own messages, oldest first: the last text of each message they added (a new
 /// thread's first message opens with the project's instructions). A subagent's thread has
 /// none of its own: its prompts came from the parent's agent.
-fn asked(events: &[Event]) -> Vec<String> {
+pub(crate) fn asked(events: &[Event]) -> Vec<String> {
     if !above(events).is_empty() {
         return Vec::new();
     }
@@ -228,7 +228,7 @@ fn asked(events: &[Event]) -> Vec<String> {
 }
 
 /// How many turns `events` begin.
-fn turns_begun(events: &[Event]) -> u64 {
+pub(crate) fn turns_begun(events: &[Event]) -> u64 {
     let begun = events
         .iter()
         .filter(|event| matches!(event.body, Body::TurnStarted(_)))
@@ -263,7 +263,7 @@ fn above(events: &[Event]) -> Vec<ThreadId> {
 }
 
 /// The text of the person's latest message, kept word for word through a compaction.
-fn latest_request(events: &[Event]) -> Option<String> {
+pub(crate) fn latest_request(events: &[Event]) -> Option<String> {
     events.iter().rev().find_map(|event| match &event.body {
         Body::MessageAdded(added) if by_person(added) => {
             let texts: Vec<&str> = added
@@ -302,7 +302,7 @@ pub(crate) fn read_untrusted(events: &[Event]) -> bool {
 
 /// Whether the model has been shown a file that usually holds secrets: an approval for one
 /// that was allowed.
-fn read_secret(events: &[Event]) -> bool {
+pub(crate) fn read_secret(events: &[Event]) -> bool {
     let mut asked: HashSet<&CallId> = HashSet::new();
     events.iter().any(|event| match &event.body {
         Body::ApprovalRequested(requested) => {
@@ -323,7 +323,7 @@ fn read_secret(events: &[Event]) -> bool {
 }
 
 /// The tools the person allowed for the rest of the thread, from its recorded approvals.
-fn allowed_for_thread(events: &[Event]) -> HashSet<String> {
+pub(crate) fn allowed_for_thread(events: &[Event]) -> HashSet<String> {
     let mut asked: HashMap<&CallId, &str> = HashMap::new();
     let mut allowed = HashSet::new();
     for event in events {

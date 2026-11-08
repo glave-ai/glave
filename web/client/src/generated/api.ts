@@ -2608,6 +2608,15 @@ export type ThreadEventsResult = {
   readonly next?: Seq | null;
 };
 
+export type ThreadForkParams = {
+  readonly at?: Seq | null;
+  readonly thread: ThreadId;
+};
+
+export type ThreadForkResult = {
+  readonly thread: ThreadSummary;
+};
+
 export type ThreadGetParams = {
   readonly thread: ThreadId;
 };
@@ -2945,6 +2954,7 @@ export interface Methods {
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
+  readonly "thread/fork": { readonly params: ThreadForkParams; readonly result: ThreadForkResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };
   readonly "thread/list/unwatch": { readonly params: ThreadListUnwatchParams; readonly result: ThreadListUnwatchResult };

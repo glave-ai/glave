@@ -15,6 +15,7 @@ pub(crate) mod connector;
 pub(crate) mod credential;
 pub(crate) mod credits;
 pub(crate) mod filters;
+pub(crate) mod fork;
 pub(crate) mod gateway;
 pub(crate) mod grouping;
 pub(crate) mod hook;
@@ -59,6 +60,7 @@ pub use connector::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use credits::{CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet};
 pub use filters::{Filters, FiltersSet, Hides, MaxPrice, Serve, Sort};
+pub use fork::{ForkFiles, ForkPoint, ThreadForked};
 pub use gateway::GatewayToolCalled;
 pub use grouping::{Grouping, GroupingSet};
 pub use hook::{HookPoint, HookRan, HookResult};
@@ -89,9 +91,7 @@ pub use service::{
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
-pub use thread::{
-    ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,
-};
+pub use thread::{Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{
     Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolError, ToolKind, WebPage,
 };
