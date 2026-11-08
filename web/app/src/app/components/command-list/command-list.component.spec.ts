@@ -122,4 +122,15 @@ describe('CommandListComponent', () => {
     expect(all(root, 'commands-error')[0]?.textContent).toBe('The computer did not answer.');
     await expectAccessible(root);
   });
+
+  it('says the ports a command listens on, where the server says them', async () => {
+    const fake = new FakeSession().answer('command/list', {
+      commands: [command('c1', DEV, { ports: [4200, 4201] }), command('c2', 'cargo watch')],
+    });
+    const root = await render(fake);
+    expect(all(root, 'command-listening').map((each) => each.textContent)).toEqual([
+      'listening on 4200 and 4201',
+    ]);
+    await expectAccessible(root);
+  });
 });

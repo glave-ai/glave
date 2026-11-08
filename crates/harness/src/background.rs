@@ -11,8 +11,10 @@ mod record;
 use std::sync::Arc;
 
 use glave_event::{Body, CommandEnding, Event, Principal};
+use std::net::SocketAddr;
+
 use glave_ports::computer::{
-    CommandId, ComputerError, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
+    CommandId, ComputerError, ComputerId, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::task::JoinSet;
@@ -46,14 +48,18 @@ impl Staged {
 }
 
 impl Commands {
-    /// The record `events` leave, its commands reached through `computers`.
-    pub(crate) fn rebuilt(events: &[Event], computers: &Arc<dyn Computers>) -> Self {
+    /// The record `events` leave, its commands reached through `computers`, on `computer`.
+    pub(crate) fn rebuilt(
+        events: &[Event],
+        computers: &Arc<dyn Computers>,
+        computer: ComputerId,
+    ) -> Self {
         let commands = Self::default();
         for event in events {
             match &event.body {
                 Body::CommandStarted(started) => commands.restore(
                     CommandId::from_uuid(started.command),
-                    WorkspaceId::from_uuid(started.workspace),
+                    (WorkspaceId::from_uuid(started.workspace), computer),
                     Arc::clone(computers),
                     started.script.clone(),
                     event.header.at,
@@ -207,8 +213,38 @@ impl Commands {
                 command: entry.script,
                 started_at: entry.started,
                 summary: record::RUNNING.to_owned(),
+                ports: Vec::new(),
             })
             .collect()
+    }
+
+    /// Where the commands still running on `computer` listen, as it says now: none of a
+    /// computer that cannot be reached or tell. Others are not asked.
+    pub async fn listening(&self, computer: ComputerId) -> Vec<(CommandId, Vec<SocketAddr>)> {
+        let running: Vec<Entry> = self
+            .running()
+            .into_iter()
+            .filter(|entry| entry.computer == computer)
+            .collect();
+        let mut workspaces: Vec<(WorkspaceId, Arc<dyn Computers>)> = Vec::new();
+        for entry in &running {
+            if !workspaces.iter().any(|(at, _)| *at == entry.workspace) {
+                workspaces.push((entry.workspace, Arc::clone(&entry.computers)));
+            }
+        }
+        let mut found = Vec::new();
+        for (workspace, computers) in workspaces {
+            let Ok(listening) = computers.listening(workspace).await else {
+                continue;
+            };
+            found.extend(
+                listening
+                    .into_iter()
+                    .filter(|listening| running.iter().any(|entry| entry.id == listening.command))
+                    .map(|listening| (listening.command, listening.at)),
+            );
+        }
+        found
     }
 
     /// Stops the command `id` for `by`, the person who asked; false when it is not running.

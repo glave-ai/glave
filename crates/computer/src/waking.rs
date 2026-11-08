@@ -16,9 +16,9 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Screenful, Search,
-    Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId,
-    WorkspaceInfo,
+    Globbed, Home, KeptWorktree, Listed, Listening, Listing, Output, Printed, Save, Saved,
+    Screenful, Search, Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -598,6 +598,18 @@ impl Computers for Waking {
         Box::pin(async move {
             match self.opened(&*self.planned(workspace)?) {
                 Some(open) => self.done(open.computers.commands(open.workspace).await),
+                None => Ok(Vec::new()),
+            }
+        })
+    }
+
+    fn listening(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
+        Box::pin(async move {
+            match self.opened(&*self.planned(workspace)?) {
+                Some(open) => self.done(open.computers.listening(open.workspace).await),
                 None => Ok(Vec::new()),
             }
         })

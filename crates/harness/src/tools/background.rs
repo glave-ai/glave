@@ -117,7 +117,8 @@ pub(crate) async fn start(
         Err(error) => return ToolOutcome::error(explain(&error)),
     };
     let computers = Arc::clone(workspace.computers());
-    let number = commands.add(id, workspace.info().id, computers, script, false);
+    let at = (workspace.info().id, workspace.info().computer);
+    let number = commands.add(id, at, computers, script, false);
     let first = match commands.numbered(number) {
         Some(entry) => unless_cancelled(cancel, commands.read(&entry, FIRST_LOOK)).await,
         None => None,

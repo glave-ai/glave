@@ -201,8 +201,8 @@ pub(crate) async fn bash(
             after_secs,
         } => {
             let computers = Arc::clone(workspace.computers());
-            let id = workspace.info().id;
-            let number = commands.add(command, id, computers, args.command, true);
+            let at = (workspace.info().id, workspace.info().computer);
+            let number = commands.add(command, at, computers, args.command, true);
             return moved(number, after_secs, &captured.render());
         }
         Exit::TimedOut { after_secs } | Exit::Idle { after_secs } => Ending::TimedOut(after_secs),
