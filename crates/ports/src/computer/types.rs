@@ -229,6 +229,11 @@ pub struct WorkspaceInfo {
     /// The temp folder commands there see, when it is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temp: Option<String>,
+    /// Where its folder's history stood as it opened (a commit, for a repository), which
+    /// [`Computers::changes`](super::Computers::changes) reads changes since; `None` for a
+    /// folder that keeps no history, or has nothing in it yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
 }
 
 /// One command, run by bash at the workspace root.

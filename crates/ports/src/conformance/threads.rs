@@ -282,6 +282,7 @@ async fn where_and_how_full<L: EventLog>(log: &L, here: &Scope, id: ThreadId) ->
             path: "/work".into(),
         },
         root: "/work".into(),
+        since: None,
     };
     let estimated = ModelResponded {
         usage: Usage::new(

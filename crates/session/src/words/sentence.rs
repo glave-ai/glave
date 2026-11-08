@@ -430,6 +430,14 @@ sentences! {
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
         "Changes made by commands or other tools are not listed.",
+    // `since` is which point the folder's answer is read since (`asked`, `opened`, `now`), and
+    // `shortened` whether some files are shown without their lines (`yes`, `no`).
+    ChangesInFolder { since: String, shortened: String } = "changes-in-folder"
+        "The thread's files are glave's own edits and all else that differs from { $since ->\n    [asked] the version it started from\n    [opened] the version its folder was at when glave last opened it\n   *[now] its folder's latest version\n }, whatever changed it{ $shortened ->\n    [yes] {\", some shown without their lines\"}\n   *[no] {\"\"}\n }; a turn's are only glave's own edits.",
+    ChangesUnread = "changes-unread"
+        "What changed in this folder couldn't be read, so only glave's own edits are listed.",
+    ChangesNoHistory = "changes-no-history"
+        "This folder keeps no version history, so only glave's own edits are listed, not what commands or other tools changed.",
 
     // A thread's plan.
     PlanProposed { steps: u64 } = "plan-proposed"

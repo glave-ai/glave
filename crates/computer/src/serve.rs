@@ -352,6 +352,12 @@ impl<C: Computers + 'static> Connection<C> {
             Request::Search { workspace, search } => {
                 reply(computers.search(workspace, &search).await)
             }
+            Request::Changes { workspace, since } => reply(
+                computers
+                    .changes(workspace, since.as_deref())
+                    .await
+                    .map(|changes| json!({"changes": changes})),
+            ),
             Request::Save { workspace, save } => reply(computers.save(workspace, &save).await),
         }
     }

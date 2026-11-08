@@ -5,6 +5,7 @@
 
 mod background;
 pub(crate) mod bytes;
+mod changes;
 mod credential;
 mod environment;
 mod finding;
@@ -19,6 +20,7 @@ use crate::tools::{BoxFuture, Cancellation};
 
 pub use background::{Background, IDLE, KEPT_OUTPUT, MAX_BACKGROUND, MAX_WAIT, Printed};
 pub use bytes::Bytes;
+pub use changes::{ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind, Since};
 pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, GitCredentials};
 pub use environment::{Environment, Image, Network, Size, is_variable_name};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
@@ -262,6 +264,22 @@ pub trait Computers: Send + Sync {
         workspace: WorkspaceId,
         search: &'a Search,
     ) -> BoxFuture<'a, Result<Searched, ComputerError>>;
+
+    /// What changed in the workspace's folder since `since`, a point in its history as
+    /// [`WorkspaceInfo::at`] named one, or since where its history stands now when that is
+    /// `None` or gone (`files/changes`): every file that differs, whatever changed it, new
+    /// files not ignored among them. `None` for a folder that keeps no history. Asking never
+    /// wakes a computer that sleeps: asleep, it answers unsupported.
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        let _ = (workspace, since);
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            "this computer cannot say what changed in its folders".into(),
+        ))))
+    }
 
     /// Commits the workspace's changes to a branch and pushes it to where the sources came
     /// from (`workspace/save`): the only way work leaves a computer. A folder that is not a
