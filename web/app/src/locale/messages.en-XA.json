@@ -78,6 +78,7 @@
     "awake.hint": "[Ţĥé šçŕééñ ɱåý šţîļļ ţûŕñ öƒƒ, åñð çļöšîñĝ ţĥé ļîð šţîļļ þûţš îţ ţö šļééþ. one two three four]",
     "awake.keep": "[Ķééþ ţĥîš çöɱþûţéŕ åŵåķé one two]",
     "awake.label": "[Ŵĥîļé ĝļåṽé ŵöŕķš one two]",
+    "commandList.listening": "[ļîšţéñîñĝ öñ {$PORTS} one]",
     "commandList.stopCommand": "[Šţöþ {$COMMAND} one]",
     "commandList.stoppingCommand": "[Šţöþþîñĝ {$COMMAND}… one]",
     "connect.address": "[Šéŕṽéŕ åððŕéšš one]",

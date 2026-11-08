@@ -2971,6 +2971,16 @@
           "$ref": "#/$defs/CommandId",
           "description": "Which command, for `command/stop`."
         },
+        "ports": {
+          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer.",
+          "items": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
         "started_at": {
           "anyOf": [
             {

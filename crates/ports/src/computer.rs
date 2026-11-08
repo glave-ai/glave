@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::tools::{BoxFuture, Cancellation};
 
-pub use background::{Background, IDLE, KEPT_OUTPUT, MAX_BACKGROUND, MAX_WAIT, Printed};
+pub use background::{Background, IDLE, KEPT_OUTPUT, Listening, MAX_BACKGROUND, MAX_WAIT, Printed};
 pub use bytes::Bytes;
 pub use changes::{ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind, Since};
 pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, GitCredentials};
@@ -201,6 +201,18 @@ pub trait Computers: Send + Sync {
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         let _ = workspace;
         Box::pin(std::future::ready(Err(no_background())))
+    }
+
+    /// Where the commands still running in the background in a workspace listen
+    /// (`command/listening`): those whose processes listen on a TCP address the computer's own
+    /// loopback reaches, oldest first. Asked for only where something reaches that loopback, as
+    /// finding them reads every process's sockets. None where the computer cannot tell.
+    fn listening(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
+        let _ = workspace;
+        Box::pin(std::future::ready(Ok(Vec::new())))
     }
 
     /// Opens a terminal of the person's own on `computer` for `owner` (a thread, as the caller

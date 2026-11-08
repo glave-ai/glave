@@ -34,9 +34,9 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
-    Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Refusal, Save, Saved, Screenful,
-    Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo, TerminalSize,
-    WorkspaceId, WorkspaceInfo,
+    Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output, Printed, Refusal, Save, Saved,
+    Screenful, Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo,
+    TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -394,22 +394,12 @@ impl LocalComputers {
                 .map(|(name, value)| (name.into(), value.into())),
         );
         if let Some(folder) = &self.glave_on_path {
-            let path = first_on_path(&all, folder);
+            let path = on_path::first_on_path(&all, folder);
             all.retain(|(name, _)| name != "PATH");
             all.push(("PATH".into(), path));
         }
         Arc::new(all)
     }
-}
-
-/// `environment`'s `PATH` with `folder` first.
-pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path) -> OsString {
-    let mut first = folder.as_os_str().to_owned();
-    if let Some((_, path)) = environment.iter().find(|(name, _)| name == "PATH") {
-        first.push(":");
-        first.push(path);
-    }
-    first
 }
 
 impl Computers for LocalComputers {
@@ -692,6 +682,16 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.workspace(workspace)?;
             Ok(self.background.list(workspace))
+        })
+    }
+
+    fn listening(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            Ok(self.background.listening(workspace, &self.processes).await)
         })
     }
 
