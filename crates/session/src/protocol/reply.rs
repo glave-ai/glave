@@ -14,9 +14,9 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
-    Told, TrustAsk, WatchEnd,
+    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources, ScheduleInfo,
+    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 mod listening;
@@ -74,6 +74,10 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
+    /// Whether it tells people's browsers when glave needs them (`push/get`), so a client
+    /// offers that only where it does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub push: bool,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never
@@ -503,6 +507,9 @@ pub enum Reply {
     /// Whether glave remembers for the person.
     #[schemars(title = "Remembering")]
     Remembering { remembering: RememberingInfo },
+    /// Whether the person's browsers are told when glave needs them, and which.
+    #[schemars(title = "Push")]
+    Push { push: PushInfo },
     /// Whether the person's agent may search the web.
     #[schemars(title = "Search")]
     Search { search: SearchInfo },

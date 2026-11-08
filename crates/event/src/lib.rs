@@ -21,8 +21,8 @@ pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
-    CallId, CredentialId, EventId, InviteId, MemoryId, PrincipalId, ProviderId, ScheduleId,
-    ThreadId,
+    CallId, CredentialId, DeviceId, EventId, InviteId, MemoryId, PrincipalId, ProviderId,
+    ScheduleId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money, Nanos};
 pub use payload::{
@@ -70,6 +70,7 @@ pub use payload::{
 };
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
+pub use payload::{PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed};
 pub use payload::{SecretAdded, SecretRemoved};
 pub use secret::{Secret, serialize_exposed, serialize_exposed_values};
 pub use seen::seen;

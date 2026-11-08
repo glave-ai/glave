@@ -92,9 +92,10 @@ fn a_client_back_from_away_hears_every_setting_may_have_changed() {
                 Setting::Memory,
                 Setting::Passkeys,
                 Setting::Language,
+                Setting::Push,
             ];
             assert_eq!(
-                settings_until(&mut watcher, Setting::Language).await,
+                settings_until(&mut watcher, Setting::Push).await,
                 every,
                 "{kind:?}: their own settings and their organization's brand, once each"
             );

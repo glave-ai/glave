@@ -164,6 +164,7 @@ where
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                     invites,
+                    push: self.inner.push.is_some(),
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
@@ -190,6 +191,9 @@ where
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
+            Request::PushGet { endpoint } => self.push_info(caller, endpoint.as_deref()).await,
+            Request::PushSubscribe { browser } => self.subscribe(caller, browser).await,
+            Request::PushRemove { device } => self.remove_device(caller, device).await,
             Request::LanguageGet {} => self.language(caller).await,
             Request::LanguageSet { language } => self.set_language(caller, language).await,
             Request::GroupingGet {} => self.grouping(caller).await,

@@ -208,6 +208,7 @@ pub(crate) async fn wire(
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         accounts: crate::serving::accounts(args, choices, &store).await?,
         mail: crate::serving::mail(choices)?,
+        push: crate::serving::push(args, choices, constraints, &store)?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         signup: choices.signup.as_ref().is_some_and(|signup| signup.value),
         forwarded: choices.forwarded.as_ref().map(|forwarded| forwarded.value),

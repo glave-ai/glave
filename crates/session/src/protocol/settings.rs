@@ -42,11 +42,13 @@ pub enum Setting {
     /// The language the server writes its own sentences to them in (`language/get`): what a
     /// client shows of the server's words, an approval's included, it reads again.
     Language,
+    /// The browsers that take their notifications (`push/get`).
+    Push,
 }
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
@@ -60,6 +62,7 @@ impl Setting {
         Self::Memory,
         Self::Passkeys,
         Self::Language,
+        Self::Push,
     ];
 
     /// Whether it reads the same in every organization the person is in, so a change made
@@ -108,6 +111,7 @@ impl Request {
             | Self::PasskeyRemove { .. }
             | Self::PersonName { .. } => Setting::Passkeys,
             Self::LanguageSet { .. } => Setting::Language,
+            Self::PushSubscribe { .. } | Self::PushRemove { .. } => Setting::Push,
             _ => return None,
         })
     }

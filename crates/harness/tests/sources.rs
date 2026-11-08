@@ -96,7 +96,8 @@ fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() 
         );
         assert_eq!(
             &offered[7..],
-            ["mcp__docs__search", "mcp__tracker__create_issue"]
+            ["mcp__docs__search", "mcp__tracker__create_issue", "compact"],
+            "glave's own come last"
         );
         assert_eq!(tools.calls().len(), 1, "a read-only tool never asks");
         assert_eq!(results(thread.messages()), ["Found: the setup guide."]);

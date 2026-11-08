@@ -1,6 +1,7 @@
 //! The latest tool results, kept word for word through a compaction, so the conversation that
 //! restarts from a summary still holds the files it was just reading and needn't read them again.
 //! Untrusted output is left to the summary: kept here it would sit in a message of the person's.
+//! A `compact` call is left out too: it is done once the conversation restarts.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -38,7 +39,10 @@ pub(crate) fn recent(messages: &[Message], room: usize) -> Option<String> {
         if omitted(output) || labelled(output) {
             continue;
         }
-        let Some(call) = calls.get(call_id) else {
+        let Some(call) = calls
+            .get(call_id)
+            .filter(|call| call.tool != super::COMPACT)
+        else {
             continue;
         };
         let entry = entry(call, *is_error, output);
