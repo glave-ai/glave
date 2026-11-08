@@ -27,6 +27,11 @@ pub const IDLE: Duration = Duration::from_hours(1);
 /// The longest one read waits for a command to end: a foreground command's longest timeout.
 pub const MAX_WAIT: Duration = Duration::from_mins(10);
 
+/// What happened to a person's computer that lost its machine or started again elsewhere, as the
+/// model is told it: why a call stopped, and why what ran in the background did
+/// (`specs/computers.md`, decision 16).
+pub const MOVED: &str = "your computer moved to another machine";
+
 /// What a command in the background printed since the last read, standard output and error
 /// together, and how it ended once it has.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

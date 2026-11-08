@@ -47,6 +47,8 @@ pub(crate) struct Entry {
     pub(crate) started: Option<At>,
     /// How it ended, once glave knows.
     pub(crate) ended: Option<CommandEnding>,
+    /// Whether the model was told it stopped with its computer, once that is why it ended.
+    pub(crate) told: bool,
 }
 
 /// A command a thread keeps running in the background, as a client lists it: what it runs,
@@ -122,6 +124,7 @@ impl Commands {
             script,
             started: None,
             ended: None,
+            told: false,
         });
         self.kept.send_replace(number);
         number
@@ -153,7 +156,16 @@ impl Commands {
             script,
             started: Some(started),
             ended: None,
+            told: false,
         });
+    }
+
+    /// Notes that the turn beginning now told the model of every command known to have ended
+    /// by then, as the log has it.
+    pub(super) fn told_at_a_turn(&self) {
+        for entry in &mut self.inner().all {
+            entry.told |= entry.ended.is_some();
+        }
     }
 
     /// Numbers the commands kept from now on after the first `used`, which the thread's history
@@ -216,6 +228,24 @@ impl Commands {
             .filter(|entry| entry.ended.is_none())
             .cloned()
             .collect()
+    }
+
+    /// The commands no longer on their computer, which the model was not told of yet.
+    pub(crate) fn gone_untold(&self) -> Vec<Entry> {
+        let inner = self.inner();
+        inner
+            .all
+            .iter()
+            .filter(|entry| entry.ended == Some(CommandEnding::Gone) && !entry.told)
+            .cloned()
+            .collect()
+    }
+
+    /// Notes that the model was told the commands numbered `told` stopped with their computer.
+    pub(crate) fn told(&self, told: &[u32]) {
+        for entry in &mut self.inner().all {
+            entry.told |= told.contains(&entry.number);
+        }
     }
 
     /// Whether any command is not known to have ended.

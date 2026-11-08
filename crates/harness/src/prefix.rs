@@ -61,10 +61,17 @@ impl Prefix {
     }
 }
 
-/// The note that opens `offer`'s turn's message, if anything changed since the model was told.
-pub(crate) fn news(offer: &ToolSet) -> Option<Part> {
-    let (text, _) = offer.news.as_deref()?;
-    Some(Part::Text { text: text.clone() })
+/// The note that opens `offer`'s turn's message, if anything changed since the model was told,
+/// with `also`, what else happened since that it is told in the same one note.
+pub(crate) fn news(offer: &ToolSet, also: Option<String>) -> Option<Part> {
+    let told = offer.news.as_deref().map(|(text, _)| text.clone());
+    let notes: Vec<String> = told.into_iter().chain(also).collect();
+    (!notes.is_empty()).then(|| Part::Text {
+        text: format!(
+            "<system-reminder>\n{}\n</system-reminder>",
+            notes.join("\n\n")
+        ),
+    })
 }
 
 /// Remembers that `thread`'s model was told what `offer`'s news says, once it is recorded.

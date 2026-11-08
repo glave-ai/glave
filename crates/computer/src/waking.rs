@@ -6,7 +6,10 @@
 //! computer that slept and woke since opens it again. Anything else opened on it (a worktree, a
 //! clone, a new project's folder) needs the computer at once, and wakes it.
 
+mod machine;
 mod terminals;
+
+pub use machine::{Grow, Lost, Short};
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,20 +38,6 @@ pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> 
 pub type Peek =
     Arc<dyn Fn() -> BoxFuture<'static, Result<Option<Home>, ComputerError>> + Send + Sync>;
 
-/// What a computer may have run short of while a command ran (`specs/computers.md`, decision
-/// 8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Short {
-    /// The command spent its run held at the CPU limit.
-    Cpu,
-    /// The computer went away as the command ran, perhaps killed for memory.
-    Memory,
-}
-
-/// Grows the computer for what a command ran short of, where it did, and answers what to tell
-/// whoever ran the command.
-pub type Grow = Arc<dyn Fn(Short) -> BoxFuture<'static, Option<String>> + Send + Sync>;
-
 /// How long a computer that answered a call is taken to be awake without asking again: a turn
 /// holds it awake, asking it how it is once a minute, so only a call after a quiet spell asks
 /// whether it slept meanwhile.
@@ -58,8 +47,9 @@ const TRUSTED: Duration = Duration::from_secs(30);
 pub struct Waking {
     wake: Wake,
     peek: Peek,
-    /// Grows it when a command runs short, where it can grow.
-    grow: Option<Grow>,
+    /// Grows it when a command runs short, and says whether it lost its machine, where it has
+    /// a machine of its own to lose.
+    machine: Option<(Grow, Lost)>,
     /// The computer as planned, and its home there.
     home: WorkspaceInfo,
     /// Where it makes scratch folders: each is this, `/`, and its name.
@@ -138,19 +128,20 @@ fn reopens(sources: &Sources) -> bool {
 }
 
 impl Waking {
-    /// The computer `wake` wakes, `peek` finds awake without waking it, and `grow`, if given,
-    /// grows, planned as `home`: its home's workspace, which names the computer, whose scratch
-    /// folders are made in the folder `scratch`. Nothing is asked of it until a call needs it.
+    /// The computer `wake` wakes, `peek` finds awake without waking it, and `machine`, if
+    /// given, grows and says whether it lost its machine, planned as `home`: its home's
+    /// workspace, which names the computer, whose scratch folders are made in the folder
+    /// `scratch`. Nothing is asked of it until a call needs it.
     pub fn home(
         (wake, peek): (Wake, Peek),
-        grow: Option<Grow>,
+        machine: Option<(Grow, Lost)>,
         home: WorkspaceInfo,
         scratch: &str,
     ) -> Home {
         let waking = Self {
             wake,
             peek,
-            grow,
+            machine,
             home: home.clone(),
             scratch: scratch.trim_end_matches('/').to_owned(),
             workspaces: Mutex::new(BTreeMap::new()),
@@ -201,6 +192,12 @@ impl Waking {
         awake.map(|(computer, at)| (computer, at.is_some_and(|at| at.elapsed() < TRUSTED)))
     }
 
+    /// Whether `computer` is the one [`Peek`] finds awake now: never so once the server let go
+    /// of it, its machine lost, so a call after that wakes a new one.
+    async fn still_awake(&self, computer: ComputerId) -> bool {
+        matches!((self.peek)().await, Ok(Some(awake)) if awake.home.computer == computer)
+    }
+
     /// Where `workspace` is open on the computer last found awake, if a call opened it there;
     /// never wakes the computer. Opened on one that slept since, it is not: its commands are
     /// gone with it.
@@ -248,7 +245,9 @@ impl Waking {
             self.last_awake()
                 .is_some_and(|(computer, lately)| lately && computer == open.computer)
         };
-        if let Some(open) = planned.real().filter(trusted) {
+        if let Some(open) = planned.real().filter(trusted)
+            && self.still_awake(open.computer).await
+        {
             return Ok(open);
         }
         let _opening = planned.opening.lock().await;
@@ -302,35 +301,6 @@ impl Waking {
         };
         *planned.real.lock().unwrap_or_else(PoisonError::into_inner) = Some(open.clone());
         Ok(open)
-    }
-
-    /// `ran`, a command's run: one held at the CPU limit grows the computer, saying how in
-    /// `output`, where whoever ran the command reads it; one that found the computer gone as
-    /// it ran grows it if it was killed for memory, and says so instead of the error.
-    async fn ran(
-        &self,
-        ran: Result<Finished, ComputerError>,
-        output: &dyn Output,
-    ) -> Result<Finished, ComputerError> {
-        let Some(grow) = &self.grow else {
-            return ran;
-        };
-        match ran {
-            Ok(finished) if finished.cpu_held => {
-                if let Some(said) = grow(Short::Cpu).await {
-                    output.write(&format!("\n{said}\n")).await;
-                }
-                Ok(finished)
-            }
-            Err(ComputerError::Unreachable(why)) => {
-                self.distrust();
-                match grow(Short::Memory).await {
-                    Some(said) => Err(ComputerError::Failed(said)),
-                    None => Err(ComputerError::Unreachable(why)),
-                }
-            }
-            ran => ran,
-        }
     }
 
     /// Has the next call ask whether the computer is awake.
@@ -544,7 +514,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<CommandId, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.start(open.workspace, command).await)
+            self.told(open.computers.start(open.workspace, command).await)
+                .await
         })
     }
 
@@ -558,7 +529,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
             match self.opened(&*self.planned(workspace)?) {
-                Some(open) => self.done(open.computers.output(open.workspace, command, wait).await),
+                Some(open) => {
+                    self.gone_with_it(open.computers.output(open.workspace, command, wait).await)
+                        .await
+                }
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -572,7 +546,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
         Box::pin(async move {
             match self.opened(&*self.planned(workspace)?) {
-                Some(open) => self.done(open.computers.ended(open.workspace, command, wait).await),
+                Some(open) => {
+                    self.gone_with_it(open.computers.ended(open.workspace, command, wait).await)
+                        .await
+                }
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -585,7 +562,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
             match self.opened(&*self.planned(workspace)?) {
-                Some(open) => self.done(open.computers.stop(open.workspace, command).await),
+                Some(open) => {
+                    self.gone_with_it(open.computers.stop(open.workspace, command).await)
+                        .await
+                }
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -597,7 +577,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         Box::pin(async move {
             match self.opened(&*self.planned(workspace)?) {
-                Some(open) => self.done(open.computers.commands(open.workspace).await),
+                Some(open) => {
+                    self.gone_with_it(open.computers.commands(open.workspace).await)
+                        .await
+                }
                 None => Ok(Vec::new()),
             }
         })
@@ -695,7 +678,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Bytes, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.read(open.workspace, path).await)
+            self.told(open.computers.read(open.workspace, path).await)
+                .await
         })
     }
 
@@ -706,7 +690,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.write(open.workspace, files).await)
+            self.told(open.computers.write(open.workspace, files).await)
+                .await
         })
     }
 
@@ -717,7 +702,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Listed, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.list(open.workspace, listing).await)
+            self.told(open.computers.list(open.workspace, listing).await)
+                .await
         })
     }
 
@@ -728,7 +714,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Stat, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.stat(open.workspace, path).await)
+            self.told(open.computers.stat(open.workspace, path).await)
+                .await
         })
     }
 
@@ -739,7 +726,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Globbed, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.glob(open.workspace, glob).await)
+            self.told(open.computers.glob(open.workspace, glob).await)
+                .await
         })
     }
 
@@ -750,7 +738,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Searched, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.search(open.workspace, search).await)
+            self.told(open.computers.search(open.workspace, search).await)
+                .await
         })
     }
 
@@ -790,7 +779,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Saved, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            self.done(open.computers.save(open.workspace, save).await)
+            self.told(open.computers.save(open.workspace, save).await)
+                .await
         })
     }
 }

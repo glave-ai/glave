@@ -25,7 +25,7 @@ use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use super::sizing::{CEILING, Size};
 use crate::worker::limits::pinned;
-use crate::{Grow, Peek, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
+use crate::{Grow, Lost, Peek, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
 
 mod lease;
 
@@ -222,6 +222,16 @@ impl People {
                 let me = std::sync::Weak::clone(&grows);
                 Box::pin(async move { grow(&me.upgrade()?, short, ceiling).await })
             });
+            let looks = std::sync::Weak::clone(me);
+            let lost: Lost = Arc::new(move || {
+                let me = std::sync::Weak::clone(&looks);
+                Box::pin(async move {
+                    match me.upgrade() {
+                        Some(person) => person.pod.ended().await,
+                        None => false,
+                    }
+                })
+            });
             let peeks = std::sync::Weak::clone(me);
             let peek: Peek = Arc::new(move || {
                 let me = std::sync::Weak::clone(&peeks);
@@ -250,7 +260,7 @@ impl People {
                 leasing: self.leasing.clone(),
                 held: Mutex::new(None),
                 renewing: Mutex::new(None),
-                planned: Waking::home((wake, peek), Some(grow), home, PERSON_SCRATCH),
+                planned: Waking::home((wake, peek), Some((grow, lost)), home, PERSON_SCRATCH),
                 pod: computer,
                 ceiling,
                 growing: tokio::sync::Mutex::new(()),
@@ -359,7 +369,7 @@ async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> Option<Strin
             ))
         }
         Short::Memory => {
-            if !person.pod.killed_for_memory().await {
+            if !person.pod.ran_out_of_memory().await {
                 return None;
             }
             let said = match now.grown(short, ceiling) {

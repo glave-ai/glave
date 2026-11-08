@@ -203,15 +203,16 @@ impl PersonComputer {
         self.ended_as().await.as_deref() == Some("OOMKilled")
     }
 
-    /// Whether its Pod's container ended killed for memory, waiting up to [`ENDED_WITHIN`] for
-    /// it to show it ended at all: for a computer that went away as a command ran.
-    pub(crate) async fn killed_for_memory(&self) -> bool {
+    /// Whether its Pod has ended or gone, waiting up to [`ENDED_WITHIN`] for the API server to
+    /// show it: for a computer a call just found it could not reach. One whose Pod still runs
+    /// only lost a connection to it, as when the API server restarts.
+    pub(crate) async fn ended(&self) -> bool {
         let until = Instant::now() + ENDED_WITHIN;
         loop {
-            match self.ended_as().await {
-                Some(reason) => return reason == "OOMKilled",
-                None if Instant::now() < until => tokio::time::sleep(POLL).await,
-                None => return false,
+            match self.running().await {
+                Ok(false) => return true,
+                _ if Instant::now() < until => tokio::time::sleep(POLL).await,
+                _ => return false,
             }
         }
     }

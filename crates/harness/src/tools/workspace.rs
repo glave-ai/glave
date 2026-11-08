@@ -105,6 +105,13 @@ impl Workspace {
         self
     }
 
+    /// Whether its computer can start again on another machine, as a person's can: what ran
+    /// there then stopped with it, and the model is told why (`specs/computers.md`, decision
+    /// 16).
+    pub(crate) fn may_restart(&self) -> bool {
+        self.asleep_at_times
+    }
+
     /// Lets a command whose sandbox has no network ask the person to run with it, or outside
     /// the sandbox, which has it, or not (`asks`): an organization's policy can forbid it. The
     /// worktrees and scratch folders made from this workspace keep it.

@@ -91,7 +91,7 @@ pub(crate) fn not_available(name: &str) -> String {
 }
 
 /// `text` in a line: its first sentence, at most `most` characters.
-fn one_line(text: &str, most: usize) -> String {
+pub(crate) fn one_line(text: &str, most: usize) -> String {
     let line = text.trim().lines().next().unwrap_or_default();
     let sentence = line.split_once(". ").map_or(line, |(first, _)| first);
     let sentence = sentence.trim().trim_end_matches('.');

@@ -12,7 +12,7 @@ mod search;
 pub(crate) mod workspace;
 mod write;
 
-pub(crate) use background::named as command_named;
+pub(crate) use background::{named as command_named, stopped_with_it};
 pub(crate) use bash::outside_sandbox;
 pub(crate) use captured::Captured;
 
@@ -243,7 +243,9 @@ impl Tool {
             Self::CommandOutput => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => {
                     let hidden = workspace.hidden();
-                    background::command_output(commands, args, (room, hidden), cancel).await
+                    let moves = workspace.may_restart();
+                    background::command_output((commands, moves), args, (room, hidden), cancel)
+                        .await
                 }
                 Err(outcome) => outcome,
             },

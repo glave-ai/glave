@@ -17,7 +17,9 @@ use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
 use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
-pub(crate) use connectors::{Route, TOOL_SEARCH, connector_called, connector_of, wrapper};
+pub(crate) use connectors::{
+    Route, TOOL_SEARCH, connector_called, connector_of, one_line, wrapper,
+};
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \

@@ -19,7 +19,9 @@ use std::time::Duration;
 
 use crate::tools::{BoxFuture, Cancellation};
 
-pub use background::{Background, IDLE, KEPT_OUTPUT, Listening, MAX_BACKGROUND, MAX_WAIT, Printed};
+pub use background::{
+    Background, IDLE, KEPT_OUTPUT, Listening, MAX_BACKGROUND, MAX_WAIT, MOVED, Printed,
+};
 pub use bytes::Bytes;
 pub use changes::{ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind, Since};
 pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, GitCredentials};

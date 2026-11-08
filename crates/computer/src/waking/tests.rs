@@ -190,6 +190,23 @@ fn a_computer_woken_again_opens_its_workspaces_again() {
     });
 }
 
+/// A computer the server let go of, its machine gone, is woken again however lately a call on
+/// the old one went through: `TRUSTED` never stands in for it.
+#[test]
+fn a_computer_let_go_of_is_woken_again_however_lately_a_call_went_through() {
+    let (_dir, base) = folder("waking-let-go");
+    let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
+    block_on!(async {
+        let home = waking(&base, &wakes, &again);
+        let chat = planned(&home, "chat").await;
+        run(&home, chat.id, "echo kept > kept.txt").await;
+        again.fetch_add(1, Ordering::SeqCst);
+        let read = home.computers.read(chat.id, "kept.txt").await.unwrap();
+        assert_eq!(read, Bytes::new(b"kept\n"));
+        assert_eq!(wakes.load(Ordering::SeqCst), 2);
+    });
+}
+
 #[test]
 fn a_project_s_folder_is_planned_asleep_and_opened_there_by_its_first_call() {
     let (_dir, base) = folder("waking-folder");

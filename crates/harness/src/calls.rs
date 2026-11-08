@@ -98,8 +98,10 @@ where
             {
                 step.summary.changed_file(path);
             }
+            let (output, told) = self.saying_what_stopped(thread, output).await;
             self.record_result(thread, first.call_id.clone(), output)
                 .await?;
+            thread.commands.told(&told);
             rest = rest.get(1..).unwrap_or_default();
         }
         Ok(())

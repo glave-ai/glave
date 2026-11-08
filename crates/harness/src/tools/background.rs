@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::CommandEnding;
-use glave_ports::computer::{ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, Printed};
+use glave_ports::computer::{
+    ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, MOVED, Printed,
+};
 use glave_ports::secrets::KnownSecrets;
 use glave_ports::{Cancellation, unless_cancelled};
 use serde::Deserialize;
@@ -15,12 +17,16 @@ use serde::Deserialize;
 use super::ToolOutcome;
 use super::captured::Captured;
 use super::workspace::{Workspace, explain};
-use crate::background::Commands;
+use crate::background::{Commands, Entry};
+use crate::toolset::one_line;
 
 /// How long a command started in the background is watched before the call answers: long
 /// enough for most servers to print their address, or fail to start, and short enough not to
 /// hold up the turn.
 const FIRST_LOOK: Duration = Duration::from_secs(2);
+
+/// The most of a stopped command's script the model is told, in characters.
+const NAMED_SCRIPT: usize = 120;
 
 /// What reading again or stopping looks like, for the model.
 const NEXT: &str = "see what it prints next with command_output, or stop it with command_output \
@@ -59,7 +65,7 @@ pub(crate) fn named(arguments: &glave_event::Arguments) -> Option<u32> {
 }
 
 pub(crate) async fn command_output(
-    commands: &Commands,
+    (commands, moves): (&Commands, bool),
     args: OutputArgs,
     (room, hidden): (usize, &KnownSecrets),
     cancel: &dyn Cancellation,
@@ -91,7 +97,7 @@ pub(crate) async fn command_output(
             let ended = commands.numbered(number).and_then(|entry| entry.ended);
             ToolOutcome::ok(format!(
                 "Command {number} {}: there is no more of its output.",
-                ended_as(ended.as_ref())
+                ended_as(ended.as_ref(), moves)
             ))
         }
         Err(error) => ToolOutcome::error(explain(&error)),
@@ -228,9 +234,11 @@ fn took(millis: u64) -> String {
     }
 }
 
-/// How a command glave knows has ended did, after "Command 2".
-fn ended_as(ending: Option<&CommandEnding>) -> String {
+/// How a command glave knows has ended did, after "Command 2", on a computer that `moves` or
+/// not: no longer on one that can move, it stopped when that did.
+fn ended_as(ending: Option<&CommandEnding>, moves: bool) -> String {
     match ending {
+        Some(CommandEnding::Gone) if moves => format!("was stopped when {MOVED}"),
         Some(CommandEnding::Exited { code }) => format!("exited with code {code}"),
         Some(CommandEnding::Signalled) => "was stopped by a signal".to_owned(),
         Some(CommandEnding::Stopped { by: None }) => "was stopped".to_owned(),
@@ -242,6 +250,26 @@ fn ended_as(ending: Option<&CommandEnding>) -> String {
         Some(CommandEnding::TimedOut) => "was stopped at its time limit".to_owned(),
         Some(CommandEnding::Gone) | None => "has ended".to_owned(),
     }
+}
+
+/// What the model is told of `stopped`, commands that stopped when their computer moved, if any
+/// did: what each ran, so it can start again what it still wants. glave never starts them
+/// itself (`specs/invariants.md`, 4).
+pub(crate) fn stopped_with_it(stopped: &[Entry]) -> Option<String> {
+    let named: Vec<String> = stopped
+        .iter()
+        .map(|entry| {
+            let script = one_line(&entry.script, NAMED_SCRIPT);
+            format!("command {} ({script})", entry.number)
+        })
+        .collect();
+    (!named.is_empty()).then(|| {
+        format!(
+            "glave: {MOVED}, which stopped what ran on it in the background: {}. glave does not \
+             start them again. Your files are kept, so start any you still want.",
+            named.join(", ")
+        )
+    })
 }
 
 /// The commands still running, as the model is told them.
