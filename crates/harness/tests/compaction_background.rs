@@ -96,7 +96,7 @@ fn prefix(request: &ModelRequest) -> (String, Vec<u8>) {
 }
 
 #[test]
-fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_calls() {
+fn the_older_messages_are_summarized_while_the_work_goes_on_and_swapped_in_between_calls() {
     let dir = folder("compact-background");
     files(&dir, &["a.txt", "b.txt", "c.txt"]);
     block_on!(async {
