@@ -1,14 +1,12 @@
-//! The fetch client's name lookups. Every address a host resolves to is checked, and only the
-//! allowed ones are handed to the connection, so a host cannot resolve to a public address
-//! when checked and a private one when connected (DNS rebinding).
+//! The fetch client's name lookups: glave's one [`Lookup`], keeping the addresses the host
+//! policy allows, so a host cannot resolve to a public address when checked and a private one
+//! when connected (DNS rebinding); a host that leads to none is refused in `web_fetch`'s words.
 
 use std::fmt;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use glave_ports::host::reachable;
+use glave_ports::host::Lookup;
 use glave_ports::settings::WebPolicy;
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
 /// A host that leads only to addresses the policy refuses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,25 +27,12 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// Looks names up with the system resolver, keeping only the addresses `policy` allows.
-pub(crate) struct Guarded {
-    pub(crate) policy: Arc<WebPolicy>,
-}
-
-impl Resolve for Guarded {
-    fn resolve(&self, name: Name) -> Resolving {
-        let host = name.as_str().to_owned();
-        let private_ok = self.policy.private_ok(&host);
-        Box::pin(async move {
-            let found: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
-                .await?
-                .filter(|addr| reachable(addr.ip(), private_ok))
-                .collect();
-            if found.is_empty() {
-                return Err(Box::new(Refused { host }) as Box<dyn std::error::Error + Send + Sync>);
-            }
-            let addrs: Addrs = Box::new(found.into_iter());
-            Ok(addrs)
-        })
-    }
+/// The lookups `policy` allows: private addresses only for the hosts it lets be private.
+pub(crate) fn guarded(policy: Arc<WebPolicy>) -> Lookup<Refused> {
+    Lookup::new(
+        move |host| policy.private_ok(host),
+        |host| Refused {
+            host: host.to_owned(),
+        },
+    )
 }
