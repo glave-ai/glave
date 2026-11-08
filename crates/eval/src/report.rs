@@ -181,7 +181,7 @@ impl Report {
     }
 
     /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls, asks,
-    /// blocked commands, median time.
+    /// blocked commands, `compact` called where no one asked, median time.
     fn totals(&self, out: &mut String) {
         let per_model = |row: &Row| -> String {
             self.models
@@ -190,7 +190,7 @@ impl Report {
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 9] = [
+        let rows: [(&str, &Row); 10] = [
             ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
             ("per passed task", &|a| per_task(PerPassedTask::of(a))),
             ("cost", &|a| dollars(spent(a))),
@@ -204,6 +204,7 @@ impl Report {
             }),
             ("asks", &|a| total(a, |a| a.asks)),
             ("blocked commands", &|a| total(a, |a| a.blocked)),
+            ("compacts unasked", &|a| total(a, |a| a.unasked_compacts)),
             ("median time", &|a| median_seconds(a)),
         ];
         for (name, row) in rows {

@@ -3,12 +3,15 @@
 //! the conversation asked for once more, adjusted for why; and every answer counted, failed
 //! ones too.
 
+use std::fmt::Write as _;
+
 use glave_event::{Part, StopReason, TurnResult};
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
     Purpose, ToolChoice,
 };
 
+use super::Why;
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -20,10 +23,10 @@ use crate::toolset::ToolSet;
 /// model that offers no such level its own.
 const LEAST_EFFORT: &str = "low";
 
-const INSTRUCTION: &str = "\
-This conversation is about to outgrow the space available. Write a handoff summary that the \
-work can continue from alone: the conversation above will be replaced by it, and whoever \
-continues will know only what it says. Use these headings:
+/// What a summary is asked for, after why it is.
+const HANDOFF: &str = "\
+Write a handoff summary that the work can continue from alone: the conversation above will be \
+replaced by it, and whoever continues will know only what it says. Use these headings:
 
 1. Request and rules: what the person wants, and every rule and constraint they gave, word for \
 word where the wording matters. They hold to the end.
@@ -43,18 +46,31 @@ anything not needed to continue.";
 const MEMORY: &str = "Leave out the memories the <MEMORY> block holds: they open the \
 conversation again after the summary.";
 
-/// What the summary call is asked, its cap the one the request is sent with: about half as many
-/// words as its tokens, which leaves room for reasoning and for text denser than prose.
-fn instruction(words: u32, memory: bool) -> String {
+/// What the summary call is asked, for `why`, its cap the one the request is sent with: about
+/// half as many words as its tokens, which leaves room for reasoning and for text denser than
+/// prose. What the person wants kept comes last, whatever else is left out.
+fn instruction(why: Why<'_>, words: u32, memory: bool) -> String {
+    let opening = match why {
+        Why::Full => "This conversation is about to outgrow the space available.",
+        Why::Asked { .. } => "The person asked for this conversation to be compacted.",
+    };
     let memory = if memory {
         format!("{MEMORY} ")
     } else {
         String::new()
     };
-    format!(
-        "{INSTRUCTION} {memory}Keep it under {words} words: it is cut off past that. Do not call \
-         any tools: reply with the summary only."
-    )
+    let mut text = format!(
+        "{opening} {HANDOFF} {memory}Keep it under {words} words: it is cut off past that. Do \
+         not call any tools: reply with the summary only."
+    );
+    if let Why::Asked { focus: Some(focus) } = why {
+        let _ = write!(
+            text,
+            "\n\nThe person wants this kept front and centre, in full, whatever else is left \
+             out: {focus}"
+        );
+    }
+    text
 }
 
 /// Why a summary's answer cannot stand in for the conversation.
@@ -90,7 +106,7 @@ impl Unusable {
 
     /// `request` changed for the one more try: less reasoning when reasoning took the room,
     /// half the words when it was cut off, no tools when it called one.
-    fn adjust(self, request: &mut ModelRequest, words: u32, memory: bool) {
+    fn adjust(self, request: &mut ModelRequest, why: Why<'_>, words: u32, memory: bool) {
         if matches!(self, Self::Cut { reasoned: true } | Self::ReasoningOnly) {
             request.effort = Some(LEAST_EFFORT.to_owned());
         }
@@ -98,7 +114,7 @@ impl Unusable {
             && let Some(Message::User { parts }) = request.messages.last_mut()
         {
             *parts = vec![Part::Text {
-                text: instruction(words / 2, memory),
+                text: instruction(why, words / 2, memory),
             }];
         }
         if self == Self::CalledTool {
@@ -142,7 +158,12 @@ where
     /// out of the prompt then (DeepSeek's read 256 tokens from its cache so, 2,304 with them
     /// offered, on the `compaction` eval) shares nothing past the first message, and some refuse
     /// a conversation with tool calls but no tools.
-    async fn summary_request(&self, thread: &Thread, offer: &ToolSet) -> (ModelRequest, u32) {
+    async fn summary_request(
+        &self,
+        thread: &Thread,
+        offer: &ToolSet,
+        why: Why<'_>,
+    ) -> (ModelRequest, u32) {
         let model = self.model_for(thread);
         let cap = self.summary_tokens(&model);
         let words = cap / 2;
@@ -151,7 +172,7 @@ where
             (self.with_files(&thread.scope, &model, self.sent(thread))).await;
         messages.push(Message::User {
             parts: vec![Part::Text {
-                text: instruction(words, memory),
+                text: instruction(why, words, memory),
             }],
         });
         let request = ModelRequest {
@@ -179,10 +200,11 @@ where
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
+        why: Why<'_>,
         spent: &mut TurnResult,
         cancel: &Cancel,
     ) -> Result<(Completion, String), HarnessError> {
-        let (mut request, words) = self.summary_request(thread, offer).await;
+        let (mut request, words) = self.summary_request(thread, offer, why).await;
         let memory = self.memory_for(thread).is_some();
         let mut tried = false;
         loop {
@@ -210,7 +232,7 @@ where
                 return Err(ProviderError::Protocol(failed).into());
             }
             tried = true;
-            unusable.adjust(&mut request, words, memory);
+            unusable.adjust(&mut request, why, words, memory);
         }
     }
 
@@ -300,9 +322,22 @@ mod tests {
 
     #[test]
     fn the_instruction_states_the_cap_it_is_sent_with() {
-        let asked = instruction(2_000, false);
+        let asked = instruction(Why::Full, 2_000, false);
+        assert!(asked.starts_with("This conversation is about to outgrow"));
         assert!(asked.contains("Keep it under 2000 words"), "{asked}");
         assert!(!asked.contains("<MEMORY>"));
-        assert!(instruction(2_000, true).contains("Leave out the memories the <MEMORY> block"));
+        let memory = instruction(Why::Full, 2_000, true);
+        assert!(memory.contains("Leave out the memories the <MEMORY> block"));
+    }
+
+    #[test]
+    fn a_focus_the_person_named_shapes_the_summary() {
+        let focus = Some("the API decisions");
+        let asking = instruction(Why::Asked { focus }, 2_000, false);
+        assert!(asking.starts_with("The person asked for this conversation to be compacted"));
+        assert!(asking.contains("Keep it under 2000 words"));
+        assert!(asking.ends_with("whatever else is left out: the API decisions"));
+        let unnamed = instruction(Why::Asked { focus: None }, 2_000, false);
+        assert!(!unnamed.contains("front and centre"));
     }
 }
