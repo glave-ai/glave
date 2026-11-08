@@ -67,8 +67,8 @@ import { TurnComponent } from '../turn/turn.component';
  * may do and the model in its quiet line, or in its place, when the project's folder isn't there
  * anymore, what the server says of it and what can be done; and beside it, when the thread has
  * any, its panel of facts, resized and collapsed by its edge and shown or hidden by ⌘. or Ctrl+.
- * anywhere in the thread, from which, as from a turn's card of what changed, its changes open in
- * full over it.
+ * anywhere in the thread; and over it, from a turn's card of what changed, that turn's changes in
+ * full.
  */
 @Component({
   selector: 'app-thread',

@@ -22,14 +22,17 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-title')).toHaveText('Make the tests pass');
     await expect(byTestId(page, 'thread-meta')).toHaveText('glave');
-    await expect(byTestId(page, 'panel-changes-file')).toHaveText([
-      /^src\/parse\.rs/u,
-      /^tests\/empty\.rs/u,
-    ]);
+    await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
     await expectAccessible(page);
-    await byTestId(page, 'panel-review').click();
-    await expect(byTestId(page, 'file')).toHaveCount(2);
-    await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');
+    // The thread's changes in full, in the panel's Changes tab.
+    await byTestId(page, 'panel-tabs-tab').filter({ hasText: 'Changes' }).click();
+    const changes = byTestId(page, 'panel-tabs-panel');
+    await expect(changes.getByTestId('file')).toHaveCount(2);
+    await expect(changes.getByTestId('file-change').first()).toContainText('fn parse');
+    await expectAccessible(page);
+    // A turn's file, in full over the page.
+    await byTestId(page, 'turn-changes-file').first().click();
+    await expect(byTestId(page, 'changes').getByTestId('file')).toHaveCount(1);
     await expectAccessible(page);
     await page.keyboard.press('Escape');
     // The model picker open, searched by name.
@@ -314,7 +317,7 @@ for (const size of [
       await byTestId(page, 'thread-panel').click();
     }
     await expect(byTestId(page, 'command-text')).toHaveText('cargo test');
-    await expect(byTestId(page, 'panel-cost')).toBeVisible();
+    await expect(byTestId(page, 'panel-context')).toBeVisible();
     await atRest(page);
     // Neither the page nor the pane that holds the thread scrolls: the conversation and the
     // panel each scroll inside themselves.

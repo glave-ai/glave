@@ -60,7 +60,6 @@ fn thread_of(org: u128) -> (ThreadId, Vec<RawEvent>) {
             name: "glave".into(),
             version: "0.0.0".into(),
         },
-        fork: None,
         parent: None,
         for_: None,
         agent: None,

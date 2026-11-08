@@ -3,13 +3,14 @@
 //! log, a view over it with nothing more kept. A connection's tools reach the model as
 //! `mcp__<name>__<tool>` after the name the person's settings give its server, so its calls are
 //! the `tool.call.requested` events naming one, in the threads of every project the person owns,
-//! archived ones too, that changed this month. The count reads every event of those threads,
-//! so it has a time limit: one that runs out, or fails, leaves the connections without a count.
+//! archived ones too, that changed this month, but a fork's copies of another's, which counted
+//! there. The count reads every event of those threads, so it has a time limit: one that runs
+//! out, or fails, leaves the connections without a count.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use glave_event::{At, Body, Payload as _, RawEvent, ToolCallRequested};
+use glave_event::{At, Body, Payload as _, RawEvent, ThreadForked, ToolCallRequested};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing, ThreadQuery};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -156,13 +157,17 @@ where
                     return Ok(());
                 }
                 let mut after = None;
+                let mut own = BTreeMap::new();
                 loop {
                     let events = log.read(scope, view.thread, after, PAGE).await?;
-                    tally(&events, since, prefixes, calls);
+                    tally(&events, since, prefixes, &mut own);
                     match events.last() {
                         Some(last) if events.len() == PAGE => after = Some(last.seq),
                         _ => break,
                     }
+                }
+                for (server, count) in own {
+                    *calls.entry(server).or_insert(0) += count;
                 }
             }
             match views.last() {
@@ -182,25 +187,32 @@ fn month_start(now: Timestamp) -> Result<At, ApiError> {
     Ok(At::from(start.timestamp()))
 }
 
-/// Adds to `calls` each call in `events` at or after `since` of a tool whose name starts with
-/// one of `prefixes`, or of the one tool a server's tools are called through where they are
-/// listed by connector (`mcp__<server>`), to its server; the longest prefix wins, as a server's
-/// own name may hold another's.
+/// Adds to `calls`, one thread's, each call in `events`, the thread's next, at or after `since`
+/// of a tool whose name starts with one of `prefixes`, or of the one tool a server's tools are
+/// called through where they are listed by connector (`mcp__<server>`), to its server; the
+/// longest prefix wins, as a server's own name may hold another's. A fork's `thread.forked`
+/// starts its count again: what came before it are copies, counted in the thread they are of.
 fn tally(
     events: &[RawEvent],
     since: At,
     prefixes: &[(String, &str)],
     calls: &mut BTreeMap<String, u64>,
 ) {
-    let asked = events
-        .iter()
-        .filter(|event| event.kind.as_str() == ToolCallRequested::TYPE && event.at >= since)
-        .filter_map(
-            |event| match glave_event::decode(event.clone()).map(|it| it.body) {
-                Ok(Body::ToolCallRequested(requested)) => Some(requested.tool),
-                _ => None,
-            },
-        );
+    let mut asked = Vec::new();
+    for event in events {
+        if event.kind.as_str() == ThreadForked::TYPE {
+            asked.clear();
+            calls.clear();
+        }
+        if event.kind.as_str() != ToolCallRequested::TYPE || event.at < since {
+            continue;
+        }
+        if let Ok(Body::ToolCallRequested(requested)) =
+            glave_event::decode(event.clone()).map(|it| it.body)
+        {
+            asked.push(requested.tool);
+        }
+    }
     for tool in asked {
         let tool = format!("{tool}__");
         let server = prefixes

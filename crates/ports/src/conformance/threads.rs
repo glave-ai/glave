@@ -66,7 +66,6 @@ pub(super) fn started() -> Result<ThreadStarted, String> {
             name: "glave".into(),
             version: "0.0.0".into(),
         },
-        fork: None,
         parent: None,
         for_: Some(person()?),
         agent: None,

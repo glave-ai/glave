@@ -9,7 +9,7 @@ import {
 import type { ChangedFile } from '@glave/client';
 import { GlzCountDirective, injectId } from '@glave/glaze';
 
-import { lineCounts, lineMarks } from '../../lib/files';
+import { lineCounts, lineMarks, totalLines } from '../../lib/files';
 import { plural } from '../../lib/plural';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 
@@ -23,8 +23,6 @@ const NARROW_ROWS = 2;
  * changes in full, and the last row, when there are more, every one of these files'. On a narrow
  * card the paths are cut short before the counts, and after two rows a last one says how many
  * more files there are. As the person watches, a count that grows counts up to its new number.
- * The thread's panel shows the thread's changes the same way, under its own `heading`
- * one `level` down, with what it adds at the foot (`[appTurnChangesFoot]`).
  */
 @Component({
   selector: 'app-turn-changes',
@@ -35,16 +33,10 @@ const NARROW_ROWS = 2;
 })
 export class TurnChangesComponent {
   readonly files = input.required<readonly ChangedFile[]>();
-  /** What the card is called; "What changed" by default, a turn's. */
-  readonly heading = input<string | null>(null);
-  /** Its heading's level: 2 in the conversation, 3 in the panel, under the panel's own. */
-  readonly level = input<2 | 3>(2);
   /** The test hook; its parts get `<testId>-<part>`: `-count`, `-file`, `-more`. */
   readonly testId = input('turn-changes');
 
   protected readonly copy = { heading: $localize`:@@turnChanges.heading:What changed` } as const;
-  protected readonly title = computed(() => this.heading() ?? this.copy.heading);
-  protected readonly third = computed(() => this.level() === 3);
   protected readonly ids = computed(() => {
     const id = this.testId();
     return { count: `${id}-count`, file: `${id}-file`, more: `${id}-more` };
@@ -62,8 +54,7 @@ export class TurnChangesComponent {
   /** How lines added and removed are written, as each count counts. */
   protected readonly marks = lineMarks(this.locale);
   protected readonly total = computed(() => {
-    const added = this.files().reduce((sum, file) => sum + file.added, 0);
-    const removed = this.files().reduce((sum, file) => sum + file.removed, 0);
+    const { added, removed } = totalLines(this.files());
     return { added, removed, label: lineCounts(added, removed, this.locale).label };
   });
   protected readonly rows = computed(() =>
