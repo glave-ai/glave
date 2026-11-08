@@ -1,15 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { ChangesService } from '../../services/changes.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { AdminBrandComponent } from './admin-brand.component';
 
 const SHADES = { light: '#0f766e', dark: '#59c5b8' };
-
-/** More turns than the page takes to come to rest; past them, something keeps changing it. */
-const TURNS = 20;
 
 async function render(fake: FakeSession): Promise<{
   root: HTMLElement;
@@ -18,21 +16,8 @@ async function render(fake: FakeSession): Promise<{
   fake.answer('appearance/preview', { shades: SHADES });
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
   const fixture = TestBed.createComponent(AdminBrandComponent);
-  // At rest once a turn ends with nothing more to draw: each turn draws what is changed, then
-  // gives what that started (the fake's answers, a file read) a task to come back in. Turns are
-  // counted, never timed, so a busy machine makes this slower, never wrong.
-  const settle = async (): Promise<void> => {
-    for (let turn = 0; turn < TURNS; turn += 1) {
-      await fixture.whenStable();
-      await new Promise((resolve) => setTimeout(resolve));
-      if (fixture.isStable()) {
-        return;
-      }
-    }
-    throw new Error(`the brand page was still changing after ${String(TURNS)} turns`);
-  };
-  await settle();
-  return { root: fixture.nativeElement as HTMLElement, settle };
+  await settle(fixture);
+  return { root: fixture.nativeElement as HTMLElement, settle: () => settle(fixture) };
 }
 
 function byId(root: HTMLElement, id: string): HTMLElement | null {

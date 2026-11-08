@@ -2,8 +2,10 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
+import { loadHighlighter } from '../../lib/highlight';
 import { expectAccessible } from '../../testing/axe';
 import { fakeMotion } from '../../testing/motion';
+import { settle } from '../../testing/settle';
 import { GlzMarkdownComponent } from './markdown.component';
 
 @Component({
@@ -44,6 +46,7 @@ async function render(
   readonly root: HTMLElement;
   readonly host: HostComponent;
   readonly stable: () => Promise<unknown>;
+  readonly settle: () => Promise<void>;
 }> {
   const fixture = TestBed.createComponent(HostComponent);
   fixture.componentInstance.text.set(text);
@@ -53,6 +56,7 @@ async function render(
     root: fixture.nativeElement as HTMLElement,
     host: fixture.componentInstance,
     stable: () => fixture.whenStable(),
+    settle: () => settle(fixture),
   };
 }
 
@@ -162,11 +166,11 @@ describe('GlzMarkdownComponent', () => {
   });
 
   it('highlights code once its language has loaded', async () => {
-    const { root, stable } = await render(REPLY);
-    await vi.waitFor(async () => {
-      await stable();
-      expect(root.querySelector('.language-rust .hljs-keyword')?.textContent).toBe('fn');
-    });
+    const { root, settle } = await render(REPLY);
+    // The language is code loaded late, which no turn of the page brings back.
+    await loadHighlighter(['rust']);
+    await settle();
+    expect(root.querySelector('.language-rust .hljs-keyword')?.textContent).toBe('fn');
     expect(root.querySelectorAll('[data-testid="md-copy"]')).toHaveLength(1);
     await expectAccessible(root);
   });
