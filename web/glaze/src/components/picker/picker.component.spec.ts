@@ -115,6 +115,19 @@ describe('GlzPickerComponent', () => {
     await expectAccessible(root);
   });
 
+  it('draws a check by the choice alone, and moves it with the choice', async () => {
+    const { root, host, stable } = await opened();
+    const checked = (): readonly boolean[] =>
+      Array.from(
+        root.querySelectorAll('[data-testid="model-option"]'),
+        (option) => option.querySelector('.check glz-icon') !== null,
+      );
+    expect(checked()).toEqual([true, false, false, false]);
+    host.value.set('hope-12b');
+    await stable();
+    expect(checked()).toEqual([false, false, false, true]);
+  });
+
   it('as a quiet one, shows the short name on its button and the full one in the list', async () => {
     const fixture = TestBed.createComponent(QuietComponent);
     await fixture.whenStable();
