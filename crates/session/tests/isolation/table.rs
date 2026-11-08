@@ -17,6 +17,8 @@ pub(super) enum Kind {
     Ask,
     /// A command a thread keeps running in the background.
     Command,
+    /// A person's terminal open in a thread.
+    Terminal,
     Schedule,
     Memory,
     /// A model account.
@@ -45,16 +47,19 @@ pub(super) enum Kind {
     /// An invite's code. Whoever holds it joins the organization that made it, so within one
     /// organization it proves nothing: it is checked across organizations only.
     InviteCode,
+    /// A browser that takes a person's notifications.
+    Device,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 18] = [
+    pub(super) const ALL: [Self; 20] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
         Self::Question,
         Self::Ask,
         Self::Command,
+        Self::Terminal,
         Self::Schedule,
         Self::Memory,
         Self::Provider,
@@ -67,6 +72,7 @@ impl Kind {
         Self::Person,
         Self::Invite,
         Self::InviteCode,
+        Self::Device,
     ];
 
     /// How a template writes it.
@@ -78,6 +84,7 @@ impl Kind {
             Self::Question => "@question",
             Self::Ask => "@ask",
             Self::Command => "@command",
+            Self::Terminal => "@terminal",
             Self::Schedule => "@schedule",
             Self::Memory => "@memory",
             Self::Provider => "@provider",
@@ -90,6 +97,7 @@ impl Kind {
             Self::Person => "@person",
             Self::Invite => "@invite",
             Self::InviteCode => "@invite_code",
+            Self::Device => "@device",
         }
     }
 
@@ -107,10 +115,12 @@ impl Kind {
             Self::Project => Some("ProjectId"),
             Self::Approval | Self::Question => Some("CallId"),
             Self::Command => Some("CommandId"),
+            Self::Terminal => Some("TerminalId"),
             Self::Schedule => Some("ScheduleId"),
             Self::Memory => Some("MemoryId"),
             Self::Provider => Some("ProviderId"),
             Self::Credential => Some("CredentialId"),
+            Self::Device => Some("DeviceId"),
             Self::Computer => Some("ComputerId"),
             Self::Person => Some("PrincipalId"),
             Self::Invite => Some("InviteId"),
@@ -136,6 +146,7 @@ impl Kind {
             Self::Approval | Self::Question => "call_nobody".to_owned(),
             Self::Ask => "nobody's ask".to_owned(),
             Self::Command => uuid(0xdead_0003),
+            Self::Terminal => uuid(0xdead_000c),
             Self::Schedule => uuid(0xdead_0004),
             Self::Memory => uuid(0xdead_0005),
             Self::Provider => uuid(0xdead_0006),
@@ -147,6 +158,7 @@ impl Kind {
             Self::Person => uuid(0xdead_000a),
             Self::Invite => uuid(0xdead_000b),
             Self::InviteCode => "1".repeat(64),
+            Self::Device => uuid(0xdead_000d),
             Self::Files => String::new(),
         })
     }
@@ -169,6 +181,10 @@ pub(super) const NOT_HELD: &[(Kind, &str)] = &[
         "no command is left running in the background",
     ),
     (
+        Kind::Terminal,
+        "no terminal opens: the suite's computer has no glave of its own to start a shell",
+    ),
+    (
         Kind::Computer,
         "threads on a computer of one's own are not available yet",
     ),
@@ -188,6 +204,24 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // Whether the server's own computer stays awake: no one's id to name.
         ("awake/get", vec![json!({})]),
         ("awake/set", vec![json!({"on": false})]),
+        // The caller's own browsers: one is looked for only among the caller's own.
+        (
+            "push/get",
+            vec![
+                json!({}),
+                json!({"endpoint": "https://fcm.googleapis.com/fcm/send/x"}),
+            ],
+        ),
+        (
+            "push/subscribe",
+            vec![json!({
+                "endpoint": "https://fcm.googleapis.com/fcm/send/x",
+                "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+                "auth": "BTBZMqHH6r4Tts7J_aSIgg",
+                "device": "Firefox",
+            })],
+        ),
+        ("push/remove", vec![json!({"device": "@device"})]),
         // The caller's own language: no one else's to name.
         ("language/get", vec![json!({})]),
         (
@@ -394,6 +428,29 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "command/stop",
             vec![json!({"thread": "@thread", "command": "@command"})],
+        ),
+        (
+            "terminal/open",
+            vec![json!({"thread": "@thread", "size": {"cols": 80, "rows": 24}})],
+        ),
+        ("terminal/list", on_thread()),
+        (
+            "terminal/write",
+            vec![json!({"thread": "@thread", "terminal": "@terminal", "input": "bHM="})],
+        ),
+        (
+            "terminal/read",
+            vec![json!({"thread": "@thread", "terminal": "@terminal", "from": 0})],
+        ),
+        (
+            "terminal/resize",
+            vec![json!({
+                "thread": "@thread", "terminal": "@terminal", "size": {"cols": 80, "rows": 24}
+            })],
+        ),
+        (
+            "terminal/close",
+            vec![json!({"thread": "@thread", "terminal": "@terminal"})],
         ),
         (
             "schedule/create",

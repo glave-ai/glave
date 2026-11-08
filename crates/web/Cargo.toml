@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 glave-event.workspace = true
-glave-ports.workspace = true
+glave-ports = { workspace = true, features = ["lookup"] }
 # HTML to Markdown, as Claude Code and OpenCode give pages to the model (Turndown's design).
 htmd.workspace = true
 reqwest.workspace = true

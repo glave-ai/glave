@@ -1,0 +1,49 @@
+<div class="head">
+  <p class="where">
+    @if (shown(); as terminal) {
+      <code class="folder" dir="ltr" data-testid="terminal-folder">{{ terminal.folder }}</code>
+    }
+    <span class="who" data-testid="terminal-who">{{ copy.who }}</span>
+  </p>
+  @if (choices(); as choices) {
+    <glz-segmented
+      testId="terminal-choices"
+      [label]="copy.terminals"
+      [options]="choices"
+      [value]="chosen()"
+      (valueChange)="show($event)"
+    />
+  }
+  <button
+    glzIconButton
+    size="sm"
+    data-testid="terminal-new"
+    [label]="copy.another"
+    (click)="another()"
+  >
+    <glz-icon [icon]="icons.another" />
+  </button>
+  @if (shown(); as terminal) {
+    <button
+      glzIconButton
+      size="sm"
+      data-testid="terminal-close"
+      [label]="copy.close"
+      (click)="close(terminal.id)"
+    >
+      <glz-icon [icon]="icons.close" />
+    </button>
+  }
+</div>
+@if (service.problem(); as problem) {
+  <p class="problem" role="alert" data-testid="terminal-problem">{{ problem }}</p>
+}
+@if (waiting()) {
+  <p class="opening" role="status" data-testid="terminal-opening">{{ copy.opening }}</p>
+}
+@for (terminal of screens(); track terminal.id) {
+  <app-terminal-screen class="box" [terminal]="terminal.id" />
+}
+@if (service.ended()) {
+  <p class="ended" role="status" data-testid="terminal-ended">{{ copy.ended }}</p>
+}

@@ -2,19 +2,19 @@
 //! (`specs/invariants.md`, 27): a thread read again from the log, a turn going on after a
 //! wait, and a subagent going on after its parent was read again.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
-use glave_event::{Body, StopReason, ThreadId};
-use glave_harness::{AllowAll, Cancel, Decision, HarnessError, Live};
+use glave_event::StopReason;
+use glave_harness::{AllowAll, Cancel};
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::testing::{FixedGitCredentials, fake_secret};
 use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest, Purpose, ToolSource};
-use serde_json::json;
 
 use crate::network::InTheLog;
 use crate::prefix::Flaky;
 use crate::project_folders::tool;
+use crate::subagents::{a_child_writes, asking_with_subagents, until_the_child_is_allowed};
 use crate::support::*;
 
 fn done(text: &str) -> Completion {
@@ -67,25 +67,11 @@ fn a_thread_read_again_from_the_log_keeps_its_prefix_and_hears_what_changed() {
     });
 }
 
-/// The child thread a turn started, as the person saw it start.
-fn child_of(started: &Mutex<Option<ThreadId>>) -> ThreadId {
-    started.lock().unwrap().unwrap()
-}
-
 #[test]
 fn a_subagent_going_on_after_a_wait_and_a_restart_keeps_its_own_first_prefix() {
     let dir = folder("prefix-child");
     block_on!(async {
-        let brief = json!({"description": "write it", "prompt": "Write x.txt."});
-        let write = json!({"path": "x.txt", "content": "x"});
-        let answers = vec![
-            answer(None, vec![("agent", brief)], StopReason::ToolUse),
-            answer(None, vec![("write", write)], StopReason::ToolUse),
-            done("Wrote it."),
-            done("The child wrote it."),
-        ];
-        let mut settings = asking();
-        settings.subagents = true;
+        let (answers, settings) = (a_child_writes(), asking_with_subagents());
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, InTheLog, log, 1, settings).await;
         let tracker = Arc::new(Flaky {
@@ -94,36 +80,7 @@ fn a_subagent_going_on_after_a_wait_and_a_restart_keeps_its_own_first_prefix() {
         });
         let harness = harness.with_tools(vec![Arc::clone(&tracker) as Arc<dyn ToolSource>]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let started = Mutex::new(None);
-        let mut live = |update: Live| {
-            if let Live::SubagentStarted { thread, .. } = update {
-                *started.lock().unwrap() = Some(thread);
-            }
-        };
-        let stopped = harness
-            .run_turn(
-                &mut thread,
-                "have a child write x",
-                &Cancel::new(),
-                &mut live,
-            )
-            .await;
-        assert!(
-            matches!(stopped, Err(HarnessError::Waits(_))),
-            "{stopped:?}"
-        );
-        let child = child_of(&started);
-        let call = events(harness.log(), child)
-            .await
-            .iter()
-            .find_map(|event| match &event.body {
-                Body::ApprovalRequested(asked) => Some(asked.call_id.clone()),
-                _ => None,
-            });
-        harness
-            .decide(scope(), child, &call.unwrap(), Decision::AllowOnce, None)
-            .await
-            .unwrap();
+        until_the_child_is_allowed(&harness, &mut thread).await;
         // Read again, as after a restart, with the tracker down: the child is read from its log
         // too, and lists what it listed before.
         tracker.down.store(true, Ordering::SeqCst);

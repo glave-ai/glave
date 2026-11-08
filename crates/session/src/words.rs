@@ -16,8 +16,8 @@ pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
 use crate::protocol::{
-    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, Reply, SearchInfo,
-    ThreadSummary, Told, Usage,
+    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, PushInfo, Reply,
+    SearchInfo, ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -40,6 +40,9 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
             }
             | Reply::Awake {
                 awake: AwakeInfo::Cannot { reason },
+            }
+            | Reply::Push {
+                push: PushInfo::Never { reason },
             },
         ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
@@ -103,6 +106,9 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
             | Reply::Awake {
                 awake: AwakeInfo::Cannot { reason },
+            }
+            | Reply::Push {
+                push: PushInfo::Never { reason },
             },
         ) => reason.translate(language),
         Ok(Reply::Sources { sources }) => {
@@ -126,13 +132,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
-        Ok(Reply::Events { events, .. }) => {
-            for event in events {
-                if let Some(written) = event_in(event, language) {
-                    *event = written;
-                }
-            }
-        }
+        Ok(Reply::Events { events, .. }) => events_in(events, language),
         Ok(Reply::Thread { thread }) => summary_in(thread, language),
         Ok(Reply::Threads { threads, .. }) => {
             for thread in threads {
@@ -140,6 +140,15 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(_) => {}
+    }
+}
+
+/// Writes the server's own sentences in `events` in `language`.
+fn events_in(events: &mut [glave_event::RawEvent], language: Language) {
+    for event in events {
+        if let Some(written) = event_in(event, language) {
+            *event = written;
+        }
     }
 }
 

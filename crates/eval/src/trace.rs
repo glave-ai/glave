@@ -36,6 +36,8 @@ pub struct Trace {
     pub asks: u32,
     /// Commands whose output carries the sandbox's note that it may have blocked them.
     pub blocked: u32,
+    /// Calls of `compact`, which the model is to make only when the person asks it to compact.
+    pub compacts: u32,
     /// Why a turn went without a source of tools, each reason once, in the order first seen.
     pub missing: Vec<String>,
 }
@@ -59,6 +61,7 @@ impl Default for Trace {
             repeated_steps: 0,
             asks: 0,
             blocked: 0,
+            compacts: 0,
             missing: Vec::new(),
         }
     }
@@ -109,6 +112,9 @@ impl Trace {
             }
             Body::ToolCallRequested(call) => {
                 self.tool_calls = self.tool_calls.saturating_add(1);
+                if call.tool == "compact" {
+                    self.compacts = self.compacts.saturating_add(1);
+                }
                 let arguments = serde_json::to_string(&call.arguments).unwrap_or_default();
                 steps.open.insert(call.call_id, (call.tool, arguments));
             }
@@ -200,6 +206,7 @@ mod tests {
                 repeated_steps: 0,
                 asks: 0,
                 blocked: 0,
+                compacts: 0,
                 missing: Vec::new(),
             }
         );
@@ -223,6 +230,14 @@ mod tests {
             line(1, "tool.call.requested", requested),
             line(2, "tool.call.completed", completed)
         )
+    }
+
+    #[test]
+    fn each_compact_call_is_counted() {
+        let command = step("a", "ls", "x");
+        let compact = step("b", "ls", "Noted.").replace("\"bash\"", "\"compact\"");
+        let trace = parse(&format!("{command}{compact}")).unwrap();
+        assert_eq!((trace.tool_calls, trace.compacts), (2, 1));
     }
 
     #[test]

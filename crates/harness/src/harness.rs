@@ -201,6 +201,9 @@ pub struct Thread {
     /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
     /// as its log kept them when it was read again, and none once it is compacted.
     pub(crate) prefix: Prefixed,
+    /// How large its next request was estimated, in tokens, when its last compaction failed:
+    /// none is tried again until it grows a little (`compaction.rs`). None once one succeeds.
+    pub(crate) summary_failed: Option<u64>,
 }
 
 impl Thread {
@@ -619,6 +622,7 @@ where
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
+            summary_failed: None,
         };
         let mut events = Vec::new();
         origin.by = Self::other_than_for(&thread, caller.person);

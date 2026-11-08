@@ -188,6 +188,22 @@ sentences! {
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
     NoCommand = "no-command" "that command is not running in this thread",
+    NoTerminal = "no-terminal" "that terminal is not open in this thread",
+    TerminalNotTheirs = "terminal-not-theirs"
+        "A terminal opens only on your own computer, and this thread doesn't work on yours.",
+    TerminalOnWorker = "terminal-on-worker"
+        "A terminal opens only on your own computer, not on one started for a single task.",
+    TerminalNoFolder = "terminal-no-folder"
+        "This thread has no folder to open a terminal in.",
+    TerminalNoHome = "terminal-no-home"
+        "Your own computer can't be reached from this server right now, so no terminal opens on it.",
+    TerminalMoved = "terminal-moved"
+        "This thread works on a computer this server doesn't reach, so no terminal opens for it.",
+    TerminalUnsupported = "terminal-unsupported"
+        "Terminals don't open on the computer this thread works on.",
+    TerminalUnreachable = "terminal-unreachable"
+        "Your computer can't be reached from this server right now. Try again in a moment.",
+    TerminalFailed = "terminal-failed" "The terminal could not be reached. Try again in a moment.",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
     Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",
@@ -540,6 +556,21 @@ sentences! {
         "This computer can't be kept awake while glave works: that needs systemd, which it doesn't run.",
     AwakeWithNothing = "awake-with-nothing"
         "This computer can't be kept awake while glave works: its system has nothing for it.",
+
+    // Notifications on the person's devices.
+    NoPush = "no-push" "This server sends no notifications.",
+    PushServiceRefused = "push-service-refused"
+        "this browser's notifications can't be turned on: glave pushes only to the browsers' own push services",
+    PushKeysRefused = "push-keys-refused"
+        "this browser's notifications can't be turned on: its keys aren't what Web Push makes. Turn them off and on again",
+    DeviceUnnamed { most: usize } = "device-unnamed"
+        "give the browser a name, in at most { $most } characters",
+    PushWaiting { title: String } = "push-waiting" "Needs you: { $title }",
+    PushWaitingUntitled = "push-waiting-untitled" "glave needs you",
+    PushDone { title: String } = "push-done" "Done: { $title }",
+    PushDoneUntitled = "push-done-untitled" "A task is done",
+    PushNotDone { title: String } = "push-not-done" "Didn't finish: { $title }",
+    PushNotDoneUntitled = "push-not-done-untitled" "A task didn't finish",
 
     // Signing a browser in.
     LinkSpent = "link-spent"

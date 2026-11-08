@@ -68,6 +68,8 @@ glave-ports.workspace = true
 glave-process.workspace = true
 glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true
+# Web Push, for what tells people's browsers when glave needs them.
+glave-push.workspace = true
 glave-session.workspace = true
 # The data store: the local SQLite file, or Postgres for a server (`[store] url`).
 glave-store-postgres.workspace = true

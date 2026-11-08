@@ -1,9 +1,10 @@
 //! Where a thread's notifications go: one bounded broadcast per watched thread, fed by the log as
 //! events are appended and by running turns as they make progress; and one more saying which
 //! thread changed, for the watches of lists (`lists.rs`), fed by the same appends and by work on
-//! a thread beginning and ending. A follower that falls too far behind misses what was not held
-//! for it: a watch reads it again from the log by `seq` (`watch.rs`), a list's from the threads
-//! view (`lists.rs`), so nothing is buffered without bound.
+//! a thread beginning and ending; and one of what needs a person, for their devices
+//! (`notify.rs`). A follower that falls too far behind misses what was not held for it: a watch
+//! reads it again from the log by `seq` (`watch.rs`), a list's from the threads view
+//! (`lists.rs`), so nothing is buffered without bound.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -13,6 +14,7 @@ use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{EventLog, Located, LogError, OrgId, ProjectId, Scope};
 use tokio::sync::{broadcast, watch};
 
+use crate::notify::Need;
 use crate::protocol::{Notification, Setting};
 
 /// Notifications held for a slow watcher before it is told it fell behind.
@@ -32,6 +34,8 @@ pub(crate) struct Hub {
     /// Told each time a browser's sign-in here may have ended, for the watches that follow
     /// one (`access.rs`).
     sign_ins: watch::Sender<()>,
+    /// What needs a person, in the thread they started, for what tells their devices.
+    needs: broadcast::Sender<Need>,
 }
 
 impl Default for Hub {
@@ -41,6 +45,7 @@ impl Default for Hub {
             parents: Mutex::default(),
             changes: broadcast::channel(BACKLOG).0,
             sign_ins: watch::channel(()).0,
+            needs: broadcast::channel(BACKLOG).0,
         }
     }
 }
@@ -110,6 +115,11 @@ impl Hub {
         self.sign_ins.subscribe()
     }
 
+    /// Starts hearing what needs a person, from now on.
+    pub(crate) fn needs(&self) -> broadcast::Receiver<Need> {
+        self.needs.subscribe()
+    }
+
     /// Tells every watch that follows a browser's sign-in that one may have ended.
     pub(crate) fn sign_ins_changed(&self) {
         self.sign_ins.send_replace(());
@@ -146,8 +156,14 @@ impl Hub {
         self.channels.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Sends `notification` to everyone watching `thread` or a thread it is a child of.
+    /// Sends `notification` to everyone watching `thread` or a thread it is a child of, and
+    /// what it says needs a person, at the thread the person started, to what tells them.
     pub(crate) fn publish(&self, thread: ThreadId, notification: Notification) {
+        if let Some(need) = Need::of(&notification) {
+            let started = self.lineage(thread).last().copied().unwrap_or(thread);
+            // Only fails when nothing tells people, which is fine.
+            let _ = self.needs.send(need.in_thread(started));
+        }
         let notification = Arc::new(notification);
         let mut to = Some(thread);
         // A child's parent may itself be a child; a cycle could never be recorded, but the walk

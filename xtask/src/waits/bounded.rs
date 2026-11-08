@@ -286,6 +286,24 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "keeping the computer awake while work runs, for as long as the server does",
     ),
     (
+        "crates/session/src/notify.rs",
+        "heard = needs.recv() => match heard {",
+        1,
+        "what needs people, heard until the server drops what pushes it",
+    ),
+    (
+        "crates/session/src/notify.rs",
+        "told(pushes.join_next().await);",
+        1,
+        "a need's pushes, each sent within glave-push's own limits (5 s to connect, 10 s in all)",
+    ),
+    (
+        "crates/session/src/notify.rs",
+        "while let Some(sent) = sends.join_next().await {",
+        1,
+        "one person's browsers' pushes, each sent within glave-push's own limits",
+    ),
+    (
         "crates/memory/src/client.rs",
         "while let Some((ledger, person)) = asked.recv().await {",
         1,
@@ -305,6 +323,39 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "a cancellation, which every caller races against the work it would cancel",
     ),
     // A limit around it, set elsewhere.
+    (
+        "crates/computer/src/local/terminal.rs",
+        "let changed = shared.changed.notified();",
+        1,
+        "what a terminal prints next, awaited within the read's wait (`timeout(left, changed)`, \
+         at most MAX_WAIT)",
+    ),
+    (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = hung_up.recv() => None,",
+        1,
+        "a terminal's starter hung up, which ends it however glave ends; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = told.recv() => None,",
+        1,
+        "a terminal's starter told to stop by the lifeline or the ledger; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/pump.rs",
+        "_ = child.wait() => break Stopped::Exited,",
+        1,
+        "a terminal's shell, until it is hung up or nothing used it for IDLE, the arms beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/pump.rs",
+        "() = shared.hang_up.notified() => break Stopped::HungUp,",
+        1,
+        "a terminal being closed, whose idle limit is the arm beside it",
+    ),
     (
         "crates/computer/src/local/background.rs",
         "status = child.wait() => break status.map_or(Ending::Signalled, exited),",

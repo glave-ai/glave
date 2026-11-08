@@ -99,6 +99,7 @@ where
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
             prefix: crate::prefix::Prefixed::None,
+            summary_failed: None,
         };
         self.take_history(&mut thread, &events).await;
         Ok(thread)
@@ -150,11 +151,15 @@ where
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
         let open = crate::waits::open_turn(&events);
         let mut staged = Vec::new();
+        // What the subagents of the calls it closes did, which count as their calls get results.
+        let mut reported = Vec::new();
         for call in dangling_calls(&events) {
             let output = match self.child_of(&scope, id, &call.call_id).await? {
                 Some(child) if CallKind::of(&call.tool) == CallKind::Agent => {
                     self.repair(scope, child.thread).await?;
-                    self.reported(&scope, child.thread).await?.0
+                    let (output, did) = self.reported(&scope, child.thread).await?;
+                    reported.push(did);
+                    output
                 }
                 _ => ToolOutput::text(true, INTERRUPTED),
             };
@@ -168,10 +173,13 @@ where
                 .rposition(|event| matches!(event.body, Body::TurnStarted(_)))
                 .unwrap_or(0);
             let turn = events.get(started..).unwrap_or_default();
-            let ended = TurnResult {
+            let mut ended = TurnResult {
                 outcome: Outcome::Interrupted,
                 ..self.tallies(&scope, id, turn).await?
             };
+            for did in &reported {
+                ended.absorb(did);
+            }
             self.stage_next(id, next, &mut staged, &ended)?;
         }
         self.log.append(&scope, &staged).await?;

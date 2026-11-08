@@ -40,19 +40,19 @@
       (input)="search($event)"
     />
   </label>
-  <!-- The switch's code loads as the page starts, beside the lists' first read, and the switch
-     shows once the person has a project: kept out of the first load. Read before its code is in,
-     the lists keep its room, so it comes in moving nothing. If its code cannot load, the threads
-     stay grouped as they are. -->
-  @defer (on immediate) {
-    @if (groupable()) {
-      <app-group-by class="grouping" />
-    }
-  } @placeholder {
-    @if (groupable()) {
-      <div class="grouping room"></div>
-    }
-  } @error {}
+  <!-- The switch's room, shown once the person has a project, decided here with the threads, so
+     the two come in together. Its code, kept out of the first load, loads as the page starts,
+     beside the lists' first read, and fills the room whenever it comes, moving nothing: Angular
+     puts the block in the page as soon as its code is in, a frame may be drawn before the change
+     detection that binds it, and the switch comes in only from that one, bound. If its code
+     cannot load, the threads stay grouped as they are. -->
+  <div class="grouping" [class.shown]="groupable()">
+    @defer (on immediate) {
+      @if (groupable()) {
+        <app-group-by />
+      }
+    } @error {}
+  </div>
   <!-- The threads by what each is doing load the first time they show, fetched once the page is
      idle: most people never leave the grouping by project. If their code cannot load, the side
      nav says so in their place. -->

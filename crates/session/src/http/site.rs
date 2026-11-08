@@ -207,7 +207,9 @@ impl fmt::Debug for Site {
 
 /// The policy every answer carries; `nonce` admits the styles Angular adds at run time. Images
 /// come from the app, and from the person's own computer: a file they add to a message is
-/// shown from a `blob:` URL the page makes of it, never fetched from anywhere.
+/// shown from a `blob:` URL the page makes of it, never fetched from anywhere. Beside Angular's
+/// own, one Trusted Types policy, `glave-push`, names the app's one service worker, which shows
+/// its notifications (`script-src` covers the worker).
 pub(crate) fn policy(nonce: &str) -> String {
     [
         "default-src 'none'",
@@ -221,7 +223,7 @@ pub(crate) fn policy(nonce: &str) -> String {
         "form-action 'none'",
         "frame-ancestors 'none'",
         "require-trusted-types-for 'script'",
-        "trusted-types angular angular#bundler",
+        "trusted-types angular angular#bundler glave-push",
     ]
     .join("; ")
 }
@@ -391,6 +393,8 @@ mod tests {
         assert!(policy.contains("frame-ancestors 'none'"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
+        // Angular's two, and the one that names the service worker, alone.
+        assert!(policy.ends_with("; trusted-types angular angular#bundler glave-push"));
     }
 
     #[test]

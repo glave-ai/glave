@@ -4,6 +4,7 @@
 //! binary for its `apply_patch` (`codex-rs/arg0`): a link to the binary's path, so an upgrade
 //! that replaces the binary in place keeps it working.
 
+use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 
@@ -31,4 +32,14 @@ pub async fn glave_on_path(_folder: &Path, _program: &Path) -> io::Result<()> {
         io::ErrorKind::Unsupported,
         "glave is put on commands' PATH on macOS and Linux only",
     ))
+}
+
+/// `environment`'s `PATH` with `folder` first.
+pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path) -> OsString {
+    let mut first = folder.as_os_str().to_owned();
+    if let Some((_, path)) = environment.iter().find(|(name, _)| name == "PATH") {
+        first.push(":");
+        first.push(path);
+    }
+    first
 }

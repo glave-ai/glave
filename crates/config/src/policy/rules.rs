@@ -56,6 +56,8 @@ pub enum Kind {
     Memory(MemoryRules),
     /// Where threads may work.
     Placement(Vec<Placement>),
+    /// The server pushes no notifications to people's browsers.
+    PushOff,
 }
 
 impl fmt::Display for Kind {
@@ -82,6 +84,7 @@ impl fmt::Display for Kind {
             }
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
+            Self::PushOff => f.write_str("[notifications] push = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
             Self::Memory(rules) => f.write_str(&rules.describe()),
             Self::Placement(places) => {
@@ -175,6 +178,9 @@ impl Constraints {
             }
             if let Some(allowed) = &file.placement.allowed {
                 add(Kind::Placement(allowed.clone()));
+            }
+            if file.notifications.push == Some(false) {
+                add(Kind::PushOff);
             }
         }
         Self { rules }
@@ -287,6 +293,11 @@ impl Constraints {
     /// The first rule that forbids people's and projects' own hooks.
     pub fn own_hooks_forbidden(&self) -> Option<&Rule> {
         self.first(|kind| matches!(kind, Kind::HooksOwnForbidden))
+    }
+
+    /// The first rule that keeps the server from pushing notifications to people's browsers.
+    pub fn push_off(&self) -> Option<&Rule> {
+        self.first(|kind| matches!(kind, Kind::PushOff))
     }
 
     /// The first rule that trusts the project at `root` without asking. Unlike the others

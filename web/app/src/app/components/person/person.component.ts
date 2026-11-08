@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  Injector,
   LOCALE_ID,
   computed,
   inject,
@@ -89,6 +90,7 @@ export class PersonComponent {
     this.organizations.organizations().map((each) => place(each, this.locale)),
   );
   private readonly session = inject(SessionService);
+  private readonly injector = inject(Injector);
 
   constructor() {
     // What the menu offers is the server's to say, whichever page opened first.
@@ -112,7 +114,15 @@ export class PersonComponent {
     this.inviting.set(true);
   }
 
-  protected signOut(): void {
-    void this.session.signOut();
+  /**
+   * Signs this browser out, stopping its notifications first through what loads only now, so
+   * the side nav's first page carries none of it; signing out goes on without it if it can't.
+   */
+  protected async signOut(): Promise<void> {
+    const loaded = await import('../../services/push.service').catch(() => null);
+    if (loaded !== null) {
+      await this.injector.get(loaded.PushService).signingOut();
+    }
+    await this.session.signOut();
   }
 }

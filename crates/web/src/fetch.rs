@@ -14,7 +14,7 @@ use reqwest::{Client, Url, redirect};
 use thiserror::Error;
 
 use crate::cache::Cache;
-use crate::resolve::{Guarded, Refused};
+use crate::resolve::{Refused, guarded};
 use crate::text::{kind, readable, title};
 
 /// How much a fetch may take.
@@ -102,9 +102,7 @@ impl Fetcher {
             .no_proxy()
             .redirect(redirect::Policy::none())
             .connect_timeout(limits.timeout)
-            .dns_resolver(Arc::new(Guarded {
-                policy: Arc::clone(&policy),
-            }))
+            .dns_resolver(Arc::new(guarded(Arc::clone(&policy))))
             .user_agent(concat!("glave/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| FetchError::Failed(e.to_string()))?;
