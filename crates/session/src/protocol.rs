@@ -327,6 +327,17 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cursor: Option<String>,
     } -> [Threads],
+    /// Makes a new thread in the same project whose history is `thread`'s up to and including
+    /// `at`, a point between its turns, to try again from there: `at` is the `seq` of a
+    /// `turn.ended`, or of an event between two turns, or before the first; the latest such
+    /// point when absent. To send an earlier message again changed, fork at the event just
+    /// before its turn's `turn.started`, then send it. The fork has the same model, settings
+    /// and prefix; nothing of `thread` changes, and files are not rewound.
+    "thread/fork" => ThreadFork {
+        thread: ThreadId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Seq>,
+    } -> [Thread],
     /// Gives a thread a title of the person's own.
     "thread/rename" => ThreadRename { thread: ThreadId, title: String } -> [Thread],
     /// Hides a thread from lists, keeping it in the log.

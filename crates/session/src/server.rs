@@ -486,9 +486,9 @@ where
     /// in a worktree of it where `worktree` says (the server's choice when it does not), else
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
     /// the folder. In the project whose settings chose workers, every thread works on a worker
-    /// instead, which clones that project's repository. With no folder (a person's Chats, or a project without one), the thread gets a
-    /// scratch folder of its own. With a model or a mode in `choice`, its turns go
-    /// to that model, or ask that much.
+    /// instead, which clones that project's repository. With no folder (a person's Chats, or a
+    /// project without one), the thread gets a scratch folder of its own. With a model or a
+    /// mode in `choice`, its turns go to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
@@ -510,26 +510,7 @@ where
         if let Some(mode) = choice.permissions {
             self.allowed_permissions(caller.person, mode)?;
         }
-        let project = scope.project();
-        let found = self.folder_to_start_in(scope.located()).await?;
-        let copies = self.copies_by_default(caller, found.as_ref()).await;
-        let folder = found.map(|(folder, _)| folder);
-        let place = match (folder, worktree, &self.inner.worker) {
-            (None, Some(true), _) => {
-                return Err(ApiError::new(
-                    code::WORKSPACE,
-                    Sentence::NoFolderForWorktree,
-                ));
-            }
-            (None, _, _) => Place::Scratch,
-            (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
-            (Some(folder), Some(true), _) => Place::Worktree(folder),
-            (Some(_), None, Some((chosen, environment))) if *chosen == project => {
-                Place::Worker(environment.clone())
-            }
-            (Some(folder), None, _) if background || copies => Place::Worktree(folder),
-            (Some(folder), _, _) => Place::Folder(folder),
-        };
+        let place = self.place_for(caller, scope, worktree, background).await?;
         let copy = background && matches!(place, Place::Worktree(_));
         let mut thread = self
             .inner
@@ -549,6 +530,36 @@ where
         self.place(id, scope);
         self.keep(id, thread).await;
         Ok(id)
+    }
+
+    /// Where a new thread for `caller` in `scope` works, as [`Server::new_thread`] says.
+    pub(crate) async fn place_for(
+        &self,
+        caller: &Caller,
+        scope: Scope,
+        worktree: Option<bool>,
+        background: bool,
+    ) -> Result<Place, ApiError> {
+        let project = scope.project();
+        let found = self.folder_to_start_in(scope.located()).await?;
+        let copies = self.copies_by_default(caller, found.as_ref()).await;
+        let folder = found.map(|(folder, _)| folder);
+        Ok(match (folder, worktree, &self.inner.worker) {
+            (None, Some(true), _) => {
+                return Err(ApiError::new(
+                    code::WORKSPACE,
+                    Sentence::NoFolderForWorktree,
+                ));
+            }
+            (None, _, _) => Place::Scratch,
+            (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
+            (Some(folder), Some(true), _) => Place::Worktree(folder),
+            (Some(_), None, Some((chosen, environment))) if *chosen == project => {
+                Place::Worker(environment.clone())
+            }
+            (Some(folder), None, _) if background || copies => Place::Worktree(folder),
+            (Some(folder), _, _) => Place::Folder(folder),
+        })
     }
 
     /// The latest event of type `kind` in `thread`, decoded: how a choice the thread made is

@@ -86,6 +86,14 @@ pub enum Invalid {
     /// A title, at most this many characters.
     #[error("a title is 1 to {0} characters, not only spaces")]
     Title(usize),
+    /// A point to fork a thread at that is not between two of its turns, or not in it.
+    #[error(
+        "a thread is forked only between its turns, and that point is within one or past its end"
+    )]
+    ForkPoint,
+    /// A subagent's thread to fork, which is the work of the thread that started it.
+    #[error("a subagent's thread is not forked on its own: fork the thread that started it")]
+    ForkSubagent,
 }
 
 impl From<EncodeError> for HarnessError {

@@ -2,33 +2,35 @@
 //! transport sends the event: what an approval asks (`approval.requested`'s `ask`), recorded in
 //! English, as every sentence is where it is made, and found again in the table by those words;
 //! why it asks (its `caution`), written again from the typed `reason` it was written from; and
-//! who asks and what came of it when a service asks the person, from the service's name.
+//! who asks and what came of it when a service asks the person, from the service's name; and
+//! where a fork begins, from how it stands as to files.
 
 use std::sync::Arc;
 
 use glave_event::{
     ApprovalRequested, Body, Event, Payload as _, RawEvent, ServiceAnswered, ServiceAsked,
-    ServiceOutcome, decode,
+    ServiceOutcome, ThreadForked, decode,
 };
 
 use super::{Language, Sentence, caution_in, say};
 use crate::protocol::{Notification, Update};
 
-/// Whether `event` may hold a sentence of the server's own: an approval does, and what a service
-/// asks and its answer.
+/// Whether `event` may hold a sentence of the server's own: an approval does, what a service
+/// asks and its answer, and where a fork begins.
 pub(super) fn asks(event: &RawEvent) -> bool {
     [
         ApprovalRequested::TYPE,
         ServiceAsked::TYPE,
         ServiceAnswered::TYPE,
+        ThreadForked::TYPE,
     ]
     .contains(&event.kind.as_str())
 }
 
 /// `event` as a caller who reads `language` is sent it: what an approval asks written in their
 /// language, when the table holds the words it was recorded in, and why it asks, when it was
-/// recorded with its reason; what a service asks and how it was answered; `None` when nothing in
-/// it changes, as in English.
+/// recorded with its reason; what a service asks and how it was answered; what a fork tells of
+/// its files; `None` when nothing in it changes, as in English.
 pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent> {
     if language == Language::English || !asks(event) {
         return None;
@@ -75,6 +77,10 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
                 },
             );
             Body::ServiceAnswered(answered)
+        }
+        Body::ThreadForked(mut forked) => {
+            forked.told = say(language, &crate::fork::forked(forked.files));
+            Body::ThreadForked(forked)
         }
         _ => return None,
     };

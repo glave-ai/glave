@@ -9,7 +9,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use glave_event::{
-    ApprovalRequested, Body, CallId, Outcome, Seq, ServiceAnswer, ServiceAsked, ThreadId, decode,
+    ApprovalRequested, Body, CallId, Outcome, RawEvent, Seq, ServiceAnswer, ServiceAsked, ThreadId,
+    decode,
 };
 use glave_harness::{Cancel, Permissions, Question};
 use glave_ports::Caller;
@@ -454,6 +455,22 @@ pub(crate) async fn export(
     path: &Path,
 ) -> anyhow::Result<()> {
     let mut lines = String::new();
+    read_events(server, thread, |event| {
+        lines.push_str(&event.to_json()?);
+        lines.push('\n');
+        Ok(())
+    })
+    .await?;
+    tokio::fs::write(path, lines).await?;
+    Ok(())
+}
+
+/// Hands each of the thread's events to `read`, in order, read a page at a time.
+pub(crate) async fn read_events(
+    server: Session<'_>,
+    thread: ThreadId,
+    mut read: impl FnMut(&RawEvent) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let mut after = None;
     loop {
         let page = Request::ThreadEvents {
@@ -464,15 +481,10 @@ pub(crate) async fn export(
         let Reply::Events { events, next, .. } = server.request(page).await? else {
             anyhow::bail!("the server answered thread/events with something else");
         };
-        for event in &events {
-            lines.push_str(&event.to_json()?);
-            lines.push('\n');
-        }
+        events.iter().try_for_each(&mut read)?;
         match next {
             Some(seq) => after = Some(seq),
-            None => break,
+            None => return Ok(()),
         }
     }
-    tokio::fs::write(path, lines).await?;
-    Ok(())
 }

@@ -81,7 +81,8 @@ pub struct ThreadView {
     /// How its latest turn ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
-    /// Tokens its own model calls used (a subagent's are in the subagent's thread).
+    /// Tokens its own model calls used (a subagent's are in the subagent's thread; a fork's
+    /// are those after its `thread.forked`).
     pub tokens: TokenCounts,
     /// What they cost, while every call reported a cost in one currency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -185,6 +186,13 @@ impl ThreadView {
             "thread.renamed" => self.title_seq = Some(event.seq),
             "workspace.bound" => self.workspace_seq = Some(event.seq),
             "thread.compacted" => self.context = None,
+            // A fork's copies are what the thread it came from used: its own start here.
+            "thread.forked" => {
+                self.tokens = TokenCounts::default();
+                self.cost = None;
+                self.unpriced = false;
+                self.estimated = false;
+            }
             "turn.started" => {
                 self.turns = self.turns.saturating_add(1);
                 self.turn = Some(OpenTurn::at(event.seq));

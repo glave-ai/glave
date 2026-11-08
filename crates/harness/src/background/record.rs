@@ -25,6 +25,8 @@ impl std::fmt::Debug for Commands {
 #[derive(Default)]
 struct Inner {
     all: Vec<Entry>,
+    /// The numbers the thread's history gave commands it does not keep: a fork's copies'.
+    before: u32,
     /// The tool call running now, which a command it starts is recorded under.
     call: Option<CallId>,
     unrecorded: Vec<Change>,
@@ -94,7 +96,7 @@ impl Commands {
         moved: bool,
     ) -> u32 {
         let mut inner = self.inner();
-        let number = next_number(&inner.all);
+        let number = next_number(&inner);
         if let Some(call_id) = inner.call.clone() {
             let started = CommandStarted {
                 command: id.as_uuid(),
@@ -133,7 +135,7 @@ impl Commands {
         started: At,
     ) {
         let mut inner = self.inner();
-        let number = next_number(&inner.all);
+        let number = next_number(&inner);
         inner.all.push(Entry {
             number,
             id,
@@ -143,6 +145,13 @@ impl Commands {
             started: Some(started),
             ended: None,
         });
+    }
+
+    /// Numbers the commands kept from now on after the first `used`, which the thread's history
+    /// gave commands it does not keep, as a fork's copies do.
+    pub(crate) fn numbered_after(&self, used: u32) {
+        let mut inner = self.inner();
+        inner.before = inner.before.max(used);
     }
 
     /// Notes how a command the log says ended did, with nothing to record.
@@ -220,9 +229,10 @@ impl Commands {
     }
 }
 
-/// The number after the last one given.
-fn next_number(all: &[Entry]) -> u32 {
-    all.last().map_or(1, |entry| entry.number.saturating_add(1))
+/// The number after the last one given, or after those the history gave before.
+fn next_number(inner: &Inner) -> u32 {
+    let last = inner.all.last().map_or(inner.before, |entry| entry.number);
+    last.saturating_add(1)
 }
 
 /// How the thread records a command's ending as its computer gave it.

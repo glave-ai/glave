@@ -292,6 +292,7 @@ where
                     .await
             }
             Request::ThreadGet { thread } => self.get_thread(caller, thread).await,
+            Request::ThreadFork { thread, at } => self.fork(caller, thread, at).await,
             Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
             Request::ThreadUnarchive { thread } => {

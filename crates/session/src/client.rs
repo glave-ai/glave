@@ -133,6 +133,7 @@ impl Remote {
 fn answers_within(request: &Request) -> Duration {
     match request {
         Request::ThreadStart { .. }
+        | Request::ThreadFork { .. }
         | Request::ThreadCompact { .. }
         | Request::ProjectCreate { .. }
         | Request::FileUpload { .. }
