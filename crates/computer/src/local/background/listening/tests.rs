@@ -1,15 +1,18 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use super::lsof::{in_lsof, in_ps, whole_lines};
+use super::proc::{in_hex, in_stat, in_table, socket_inode};
 use super::*;
 
 #[test]
-fn lsof_is_read_by_group_keeping_what_loopback_reaches_with_its_family() {
-    // As macOS 26's lsof prints it for a group listening at each kind of address, then a
-    // second group listening on a private address only.
-    let printed = "p83733\ng83730\nf3\ntIPv4\nn127.0.0.1:61946\nf4\ntIPv6\nn[::1]:61947\nf5\n\
-                   tIPv4\nn*:61948\nf6\ntIPv6\nn*:61949\np900\ng900\nf7\ntIPv4\n\
-                   n192.168.1.5:8000\n";
-    let found = in_lsof(printed);
+fn lsof_is_read_by_process_keeping_what_loopback_reaches_with_its_family() {
+    // As macOS 26's lsof prints it for two processes of one command listening at each kind of
+    // address, then a process of no command listening on a private address only.
+    let printed = "p83733\nf3\ntIPv4\nn127.0.0.1:61946\nf4\ntIPv6\nn[::1]:61947\np83740\nf5\n\
+                   tIPv4\nn*:61948\nf6\ntIPv6\nn*:61949\np900\nf7\ntIPv4\nn127.0.0.1:8000\n\
+                   p83741\nf8\ntIPv4\nn192.168.1.5:9000\n";
+    let owned: HashMap<u32, u32> = [(83733, 83730), (83740, 83730), (83741, 83730)].into();
+    let found = in_lsof(printed, &owned);
     assert_eq!(found.len(), 1, "{found:?}");
     let at: Vec<(u16, IpAddr)> = found[&83730].iter().copied().collect();
     assert_eq!(
@@ -21,7 +24,33 @@ fn lsof_is_read_by_group_keeping_what_loopback_reaches_with_its_family() {
             (61949, IpAddr::V6(Ipv6Addr::UNSPECIFIED)),
         ]
     );
-    assert!(in_lsof("").is_empty());
+    assert!(in_lsof("", &owned).is_empty());
+}
+
+#[test]
+fn ps_names_each_process_s_parent_and_group() {
+    let printed = "    1     0     1\n  420     1   420\n  421   420   421\nnot a process\n";
+    let processes = in_ps(printed);
+    assert_eq!(processes.len(), 3);
+    assert_eq!(
+        processes[&421],
+        Process {
+            parent: 420,
+            group: 421
+        }
+    );
+}
+
+#[test]
+fn a_program_s_output_cut_short_is_read_to_its_last_whole_line() {
+    let printed = b"n127.0.0.1:5173\nn127.0.0.1:51";
+    assert_eq!(
+        whole_lines(printed, printed.len()),
+        "n127.0.0.1:5173\nn127.0.0.1:51"
+    );
+    // Kept to its first bytes and one more: the last line was cut, and is left out.
+    assert_eq!(whole_lines(printed, printed.len() - 1), "n127.0.0.1:5173\n");
+    assert_eq!(whole_lines(b"n127.0.0.1:5", 10), "");
 }
 
 #[test]

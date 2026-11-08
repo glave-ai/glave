@@ -569,12 +569,12 @@ impl Computers for Waking {
         &self,
         workspace: WorkspaceId,
     ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
-        Box::pin(async move {
-            match self.opened(&*self.planned(workspace)?) {
-                Some(open) => self.done(open.computers.listening(open.workspace).await),
-                None => Ok(Vec::new()),
-            }
-        })
+        let _ = workspace;
+        // Only the server's own computer is asked (`specs/computers.md`, "Where it listens,
+        // when asked"): a person's computer in the cloud waits for a preview of its own (#356).
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            "a person's computer in the cloud doesn't say where its commands listen".into(),
+        ))))
     }
 
     fn open_terminal<'a>(
