@@ -20,16 +20,17 @@ use crate::support::*;
 
 /// A page's server, as a dev server is: at the address its argument names, `::` meaning every
 /// address of both families, at a port the system picks, which it writes (`port`) once it
-/// listens.
+/// listens. It binds as a `TCPServer`, since `HTTPServer` asks DNS for its host's name as it
+/// binds, which outlasted the wait on macOS runners.
 const SERVER: &str = "\
-import http.server as h, os, socket, sys
+import http.server as h, os, socket, socketserver, sys
 both = sys.argv[1] == '::'
 class Server(h.ThreadingHTTPServer):
     address_family = socket.AF_INET6 if both else socket.AF_INET
     def server_bind(self):
         if both:
             self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        super().server_bind()
+        socketserver.TCPServer.server_bind(self)
 served = Server((sys.argv[1], 0), h.SimpleHTTPRequestHandler)
 open('port.next', 'w').write(str(served.server_address[1]))
 os.rename('port.next', 'port')
