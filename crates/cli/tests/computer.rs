@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
-use glave_ports::testing::{TempDir, any_secret, read_program};
+use glave_ports::testing::{SocketPath, TempDir, any_secret, read_program};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
 use crate::support::Lifeline;
@@ -130,7 +130,7 @@ fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
     let now = SystemTime::from(SystemClock.now());
     let token = Token::mint(now, Duration::from_mins(10)).unwrap();
     std::fs::write(secret.join("token"), token.to_file()).unwrap();
-    let socket = dir.join("glave.sock");
+    let socket = SocketPath::new(&dir, "glave.sock").unwrap();
     // Each glave ends with the test, however it ends.
     let lifeline = Lifeline::new(&dir);
     read_program(GLAVE).unwrap();
@@ -142,7 +142,7 @@ fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
     block_on!(async {
         let mut server = glave()
             .args(["computer", "serve", "--socket"])
-            .arg(&socket)
+            .arg(&*socket)
             .arg(&secret)
             .env("GLAVE_HOME", dir.join("home"))
             .kill_on_drop(true)
@@ -151,7 +151,7 @@ fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
         for _ in 0..2 {
             let mut bridge = glave()
                 .args(["computer", "bridge"])
-                .arg(&socket)
+                .arg(&*socket)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .kill_on_drop(true)

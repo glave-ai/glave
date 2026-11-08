@@ -7,6 +7,7 @@
 use std::io::{BufRead as _, BufReader};
 use std::process::{Command, Output, Stdio};
 
+use glave_ports::MAX_SOCKET_PATH;
 use glave_ports::testing::Running;
 use glave_provider_openai::fake::FakeServer;
 
@@ -129,7 +130,11 @@ fn a_stale_socket_is_replaced_only_by_the_lock_s_holder() {
     // A short name: the socket's path must stay short enough for a socket.
     let place = place("st");
     let socket = place.home.join("run/server.sock");
-    assert!(socket.as_os_str().len() <= 100, "{}", socket.display());
+    assert!(
+        socket.as_os_str().len() <= MAX_SOCKET_PATH,
+        "{}",
+        socket.display()
+    );
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -205,7 +210,11 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
     // A short name: the socket's path must stay short enough for a socket.
     let place = place("sb");
     let socket = place.home.join("run/server.sock");
-    assert!(socket.as_os_str().len() <= 100, "{}", socket.display());
+    assert!(
+        socket.as_os_str().len() <= MAX_SOCKET_PATH,
+        "{}",
+        socket.display()
+    );
     // Spelled so no approval rule stops it first: the sandbox alone must.
     let script = format!(
         "d='{}'; cat \"$d\"/serve.t* && echo token-read; cat \"$d\"/root.k* && echo key-read; \

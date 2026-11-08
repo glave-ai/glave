@@ -245,7 +245,7 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
         return;
     }
     let dir = scratch("seccomp");
-    let socket = dir.join("outside.sock");
+    let socket = glave_ports::testing::SocketPath::new(&dir, "outside.sock").unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
     let tmux = Tmux::listen();
     std::fs::write(dir.join("project/pool.py"), POOL).unwrap();

@@ -312,8 +312,8 @@ mod tests {
     #[test]
     fn docker_that_takes_a_call_and_never_answers_fails_it_at_its_limit() {
         let dir = glave_ports::testing::TempDir::new("engine-silent").unwrap();
-        let socket = dir.join("docker.sock");
-        let engine = Engine::new(&socket);
+        let socket = glave_ports::testing::SocketPath::new(&dir, "docker.sock").unwrap();
+        let engine = Engine::new(socket.to_path_buf());
         let (asked, attached, pulled) = glave_ports::block_on!(async {
             tokio::time::pause();
             let listener = tokio::net::UnixListener::bind(&socket).unwrap();
@@ -361,8 +361,8 @@ mod tests {
     fn a_pull_longer_than_an_answer_may_be_keeps_its_latest_progress_and_its_error() {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
         let dir = glave_ports::testing::TempDir::new("engine-long-pull").unwrap();
-        let socket = dir.join("docker.sock");
-        let engine = Engine::new(&socket);
+        let socket = glave_ports::testing::SocketPath::new(&dir, "docker.sock").unwrap();
+        let engine = Engine::new(socket.to_path_buf());
         let pulled = glave_ports::block_on!(async {
             let listener = tokio::net::UnixListener::bind(&socket).unwrap();
             // A pull of many layers: more progress than an answer may hold, then its error.
