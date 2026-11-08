@@ -255,7 +255,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         Transport::Socket(path, folder, _) => vec![folder.clone(), path.clone()],
         Transport::Stdio | Transport::Tcp(_) | Transport::Tls(..) => Vec::new(),
     };
-    let computers = crate::helpers::with_sandbox_helper(
+    let computers = crate::helpers::with_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
             .with_scratch(home.join(crate::worktrees::SCRATCH))
