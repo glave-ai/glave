@@ -622,55 +622,65 @@ impl Computers for RemoteComputers {
     fn write_terminal<'a>(
         &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         input: &'a Bytes,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        let input = input.clone();
+        let (owner, input) = (owner.to_owned(), input.clone());
         let request = Request::TerminalWrite {
             computer,
             terminal,
+            owner,
             input,
         };
         Box::pin(async move { self.call(&request).await.map(drop) })
     }
 
-    fn read_terminal(
-        &self,
+    fn read_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         from: u64,
         wait: Duration,
-    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
         let wait_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX);
+        let owner = owner.to_owned();
         let request = Request::TerminalRead {
             computer,
             terminal,
+            owner,
             from,
             wait_ms,
         };
         Box::pin(async move { self.typed(&request).await })
     }
 
-    fn resize_terminal(
-        &self,
+    fn resize_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         size: TerminalSize,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let owner = owner.to_owned();
         let request = Request::TerminalResize {
             computer,
             terminal,
+            owner,
             size,
         };
         Box::pin(async move { self.call(&request).await.map(drop) })
     }
 
-    fn close_terminal(
-        &self,
+    fn close_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
-        let request = Request::TerminalClose { computer, terminal };
+        (terminal, owner): (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let owner = owner.to_owned();
+        let request = Request::TerminalClose {
+            computer,
+            terminal,
+            owner,
+        };
         Box::pin(async move { self.call(&request).await.map(drop) })
     }
 

@@ -3,7 +3,7 @@
 //! closed for them alone. Nothing of it is recorded: the event log, the model and the server's
 //! log never hold a byte typed or printed. The server keeps nothing of them either: each call
 //! finds the thread's computer from its binding, as opening one does, and the computer keeps
-//! which thread's each terminal is, so a restart, or another server of the store, finds them.
+//! which thread's each terminal is and checks it on every call.
 //!
 //! Who may open one: only the person whose computer it is. On the server's own computer, the
 //! person the server works for (as only they leave the sandbox there, `specs/sandbox.md`,
@@ -13,27 +13,35 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::{Body, ComputerKind, Payload as _, ThreadId, WorkspaceBound};
+use glave_event::{Body, ComputerKind, Payload as _, PrincipalId, ThreadId, WorkspaceBound};
 use glave_harness::owner_label;
 use glave_ports::computer::{
-    Bytes, ComputerError, ComputerId, Computers, TerminalId, TerminalSize,
+    Bytes, ComputerError, ComputerId, Computers, Refusal, TerminalId, TerminalSize,
 };
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Standing};
 
-use crate::protocol::{ApiError, Reply, code};
+use crate::protocol::{ApiError, Reply, Told, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
 /// The longest one read waits for something to read: under the quiet a proxy allows a request.
 const MOST_WAIT: Duration = Duration::from_secs(25);
 
-/// Where a thread's terminals are: its folder, on a computer of the caller's own, and whose
-/// they are there.
+/// Where a thread's terminals are: its folder, on its own computer, whose they are there, and
+/// whose computer that is (none for this server's, its person's).
 struct Place {
     folder: String,
     owner: String,
     computers: Arc<dyn Computers>,
     computer: ComputerId,
+    person: Option<PrincipalId>,
+}
+
+impl Place {
+    /// `terminal` there, as its owner names it.
+    fn at(&self, terminal: TerminalId) -> (TerminalId, &str) {
+        (terminal, &self.owner)
+    }
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -42,10 +50,21 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Whether `caller` may open terminals here: the person the server works for, or anyone
-    /// where people have computers of their own.
-    pub(crate) fn opens_terminals(&self, caller: &Caller) -> bool {
-        self.inner.homes.is_some() || self.is_theirs(caller)
+    /// Whether a terminal opens in a thread for its person, `whose`, where it works as `bound`
+    /// records: shown, in a folder on its person's own computer, this server's for the person
+    /// it works for, or theirs where people have computers of their own; never on a worker.
+    pub(crate) fn opens_terminals(
+        &self,
+        standing: Standing,
+        bound: Option<&WorkspaceBound>,
+        whose: Option<PrincipalId>,
+    ) -> bool {
+        standing == Standing::Active
+            && bound.is_some_and(|bound| match bound.computer.kind {
+                ComputerKind::Local => whose.is_none_or(|person| Some(person) == self.person()),
+                ComputerKind::Person => true,
+                ComputerKind::Worker => false,
+            })
     }
 
     /// Answers `terminal/open`: refused in a thread put away, and closed again when it was put
@@ -56,7 +75,6 @@ where
         thread: ThreadId,
         size: TerminalSize,
     ) -> Result<Reply, ApiError> {
-        self.shown(thread).await?;
         let place = self.terminal_place(caller, thread).await?;
         let (computers, computer) = (&place.computers, place.computer);
         let opened = computers.open_terminal(computer, &place.folder, &place.owner, size);
@@ -68,7 +86,7 @@ where
             other => refused(other),
         })?;
         if let Err(away) = self.shown(thread).await {
-            let _ = computers.close_terminal(computer, id).await;
+            let _ = computers.close_terminal(computer, place.at(id)).await;
             return Err(away);
         }
         let listed = computers
@@ -108,7 +126,7 @@ where
         let place = self.terminal_place(caller, thread).await?;
         let written = place
             .computers
-            .write_terminal(place.computer, terminal, input);
+            .write_terminal(place.computer, place.at(terminal), input);
         written.await.map_err(refused)?;
         Ok(Reply::Done {})
     }
@@ -125,7 +143,7 @@ where
         let wait = wait.min(MOST_WAIT);
         let read = place
             .computers
-            .read_terminal(place.computer, terminal, from, wait);
+            .read_terminal(place.computer, place.at(terminal), from, wait);
         Ok(Reply::Screen {
             screen: read.await.map_err(refused)?,
         })
@@ -141,41 +159,47 @@ where
         let place = self.terminal_place(caller, thread).await?;
         let resized = place
             .computers
-            .resize_terminal(place.computer, terminal, size);
+            .resize_terminal(place.computer, place.at(terminal), size);
         resized.await.map_err(refused)?;
         Ok(Reply::Done {})
     }
 
-    /// Answers `terminal/close`.
+    /// Answers `terminal/close`, in a thread put away too.
     pub(crate) async fn close_terminal(
         &self,
         caller: &Caller,
         thread: ThreadId,
         terminal: TerminalId,
     ) -> Result<Reply, ApiError> {
-        let place = self.terminal_place(caller, thread).await?;
-        let closed = place.computers.close_terminal(place.computer, terminal);
+        let place = self.on_theirs(caller, self.place_of(thread).await?)?;
+        let closed = place
+            .computers
+            .close_terminal(place.computer, place.at(terminal));
         closed.await.map_err(refused)?;
         Ok(Reply::Done {})
     }
 
-    /// Closes every terminal open in `thread`, as it is archived or deleted: those its computer
-    /// keeps for it, wherever it is reached from.
-    pub(crate) async fn close_terminals(&self, caller: &Caller, thread: ThreadId) {
-        let Ok(place) = self.terminal_place(caller, thread).await else {
+    /// Closes every terminal open in `thread`, as it is archived or deleted, whoever puts it
+    /// away: those its own computer keeps for it.
+    pub(crate) async fn close_terminals(&self, thread: ThreadId) {
+        let Ok(place) = self.place_of(thread).await else {
             return;
         };
-        let Ok(open) = place
+        let open = match place
             .computers
             .terminals(place.computer, &place.owner)
             .await
-        else {
-            return;
+        {
+            Ok(open) => open,
+            Err(error) => {
+                tracing::warn!(%error, %thread, "could not find a thread's terminals to close");
+                return;
+            }
         };
         for terminal in open {
             let closed = place
                 .computers
-                .close_terminal(place.computer, terminal.id)
+                .close_terminal(place.computer, place.at(terminal.id))
                 .await;
             if let Err(error) = closed {
                 tracing::warn!(%error, %thread, "could not close a terminal");
@@ -197,10 +221,33 @@ where
         }
     }
 
-    /// Where `thread`'s terminals are for `caller`: the folder its latest binding records, on
-    /// the computer it records when that computer is the caller's own and this server reaches
-    /// it.
+    /// Where a shown `thread`'s terminals are for `caller`, refused unless its computer is
+    /// theirs.
     async fn terminal_place(&self, caller: &Caller, thread: ThreadId) -> Result<Place, ApiError> {
+        self.shown(thread).await?;
+        self.on_theirs(caller, self.place_of(thread).await?)
+    }
+
+    /// `place`, when its computer is `caller`'s: this server's for the person it works for, or
+    /// the computer of the person it is.
+    fn on_theirs(&self, caller: &Caller, place: Place) -> Result<Place, ApiError> {
+        let theirs = match place.person {
+            None => self.is_theirs(caller),
+            Some(person) => self.person_of(caller)? == person,
+        };
+        if !theirs {
+            return Err(ApiError::new(
+                code::NOT_ALLOWED,
+                Sentence::TerminalNotTheirs,
+            ));
+        }
+        Ok(place)
+    }
+
+    /// Where `thread`'s terminals are, whoever asks: the folder its latest binding records, on
+    /// the computer it records when this server reaches it: its own for a thread here, its
+    /// person's own where people have computers of their own.
+    async fn place_of(&self, thread: ThreadId) -> Result<Place, ApiError> {
         let scope = self.scope_of(thread)?;
         let latest = self.latest(&scope, thread, WorkspaceBound::TYPE).await?;
         let Some(Body::WorkspaceBound(bound)) = latest else {
@@ -209,23 +256,23 @@ where
                 Sentence::TerminalNoFolder,
             ));
         };
-        let (computers, computer) = match bound.computer.kind {
-            ComputerKind::Local if self.is_theirs(caller) => {
-                let here = self.inner.harness.workspace();
-                (Arc::clone(here.computers()), here.info().computer)
-            }
+        let no_home = || ApiError::new(code::NOT_AVAILABLE, Sentence::TerminalNoHome);
+        let (computers, computer, person) = match bound.computer.kind {
             ComputerKind::Local => {
-                return Err(ApiError::new(
-                    code::NOT_ALLOWED,
-                    Sentence::TerminalNotTheirs,
-                ));
+                let here = self.inner.harness.workspace();
+                (Arc::clone(here.computers()), here.info().computer, None)
             }
             ComputerKind::Person => {
-                let person = self.person_of(caller)?;
+                let view = self.inner.harness.log().thread_view(&scope, thread).await?;
+                let whose = view.and_then(|view| view.whose()).or_else(|| self.person());
+                let person = whose.ok_or_else(no_home)?;
                 let home = self.inner.harness.own_home(scope.org(), person);
-                let no_home = || ApiError::new(code::NOT_AVAILABLE, Sentence::TerminalNoHome);
                 let home = home.ok_or_else(no_home)?.map_err(|_| no_home())?;
-                (Arc::clone(home.computers()), home.info().computer)
+                (
+                    Arc::clone(home.computers()),
+                    home.info().computer,
+                    Some(person),
+                )
             }
             ComputerKind::Worker => {
                 return Err(ApiError::new(
@@ -242,6 +289,7 @@ where
             owner: owner_label(scope, thread),
             computers,
             computer,
+            person,
         })
     }
 }
@@ -250,20 +298,39 @@ fn no_terminal() -> ApiError {
     ApiError::new(code::NO_TERMINAL, Sentence::NoTerminal)
 }
 
-/// A computer's refusal of a terminal call, as the session says it: its own plain words for a
-/// limit or a size, never the operating system's, which go to the log alone.
+/// A computer's refusal of a terminal call, as the session says it: glave's own words for a
+/// limit, a size or a shell, written again in the caller's language, never the operating
+/// system's, which go to the log alone.
 fn refused(error: ComputerError) -> ApiError {
     match error {
         ComputerError::NotFound(_) => no_terminal(),
-        ComputerError::Refused(reason) => ApiError::new(
-            code::LIMIT,
-            Sentence::TerminalRefused {
-                reason: reason.to_string(),
-            },
-        ),
-        other => {
-            tracing::warn!(error = %other, "a terminal call failed");
-            ApiError::new(code::INTERNAL, Sentence::TerminalFailed)
+        ComputerError::Refused(reason) => match reason.refusal() {
+            Some(refusal) => ApiError::new(refusal_code(refusal), Told::from(&reason)),
+            None => failed(&reason),
+        },
+        // For good, so never "try again".
+        ComputerError::Unsupported(_) => {
+            ApiError::new(code::NOT_AVAILABLE, Sentence::TerminalUnsupported)
         }
+        ComputerError::Unreachable(why) => {
+            tracing::warn!(error = %why, "a terminal's computer could not be reached");
+            ApiError::new(code::NOT_AVAILABLE, Sentence::TerminalUnreachable)
+        }
+        ComputerError::Failed(why) => failed(&why),
+    }
+}
+
+/// A terminal call that failed, said plainly; why goes to the log.
+fn failed(why: &str) -> ApiError {
+    tracing::warn!(error = %why, "a terminal call failed");
+    ApiError::new(code::INTERNAL, Sentence::TerminalFailed)
+}
+
+/// The code a computer's refusal of a terminal call answers with.
+fn refusal_code(refusal: &Refusal) -> i64 {
+    match refusal {
+        Refusal::TooManyTerminals { .. } | Refusal::TooManyOwnedTerminals { .. } => code::LIMIT,
+        Refusal::NoLoginShell => code::NOT_AVAILABLE,
+        _ => code::INVALID_PARAMS,
     }
 }

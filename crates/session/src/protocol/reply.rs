@@ -71,11 +71,6 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
-    /// Whether the caller may open terminals of their own in their threads' folders: their
-    /// shell, on their own computer, never on the server's for anyone but the person it works
-    /// for (`specs/session.md`, "Terminals").
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub terminals: bool,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never
@@ -181,6 +176,11 @@ pub struct ThreadSummary {
     /// the server last found it so; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk: Option<Box<DiskShort>>,
+    /// Whether its person may open terminals of their own in its folder: their shell, on their
+    /// own computer, so never on a worker, nor on the server's for anyone but the person it
+    /// works for; never once it is put away (`specs/session.md`, "Terminals").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub terminals: bool,
 }
 
 /// A person's computer short of room, more than 90% of its disk used and nothing more glave can

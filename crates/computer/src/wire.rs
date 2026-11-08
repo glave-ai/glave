@@ -34,7 +34,8 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `2026-11-07` added `files/changes`, what changed in a folder since a point in its history, and
 /// `at`, that point as a workspace opens, on what `workspace/open` answers.
 /// `2026-11-08` added a person's terminals: `terminal/open`, `terminal/list`, `terminal/write`,
-/// `terminal/read`, `terminal/resize` and `terminal/close`.
+/// `terminal/read`, `terminal/resize` and `terminal/close`, each naming the terminal's owner,
+/// which the computer checks.
 pub(crate) const PROTOCOL: &str = "2026-11-08";
 
 /// The notification that carries a command's output.
@@ -131,6 +132,7 @@ pub(crate) enum Request {
     TerminalWrite {
         computer: ComputerId,
         terminal: TerminalId,
+        owner: String,
         input: Bytes,
     },
     /// Waits up to `wait_ms` for something printed from `from` before answering.
@@ -138,6 +140,7 @@ pub(crate) enum Request {
     TerminalRead {
         computer: ComputerId,
         terminal: TerminalId,
+        owner: String,
         from: u64,
         #[serde(default)]
         wait_ms: u64,
@@ -146,12 +149,14 @@ pub(crate) enum Request {
     TerminalResize {
         computer: ComputerId,
         terminal: TerminalId,
+        owner: String,
         size: TerminalSize,
     },
     #[serde(rename = "terminal/close")]
     TerminalClose {
         computer: ComputerId,
         terminal: TerminalId,
+        owner: String,
     },
     #[serde(rename = "files/read")]
     Read {

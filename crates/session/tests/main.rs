@@ -69,6 +69,7 @@ mod steer;
 mod steps;
 mod subagents;
 mod tasks;
+mod terminals;
 mod thought;
 mod titles;
 mod tracing;

@@ -120,7 +120,7 @@ where
         }
         // Its terminals end as it is put away.
         if change != Change::Unarchive {
-            self.close_terminals(caller, thread).await;
+            self.close_terminals(thread).await;
         }
         // Its place was found to change it, so it is known by now.
         if change != Change::Unarchive
@@ -294,6 +294,7 @@ where
                     largest: short.largest,
                 })
             });
+        let terminals = self.opens_terminals(view.standing, workspace.as_deref(), theirs);
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -317,6 +318,7 @@ where
             workspace,
             context,
             disk,
+            terminals,
         })
     }
 

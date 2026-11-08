@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, TerminalSize};
+use glave_ports::computer::{ComputerError, Refusal, TerminalSize};
 
 /// The variables a terminal's shell is given from the computer's environment; its login
 /// profile sets the rest, as a terminal app's shell starts.
@@ -89,7 +89,8 @@ pub(super) fn login_args(shell: &Path) -> &'static [&'static str] {
 }
 
 /// The person's login shell: the one `SHELL` names, else their account's; refused when their
-/// account is given one that opens no shell.
+/// account is given one that opens no shell. Blocking: the user database may be a program to
+/// ask.
 pub(super) fn login_shell(environment: &[(OsString, OsString)]) -> Result<PathBuf, ComputerError> {
     let named = |name: &str| {
         environment
@@ -107,13 +108,7 @@ pub(super) fn login_shell(environment: &[(OsString, OsString)]) -> Result<PathBu
         .and_then(|name| name.to_str())
         .is_some_and(|name| NO_SHELL.contains(&name));
     if opens_none {
-        return Err(ComputerError::Refused(
-            format!(
-                "this account's login shell, {}, opens no shell, so no terminal opens for it",
-                shell.display()
-            )
-            .into(),
-        ));
+        return Err(ComputerError::Refused(Refusal::NoLoginShell.into()));
     }
     Ok(shell)
 }

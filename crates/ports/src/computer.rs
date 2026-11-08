@@ -207,9 +207,9 @@ pub trait Computers: Send + Sync {
     /// names it) (`terminal/open`): their login shell, at `folder`, on a pseudo-terminal of
     /// `size`, outside every sandbox, in a session of its own that its computer ends with
     /// everything in it. It stays open until it is closed, its computer is destroyed or goes
-    /// away, or nothing uses it for [`IDLE`]: nothing printed, read or written. A computer keeps
-    /// at most [`MAX_TERMINALS`] open and [`MAX_OWNED_TERMINALS`] for one owner, and refuses
-    /// one more. A computer that opens no terminals answers unsupported.
+    /// away, or nothing uses it for [`IDLE`]: no read that found something printed, and no
+    /// write. A computer keeps at most [`MAX_TERMINALS`] open and [`MAX_OWNED_TERMINALS`] for
+    /// one owner, and refuses one more. A computer that opens no terminals answers unsupported.
     fn open_terminal<'a>(
         &'a self,
         computer: ComputerId,
@@ -232,51 +232,55 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Ok(Vec::new())))
     }
 
-    /// Types `input` into a terminal (`terminal/write`), at most [`TERMINAL_CHUNK`] bytes.
+    /// Types `input` into a terminal of `owner`'s (`terminal/write`), at most
+    /// [`TERMINAL_CHUNK`] bytes. Each call on a terminal names its owner, which its computer
+    /// checks: another owner's is not found.
     fn write_terminal<'a>(
         &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         input: &'a Bytes,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        let _ = (computer, terminal, input);
+        let _ = (computer, terminal, owner, input);
         Box::pin(std::future::ready(Err(no_terminals())))
     }
 
-    /// What a terminal printed from offset `from` (`terminal/read`), at most
+    /// What a terminal of `owner`'s printed from offset `from` (`terminal/read`), at most
     /// [`TERMINAL_CHUNK`] bytes, waiting up to `wait` (at most [`MAX_WAIT`]) for something to
-    /// read when nothing is there yet (a read that finds nothing does not use it); a `from` past what it printed reads from its end. Never
-    /// forgets it: a terminal whose shell ended stays until it is closed.
-    fn read_terminal(
-        &self,
+    /// read when nothing is there yet (a read that finds nothing does not use it); a `from`
+    /// past what it printed reads from its end. Never forgets it: a terminal whose shell ended
+    /// stays until it is closed.
+    fn read_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         from: u64,
         wait: Duration,
-    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
-        let _ = (computer, terminal, from, wait);
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        let _ = (computer, terminal, owner, from, wait);
         Box::pin(std::future::ready(Err(no_terminals())))
     }
 
-    /// Gives a terminal another size (`terminal/resize`), which its shell is told of.
-    fn resize_terminal(
-        &self,
+    /// Gives a terminal of `owner`'s another size (`terminal/resize`), which its shell is told
+    /// of.
+    fn resize_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
+        (terminal, owner): (TerminalId, &'a str),
         size: TerminalSize,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
-        let _ = (computer, terminal, size);
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let _ = (computer, terminal, owner, size);
         Box::pin(std::future::ready(Err(no_terminals())))
     }
 
-    /// Closes a terminal (`terminal/close`): hangs it up, as a terminal's hang-up does, ends
-    /// what is left in its session, and forgets it.
-    fn close_terminal(
-        &self,
+    /// Closes a terminal of `owner`'s (`terminal/close`): hangs it up, as a terminal's hang-up
+    /// does, ends what is left in its session, and forgets it.
+    fn close_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        terminal: TerminalId,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
-        let _ = (computer, terminal);
+        (terminal, owner): (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let _ = (computer, terminal, owner);
         Box::pin(std::future::ready(Err(no_terminals())))
     }
 

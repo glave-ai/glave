@@ -447,39 +447,39 @@ impl Computers for LocalComputers {
     fn write_terminal<'a>(
         &'a self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &'a str),
         input: &'a Bytes,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(self.terminals.write(computer, id, input))
+        Box::pin(self.terminals.write(computer, at, input))
     }
 
-    fn read_terminal(
-        &self,
+    fn read_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &'a str),
         from: u64,
         wait: Duration,
-    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
-        Box::pin(self.terminals.read(computer, id, from, wait))
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        Box::pin(self.terminals.read(computer, at, from, wait))
     }
 
-    fn resize_terminal(
-        &self,
+    fn resize_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &'a str),
         size: TerminalSize,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(std::future::ready(
-            self.terminals.resize(computer, id, size),
+            self.terminals.resize(computer, at, size),
         ))
     }
 
-    fn close_terminal(
-        &self,
+    fn close_terminal<'a>(
+        &'a self,
         computer: ComputerId,
-        id: TerminalId,
-    ) -> BoxFuture<'_, Result<(), ComputerError>> {
-        Box::pin(self.terminals.close(computer, id))
+        at: (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.close(computer, at))
     }
 
     fn worktrees(
@@ -544,7 +544,7 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.remove_computer(computer)?;
             self.background.stop_all(|on, _| on == computer).await;
-            self.terminals.close_all(computer);
+            self.terminals.close_all(computer).await;
             let copies = self.base.join(computer.to_string());
             match tokio::fs::remove_dir_all(&copies).await {
                 Ok(()) => Ok(()),
