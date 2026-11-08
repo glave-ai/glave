@@ -43,6 +43,16 @@ pub(super) async fn changes<C: Computers>(
         at.as_ref().is_some_and(|at| at.len() >= 40),
         "a folder in a repository opens where its history stands",
     )?;
+    let again = computers.reopen(computer, &seed.sources).await;
+    let again = again.map_err(failed("open a folder again"))?;
+    ensure(
+        again.root == seed.root && again.id != seed.id,
+        "a folder opened again is the same folder, as another workspace",
+    )?;
+    computers
+        .close(again.id)
+        .await
+        .map_err(failed("close a folder"))?;
     let unchanged = computers.changes(seed.id, at.as_deref()).await;
     ensure(
         unchanged.is_ok_and(|changes| changes.is_some_and(|changes| changes.files.is_empty())),

@@ -7,6 +7,7 @@
 //! clone, a new project's folder) needs the computer at once, and wakes it.
 
 mod machine;
+mod planned;
 mod terminals;
 
 pub use machine::{Grow, Lost, Short};
@@ -24,6 +25,7 @@ use glave_ports::computer::{
     WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
+use planned::{Planned, Real};
 use tokio::time::Instant;
 
 /// Wakes the computer, if it sleeps, and answers it awake with its home: what [`Waking`] asks
@@ -58,55 +60,6 @@ pub struct Waking {
     workspaces: Mutex<BTreeMap<WorkspaceId, Arc<Planned>>>,
     /// The computer last found awake, and when a call on it last went through.
     awake: Mutex<Option<(ComputerId, Option<Instant>)>>,
-}
-
-/// A workspace planned on the computer.
-struct Planned {
-    info: WorkspaceInfo,
-    /// Where it is open, once a call needed it; opened again on a computer woken since.
-    real: Mutex<Option<Real>>,
-    /// Held by the one call opening it, so two calls at once share one wake and one open.
-    opening: tokio::sync::Mutex<()>,
-    /// Let go of while a command of its ran in the background there: kept for that command
-    /// until the computer sleeps, which ends it, then forgotten.
-    closing: AtomicBool,
-    /// Where its folder's history stood as it was first opened on the computer awake, which a
-    /// plan made asleep can't know: what changes are read since when none is asked.
-    first_at: Mutex<Option<String>>,
-}
-
-impl Planned {
-    /// Where its folder's history stood as it was first opened on the computer awake.
-    fn first_at(&self) -> Option<String> {
-        self.first_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Keeps `at` as where its folder's history stood when first opened, unless it was opened
-    /// before.
-    fn opened_at(&self, at: Option<&String>) {
-        let mut first = self.first_at.lock().unwrap_or_else(PoisonError::into_inner);
-        if first.is_none() {
-            *first = at.cloned();
-        }
-    }
-
-    fn real(&self) -> Option<Real> {
-        self.real
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-/// A planned workspace, open on the computer awake.
-#[derive(Clone)]
-struct Real {
-    computers: Arc<dyn Computers>,
-    computer: ComputerId,
-    workspace: WorkspaceId,
 }
 
 impl std::fmt::Debug for Waking {
@@ -437,6 +390,15 @@ impl Computers for Waking {
                 .await?;
             self.opened_now(computer, home, opened)
         })
+    }
+
+    /// As [`Computers::open`]: what it plans asks the computer nothing.
+    fn reopen<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        self.open(computer, sources)
     }
 
     /// Closed where it is open, and forgotten; one never opened, or opened on a computer that
