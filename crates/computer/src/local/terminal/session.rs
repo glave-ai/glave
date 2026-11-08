@@ -25,16 +25,17 @@ pub(super) struct Session {
 }
 
 impl Session {
-    /// The session `leader` leads, in the terminal named `tty`, as `/dev/ttys012`: which only
-    /// macOS needs to find its processes.
+    /// The session `leader` leads, in the terminal named `tty`, as `/dev/ttys012`, by which
+    /// macOS finds its processes.
+    #[cfg(target_os = "macos")]
     pub(super) fn new(leader: Pid, tty: String) -> Self {
-        #[cfg(not(target_os = "macos"))]
-        let _ = tty;
-        Self {
-            leader,
-            #[cfg(target_os = "macos")]
-            tty,
-        }
+        Self { leader, tty }
+    }
+
+    /// The session `leader` leads, whose processes the system names.
+    #[cfg(not(target_os = "macos"))]
+    pub(super) fn new(leader: Pid) -> Self {
+        Self { leader }
     }
 
     /// The process that leads it.
