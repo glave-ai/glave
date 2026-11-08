@@ -768,7 +768,10 @@ impl Computers for LocalComputers {
         workspace: WorkspaceId,
         since: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
-        Box::pin(async move { changes::since(&*self.registry.workspace(workspace)?, since).await })
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            changes::since(&opened, since, &self.base).await
+        })
     }
 
     fn save<'a>(

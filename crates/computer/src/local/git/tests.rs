@@ -15,6 +15,7 @@ use super::*;
 use crate::LocalComputers;
 use crate::worktrees::{self, Condition};
 
+mod changes;
 mod saving;
 
 /// `a.txt` changed but its size not, so git must read it, through any filter, to see the change.
@@ -117,6 +118,35 @@ fn executable(path: &Path, text: &str) {
 impl Planted {
     fn config(&self, key: &str, value: &str) {
         must(self, &["config", key, value]);
+    }
+
+    /// A repository at `inner`, with a commit, whose own config names the program as a filter
+    /// for every file, and a file there changed, so git looking inside runs it.
+    fn repository_inside(&self, inner: &Path) {
+        let identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+        std::fs::create_dir_all(inner).unwrap();
+        assert!(plain(self, inner, &["init", "-q"]).status.success());
+        std::fs::write(inner.join("f.txt"), "one\n").unwrap();
+        assert!(plain(self, inner, &["add", "f.txt"]).status.success());
+        let commit = [&identity[..], &["commit", "-qm", "one"]].concat();
+        assert!(plain(self, inner, &commit).status.success());
+        let key = "filter.planted.clean";
+        let program = self.program.to_string_lossy();
+        assert!(
+            plain(self, inner, &["config", key, &program])
+                .status
+                .success()
+        );
+        std::fs::write(inner.join(".git/info/attributes"), "* filter=planted\n").unwrap();
+        std::fs::write(inner.join("f.txt"), "ONE\n").unwrap();
+    }
+
+    /// Commits `path` in the repository at `root`: a repository inside, as one it tracks.
+    fn holds(&self, root: &Path, path: &str) {
+        let identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+        assert!(plain(self, root, &["add", path]).status.success());
+        let commit = [&identity[..], &["commit", "-qm", "holds it"]].concat();
+        assert!(plain(self, root, &commit).status.success());
     }
 
     /// What ran since it was last asked.
@@ -289,26 +319,8 @@ fn a_filter_in_a_repository_inside_a_worktree_never_runs_and_keeps_it_from_remov
     let planted = planted();
     let opened = planted.glave_opens_a_worktree().unwrap();
     let root = PathBuf::from(&opened.root);
-    let inner = root.join("inner");
-    let identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
-    std::fs::create_dir_all(&inner).unwrap();
-    assert!(plain(&planted, &inner, &["init", "-q"]).status.success());
-    std::fs::write(inner.join("f.txt"), "one\n").unwrap();
-    assert!(plain(&planted, &inner, &["add", "f.txt"]).status.success());
-    let commit = [&identity[..], &["commit", "-qm", "one"]].concat();
-    assert!(plain(&planted, &inner, &commit).status.success());
-    assert!(plain(&planted, &root, &["add", "inner"]).status.success());
-    let commit = [&identity[..], &["commit", "-qm", "holds it"]].concat();
-    assert!(plain(&planted, &root, &commit).status.success());
-    let key = "filter.planted.clean";
-    let program = planted.program.to_string_lossy();
-    assert!(
-        plain(&planted, &inner, &["config", key, &program])
-            .status
-            .success()
-    );
-    std::fs::write(inner.join(".git/info/attributes"), "* filter=planted\n").unwrap();
-    std::fs::write(inner.join("f.txt"), "ONE\n").unwrap();
+    planted.repository_inside(&root.join("inner"));
+    planted.holds(&root, "inner");
     plain(&planted, &root, &["status", "--porcelain"]);
     assert!(planted.take_ran(), "plain git never ran it");
     let kept = planted.kept();

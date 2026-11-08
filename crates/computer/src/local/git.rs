@@ -65,6 +65,13 @@ const RUNS_NO_FILTER: [&str; 13] = [
     "update-ref",
 ];
 
+/// What keeps git out of a repository the index tracks inside this one (a submodule, or one a
+/// command committed there): `status` and `diff` look inside one by running git there, with
+/// that repository's own config, which a command in the folder may have written and glave's git
+/// has not read, so a filter it names would run. So they aren't asked to; what such a
+/// repository holds is told some other way, or not at all.
+pub(crate) const LEAVE_SUBMODULES: &str = "--ignore-submodules=dirty";
+
 /// The transports git may use when a command should cross no network, none being called this:
 /// a repository's config can make any read fetch a missing object through a remote it names,
 /// and with that run a helper, an ssh command or a remote helper.

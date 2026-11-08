@@ -141,16 +141,19 @@ fn a_thread_that_changed_nothing_says_so_and_a_missing_one_is_refused() {
     });
 }
 
-/// In a repository: glave writes a file a formatter then rewrites, and commands edit a tracked
-/// file and make a new one.
+/// In a repository: glave writes a file a formatter then rewrites, commands edit a tracked
+/// file, make a new one and have the repository ignore another, which glave then writes.
 fn script_in_repository() -> Vec<glave_ports::Completion> {
     let write = json!({"path": "main.rs", "content": "fn  main()  {}\n"});
     let format = "tr -s ' ' < main.rs > main.rs.new && mv main.rs.new main.rs";
-    let edit = "printf 'Use spaces.\\n' > AGENTS.md && printf 'made\\n' > made.txt";
+    let edit = "printf 'Use spaces.\\n' > AGENTS.md && printf 'made\\n' > made.txt && \
+        printf 'skip.txt\\n' > .gitignore";
+    let ignored = json!({"path": "./skip.txt", "content": "kept\n"});
     vec![
         answer(None, Some(("write", write))),
         answer(None, Some(("bash", json!({"command": format})))),
         answer(None, Some(("bash", json!({"command": edit})))),
+        answer(None, Some(("write", ignored))),
         answer(Some("Done."), None),
     ]
 }
@@ -198,6 +201,10 @@ fn in_a_repository_a_thread_s_files_are_all_that_differ_from_where_it_started() 
             shown,
             [
                 (
+                    ".gitignore",
+                    vec![(ChangeKind::Wrote, edited(&["+skip.txt"]))]
+                ),
+                (
                     "AGENTS.md",
                     vec![(ChangeKind::Edited, edited(&["-Use tabs.", "+Use spaces."]))]
                 ),
@@ -206,13 +213,15 @@ fn in_a_repository_a_thread_s_files_are_all_that_differ_from_where_it_started() 
                     "main.rs",
                     vec![(ChangeKind::Wrote, edited(&["+fn main() {}"]))]
                 ),
+                ("./skip.txt", vec![(ChangeKind::Wrote, edited(&["+kept"]))]),
             ],
-            "a command's edit, a new file no one added, and what the formatter left"
+            "a command's edit, new files no one added, what the formatter left, then glave's \
+             own edit of a file the repository ignores"
         );
         assert_eq!(
             &*note,
-            "The thread's files are all that differ from the version it started from, whatever \
-             changed them; a turn's are only glave's own edits."
+            "The thread's files are glave's own edits and all else that differs from the version \
+             it started from, whatever changed it; a turn's are only glave's own edits."
         );
         let own: Vec<_> = turns
             .iter()
@@ -220,8 +229,11 @@ fn in_a_repository_a_thread_s_files_are_all_that_differ_from_where_it_started() 
             .collect();
         assert_eq!(
             own,
-            [vec![(ChangeKind::Wrote, edited(&["+fn  main()  {}"]))]],
-            "the turn's own write, as it asked"
+            [
+                vec![(ChangeKind::Wrote, edited(&["+fn  main()  {}"]))],
+                vec![(ChangeKind::Wrote, edited(&["+kept"]))]
+            ],
+            "the turn's own writes, as they asked"
         );
     });
 }

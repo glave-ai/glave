@@ -256,3 +256,46 @@ fn a_workspace_let_go_of_with_a_command_running_is_kept_for_it_until_the_compute
         assert_eq!(wakes.load(Ordering::SeqCst), 2, "letting go wakes nothing");
     });
 }
+
+#[test]
+fn what_changed_in_a_folder_planned_asleep_is_read_since_it_was_first_opened_awake() {
+    let (_dir, base) = folder("waking-changes");
+    let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
+    let project = base.canonicalize().unwrap().join("home/app");
+    std::fs::create_dir_all(&project).unwrap();
+    let commit = "git -c user.name=t -c user.email=t@example.com commit -q";
+    block_on!(async {
+        let home = waking(&base, &wakes, &again);
+        let made =
+            format!("cd app && git init -q && echo a > a.txt && git add a.txt && {commit} -m a");
+        run(&home, home.home.id, &made).await;
+        let sources = Sources::Folder {
+            path: project.to_string_lossy().into_owned(),
+        };
+        let opened = home
+            .computers
+            .open(home.home.computer, &sources)
+            .await
+            .unwrap();
+        assert_eq!(opened.at, None, "planned, where it stands isn't known");
+        let unopened = home.computers.changes(opened.id, None).await;
+        assert!(
+            matches!(unopened, Err(ComputerError::Unsupported(_))),
+            "not open there yet, so not asked: {unopened:?}"
+        );
+        let committed = format!("echo c > c.txt && git add c.txt && {commit} -m c");
+        run(&home, opened.id, &committed).await;
+        let read = home.computers.changes(opened.id, None).await;
+        let changes = read.unwrap().unwrap();
+        let paths: Vec<&str> = changes
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect();
+        assert_eq!(
+            (changes.since, paths),
+            (Since::Opened, vec!["c.txt"]),
+            "since it was first opened awake, its commit since counted"
+        );
+    });
+}

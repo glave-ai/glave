@@ -106,6 +106,24 @@ describe('ChangedFilesService', () => {
     expect(fake.paramsOf('thread/changes')).toHaveLength(2);
   });
 
+  it('reads one at a time, and once more after for every ask meanwhile', async () => {
+    const fake = new FakeSession().answer('thread/events', { events: [WRITE, WROTE] });
+    const give = fake.held('thread/changes');
+    const { changed, thread } = make(fake);
+    await thread.open('thread-1');
+    TestBed.tick();
+    void changed.refresh();
+    void changed.refresh();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(1);
+    give({ changes: CHANGED });
+    await settle();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(2);
+    give({ changes: CHANGED });
+    await settle();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(2);
+    expect(changed.files()).toBe(CHANGED.files);
+  });
+
   it('keeps the room of the files its ended turns recorded until they are read', async () => {
     const fake = new FakeSession().answer('thread/events', {
       events: [

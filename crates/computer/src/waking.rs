@@ -15,7 +15,7 @@ use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
     Globbed, Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched,
-    Sources, Stat, WorkspaceId, WorkspaceInfo,
+    Since, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -68,9 +68,29 @@ struct Planned {
     /// Let go of while a command of its ran in the background there: kept for that command
     /// until the computer sleeps, which ends it, then forgotten.
     closing: AtomicBool,
+    /// Where its folder's history stood as it was first opened on the computer awake, which a
+    /// plan made asleep can't know: what changes are read since when none is asked.
+    first_at: Mutex<Option<String>>,
 }
 
 impl Planned {
+    /// Where its folder's history stood as it was first opened on the computer awake.
+    fn first_at(&self) -> Option<String> {
+        self.first_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Keeps `at` as where its folder's history stood when first opened, unless it was opened
+    /// before.
+    fn opened_at(&self, at: Option<&String>) {
+        let mut first = self.first_at.lock().unwrap_or_else(PoisonError::into_inner);
+        if first.is_none() {
+            *first = at.cloned();
+        }
+    }
+
     fn real(&self) -> Option<Real> {
         self.real
             .lock()
@@ -129,6 +149,7 @@ impl Waking {
     fn plan(&self, info: WorkspaceInfo, real: Option<Real>) {
         let id = info.id;
         let planned = Arc::new(Planned {
+            first_at: Mutex::new(info.at.clone()),
             info,
             real: Mutex::new(real),
             opening: tokio::sync::Mutex::new(()),
@@ -255,6 +276,7 @@ impl Waking {
                 info.root, planned.info.root
             )));
         }
+        planned.opened_at(info.at.as_ref());
         let open = Real {
             computers: awake.computers,
             computer: awake.home.computer,
@@ -630,7 +652,8 @@ impl Computers for Waking {
     }
 
     /// Asked only of a computer a call went through on lately, where the workspace is open:
-    /// reading what changed never wakes one.
+    /// reading what changed never wakes one. With no point asked, since where its folder stood
+    /// as it was first opened awake, which nothing of the thread's changed before.
     fn changes<'a>(
         &'a self,
         workspace: WorkspaceId,
@@ -644,7 +667,16 @@ impl Computers for Waking {
                     "the computer may be asleep, and asking it what changed would wake it".into(),
                 ));
             };
-            self.done(open.computers.changes(open.workspace, since).await)
+            let first = since.is_none().then(|| planned.first_at()).flatten();
+            let asked = since.or(first.as_deref());
+            let read = open.computers.changes(open.workspace, asked).await;
+            Ok(self.done(read)?.map(|changes| match changes.since {
+                Since::Asked if first.is_some() => Changes {
+                    since: Since::Opened,
+                    ..changes
+                },
+                _ => changes,
+            }))
         })
     }
 

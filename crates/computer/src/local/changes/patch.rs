@@ -6,14 +6,17 @@
 
 use std::path::Path;
 
-use glave_ports::computer::{ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind};
+use glave_ports::computer::{
+    ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind, Since,
+};
 use glave_ports::secrets::is_secret_file;
 
 /// The most files listed: past them, the rest go unnamed.
 const MOST_FILES: usize = 1_000;
 
-/// `printed`, git's answer, as changes; `cut` when it was cut short.
-pub(super) fn changes(printed: &[u8], cut: bool) -> Changes {
+/// `printed`, git's answer, as changes `since` the point it was read since; `cut` when it was
+/// cut short.
+pub(super) fn changes(printed: &[u8], cut: bool, since: Since) -> Changes {
     let (counted, patch, whole) = counts(printed);
     let mut shortened = cut || !whole || counted.len() > MOST_FILES;
     let mut sections = sections(patch, cut).into_iter();
@@ -40,7 +43,11 @@ pub(super) fn changes(printed: &[u8], cut: bool) -> Changes {
             removed,
         });
     }
-    Changes { files, shortened }
+    Changes {
+        files,
+        since,
+        shortened,
+    }
 }
 
 /// A file as the counts name it: its path, and the lines added and removed, unless binary.
@@ -211,7 +218,7 @@ mod tests {
 
     #[test]
     fn each_file_has_its_counts_and_its_stretches_and_a_binary_one_none() {
-        let changes = changes(&answer(), false);
+        let changes = changes(&answer(), false, Since::Asked);
         let counted: Vec<_> = changes
             .files
             .iter()
@@ -267,12 +274,12 @@ mod tests {
             .windows(4)
             .position(|window| window == b"+new")
             .unwrap();
-        let changes = changes(&answer[..at], true);
+        let changes = changes(&answer[..at], true, Since::Asked);
         assert_eq!(changes.files.len(), 4);
         assert!(changes.shortened);
         assert_eq!(changes.files[2].changes.len(), 2, "whole before the cut");
         assert!(changes.files[3].changes.is_empty(), "cut in its lines");
-        let in_counts = super::changes(&answer[..20], true);
+        let in_counts = super::changes(&answer[..20], true, Since::Now);
         let paths: Vec<_> = in_counts.files.iter().map(|file| &file.path).collect();
         assert_eq!(paths, ["bin.dat"], "a record cut short is not named");
     }
@@ -281,13 +288,13 @@ mod tests {
     fn a_secret_s_lines_are_left_out_and_nothing_changed_is_nothing() {
         let answer = "1\t0\t.env\x00\x00diff --git a/.env b/.env\nnew file mode 100644\n\
             @@ -0,0 +1 @@\n+TOKEN=x\n";
-        let changes = changes(answer.as_bytes(), false);
+        let changes = changes(answer.as_bytes(), false, Since::Asked);
         assert_eq!((changes.files[0].added, changes.shortened), (1, true));
         assert!(
             changes.files[0].changes.is_empty(),
             "named, its lines kept back"
         );
-        let none = super::changes(b"", false);
+        let none = super::changes(b"", false, Since::Now);
         assert!(none.files.is_empty() && !none.shortened);
     }
 
@@ -295,7 +302,7 @@ mod tests {
     fn a_section_of_another_file_stops_the_lines_where_they_would_go_wrong() {
         let answer = "1\t0\ta.txt\x001\t0\tb.txt\x00\x00diff --git a/b.txt b/b.txt\n\
             @@ -0,0 +1 @@\n+b\n";
-        let changes = changes(answer.as_bytes(), false);
+        let changes = changes(answer.as_bytes(), false, Since::Asked);
         assert!(changes.files.iter().all(|file| file.changes.is_empty()));
         assert!(changes.shortened);
     }

@@ -1,49 +1,73 @@
 //! What changed in a workspace's folder since a point in its history (`files/changes`), as
 //! git tells it: every file that differs from a commit, whatever changed it, the new files git
 //! doesn't ignore among them, read without writing anything in the person's repository. New
-//! files are marked in a copy of the index, whose objects go to a folder of glave's own beside
-//! it, so git compares them as any other; its answer is read up to a limit and drawn as changes
+//! files are marked in a copy of the index, in a folder of glave's own ([`apart`]), so git
+//! compares them as any other; its answer is read up to a limit and drawn as changes
 //! ([`patch`]). glave's own git, outside any sandbox, so run as `git.rs` runs every git: no
-//! hooks, no file-system monitor, no program a repository names, and here no external diff or
-//! text conversion either.
+//! hooks, no file-system monitor, no program a repository names; here no external diff or text
+//! conversion either, and never inside a repository the folder holds, whose own config could
+//! name a program.
 
+mod apart;
 mod patch;
 
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use glave_ports::computer::{Changes, ComputerError};
+use glave_ports::computer::{Changes, ComputerError, Since};
 
-use super::git::Git;
-use super::registry::{Opened, new_id};
+use super::git::{Git, LEAVE_SUBMODULES};
+use super::registry::Opened;
+use apart::Apart;
 
-/// The most of git's answer read, in bytes: past it, files are named with their counts and
-/// without their lines.
+/// The most of git's answer read, in bytes, and of its list of new files: past it, files are
+/// named with their counts and without their lines, and new files past it go unnamed.
 const MOST_READ: usize = 1024 * 1024;
 
 /// The largest file git reads the lines of: a larger one it counts as binary, named without
 /// them, rather than read whole.
 const LARGEST_READ: &str = "core.bigFileThreshold=8m";
 
+/// What git says of a folder in no repository, in the C locale.
+const NO_REPOSITORY: &str = "not a git repository";
+
 /// Where the folder of `opened` stands in its history now: its commit, when it is in a
-/// repository that has one.
+/// repository that has one; the empty tree in one with no commit yet, so all it gets is new.
 pub(crate) async fn at(opened: &Opened) -> Option<String> {
     let git = Git::at(&opened.processes, &opened.environment, &opened.root);
     let head = git.ask(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-    head.await.ok()?.ok().filter(|commit| is_commit(commit))
+    if let Ok(Ok(commit)) = head.await {
+        return Some(commit).filter(|commit| is_point(commit));
+    }
+    let inside = git.ask(&["rev-parse", "--is-inside-work-tree"]).await;
+    if !matches!(&inside, Ok(Ok(inside)) if inside == "true") {
+        return None;
+    }
+    let empty = git.must(&["hash-object", "-t", "tree", "/dev/null"]).await;
+    empty.ok().filter(|tree| is_point(tree))
 }
 
-/// What changed in the folder of `opened` since the commit `since`, or since where it stands
-/// now when that is `None` or gone; `None` when it is in no repository.
+/// What changed in the folder of `opened` since the point `since`, or since where it stands
+/// now when that is `None` or gone, working in a folder of glave's own in its computer's folder
+/// in `base`; `None` for a folder in no repository, or one its repository ignores. A repository
+/// git can't read (owned by someone else, damaged) is an error, never no history.
 pub(crate) async fn since(
     opened: &Opened,
     since: Option<&str>,
+    base: &Path,
 ) -> Result<Option<Changes>, ComputerError> {
-    let git = Git::at(&opened.processes, &opened.environment, &opened.root);
+    let in_c: Vec<(OsString, OsString)> = opened
+        .environment
+        .iter()
+        .cloned()
+        .chain([("LC_ALL".into(), "C".into())])
+        .collect();
+    let git = Git::at(&opened.processes, &in_c, &opened.root);
     let found = git
         .ask(&[
             "rev-parse",
             "--is-inside-work-tree",
+            "--show-prefix",
             "--path-format=absolute",
             "--git-path",
             "index",
@@ -51,27 +75,35 @@ pub(crate) async fn since(
             "objects",
         ])
         .await?;
-    let Ok(found) = found else {
-        return Ok(None);
+    let found = match found {
+        Ok(found) => found,
+        Err(said) if said.contains(NO_REPOSITORY) => return Ok(None),
+        Err(said) => return Err(ComputerError::Failed(said)),
     };
     let mut found = found.lines();
-    let (Some("true"), Some(index), Some(objects)) = (found.next(), found.next(), found.next())
+    let (Some(inside), Some(prefix), Some(index), Some(objects)) =
+        (found.next(), found.next(), found.next(), found.next())
     else {
-        return Ok(None);
+        return Err(ComputerError::Failed(format!(
+            "git rev-parse told too little about {}",
+            opened.root.display()
+        )));
     };
-    let from = from(&git, since).await?;
-    let apart = Apart::made(Path::new(index)).await?;
+    // The repository's own folder, or one it ignores, keeps no history of its own.
+    let ignored = !prefix.is_empty() && git.ask(&["check-ignore", "--quiet", "."]).await?.is_ok();
+    if inside != "true" || ignored {
+        return Ok(None);
+    }
+    let (from, since) = from(&git, since).await?;
+    // In the computer's own folder, which goes with it.
+    let own = base.join(opened.computer.to_string());
+    let apart = Apart::made(&own, Path::new(index)).await?;
     let environment = apart.environment(&opened.environment, objects);
     let git = Git {
         options: vec!["-c".into(), LARGEST_READ.into()],
         ..Git::at(&opened.processes, &environment, &opened.root)
     };
-    if let Err(said) = git.ask(&["add", "--intent-to-add", "--", "."]).await?
-        && git.ask(&["check-ignore", "--quiet", "."]).await?.is_err()
-    {
-        // Unless the folder itself is ignored, so nothing new in it would count.
-        return Err(ComputerError::Failed(said));
-    }
+    let unmarked = mark_new(&git, &apart).await?;
     let printed = git
         .printed(
             &[
@@ -79,6 +111,9 @@ pub(crate) async fn since(
                 "--no-color",
                 "--no-ext-diff",
                 "--no-textconv",
+                LEAVE_SUBMODULES,
+                // Nor `diff.submodule` set to `log` or `diff`, which would run git there.
+                "--submodule=short",
                 "--no-renames",
                 "--relative",
                 "-O/dev/null",
@@ -95,76 +130,69 @@ pub(crate) async fn since(
         )
         .await?;
     let (printed, cut) = printed.map_err(ComputerError::Failed)?;
-    Ok(Some(patch::changes(&printed, cut)))
+    let mut changes = patch::changes(&printed, cut, since);
+    changes.shortened |= unmarked;
+    Ok(Some(changes))
 }
 
-/// The commit changes are read since: `since` while the repository still has it, else where
-/// it stands now, else, in a repository with no commit yet, the empty tree.
-async fn from(git: &Git<'_>, since: Option<&str>) -> Result<String, ComputerError> {
-    let known = since.filter(|since| is_commit(since)).into_iter();
-    for point in known.chain(["HEAD"]) {
-        let commit = format!("{point}^{{commit}}");
-        if let Ok(commit) = git
-            .ask(&["rev-parse", "--verify", "--quiet", &commit])
+/// Marks each new file git doesn't ignore in the copy of the index `apart` holds as one meant
+/// to be added, so the diff counts it: never a repository inside the folder, which git lists as
+/// a folder, and would take in for one it tracks, then look inside with that repository's own
+/// config. Whether some new files went unmarked, past the most read.
+async fn mark_new(git: &Git<'_>, apart: &Apart) -> Result<bool, ComputerError> {
+    let listed = git.printed(
+        &[
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+        ],
+        MOST_READ,
+    );
+    let (listed, cut) = listed.await?.map_err(ComputerError::Failed)?;
+    let mut new: Vec<&[u8]> = listed
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty() && !path.ends_with(b"/"))
+        .collect();
+    if cut {
+        // Its last one may be cut short.
+        new.pop();
+    }
+    if new.is_empty() {
+        return Ok(cut);
+    }
+    let paths = apart.write("new", &new.join(&0)).await?;
+    let from_file = format!("--pathspec-from-file={}", paths.display());
+    let marking = ["add", "--intent-to-add", &from_file, "--pathspec-file-nul"];
+    git.must(&marking).await?;
+    Ok(cut)
+}
+
+/// The tree changes are read since, and which point it is: `since` while the repository still
+/// has it, else where it stands now, else, in a repository with no commit yet, the empty tree.
+async fn from(git: &Git<'_>, since: Option<&str>) -> Result<(String, Since), ComputerError> {
+    let asked = since
+        .filter(|since| is_point(since))
+        .map(|since| (since, Since::Asked));
+    for (point, which) in asked.into_iter().chain([("HEAD", Since::Now)]) {
+        let tree = format!("{point}^{{tree}}");
+        if let Ok(tree) = git
+            .ask(&["rev-parse", "--verify", "--quiet", &tree])
             .await?
         {
-            return Ok(commit);
+            return Ok((tree, which));
         }
     }
-    git.must(&["hash-object", "-t", "tree", "/dev/null"]).await
+    let empty = git
+        .must(&["hash-object", "-t", "tree", "/dev/null"])
+        .await?;
+    Ok((empty, Since::Now))
 }
 
-/// Whether `text` names a commit as git writes one: 40 hex digits, or 64 in a repository of
-/// SHA-256, so it can never be read as an option or a name.
-fn is_commit(text: &str) -> bool {
+/// Whether `text` names a commit or a tree as git writes one: 40 hex digits, or 64 in a
+/// repository of SHA-256, so it can never be read as an option or a name.
+fn is_point(text: &str) -> bool {
     matches!(text.len(), 40 | 64) && text.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-/// A folder of glave's own for one read, removed with it: a copy of the repository's index,
-/// which new files are marked in, and the objects git makes meanwhile.
-struct Apart(PathBuf);
-
-impl Apart {
-    /// The folder, with a copy of the index at `index` when the repository has one yet.
-    async fn made(index: &Path) -> Result<Self, ComputerError> {
-        let apart = Self(std::env::temp_dir().join(format!("glave-changes-{}", new_id()?)));
-        let failed = |error: std::io::Error| {
-            ComputerError::Failed(format!("could not make {}: {error}", apart.0.display()))
-        };
-        tokio::fs::create_dir_all(apart.0.join("objects"))
-            .await
-            .map_err(failed)?;
-        match tokio::fs::copy(index, apart.0.join("index")).await {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(failed(error)),
-            _ => Ok(apart),
-        }
-    }
-
-    /// `environment`, with git's index and new objects here, and the repository's `objects`
-    /// read beside them.
-    fn environment(
-        &self,
-        environment: &[(OsString, OsString)],
-        objects: &str,
-    ) -> Vec<(OsString, OsString)> {
-        let quoted = objects.replace('\\', "\\\\").replace('"', "\\\"");
-        let apart: [(OsString, OsString); 4] = [
-            ("GIT_INDEX_FILE".into(), self.0.join("index").into()),
-            ("GIT_OBJECT_DIRECTORY".into(), self.0.join("objects").into()),
-            (
-                "GIT_ALTERNATE_OBJECT_DIRECTORIES".into(),
-                format!("\"{quoted}\"").into(),
-            ),
-            // Nor does git take the index's lock to refresh it.
-            ("GIT_OPTIONAL_LOCKS".into(), "0".into()),
-        ];
-        environment.iter().cloned().chain(apart).collect()
-    }
-}
-
-impl Drop for Apart {
-    fn drop(&mut self) {
-        // A copy of an index and an empty object, removed in moments.
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }

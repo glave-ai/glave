@@ -10,11 +10,26 @@ use serde::{Deserialize, Serialize};
 pub struct Changes {
     /// Every file that differs from that point, in the order of their paths.
     pub files: Vec<ChangedFile>,
+    /// Which point they differ from.
+    pub since: Since,
     /// Whether some of it was left out to keep the answer small: a file binary, named like
     /// one that holds secrets, or past the limit is named, with its counts, without its lines;
-    /// past the most files listed, the rest are not named.
+    /// past the most files listed, or the most new files read, the rest are not named.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shortened: bool,
+}
+
+/// The point in a folder's history changes were read since.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Since {
+    /// The one asked for.
+    Asked,
+    /// Where the history stood as the workspace was first opened on its computer awake, none
+    /// being asked for: a person's computer, which a workspace is planned on asleep.
+    Opened,
+    /// Where it stands now: the one asked for was none, or is gone from the history.
+    Now,
 }
 
 /// A file, with every line its changes added and took out, and each change.

@@ -1,37 +1,43 @@
 //! What changed in a folder since a point in its history: every file that differs from it,
 //! whatever changed it (a command here), new and removed ones among them, a binary one named
-//! without its lines, an ignored one left out, and what was committed since still counted. A
-//! folder that keeps no history says so.
+//! without its lines, an ignored one and a repository inside left out, and what was committed
+//! since still counted, read without writing in the repository; which point it was read since,
+//! where it stands now when the one asked for is gone; a repository with no commit yet standing
+//! at nothing. A folder that keeps no history, or that its repository ignores, says so.
 
-use super::helpers::{failed, run_quietly};
+use super::helpers::{failed, run, run_quietly};
 use super::{Verdict, ensure};
-use crate::computer::{ChangeKind, ChangedFile, ComputerId, Computers, LineKind, Sources};
+use crate::computer::{
+    ChangeKind, ChangedFile, Changes, Command, ComputerId, Computers, LineKind, Since, Sources,
+    WorkspaceId,
+};
 
 /// Files committed in `seed`, the repository `moves_through_git` leaves.
 const COMMITTED: &str = "cd seed && printf 'one\\ntwo\\n' > kept.txt && printf 'x\\n' > gone.txt \
-    && printf 'ignored.txt\\n' > .gitignore && git add -A && \
+    && printf 'ignored.txt\\nskip/\\n' > .gitignore && git add -A && \
     git -c user.name=seed -c user.email=seed@example.com commit -q -m files";
 
-/// What a command changes there afterwards, one change committed.
+/// What a command changes there afterwards, one change committed, beside a repository of its
+/// own with no commit and a folder the repository ignores.
 const CHANGED: &str = "cd seed && printf 'one\\nTWO\\n' > kept.txt && rm gone.txt && \
     printf 'a\\nb\\n' > new.txt && printf 'x\\000y' > blob.bin && printf 'no\\n' > ignored.txt \
-    && printf 'c\\n' > committed.txt && git add committed.txt && \
+    && mkdir -p skip inner && printf 's\\n' > skip/s.txt && git -C inner init -q && \
+    printf 'i\\n' > inner/i.txt && printf 'c\\n' > committed.txt && git add committed.txt && \
     git -c user.name=seed -c user.email=seed@example.com commit -q -m more";
+
+/// What tells whether `seed`'s index or objects changed.
+const LOOK: &str = "cd seed && cksum .git/index && find .git/objects -type f | wc -l";
 
 /// Runs after `worktrees`, in the folder `root`, where `seed` is, as the computer names it;
 /// `scratch` holds `plain`, a folder in no repository.
 pub(super) async fn changes<C: Computers>(
     computers: &C,
     computer: ComputerId,
-    here: crate::computer::WorkspaceId,
+    here: WorkspaceId,
     (root, scratch): (&str, &str),
 ) -> Verdict {
     run_quietly(computers, here, COMMITTED).await?;
-    let folder = |path: String| Sources::Folder { path };
-    let seed = computers
-        .open(computer, &folder(format!("{root}/seed")))
-        .await
-        .map_err(failed("open a repository's folder"))?;
+    let seed = open(computers, computer, &format!("{root}/seed")).await?;
     let at = seed.at.clone();
     ensure(
         at.as_ref().is_some_and(|at| at.len() >= 40),
@@ -43,11 +49,8 @@ pub(super) async fn changes<C: Computers>(
         "a folder as it opened has nothing changed",
     )?;
     run_quietly(computers, here, CHANGED).await?;
-    let since = computers
-        .changes(seed.id, at.as_deref())
-        .await
-        .map_err(failed("read what changed"))?
-        .ok_or("a repository's folder keeps history")?;
+    let (_, before) = run(computers, here, &Command::new(LOOK)).await?;
+    let since = read(computers, seed.id, at.as_deref()).await?;
     let paths: Vec<&str> = since.files.iter().map(|file| file.path.as_str()).collect();
     ensure(
         paths
@@ -58,50 +61,114 @@ pub(super) async fn changes<C: Computers>(
                 "kept.txt",
                 "new.txt",
             ],
-        "every file that differs, by path, new and removed among them, the ignored one not",
+        "every file that differs, by path, new and removed among them, the ignored ones and a \
+         repository inside not",
     )?;
     ensure(
-        since.shortened
+        since.since == Since::Asked
+            && since.shortened
             && since
                 .files
                 .first()
                 .is_some_and(|blob| blob.changes.is_empty()),
-        "a binary file is named without its lines",
+        "read since the point asked, a binary file named without its lines",
     )?;
     shown(&since.files)?;
-    let now = computers
-        .changes(seed.id, None)
-        .await
-        .map_err(failed("read what changed since now"))?;
-    let named = |changes: Option<crate::computer::Changes>| {
-        changes.map(|changes| changes.files.into_iter().map(|file| file.path).collect())
-    };
-    let now: Option<Vec<String>> = named(now);
+    let now = read(computers, seed.id, None).await?;
     ensure(
-        now.as_ref().is_some_and(|now| now.len() == 4),
+        now.since == Since::Now && now.files.len() == 4,
         "since where it stands now, what was committed is no change",
     )?;
-    let odd = computers.changes(seed.id, Some("--output=x")).await;
+    let gone = "0123456789abcdef0123456789abcdef01234567";
+    for point in [gone, "--output=x"] {
+        let odd = read(computers, seed.id, Some(point)).await?;
+        ensure(
+            odd.since == Since::Now && odd.files == now.files,
+            "a point the history lacks, or one no commit could be, is read as now, never as an \
+             option",
+        )?;
+    }
+    let (_, after) = run(computers, here, &Command::new(LOOK)).await?;
     ensure(
-        odd.is_ok_and(|odd| named(odd) == now),
-        "what names no commit is read as now, never as an option",
+        !before.is_empty() && before == after,
+        "reading what changed writes nothing in the repository: its index and objects as they were",
     )?;
-    let plain = computers
-        .open(computer, &folder(format!("{scratch}/plain")))
+    computers
+        .close(seed.id)
         .await
-        .map_err(failed("open a plain folder"))?;
-    let none = computers.changes(plain.id, None).await;
+        .map_err(failed("close a folder"))?;
+    elsewhere(computers, computer, here, (root, scratch)).await
+}
+
+/// A repository with no commit yet, a folder its repository ignores, and one in none.
+async fn elsewhere<C: Computers>(
+    computers: &C,
+    computer: ComputerId,
+    here: WorkspaceId,
+    (root, scratch): (&str, &str),
+) -> Verdict {
+    run_quietly(
+        computers,
+        here,
+        "git init -q fresh && printf 'n\\n' > fresh/n.txt",
+    )
+    .await?;
+    let fresh = open(computers, computer, &format!("{root}/fresh")).await?;
+    let new = read(computers, fresh.id, fresh.at.as_deref()).await?;
     ensure(
-        plain.at.is_none() && none.is_ok_and(|none| none.is_none()),
-        "a folder in no repository keeps no history, and says so",
+        fresh.at.is_some()
+            && new.since == Since::Asked
+            && new
+                .files
+                .iter()
+                .map(|file| file.path.as_str())
+                .eq(["n.txt"]),
+        "a repository with no commit yet stands at nothing, so all in it is new",
     )?;
-    for workspace in [seed.id, plain.id] {
+    let mut folders = vec![fresh.id];
+    for (path, why) in [
+        (
+            format!("{root}/seed/skip"),
+            "a folder its repository ignores",
+        ),
+        (format!("{scratch}/plain"), "a folder in no repository"),
+    ] {
+        let folder = open(computers, computer, &path).await?;
+        folders.push(folder.id);
+        let none = computers.changes(folder.id, None).await;
+        ensure(none.is_ok_and(|none| none.is_none()), why)?;
+    }
+    for workspace in folders {
         computers
             .close(workspace)
             .await
             .map_err(failed("close a folder"))?;
     }
     Ok(())
+}
+
+/// The folder at `path`, opened in place.
+async fn open<C: Computers>(
+    computers: &C,
+    computer: ComputerId,
+    path: &str,
+) -> Result<crate::computer::WorkspaceInfo, String> {
+    let sources = Sources::Folder {
+        path: path.to_owned(),
+    };
+    let opened = computers.open(computer, &sources).await;
+    opened.map_err(failed("open a folder"))
+}
+
+/// What changed in `workspace` since `since`, which must keep history.
+async fn read<C: Computers>(
+    computers: &C,
+    workspace: WorkspaceId,
+    since: Option<&str>,
+) -> Result<Changes, String> {
+    let read = computers.changes(workspace, since).await;
+    read.map_err(failed("read what changed"))?
+        .ok_or_else(|| "a repository's folder keeps history".to_owned())
 }
 
 /// Checks the lines of the files a command changed: a stretch of an edited file, the whole of
