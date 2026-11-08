@@ -205,16 +205,19 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Err(no_background())))
     }
 
-    /// Where the commands still running in the background in a workspace listen
-    /// (`command/listening`): those whose processes listen on a TCP address the computer's own
-    /// loopback reaches, oldest first. Asked for only where something reaches that loopback, as
-    /// finding them reads every process's sockets. None where the computer cannot tell.
+    /// Where the commands still running in the background in a workspace listen: those whose
+    /// processes listen on a TCP address the computer's own loopback reaches, oldest first.
+    /// Asked for only where something reaches that loopback, as finding them reads every
+    /// process's sockets: this machine alone, for now (`specs/computers.md`). A computer
+    /// that cannot tell answers unsupported.
     fn listening(
         &self,
         workspace: WorkspaceId,
     ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
         let _ = workspace;
-        Box::pin(std::future::ready(Ok(Vec::new())))
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            "this computer cannot tell where its commands listen".into(),
+        ))))
     }
 
     /// Opens a terminal of the person's own on `computer` for `owner` (a thread, as the caller
