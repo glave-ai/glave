@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ApiError, ErrorCode, type Notification, type RawEvent } from '@glave/client';
+import { ApiError, ErrorCode, type Notification, type Preview, type RawEvent } from '@glave/client';
 
 import { LOOKS_AGAIN } from '../lib/previews';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
@@ -35,6 +35,13 @@ async function settle(): Promise<void> {
   TestBed.tick();
   await new Promise((resolve) => setTimeout(resolve));
   TestBed.tick();
+}
+
+/** A thread that started `npm run dev`, which serves `previews` as it runs. */
+function devServer(previews: readonly Preview[]): FakeSession {
+  return new FakeSession()
+    .answer('thread/events', { events: [STARTED] })
+    .answer('command/list', { commands: [command('c1', 'npm run dev')], previews });
 }
 
 function ids(commands: CommandsService): readonly string[] {
@@ -200,10 +207,7 @@ describe('CommandsService', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     try {
       vi.setSystemTime(Date.parse('2026-10-11T10:02:05.000Z'));
-      const fake = new FakeSession()
-        .answer('thread/events', { events: [STARTED] })
-        .answer('command/list', { commands: [command('c1', 'npm run dev')], previews: [] });
-      const { commands, thread, panel } = make(fake);
+      const { commands, thread, panel } = make(devServer([]));
       panel.setShowing(true);
       await thread.open('thread-1');
       await settle();
@@ -222,11 +226,7 @@ describe('CommandsService', () => {
 
   it('reads the previews of what they serve, and drops a stopped command’s', async () => {
     const dev = { command: 'c1', port: 5173, url: 'http://127.0.0.1:61234/' };
-    const fake = new FakeSession()
-      .answer('thread/events', { events: [STARTED] })
-      .answer('command/list', { commands: [command('c1', 'npm run dev')], previews: [dev] })
-      .answer('command/stop', {});
-    const { commands, thread } = make(fake);
+    const { commands, thread } = make(devServer([dev]).answer('command/stop', {}));
     await thread.open('thread-1');
     await settle();
     expect(commands.previews()).toEqual([dev]);
@@ -238,9 +238,7 @@ describe('CommandsService', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const dev = { command: 'c1', port: 5173, url: 'http://127.0.0.1:61234/' };
-      const fake = new FakeSession()
-        .answer('thread/events', { events: [STARTED] })
-        .answer('command/list', { commands: [command('c1', 'npm run dev')], previews: [] });
+      const fake = devServer([]);
       const { commands, thread, panel } = make(fake);
       panel.setShowing(true);
       await thread.open('thread-1');
