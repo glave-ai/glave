@@ -3,39 +3,14 @@
 //! centre; the call's line says so, and its result follows it in the restarted conversation.
 
 use glave_event::{Body, Event, StopReason};
-use glave_harness::{AllowAll, Cancel, Harness, Live};
-use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, Message, ModelRequest, Purpose};
+use glave_harness::{AllowAll, Cancel, Live};
+use glave_ports::{Completion, InMemoryLog, Message};
 
+use crate::compaction_background::apart;
 use crate::support::*;
 
 /// What the person says to ask for it.
 const ASKED: &str = "go ahead and compact, and keep the API decisions front and centre";
-
-/// A harness whose conversation follows `answers` and whose summaries `summaries`, and what
-/// it is sent.
-async fn summarizing(
-    dir: &std::path::Path,
-    answers: Vec<Completion>,
-    summaries: Vec<Completion>,
-) -> (
-    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>,
-    Seen,
-) {
-    let script = ScriptedModel::new(answers).summarizing(summaries, 0);
-    let seen = script.seen();
-    let parts = glave_harness::Parts {
-        provider: script,
-        log: InMemoryLog::new(),
-        blobs: InMemoryBlobs::new(),
-        approver: AllowAll,
-        clock: Box::new(glave_ports::testing::ManualClock::ticking(
-            1_791_000_000_000,
-        )),
-        entropy: Box::new(glave_ports::testing::CountingEntropy::starting_at(1)),
-        workspace: workspace(dir).await,
-    };
-    (Harness::new(parts, settings()), seen)
-}
 
 /// A turn that notes a decision, then one whose model compacts as the person asks, keeping
 /// "the API decisions".
@@ -91,7 +66,16 @@ fn asked_in_plain_words_the_model_compacts_keeping_what_the_person_named() {
     let dir = folder("compact-asked");
     block_on!(async {
         let (answers, summaries) = script();
-        let (harness, seen) = summarizing(&dir, answers, summaries).await;
+        let script = ScriptedModel::new(answers).summarizing(summaries, 0);
+        let workspace = workspace(&dir).await;
+        let (harness, seen) = scripted(
+            workspace,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let noted = "Remember: the API uses REST, not GraphQL.";
         turn(&harness, &mut thread, noted).await;
@@ -103,10 +87,7 @@ fn asked_in_plain_words_the_model_compacts_keeping_what_the_person_named() {
             .await
             .unwrap();
 
-        let all: Vec<ModelRequest> = seen.lock().unwrap().clone();
-        let (calls, summaries): (Vec<_>, Vec<_>) = all
-            .into_iter()
-            .partition(|request| request.purpose != Purpose::Summary);
+        let (calls, summaries) = apart(&seen);
         assert!(
             calls[0].tools.iter().any(|spec| spec.name == "compact"),
             "listed from the first call, so the prefix never changes for it"

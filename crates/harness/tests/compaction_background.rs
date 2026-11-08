@@ -68,23 +68,18 @@ fn summarizing(
     Seen,
 ) {
     let script = ScriptedModel::new(answers).summarizing(summaries, after);
-    let seen = script.seen();
-    let parts = glave_harness::Parts {
-        provider: script,
-        log: InMemoryLog::new(),
-        blobs: InMemoryBlobs::new(),
-        approver: AllowAll,
-        clock: Box::new(glave_ports::testing::ManualClock::ticking(
-            1_791_000_000_000,
-        )),
-        entropy: Box::new(glave_ports::testing::CountingEntropy::starting_at(1)),
+    scripted(
         workspace,
-    };
-    (Harness::new(parts, half_window()), seen)
+        script,
+        AllowAll,
+        InMemoryLog::new(),
+        1,
+        half_window(),
+    )
 }
 
 /// The requests of the conversation, and the summaries', apart.
-fn apart(seen: &Seen) -> (Vec<ModelRequest>, Vec<ModelRequest>) {
+pub(crate) fn apart(seen: &Seen) -> (Vec<ModelRequest>, Vec<ModelRequest>) {
     seen.lock()
         .unwrap()
         .iter()

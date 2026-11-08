@@ -106,36 +106,22 @@ mod tests {
     use super::*;
     use glave_event::CallId;
 
-    fn user(text: &str) -> Message {
-        Message::User {
-            parts: vec![Part::Text { text: text.into() }],
-        }
-    }
-
-    fn call(id: &str) -> Message {
-        Message::Assistant {
-            parts: Vec::new(),
-            tool_calls: vec![glave_ports::ToolCall {
-                call_id: CallId::new(id).unwrap(),
-                tool: "read".into(),
-                arguments: glave_event::Arguments::Malformed(String::new()),
-            }],
-        }
-    }
-
-    fn result(id: &str, text: &str) -> Message {
-        Message::Tool {
-            call_id: CallId::new(id).unwrap(),
-            is_error: false,
-            output: vec![Part::Text { text: text.into() }],
-        }
-    }
-
     #[test]
     fn the_latest_request_is_held_word_for_word_or_not_at_all() {
-        let messages = vec![user("please fix the build now"), call("1")];
+        let text = |text: &str| vec![Part::Text { text: text.into() }];
+        let messages = [Message::User {
+            parts: text("please fix the build now"),
+        }];
         assert!(holds(&messages, "fix the build"));
         assert!(!holds(&messages, "deploy it"));
-        assert!(!holds(&[result("1", "fix the build")], "fix the build"));
+        let result = Message::Tool {
+            call_id: CallId::new("call_1").unwrap(),
+            is_error: false,
+            output: text("fix the build"),
+        };
+        assert!(
+            !holds(&[result], "fix the build"),
+            "a tool's words are not the person's"
+        );
     }
 }

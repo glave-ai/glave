@@ -152,7 +152,7 @@ where
         }
         if thread.background.writing() {
             // The turn can go no further without it: dropped by a cancel, which the turn sees.
-            let Some(waited) = cancel.run(thread.background.wait()).await else {
+            let Some(waited) = cancel.run(thread.background.written()).await else {
                 return Ok(());
             };
             if let Some(ended) = waited

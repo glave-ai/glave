@@ -107,9 +107,9 @@ impl Background {
         Some((older, flatten(joined)))
     }
 
-    /// Waits for the summary being written, if there is one: the turn can go no further
+    /// The summary being written, if there is one, once it is: the turn can go no further
     /// without it. Bounded by the task's own limit.
-    pub(crate) async fn wait(&mut self) -> Option<Ended> {
+    pub(crate) async fn written(&mut self) -> Option<Ended> {
         let (_, task) = self.job.as_mut()?;
         let joined = tokio::time::timeout(LIMIT, task.join_next()).await.ok()??;
         let (older, _) = self.job.take()?;
@@ -242,29 +242,10 @@ fn flatten(
 
 #[cfg(test)]
 mod tests {
-    use glave_event::{ModelRef, Part, StopReason, TokenCounts, Usage};
     use glave_ports::testing::ScriptedModel;
     use tokio::sync::Notify;
 
     use super::*;
-
-    fn said(text: &str) -> Completion {
-        Completion {
-            model: ModelRef {
-                provider: "script".into(),
-                name: "test-model".into(),
-            },
-            response_id: None,
-            parts: vec![Part::Text { text: text.into() }],
-            tool_calls: Vec::new(),
-            stop: StopReason::EndTurn,
-            provider_stop: None,
-            usage: Usage::new(TokenCounts::default(), false, None).unwrap(),
-            cost: None,
-            served: None,
-            upstream: None,
-        }
-    }
 
     fn request() -> ModelRequest {
         serde_json::from_value(serde_json::json!({
@@ -283,12 +264,17 @@ mod tests {
         }
     }
 
+    /// A model whose one answer, a refusal, waits for `gate`.
+    fn gated(gate: &Arc<Notify>) -> Arc<ScriptedModel> {
+        let refused = Err(ProviderError::Protocol("no".into()));
+        Arc::new(ScriptedModel::answering(vec![refused]).gated(Arc::clone(gate)))
+    }
+
     #[test]
     fn nothing_waits_for_a_summary_until_the_turn_needs_it() {
         glave_ports::block_on!(async {
             let gate = Arc::new(Notify::new());
-            let script = ScriptedModel::new(vec![said("Older.")]).gated(Arc::clone(&gate));
-            let model = Arc::new(script);
+            let model = gated(&gate);
             let mut background = Background::default();
             assert!(background.idle() && background.ended().await.is_none());
             background.start(&model, request(), older()).await;
@@ -296,9 +282,12 @@ mod tests {
             assert!(background.ended().await.is_none(), "not written yet");
             assert!(background.clone().idle(), "a copy of the thread has none");
             gate.notify_one();
-            let (covered, answer) = background.wait().await.unwrap();
+            let (covered, answer) = background.written().await.unwrap();
             assert_eq!(covered, older());
-            assert_eq!(answer.unwrap().parts, said("Older.").parts);
+            assert!(
+                matches!(answer, Err(ProviderError::Protocol(_))),
+                "{answer:?}"
+            );
             assert!(background.idle(), "one may start again");
             background.spend();
             assert!(!background.idle());
@@ -310,8 +299,7 @@ mod tests {
     #[test]
     fn a_summary_being_written_stops_with_its_thread() {
         glave_ports::block_on!(async {
-            let gate = Arc::new(Notify::new());
-            let model = Arc::new(ScriptedModel::new(vec![said("Older.")]).gated(gate));
+            let model = gated(&Arc::new(Notify::new()));
             let mut background = Background::default();
             background.start(&model, request(), older()).await;
             assert_eq!(Arc::strong_count(&model), 2, "the task holds the model");
