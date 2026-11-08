@@ -71,7 +71,7 @@ fn run(
         .collect();
     let mut computers = LocalComputers::new(dir.join("copies"), environment);
     if let Some(helper) = helper {
-        computers = computers.with_sandbox_helper(helper);
+        computers = computers.with_helper(helper);
     }
     let mut command = Command::new(script);
     command.sandbox = sandbox.map(|(level, network)| Sandbox {
@@ -357,8 +357,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), dir.as_os_str().to_owned())])
         .collect();
-    let computers =
-        LocalComputers::new(dir.join("copies"), environment).with_sandbox_helper(&helper);
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,
@@ -396,7 +395,7 @@ fn landlock_keeps_glave_on_path_readable() {
         ("HOME".into(), dir.as_os_str().to_owned()),
     ];
     let computers = LocalComputers::new(dir.join("copies"), environment)
-        .with_sandbox_helper(&helper)
+        .with_helper(&helper)
         .with_glave_on_path(&on_path);
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,

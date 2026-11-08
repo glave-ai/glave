@@ -27,11 +27,11 @@ pub(crate) fn run() -> Option<ExitCode> {
     Some(ExitCode::from(126))
 }
 
-/// `computers` with this program as the sandbox's helper, which Linux needs where
+/// `computers` with this program as glave's own, which Linux needs to sandbox commands where
 /// bubblewrap cannot start.
-pub(crate) fn with_sandbox_helper(computers: LocalComputers) -> LocalComputers {
+pub(crate) fn with_helper(computers: LocalComputers) -> LocalComputers {
     match glave_process::this_program() {
-        Ok(program) => computers.with_sandbox_helper(program),
+        Ok(program) => computers.with_helper(program),
         Err(_) => computers,
     }
 }

@@ -46,7 +46,7 @@ pub fn sandbox_available() -> bool {
 /// the helper's: `glave __glave-sandbox <plan> -- <command>…` confines itself with Landlock
 /// and seccomp, then becomes the command. Returns `None` when they are not, and otherwise only
 /// when confining or starting the command failed, saying what went wrong. A program that
-/// passes its own path to [`crate::LocalComputers::with_sandbox_helper`] calls this first
+/// passes its own path to [`crate::LocalComputers::with_helper`] calls this first
 /// thing in `main`, before it starts any threads.
 pub fn sandbox_helper(args: &[OsString]) -> Option<String> {
     if args.get(1).is_none_or(|first| first != SANDBOX_HELPER_ARG) {
