@@ -14,15 +14,34 @@ const GRACE: Duration = Duration::from_secs(1);
 /// How often what is left is looked for meanwhile.
 const LOOK_EVERY: Duration = Duration::from_millis(50);
 
-/// A terminal's session: its shell's process, which leads it, and the terminal it runs in.
+/// A terminal's session: the process that leads it, and on macOS the terminal it runs in, by
+/// which its processes are found there.
 #[derive(Debug, Clone)]
 pub(super) struct Session {
-    pub(super) leader: Pid,
-    /// The terminal's name, as `/dev/ttys012` or `/dev/pts/3`.
-    pub(super) tty: String,
+    leader: Pid,
+    /// The terminal's name, as `/dev/ttys012`.
+    #[cfg(target_os = "macos")]
+    tty: String,
 }
 
 impl Session {
+    /// The session `leader` leads, in the terminal named `tty`, as `/dev/ttys012`: which only
+    /// macOS needs to find its processes.
+    pub(super) fn new(leader: Pid, tty: String) -> Self {
+        #[cfg(not(target_os = "macos"))]
+        let _ = tty;
+        Self {
+            leader,
+            #[cfg(target_os = "macos")]
+            tty,
+        }
+    }
+
+    /// The process that leads it.
+    pub(super) fn leader(&self) -> Pid {
+        self.leader
+    }
+
     /// Hangs everything in it up, as a terminal's hang-up does: SIGHUP to the shell's group and
     /// to each process in the session, the jobs in front and behind among them; what is left
     /// after a second is killed, as it is found then.
