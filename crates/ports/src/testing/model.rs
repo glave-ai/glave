@@ -43,7 +43,7 @@ pub struct ScriptedModel {
     /// How many of the conversation's requests a summary waits for after it is asked.
     summary_after: usize,
     /// How many of the conversation's requests (all but summaries) it has received.
-    asked: Arc<watch::Sender<usize>>,
+    asked: watch::Sender<usize>,
 }
 
 /// A summary held until the conversation has made `target` requests in all.
@@ -71,7 +71,7 @@ impl ScriptedModel {
             recording: true,
             summaries: None,
             summary_after: 0,
-            asked: Arc::new(watch::Sender::new(0)),
+            asked: watch::Sender::new(0),
         }
     }
 
