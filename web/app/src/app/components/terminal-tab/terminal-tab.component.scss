@@ -1,0 +1,50 @@
+// The line naming where it is, then the screen, filling what is left of the tab, whose panel
+// gives it its insets.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+.where {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--glz-space-1) var(--glz-space-2);
+  min-inline-size: 0;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.folder {
+  overflow: hidden;
+  color: var(--glz-color-text);
+  font-family: var(--glz-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.box {
+  flex: 1;
+}
+
+.problem {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
+
+.opening,
+.ended {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

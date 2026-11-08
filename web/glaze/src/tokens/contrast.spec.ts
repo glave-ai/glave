@@ -105,6 +105,18 @@ const PAIRS: readonly Pair[] = [
     what: 'a tooltip',
   },
   {
+    color: '--glz-color-on-terminal',
+    on: [['--glz-surface-terminal'], ['--glz-surface-terminal', '--glz-terminal-selection']],
+    least: TEXT,
+    what: 'a terminal’s text, and its selection',
+  },
+  ...Array.from({ length: 16 }, (_, index) => ({
+    color: `--glz-terminal-ansi-${String(index)}`,
+    on: [['--glz-surface-terminal']],
+    least: TEXT,
+    what: 'a terminal’s colours, as programs print in them',
+  })),
+  {
     color: '--glz-selected-marker',
     on: [...CONTROLS_ON, ['--glz-surface-selected']],
     least: NOT_TEXT,

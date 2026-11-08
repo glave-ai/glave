@@ -1,0 +1,35 @@
+// xterm.js's own styles, which what it draws needs. Not encapsulated, so they reach what xterm
+// draws: they join the page's styles once a terminal first shows, and stay, global, as xterm's
+// own `.xterm` rules are; each rule of ours is under the component's class.
+@use '@xterm/xterm/css/xterm';
+
+.app-terminal-screen {
+  display: block;
+  min-block-size: 0;
+  padding-block: var(--glz-space-2);
+  padding-inline: var(--glz-space-3);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-terminal);
+  color: var(--glz-color-on-terminal);
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-sm);
+
+  .screen {
+    block-size: 100%;
+  }
+
+  .xterm .xterm-viewport {
+    background: var(--glz-surface-terminal);
+  }
+
+  // Its scrollbar fades in and out in the calm set's own times, so it holds still in less motion.
+  .xterm .xterm-scrollable-element > .visible {
+    transition-duration: var(--glz-duration-quick);
+    transition-timing-function: var(--glz-ease-out);
+  }
+
+  .xterm .xterm-scrollable-element > .invisible.fade {
+    transition-duration: var(--glz-duration-slow);
+    transition-timing-function: var(--glz-ease-out);
+  }
+}
