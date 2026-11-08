@@ -1,0 +1,91 @@
+<div class="facts" data-testid="panel-facts" [class.reading]="reading()">
+  @if (where(); as where) {
+    <section class="section" data-testid="panel-where">
+      <h3 class="heading">{{ copy.where }}</h3>
+      <ul class="lines">
+        @for (line of where; track line.key) {
+          <li class="line" data-testid="panel-where-part">
+            <glz-icon class="mark" [icon]="line.icon" [label]="line.label" />
+            <span class="text" dir="auto">{{ line.text }}</span>
+            @if (line.detail; as detail) {
+              &ngsp;<span class="between" aria-hidden="true">{{ copy.between }}</span
+              >&ngsp;
+              <span class="detail" data-testid="panel-where-detail" [class.path]="line.path">{{
+                detail
+              }}</span>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  }
+  @if (facts.plan(); as plan) {
+    <section class="section">
+      <h3 class="glz-visually-hidden">{{ copy.plan }}</h3>
+      <glz-plan-card testId="panel-plan" size="sm" [summary]="plan.sentence" [steps]="plan.steps" />
+    </section>
+  }
+  @if (context(); as context) {
+    <section class="section" data-testid="panel-context-section">
+      <div class="head">
+        <h3 class="heading">{{ copy.context }}</h3>
+        <span class="detail" data-testid="panel-context">{{ context.used }}</span>
+        <meter
+          class="meter"
+          min="0"
+          max="100"
+          data-testid="panel-meter"
+          [value]="context.percent"
+          [attr.aria-label]="copy.context"
+          [attr.aria-valuetext]="context.used"
+        ></meter>
+        <button
+          glzButton
+          size="sm"
+          data-testid="panel-compact"
+          [disabled]="context.waits"
+          (click)="compact()"
+        >
+          {{ context.action }}
+        </button>
+      </div>
+      @if (context.problem; as problem) {
+        <p class="problem" role="alert" data-testid="panel-compact-problem">{{ problem }}</p>
+      }
+    </section>
+  }
+  @if (signIns(); as signIns) {
+    <section class="section">
+      <div class="head">
+        <h3 class="heading">{{ copy.connections }}</h3>
+        <a
+          class="link"
+          data-testid="panel-sign-in"
+          [routerLink]="signIns.link"
+          [queryParams]="signIns.query"
+          >{{ signIns.text }}</a
+        >
+      </div>
+    </section>
+  }
+  @if (changes(); as changes) {
+    <!-- Its room, unseen, until what changed is read: nothing below it moves as that comes in. -->
+    <section class="section" data-testid="panel-changes" [class.room]="changes.room">
+      <div class="head">
+        <h3 class="heading">{{ copy.changes }}</h3>
+        <span class="counts" aria-hidden="true"
+          ><span class="plus" [glzCount]="changes.added" [glzCountFormat]="marks.added"></span
+          ><span class="minus" [glzCount]="changes.removed" [glzCountFormat]="marks.removed"></span
+        ></span>
+        <span class="glz-visually-hidden">{{ changes.label }}</span>
+      </div>
+      <p class="detail" data-testid="panel-changes-count">{{ changes.files }}</p>
+    </section>
+  }
+  @if (running()) {
+    <section class="section" data-testid="panel-running">
+      <h3 class="heading">{{ copy.running }}</h3>
+      <app-command-list />
+    </section>
+  }
+</div>

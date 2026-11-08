@@ -5,34 +5,17 @@ import { fakeMedia } from '@glave/glaze/testing/media';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
 import { ChangedFilesService } from './changed-files.service';
+import { ChangesService } from './changes.service';
 import { CommandsService } from './commands.service';
 import { FirstTurnService } from './first-turn.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
-import { SourcesService } from './sources.service';
 import { ThreadPanelService } from './thread-panel.service';
 import { ThreadService } from './thread.service';
 
 function workspace(opened: Opened, kind: 'local' | 'worker' = 'worker'): WorkspaceBound {
   return { workspace: 'w1', computer: { id: 'c1', kind }, opened, root: '/w' };
 }
-
-const READ = [
-  event(1, 'message.added', {
-    role: 'user',
-    parts: [
-      { type: 'text', text: 'What changed in Tokio?' },
-      { type: 'file', name: 'notes.md', bytes: 120 },
-    ],
-  }),
-  event(2, 'tool.call.requested', {
-    call_id: 'c1',
-    tool: 'web_fetch',
-    arguments: { json: { url: 'https://tokio.rs/blog' } },
-  }),
-  event(3, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Much.' }] }),
-  event(4, 'turn.ended', { outcome: 'completed' }),
-];
 
 /** The panel's service on `fake`, its thread holding `events`, not yet opened. */
 function provide(
@@ -47,7 +30,6 @@ function provide(
       ...provideFakeSession(fake),
       ThreadService,
       CommandsService,
-      SourcesService,
       ChangedFilesService,
       PlanService,
       ThreadPanelService,
@@ -143,12 +125,12 @@ describe('ThreadPanelService', () => {
 
   it('is read once its history is, whatever else is unanswered, and stays so in the thread', async () => {
     const fake = new FakeSession();
-    // What it changed, its plan, its pages and its commands are never answered.
+    // What it changed, its plan, its commands and its sign-ins are never answered.
     for (const method of [
       'thread/changes',
       'thread/plan',
-      'thread/sources',
       'command/list',
+      'connector/list',
     ] as const) {
       fake.held(method);
     }
@@ -186,21 +168,71 @@ describe('ThreadPanelService', () => {
     expect([panel.shown(), panels.showing()]).toEqual([false, false]);
   });
 
-  it('lists the pages its replies drew on once each, and the files the person attached', async () => {
-    const page = { url: 'https://tokio.rs/blog', title: 'Tokio blog' };
-    const fake = new FakeSession().answer('thread/sources', {
-      sources: [
-        { reply: 3, sentence: 'Sources: 1 page', pages: [page] },
-        { reply: 7, sentence: 'Sources: 2 pages', pages: [page, { url: 'not a url' }] },
-      ],
+  it("counts the apps its project's threads use that need signing in again", async () => {
+    const connector = (id: string, status: 'connected' | 'sign_in_again'): object => ({
+      id,
+      name: id,
+      status,
+      categories: [],
+      tags: [],
+      company: id,
+      description: '',
+      docs: '',
+      url: `https://${id}.example`,
+      returns: 'text',
+      sign_in: 'dcr',
     });
-    const panel = await make(fake, READ);
-    expect(panel.pages().map((each) => [each.name, each.host])).toEqual([
-      ['Tokio blog', 'tokio.rs'],
-      ['not a url', 'not a url'],
+    let listed = [connector('linear', 'sign_in_again'), connector('notion', 'connected')];
+    const fake = new FakeSession().answer('connector/list', () => ({
+      connectors: listed,
+      categories: [],
+      companies: [],
+      tags: [],
+    }));
+    const panel = await make(fake);
+    expect(panel.signInAgain()).toBe(1);
+    expect(fake.paramsOf('connector/list')).toEqual([{ used_in: 'project-1' }]);
+    // Read again as the person's connections change.
+    listed = [connector('linear', 'connected')];
+    TestBed.inject(ChangesService).tell('connections');
+    await settle();
+    expect(panel.signInAgain()).toBe(0);
+    // A list that cannot be read says nothing.
+    TestBed.resetTestingModule();
+    const unread = await make(
+      new FakeSession().answer(
+        'connector/list',
+        new ApiError({ code: ErrorCode.INTERNAL, message: 'it failed' }),
+      ),
+    );
+    expect(unread.signInAgain()).toBe(0);
+  });
+
+  it('compacts its context on request, and shows a refusal in the server’s words', async () => {
+    const fake = new FakeSession();
+    const give = fake.held('thread/compact');
+    const panel = await make(fake);
+    const compacted = panel.compact();
+    expect(panel.compacting()).toBe(true);
+    // Once is enough while it runs.
+    void panel.compact();
+    expect(fake.paramsOf('thread/compact')).toEqual([{ thread: 'thread-1' }]);
+    give({ before_tokens: 90_000, after_tokens: 12_000 });
+    await compacted;
+    expect([panel.compacting(), panel.compactProblem()]).toEqual([false, null]);
+    fake.answer(
+      'thread/compact',
+      new ApiError({ code: ErrorCode.INVALID_PARAMS, message: 'a turn is running in it' }),
+    );
+    await panel.compact();
+    expect([panel.compacting(), panel.compactProblem()]).toEqual([
+      false,
+      'A turn is running in it.',
     ]);
-    expect(panel.attached().map((each) => each.name)).toEqual(['notes.md']);
-    expect(panel.shown()).toBe(true);
+    // Another thread starts afresh.
+    void TestBed.inject(ThreadService).open('thread-2');
+    TestBed.tick();
+    expect(panel.compactProblem()).toBeNull();
   });
 
   it('shows the plan the server reads, once the thread has one', async () => {
@@ -228,10 +260,9 @@ describe('ThreadPanelService', () => {
       event(2, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
     ]);
     expect([panel.files(), panel.note(), panel.shown()]).toEqual([files, note, true]);
-    expect(panel.reviewedFiles()).toBe(files);
   });
 
-  it('shows the commands it keeps running, and a turn’s or the thread’s changes in full', async () => {
+  it('shows the commands it keeps running, and a turn’s changes in full', async () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [command('c1', 'npm run dev')],
     });
@@ -253,9 +284,9 @@ describe('ThreadPanelService', () => {
     panel.setReviewing(true);
     expect(panel.reviewed()).toBe('src/main.rs');
     panel.setReviewing(false);
-    expect(panel.reviewing()).toBe(false);
-    panel.showChanges(null, null);
-    expect([panel.reviewing(), panel.reviewedFiles(), panel.reviewed()]).toEqual([true, [], null]);
+    expect([panel.reviewing(), panel.reviewedFiles()]).toEqual([false, []]);
+    panel.showChanges(turn, null);
+    expect([panel.reviewing(), panel.reviewed()]).toEqual([true, null]);
     // Another thread starts afresh.
     panel.reset();
     expect(panel.reviewing()).toBe(false);

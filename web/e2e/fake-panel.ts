@@ -1,10 +1,17 @@
-import type { PlanInfo, ReplySources, RunningCommand, ThreadSummary } from '@glave/client';
+import type {
+  ConnectorInfo,
+  PlanInfo,
+  ReplySources,
+  RunningCommand,
+  ThreadSummary,
+} from '@glave/client';
 
-import { type Answers, bound, call, done, event } from './fake-records';
+import { type Answers, WORKSPACE, bound, call, done, event } from './fake-records';
 
 /**
- * A coding thread with something in every section of its panel (`fakeApi`'s `panel`): it read
- * a page, was given a screenshot, changed two files, builds a plan and keeps the tests running.
+ * A coding thread with something in every section of its panel (`fakeApi`'s `panel`): it works
+ * on a separate copy, read a page, was given a screenshot, changed two files, builds a plan and
+ * keeps the tests running, and an app its project uses needs signing in again.
  */
 export const VERBOSE = '01900000-0000-7000-8000-000000000131';
 
@@ -22,11 +29,34 @@ export const TESTS: RunningCommand = {
   summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
 };
 
-/** What its summary says beyond any thread's: how full its context is, and what it cost. */
+/**
+ * What its summary says beyond any thread's: it works on a worktree of the project's folder, how
+ * full its context is, and what it cost.
+ */
 export const VERBOSE_SUMMARY: Partial<ThreadSummary> = {
   turns: 2,
   cost: { nanos: 12_000_000, currency: 'USD' },
   context: { percent: 39, tokens: 49_920, window: 128_000 },
+  workspace: {
+    ...WORKSPACE,
+    opened: { kind: 'worktree', repository: '/work/glave', branch: 'glave/add-verbose' },
+    root: '/home/.glave/worktrees/glave-add-verbose',
+  },
+};
+
+/** An app its project's threads use, whose sign-in no longer works. */
+const LINEAR: ConnectorInfo = {
+  id: 'linear',
+  name: 'Linear',
+  status: 'sign_in_again',
+  categories: [],
+  tags: [],
+  company: 'linear',
+  description: 'Issues and projects in Linear.',
+  docs: 'https://linear.app/docs/mcp',
+  url: 'https://mcp.linear.app/mcp',
+  returns: 'text',
+  sign_in: 'dcr',
 };
 
 /** Its plan, being built: a step done, one doing, two to do. */
@@ -132,6 +162,12 @@ export const ABOUT_VERBOSE: Answers<null> = {
   'thread/sources': (params) => (params.thread === VERBOSE ? { sources: SOURCES } : undefined),
   'command/list': (params) => (params.thread === VERBOSE ? { commands: [TESTS] } : undefined),
   'thread/plan': (params) => (params.thread === VERBOSE ? { plan: PLAN } : undefined),
+  'thread/compact': (params) =>
+    params.thread === VERBOSE ? { before_tokens: 49_920, after_tokens: 8_000 } : undefined,
+  'connector/list': (params) =>
+    typeof params.used_in === 'string'
+      ? { connectors: [LINEAR], categories: [], companies: [], tags: [] }
+      : undefined,
 };
 
 /** A plain chat: words alone, so no panel. */
