@@ -108,6 +108,15 @@ pub struct LocalComputers {
     cgroup: Option<PathBuf>,
 }
 
+/// What a folder is opened as, which says whether to ask git where its history stands (`at`).
+#[derive(Debug, Clone, Copy)]
+enum Opening {
+    /// Where a thread is placed, which its binding records (`workspace.bound`'s `since`).
+    Placed,
+    /// This machine's own folder, which no thread records.
+    Own,
+}
+
 impl LocalComputers {
     /// Computers on this machine, keeping repository copies under `base`. Commands run with
     /// `environment` (usually glave's own) less anything named like a secret, such as the
@@ -153,7 +162,10 @@ impl LocalComputers {
         Self::new(std::env::temp_dir().join("glave-workspaces"), environment)
     }
 
-    /// A host computer made from these computers, with `folder` open on it in place.
+    /// A host computer made from these computers, with `folder` open on it in place. Where the
+    /// folder's history stands is not asked (`at` is none): no thread records this workspace as
+    /// the one it was placed in, since a thread placed in the folder opens it again, and asking
+    /// would run git once or twice at every start, before a thread is read.
     pub async fn open_here(
         self,
         folder: impl AsRef<Path>,
@@ -169,7 +181,9 @@ impl LocalComputers {
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
-        let workspace = computers.open(computer, &sources).await?;
+        let workspace = computers
+            .open_now(computer, &sources, None, Opening::Own)
+            .await?;
         Ok((computers, workspace))
     }
 
@@ -211,6 +225,7 @@ impl LocalComputers {
         computer: ComputerId,
         sources: &Sources,
         credential: Option<&GitCredential>,
+        opening: Opening,
     ) -> Result<WorkspaceInfo, ComputerError> {
         if let Some(credential) = credential {
             credential.check()?;
@@ -252,7 +267,10 @@ impl LocalComputers {
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };
         let info = WorkspaceInfo {
-            at: changes::at(&opened).await,
+            at: match opening {
+                Opening::Placed => changes::at(&opened).await,
+                Opening::Own => None,
+            },
             ..info
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
@@ -562,7 +580,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None))
+        Box::pin(self.open_now(computer, sources, None, Opening::Placed))
     }
 
     fn open_with_credential<'a>(
@@ -571,7 +589,7 @@ impl Computers for LocalComputers {
         sources: &'a Sources,
         credential: &'a GitCredential,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, Some(credential)))
+        Box::pin(self.open_now(computer, sources, Some(credential), Opening::Placed))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
