@@ -192,7 +192,7 @@ export class GlaveClient {
  */
 export function codeFromFragment(
   fragment: string,
-  link: 'code' | 'setup' | 'invite' | 'signup' | 'recover',
+  link: 'code' | 'setup' | 'invite' | 'signup' | 'recover' | 'org',
 ): string | undefined {
   const fields = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
   const code = fields.get(link);

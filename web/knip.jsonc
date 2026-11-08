@@ -16,6 +16,8 @@
     "app/proxy.conf.mjs",
     // Screenshots for a pull request, run by hand (`node e2e/shots.mjs <url> <out-dir>`).
     "e2e/shots.mjs",
+    // The service worker that shows notifications, which the app registers by its address.
+    "app/public/push-worker.js",
     // The check that each unit test file puts back the globals it replaces: angular.json's
     // `test` targets run it as a setup file, which knip's Angular plugin doesn't follow.
     "glaze/src/testing/restored.ts",
