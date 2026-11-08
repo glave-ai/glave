@@ -2,13 +2,12 @@
 //! of the test's own. A program of its own is the server here, since a test can't change its
 //! own environment, and only a new program's shows what `git credential fill` inherits.
 
-use std::os::unix::fs::PermissionsExt as _;
 use std::process::Stdio;
 use std::time::Duration;
 
 use glave_computer::WorkerCredentials;
 use glave_ports::block_on;
-use glave_ports::testing::{TempDir, any_secret, fake_secret};
+use glave_ports::testing::{TempDir, any_secret, fake_secret, new_script};
 use glave_process::{Processes, Program};
 
 /// Set on the server the first test starts, so the second does nothing when run by anything else.
@@ -32,13 +31,12 @@ fn a_credential_helper_gets_what_it_needs_and_none_of_the_server_s_own() {
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let helper = dir.join("helper");
-    std::fs::write(
+    new_script(
         &helper,
         "#!/bin/sh\nenv > \"$HOME/seen\"\ntest \"$1\" = get || exit 0\n\
          printf 'username=someone\\npassword=%s\\n' \"$GH_TOKEN\"\n",
     )
     .unwrap();
-    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(
         home.join(".gitconfig"),
         // The empty value first: no helper configured anywhere else on this computer is asked.

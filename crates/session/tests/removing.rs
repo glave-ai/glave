@@ -413,12 +413,10 @@ fn someone_removed_has_their_commands_in_the_background_stopped() {
 /// session of its own, then the shell in it, as the starter runs it (perl, on every machine
 /// the tests run on).
 fn starter(dir: &std::path::Path) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt as _;
     let path = dir.join("starter");
     let script = "#!/usr/bin/perl\nuse POSIX ();\nPOSIX::setsid() or die \"setsid: $!\";\n\
                   shift @ARGV;\nexec @ARGV or die \"exec: $!\";\n";
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    glave_ports::testing::new_script(&path, script).unwrap();
     path
 }
 

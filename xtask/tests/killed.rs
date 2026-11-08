@@ -1,11 +1,10 @@
 //! What xtask runs ends when xtask is killed outright (#558): `cargo xtask eval`, given a
 //! stand-in `cargo` that only sleeps, has it stopped at once by xtask's lifeline.
 
-use std::os::unix::fs::PermissionsExt as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use glave_ports::testing::{HUNG, Running, TempDir};
+use glave_ports::testing::{HUNG, Running, TempDir, new_script};
 
 /// Waits up to `limit` for `done`.
 fn until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
@@ -54,8 +53,7 @@ fn what_xtask_runs_ends_when_xtask_is_killed_outright() {
         echo $$ > \"$XTASK_TEST_STARTED.part\"\n\
         mv \"$XTASK_TEST_STARTED.part\" \"$XTASK_TEST_STARTED\"\n\
         exec sleep 300\n";
-    std::fs::write(&cargo, script).unwrap();
-    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    new_script(&cargo, script).unwrap();
     let path = format!("{}:{}", folder.display(), std::env::var("PATH").unwrap());
     let child = Command::new(env!("CARGO_BIN_EXE_xtask"))
         // No `.env` read: the endpoint the evals would use is not this test's.
