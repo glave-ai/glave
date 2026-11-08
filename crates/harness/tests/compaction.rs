@@ -1,5 +1,6 @@
 //! Compaction against a scripted model: a thread that outgrows its window is summarized,
 //! recorded, continued from the summary, and resumed the same way; one that fits is left alone.
+//! A summary that cannot stand in for the conversation is in `summaries.rs`.
 
 use glave_event::StopReason;
 use glave_harness::{AllowAll, Cancel, Compaction, Live};
@@ -10,7 +11,7 @@ use crate::support::*;
 
 /// A window so small that reading one large file fills it: a read gives at most a quarter of
 /// it, so it compacts at a fifth.
-fn tiny_window() -> glave_harness::Settings {
+pub(crate) fn tiny_window() -> glave_harness::Settings {
     let mut settings = settings();
     settings.compaction = Compaction {
         window_tokens: 20_000,
@@ -19,7 +20,7 @@ fn tiny_window() -> glave_harness::Settings {
     settings
 }
 
-fn requests(seen: &Seen) -> Vec<ModelRequest> {
+pub(crate) fn requests(seen: &Seen) -> Vec<ModelRequest> {
     seen.lock().unwrap().clone()
 }
 
@@ -57,6 +58,11 @@ fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
         assert_eq!(sent.len(), 3, "the read, the summary, the answer");
         let instruction = text_of(sent[1].messages.last().unwrap());
         assert!(instruction.contains("handoff summary"), "{instruction}");
+        assert!(
+            instruction.contains("Keep it under 2000 words"),
+            "the cap it is sent with: {instruction}"
+        );
+        assert_eq!(sent[1].max_output_tokens, Some(4_000));
         assert!(
             !sent[1].tools.is_empty(),
             "tools stay listed for strict providers"
@@ -185,43 +191,6 @@ fn compact_on_request_restarts_from_the_summary() {
             &recorded[recorded.len() - 2..],
             ["model.responded", "thread.compacted"]
         );
-    });
-}
-
-#[test]
-fn an_empty_summary_leaves_the_thread_as_it_was() {
-    let dir = folder("empty-summary");
-    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(3_000)).unwrap();
-    block_on!(async {
-        let answers = vec![
-            reads("big.txt"),
-            answer(None, vec![], StopReason::EndTurn),
-            answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
-        ];
-        let log = InMemoryLog::new();
-        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        harness
-            .run_turn(
-                &mut thread,
-                "what is in big.txt?",
-                &Cancel::new(),
-                &mut |live| {
-                    shown.push(live);
-                },
-            )
-            .await
-            .unwrap();
-        assert!(
-            shown
-                .iter()
-                .any(|live| matches!(live, Live::CompactionFailed(_)))
-        );
-        let sent = requests(&seen);
-        assert!(sent[2].messages.len() > 1, "the full conversation goes on");
-        let recorded = kinds(&events(harness.log(), thread.id).await);
-        assert!(!recorded.contains(&"thread.compacted"), "{recorded:?}");
     });
 }
 

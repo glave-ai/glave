@@ -19,7 +19,7 @@ use glave_ports::settings::Protections;
 use glave_ports::testing::{FixedGitCredentials, fake_secret};
 use glave_ports::{
     BoxFuture, Caller, Cancellation, Completion, InMemoryBlobs, InMemoryLog, InMemoryTools,
-    Message, ModelRequest, ToolError, ToolInfo, ToolOutput, ToolSource,
+    Message, ModelRequest, Purpose, ToolError, ToolInfo, ToolOutput, ToolSource,
 };
 use serde_json::json;
 
@@ -148,6 +148,13 @@ fn opened_alike(requests: &[ModelRequest]) {
     for (at, request) in requests[..5].iter().enumerate() {
         assert!(prefix(request) == first, "call {at} opens as the first did");
     }
+    // The summary is sent the conversation as the call before it was, then that call's answer
+    // and the instruction, and reasons as it did, so the provider's cache holds all of it.
+    let (built, summary) = (&requests[3], &requests[4]);
+    assert_eq!(summary.purpose, Purpose::Summary);
+    assert!(summary.messages.starts_with(&built.messages));
+    assert_eq!(summary.messages.len(), built.messages.len() + 2);
+    assert_eq!(summary.effort, built.effort);
     let compacted = prefix(&requests[5]);
     assert!(
         compacted != first,

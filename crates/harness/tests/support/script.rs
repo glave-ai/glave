@@ -226,7 +226,25 @@ pub(crate) fn harness_with<L: EventLog, A: Approver>(
     seed: u64,
     settings: Settings,
 ) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
-    let script = ScriptedModel::new(answers);
+    scripted(
+        workspace,
+        ScriptedModel::new(answers),
+        approver,
+        log,
+        seed,
+        settings,
+    )
+}
+
+/// Like `harness_with`, answering as `script` does.
+pub(crate) fn scripted<L: EventLog, A: Approver>(
+    workspace: Workspace,
+    script: ScriptedModel,
+    approver: A,
+    log: L,
+    seed: u64,
+    settings: Settings,
+) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
     let requests = script.seen();
     let parts = Parts {
         provider: script,
