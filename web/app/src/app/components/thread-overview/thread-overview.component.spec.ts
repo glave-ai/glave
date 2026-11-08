@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type ThreadSummary, type WorkspaceBound } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { ProjectsService } from '../../services/projects.service';
 import { FakeSession } from '../../testing/fake-session';
@@ -55,7 +56,8 @@ async function render(
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadOverviewComponent>>;
 }> {
-  await openForPanel(fake, events, { read });
+  fakeMedia(false);
+  await openForPanel(fake, events, read);
   const fixture = TestBed.createComponent(ThreadOverviewComponent);
   await drawn(fixture);
   return { root: fixture.nativeElement as HTMLElement, fixture };

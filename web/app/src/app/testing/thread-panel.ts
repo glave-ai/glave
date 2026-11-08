@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { ChangedFilesService } from '../services/changed-files.service';
 import { CommandsService } from '../services/commands.service';
@@ -13,20 +12,19 @@ import { record } from './fixtures';
 
 /**
  * Opens thread-1, whose history is `events`, in project-1, called glave, with what a thread's
- * panel reads beside it, against `fake`: on a narrow screen when `narrow`, its project's name
- * read first unless `read` is false.
+ * panel reads beside it, against `fake`: its project's name read first unless `read` is false.
+ * The screen's width is the test's to fake first.
  */
 export async function openForPanel(
   fake: FakeSession,
   events: readonly unknown[],
-  { narrow = false, read = true }: { readonly narrow?: boolean; readonly read?: boolean } = {},
+  read = true,
 ): Promise<void> {
   localStorage.clear();
   fake
     .answer('thread/events', { events })
     .answer('project/list', { projects: [record('project-1', 'glave')], gone: [] })
     .answer('thread/list', { threads: [] });
-  fakeMedia(narrow);
   TestBed.configureTestingModule({
     providers: [
       ...provideFakeSession(fake),
