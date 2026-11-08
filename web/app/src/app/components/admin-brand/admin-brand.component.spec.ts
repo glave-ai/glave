@@ -8,6 +8,9 @@ import { AdminBrandComponent } from './admin-brand.component';
 
 const SHADES = { light: '#0f766e', dark: '#59c5b8' };
 
+/** More turns than the page takes to come to rest; past them, something keeps changing it. */
+const TURNS = 20;
+
 async function render(fake: FakeSession): Promise<{
   root: HTMLElement;
   settle: () => Promise<void>;
@@ -15,10 +18,18 @@ async function render(fake: FakeSession): Promise<{
   fake.answer('appearance/preview', { shades: SHADES });
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
   const fixture = TestBed.createComponent(AdminBrandComponent);
+  // At rest once a turn ends with nothing more to draw: each turn draws what is changed, then
+  // gives what that started (the fake's answers, a file read) a task to come back in. Turns are
+  // counted, never timed, so a busy machine makes this slower, never wrong.
   const settle = async (): Promise<void> => {
-    await fixture.whenStable();
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
+    for (let turn = 0; turn < TURNS; turn += 1) {
+      await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve));
+      if (fixture.isStable()) {
+        return;
+      }
+    }
+    throw new Error(`the brand page was still changing after ${String(TURNS)} turns`);
   };
   await settle();
   return { root: fixture.nativeElement as HTMLElement, settle };
@@ -92,9 +103,7 @@ describe('AdminBrandComponent', () => {
     Object.defineProperty(file, 'files', { value: [new File(['x'], 'logo.gif')] });
     file.dispatchEvent(new Event('change'));
     await settle();
-    await vi.waitFor(() => {
-      expect(byId(root, 'brand-problem')?.textContent).toContain('PNG, JPEG or WebP');
-    });
+    expect(byId(root, 'brand-problem')?.textContent).toContain('PNG, JPEG or WebP');
     expect(byId(root, 'brand-logo')).toBeNull();
   });
 
@@ -193,9 +202,7 @@ describe('AdminBrandComponent', () => {
     it('keeps a logo removed here, when they kept another', async () => {
       const fake = withLogo(kept(), 'abc');
       const { root, settle } = await render(fake);
-      await vi.waitFor(() => {
-        expect(byId(root, 'brand-logo-remove')).not.toBeNull();
-      });
+      expect(byId(root, 'brand-logo-remove')).not.toBeNull();
       byId(root, 'brand-logo-remove')?.click();
       await settle();
       expect(byId(root, 'brand-logo')).toBeNull();
@@ -210,28 +217,21 @@ describe('AdminBrandComponent', () => {
     it('draws their logo, not a file picked here and saved, once they keep another', async () => {
       const fake = withLogo(kept(), 'abc').answer('brand/logo/upload', { sha256: 'ghi' });
       const { root, settle } = await render(fake);
-      await vi.waitFor(() => {
-        expect(byId(root, 'brand-logo')).not.toBeNull();
-      });
       const first = (byId(root, 'brand-logo') as HTMLImageElement).src;
       const file = byId(root, 'brand-logo-file') as HTMLInputElement;
       Object.defineProperty(file, 'files', { value: [new File(['x'], 'logo.png')] });
       file.dispatchEvent(new Event('change'));
-      await vi.waitFor(() => {
-        expect((byId(root, 'brand-logo') as HTMLImageElement).src).not.toBe(first);
-      });
       await settle();
       const picked = (byId(root, 'brand-logo') as HTMLImageElement).src;
+      expect(picked).not.toBe(first);
       byId(root, 'brand-save')?.click();
       await settle();
       expect(fake.paramsOf('brand/set')).toEqual([{ ...ACME, logo: 'ghi' }]);
       expect((byId(root, 'brand-logo') as HTMLImageElement).src).toBe(picked);
       withLogo(fake, 'def').answer('brand/get', { brand: THEIRS });
       heard();
-      await vi.waitFor(() => {
-        expect(fake.paramsOf('brand/logo/get')).toHaveLength(2);
-      });
       await settle();
+      expect(fake.paramsOf('brand/logo/get')).toHaveLength(2);
       const shown = (byId(root, 'brand-logo') as HTMLImageElement).src;
       expect([first, picked]).not.toContain(shown);
     });
