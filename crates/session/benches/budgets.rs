@@ -12,6 +12,11 @@
 //! but without the web app inside. The threads are recorded and resumed in this program, on
 //! glave's own allocator.
 //!
+//! `budgets record <folder>` and `budgets resume <folder>` count a resume's instructions, which
+//! unlike its milliseconds don't depend on the CPU (#1286): the first records the 10,000-event
+//! thread there at full speed, and the second, run under Valgrind, only resumes it, so what
+//! Valgrind counts is the resume (`budgets.yml`).
+//!
 //! It lives in a package with no program of its own, so building it links no second glave.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
@@ -27,12 +32,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail};
 use glave_computer::LocalComputers;
-use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
-use glave_harness::{AllowAll, Cancel, Harness, Parts, Settings, Workspace};
+use glave_event::{Arguments, ModelRef, Part, StopReason, ThreadId, TokenCounts, Usage};
+use glave_harness::{AllowAll, Cancel, Harness, Parts, Settings, Thread, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::testing::ScriptedModel;
-use glave_ports::{Completion, OsEntropy, RequestedCall, SystemClock};
+use glave_ports::{Completion, OsEntropy, RequestedCall, Scope, SystemClock};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
+use tokio::runtime::Runtime;
 
 /// Events in the resumed thread.
 const EVENTS: usize = 10_000;
@@ -56,13 +62,30 @@ const BINARY: &str = "GLAVE_BUDGETS_BINARY";
 const STARTS_WITHIN: Duration = Duration::from_secs(20);
 const ANSWERS_WITHIN: Duration = Duration::from_secs(20);
 const STOPS_WITHIN: Duration = Duration::from_secs(30);
+/// The file, in a folder `budgets record` filled, naming the thread it recorded.
+const THREAD_ID: &str = "thread-id";
 
 fn main() -> anyhow::Result<()> {
-    let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
-    std::fs::create_dir_all(&dir)?;
-    let result = measure(&dir);
-    let _ = std::fs::remove_dir_all(&dir);
-    result
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    match arguments.as_slice() {
+        ["record", folder] => runtime()?.block_on(record_to_count(Path::new(folder))),
+        ["resume", folder] => runtime()?.block_on(resume_to_count(Path::new(folder))),
+        // The budgets: with no arguments, or the `--bench` that `cargo bench` passes.
+        _ => {
+            let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
+            std::fs::create_dir_all(&dir)?;
+            let result = measure(&dir);
+            let _ = std::fs::remove_dir_all(&dir);
+            result
+        }
+    }
+}
+
+fn runtime() -> anyhow::Result<Runtime> {
+    Ok(tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?)
 }
 
 fn measure(dir: &Path) -> anyhow::Result<()> {
@@ -81,9 +104,7 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
         })?
         .len();
     let answer = median(answered(&binary, dir)?);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
+    let runtime = runtime()?;
     let (recorded, resume) = runtime.block_on(threads(dir, None))?;
     let (_, compacted) = runtime.block_on(threads(dir, Some(TURNS_PER_COMPACTION)))?;
     let binary_budget = format!("< {BINARY_MB} MB");
@@ -260,21 +281,58 @@ async fn threads(dir: &Path, compacting: Option<usize>) -> anyhow::Result<(Durat
     } else {
         "whole"
     });
-    let project = dir.join("thread");
-    std::fs::create_dir_all(&project)?;
-    std::fs::write(project.join("README.md"), "A line of notes.\n".repeat(80))?;
-    let database = dir.join("bench.db");
-    let keys = || -> anyhow::Result<KeySettings> {
-        let root = KeyFileRoot::open_or_create(database.with_extension("key"))?;
-        Ok(KeySettings::new(std::sync::Arc::new(root)))
-    };
-    let bucket = glave_bucket::Bucket::folder(&dir.join("blobs")).await?;
-    let store = Store::open(&database, keys()?, std::sync::Arc::new(bucket.clone())).await?;
-    let scope = glave_ports::Scope::glaves_own(
-        store.org(uuid(1)).await?,
-        glave_ports::ProjectId::from_uuid(uuid(2)),
-    );
-    let harness = harness_on(&store, &project, compacting).await?;
+    let files = Files::at(&dir, compacting).await?;
+    let (store, harness) = files.open().await?;
+    let scope = scope_on(&store).await?;
+    let (thread, recorded) = record(&harness, scope, compacting).await?;
+    let mut resumes = Vec::with_capacity(RESUMES);
+    for _ in 0..RESUMES {
+        let started = Instant::now();
+        let (_store, fresh) = files.open().await?;
+        let again = fresh.resume_thread(scope, thread.id).await?;
+        resumes.push(started.elapsed());
+        if again.messages().len() != thread.messages().len() {
+            bail!("the resumed thread differs from the recorded one");
+        }
+    }
+    Ok((recorded, median(resumes)))
+}
+
+/// `budgets record <folder>`: the thread `budgets resume` resumes.
+async fn record_to_count(folder: &Path) -> anyhow::Result<()> {
+    let files = Files::at(folder, None).await?;
+    let (store, harness) = files.open().await?;
+    let (thread, _) = record(&harness, scope_on(&store).await?, None).await?;
+    std::fs::write(folder.join(THREAD_ID), thread.id.to_string())?;
+    Ok(())
+}
+
+/// `budgets resume <folder>`: one resume of the thread `budgets record` left there, the store
+/// opened afresh as the timed resumes open it.
+async fn resume_to_count(folder: &Path) -> anyhow::Result<()> {
+    let files = Files::at(folder, None).await?;
+    let (store, harness) = files.open().await?;
+    let id: uuid::Uuid = std::fs::read_to_string(folder.join(THREAD_ID))?.parse()?;
+    let again = harness
+        .resume_thread(scope_on(&store).await?, ThreadId::try_from(id)?)
+        .await?;
+    let messages = again.messages().len();
+    if messages < turns() {
+        bail!(
+            "resumed only {messages} messages of a thread of {} turns",
+            turns()
+        );
+    }
+    Ok(())
+}
+
+/// Records the thread's turns, compacted every `compacting` turns when that is given: the
+/// thread, and how long it took.
+async fn record(
+    harness: &Benched,
+    scope: Scope,
+    compacting: Option<usize>,
+) -> anyhow::Result<(Thread, Duration)> {
     let mut thread = harness.start_thread(scope).await?;
     let started = Instant::now();
     for turn in 1..=turns() {
@@ -287,19 +345,46 @@ async fn threads(dir: &Path, compacting: Option<usize>) -> anyhow::Result<(Durat
                 .await?;
         }
     }
-    let recorded = started.elapsed();
-    let mut resumes = Vec::with_capacity(RESUMES);
-    for _ in 0..RESUMES {
-        let started = Instant::now();
-        let store = Store::open(&database, keys()?, std::sync::Arc::new(bucket.clone())).await?;
-        let fresh = harness_on(&store, &project, compacting).await?;
-        let again = fresh.resume_thread(scope, thread.id).await?;
-        resumes.push(started.elapsed());
-        if again.messages().len() != thread.messages().len() {
-            bail!("the resumed thread differs from the recorded one");
-        }
+    Ok((thread, started.elapsed()))
+}
+
+async fn scope_on(store: &Store) -> anyhow::Result<Scope> {
+    Ok(Scope::glaves_own(
+        store.org(uuid(1)).await?,
+        glave_ports::ProjectId::from_uuid(uuid(2)),
+    ))
+}
+
+/// Where a benchmark's thread is kept, and how it was recorded.
+struct Files {
+    project: PathBuf,
+    database: PathBuf,
+    bucket: glave_bucket::Bucket,
+    compacting: Option<usize>,
+}
+
+impl Files {
+    async fn at(dir: &Path, compacting: Option<usize>) -> anyhow::Result<Self> {
+        let project = dir.join("thread");
+        std::fs::create_dir_all(&project)?;
+        std::fs::write(project.join("README.md"), "A line of notes.\n".repeat(80))?;
+        Ok(Self {
+            project,
+            database: dir.join("bench.db"),
+            bucket: glave_bucket::Bucket::folder(&dir.join("blobs")).await?,
+            compacting,
+        })
     }
-    Ok((recorded, median(resumes)))
+
+    /// A freshly opened store, and a harness on it.
+    async fn open(&self) -> anyhow::Result<(Store, Benched)> {
+        let root = KeyFileRoot::open_or_create(self.database.with_extension("key"))?;
+        let keys = KeySettings::new(std::sync::Arc::new(root));
+        let bucket = std::sync::Arc::new(self.bucket.clone());
+        let store = Store::open(&self.database, keys, bucket).await?;
+        let harness = harness_on(&store, &self.project, self.compacting).await?;
+        Ok((store, harness))
+    }
 }
 
 type Benched = Harness<ScriptedModel, SqliteLog, SqliteBlobs, AllowAll>;
