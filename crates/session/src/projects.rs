@@ -198,7 +198,7 @@ where
 
     /// Where `thread` is in `org`: remembered, or found in the log. Where it is, not who may
     /// read it; a thread of another organization is not found.
-    async fn located(&self, org: OrgId, thread: ThreadId) -> Result<Located, ApiError> {
+    pub(crate) async fn located(&self, org: OrgId, thread: ThreadId) -> Result<Located, ApiError> {
         if glave_ports::stream::Reserved::of(thread).is_some() {
             return Err(no_thread(thread));
         }

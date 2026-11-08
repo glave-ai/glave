@@ -33,8 +33,12 @@ glave-identity.workspace = true
 # The names MCP tools reach the model by, to count each connection's calls (usage.rs).
 glave-mcp.workspace = true
 glave-ports.workspace = true
+# Web Push: what needs a person, told to their browsers (push.rs, notify.rs).
+glave-push.workspace = true
 # Each web page's CSP nonce, straight from the operating system (http/site.rs).
 getrandom.workspace = true
+# Whose browser a push endpoint is, kept in a stream named by its hash (push.rs).
+sha2.workspace = true
 # The HTTP transport's server.
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
@@ -67,6 +71,10 @@ glave-keys.workspace = true
 glave-memory.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
+# Pushes to a push service on this computer.
+glave-push = { workspace = true, features = ["test-service"] }
+# Reading what a push carried, as the browser it went to would (RFC 8291).
+web-push-native.workspace = true
 # web_fetch reading a local page, for the sources a reply drew on.
 glave-web = { workspace = true, features = ["pages"] }
 # The isolation suite on Postgres too, when a test database is given.

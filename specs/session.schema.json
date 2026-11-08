@@ -1121,6 +1121,11 @@
       ],
       "type": "object"
     },
+    "DeviceId": {
+      "description": "Identifies one browser or device that takes a person's notifications\n(`push.subscribed`), sealed under a key of its own.",
+      "format": "uuid",
+      "type": "string"
+    },
     "DiffLine": {
       "description": "One line of a change.",
       "properties": {
@@ -2654,6 +2659,80 @@
         }
       ]
     },
+    "PushDevice": {
+      "description": "A browser that takes the person's notifications.",
+      "properties": {
+        "added": {
+          "$ref": "#/$defs/At"
+        },
+        "current": {
+          "description": "It is the browser that asked: `push/get`'s `endpoint` is its subscription's.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/DeviceId",
+          "description": "What `push/remove` names it by."
+        },
+        "name": {
+          "description": "What the person knows it as: \"Safari on iPhone\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "added"
+      ],
+      "type": "object"
+    },
+    "PushInfo": {
+      "description": "Whether the server tells the person's browsers when glave needs them.",
+      "oneOf": [
+        {
+          "description": "It sends none here, and `reason`, why.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "It sends them: when something waits for the person (an approval, a question, a service's\nask) and when a task of theirs finishes or fails.",
+          "properties": {
+            "devices": {
+              "description": "The browsers that take their notifications, the latest first.",
+              "items": {
+                "$ref": "#/$defs/PushDevice"
+              },
+              "type": "array"
+            },
+            "key": {
+              "description": "The key a browser subscribes with (`applicationServerKey`), in base64url.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "offered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "devices"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Question": {
       "additionalProperties": false,
       "description": "One question.",
@@ -3173,6 +3252,10 @@
           },
           "type": "array"
         },
+        "push": {
+          "description": "Whether it tells people's browsers when glave needs them (`push/get`), so a client\noffers that only where it does.",
+          "type": "boolean"
+        },
         "role": {
           "anyOf": [
             {
@@ -3309,6 +3392,11 @@
         {
           "const": "language",
           "description": "The language the server writes its own sentences to them in (`language/get`): what a\nclient shows of the server's words, an approval's included, it reads again.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "The browsers that take their notifications (`push/get`).",
           "type": "string"
         }
       ]
@@ -7222,6 +7310,102 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "push/get": {
+      "params": {
+        "properties": {
+          "endpoint": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "push/remove": {
+      "params": {
+        "properties": {
+          "device": {
+            "$ref": "#/$defs/DeviceId"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "push/subscribe": {
+      "params": {
+        "description": "A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),\nand what the person knows the browser as. Its `Debug` says neither its endpoint nor its\nsecret.",
+        "properties": {
+          "auth": {
+            "$ref": "#/$defs/Secret",
+            "description": "The secret it shares with the server, in base64url."
+          },
+          "device": {
+            "description": "What the person knows it as: \"Safari on iPhone\".",
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Where its push service takes pushes for it.",
+            "type": "string"
+          },
+          "p256dh": {
+            "description": "Its public key, in base64url.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth",
+          "device"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's browsers are told when glave needs them, and which.",
+        "properties": {
+          "push": {
+            "$ref": "#/$defs/PushInfo"
+          }
+        },
+        "required": [
+          "push"
+        ],
         "type": "object"
       },
       "streams": false

@@ -4,8 +4,8 @@
 //! with glave accounts, each request of theirs carrying it, so one server serves two
 //! organizations. Each person
 //! makes their own things as any client would (a project, threads, a schedule, a task,
-//! memories; the person on the computer also browser sessions, accounts and a turn waiting for
-//! them), and the world keeps the ids.
+//! memories, a browser taking their notifications; the person on the computer also browser
+//! sessions, accounts and a turn waiting for them), and the world keeps the ids.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -174,6 +174,9 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
     setup.browsers = Some(Arc::clone(&browsers));
     setup.identity_provider = true;
+    let pusher = glave_push::Pusher::new("mailto:ops@example.com").unwrap();
+    let pushing = glave_session::Pushing::new(pusher, Arc::clone(&parts.eraser));
+    setup.push = Some(Arc::new(pushing));
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
         setup.hosts = Some(Arc::new(Hosts::default()));
@@ -243,6 +246,10 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     let saved = json!({"text": format!("{} likes tea", person.name), "scope": "project", "project": project});
     let saved = call("memory/save", saved).await;
     person.keep(Kind::Memory, saved["memories"][0]["memory"].clone());
+    let endpoint = format!("https://fcm.googleapis.com/fcm/send/{}", person.name);
+    let browser = json!({"endpoint": endpoint, "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", "auth": "BTBZMqHH6r4Tts7J_aSIgg", "device": "Firefox"});
+    let subscribed = call("push/subscribe", browser).await;
+    person.keep(Kind::Device, subscribed["push"]["devices"][0]["id"].clone());
     if !local {
         return;
     }
