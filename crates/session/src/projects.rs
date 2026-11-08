@@ -324,6 +324,7 @@ where
         Ok(Reply::Project {
             project,
             folder: None,
+            copies: None,
         })
     }
 
@@ -335,7 +336,15 @@ where
     ) -> Result<Reply, ApiError> {
         let (project, scope) = self.authorized(caller, project).await?;
         let folder = self.folder_of(scope.located()).await?;
-        Ok(Reply::Project { project, folder })
+        let copies = match project.kind {
+            ProjectKind::Project => self.copies(caller, scope).await,
+            ProjectKind::Personal => None,
+        };
+        Ok(Reply::Project {
+            project,
+            folder,
+            copies,
+        })
     }
 
     /// Answers `project/rename`: the last rename wins.
@@ -361,6 +370,7 @@ where
         Ok(Reply::Project {
             project: renamed,
             folder,
+            copies: None,
         })
     }
 

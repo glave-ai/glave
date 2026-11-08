@@ -302,6 +302,8 @@
     "home.placeholder": "Ask anything, or describe a task",
     "home.private": "Private on this computer. Only the model you pick sees what you send.",
     "home.searching": "Web search is on",
+    "home.separate": "Work on a separate copy",
+    "home.separateHint": "so it doesn't touch your folder or other chats",
     "home.where": "Where",
     "invite.asAdmin": "You'll join as an admin.",
     "invite.asMember": "You'll join as a member.",

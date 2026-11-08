@@ -144,6 +144,38 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
+  it('offers a separate copy where the server says a chat may have one, checked as it would start', async () => {
+    const fake = session().answer('project/get', (params) =>
+      (params as { readonly project: string }).project === 'p1'
+        ? { project: record('p1', 'glave'), copies: { by_default: true } }
+        : { project: record('p2', 'Garden') },
+    );
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake, 'p1');
+    const box = (): HTMLInputElement | null =>
+      root.querySelector<HTMLInputElement>('[data-testid="home-separate-input"]');
+    expect(box()?.checked).toBe(true);
+    expect(
+      root.querySelector('[data-testid="home-separate"]')?.textContent.replace(/\s+/gu, ' '),
+    ).toBe("Work on a separate copy so it doesn't touch your folder or other chats");
+    await expectAccessible(root);
+    box()?.click();
+    await send(root, 'Fix the flaky test');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p1', worktree: false }]);
+    expect(fake.paramsOf('project/get')).toEqual([{ project: 'p1' }]);
+    navigate.mockRestore();
+    // A project whose folder has no copy to give, and a chat, offer none and ask nothing of it.
+    TestBed.resetTestingModule();
+    const garden = await render(fake, 'p2');
+    expect(garden.querySelector('[data-testid="home-separate"]')).toBeNull();
+    TestBed.resetTestingModule();
+    const chats = session();
+    const chat = await render(chats);
+    expect(chat.querySelector('[data-testid="home-separate"]')).toBeNull();
+    expect(chats.paramsOf('project/get')).toEqual([]);
+  });
+
   it('on a phone, puts where it goes behind the options button with the rest', async () => {
     const root = await render(session(), undefined, true);
     const status = root.querySelector('[data-testid="home-composer-status"]');

@@ -34,3 +34,12 @@ pub struct ProjectFolder {
     pub source: FolderSource,
     pub checkout: Checkout,
 }
+
+/// A new chat in a project may work on a separate copy of its folder, a git worktree on a branch
+/// of its own, which touches neither the folder nor other chats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Copies {
+    /// Whether it does unless `thread/start` says: the project's own `worktree` choice for the
+    /// person on this computer, else the server's.
+    pub by_default: bool,
+}

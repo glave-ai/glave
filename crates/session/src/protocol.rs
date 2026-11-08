@@ -63,7 +63,7 @@ pub use params::{Answer, Show};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
-pub use projects::{GoneFolder, NewFolder, ProjectFolder};
+pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
 pub use reply::{
     AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,

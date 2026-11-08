@@ -16,6 +16,9 @@ use crate::cancel::Cancel;
 /// How long cloning a new project's repository may take.
 const CLONE_SECS: u64 = 30 * 60;
 
+/// How long git may take to say whether a folder has a commit to start a copy from.
+const COPIES_SECS: u64 = 10;
+
 /// A folder as glave found it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Looked {
@@ -51,6 +54,18 @@ impl Workspace {
                 .and_then(|bytes| origin_remote(&String::from_utf8_lossy(bytes.as_slice()))),
             root: info.root,
         })
+    }
+
+    /// Whether the folder at `path` on this workspace's computer can be worked on a separate
+    /// copy, a git worktree: it is in a repository with a commit to start one from. Like
+    /// [`Workspace::look`], not for a person's own computer, which this would wake.
+    pub async fn copies(&self, path: &str) -> Result<bool, ComputerError> {
+        let info = self.open_plain(path).await?;
+        let found = self
+            .unconfined(&info, "git rev-parse --verify --quiet HEAD", COPIES_SECS)
+            .await;
+        self.forget(info.id).await;
+        Ok(found.is_ok())
     }
 
     /// The folders inside the folder at `path` on this workspace's computer, by name: what a

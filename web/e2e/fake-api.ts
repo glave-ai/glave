@@ -640,6 +640,9 @@ const ANSWERS: Answers<Known> = {
     return { thread: fresh };
   },
   'thread/rename': (params) => ({ thread: thread(params.thread, params.title) }),
+  // The project's folder is a git repository, so a new chat may work on a separate copy.
+  'project/get': (params) =>
+    params.project === PROJECT.id ? { project: PROJECT, copies: { by_default: false } } : undefined,
   'model/list': () => ({ models: MODELS }),
   'tasks/list': () => ({ tasks: TASKS }),
   'schedule/list': () => ({ schedules: [] }),

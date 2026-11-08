@@ -382,6 +382,7 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
         let Reply::Project {
             project,
             folder: Some(folder),
+            ..
         } = made
         else {
             panic!("a project with its folder, not {made:?}")
@@ -520,6 +521,7 @@ pub(crate) async fn new_garden(server: &Tested<Shared>) -> (glave_ports::Project
     let Reply::Project {
         project,
         folder: Some(folder),
+        ..
     } = reply
     else {
         panic!("a project with its folder, not {reply:?}")

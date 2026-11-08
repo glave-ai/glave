@@ -12,9 +12,10 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { Permissions, ThreadStartParams } from '@glave/client';
+import type { Copies, Permissions, ProjectId, ThreadStartParams } from '@glave/client';
 import {
   GlzAttachmentComponent,
+  GlzCheckboxComponent,
   GlzComposerComponent,
   GlzIconComponent,
   type GlzMenuOption,
@@ -35,18 +36,27 @@ import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { PermissionsComponent } from '../permissions/permissions.component';
 
+/** What the server said of a new chat's copies in a project (`project/get`). */
+interface Offered {
+  readonly project: ProjectId;
+  /** Whether one may work on a separate copy, and does unless told; `null` when it may not. */
+  readonly copies: Copies | null;
+}
+
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and what the agent may do and the model in the quiet line
- * under it. Sending starts the thread there, on the model and with the mode picked, and its
- * first turn, and opens the thread at once. When glave runs on this
- * computer, a line under it says what stays private. Opened for a project, the composer takes
- * focus, and the page has Back.
+ * under it; under that, in a project the server says may give a chat a separate copy of its
+ * folder, a checkbox to work on one, checked as the server would start it. Sending starts the
+ * thread there, on the model and with the mode picked, on a copy or not, and its first turn,
+ * and opens the thread at once. When glave runs on this computer, a line under it says what
+ * stays private. Opened for a project, the composer takes focus, and the page has Back.
  */
 @Component({
   selector: 'app-home',
   imports: [
     GlzAttachmentComponent,
+    GlzCheckboxComponent,
     EffortPickerComponent,
     GlzComposerComponent,
     GlzIconComponent,
@@ -75,6 +85,8 @@ export class HomeComponent {
     chat: $localize`:@@home.chat:A chat`,
     private: $localize`:@@home.private:Private on this computer. Only the model you pick sees what you send.`,
     searching: $localize`:@@home.searching:Web search is on`,
+    separate: $localize`:@@home.separate:Work on a separate copy`,
+    separateHint: $localize`:@@home.separateHint:so it doesn't touch your folder or other chats`,
   } as const;
   protected readonly lock = Lock;
   protected readonly globe = Globe;
@@ -112,6 +124,21 @@ export class HomeComponent {
   protected readonly where = linkedSignal<string | null>(
     () => this.project() ?? this.projects.home() ?? null,
   );
+  /** The project of a folder's the thread would start in, if it starts in one. */
+  private readonly inFolder = computed(() => {
+    const where = this.where();
+    return where !== null && this.projects.project(where)?.kind === 'project' ? where : null;
+  });
+  private readonly offered = signal<Offered | null>(null);
+  /** Counts the reads of what is offered, so an answer a later one overtook is dropped. */
+  private asked = 0;
+  /** Whether a new chat where it starts may work on a separate copy, and does unless told. */
+  protected readonly copies = computed(() => {
+    const offered = this.offered();
+    return offered !== null && offered.project === this.inFolder() ? offered.copies : null;
+  });
+  /** Whether it works on one: as the server would start it, until the person picks. */
+  protected readonly separate = linkedSignal(() => this.copies()?.by_default ?? false);
   /** The places a thread can start: a chat, or each project. */
   protected readonly places = computed<readonly GlzMenuOption[]>(() => {
     const home = this.projects.home();
@@ -141,6 +168,13 @@ export class HomeComponent {
         this.attachments.keepIn(where);
       });
     });
+    // What the server says of a new chat's copies in the project it would start in.
+    effect(() => {
+      const project = this.inFolder();
+      if (project !== null) {
+        untracked(() => void this.readCopies(project));
+      }
+    });
     // A link that names a project (a project just made, a project's +) is there to start a
     // thread in it: the cursor goes to the composer.
     afterRenderEffect(() => {
@@ -162,6 +196,7 @@ export class HomeComponent {
       const effort = effortToSend(this.pickedEffort(), null, info);
       const params: ThreadStartParams = {
         ...(project === null ? {} : { project }),
+        ...(this.copies() === null ? {} : { worktree: this.separate() }),
         ...(model === null ? {} : { model }),
         ...(permissions === null ? {} : { permissions }),
         ...(effort === undefined ? {} : { effort }),
@@ -179,6 +214,20 @@ export class HomeComponent {
       this.error.set(error instanceof Error ? error.message : String(error));
     } finally {
       this.starting.set(false);
+    }
+  }
+
+  /** Reads what `project/get` says of a new chat's copies in `project`. */
+  private async readCopies(project: ProjectId): Promise<void> {
+    this.asked += 1;
+    const asked = this.asked;
+    try {
+      const { copies } = await this.session.call('project/get', { project });
+      if (asked === this.asked) {
+        this.offered.set({ project, copies: copies ?? null });
+      }
+    } catch {
+      // Unread, nothing is offered: the thread starts as the server would start it.
     }
   }
 }

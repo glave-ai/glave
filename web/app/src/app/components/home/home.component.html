@@ -66,6 +66,11 @@
       <app-effort-picker [model]="picked()" [(value)]="pickedEffort" />
     </div>
   </glz-composer>
+  @if (copies()) {
+    <glz-checkbox class="separate" testId="home-separate" [(checked)]="separate"
+      >{{ copy.separate }}&ngsp;<span class="hint">{{ copy.separateHint }}</span></glz-checkbox
+    >
+  }
   @if (local()) {
     <p class="private" data-testid="home-private">
       <glz-icon [icon]="lock" />

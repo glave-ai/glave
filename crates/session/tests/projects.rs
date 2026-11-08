@@ -39,7 +39,9 @@ fn create(name: &str, folder: Option<NewFolder>) -> Request {
 /// The project and folder a `project/*` request answered with.
 fn made(reply: Reply) -> (Project, Option<ProjectFolder>) {
     match reply {
-        Reply::Project { project, folder } => (project, folder),
+        Reply::Project {
+            project, folder, ..
+        } => (project, folder),
         other => panic!("a project, not {other:?}"),
     }
 }
