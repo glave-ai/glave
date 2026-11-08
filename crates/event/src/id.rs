@@ -202,6 +202,13 @@ v7_id!(
     "credential id"
 );
 
+v7_id!(
+    /// Identifies one browser or device that takes a person's notifications
+    /// (`push.subscribed`), sealed under a key of its own.
+    DeviceId,
+    "device id"
+);
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,

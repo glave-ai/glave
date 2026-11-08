@@ -2,15 +2,18 @@
 //! ledger's id: in the server's own organization's scope, `push.key.made`, the key every push
 //! on the store is signed with, the first one recorded holding for good, and, in a stream of
 //! each endpoint's own, `push.claimed`, the person whose browser it is now; in a person's
-//! personal project, the browsers that take their notifications, each `push.subscribed`, sealed
-//! under a key of its own, until a `push.unsubscribed` of it erases it (the person turned it off,
-//! it moved to someone else, or its push service said it is gone or kept failing).
+//! personal project, the browsers that take their notifications, each `push.subscribed` until a
+//! `push.unsubscribed` of it erases it (the person turned it off or signed out there, it moved to
+//! someone else, or its push service said it is gone or kept failing). A browser's
+//! subscription and its claim are sealed under the browser's own key, so erasing it erases both.
+
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::codec::{Body, Payload, parse};
-use crate::id::{CredentialId, PrincipalId};
+use crate::id::{DeviceId, PrincipalId};
 use crate::secret::Secret;
 
 pub(crate) const KEY_MADE: &str = "push.key.made";
@@ -28,12 +31,13 @@ pub struct PushKeyMade {
 }
 
 /// A browser or device that takes the person's notifications, as its push subscription says.
-/// Sealed under the device's own key, so forgetting it erases it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Sealed under the device's own key, so forgetting it erases it. Its `Debug` says neither its
+/// endpoint nor its secret.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PushSubscribed {
     /// What it is kept and erased by.
-    pub device: CredentialId,
+    pub device: DeviceId,
     /// Where its push service takes pushes for it.
     pub endpoint: String,
     /// The public key a push to it is encrypted to, in base64url.
@@ -43,13 +47,26 @@ pub struct PushSubscribed {
     pub auth: Secret,
     /// What the person knows it as: "Safari on iPhone".
     pub name: String,
+    /// The browser session it was subscribed in, when it was one: once that session ends, the
+    /// browser is forgotten, so no one who uses it next sees the person's notifications.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+impl fmt::Debug for PushSubscribed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PushSubscribed")
+            .field("device", &self.device)
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A browser takes the person's notifications no more, and is erased.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PushUnsubscribed {
-    pub device: CredentialId,
+    pub device: DeviceId,
     /// Its push service said the subscription is gone, or kept failing, rather than the person
     /// turning it off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -57,12 +74,12 @@ pub struct PushUnsubscribed {
 }
 
 /// Whose browser an endpoint is now: the person who subscribed it last, as `device`. Holds no
-/// endpoint: its stream is named by the endpoint's hash.
+/// endpoint: its stream is named by the endpoint's hash. Sealed under the device's own key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PushClaimed {
     pub person: PrincipalId,
-    pub device: CredentialId,
+    pub device: DeviceId,
 }
 
 impl Payload for PushKeyMade {
@@ -85,11 +102,11 @@ impl Payload for PushClaimed {
     const VERSION: u32 = 1;
 }
 
-/// The device whose own key seals `data`, a `push.subscribed`'s.
-pub(crate) fn sealed_device(data: &RawValue) -> Option<CredentialId> {
+/// The device whose own key seals `data`, a `push.subscribed`'s or a `push.claimed`'s.
+pub(crate) fn sealed_device(data: &RawValue) -> Option<DeviceId> {
     #[derive(Deserialize)]
     struct Device {
-        device: CredentialId,
+        device: DeviceId,
     }
     serde_json::from_str::<Device>(data.get())
         .ok()

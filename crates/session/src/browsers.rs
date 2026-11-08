@@ -251,6 +251,7 @@ where
         let ended = browsers.end(session).await;
         self.inner.hub.sign_ins_changed();
         ended?;
+        self.forget_signed_out(caller).await;
         Ok(Reply::Done {})
     }
 
@@ -264,6 +265,7 @@ where
         let ended = browsers.end_others(session_of(caller)).await;
         self.inner.hub.sign_ins_changed();
         ended?;
+        self.forget_signed_out(caller).await;
         Ok(Reply::Done {})
     }
 

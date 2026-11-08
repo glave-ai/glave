@@ -294,6 +294,13 @@ impl Browsers {
         self.state().live(now).any(|session| session.id == id)
     }
 
+    /// Whether the session `id` has ended: signed out, here or by another server on the store,
+    /// or past its lifetime, with what the store holds read first.
+    pub async fn ended(&self, id: &str) -> Result<bool, BrowserError> {
+        self.catch_up().await?;
+        Ok(!self.signed_in(id))
+    }
+
     /// The passkey that signed the session `id` in, by its id, if one did.
     pub fn passkey_of(&self, id: &str) -> Option<String> {
         let id = Uuid::parse_str(id).ok()?;

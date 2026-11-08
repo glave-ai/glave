@@ -1,14 +1,17 @@
 //! Push notifications as clients see them (`push/*`): whether the server sends them, the key a
 //! browser subscribes with, and the browsers that take the person's.
 
-use glave_event::{At, CredentialId, Secret};
+use std::fmt;
+
+use glave_event::{At, DeviceId, Secret};
 use serde::{Deserialize, Serialize};
 
 use super::Told;
 
 /// A browser's push subscription, as `PushManager.subscribe` made it (`PushSubscription.toJSON`),
-/// and what the person knows the browser as.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+/// and what the person knows the browser as. Its `Debug` says neither its endpoint nor its
+/// secret.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PushSubscription {
     /// Where its push service takes pushes for it.
     pub endpoint: String,
@@ -19,6 +22,14 @@ pub struct PushSubscription {
     pub auth: Secret,
     /// What the person knows it as: "Safari on iPhone".
     pub device: String,
+}
+
+impl fmt::Debug for PushSubscription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PushSubscription")
+            .field("device", &self.device)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Whether the server tells the person's browsers when glave needs them.
@@ -41,7 +52,7 @@ pub enum PushInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PushDevice {
     /// What `push/remove` names it by.
-    pub id: CredentialId,
+    pub id: DeviceId,
     /// What the person knows it as: "Safari on iPhone".
     pub name: String,
     pub added: At,

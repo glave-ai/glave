@@ -293,7 +293,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/notify.rs",
-        "pushes.join_next().await;",
+        "told(pushes.join_next().await);",
         1,
         "a need's pushes, each sent within glave-push's own limits (5 s to connect, 10 s in all)",
     ),

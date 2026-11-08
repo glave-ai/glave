@@ -74,6 +74,24 @@ pub enum PushError {
     Contact(String),
 }
 
+impl PushError {
+    /// Whether the push service put the failure down to the subscription itself: a 4xx answer
+    /// but 408 (it timed out) and 429 (too many pushes). This server's own network, a timeout,
+    /// the service's limits and its own troubles (5xx) never are, so an outage forgets no one.
+    pub fn of_the_subscription(&self) -> bool {
+        match self {
+            Self::Refused(status) => {
+                status.is_client_error()
+                    && !matches!(
+                        *status,
+                        StatusCode::REQUEST_TIMEOUT | StatusCode::TOO_MANY_REQUESTS
+                    )
+            }
+            _ => false,
+        }
+    }
+}
+
 /// A push service's name that leads only to addresses a push never reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Private {
@@ -260,6 +278,19 @@ mod tests {
             outcome(StatusCode::TOO_MANY_REQUESTS),
             Err(PushError::Refused(_))
         ));
+    }
+
+    #[test]
+    fn only_a_4xx_but_408_and_429_is_the_subscription_s_own_failure() {
+        let refused = |code: u16| PushError::Refused(StatusCode::from_u16(code).unwrap());
+        for theirs in [400, 401, 403, 413] {
+            assert!(refused(theirs).of_the_subscription(), "{theirs}");
+        }
+        for not in [408, 429, 500, 502, 503] {
+            assert!(!refused(not).of_the_subscription(), "{not}");
+        }
+        assert!(!PushError::TimedOut.of_the_subscription());
+        assert!(!PushError::Unreached("no route".into()).of_the_subscription());
     }
 
     #[test]
