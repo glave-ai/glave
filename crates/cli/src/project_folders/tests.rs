@@ -360,7 +360,7 @@ fn a_project_s_program_that_needs_a_variable_stays_off_only_where_people_sign_in
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
         let brought = projects.brought(&project, project_id()).await;
         assert!(!brought.tools.is_empty(), "started on the person's own");
-        assert!(projects.set_aside(&project).await.is_empty());
+        assert_eq!(projects.set_aside(&project).await, Vec::<String>::new());
 
         projects.reachable = glave_mcp::Reachable::OnlyPublic;
         let brought = projects.brought(&project, project_id()).await;
