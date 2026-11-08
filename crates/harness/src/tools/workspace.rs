@@ -293,7 +293,7 @@ impl Workspace {
     }
 
     /// The computers this workspace is on.
-    pub(crate) fn computers(&self) -> &Arc<dyn Computers> {
+    pub fn computers(&self) -> &Arc<dyn Computers> {
         &self.computers
     }
 

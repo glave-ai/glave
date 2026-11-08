@@ -29,8 +29,8 @@ pub(crate) struct Activity {
     last: Mutex<Instant>,
 }
 
-/// One request running, until it is dropped.
-pub(crate) struct Answering(Arc<Activity>);
+/// One request running, until it is dropped, which counts as a use unless it went unused.
+pub(crate) struct Answering(Arc<Activity>, bool);
 
 impl Activity {
     pub(crate) fn new() -> Arc<Self> {
@@ -43,11 +43,11 @@ impl Activity {
     /// Counts one request running, until what it answers is dropped.
     pub(crate) fn begin(activity: &Arc<Self>) -> Answering {
         activity.running.fetch_add(1, Ordering::SeqCst);
-        Answering(Arc::clone(activity))
+        Answering(Arc::clone(activity), true)
     }
 
     /// Counts now as a time the computer was in use.
-    fn touch(&self) {
+    pub(crate) fn touch(&self) {
         *self.last.lock().unwrap_or_else(PoisonError::into_inner) = Instant::now();
     }
 
@@ -63,9 +63,18 @@ impl Activity {
     }
 }
 
+impl Answering {
+    /// Counts the request as not running, and as no use when it ends: a wait for something.
+    pub(crate) fn unused(mut self) {
+        self.1 = false;
+    }
+}
+
 impl Drop for Answering {
     fn drop(&mut self) {
-        self.0.touch();
+        if self.1 {
+            self.0.touch();
+        }
         self.0.running.fetch_sub(1, Ordering::SeqCst);
     }
 }

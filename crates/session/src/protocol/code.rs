@@ -44,6 +44,7 @@ codes! {
     HOST = -32025, "The git host, or a connection's server or its sign-in, refused or could not be reached";
     NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
     NO_COMMAND = -32027, "No such command is running in the background in this thread";
+    NO_TERMINAL = -32038, "No such terminal is open in this thread";
     QUEUE_FULL = -32028, "As many messages wait for the running turn as it takes";
     NO_FILE = -32030, "No such file here: never kept in this project, or no message used it within a day";
     NO_IMAGES = -32031, "The thread's model does not read images";
