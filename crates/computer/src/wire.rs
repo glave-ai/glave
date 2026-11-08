@@ -35,8 +35,7 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `at`, that point as a workspace opens, on what `workspace/open` answers.
 /// `2026-11-08` added a person's terminals: `terminal/open`, `terminal/list`, `terminal/write`,
 /// `terminal/read`, `terminal/resize` and `terminal/close`, each naming the terminal's owner,
-/// which the computer checks; and `command/listening`, where a workspace's commands in the
-/// background listen.
+/// which the computer checks.
 pub(crate) const PROTOCOL: &str = "2026-11-08";
 
 /// The notification that carries a command's output.
@@ -118,9 +117,6 @@ pub(crate) enum Request {
     /// Answered with the workspace's `commands` in the background.
     #[serde(rename = "command/list")]
     Commands { workspace: WorkspaceId },
-    /// Answered with where the workspace's commands in the background listen, as `listening`.
-    #[serde(rename = "command/listening")]
-    Listening { workspace: WorkspaceId },
     /// Answered with the `terminal` it opened.
     #[serde(rename = "terminal/open")]
     TerminalOpen {
@@ -220,7 +216,6 @@ impl Request {
             Self::Ended { .. } => "command/ended",
             Self::Stop { .. } => "command/stop",
             Self::Commands { .. } => "command/list",
-            Self::Listening { .. } => "command/listening",
             Self::TerminalOpen { .. } => "terminal/open",
             Self::TerminalList { .. } => "terminal/list",
             Self::TerminalWrite { .. } => "terminal/write",
@@ -257,7 +252,6 @@ const METHODS: &[&str] = &[
     "command/ended",
     "command/stop",
     "command/list",
-    "command/listening",
     "terminal/open",
     "terminal/list",
     "terminal/write",
