@@ -61,6 +61,26 @@ fn this_machine_opens_terminals_with_glave_as_their_starter_directly_and_through
     });
 }
 
+/// `glave computer serve --stdio`, at home in `dir` with bash its terminals' shell, and a
+/// computer made there.
+async fn served_in(
+    dir: &std::path::Path,
+) -> (
+    tokio::process::Child,
+    glave_computer::RemoteComputers,
+    ComputerId,
+) {
+    let home = dir.join("home");
+    let env = [
+        ("GLAVE_HOME", home.as_os_str()),
+        ("HOME", dir.as_os_str()),
+        ("SHELL", "/bin/bash".as_ref()),
+    ];
+    let (child, remote) = served_on_stdio(&env).await;
+    let computer = remote.create(&Environment::host()).await.unwrap().id;
+    (child, remote, computer)
+}
+
 #[test]
 fn the_binary_serves_terminals_across_the_protocol() {
     let dir = TempDir::new("terminals-served").unwrap();
@@ -68,14 +88,7 @@ fn the_binary_serves_terminals_across_the_protocol() {
     std::fs::create_dir_all(&folder).unwrap();
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let home = dir.join("home");
-        let env = [
-            ("GLAVE_HOME", home.as_os_str()),
-            ("HOME", dir.as_os_str()),
-            ("SHELL", "/bin/bash".as_ref()),
-        ];
-        let (mut child, remote) = served_on_stdio(&env).await;
-        let computer = remote.create(&Environment::host()).await.unwrap().id;
+        let (mut child, remote, computer) = served_in(&dir).await;
         let verdict = conformance::terminals(&remote, computer, &folder.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
         drop(remote);
@@ -111,13 +124,15 @@ fn held(home: &Home, stands: &Arc<AtomicU8>, wakes: &Arc<AtomicUsize>) -> Home {
     Waking::home((wake, peek), None, home.home.clone(), "/nowhere")
 }
 
-/// What `terminal` on `home`'s computer printed until it printed `marker`.
-async fn printed(home: &Home, terminal: (TerminalId, &str), marker: &str) -> String {
-    let (computer, mut seen, mut from) = (home.home.computer, Vec::new(), 0);
+/// What `terminal` on `computer` printed until it printed `marker`.
+async fn printed(
+    (computers, computer): (&dyn Computers, ComputerId),
+    terminal: (TerminalId, &str),
+    marker: &str,
+) -> String {
+    let (mut seen, mut from) = (Vec::new(), 0);
     for _ in 0..100 {
-        let read =
-            home.computers
-                .read_terminal(computer, terminal, from, Duration::from_millis(300));
+        let read = computers.read_terminal(computer, terminal, from, Duration::from_millis(300));
         let read = read.await.unwrap();
         seen.extend_from_slice(read.output.as_slice());
         from = read.next;
@@ -173,7 +188,7 @@ fn a_person_s_computer_finds_its_terminals_as_it_is_awake_and_never_wakes_to_say
             .write_terminal(computer, terminal, &input)
             .await
             .unwrap();
-        printed(&then, terminal, "found-42").await;
+        printed((&*then.computers, computer), terminal, "found-42").await;
 
         // Asleep, it has none; out of this server's reach, it says so, never that it has none.
         stands.store(ASLEEP, Ordering::SeqCst);
@@ -212,6 +227,72 @@ fn a_person_s_computer_finds_its_terminals_as_it_is_awake_and_never_wakes_to_say
     });
 }
 
+/// The number `text` prints after `name`, ended by a `-`: what was typed, echoed, has none.
+fn number_in(text: &str, name: &str) -> Option<i32> {
+    text.match_indices(name).find_map(|(at, _)| {
+        let after = text.get(at + name.len()..)?;
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        let ended = after.get(digits.len()..)?.starts_with('-');
+        ended.then(|| digits.parse().ok()).flatten()
+    })
+}
+
+/// Whether process `pid` is gone within moments: its lifeline's grace and the session's own.
+async fn gone_soon(pid: rustix::process::Pid) -> bool {
+    for _ in 0..200 {
+        if rustix::process::test_kill_process(pid).is_err() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
+}
+
+/// However glave ends, killed outright or told to stop, what a terminal's shell started does
+/// not outlive it: not a job that ignores hang-ups, in a group of its own, which the shell's hang-up
+/// never reaches. The terminal's starter, the session's leader, ends the session.
+#[test]
+fn a_terminal_s_jobs_end_however_glave_ends() {
+    use rustix::process::{Pid, Signal, kill_process};
+    let dir = TempDir::new("terminals-killed").unwrap();
+    let folder = dir.join("work");
+    std::fs::create_dir_all(&folder).unwrap();
+    read_program(GLAVE).unwrap();
+    block_on!(async {
+        for (how, said) in [(Signal::KILL, "SIGKILL"), (Signal::TERM, "SIGTERM")] {
+            let (mut child, remote, computer) = served_in(&dir).await;
+            let path = folder.to_string_lossy();
+            let id = remote.open_terminal(computer, &path, "t", SIZE).await;
+            let terminal = (id.unwrap(), "t");
+            // A job that ignores hang-ups, as `nohup` makes one (macOS's own `nohup` may
+            // refuse a terminal glave holds, which would prove nothing).
+            let typed =
+                "(trap '' HUP; exec sleep 609) >/dev/null 2>&1 & printf 'job-%s-done\\n' $!\r";
+            let typed = Bytes::new(typed);
+            remote
+                .write_terminal(computer, terminal, &typed)
+                .await
+                .unwrap();
+            // The line it printed, not the one typed, ends where its line does.
+            let text = printed((&remote, computer), terminal, "-done\r").await;
+            let job = Pid::from_raw(number_in(&text, "job-").unwrap()).unwrap();
+            assert!(
+                rustix::process::test_kill_process(job).is_ok(),
+                "the job runs: {text}"
+            );
+            let glave = Pid::from_raw(i32::try_from(child.id().unwrap()).unwrap()).unwrap();
+            kill_process(glave, how).unwrap();
+            let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
+            assert!(ended.is_ok(), "glave ends on {said}");
+            drop(remote);
+            assert!(
+                gone_soon(job).await,
+                "a job that ignores hang-ups outlived glave's {said}"
+            );
+        }
+    });
+}
+
 /// What `caller`'s `method` with `params` answers, as JSON, or its error's.
 async fn asked(caller: &Remote, method: &str, params: Value) -> Result<Value, Value> {
     match caller.request(&request(method, params)).await {
@@ -247,6 +328,43 @@ async fn typed(caller: &Remote, at: &Value, line: &str) {
     let input = serde_json::to_value(Bytes::new(format!("{line}\r"))).unwrap();
     let params = json!({"thread": at["thread"], "terminal": at["terminal"], "input": input});
     asked(caller, "terminal/write", params).await.unwrap();
+}
+
+#[test]
+fn removing_a_project_closes_the_terminals_of_its_threads() {
+    let place = place("terminal-removed");
+    let model = FakeServer::start(Vec::new()).unwrap();
+    let home = place.home.to_string_lossy().into_owned();
+    let env = [("SHELL", "/bin/bash"), ("HOME", home.as_str())];
+    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &env);
+    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    let garden = place.home.join("garden");
+    std::fs::create_dir_all(&garden).unwrap();
+    block_on!(async {
+        let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
+        let folder = json!({"kind": "path", "path": garden});
+        let params = json!({"name": "garden", "folder": folder});
+        let made = asked(&owner, "project/create", params).await.unwrap();
+        let project = made["project"]["id"].clone();
+        let params = json!({"project": project});
+        let started = asked(&owner, "thread/start", params).await.unwrap();
+        let thread = started["thread"]["id"].clone();
+        let params = json!({"thread": thread, "size": {"cols": 80, "rows": 24}});
+        let opened = asked(&owner, "terminal/open", params).await.unwrap();
+        let at = json!({"thread": thread, "terminal": opened["terminal"]["id"]});
+        typed(&owner, &at, "printf 'pid-%s-done\\n' $$").await;
+        let (text, _) = until_printed(&owner, &at, 0, "-done\r").await;
+        let shell = number_in(&text, "pid-").unwrap();
+        let shell = rustix::process::Pid::from_raw(shell).unwrap();
+
+        asked(&owner, "project/remove", json!({"project": project}))
+            .await
+            .unwrap();
+        assert!(
+            gone_soon(shell).await,
+            "its terminal's shell outlived the project"
+        );
+    });
 }
 
 #[test]

@@ -5,6 +5,8 @@
 //! asleep keeps no processes, so it has none and is not woken to say so; one this server can't
 //! reach says so, never that it has none.
 
+use std::sync::PoisonError;
+
 use glave_ports::computer::{ComputerError, ComputerId, TerminalId, TerminalInfo, TerminalSize};
 
 #[cfg(doc)]
@@ -12,7 +14,9 @@ use super::Peek;
 use super::{Real, Waking};
 
 impl Waking {
-    /// Opens a terminal at `folder` for `owner` on the computer, woken for it.
+    /// Opens a terminal at `folder` for `owner` on the computer, woken for it, with the
+    /// workspace planned there opened for real first, as its first command would open it: a
+    /// chat's scratch folder is made only then.
     pub(super) async fn open_terminal_woken(
         &self,
         computer: ComputerId,
@@ -22,7 +26,14 @@ impl Waking {
         if computer != self.home.computer {
             return Err(ComputerError::NotFound(format!("no computer {computer}")));
         }
-        let home = self.real(self.home.id).await?;
+        let planned = self
+            .workspaces
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .find(|planned| planned.info.root == folder)
+            .map_or(self.home.id, |planned| planned.info.id);
+        let home = self.real(planned).await?;
         let opened = home
             .computers
             .open_terminal(home.computer, folder, owner, size);
