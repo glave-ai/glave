@@ -300,9 +300,9 @@ where
         })
     }
 
-    /// Summarizes the conversation's first `covers` messages, which run through event
-    /// `through`, as `how` says, and restarts it from the summary, the rest kept as they were:
-    /// for the person's own request (`asked.rs`).
+    /// Summarizes the conversation's first `covers` messages as `how` says, and restarts it
+    /// from the summary, the rest kept as they were: for the person's own request (`asked.rs`).
+    /// A log that does not hold the conversation as the thread does fails as a summary would.
     async fn compact_older(
         &self,
         thread: &mut Thread,
