@@ -626,8 +626,7 @@ impl Computers for Waking {
         })
     }
 
-    /// Terminals are only on the computer awake: one that slept since has none, and is not
-    /// woken to say so.
+    /// Only on the computer awake: one that slept since has none, and isn't woken to say so.
     fn write_terminal<'a>(
         &'a self,
         _computer: ComputerId,
@@ -636,12 +635,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            self.done(
-                awake
-                    .computers
-                    .write_terminal(awake.computer, terminal, input)
-                    .await,
-            )
+            let written = awake
+                .computers
+                .write_terminal(awake.computer, terminal, input);
+            self.done(written.await)
         })
     }
 
@@ -683,12 +680,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            self.done(
-                awake
-                    .computers
-                    .close_terminal(awake.computer, terminal)
-                    .await,
-            )
+            let closed = awake.computers.close_terminal(awake.computer, terminal);
+            self.done(closed.await)
         })
     }
 
