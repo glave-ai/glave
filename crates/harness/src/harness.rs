@@ -202,7 +202,7 @@ pub struct Thread {
     /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
     /// as its log kept them when it was read again, and none once it is compacted.
     pub(crate) prefix: Prefixed,
-    /// The summary of its older half being written in the background, if one is
+    /// The summary of its older messages being written in the background, if one is
     /// (`compaction/background.rs`): stopped when the thread is dropped.
     pub(crate) background: crate::compaction::Background,
 }

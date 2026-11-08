@@ -1,6 +1,6 @@
 //! Compaction in the background against a scripted model whose summaries come back at a step
-//! the test knows: the older half is summarized while the turn goes on, no model call waits for
-//! it, and it is swapped in at the next boundary between calls, the newer half kept as it was;
+//! the test knows: the older messages are summarized while the turn goes on, no model call waits
+//! for it, and it is swapped in at the next boundary between calls, the latest kept as they were;
 //! the prefix changes once, there; one that frees nothing falls back to compacting the whole at
 //! the threshold.
 
@@ -15,7 +15,7 @@ use glave_ports::{
 use crate::project_folders::tool;
 use crate::support::*;
 
-/// A window whose threshold is at half of it, 50,000 tokens: a summary of the older half
+/// A window whose threshold is at half of it, 50,000 tokens: a summary of the older messages
 /// starts in the background from 40,000.
 fn half_window() -> glave_harness::Settings {
     let mut settings = settings();
@@ -133,7 +133,7 @@ fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_ca
         assert_eq!(
             asked.messages.len(),
             4,
-            "the older half and the instruction"
+            "the older messages and the instruction"
         );
         assert!(text_of(&asked.messages[3]).contains("followed by the latest messages"));
         assert_eq!(
@@ -142,7 +142,7 @@ fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_ca
             "it shares the cache's prefix"
         );
 
-        // Swapped in at the boundary after the fourth call: the summary, then the newer half.
+        // Swapped in at the boundary after the fourth call: the summary, then the latest messages.
         let after = &calls[4].messages;
         let restart = text_of(&after[0]);
         assert!(
@@ -152,12 +152,12 @@ fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_ca
         assert!(restart.contains("it holds a.txt lines."), "{restart}");
         assert!(
             !restart.contains("word for word"),
-            "the latest request is in the newer half, as it was: {restart}"
+            "the latest request is among the latest messages, as it was: {restart}"
         );
         assert_eq!(
             after[1..5],
             calls[3].messages[3..],
-            "the newer half, as it was"
+            "the latest messages, as they were"
         );
         assert_eq!(
             after.len(),

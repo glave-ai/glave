@@ -1,7 +1,7 @@
 //! Keeping a thread within the model's context window: estimating how large the next request
-//! will be; once it nears the threshold, summarizing the older half of the conversation in the
-//! background while the turn goes on, and swapping the summary in between model calls, the newer
-//! half kept as it was; at the threshold, waiting for that summary, or summarizing the whole
+//! will be; once it nears the threshold, summarizing all but the latest messages of the
+//! conversation in the background while the turn goes on, and swapping the summary in between
+//! model calls, the latest kept as they were; at the threshold, waiting for that summary, or summarizing the whole
 //! conversation as before when there is none; and compacting when the person asks (`asked.rs`).
 //! Every summary is recorded as `thread.compacted`; nothing before it leaves the log.
 
@@ -39,7 +39,7 @@ pub struct Compaction {
     /// The model's context window, in tokens.
     pub window_tokens: u64,
     /// Compact before a request that would fill this much of the window, in percent. A summary
-    /// of the older half starts in the background a tenth of the window before it.
+    /// of the older messages starts in the background a tenth of the window before it.
     pub at_percent: u8,
 }
 
@@ -73,15 +73,15 @@ pub(crate) struct Measured {
 /// The longest summary asked for, in tokens.
 const SUMMARY_TOKENS: u32 = 4_000;
 
-/// How far before the threshold, in points of the window, a summary of the older half starts in
-/// the background: a tenth of it, 12,800 tokens of a 128,000-token window (Claude Code keeps a
+/// How far before the threshold, in points of the window, a summary of the older messages starts
+/// in the background: a tenth of it, 12,800 tokens of a 128,000-token window (Claude Code keeps a
 /// 13,000-token buffer before it compacts), room for the steps a turn takes while the summary is
 /// written. No request goes past the threshold for it: the model works with as much of the
-/// window as before, and after the swap keeps the newer half as it was rather than a summary
-/// alone.
+/// window as before, and after the swap keeps its latest messages as they were rather than a
+/// summary alone.
 const LEAD: u8 = 10;
 
-/// The fewest tokens an older half is worth summarizing in the background for: less frees too
+/// The fewest tokens older messages are worth summarizing in the background for: less frees too
 /// little to pay for the call, and is left to the compaction at the threshold.
 const OLDER_MIN: u64 = 1_000;
 

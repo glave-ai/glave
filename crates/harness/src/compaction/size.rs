@@ -1,5 +1,5 @@
 //! How large a conversation is: its characters, the next request's size in tokens as the
-//! provider last counted it and what came since, and where its older half ends.
+//! provider last counted it and what came since, and where its older messages end.
 
 use glave_event::{Arguments, Part};
 use glave_ports::{Message, ToolSpec};

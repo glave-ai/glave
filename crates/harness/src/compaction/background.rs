@@ -1,5 +1,5 @@
-//! A summary of a thread's older half, written in a task of its own while the turn goes on, and
-//! swapped in at the first boundary between model calls after it is ready (`compaction.rs`).
+//! A summary of a thread's older messages, written in a task of its own while the turn goes on,
+//! and swapped in at the first boundary between model calls after it is ready (`compaction.rs`).
 //! The thread owns the task: it is stopped when the thread lets go of it or is dropped, so it
 //! never outlives the thread, and one runs at a time. It writes nothing: what it returns is
 //! recorded only when it is swapped in.
@@ -141,8 +141,9 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Starts summarizing `thread`'s older half in the background, when it has one worth it:
-    /// its first messages up to a response, at least half of what it holds.
+    /// Starts summarizing `thread`'s older messages in the background, when there are enough to
+    /// be worth it: all but the latest, which fit in the room a whole compaction keeps for the
+    /// latest tool results (a quarter of what fills the window to the threshold).
     pub(super) async fn start_background(&self, thread: &mut Thread, offer: &ToolSet) {
         let window_tokens = self.context_window(&self.model_for(thread));
         let at_percent = self.settings.compaction.at_percent;
@@ -175,8 +176,8 @@ where
     }
 
     /// Takes in a summary written in the background, `ended`: its usage, always, and the
-    /// summary in place of the older half it covers, when it came and frees at least half of
-    /// that half, answering the next request's estimated size before and after. One that did
+    /// summary in place of the older messages it covers, when it came and frees at least half
+    /// of what they held, answering the next request's estimated size before and after. One that did
     /// not, or leaves the request still nearing the threshold, keeps another from starting in
     /// the background until the conversation next restarts.
     pub(super) async fn swap_in(
