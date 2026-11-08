@@ -189,9 +189,9 @@ where
     /// the computer it is on when that computer is the caller's.
     async fn terminal_place(&self, caller: &Caller, thread: ThreadId) -> Result<Place, ApiError> {
         let scope = self.scope_of(thread)?;
-        let bound = match self.latest(&scope, thread, WorkspaceBound::TYPE).await? {
-            Some(Body::WorkspaceBound(bound)) => bound,
-            _ => return Err(not_theirs()),
+        let latest = self.latest(&scope, thread, WorkspaceBound::TYPE).await?;
+        let Some(Body::WorkspaceBound(bound)) = latest else {
+            return Err(not_theirs());
         };
         let (computers, computer) = match bound.computer.kind {
             ComputerKind::Local if self.works_for(caller.person) => {

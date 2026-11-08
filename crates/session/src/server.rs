@@ -348,6 +348,10 @@ where
     /// A server for the projects of `org`, its threads working on the computer
     /// `wiring.workspace` is on: in their projects' folders, or scratch folders. It has no
     /// project of its own: a request that names none acts in the caller's Chats.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "a line for each piece of the server's state, made in one place"
+    )]
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
