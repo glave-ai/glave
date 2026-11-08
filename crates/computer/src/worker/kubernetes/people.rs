@@ -25,7 +25,7 @@ use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use super::sizing::{CEILING, Size};
 use crate::worker::limits::pinned;
-use crate::{Grow, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
+use crate::{Grow, Peek, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
 
 mod lease;
 
@@ -222,6 +222,16 @@ impl People {
                 let me = std::sync::Weak::clone(&grows);
                 Box::pin(async move { grow(&me.upgrade()?, short, ceiling).await })
             });
+            let peeks = std::sync::Weak::clone(me);
+            let peek: Peek = Arc::new(move || {
+                let me = std::sync::Weak::clone(&peeks);
+                Box::pin(async move {
+                    match me.upgrade() {
+                        Some(person) => peeked(&person).await,
+                        None => Ok(None),
+                    }
+                })
+            });
             let (me, environment) = (std::sync::Weak::clone(me), self.environment.clone());
             let wake: Wake = Arc::new(move || {
                 let (me, environment) = (std::sync::Weak::clone(&me), environment.clone());
@@ -240,7 +250,7 @@ impl People {
                 leasing: self.leasing.clone(),
                 held: Mutex::new(None),
                 renewing: Mutex::new(None),
-                planned: Waking::home(wake, Some(grow), home, PERSON_SCRATCH),
+                planned: Waking::home((wake, peek), Some(grow), home, PERSON_SCRATCH),
                 pod: computer,
                 ceiling,
                 growing: tokio::sync::Mutex::new(()),
@@ -535,6 +545,27 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
         State::Asleep | State::Waking => Err(ComputerError::Failed(
             "your computer went to sleep as it woke".into(),
         )),
+    }
+}
+
+/// `person`'s computer as it is now, never woken: awake with its home, as this server drives
+/// it; none while it sleeps or is being woken (a wake starts it anew); unreachable while its
+/// Pod runs, or can't be read, without this server driving it: another server's, or one this
+/// server woke before it restarted.
+async fn peeked(person: &Person) -> Result<Option<Home>, ComputerError> {
+    let now = person.state.borrow().clone();
+    match now {
+        State::Awake(home) => Ok(Some(Home {
+            computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
+            home,
+        })),
+        State::Waking => Ok(None),
+        State::Asleep | State::Failed(..) => match person.pod.running().await {
+            Ok(false) => Ok(None),
+            Ok(true) | Err(_) => Err(ComputerError::Unreachable(
+                "your computer runs, but not through this server, which so cannot reach it".into(),
+            )),
+        },
     }
 }
 

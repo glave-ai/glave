@@ -118,6 +118,10 @@ where
                 ended.as_ref().as_ref().map_err(ApiError::from)?;
             }
         }
+        // Its terminals end as it is put away.
+        if change != Change::Unarchive {
+            self.close_terminals(thread).await;
+        }
         // Its place was found to change it, so it is known by now.
         if change != Change::Unarchive
             && let Some(worktrees) = &self.inner.worktrees
@@ -290,6 +294,7 @@ where
                     largest: short.largest,
                 })
             });
+        let terminals = self.opens_terminals(view.standing, workspace.as_deref(), theirs);
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -313,6 +318,7 @@ where
             workspace,
             context,
             disk,
+            terminals,
         })
     }
 

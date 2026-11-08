@@ -51,7 +51,8 @@ jobs:
       # glave of the latest release for each processor (dist's static builds), checked against
       # the provenance the release made for its archives, signed by the Release workflow alone. Before the first release there is
       # none, and the image carries no glave. After a release, an image already published with
-      # its version means the run was a dry run, and nothing more is done.
+      # its version means the run was a dry run, and nothing more is done. Each archive's
+      # download tries again while GitHub fails for a moment, as .github/curl/.curlrc says.
       - name: glave of the latest release
         id: glave
         env:
@@ -71,7 +72,8 @@ jobs:
           for pair in amd64:x86_64 arm64:aarch64; do
             arch="${pair%%:*}"
             archive="glave-${pair#*:}-unknown-linux-musl.tar.xz"
-            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$archive" --dir "$RUNNER_TEMP"
+            curl -fsSL --retry 8 --retry-all-errors --retry-max-time 300 --connect-timeout 20 \
+              -o "$RUNNER_TEMP/$archive" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$tag/$archive"
             gh attestation verify "$RUNNER_TEMP/$archive" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
             mkdir -p "$RUNNER_TEMP/$arch" "images/computer/glave/$arch"

@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use glave_computer::{LocalComputers, Wake, Waking};
+use glave_computer::{LocalComputers, Peek, Wake, Waking};
 use glave_event::{HookPoint, Permissions, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
 use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel};
@@ -83,12 +83,14 @@ impl Sleepy {
     fn finding(reached: &Home, scratch: &Path, found: Result<Home, ComputerError>) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
         let counted = Arc::clone(&asked);
+        let seen = found.clone().map(Some);
+        let peek: Peek = Arc::new(move || Box::pin(std::future::ready(seen.clone())));
         let wake: Wake = Arc::new(move || {
             counted.fetch_add(1, Ordering::SeqCst);
             Box::pin(std::future::ready(found.clone()))
         });
         let scratch = scratch.to_string_lossy();
-        let planned = Waking::home(wake, None, reached.home.clone(), &scratch);
+        let planned = Waking::home((wake, peek), None, reached.home.clone(), &scratch);
         Self {
             planned,
             asked,

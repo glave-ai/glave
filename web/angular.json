@@ -87,7 +87,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "app/tsconfig.spec.json",
-            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "setupFiles": ["glaze/src/testing/platform.ts", "glaze/src/testing/restored.ts"],
             "runnerConfig": "vitest.config.mjs",
             "coverage": true,
             "coverageReporters": ["text-summary"],
@@ -143,7 +143,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "glaze/tsconfig.spec.json",
-            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "setupFiles": ["glaze/src/testing/platform.ts", "glaze/src/testing/restored.ts"],
             "runnerConfig": "vitest.config.mjs",
             "coverage": true,
             "coverageReporters": ["text-summary"],
