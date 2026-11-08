@@ -23,7 +23,7 @@ pub const TERMINAL_KEPT: usize = 256 * 1024;
 pub const TERMINAL_CHUNK: usize = 64 * 1024;
 
 /// The most columns or rows a terminal is opened or resized to.
-pub const TERMINAL_MAX_SIDE: u16 = 1_000;
+const TERMINAL_MAX_SIDE: u16 = 1_000;
 
 /// How many columns and rows a terminal shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -33,7 +33,7 @@ pub struct TerminalSize {
 }
 
 impl TerminalSize {
-    /// The size, when each side is 1 to [`TERMINAL_MAX_SIDE`]; refused otherwise.
+    /// The size, when each side is 1 to 1,000; refused otherwise.
     pub fn checked(self) -> Result<Self, ComputerError> {
         let fits = |side: u16| (1..=TERMINAL_MAX_SIDE).contains(&side);
         if fits(self.cols) && fits(self.rows) {

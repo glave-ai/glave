@@ -357,8 +357,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), dir.as_os_str().to_owned())])
         .collect();
-    let computers =
-        LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,

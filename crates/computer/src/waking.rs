@@ -615,7 +615,9 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            let read = awake.computers.read_terminal(awake.computer, terminal, from, wait);
+            let read = awake
+                .computers
+                .read_terminal(awake.computer, terminal, from, wait);
             self.done(read.await)
         })
     }
@@ -628,7 +630,9 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            let resized = awake.computers.resize_terminal(awake.computer, terminal, size);
+            let resized = awake
+                .computers
+                .resize_terminal(awake.computer, terminal, size);
             self.done(resized.await)
         })
     }
@@ -640,7 +644,12 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            self.done(awake.computers.close_terminal(awake.computer, terminal).await)
+            self.done(
+                awake
+                    .computers
+                    .close_terminal(awake.computer, terminal)
+                    .await,
+            )
         })
     }
 

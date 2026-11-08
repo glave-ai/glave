@@ -30,9 +30,7 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, git_settings, is_kept, is_protected, is_protected_refusal,
     refuse_protected,
 };
-pub use terminal::{
-    MAX_TERMINALS, Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TERMINAL_MAX_SIDE, TerminalSize,
-};
+pub use terminal::{MAX_TERMINALS, Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalSize};
 pub use types::{
     Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, DiskUse, Ending, Entry,
     EntryKind, FileWrite, Finished, Freed, KeptWorktree, Listed, Listing, OnTimeout, Save, Saved,

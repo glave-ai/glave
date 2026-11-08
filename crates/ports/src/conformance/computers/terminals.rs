@@ -85,7 +85,9 @@ async fn until_printed<C: Computers>(
             return Ok((text, at));
         }
         if read.ended {
-            return Err(format!("its shell ended before it printed {marker:?}: {text}"));
+            return Err(format!(
+                "its shell ended before it printed {marker:?}: {text}"
+            ));
         }
     }
     let text = String::from_utf8_lossy(&seen);

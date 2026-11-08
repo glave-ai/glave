@@ -50,8 +50,8 @@ pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
-pub use terminal::terminal_helper;
 use terminal::Terminals;
+pub use terminal::terminal_helper;
 
 /// What measures a disk in place of the system.
 #[derive(Clone)]
@@ -477,7 +477,9 @@ impl Computers for LocalComputers {
         id: TerminalId,
         size: TerminalSize,
     ) -> BoxFuture<'_, Result<(), ComputerError>> {
-        Box::pin(std::future::ready(self.terminals.resize(computer, id, size)))
+        Box::pin(std::future::ready(
+            self.terminals.resize(computer, id, size),
+        ))
     }
 
     fn close_terminal(

@@ -137,7 +137,9 @@ where
     ) -> Result<Reply, ApiError> {
         let (computers, computer) = self.terminal_of(thread, terminal)?;
         let wait = wait.min(MOST_WAIT);
-        let read = computers.read_terminal(computer, terminal, from, wait).await;
+        let read = computers
+            .read_terminal(computer, terminal, from, wait)
+            .await;
         let screen = self.settle(thread, terminal, read)?;
         Ok(Reply::Screen { screen })
     }
@@ -199,7 +201,9 @@ where
             ComputerKind::Person => {
                 let person = self.person_of(caller)?;
                 let home = self.inner.harness.own_home(scope.org(), person);
-                let home = home.ok_or_else(not_theirs)?.map_err(|error| ApiError::from(&error))?;
+                let home = home
+                    .ok_or_else(not_theirs)?
+                    .map_err(|error| ApiError::from(&error))?;
                 (Arc::clone(home.computers()), home.info().computer)
             }
             ComputerKind::Worker => {

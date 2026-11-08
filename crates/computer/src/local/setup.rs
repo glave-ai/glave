@@ -5,9 +5,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use glave_ports::computer::{ComputerId, DiskSpace};
 #[cfg(doc)]
 use glave_ports::computer::Sources;
+use glave_ports::computer::{ComputerId, DiskSpace};
 use glave_process::Processes;
 
 use super::{LocalComputers, Measure};

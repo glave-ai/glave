@@ -28,18 +28,27 @@ fn without_glave_s_own_program_no_terminal_opens_and_none_is_found() {
         );
         let flat = TerminalSize { cols: 80, rows: 0 };
         let opened = computers.open_terminal(computer, &folder, flat).await;
-        assert!(matches!(opened, Err(ComputerError::Refused(_))), "{opened:?}");
+        assert!(
+            matches!(opened, Err(ComputerError::Refused(_))),
+            "{opened:?}"
+        );
         let nowhere = format!("{folder}/not-there");
         let opened = computers.open_terminal(computer, &nowhere, SIZE).await;
-        assert!(matches!(opened, Err(ComputerError::NotFound(_))), "{opened:?}");
+        assert!(
+            matches!(opened, Err(ComputerError::NotFound(_))),
+            "{opened:?}"
+        );
 
         let stray = TerminalId::from_uuid(uuid::Uuid::nil());
         let input = Bytes::new(b"ls\r".to_vec());
-        let not_found = |result: Result<(), ComputerError>| {
-            matches!(result, Err(ComputerError::NotFound(_)))
-        };
-        assert!(not_found(computers.write_terminal(computer, stray, &input).await));
-        assert!(not_found(computers.resize_terminal(computer, stray, SIZE).await));
+        let not_found =
+            |result: Result<(), ComputerError>| matches!(result, Err(ComputerError::NotFound(_)));
+        assert!(not_found(
+            computers.write_terminal(computer, stray, &input).await
+        ));
+        assert!(not_found(
+            computers.resize_terminal(computer, stray, SIZE).await
+        ));
         assert!(not_found(computers.close_terminal(computer, stray).await));
         let read = computers
             .read_terminal(computer, stray, 0, Duration::ZERO)

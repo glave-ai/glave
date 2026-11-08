@@ -27,7 +27,9 @@ impl Ring {
 
     /// Keeps `bytes`, dropping the oldest past its room.
     pub(super) fn push(&mut self, bytes: &[u8]) {
-        let tail = bytes.get(bytes.len().saturating_sub(self.room)..).unwrap_or(bytes);
+        let tail = bytes
+            .get(bytes.len().saturating_sub(self.room)..)
+            .unwrap_or(bytes);
         self.kept.extend(tail);
         let over = self.kept.len().saturating_sub(self.room);
         self.kept.drain(..over);
@@ -77,12 +79,18 @@ mod tests {
         let mut ring = Ring::new(8);
         ring.push(b"hello");
         let read = ring.read(1, 3);
-        assert_eq!((read.from, read.output.as_slice(), read.next), (1, &b"ell"[..], 4));
+        assert_eq!(
+            (read.from, read.output.as_slice(), read.next),
+            (1, &b"ell"[..], 4)
+        );
         assert!(!read.ended);
         assert!(ring.ready(4));
         assert!(!ring.ready(5), "nothing past what was printed");
         let past = ring.read(99, 3);
-        assert_eq!((past.from, past.output.as_slice(), past.next), (5, &b""[..], 5));
+        assert_eq!(
+            (past.from, past.output.as_slice(), past.next),
+            (5, &b""[..], 5)
+        );
     }
 
     #[test]
@@ -91,7 +99,10 @@ mod tests {
         ring.push(b"abc");
         ring.push(b"defgh");
         let read = ring.read(0, 10);
-        assert_eq!((read.from, read.output.as_slice(), read.next), (4, &b"efgh"[..], 8));
+        assert_eq!(
+            (read.from, read.output.as_slice(), read.next),
+            (4, &b"efgh"[..], 8)
+        );
         ring.push(b"0123456789");
         let read = ring.read(8, 10);
         assert_eq!((read.from, read.output.as_slice()), (14, &b"6789"[..]));

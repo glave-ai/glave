@@ -4,9 +4,7 @@
 //! `glave computer serve --stdio`, across the protocol. The person's server opens theirs in a
 //! thread's folder over the session API, and never one for someone else on its computer.
 
-use std::process::Stdio;
-
-use glave_computer::{LocalComputers, RemoteComputers};
+use glave_computer::LocalComputers;
 use glave_ports::computer::{Bytes, Computers, Environment, Screenful};
 use glave_ports::testing::{TempDir, read_program};
 use glave_ports::{block_on, conformance};
@@ -15,6 +13,7 @@ use glave_provider_openai::fake::FakeServer;
 use glave_session::client::Remote;
 use serde_json::{Value, json};
 
+use crate::computer::served_on_stdio;
 use crate::connected::request;
 use crate::http::serve_http_with;
 use crate::invited::invited;
@@ -61,20 +60,13 @@ fn the_binary_serves_terminals_across_the_protocol() {
     std::fs::create_dir_all(&folder).unwrap();
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let mut child = tokio::process::Command::new(GLAVE)
-            .args(["computer", "serve", "--stdio"])
-            .env_clear()
-            .envs(shell_in(&dir))
-            .env("GLAVE_HOME", dir.join("home"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let input = child.stdout.take().unwrap();
-        let output = child.stdin.take().unwrap();
-        let remote = RemoteComputers::connect(input, output);
-        remote.check_protocol().await.unwrap();
+        let home = dir.join("home");
+        let env = [
+            ("GLAVE_HOME", home.as_os_str()),
+            ("HOME", dir.as_os_str()),
+            ("SHELL", "/bin/bash".as_ref()),
+        ];
+        let (mut child, remote) = served_on_stdio(&env).await;
         let computer = remote.create(&Environment::host()).await.unwrap().id;
         let verdict = conformance::terminals(&remote, computer, &folder.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
@@ -108,7 +100,10 @@ async fn until_printed(caller: &Remote, at: &Value, from: u64, marker: &str) -> 
             return (text, from);
         }
     }
-    panic!("never printed {marker:?}: {}", String::from_utf8_lossy(&seen));
+    panic!(
+        "never printed {marker:?}: {}",
+        String::from_utf8_lossy(&seen)
+    );
 }
 
 /// Types `line` and a return into the terminal `at` names.
@@ -169,7 +164,9 @@ fn the_person_s_server_opens_their_terminal_in_a_thread_s_folder_and_no_one_else
         assert_eq!(refused["code"], -32001, "{refused}");
 
         let close = json!({"thread": thread, "terminal": at["terminal"]});
-        asked(&owner, "terminal/close", close.clone()).await.unwrap();
+        asked(&owner, "terminal/close", close.clone())
+            .await
+            .unwrap();
         let gone = asked(&owner, "terminal/close", close).await.unwrap_err();
         assert_eq!(gone["code"], -32038, "{gone}");
         let listed = asked(&owner, "terminal/list", json!({"thread": thread})).await;

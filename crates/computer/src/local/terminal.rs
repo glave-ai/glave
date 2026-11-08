@@ -8,8 +8,8 @@
 mod helper;
 mod ring;
 
-pub use helper::terminal_helper;
 pub(crate) use helper::TERMINAL_HELPER_ARG;
+pub use helper::terminal_helper;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -264,7 +264,8 @@ impl Terminals {
 
     /// Hangs up every terminal open on `computer`, as it is destroyed.
     pub(crate) fn close_all(&self, computer: ComputerId) {
-        self.lock().retain(|_, terminal| terminal.computer != computer);
+        self.lock()
+            .retain(|_, terminal| terminal.computer != computer);
     }
 
     fn shared(&self, computer: ComputerId, id: TerminalId) -> Result<Arc<Shared>, ComputerError> {
@@ -384,7 +385,11 @@ async fn pump(shared: Arc<Shared>, output: pipe::Receiver, mut child: Child) {
 /// Reads what is left to read, until the terminal's other side closes.
 async fn drain(shared: &Shared, output: &pipe::Receiver, buffer: &mut [u8]) {
     loop {
-        match output.readable().await.and_then(|()| output.try_read(buffer)) {
+        match output
+            .readable()
+            .await
+            .and_then(|()| output.try_read(buffer))
+        {
             Ok(read) if read > 0 => shared.print(buffer.get(..read).unwrap_or_default()),
             Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             Ok(_) | Err(_) => return,
@@ -396,7 +401,9 @@ async fn drain(shared: &Shared, output: &pipe::Receiver, buffer: &mut [u8]) {
 /// jobs, and to whatever runs in front, then the shell's group stopped whole, and whatever ran
 /// in front killed.
 async fn hang_up(shared: &Shared, child: &mut Child) {
-    let shell = child.id().and_then(|id| Pid::from_raw(i32::try_from(id).ok()?));
+    let shell = child
+        .id()
+        .and_then(|id| Pid::from_raw(i32::try_from(id).ok()?));
     let front = rustix::termios::tcgetpgrp(&shared.input).ok();
     for group in [shell, front].into_iter().flatten() {
         let _ = kill_process_group(group, Signal::HUP);

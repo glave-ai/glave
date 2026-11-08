@@ -428,7 +428,11 @@ impl<C: Computers + 'static> Connection<C> {
                 wait_ms,
             } => {
                 let wait = Duration::from_millis(wait_ms);
-                reply(computers.read_terminal(computer, terminal, from, wait).await)
+                reply(
+                    computers
+                        .read_terminal(computer, terminal, from, wait)
+                        .await,
+                )
             }
             Request::TerminalResize {
                 computer,
