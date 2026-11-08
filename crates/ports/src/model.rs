@@ -14,8 +14,9 @@ use thiserror::Error;
 use crate::failure::Failure;
 use crate::scope::OrgId;
 
-/// A model that can answer a conversation.
-pub trait ModelProvider: Send + Sync {
+/// A model that can answer a conversation. A provider is a handle that owns what it needs, so
+/// a call can run in a task of its own, as a thread's summary written in the background does.
+pub trait ModelProvider: Send + Sync + 'static {
     /// Sends one request and streams the answer. Live fragments go to `on_delta` as they
     /// arrive and are never stored; the finished answer is returned. An error once any output
     /// came (text, reasoning or a tool call) is [`ProviderError::AfterOutput`], so nobody

@@ -689,10 +689,14 @@ fn note(transcript: &mut String, live: Live) {
         Live::Compacted {
             before_tokens,
             after_tokens,
-        } => writeln!(
-            transcript,
-            "[compacted {before_tokens} → {after_tokens} tokens]"
-        ),
+            waited,
+        } => {
+            let how = if waited { "" } else { " in the background" };
+            writeln!(
+                transcript,
+                "[compacted {before_tokens} → {after_tokens} tokens{how}]"
+            )
+        }
         Live::CompactionFailed(reason) => writeln!(transcript, "[compaction failed] {reason}"),
         Live::Retrying {
             retry, of, error, ..

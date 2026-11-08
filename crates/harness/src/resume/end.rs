@@ -1,6 +1,6 @@
 //! Reading a thread again from its log, from its end (`specs/storage.md`, "A thread read from
-//! its end"): back to its latest compaction and the turn it fell in, which is all its
-//! conversation, and of what came before only what outlasts a compaction.
+//! its end"): back to what its latest compaction keeps and the turn that fell in, which is all
+//! its conversation, and of what came before only what outlasts a compaction.
 
 use std::collections::BTreeMap;
 
@@ -72,7 +72,8 @@ where
     A: Approver,
 {
     /// Thread `id`'s events as reading it again needs them, in order: every one from the
-    /// `turn.started` at or before its latest compaction (all of them when it has none), and
+    /// `turn.started` at or before the first event its latest compaction keeps (all of them when
+    /// it has none), and
     /// before that its records ([`RECORDS`]), the person's latest messages, which the judge
     /// reads and the latest of which a compaction keeps.
     pub(crate) async fn load(
@@ -104,9 +105,9 @@ where
         Ok(events.into_values().collect())
     }
 
-    /// Where thread `id`'s end begins: the `turn.started` at or before its latest compaction,
-    /// or the compaction itself when no turn came before it; `None`, its start, when it was
-    /// never compacted.
+    /// Where thread `id`'s end begins: the `turn.started` at or before the first event its
+    /// latest compaction keeps (the one after what its summary covers), or that event itself
+    /// when no turn came before it; `None`, its start, when it was never compacted.
     async fn end_of(&self, scope: &Scope, id: ThreadId) -> Result<Option<Seq>, HarnessError> {
         let Some(compacted) = self
             .log
@@ -115,12 +116,24 @@ where
         else {
             return Ok(None);
         };
+        let at = compacted.seq;
+        let kept = match decode(compacted).map(|event| event.body) {
+            Ok(Body::ThreadCompacted(compacted)) => compacted.through.get().saturating_add(1),
+            _ => at.get(),
+        };
+        let first = Seq::new(kept.min(at.get())).unwrap_or(at);
         let kinds = [TurnStarted::TYPE];
         let started = self
             .log
-            .read_back(scope, id, Some(&kinds), Some(compacted.seq), 1)
+            .read_back(
+                scope,
+                id,
+                Some(&kinds),
+                Seq::new(first.get().saturating_add(1)).ok(),
+                1,
+            )
             .await?;
-        Ok(Some(started.first().map_or(compacted.seq, |turn| turn.seq)))
+        Ok(Some(started.first().map_or(first, |turn| turn.seq)))
     }
 
     /// Thread `id`'s events of `back`'s kinds before `before`, newest first, back to the first

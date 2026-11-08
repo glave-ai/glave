@@ -77,7 +77,7 @@ fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
         assert_eq!(summary.model_calls, 3, "the summary call counts");
         assert!(shown.iter().any(|live| matches!(
             live,
-            Live::Compacted { before_tokens, after_tokens } if after_tokens < before_tokens
+            Live::Compacted { before_tokens, after_tokens, waited: true } if after_tokens < before_tokens
         )));
         let recorded = kinds(&events(harness.log(), thread.id).await);
         let compacted = recorded.iter().position(|kind| *kind == "thread.compacted");

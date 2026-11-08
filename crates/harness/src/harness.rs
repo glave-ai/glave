@@ -65,7 +65,8 @@ pub(crate) struct Actors {
 }
 
 pub struct Harness<P, L, B, A> {
-    pub(crate) provider: P,
+    /// Shared, so a summary can be written in a task of its own (`compaction/background.rs`).
+    pub(crate) provider: Arc<P>,
     pub(crate) log: L,
     pub(crate) blobs: B,
     pub(crate) approver: A,
@@ -201,6 +202,9 @@ pub struct Thread {
     /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
     /// as its log kept them when it was read again, and none once it is compacted.
     pub(crate) prefix: Prefixed,
+    /// The summary of its older half being written in the background, if one is
+    /// (`compaction/background.rs`): stopped when the thread is dropped.
+    pub(crate) background: crate::compaction::Background,
 }
 
 impl Thread {
@@ -290,7 +294,7 @@ where
         };
         Self {
             actors,
-            provider: parts.provider,
+            provider: Arc::new(parts.provider),
             log: parts.log,
             blobs: parts.blobs,
             approver: parts.approver,
@@ -619,6 +623,7 @@ where
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
+            background: crate::compaction::Background::default(),
         };
         let mut events = Vec::new();
         origin.by = Self::other_than_for(&thread, caller.person);

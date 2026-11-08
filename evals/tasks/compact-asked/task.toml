@@ -1,0 +1,11 @@
+[task]
+name = "glave/compact-asked"
+description = "Asked in plain words to compact and keep something front and centre, the model compacts the thread itself and still knows it."
+
+[glave]
+# The window is the default, so nothing compacts unless the model does as the person asks.
+turns = [
+    "That's all for now. Go ahead and compact our conversation, and keep the code word front and centre in your summary.",
+    "What was the code word I gave you earlier? Reply with just the word.",
+]
+checks = ["one_thread", { recorded = "thread.compacted" }, { answer_contains = "marigold-42" }]

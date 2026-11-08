@@ -1,8 +1,9 @@
 //! Rebuilding the conversation a model sees from a thread's events. The log alone is enough
 //! to resume a thread: nothing the model needs lives anywhere else. A compaction restarts the
-//! conversation from its summary; the events before it stay in the log.
+//! conversation from its summary and the latest messages it keeps as they were; the events before
+//! it stay in the log.
 
-use glave_event::{Body, Event, MessageAdded, Role, ToolCallRequested};
+use glave_event::{Body, Event, MessageAdded, Role, Seq, ToolCallRequested};
 use glave_ports::{Message, ToolCall};
 
 /// The conversation recorded in `events`, in order, from the latest compaction on.
@@ -12,6 +13,26 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
         follow(&mut messages, event);
     }
     messages
+}
+
+/// Where each message of the conversation `events` record begins: the `seq` of the event that
+/// started it, one for each message [`conversation`] gives, in the same order. A compaction
+/// begins its restart message; the messages it keeps begin where they did.
+pub(crate) fn beginnings(events: &[Event]) -> Vec<Seq> {
+    let mut messages: Vec<Message> = Vec::new();
+    let mut began: Vec<Seq> = Vec::new();
+    for event in events {
+        let before = messages.len();
+        follow(&mut messages, event);
+        if let Body::ThreadCompacted(_) = &event.body {
+            let kept =
+                began.split_off(began.len().saturating_sub(messages.len().saturating_sub(1)));
+            began = std::iter::once(event.header.seq).chain(kept).collect();
+        } else if messages.len() > before {
+            began.push(event.header.seq);
+        }
+    }
+    began
 }
 
 /// Takes one event into the conversation built so far.
@@ -35,10 +56,13 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
             }
         }
         Body::ThreadCompacted(compacted) => {
+            let kept = usize::try_from(compacted.kept).unwrap_or(usize::MAX);
+            let kept = messages.split_off(messages.len().saturating_sub(kept));
             messages.clear();
             messages.push(Message::User {
                 parts: compacted.parts.clone(),
             });
+            messages.extend(kept);
         }
         Body::ThreadStarted(_)
         | Body::ThreadForked(_)

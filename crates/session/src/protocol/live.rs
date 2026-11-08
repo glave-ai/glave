@@ -134,6 +134,7 @@ impl From<Live> for Update {
             Live::Compacted {
                 before_tokens,
                 after_tokens,
+                ..
             } => Self::Compacted {
                 before_tokens,
                 after_tokens,

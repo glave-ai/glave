@@ -107,16 +107,21 @@ pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result
 }
 
 /// The conversation was summarized to fit the model's context window. From here on, the model
-/// sees `parts` as the first message, then what is recorded after this event. Nothing before it
-/// is removed from the log.
+/// sees `parts` as the first message, then the conversation's latest `kept` messages as they
+/// were, then what is recorded after this event. Nothing before it is removed from the log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThreadCompacted {
-    /// The last event the summary covers.
+    /// The last event the summary covers: the `kept` messages were all recorded after it.
     pub through: Seq,
     /// The message the conversation restarts from: the summary and the person's latest
     /// request.
     pub parts: Vec<Part>,
+    /// How many of the conversation's latest messages stay as they were after `parts`: none
+    /// when the summary covers it all, the newer half when the older was summarized in the
+    /// background.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub kept: u32,
     /// Whether the thread had read untrusted content by then, which a thread read again from
     /// here on, never from before it, keeps knowing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -136,4 +141,13 @@ pub(crate) fn decode_compacted(
         1 => Some(parse(data)),
         _ => None,
     }
+}
+
+/// Whether a count is none, which a payload leaves out.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if"
+)]
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }

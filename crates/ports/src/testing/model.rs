@@ -5,9 +5,11 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::Part;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 
-use crate::model::{Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError};
+use crate::model::{
+    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
+};
 
 /// Every request a scripted model received, in order.
 pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
@@ -22,7 +24,8 @@ pub type Answer = Result<Completion, ProviderError>;
 /// conversation, told apart by a word its first message holds, and answers each request with
 /// the entry for the step the conversation is at (how many answers it holds), so conversations
 /// side by side, such as subagents', each get their own, and a conversation read again from
-/// its log after a restart is answered as it would have been.
+/// its log after a restart is answered as it would have been. A summarizing one answers
+/// summaries from a script of their own, each held until the conversation has gone on.
 #[derive(Debug)]
 pub struct ScriptedModel {
     answers: Mutex<VecDeque<Answer>>,
@@ -35,6 +38,19 @@ pub struct ScriptedModel {
     gate: Option<Arc<Notify>>,
     seen: Seen,
     recording: bool,
+    /// What summaries are answered with, in turn, when they have a script of their own.
+    summaries: Option<Mutex<VecDeque<Answer>>>,
+    /// How many of the conversation's requests a summary waits for after it is asked.
+    summary_after: usize,
+    /// How many of the conversation's requests (all but summaries) it has received.
+    asked: Arc<watch::Sender<usize>>,
+}
+
+/// A summary held until the conversation has made `target` requests in all.
+struct Held {
+    answer: Option<Answer>,
+    target: usize,
+    asked: watch::Receiver<usize>,
 }
 
 impl ScriptedModel {
@@ -53,6 +69,9 @@ impl ScriptedModel {
             gate: None,
             seen: Seen::default(),
             recording: true,
+            summaries: None,
+            summary_after: 0,
+            asked: Arc::new(watch::Sender::new(0)),
         }
     }
 
@@ -94,6 +113,37 @@ impl ScriptedModel {
             gate: Some(gate),
             ..self
         }
+    }
+
+    /// The same model, answering summaries (`Purpose::Summary`) from `summaries` in turn, apart
+    /// from the conversation's script, each once the model has received `after` more of the
+    /// conversation's requests since it was asked: a summary written in the background while
+    /// the conversation goes on, finished at a step the test knows.
+    #[must_use]
+    pub fn summarizing(self, summaries: Vec<Completion>, after: usize) -> Self {
+        Self {
+            summaries: Some(Mutex::new(summaries.into_iter().map(Ok).collect())),
+            summary_after: after,
+            ..self
+        }
+    }
+
+    /// A summary `request` is, held as [`ScriptedModel::summarizing`] says, when summaries
+    /// have a script of their own.
+    fn held(&self, request: &ModelRequest) -> Option<Held> {
+        let summaries = self.summaries.as_ref()?;
+        if request.purpose != Purpose::Summary {
+            return None;
+        }
+        let answer = summaries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        Some(Held {
+            answer,
+            target: self.asked.borrow().saturating_add(self.summary_after),
+            asked: self.asked.subscribe(),
+        })
     }
 
     /// The same model, keeping no requests: for a benchmark, whose conversations grow long.
@@ -165,8 +215,17 @@ impl ModelProvider for ScriptedModel {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(request.clone());
         }
-        let word = self.word(request);
-        let next = self.next(request);
+        let held = self.held(request);
+        if held.is_none() {
+            self.asked
+                .send_modify(|asked| *asked = asked.saturating_add(1));
+        }
+        let word = self.word(request).filter(|_| held.is_none());
+        let next = if held.is_none() {
+            self.next(request)
+        } else {
+            None
+        };
         let parts = next
             .iter()
             .flat_map(|answer| answer.iter())
@@ -186,8 +245,16 @@ impl ModelProvider for ScriptedModel {
                 .find(|(named, _)| *named == word)
                 .map(|(_, gate)| Arc::clone(gate))
         });
-        let gate = own.or_else(|| self.gate.clone());
+        let gate = own.or_else(|| self.gate.clone()).filter(|_| held.is_none());
         async move {
+            if let Some(mut held) = held {
+                let target = held.target;
+                let _ =
+                    tokio::time::timeout(super::HUNG, held.asked.wait_for(|n| *n >= target)).await;
+                return held
+                    .answer
+                    .unwrap_or_else(|| Err(ProviderError::Protocol("no summary left".into())));
+            }
             if let Some(gate) = gate {
                 gate.notified().await;
             }

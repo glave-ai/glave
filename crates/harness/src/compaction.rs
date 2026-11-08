@@ -1,17 +1,30 @@
 //! Keeping a thread within the model's context window: estimating how large the next request
-//! will be, and restarting the conversation from a handoff summary when it nears the limit.
-//! The summary is recorded as `thread.compacted`; nothing before it leaves the log.
+//! will be; once it nears the threshold, summarizing the older half of the conversation in the
+//! background while the turn goes on, and swapping the summary in between model calls, the newer
+//! half kept as it was; at the threshold, waiting for that summary, or summarizing the whole
+//! conversation as before when there is none; and compacting when the person asks (`asked.rs`).
+//! Every summary is recorded as `thread.compacted`; nothing before it leaves the log.
 
+mod asked;
+mod background;
 mod recent;
+mod restart;
+mod size;
+mod words;
 
-use std::fmt::Write as _;
-
-use glave_event::{Arguments, Part, Seq, ThreadCompacted, TurnResult};
+use glave_event::{Part, Seq, TurnResult};
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
-    Purpose, ToolChoice, ToolSpec,
+    Purpose, ToolChoice,
 };
+
+pub(crate) use asked::{COMPACT, describe as described, spec};
+pub(crate) use background::Background;
+use restart::Restart;
+pub(crate) use size::chars;
+use size::{CHARS_PER_TOKEN, next_request_tokens, past};
+use words::Covers;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
@@ -25,7 +38,8 @@ use crate::turn::Live;
 pub struct Compaction {
     /// The model's context window, in tokens.
     pub window_tokens: u64,
-    /// Compact before a request that would fill this much of the window, in percent.
+    /// Compact before a request that would fill this much of the window, in percent. A summary
+    /// of the older half starts in the background [`LEAD`] points before it.
     pub at_percent: u8,
 }
 
@@ -56,99 +70,20 @@ pub(crate) struct Measured {
     pub chars: u64,
 }
 
-/// Characters per token when nothing better is known. Code runs closer to 3, so estimates
-/// run low; the threshold leaves room for that.
-const CHARS_PER_TOKEN: u64 = 4;
-
 /// The longest summary asked for, in tokens.
 const SUMMARY_TOKENS: u32 = 4_000;
 
-const INSTRUCTION: &str = "\
-This conversation is about to outgrow the space available. Write a handoff summary that the \
-work can continue from alone: the conversation above will be replaced by it, and whoever \
-continues will know only what it says. Use these headings:
+/// How far before the threshold, in points of the window, a summary of the older half starts in
+/// the background: a tenth of it, 12,800 tokens of a 128,000-token window (Claude Code keeps a
+/// 13,000-token buffer before it compacts), room for the steps a turn takes while the summary is
+/// written. No request goes past the threshold for it: the model works with as much of the
+/// window as before, and after the swap keeps the newer half as it was rather than a summary
+/// alone.
+const LEAD: u8 = 10;
 
-1. Request and rules: what the person wants, and every rule and constraint they gave, word for \
-word where the wording matters. They hold to the end.
-2. Done: each piece finished, with the files changed and how it was checked. It is not to be \
-done again.
-3. In progress: exactly where the current piece stands, what is changed and what is not yet.
-4. Next: the steps left, in order, the very next one first: one small enough to finish before \
-the space runs out again.
-5. Failed: approaches that did not work and why, so they are not tried again.
-6. Files read: each file and what was learned from it that the work still needs (names, \
-signatures, values, where things are), so it needn't be read again unless it must be changed.
-
-Keep the exact file paths, names, numbers and error messages that still matter. Leave out \
-anything not needed to continue. Do not call any tools: reply with the summary only.";
-
-/// Characters of everything the model sees in `messages`.
-pub(crate) fn chars(messages: &[Message]) -> u64 {
-    let total: usize = messages
-        .iter()
-        .map(|message| match message {
-            Message::User { parts } | Message::Tool { output: parts, .. } => parts_chars(parts),
-            Message::Assistant { parts, tool_calls } => {
-                let calls: usize = tool_calls
-                    .iter()
-                    .map(|call| {
-                        call.tool
-                            .len()
-                            .saturating_add(arguments_chars(&call.arguments))
-                    })
-                    .sum();
-                parts_chars(parts).saturating_add(calls)
-            }
-        })
-        .sum();
-    u64::try_from(total).unwrap_or(u64::MAX)
-}
-
-fn parts_chars(parts: &[Part]) -> usize {
-    parts
-        .iter()
-        .map(|part| match part {
-            Part::Text { text } => text.len(),
-            Part::Reasoning { text, .. } => text.as_ref().map_or(0, String::len),
-            Part::File { .. } => 0,
-        })
-        .sum()
-}
-
-fn arguments_chars(arguments: &Arguments) -> usize {
-    match arguments {
-        Arguments::Json(map) => serde_json::to_string(map).map_or(0, |json| json.len()),
-        Arguments::Malformed(raw) => raw.len(),
-    }
-}
-
-/// A tool call's arguments as the model wrote them.
-fn arguments_text(arguments: &Arguments) -> String {
-    match arguments {
-        Arguments::Json(map) => serde_json::to_string(map).unwrap_or_default(),
-        Arguments::Malformed(raw) => raw.clone(),
-    }
-}
-
-/// Characters every request carries besides the conversation: instructions and tools.
-/// The estimated size of the next request, in tokens: the last reported count plus what
-/// was added since, or an estimate of everything when nothing was reported yet.
-fn next_request_tokens(thread: &Thread, offer: &ToolSet) -> u64 {
-    let now = chars(&thread.messages);
-    match thread.measured {
-        Some(measured) => measured
-            .tokens
-            .saturating_add(now.saturating_sub(measured.chars).div_ceil(CHARS_PER_TOKEN)),
-        None => now
-            .saturating_add(base_chars(&offer.system, &offer.specs))
-            .div_ceil(CHARS_PER_TOKEN),
-    }
-}
-
-fn base_chars(system: &str, tools: &[ToolSpec]) -> u64 {
-    let tools = serde_json::to_string(tools).map_or(0, |json| json.len());
-    u64::try_from(system.len().saturating_add(tools)).unwrap_or(u64::MAX)
-}
+/// The fewest tokens an older half is worth summarizing in the background for: less frees too
+/// little to pay for the call, and is left to the compaction at the threshold.
+const OLDER_MIN: u64 = 1_000;
 
 /// Characters of the latest tool results a restart keeps: a quarter of what fills the window
 /// enough to compact, so the summary, the results and the next steps fit well below it.
@@ -157,29 +92,17 @@ fn recent_room(window_tokens: u64, at_percent: u8) -> usize {
     usize::try_from(tokens.saturating_mul(CHARS_PER_TOKEN)).unwrap_or(usize::MAX)
 }
 
-/// The message a compacted conversation restarts from: the summary, the latest tool results as
-/// they were, and the person's latest request.
-fn restart_text(summary: &str, recent: Option<&str>, request: Option<&str>) -> String {
-    let mut text = format!(
-        "[Earlier parts of this conversation were summarized to save space. The \
-         summary holds what was done and learned: go on from its next step. Read only what that \
-         step needs, one file at a time, not everything again at once, or the space runs out \
-         again before anything is done.]\n\n{}",
-        summary.trim()
-    );
-    if let Some(recent) = recent {
-        let _ = write!(
-            text,
-            "\n\nYour latest tool calls and what they returned, as they were:{recent}"
-        );
-    }
-    if let Some(request) = request {
-        let _ = write!(
-            text,
-            "\n\nThe person's latest request, word for word:\n{request}"
-        );
-    }
-    text
+/// The summary's text, its text parts joined.
+fn summary_text(completion: &Completion) -> String {
+    let texts: Vec<&str> = completion
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    texts.join("\n")
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -189,8 +112,11 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Compacts now if the next request would pass the threshold, counting the summary's
-    /// model call in `summary`. A thread with nothing yet to summarize is left alone. A summary
+    /// Keeps the next request within the window, at a boundary between model calls, counting
+    /// any summary's model call in `summary`: swaps in a summary written in the background
+    /// that is ready, and starts one once the request nears the threshold; at the threshold,
+    /// waits for the one being written, and compacts the whole conversation when there is none
+    /// or it freed too little. A thread with nothing yet to summarize is left alone. A summary
     /// the provider fails to give is reported and the turn goes on: the request may still fit.
     pub(crate) async fn compact_if_needed(
         &self,
@@ -200,23 +126,69 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
+        if let Some(ended) = thread.background.ended().await
+            && let Some((before_tokens, after_tokens)) =
+                self.swap_in(thread, offer, summary, ended).await?
+        {
+            live(Live::Compacted {
+                before_tokens,
+                after_tokens,
+                waited: false,
+            });
+        }
+        if thread.messages.len() < 3 {
+            return Ok(());
+        }
         let at_percent = self.settings.compaction.at_percent;
         let window_tokens = self.context_window(&self.model_for(thread));
         let tokens = next_request_tokens(thread, offer);
-        let full =
-            tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
-        if !full || thread.messages.len() < 3 {
+        if !past(tokens, window_tokens, at_percent) {
+            if past(tokens, window_tokens, at_percent.saturating_sub(LEAD))
+                && thread.background.idle()
+            {
+                self.start_background(thread, offer).await;
+            }
             return Ok(());
         }
+        if thread.background.writing() {
+            // The turn can go no further without it: dropped by a cancel, which the turn sees.
+            let Some(waited) = cancel.run(thread.background.wait()).await else {
+                return Ok(());
+            };
+            if let Some(ended) = waited
+                && let Some((before_tokens, after_tokens)) =
+                    self.swap_in(thread, offer, summary, ended).await?
+            {
+                live(Live::Compacted {
+                    before_tokens,
+                    after_tokens,
+                    waited: true,
+                });
+            }
+            let tokens = next_request_tokens(thread, offer);
+            if !past(tokens, window_tokens, at_percent) {
+                return Ok(());
+            }
+        }
+        self.compact_whole(thread, offer, summary, cancel, live)
+            .await
+    }
+
+    /// Compacts the whole conversation, as it outgrows the window with no summary in the
+    /// background to swap in.
+    async fn compact_whole(
+        &self,
+        thread: &mut Thread,
+        offer: &mut ToolSet,
+        summary: &mut TurnResult,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<(), HarnessError> {
         match self.compact_with(thread, offer, cancel, live).await {
             Ok(compacted) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 summary.take_in(&compacted.completion.responded());
-                // A thread of its own opens again with the prompt and tools on offer now; a
-                // subagent's are its parent's.
-                if !thread.delegated() {
-                    *offer = self.tools(thread).await;
-                }
+                self.offer_again(thread, offer).await;
                 Ok(())
             }
             Err(HarnessError::Provider(error)) => {
@@ -226,6 +198,14 @@ where
             // The turn sees the cancel itself and stops.
             Err(HarnessError::Cancelled) => Ok(()),
             Err(error) => Err(error),
+        }
+    }
+
+    /// After a compaction, a thread of its own opens again with the prompt and tools on offer
+    /// now; a subagent's are its parent's.
+    async fn offer_again(&self, thread: &mut Thread, offer: &mut ToolSet) {
+        if !thread.delegated() {
+            *offer = self.tools(thread).await;
         }
     }
 
@@ -271,6 +251,8 @@ where
         self.compact_with(thread, &offer, cancel, live).await
     }
 
+    /// Summarizes the whole conversation and restarts it from the summary, the latest tool
+    /// results and the person's latest request.
     pub(crate) async fn compact_with(
         &self,
         thread: &mut Thread,
@@ -281,16 +263,104 @@ where
         let before_tokens = next_request_tokens(thread, offer);
         let window_tokens = self.context_window(&self.model_for(thread));
         let at_percent = self.settings.compaction.at_percent;
-        let mut messages = thread.messages.clone();
+        let covers = thread.messages.len();
+        let request = self.summary_request(thread, offer, covers, Covers::Whole);
+        let completion = self.summarize(request, cancel).await?;
+        let text = summary_text(&completion);
+        if text.trim().is_empty() {
+            return Err(ProviderError::Protocol("the model returned no summary".into()).into());
+        }
+        let through = thread
+            .next_seq
+            .get()
+            .checked_sub(1)
+            .and_then(|seq| Seq::new(seq).ok())
+            .ok_or_else(|| HarnessError::Event("there is nothing to compact".into()))?;
+        let recent = recent::recent(&thread.messages, recent_room(window_tokens, at_percent));
+        let restart = Restart {
+            completion: &completion,
+            summary: &text,
+            covers,
+            through,
+            how: Covers::Whole,
+            recent: recent.as_deref(),
+        };
+        self.restart(thread, &restart).await?;
+        thread.background.restarted();
+        let after_tokens = next_request_tokens(thread, offer);
+        live(Live::Compacted {
+            before_tokens,
+            after_tokens,
+            waited: true,
+        });
+        Ok(Compacted {
+            before_tokens,
+            after_tokens,
+            completion,
+        })
+    }
+
+    /// Summarizes the conversation's first `covers` messages, which run through event
+    /// `through`, as `how` says, and restarts it from the summary, the rest kept as they were:
+    /// for the person's own request (`asked.rs`).
+    async fn compact_older(
+        &self,
+        thread: &mut Thread,
+        offer: &mut ToolSet,
+        covers: usize,
+        how: Covers<'_>,
+        cancel: &Cancel,
+    ) -> Result<Compacted, HarnessError> {
+        let unread = || ProviderError::Protocol("its log could not be read".into());
+        let through = self
+            .covered_through(thread, covers)
+            .await
+            .ok_or_else(unread)?;
+        let before_tokens = next_request_tokens(thread, offer);
+        let request = self.summary_request(thread, offer, covers, how);
+        let completion = self.summarize(request, cancel).await?;
+        let text = summary_text(&completion);
+        if text.trim().is_empty() {
+            return Err(ProviderError::Protocol("the model returned no summary".into()).into());
+        }
+        let restart = Restart {
+            completion: &completion,
+            summary: &text,
+            covers,
+            through,
+            how,
+            recent: None,
+        };
+        self.restart(thread, &restart).await?;
+        thread.background.restarted();
+        self.offer_again(thread, offer).await;
+        Ok(Compacted {
+            before_tokens,
+            after_tokens: next_request_tokens(thread, offer),
+            completion,
+        })
+    }
+
+    /// What a summary of `thread`'s first `covers` messages is asked with: the thread's own
+    /// prompt and tools, so the provider's cache still holds what they share, and the
+    /// instruction for `how` as the last message.
+    fn summary_request(
+        &self,
+        thread: &Thread,
+        offer: &ToolSet,
+        covers: usize,
+        how: Covers<'_>,
+    ) -> ModelRequest {
+        let mut messages = thread.messages.get(..covers).unwrap_or_default().to_vec();
         messages.push(Message::User {
             parts: vec![Part::Text {
-                text: INSTRUCTION.to_owned(),
+                text: words::instruction(how),
             }],
         });
         // The tools stay listed: some providers refuse a conversation with tool calls but no
         // tools. The instruction asks for text only, and any call is ignored.
         let model = self.model_for(thread);
-        let request = ModelRequest {
+        ModelRequest {
             max_output_tokens: Some(self.summary_tokens(&model)),
             model,
             system: offer.system.clone(),
@@ -302,72 +372,9 @@ where
             effort: None,
             payer: Some(thread.payer()),
             route: None,
-        };
-        let completion = self.summarize(request, cancel).await?;
-        let summary: Vec<&str> = completion
-            .parts
-            .iter()
-            .filter_map(|part| match part {
-                Part::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        let summary = summary.join("\n");
-        if summary.trim().is_empty() {
-            return Err(ProviderError::Protocol("the model returned no summary".into()).into());
         }
-        let through = thread
-            .next_seq
-            .get()
-            .checked_sub(1)
-            .and_then(|seq| Seq::new(seq).ok())
-            .ok_or_else(|| HarnessError::Event("there is nothing to compact".into()))?;
-        // The project's instructions open the restarted conversation, as they opened the first.
-        let mut parts = thread.opening_parts().unwrap_or_default();
-        parts.push(Part::Text {
-            text: restart_text(
-                &summary,
-                recent::recent(&thread.messages, recent_room(window_tokens, at_percent)).as_deref(),
-                thread.request.as_deref(),
-            ),
-        });
-        let mut events = Vec::new();
-        self.stage(thread, &mut events, &completion.responded())?;
-        let compacted = ThreadCompacted {
-            through,
-            parts: parts.clone(),
-            untrusted: thread.untrusted,
-        };
-        self.stage(thread, &mut events, &compacted)?;
-        self.commit(thread, events).await?;
-        thread.messages = vec![Message::User { parts }];
-        thread.measured = None;
-        // The conversation starts again, and so may its prefix (`prefix.rs`).
-        thread.prefix = crate::prefix::Prefixed::None;
-        // The start shows every memory the thread knows now, and the notes fold away.
-        if self.memory_for(thread).is_some() {
-            thread.memory.restart();
-        }
-        let after_tokens = next_request_tokens(thread, offer);
-        live(Live::Compacted {
-            before_tokens,
-            after_tokens,
-        });
-        Ok(Compacted {
-            before_tokens,
-            after_tokens,
-            completion,
-        })
     }
-}
 
-impl<P, L, B, A> Harness<P, L, B, A>
-where
-    P: ModelProvider,
-    L: EventLog,
-    B: BlobStore,
-    A: Approver,
-{
     /// Asks for the summary. A request refused as too long loses its oldest tool outputs and is
     /// asked again, until it fits or there are none left to lose. Only the model call can be
     /// dropped by a cancel: what follows it writes to the log.
@@ -391,49 +398,5 @@ where
                 other => return Ok(other?),
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_restart_message_keeps_the_request_word_for_word() {
-        let text = restart_text(
-            "  Did A and B.\n",
-            Some("\n\n`read` a:\nA"),
-            Some("fix the build"),
-        );
-        assert!(text.starts_with("[Earlier parts of this conversation were summarized"));
-        assert!(
-            text.ends_with("]\n\nDid A and B.\n\nYour latest tool calls and what they returned, as they were:\n\n`read` a:\nA\n\nThe person's latest request, word for word:\nfix the build"),
-            "{text}"
-        );
-        let bare = restart_text("Did A.", None, None);
-        assert!(!bare.contains("word for word") && !bare.contains("latest tool calls"));
-    }
-
-    #[test]
-    fn characters_count_what_the_model_sees() {
-        let messages = vec![
-            Message::User {
-                parts: vec![Part::Text {
-                    text: "abcd".into(),
-                }],
-            },
-            Message::Assistant {
-                parts: vec![Part::Reasoning {
-                    text: Some("xy".into()),
-                    opaque: None,
-                }],
-                tool_calls: vec![glave_ports::ToolCall {
-                    call_id: glave_event::CallId::new("call_1").unwrap(),
-                    tool: "read".into(),
-                    arguments: Arguments::Malformed("{p".into()),
-                }],
-            },
-        ];
-        assert_eq!(chars(&messages), 4 + 2 + 4 + 2);
     }
 }

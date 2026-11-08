@@ -148,6 +148,7 @@ where
         if self.settings.plans || planning || thread.plan.plan.is_some() {
             set.offer_plan();
         }
+        set.offer_compact();
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);
         }

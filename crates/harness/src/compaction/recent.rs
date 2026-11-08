@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use glave_event::{CallId, Part};
 use glave_ports::{Message, ToolCall};
 
-use super::arguments_text;
+use super::size::arguments_text;
 use crate::room::omitted;
 use crate::untrusted::labelled;
 

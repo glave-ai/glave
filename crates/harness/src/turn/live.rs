@@ -35,9 +35,13 @@ pub enum Live {
         no_one_there: bool,
     },
     /// The conversation was summarized to fit the context window; sizes are estimates.
+    /// `waited` when the turn waited for the summary: the whole conversation's, one the person
+    /// asked for, or one in the background not ready at the threshold; not when one written
+    /// in the background was swapped in between model calls.
     Compacted {
         before_tokens: u64,
         after_tokens: u64,
+        waited: bool,
     },
     /// A needed compaction failed; the turn goes on without it.
     CompactionFailed(String),

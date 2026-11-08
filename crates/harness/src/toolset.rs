@@ -59,11 +59,13 @@ enum Own {
     Agent,
     /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
+    /// `compact`: in every thread of the person's, for when they ask.
+    Compact,
 }
 
 impl Own {
     /// Every one of glave's own tools.
-    const ALL: [Self; 3] = [Self::Question, Self::Agent, Self::Plan];
+    const ALL: [Self; 4] = [Self::Question, Self::Agent, Self::Plan, Self::Compact];
 
     /// The tool's name.
     fn name(self) -> &'static str {
@@ -71,6 +73,7 @@ impl Own {
             Self::Question => crate::question::QUESTION,
             Self::Agent => crate::subagent::AGENT,
             Self::Plan => crate::plan::UPDATE_PLAN,
+            Self::Compact => crate::compaction::COMPACT,
         }
     }
 }
@@ -248,8 +251,18 @@ impl ToolSet {
         self.offers(Own::Plan, name)
     }
 
+    /// Offers `compact` too. A subagent never gets it: no person talks to it.
+    pub(crate) fn offer_compact(&mut self) {
+        self.offer(Own::Compact, crate::compaction::spec());
+    }
+
+    /// Whether `name` is `compact`, while it is on offer.
+    pub(crate) fn is_compact(&self, name: &str) -> bool {
+        self.offers(Own::Compact, name)
+    }
+
     /// The tools a subagent has: these, less glave's own (`agent`, `question`,
-    /// `update_plan` and memory's), and for an explorer only those that read.
+    /// `update_plan`, `compact` and memory's), and for an explorer only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;
         let by_name: HashMap<String, (usize, ToolInfo)> = self

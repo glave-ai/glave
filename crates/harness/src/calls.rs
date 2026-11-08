@@ -184,6 +184,8 @@ where
             return self.put_questions(thread, call, cancel, live).await;
         } else if step.toolset.is_plan(&call.tool) {
             return Ok(self.update_plan(thread, call, step, cancel, live));
+        } else if step.toolset.is_compact(&call.tool) {
+            return self.compact_asked(thread, call, step, cancel, live).await;
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
@@ -505,7 +507,7 @@ where
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
-        let asking = judge(&self.provider, &model, Some(thread.payer()), &case);
+        let asking = judge(&*self.provider, &model, Some(thread.payer()), &case);
         let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);
         };
