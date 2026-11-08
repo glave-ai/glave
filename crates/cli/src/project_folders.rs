@@ -246,7 +246,7 @@ impl ProjectFolders {
     }
 
     /// Why each of `outcome`'s servers stays off though it is trusted: it shares a name with one
-    /// of the person's own, or it is remote and needs what a project's file can't send.
+    /// of the person's own, or it needs what a project's file can't give it.
     fn servers_off(&self, outcome: &Outcome) -> Vec<String> {
         let taken = outcome
             .servers
@@ -258,7 +258,7 @@ impl ProjectFolders {
                      instead"
                 )
             });
-        let needing = needing(outcome);
+        let needing = self.needing(outcome);
         let needs =
             needing
                 .iter()
@@ -266,12 +266,25 @@ impl ProjectFolders {
                 .map(|(name, variables)| {
                     format!(
                         "MCP server {name} is off: it needs {} from this computer, and a project's \
-                     settings can't send those to a server elsewhere; in the person's own \
-                     settings it can have them",
+                     settings can't pass those on; in the person's own settings it can have \
+                     them",
                         variables.join(", ")
                     )
                 });
         taken.chain(needs).collect()
+    }
+
+    /// The servers of `outcome` left off since they name variables a project's file can't read
+    /// here, each with those names: a remote server's always, a program's only where the file
+    /// reads none of the environment.
+    fn needing(&self, outcome: &Outcome) -> BTreeMap<String, Vec<String>> {
+        use glave_ports::settings::mcp::{withheld, withheld_from_programs};
+        let text = trust::mcp_json(&outcome.servers);
+        let mut needing = withheld(&text).unwrap_or_default();
+        if !crate::mcp::project_reads_environment(self.reachable) {
+            needing.extend(withheld_from_programs(&text).unwrap_or_default());
+        }
+        needing
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Running> {
@@ -350,7 +363,7 @@ impl ProjectFolders {
         let base = self.base();
         let mcp = read.choices.as_ref().unwrap_or(&base.choices).mcp.as_ref();
         let chosen = mcp.map(|chosen| &chosen.value);
-        let needing = needing(&outcome);
+        let needing = self.needing(&outcome);
         let servers: BTreeMap<String, String> = outcome
             .servers
             .iter()
@@ -431,13 +444,6 @@ fn failed(error: &dyn std::fmt::Display) -> ApiError {
         "glave could not read what this project brings, so it stays off; try again, or open the \
          project in a terminal to see why",
     )
-}
-
-/// The remote servers of `outcome` left off since their URL or headers name variables a
-/// project's file can't read, each with those names.
-fn needing(outcome: &Outcome) -> BTreeMap<String, Vec<String>> {
-    let text = trust::mcp_json(&outcome.servers);
-    glave_ports::settings::mcp::withheld(&text).unwrap_or_default()
 }
 
 impl glave_harness::ProjectFolders for ProjectFolders {

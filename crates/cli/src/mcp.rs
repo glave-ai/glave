@@ -36,7 +36,8 @@ pub(crate) use written::{Removed, Writer};
 pub(crate) const FILE: &str = "mcp.json";
 
 /// The environment servers' `${VAR}` are filled from: all of it for the person's own, and for a
-/// program a project starts; none of it for a remote server in a project's file.
+/// program a project starts where [`project_reads_environment`] says; none of it for a remote
+/// server in a project's file.
 pub(crate) fn environment() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
@@ -75,6 +76,15 @@ fn own_reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
     } else {
         Reachable::AlsoPrivate
     }
+}
+
+/// Whether a program in a project's file may have its `${VAR}` filled from this server's
+/// environment: on the person's own computer, whose environment it is; not where people sign in
+/// from elsewhere, the rule that keeps remote servers to public addresses. There the
+/// environment is the server's, holding what it runs on, and no repository's file names any of
+/// it.
+pub(crate) fn project_reads_environment(reachable: Reachable) -> bool {
+    reachable == Reachable::AlsoPrivate
 }
 
 /// Which connectors of glave's catalog the person may connect and use here.
@@ -128,7 +138,8 @@ pub(crate) async fn close(started: &[Arc<McpServer>]) {
 
 /// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
 /// folder, for the threads that work in it: each told, when it asks, that the folder is the
-/// one it works for. A remote one only at an address `reachable` allows.
+/// one it works for. A remote one only at an address `reachable` allows, and a program's `${VAR}`
+/// filled only where [`project_reads_environment`] says.
 pub(crate) fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
@@ -139,7 +150,13 @@ pub(crate) fn start_project(
     let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
     let environment = environment();
-    let configs = glave_ports::settings::mcp::parse_project(&text, &environment)
+    let nothing = BTreeMap::new();
+    let filling = if project_reads_environment(reachable) {
+        &environment
+    } else {
+        &nothing
+    };
+    let configs = glave_ports::settings::mcp::parse_project(&text, filling)
         .context("in the project's trusted .mcp.json servers")?;
     let marks = glave_ports::settings::mcp::marks(&text)?;
     Ok(configs

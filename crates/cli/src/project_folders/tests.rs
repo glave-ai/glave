@@ -351,6 +351,36 @@ fn a_project_s_remote_server_that_needs_a_variable_stays_off_and_says_so() {
 }
 
 #[test]
+fn a_project_s_program_that_needs_a_variable_stays_off_only_where_people_sign_in_from_elsewhere() {
+    let needs = r#""docs": {"command": "/nonexistent/docs-mcp", "args": ["--key", "${HOME}"]}"#;
+    let (_dir, home, project) = place("program-needs", needs, "");
+    block_on!(async {
+        let mut projects = projects(&home, Vec::new(), &[]).await;
+        let ask = projects.ask(&project).await.unwrap().unwrap();
+        assert!(projects.trust(&project, &ask.ask).await.unwrap());
+        let brought = projects.brought(&project, project_id()).await;
+        assert!(!brought.tools.is_empty(), "started on the person's own");
+        assert!(projects.set_aside(&project).await.is_empty());
+
+        projects.reachable = glave_mcp::Reachable::OnlyPublic;
+        let brought = projects.brought(&project, project_id()).await;
+        assert!(brought.tools.is_empty(), "never started");
+        let aside = projects.set_aside(&project).await;
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert!(
+            aside[0].starts_with("MCP server docs is off: it needs HOME from this computer"),
+            "{aside:?}"
+        );
+        let told = projects
+            .for_folder(&project, Some(&project), true)
+            .await
+            .unwrap();
+        assert!(told.contains(&aside[0]), "the model is told too: {told}");
+        projects.close().await;
+    });
+}
+
+#[test]
 fn an_idle_project_s_servers_close_and_start_again_when_needed() {
     let (_dir, home, project) = place("idle", DOCS, "");
     block_on!(async {

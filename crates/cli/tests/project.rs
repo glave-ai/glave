@@ -152,6 +152,65 @@ fn a_project_s_remote_server_is_sent_nothing_from_glave_s_environment() {
     assert!(!everything.contains(&value), "the value goes nowhere");
 }
 
+/// What a trusted project's programs get of glave's environment, as `config` in glave's folder
+/// says where it is reached: `named` runs only if `${PROGRAM}` is read, and `needs` names a
+/// variable with no default. The tools the model is offered, and all the model is told.
+fn programs_reading(name: &str, config: &str) -> (Vec<String>, String) {
+    let place = place(name);
+    std::fs::create_dir_all(&place.home).unwrap();
+    std::fs::write(place.home.join("config.toml"), config).unwrap();
+    let server = test_server();
+    let file = json!({ "mcpServers": {
+        "named": { "command": "${PROGRAM:-/nonexistent/program}" },
+        "needs": { "command": server, "env": { "KEY": "${GLAVE_TEST_PROGRAM_VALUE}" } },
+    }});
+    std::fs::write(place.project.join(".mcp.json"), file.to_string()).unwrap();
+    let value = fake_secret("value_");
+    let env = [
+        ("PROGRAM", server.to_str().unwrap()),
+        ("GLAVE_TEST_PROGRAM_VALUE", value.as_str()),
+    ];
+    trust_project(&place, &env);
+    let model = FakeServer::start(vec![Reply::text("Done.")]).unwrap();
+    let mut running = start_with(&place, &model, &["--model", "m", "hello"], &env);
+    drop(running.stdin.take());
+    let output = running.wait_with_output().unwrap();
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    let received = model.received();
+    let told = said(&received[0].body, "user").join("\n");
+    assert!(
+        !format!("{shown}{}", received[0].body).contains(&value),
+        "the value goes nowhere the person or the model sees"
+    );
+    (offered(&received[0].body), told)
+}
+
+#[test]
+fn on_the_person_s_own_computer_a_project_s_program_reads_glave_s_environment() {
+    let (tools, told) = programs_reading("project-program-here", "");
+    for tool in ["mcp__named__echo", "mcp__needs__echo"] {
+        assert!(tools.iter().any(|it| it == tool), "{tool}: {tools:?}");
+    }
+    assert!(!told.contains("is off"), "{told}");
+}
+
+#[test]
+fn where_people_sign_in_from_elsewhere_a_project_s_program_reads_nothing_of_the_environment() {
+    let reached = "[serve]\norigin = \"https://glave.example.com\"\n";
+    let (tools, told) = programs_reading("project-program-elsewhere", reached);
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool.starts_with("mcp__named__") || tool.starts_with("mcp__needs__")),
+        "{tools:?}"
+    );
+    assert!(
+        told.contains("MCP server needs is off") && told.contains("GLAVE_TEST_PROGRAM_VALUE"),
+        "the model is told which server is off and why: {told}"
+    );
+}
+
 #[test]
 fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     let place = place("project-plain");
