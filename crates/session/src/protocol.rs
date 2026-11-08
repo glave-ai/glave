@@ -539,8 +539,7 @@ methods! {
     "terminal/read" => TerminalRead { thread: ThreadId, terminal: TerminalId, from: u64,
         #[serde(default)] wait_ms: u64 } -> [Screen],
     /// Gives one of a thread's terminals another size.
-    "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId,
-        size: TerminalSize } -> [Done],
+    "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
     /// Closes one of a thread's terminals, ending its shell.
     "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
     /// Runs a prompt as a task at set times, each run in a new thread
