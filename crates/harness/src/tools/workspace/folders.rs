@@ -57,12 +57,17 @@ impl Workspace {
     }
 
     /// Whether the folder at `path` on this workspace's computer can be worked on a separate
-    /// copy, a git worktree: it is in a repository with a commit to start one from. Like
+    /// copy, a git worktree: it is in a repository's working tree with a commit to start one
+    /// from, as making a worktree asks. Like
     /// [`Workspace::look`], not for a person's own computer, which this would wake.
     pub async fn copies(&self, path: &str) -> Result<bool, ComputerError> {
         let info = self.open_plain(path).await?;
         let found = self
-            .unconfined(&info, "git rev-parse --verify --quiet HEAD", COPIES_SECS)
+            .unconfined(
+                &info,
+                "git rev-parse --show-toplevel >/dev/null && git rev-parse --verify --quiet HEAD",
+                COPIES_SECS,
+            )
             .await;
         self.forget(info.id).await;
         Ok(found.is_ok())

@@ -78,9 +78,12 @@ fn a_project_says_whether_a_new_chat_may_work_on_a_separate_copy() {
         let plain = dir.join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         let (server, _) = setup.build(&plain).await;
-        // A folder that is no repository has no copy to give, nor one with no commit yet.
+        // A folder that is no repository has no copy to give, nor one with no commit yet, nor
+        // one that isn't there anymore, which `project/get` still answers.
         assert_eq!(copies(&server).await, None);
         sh(&plain, "git init -q");
+        assert_eq!(copies(&server).await, None);
+        std::fs::remove_dir_all(&plain).unwrap();
         assert_eq!(copies(&server).await, None);
     });
 }

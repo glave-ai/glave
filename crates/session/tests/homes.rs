@@ -415,6 +415,18 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
             asked,
             "listing asks nothing of their computer"
         );
+        // Nor does asking whether a new chat may work on a copy, which offers none there.
+        let got = server
+            .request(Request::ProjectGet {
+                project: project.id,
+            })
+            .await
+            .unwrap();
+        let Reply::Project { copies, .. } = got else {
+            panic!("a project, not {got:?}")
+        };
+        assert_eq!(copies, None);
+        assert_eq!(homes.asked(), asked, "nothing asked of their computer");
 
         started_later(&dir, log, &server, project.id, &root).await;
 

@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test';
 
-import { THREAD, fakeApi } from './fake-api';
+import { PROJECT, THREAD, fakeApi } from './fake-api';
 import { LONG, LONG_TURNS } from './fake-long';
 import {
   type Felt,
@@ -22,6 +22,8 @@ import { SIGNED_IN, atRest, byTestId, expect, hold, test } from './support';
 const OPENED = [
   { name: 'the Chats', path: '/', shown: 'nav-thread' },
   { name: 'a thread', path: `/t/${THREAD}`, shown: 'thread-message' },
+  // Centred, it must not move as the server says a chat there may work on a separate copy.
+  { name: "a project's page", path: `/p/${PROJECT.id}`, shown: 'home-separate-input' },
 ] as const;
 
 /** What the person feels as `page` opens at `path` and comes to rest, `shown` on it. */

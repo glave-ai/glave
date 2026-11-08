@@ -15,17 +15,20 @@ import type { FormCheckboxControl } from '@angular/forms/signals';
 import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../tokens/forms';
+import { injectId } from '../../tokens/ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { input: 'input' } as const;
 
 /**
  * A checkbox with its label: a native checkbox (keyboard, screen readers and forms all as the
- * browser has them) drawn in Glaze's style. Binds with reactive forms, `ngModel`, signal
- * forms or `[(checked)]`.
+ * browser has them) drawn in Glaze's style, and a `hint` under the label, a muted line that
+ * describes it, as a radio's does. Binds with reactive forms, `ngModel`, signal forms or
+ * `[(checked)]`.
  *
  * ```html
  * <glz-checkbox [(checked)]="remember">Remember this choice</glz-checkbox>
+ * <glz-checkbox hint="So it doesn't touch your folder" [(checked)]="copy">Work on a copy</glz-checkbox>
  * <glz-checkbox [formControl]="terms">I agree</glz-checkbox>
  * ```
  */
@@ -46,6 +49,8 @@ export class GlzCheckboxComponent implements ControlValueAccessor, FormCheckboxC
   readonly disabled = input(false, { transform: booleanAttribute });
   /** Shown as partly checked, as for a "select all" over a mixed selection. */
   readonly indeterminate = input(false, { transform: booleanAttribute });
+  /** A line under the label that says more about the choice. */
+  readonly hint = input('');
   /** Emitted when focus leaves it: it has been touched. */
   readonly touch = output();
 
@@ -57,7 +62,15 @@ export class GlzCheckboxComponent implements ControlValueAccessor, FormCheckboxC
 
   private readonly showError = computed(() => this.state.invalid() && this.state.touched());
   protected readonly isDisabled = computed(() => this.disabled() || this.formDisabled());
-  protected readonly describedBy = computed(() => this.field?.describedBy() ?? null);
+  protected readonly labelId = injectId('glz-checkbox-label');
+  protected readonly hintId = injectId('glz-checkbox-hint');
+  protected readonly hasHint = computed(() => this.hint() !== '');
+  /** With a hint, the label alone names the checkbox and the hint describes it. */
+  protected readonly labelledBy = computed(() => (this.hasHint() ? this.labelId : null));
+  /** Its hint, else its form field's, describes it. */
+  protected readonly describedBy = computed(() =>
+    this.hasHint() ? this.hintId : (this.field?.describedBy() ?? null),
+  );
   protected readonly ariaInvalid = computed(() => (this.showError() ? 'true' : null));
   protected readonly ariaRequired = computed(() => (this.state.required() ? 'true' : null));
 

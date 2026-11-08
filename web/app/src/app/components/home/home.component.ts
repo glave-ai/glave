@@ -47,7 +47,8 @@ interface Offered {
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and what the agent may do and the model in the quiet line
  * under it; under that, in a project the server says may give a chat a separate copy of its
- * folder, a checkbox to work on one, checked as the server would start it. Sending starts the
+ * folder, a checkbox to work on one, checked as the server would start it, its room kept unseen
+ * in any project until the server says. Sending starts the
  * thread there, on the model and with the mode picked, on a copy or not, and its first turn,
  * and opens the thread at once. When glave runs on this computer, a line under it says what
  * stays private. Opened for a project, the composer takes focus, and the page has Back.
@@ -137,6 +138,10 @@ export class HomeComponent {
     const offered = this.offered();
     return offered !== null && offered.project === this.inFolder() ? offered.copies : null;
   });
+  /** Whether it would start in a project's folder, where the choice keeps its room. */
+  protected readonly inProjectFolder = computed(() => this.inFolder() !== null);
+  /** Whether no copy is offered there, or not yet known to be. */
+  protected readonly unoffered = computed(() => this.copies() === null);
   /** Whether it works on one: as the server would start it, until the person picks. */
   protected readonly separate = linkedSignal(() => this.copies()?.by_default ?? false);
   /** The places a thread can start: a chat, or each project. */

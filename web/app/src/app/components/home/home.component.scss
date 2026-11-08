@@ -35,8 +35,8 @@
   font-size: var(--glz-text-sm);
 }
 
-.hint {
-  color: var(--glz-color-text-muted);
+.unseen {
+  visibility: hidden;
 }
 
 .private {

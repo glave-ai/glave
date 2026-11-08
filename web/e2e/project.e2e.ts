@@ -21,8 +21,9 @@ test('a project’s page, where glave run in its folder opens, starts a thread i
   // Its folder is a git repository, so a chat may work on a separate copy of it.
   const separate = byTestId(page, 'home-separate-input');
   await expect(separate).not.toBeChecked();
-  await expect(byTestId(page, 'home-separate')).toContainText(
-    "Work on a separate copy so it doesn't touch your folder or other chats",
+  await expect(separate).toHaveAccessibleName('Work on a separate copy');
+  await expect(separate).toHaveAccessibleDescription(
+    "so it doesn't touch your folder or other chats",
   );
   await separate.check();
   await byTestId(page, 'home-composer-input').fill('What changed today?');

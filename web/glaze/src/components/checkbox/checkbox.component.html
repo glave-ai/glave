@@ -6,6 +6,7 @@
     [checked]="checked()"
     [indeterminate]="indeterminate()"
     [disabled]="isDisabled()"
+    [attr.aria-labelledby]="labelledBy()"
     [attr.aria-describedby]="describedBy()"
     [attr.aria-invalid]="ariaInvalid()"
     [attr.aria-required]="ariaRequired()"
@@ -13,5 +14,10 @@
     (blur)="blurred()"
   />
   <span class="mark" aria-hidden="true"></span>
-  <span class="text"><ng-content /></span>
+  <span class="text">
+    <span [id]="labelId"><ng-content /></span>
+    @if (hasHint()) {
+      <span class="hint" [id]="hintId">{{ hint() }}</span>
+    }
+  </span>
 </label>

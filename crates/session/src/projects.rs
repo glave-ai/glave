@@ -337,7 +337,7 @@ where
         let (project, scope) = self.authorized(caller, project).await?;
         let folder = self.folder_of(scope.located()).await?;
         let copies = match project.kind {
-            ProjectKind::Project => self.copies(caller, scope).await,
+            ProjectKind::Project => self.copies(caller, scope, folder.as_ref()).await,
             ProjectKind::Personal => None,
         };
         Ok(Reply::Project {

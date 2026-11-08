@@ -66,9 +66,16 @@
       <app-effort-picker [model]="picked()" [(value)]="pickedEffort" />
     </div>
   </glz-composer>
-  @if (copies()) {
-    <glz-checkbox class="separate" testId="home-separate" [(checked)]="separate"
-      >{{ copy.separate }}&ngsp;<span class="hint">{{ copy.separateHint }}</span></glz-checkbox
+  <!-- In a project, its room kept, unseen, until the server says a chat there may have a copy:
+       the page is centred, so nothing above it moves as that comes in. -->
+  @if (inProjectFolder()) {
+    <glz-checkbox
+      class="separate"
+      testId="home-separate"
+      [class.unseen]="unoffered()"
+      [hint]="copy.separateHint"
+      [(checked)]="separate"
+      >{{ copy.separate }}</glz-checkbox
     >
   }
   @if (local()) {

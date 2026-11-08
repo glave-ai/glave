@@ -155,9 +155,12 @@ describe('HomeComponent', () => {
     const box = (): HTMLInputElement | null =>
       root.querySelector<HTMLInputElement>('[data-testid="home-separate-input"]');
     expect(box()?.checked).toBe(true);
-    expect(
-      root.querySelector('[data-testid="home-separate"]')?.textContent.replace(/\s+/gu, ' '),
-    ).toBe("Work on a separate copy so it doesn't touch your folder or other chats");
+    const label = box()?.getAttribute('aria-labelledby') ?? '';
+    expect(document.getElementById(label)?.textContent).toBe('Work on a separate copy');
+    const hint = box()?.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(hint)?.textContent).toBe(
+      "so it doesn't touch your folder or other chats",
+    );
     await expectAccessible(root);
     box()?.click();
     await send(root, 'Fix the flaky test');
@@ -165,10 +168,12 @@ describe('HomeComponent', () => {
     expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p1', worktree: false }]);
     expect(fake.paramsOf('project/get')).toEqual([{ project: 'p1' }]);
     navigate.mockRestore();
-    // A project whose folder has no copy to give, and a chat, offer none and ask nothing of it.
+    // A project whose folder has no copy to give keeps its room, unseen; a chat offers none and
+    // asks nothing of it.
     TestBed.resetTestingModule();
     const garden = await render(fake, 'p2');
-    expect(garden.querySelector('[data-testid="home-separate"]')).toBeNull();
+    const unseen = garden.querySelector<HTMLElement>('[data-testid="home-separate"]');
+    expect(getComputedStyle(unseen ?? garden).visibility).toBe('hidden');
     TestBed.resetTestingModule();
     const chats = session();
     const chat = await render(chats);

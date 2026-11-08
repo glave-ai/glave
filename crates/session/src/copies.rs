@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
-use crate::protocol::Copies;
+use crate::protocol::{Copies, ProjectFolder};
 use crate::server::Server;
 
 impl<P, L, B> Server<P, L, B>
@@ -38,27 +38,34 @@ where
         }
     }
 
-    /// What `project/get` tells `caller` of a new chat's copies in `scope`: one may be offered
-    /// where its folder is in a git repository with a commit to start one from, on this server's
-    /// computer, and its threads work here rather than on workers; and whether it works on one
-    /// unless told. A folder that isn't there anymore has none.
-    pub(crate) async fn copies(&self, caller: &Caller, scope: Scope) -> Option<Copies> {
+    /// What `project/get` tells `caller` of a new chat's copies in `scope`, whose `folder` it
+    /// read: one may be offered where that folder is on this server's computer, in a git
+    /// repository with a commit to start one from, and its threads work here rather than on
+    /// workers; and whether it works on one unless told, read afresh as a new thread reads it.
+    /// None for a folder on the person's own computer, which this never wakes, nor for one
+    /// that isn't there anymore.
+    pub(crate) async fn copies(
+        &self,
+        caller: &Caller,
+        scope: Scope,
+        folder: Option<&ProjectFolder>,
+    ) -> Option<Copies> {
         let on_workers = self
             .inner
             .worker
             .as_ref()
             .is_some_and(|(chosen, _)| *chosen == scope.project());
-        if on_workers {
+        let checkout = &folder?.checkout;
+        if on_workers || checkout.computer != self.computer() {
             return None;
         }
-        let found = self.folder_to_start_in(scope.located()).await.ok()??;
-        let (folder, false) = &found else {
-            return None;
-        };
         let workspace = self.inner.harness.workspace();
-        if !workspace.copies(folder).await.unwrap_or(false) {
+        if !workspace.copies(&checkout.path).await.unwrap_or(false) {
             return None;
         }
+        // What the person chose meanwhile applies, as it does to the thread they start.
+        self.reread().await;
+        let found = (checkout.path.clone(), false);
         let by_default = self.copies_by_default(caller, Some(&found)).await;
         Some(Copies { by_default })
     }
