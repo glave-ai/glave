@@ -11,9 +11,10 @@ use serde_json::json;
 use crate::support::*;
 
 /// A page and a server for it, on loopback at a port the system picks, as a dev server is,
-/// which writes its port (`port`) once it listens.
-const SERVES: &str = "printf 'hello' > index.html && exec python3 -c \"import http.server as h, os; \
-     s = h.ThreadingHTTPServer(('127.0.0.1', 0), h.SimpleHTTPRequestHandler); \
+/// which writes its port (`port`) once it listens. A `TCPServer`, since `HTTPServer` asks DNS
+/// for its host's name as it binds, which took over 20 seconds on macOS runners.
+const SERVES: &str = "printf 'hello' > index.html && exec python3 -c \"import http.server as h, os, \
+     socketserver; s = socketserver.ThreadingTCPServer(('127.0.0.1', 0), h.SimpleHTTPRequestHandler); \
      open('port.next', 'w').write(str(s.server_address[1])); os.rename('port.next', 'port'); \
      s.serve_forever()\"";
 
