@@ -61,6 +61,26 @@ fn this_machine_opens_terminals_with_glave_as_their_starter_directly_and_through
     });
 }
 
+/// `glave computer serve --stdio`, at home in `dir` with bash its terminals' shell, and a
+/// computer made there.
+async fn served_in(
+    dir: &std::path::Path,
+) -> (
+    tokio::process::Child,
+    glave_computer::RemoteComputers,
+    ComputerId,
+) {
+    let home = dir.join("home");
+    let env = [
+        ("GLAVE_HOME", home.as_os_str()),
+        ("HOME", dir.as_os_str()),
+        ("SHELL", "/bin/bash".as_ref()),
+    ];
+    let (child, remote) = served_on_stdio(&env).await;
+    let computer = remote.create(&Environment::host()).await.unwrap().id;
+    (child, remote, computer)
+}
+
 #[test]
 fn the_binary_serves_terminals_across_the_protocol() {
     let dir = TempDir::new("terminals-served").unwrap();
@@ -68,14 +88,7 @@ fn the_binary_serves_terminals_across_the_protocol() {
     std::fs::create_dir_all(&folder).unwrap();
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let home = dir.join("home");
-        let env = [
-            ("GLAVE_HOME", home.as_os_str()),
-            ("HOME", dir.as_os_str()),
-            ("SHELL", "/bin/bash".as_ref()),
-        ];
-        let (mut child, remote) = served_on_stdio(&env).await;
-        let computer = remote.create(&Environment::host()).await.unwrap().id;
+        let (mut child, remote, computer) = served_in(&dir).await;
         let verdict = conformance::terminals(&remote, computer, &folder.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
         drop(remote);
@@ -247,14 +260,7 @@ fn a_terminal_s_jobs_end_however_glave_ends() {
     read_program(GLAVE).unwrap();
     block_on!(async {
         for (how, said) in [(Signal::KILL, "SIGKILL"), (Signal::TERM, "SIGTERM")] {
-            let home = dir.join("home");
-            let env = [
-                ("GLAVE_HOME", home.as_os_str()),
-                ("HOME", dir.as_os_str()),
-                ("SHELL", "/bin/bash".as_ref()),
-            ];
-            let (mut child, remote) = served_on_stdio(&env).await;
-            let computer = remote.create(&Environment::host()).await.unwrap().id;
+            let (mut child, remote, computer) = served_in(&dir).await;
             let path = folder.to_string_lossy();
             let id = remote.open_terminal(computer, &path, "t", SIZE).await;
             let terminal = (id.unwrap(), "t");
