@@ -27,6 +27,9 @@
           <glz-icon [icon]="icons.stop" />
         </button>
       </div>
+      @if (row.listening; as listening) {
+        <p class="listening" data-testid="command-listening">{{ listening }}</p>
+      }
       @if (row.refusal; as refusal) {
         <p class="error" role="alert" data-testid="command-refusal">{{ refusal }}</p>
       }

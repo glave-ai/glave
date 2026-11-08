@@ -68,7 +68,8 @@
   overflow-wrap: anywhere;
 }
 
-.summary {
+.summary,
+.listening {
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }

@@ -1059,6 +1059,11 @@ export type RunningCommand = {
   readonly command: string;
   /** Which command, for `command/stop`. */
   readonly id: CommandId;
+  /**
+   * The TCP ports it listens on, lowest first, where the caller reaches this computer's
+   * loopback: looked for only then, and on the server's own computer.
+   */
+  readonly ports?: readonly (number)[];
   /** When it started, once the thread has recorded it. */
   readonly started_at?: At | null;
   /** What it is doing, in plain words. */

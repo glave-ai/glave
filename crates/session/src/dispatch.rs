@@ -475,7 +475,7 @@ where
             Request::TerminalClose { thread, terminal } => {
                 self.close_terminal(caller, thread, terminal).await
             }
-            Request::CommandList { thread } => self.list_commands(thread).await,
+            Request::CommandList { thread } => self.list_commands(caller, thread).await,
             Request::CommandStop { thread, command } => {
                 self.stop_command(caller, thread, command).await
             }
