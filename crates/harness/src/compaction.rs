@@ -39,7 +39,7 @@ pub struct Compaction {
     /// The model's context window, in tokens.
     pub window_tokens: u64,
     /// Compact before a request that would fill this much of the window, in percent. A summary
-    /// of the older half starts in the background [`LEAD`] points before it.
+    /// of the older half starts in the background a tenth of the window before it.
     pub at_percent: u8,
 }
 
