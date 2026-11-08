@@ -140,6 +140,13 @@ export class ThreadPanelComponent {
       this.tabs().findIndex((tab) => tab.key === this.chosen()),
     ),
   );
+  /**
+   * Whether the Terminal is the tab shown. What a tab holds is made whether it is shown or not,
+   * and making the Terminal starts a shell, which only choosing its tab may.
+   */
+  protected readonly terminalChosen = computed(
+    () => this.tabs()[this.selected()]?.key === 'terminal',
+  );
 
   constructor() {
     // What had the keyboard's place went from the panel as it drew: the place goes to its

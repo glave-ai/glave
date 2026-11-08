@@ -118,8 +118,12 @@ describe('ThreadPanelComponent', () => {
       'Terminal',
       'Changes',
     ]);
+    // A shell starts only once the person chooses its tab.
+    expect(fake.paramsOf('terminal/list')).toHaveLength(0);
+    expect(fake.paramsOf('terminal/open')).toHaveLength(0);
     tabs(root)[1]?.click();
     await drawn(fixture);
+    expect(fake.paramsOf('terminal/open')).toHaveLength(1);
     expect(root.querySelector('app-thread-overview')).toBeNull();
     expect(root.querySelector('app-terminal-tab')).not.toBeNull();
     await expectAccessible(root);
