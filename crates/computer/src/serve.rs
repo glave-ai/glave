@@ -339,17 +339,7 @@ impl<C: Computers + 'static> Connection<C> {
                 run,
                 credentials,
             } => self.run(workspace, &command, run, credentials).await,
-            Request::Cancel { run } => {
-                if let Some(switch) = self
-                    .runs
-                    .lock()
-                    .ok()
-                    .and_then(|runs| runs.get(&run).cloned())
-                {
-                    switch.cancel();
-                }
-                Ok(json!({}))
-            }
+            Request::Cancel { run } => Ok(self.cancel(&run)),
             request @ (Request::Start { .. }
             | Request::Output { .. }
             | Request::Ended { .. }
@@ -376,6 +366,12 @@ impl<C: Computers + 'static> Connection<C> {
             Request::Search { workspace, search } => {
                 reply(computers.search(workspace, &search).await)
             }
+            Request::Changes { workspace, since } => reply(
+                computers
+                    .changes(workspace, since.as_deref())
+                    .await
+                    .map(|changes| json!({"changes": changes})),
+            ),
             Request::Save { workspace, save } => reply(computers.save(workspace, &save).await),
         }
     }
@@ -419,6 +415,19 @@ impl<C: Computers + 'static> Connection<C> {
                 &format!("{} is not about commands in the background", other.method()),
             )),
         }
+    }
+
+    /// Stops the run `run`, if it still runs.
+    fn cancel(&self, run: &str) -> Value {
+        if let Some(switch) = self
+            .runs
+            .lock()
+            .ok()
+            .and_then(|runs| runs.get(run).cloned())
+        {
+            switch.cancel();
+        }
+        json!({})
     }
 
     /// Answers a request about a person's terminals.

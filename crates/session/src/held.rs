@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::{PrincipalId, ThreadId};
-use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
+use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread, Workspace};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Standing};
 use jiff::Timestamp;
 use tokio::sync::watch;
@@ -38,6 +38,8 @@ pub(crate) enum Slot {
         inbox: Option<Inbox>,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
+        /// The workspace it works in, where what it changed is read meanwhile.
+        workspace: Option<Arc<Workspace>>,
         /// Where it is, which never changes, for glave's own work on it meanwhile.
         at: Located,
         /// The person whose work it is, which ends if they are removed from `at`'s
@@ -162,6 +164,7 @@ where
                     finished,
                     inbox,
                     commands: held.commands(),
+                    workspace: self.inner.harness.works_in(&held),
                     at: held.scope.located(),
                     person: held.for_person(),
                 };

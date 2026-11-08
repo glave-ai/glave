@@ -33,6 +33,10 @@ export class ChangedFilesService {
   });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
+  /** Whether a read is in flight. */
+  private reading = false;
+  /** Whether a read was asked for since the one in flight began. */
+  private again = false;
 
   /** Every file the thread changed, in the order first changed. */
   readonly files = computed<readonly ChangedFile[]>(() => this.changes()?.files ?? []);
@@ -77,8 +81,35 @@ export class ChangedFilesService {
     });
   }
 
-  /** Reads what the thread changed. */
+  /**
+   * Reads what the thread changed: at once, or, while a read is in flight, once more after it,
+   * however often it was asked meanwhile, so a run of commands ending costs the server two reads.
+   */
   async refresh(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return;
+    }
+    this.reading = true;
+    this.again = false;
+    try {
+      do {
+        await this.read();
+      } while (this.asked());
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  /** Whether a read was asked for since the last began, taking it as begun. */
+  private asked(): boolean {
+    const asked = this.again;
+    this.again = false;
+    return asked;
+  }
+
+  /** Reads what the thread changed, once. */
+  private async read(): Promise<void> {
     const thread = this.thread.thread();
     if (thread === null) {
       return;

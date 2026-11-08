@@ -7,11 +7,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed, GitCredential,
-    GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved,
-    Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalInfo, TerminalSize,
-    WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed,
+    GitCredential, GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed,
+    Save, Saved, Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalInfo,
+    TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -748,6 +748,25 @@ impl Computers for RemoteComputers {
             search: search.clone(),
         };
         Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Answered {
+            changes: Option<Changes>,
+        }
+        let request = Request::Changes {
+            workspace,
+            since: since.map(str::to_owned),
+        };
+        Box::pin(async move {
+            let answered: Answered = self.typed(&request).await?;
+            Ok(answered.changes)
+        })
     }
 
     fn save<'a>(
