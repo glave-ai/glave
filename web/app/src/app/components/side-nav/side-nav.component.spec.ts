@@ -7,6 +7,7 @@ import {
 import { provideRouter } from '@angular/router';
 import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { AppearanceService } from '../../services/appearance.service';
 import { GroupingService } from '../../services/grouping.service';
@@ -67,16 +68,6 @@ async function render(
   return { root: fixture.nativeElement as HTMLElement, fixture, fake };
 }
 
-/** Lets what the side nav started settle: its calls, and the code it loads late. */
-async function settle(
-  fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>,
-): Promise<void> {
-  for (let turn = 0; turn < 3; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
-  }
-}
-
 describe('SideNavComponent', () => {
   it('names the organization, and asks for no logo when it has none', async () => {
     const organization = { name: 'Acme', accent: 'plain', locked: false };
@@ -105,28 +96,24 @@ describe('SideNavComponent', () => {
 
     fake.answer('appearance/get', { organization: { ...organization, logo: 'one' } });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()?.alt).toBe('Acme');
-      expect(logo()?.src).toMatch(/^blob:/u);
-    });
+    // What reads the logo is code loaded late, which no turn of the side nav brings back.
+    await import('../../services/brand.service');
+    await settle(fixture);
+    expect(logo()?.alt).toBe('Acme');
+    expect(logo()?.src).toMatch(/^blob:/u);
     expect(heading()).toBeNull();
     const first = logo()?.src;
 
     fake.answer('appearance/get', { organization: { ...organization, logo: 'two' } });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()?.src).toMatch(/^blob:/u);
-      expect(logo()?.src).not.toBe(first);
-    });
+    await settle(fixture);
+    expect(logo()?.src).toMatch(/^blob:/u);
+    expect(logo()?.src).not.toBe(first);
 
     fake.answer('appearance/get', { organization });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()).toBeNull();
-    });
+    await settle(fixture);
+    expect(logo()).toBeNull();
     expect(heading()?.textContent).toBe('Acme');
   });
 
@@ -228,15 +215,14 @@ describe('SideNavComponent', () => {
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
     expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(tasks);
-    // Read before the switch's code is in, the switch's room is kept above them.
-    expect(root.querySelector('app-projects-nav')?.previousElementSibling?.className).toBe(
-      'grouping room',
-    );
+    // Read before the switch's code is in, the switch's room is kept above them, decided with
+    // them, and the switch fills it once its code is in: no swap of the block can move them.
+    const room = root.querySelector('app-projects-nav')?.previousElementSibling;
+    expect(room?.className).toBe('grouping shown');
+    expect(room?.querySelector('app-group-by')).toBeNull();
     await (await fixture.getDeferBlocks())[0]?.render(DeferBlockState.Complete);
-    expect(root.querySelector('.room')).toBeNull();
-    expect(root.querySelector('app-group-by')?.nextElementSibling?.tagName).toBe(
-      'APP-PROJECTS-NAV',
-    );
+    expect(root.querySelector('app-projects-nav')?.previousElementSibling).toBe(room);
+    expect(room?.querySelector('app-group-by')).not.toBeNull();
     await expectAccessible(root);
   });
 
@@ -250,8 +236,8 @@ describe('SideNavComponent', () => {
     expect(root.querySelector('[data-testid="nav-projects"]')).not.toBeNull();
     expect(root.querySelector('app-status-nav')).toBeNull();
     // Above the threads, as they scroll.
-    const group = root.querySelector('app-group-by');
-    expect(group?.nextElementSibling?.tagName.toLowerCase()).toBe('app-projects-nav');
+    const room = root.querySelector('app-group-by')?.parentElement;
+    expect(room?.nextElementSibling?.tagName.toLowerCase()).toBe('app-projects-nav');
     await expectAccessible(root);
     radio('Status')?.click();
     await settle(fixture);
@@ -294,7 +280,10 @@ describe('SideNavComponent', () => {
       projects: [record('me', 'Personal', 'personal')],
       grouping: 'status',
     });
+    // Neither the switch nor a room for it.
     expect(root.querySelector('[data-testid="nav-group"]')).toBeNull();
+    const room = root.querySelector('.grouping');
+    expect(room === null ? null : getComputedStyle(room).display).toBe('none');
     expect(root.querySelector('app-status-nav')).toBeNull();
     expect(root.querySelector('[data-testid="nav-chats"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="nav-thread-line"]')).toBeNull();

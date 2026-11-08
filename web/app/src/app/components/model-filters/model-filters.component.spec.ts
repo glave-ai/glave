@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type Filters } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ROUTED } from '../../testing/fixtures';
@@ -20,13 +21,8 @@ async function render(
     .answer('model/list', { models: ROUTED });
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
   const fixture = TestBed.createComponent(ModelFiltersComponent);
-  const settle = async (): Promise<void> => {
-    await fixture.whenStable();
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
-  };
-  await settle();
-  return { root: fixture.nativeElement as HTMLElement, fake, settle };
+  await settle(fixture);
+  return { root: fixture.nativeElement as HTMLElement, fake, settle: () => settle(fixture) };
 }
 
 /** The segment of `group` labelled `label`. */
@@ -108,8 +104,7 @@ describe('ModelFiltersComponent', () => {
     await expectAccessible(root);
     fake.answer('filters/get', { filters: {}, europe: EUROPE });
     root.querySelector<HTMLButtonElement>('[data-testid="model-filters-retry"]')?.click();
-    await vi.waitFor(() => {
-      expect(root.querySelector('[data-testid="model-filters"]')).not.toBeNull();
-    });
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="model-filters"]')).not.toBeNull();
   });
 });
