@@ -11,16 +11,19 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glave_computer::{Grow, LocalComputers, Lost, Peek, Wake, Waking};
 use glave_event::{Body, CommandEnding, PrincipalId, StopReason};
-use glave_harness::{AllowAll, Homes, Place};
+use glave_harness::{AllowAll, Harness, Homes, Place, Thread};
 use glave_ports::computer::{Command, ComputerError, Home, MOVED, Sandbox};
 use glave_ports::testing::{Captured, TempDir};
-use glave_ports::{InMemoryLog, ModelRequest, NeverCancelled, OrgId};
+use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, NeverCancelled, OrgId};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::support::*;
 use crate::wire::home_across_the_wire;
+
+/// The harness these tests run a thread on.
+type Moved = Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>;
 
 /// The named pipe a command opens as it starts: read once it is running, so the test takes the
 /// machine away from under it.
@@ -151,19 +154,19 @@ impl Homes for Moving {
 }
 
 /// An answer calling `tool` with `arguments`.
-fn calls(tool: &str, arguments: Value) -> glave_ports::Completion {
+fn calls(tool: &str, arguments: Value) -> Completion {
     answer(None, vec![(tool, arguments)], StopReason::ToolUse)
 }
 
-fn bash(script: &str) -> glave_ports::Completion {
+fn bash(script: &str) -> Completion {
     calls("bash", json!({ "command": script }))
 }
 
-fn background(script: &str) -> glave_ports::Completion {
+fn background(script: &str) -> Completion {
     calls("bash", json!({ "command": script, "background": true }))
 }
 
-fn done() -> glave_ports::Completion {
+fn done() -> Completion {
     answer(Some("Done."), vec![], StopReason::EndTurn)
 }
 
@@ -194,6 +197,21 @@ fn prefix_is_unchanged(requests: &[ModelRequest]) {
     }
 }
 
+/// A harness answering `answers`, its people's computers `moving`, what the model is sent, and a
+/// thread started at `place`.
+async fn on_it(
+    server: &Path,
+    answers: Vec<Completion>,
+    moving: &Arc<Moving>,
+    place: Place,
+) -> (Moved, Seen, Thread) {
+    let log = InMemoryLog::new();
+    let (harness, seen) = harness_seeing(server, answers, AllowAll, log, 1, settings()).await;
+    let harness = harness.with_homes(Some(Arc::clone(moving) as Arc<dyn Homes>));
+    let thread = thread_in(&harness, place).await;
+    (harness, seen, thread)
+}
+
 /// Waits for the command started in `folder` to open its pipe, then does `then` under it.
 async fn once_started(folder: &Path, then: impl Future<Output = ()>) {
     let pipe = folder.join(STARTED);
@@ -217,17 +235,7 @@ fn a_command_cut_off_with_its_machine_says_why_and_the_next_call_runs_on_the_sam
             bash("cat kept.txt; cat runs.txt"),
             done(),
         ];
-        let (harness, seen) = harness_seeing(
-            &server,
-            answers,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        )
-        .await;
-        let harness = harness.with_homes(Some(Arc::clone(&moving) as Arc<dyn Homes>));
-        let mut thread = thread_in(&harness, place).await;
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
         tokio::join!(
             turn(&harness, &mut thread, "build it"),
             once_started(&home, moving.lose())
@@ -266,10 +274,7 @@ fn what_ran_in_the_background_is_told_as_stopped_once_in_the_note_before_the_nex
             done(),
             done(),
         ];
-        let log = InMemoryLog::new();
-        let (harness, seen) = harness_seeing(&server, answers, AllowAll, log, 1, settings()).await;
-        let harness = harness.with_homes(Some(Arc::clone(&moving) as Arc<dyn Homes>));
-        let mut thread = thread_in(&harness, place).await;
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
         turn(&harness, &mut thread, "start the server").await;
 
         // The machine goes while no turn runs, and the wait a server keeps on the command ends.
@@ -329,17 +334,7 @@ fn the_first_tool_result_after_the_machine_went_names_what_ran_in_the_background
             done(),
             done(),
         ];
-        let (harness, seen) = harness_seeing(
-            &server,
-            answers,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        )
-        .await;
-        let harness = harness.with_homes(Some(Arc::clone(&moving) as Arc<dyn Homes>));
-        let mut thread = thread_in(&harness, place).await;
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
         tokio::join!(
             turn(&harness, &mut thread, "start and build"),
             once_started(&home, moving.lose())
@@ -368,17 +363,7 @@ fn a_server_s_rollout_tells_a_thread_read_from_its_log_what_stopped() {
     block_on!(async {
         let first = Moving::new(&computer, &home).await;
         let answers = vec![background("sleep 30"), done(), done(), done()];
-        let (harness, seen) = harness_seeing(
-            &server,
-            answers,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        )
-        .await;
-        let harness = harness.with_homes(Some(Arc::clone(&first) as Arc<dyn Homes>));
-        let mut thread = thread_in(&harness, place).await;
+        let (harness, seen, mut thread) = on_it(&server, answers, &first, place).await;
         turn(&harness, &mut thread, "start the server").await;
 
         // A new server, which never started this computer, replaces it at its first call.
@@ -446,17 +431,7 @@ fn a_connection_that_dropped_with_its_machine_still_there_is_not_told_as_a_move(
             bash(&format!("echo > {STARTED}; sleep 30")),
             answer(Some("It dropped."), vec![], StopReason::EndTurn),
         ];
-        let (harness, seen) = harness_seeing(
-            &server,
-            answers,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        )
-        .await;
-        let harness = harness.with_homes(Some(Arc::clone(&moving) as Arc<dyn Homes>));
-        let mut thread = thread_in(&harness, place).await;
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
         tokio::join!(
             turn(&harness, &mut thread, "build it"),
             once_started(&home, moving.drop_connection())
