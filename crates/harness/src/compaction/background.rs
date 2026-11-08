@@ -13,8 +13,8 @@ use glave_ports::{
 };
 use tokio::task::JoinSet;
 
-use super::size::{CHARS_PER_TOKEN, chars, next_request_tokens, older_half, past};
-use super::{Covers, LEAD, OLDER_MIN, Restart, summary_text};
+use super::size::{CHARS_PER_TOKEN, chars, next_request_tokens, older_part, past};
+use super::{Covers, LEAD, OLDER_MIN, Restart, recent_room, summary_text};
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::toolset::ToolSet;
@@ -144,7 +144,10 @@ where
     /// Starts summarizing `thread`'s older half in the background, when it has one worth it:
     /// its first messages up to a response, at least half of what it holds.
     pub(super) async fn start_background(&self, thread: &mut Thread, offer: &ToolSet) {
-        let Some(covers) = older_half(&thread.messages) else {
+        let window_tokens = self.context_window(&self.model_for(thread));
+        let at_percent = self.settings.compaction.at_percent;
+        let keep = u64::try_from(recent_room(window_tokens, at_percent)).unwrap_or(u64::MAX);
+        let Some(covers) = older_part(&thread.messages, keep) else {
             return;
         };
         let older_chars = chars(thread.messages.get(..covers).unwrap_or_default());

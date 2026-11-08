@@ -84,16 +84,16 @@ pub(super) fn past(tokens: u64, window: u64, percent: u8) -> bool {
     tokens.saturating_mul(100) >= window.saturating_mul(u64::from(percent))
 }
 
-/// Where the older half of `messages` ends: at the first response of the model's that begins
-/// once at least half their characters came before it, at least two messages in, so the newer
-/// half opens with a response and holds every call's result with its call. `None` when no
-/// response comes that late.
-pub(super) fn older_half(messages: &[Message]) -> Option<usize> {
+/// Where the older part of `messages` ends, leaving the newest that fit in `keep` characters:
+/// at the first response of the model's, at least two messages in, after which no more than
+/// `keep` follow, so the newer part opens with a response and holds every call's result with
+/// its call. `None` when even the latest response and what follows it hold more.
+pub(super) fn older_part(messages: &[Message], keep: u64) -> Option<usize> {
     let total = chars(messages);
     let mut before = 0_u64;
     for (index, message) in messages.iter().enumerate() {
-        let late = before.saturating_mul(2) >= total;
-        if index >= 2 && late && matches!(message, Message::Assistant { .. }) {
+        let fits = total.saturating_sub(before) <= keep;
+        if index >= 2 && fits && matches!(message, Message::Assistant { .. }) {
             return Some(index);
         }
         before = before.saturating_add(chars(std::slice::from_ref(message)));
@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn the_older_half_ends_at_a_response_once_half_came_before_it() {
+    fn the_older_part_ends_at_the_first_response_after_which_the_rest_fits() {
         let messages = vec![
             user(&"a".repeat(10)),
             call("1"),
@@ -163,15 +163,17 @@ mod tests {
             result("3", &"d".repeat(10)),
         ];
         assert_eq!(
-            older_half(&messages),
+            older_part(&messages, 60),
             Some(3),
-            "the second response opens the newer"
+            "the second response opens the newer: 58 characters"
         );
+        assert_eq!(older_part(&messages, 20), Some(5), "the latest alone");
+        assert_eq!(older_part(&messages, 10), None, "not even the latest fits");
         let one_big = vec![user("hi"), call("1"), result("1", &"b".repeat(400))];
         assert_eq!(
-            older_half(&one_big),
+            older_part(&one_big, 100),
             None,
-            "no response comes after the half"
+            "too early to keep anything"
         );
     }
 }

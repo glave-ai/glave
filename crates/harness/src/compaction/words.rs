@@ -8,7 +8,8 @@ use std::fmt::Write as _;
 pub(super) enum Covers<'a> {
     /// The whole conversation, as it outgrows the space: today's compaction.
     Whole,
-    /// Its older half, written in the background: the newer half follows the restart as it was.
+    /// All but its latest messages, written in the background: those follow the restart as they
+    /// were.
     Older {
         /// The most words the summary may take: a third of what it replaces.
         words: u64,
@@ -27,8 +28,6 @@ const IN_PROGRESS: &str = "In progress: exactly where the current piece stands, 
      and what is not yet.";
 const NEXT: &str = "Next: the steps left, in order, the very next one first: one small enough to \
      finish before the space runs out again.";
-/// For the older half, whose next steps are in the newer half.
-const WHERE_IT_STOOD: &str = "Where it stood: what was in progress when this part ends.";
 const FAILED: &str = "Failed: approaches that did not work and why, so they are not tried again.";
 const FILES: &str = "Files read: each file and what was learned from it that the work still \
      needs (names, signatures, values, where things are), so it needn't be read again unless it \
@@ -37,13 +36,13 @@ const KEEP: &str = "Keep the exact file paths, names, numbers and error messages
      matter.";
 const TEXT_ONLY: &str = "Do not call any tools: reply with the summary only.";
 
-/// `items` as numbered headings, then what to keep and leave out: `left_out`.
-fn headings(items: &[&str], left_out: &str) -> String {
+/// The headings every summary uses, then what to keep and leave out.
+fn headings() -> String {
     let mut text = String::new();
-    for (number, item) in (1..).zip(items) {
+    for (number, item) in (1..).zip([REQUEST, DONE, IN_PROGRESS, NEXT, FAILED, FILES]) {
         let _ = writeln!(text, "{number}. {item}");
     }
-    format!("{text}\n{KEEP} {left_out} {TEXT_ONLY}")
+    format!("{text}\n{KEEP} Leave out anything not needed to continue. {TEXT_ONLY}")
 }
 
 /// What the summary call is asked, as the conversation's last message.
@@ -53,20 +52,14 @@ pub(super) fn instruction(covers: Covers<'_>) -> String {
             "This conversation is about to outgrow the space available. Write a handoff summary \
              that the work can continue from alone: the conversation above will be replaced by \
              it, and whoever continues will know only what it says. Use these headings:\n\n{}",
-            headings(
-                &[REQUEST, DONE, IN_PROGRESS, NEXT, FAILED, FILES],
-                "Leave out anything not needed to continue."
-            )
+            headings()
         ),
         Covers::Older { words } => format!(
-            "The conversation above is the older part of a longer one: a newer part follows it, \
-             and stays as it is. Write a summary of the part above that the newer part can go on \
-             from: the part above will be replaced by it. Keep it under {words} words. Use these \
-             headings:\n\n{}",
-            headings(
-                &[REQUEST, DONE, WHERE_IT_STOOD, FAILED, FILES],
-                "Leave out anything the newer part will not need."
-            )
+            "The conversation above is about to outgrow the space available. Write a handoff \
+             summary of it that the work can continue from: it will be replaced by the summary, \
+             followed by the latest messages, which stay as they are. Keep it under {words} \
+             words. Use these headings:\n\n{}",
+            headings()
         ),
         Covers::Asked { focus } => {
             let mut text = format!(
@@ -74,10 +67,7 @@ pub(super) fn instruction(covers: Covers<'_>) -> String {
                  that the work can continue from alone: the conversation above will be replaced \
                  by it, and whoever continues will know only what it says. Use these \
                  headings:\n\n{}",
-                headings(
-                    &[REQUEST, DONE, IN_PROGRESS, NEXT, FAILED, FILES],
-                    "Leave out anything not needed to continue."
-                )
+                headings()
             );
             if let Some(focus) = focus {
                 let _ = write!(
@@ -106,9 +96,11 @@ pub(super) fn restart(
              that step needs, one file at a time, not everything again at once, or the space runs \
              out again before anything is done.]"
             .to_owned(),
-        Covers::Older { .. } => "[The older part of this conversation was summarized to save \
+        Covers::Older { .. } => "[Earlier parts of this conversation were summarized to save \
              space. The summary holds what was done and learned before the messages that follow, \
-             which are as they were: go on from the latest of them.]"
+             the latest, which are as they were: go on from them, and do not do again what the \
+             summary says is done. Read only what the next step needs, one file at a time, not \
+             everything again at once, or the space runs out again before anything is done.]"
             .to_owned(),
         Covers::Asked { focus } => {
             let kept = focus.map_or_else(String::new, |focus| {
@@ -175,10 +167,13 @@ mod tests {
     }
 
     #[test]
-    fn the_older_half_is_asked_for_briefly_and_the_newer_follows() {
+    fn the_older_part_is_asked_for_briefly_and_the_latest_follow() {
         let asking = instruction(Covers::Older { words: 300 });
-        assert!(asking.contains("under 300 words") && !asking.contains("4. Next"));
+        assert!(asking.contains("under 300 words") && asking.contains("4. Next"));
         let text = restart(Covers::Older { words: 300 }, "Read a.", None, None);
-        assert!(text.contains("the messages that follow, which are as they were"));
+        assert!(
+            text.contains("the latest, which are as they were"),
+            "{text}"
+        );
     }
 }

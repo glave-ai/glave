@@ -135,7 +135,7 @@ fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_ca
             4,
             "the older half and the instruction"
         );
-        assert!(text_of(&asked.messages[3]).contains("older part of a longer one"));
+        assert!(text_of(&asked.messages[3]).contains("followed by the latest messages"));
         assert_eq!(
             prefix(asked),
             prefix(&calls[0]),
@@ -145,7 +145,10 @@ fn the_older_half_is_summarized_while_the_work_goes_on_and_swapped_in_between_ca
         // Swapped in at the boundary after the fourth call: the summary, then the newer half.
         let after = &calls[4].messages;
         let restart = text_of(&after[0]);
-        assert!(restart.starts_with("[The older part of this conversation was summarized"));
+        assert!(
+            restart.contains("the latest, which are as they were"),
+            "{restart}"
+        );
         assert!(restart.contains("it holds a.txt lines."), "{restart}");
         assert!(
             !restart.contains("word for word"),
@@ -214,7 +217,7 @@ fn a_summary_that_frees_nothing_falls_back_to_compacting_the_whole_at_the_thresh
 
         let (calls, summaries) = apart(&seen);
         assert_eq!(summaries.len(), 2, "none started again after the empty one");
-        assert!(text_of(summaries[0].messages.last().unwrap()).contains("older part"));
+        assert!(text_of(summaries[0].messages.last().unwrap()).contains("the latest messages"));
         assert!(text_of(summaries[1].messages.last().unwrap()).contains("about to outgrow"));
         let last = &calls.last().unwrap().messages;
         assert_eq!(last.len(), 1, "the whole restarts from one message");
