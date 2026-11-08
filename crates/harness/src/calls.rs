@@ -237,8 +237,9 @@ where
             {
                 return Ok(refused);
             }
-            if let Some(lifted) = lifted {
-                step.summary.let_out(lifted);
+            // What it was allowed without, as its log counts it once it begins.
+            if let Some(asked) = asked {
+                step.summary.let_out(asked);
             }
             return self
                 .run_call(thread, call, &source, &hooked, summary, None, cancel, live)

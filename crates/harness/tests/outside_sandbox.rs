@@ -9,11 +9,14 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Body, Caution, Event, Principal, StopReason, ThreadId, Verdict};
-use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, Harness, NoOneToAsk, Settings};
+use glave_harness::{
+    ApprovalRequest, Approver, Cancel, Decision, Harness, HarnessError, NoOneToAsk, Settings,
+};
 use glave_ports::computer::{Sandbox, SandboxLevel};
-use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, Purpose};
+use glave_ports::{Caller, Completion, InMemoryBlobs, InMemoryLog, ModelRequest, Purpose};
 use serde_json::json;
 
+use crate::network::InTheLog;
 use crate::support::*;
 
 const REASON: &str = "it writes beside the project, which the sandbox blocks";
@@ -198,6 +201,57 @@ fn it_asks_every_time_even_in_auto_and_runs_outside_once_allowed() {
 }
 
 #[test]
+fn allowed_while_its_turn_waited_it_counts_once() {
+    let Some(base) = sandboxed("waited") else {
+        return;
+    };
+    block_on!(async {
+        let answers = vec![
+            answer(None, vec![outside(&base, "one.txt")], StopReason::ToolUse),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let workspace = in_sandbox(&base).await;
+        let log = InMemoryLog::new();
+        let (harness, _) = harness_with(workspace, answers, InTheLog, log, 1, in_the_sandbox());
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let stopped = harness
+            .run_turn(&mut thread, "write beside it", &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(
+            matches!(stopped, Err(HarnessError::Waits(_))),
+            "{stopped:?}"
+        );
+        let asked = events(harness.log(), thread.id).await;
+        let call = asked.iter().find_map(|event| match &event.body {
+            Body::ApprovalRequested(asked) => Some(asked.call_id.clone()),
+            _ => None,
+        });
+        harness
+            .decide(
+                scope(),
+                thread.id,
+                &call.unwrap(),
+                Decision::AllowOnce,
+                None,
+            )
+            .await
+            .unwrap();
+        let turn = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert!(base.join("one.txt").exists());
+        assert_eq!(turn.outside_sandbox, 1, "{turn:?}");
+        let ended = events(harness.log(), thread.id).await;
+        let ended = ended.iter().find_map(|event| match &event.body {
+            Body::TurnEnded(ended) => Some(ended.clone()),
+            _ => None,
+        });
+        assert_eq!(ended, Some(turn), "the log says the same");
+    });
+}
+
+#[test]
 fn with_no_one_there_it_never_runs_even_where_the_judge_would_let_it() {
     let Some(base) = sandboxed("no-one") else {
         return;
@@ -354,11 +408,11 @@ fn without_a_sandbox_the_request_changes_nothing() {
 }
 
 /// Someone other than the person the harness works for, whose commands run on its computer.
-fn grace() -> glave_ports::Caller {
+fn grace() -> Caller {
     let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
-    glave_ports::Caller {
+    Caller {
         person: Some(someone.unwrap()),
-        ..glave_ports::Caller::default()
+        ..Caller::default()
     }
 }
 
@@ -445,7 +499,7 @@ fn where_no_sandbox_runs_another_person_s_commands_never_run_and_the_person_s_ow
         assert!(!dir.join("theirs.txt").exists());
         assert!(told(&theirs).contains("the sandbox can't run here for this thread"));
 
-        let mine = glave_ports::Caller::default();
+        let mine = Caller::default();
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .choose_permissions(&mut thread, &mine, full)

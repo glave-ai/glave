@@ -264,8 +264,9 @@ where
             .next())
     }
 
-    /// What the turn that starts at `turn`'s first event did so far, its subagents' work added
-    /// in, as it would have counted it.
+    /// What the turn that starts at `turn`'s first event did so far, as it would have counted
+    /// it: its subagents' work added in for the calls that have their results. A subagent whose
+    /// call has none yet counts once it does, as the turn goes on.
     pub(crate) async fn tallies(
         &self,
         scope: &Scope,
@@ -273,7 +274,7 @@ where
         turn: &[Event],
     ) -> Result<TurnResult, HarnessError> {
         let mut summary = own_tallies(turn);
-        let agents: Vec<&CallId> = turn
+        let agents: HashSet<&CallId> = turn
             .iter()
             .filter_map(|event| match &event.body {
                 Body::ToolCallRequested(call) if CallKind::of(&call.tool) == CallKind::Agent => {
@@ -282,7 +283,16 @@ where
                 _ => None,
             })
             .collect();
-        for call in agents {
+        let reported: Vec<&CallId> = turn
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ToolCallCompleted(done) if agents.contains(&done.call_id) => {
+                    Some(&done.call_id)
+                }
+                _ => None,
+            })
+            .collect();
+        for call in reported {
             if let Some(child) = self.child_of(scope, thread, call).await? {
                 let events = self.load(scope, child.thread).await?;
                 summary.absorb(&own_tallies(&events));
@@ -449,9 +459,9 @@ fn dangling(events: &[Event]) -> bool {
     })
 }
 
-/// What the latest turn in `events` did by itself: its model calls, tool calls, commands run
-/// outside the sandbox, tokens and cost, the files it changed, and how it ended (completed
-/// while it has not).
+/// What the latest turn in `events` did by itself: its model calls, tool calls, commands that
+/// began outside the sandbox, tokens and cost, the files it changed, and how it ended
+/// (completed while it has not).
 pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
     let started = events
         .iter()
@@ -483,14 +493,12 @@ pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
                     outside.insert(&asked.call_id, let_out.lifted);
                 }
             }
-            Body::ApprovalDecided(decided)
-                if matches!(
-                    decided.decision,
-                    Verdict::AllowOnce | Verdict::AllowForThread
-                ) =>
-            {
-                if let Some(lifted) = outside.get(&decided.call_id) {
-                    summary.let_out(*lifted);
+            // A command let out counts as it begins, as a running turn counts it: one allowed
+            // while its turn waited counts once the turn goes on and begins it. Only a call
+            // allowed begins.
+            Body::ToolCallStarted(started) => {
+                if let Some(lifted) = outside.remove(&started.call_id) {
+                    summary.let_out(lifted);
                 }
             }
             Body::TurnEnded(ended) => summary.outcome = ended.outcome,
