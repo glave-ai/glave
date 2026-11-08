@@ -205,6 +205,14 @@ mod tests {
             ),
         )
         .unwrap();
+        // A program just written starts slowly on a busy Mac, the system checking it first (over
+        // 20 seconds, measured): its first start isn't what the limit on the helper is for.
+        let mut first_start = glave_process::Program::new(&theirs);
+        let started = glave_ports::block_on!(
+            Processes::unrecorded().output(&mut first_start, glave_ports::testing::HUNG)
+        )
+        .unwrap();
+        assert!(started.status.success());
         let mut server = glave_process::Program::new(std::env::current_exe().unwrap());
         server
             .args([
