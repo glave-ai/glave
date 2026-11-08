@@ -103,6 +103,7 @@ glave-ports = { path = "crates/ports" }
 glave-process = { path = "crates/process" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }
 glave-provider-openai = { path = "crates/provider-openai" }
+glave-push = { path = "crates/push" }
 glave-session = { path = "crates/session" }
 glave-shell = { path = "crates/shell" }
 glave-store-postgres = { path = "crates/store-postgres" }
@@ -163,6 +164,9 @@ opentelemetry = { version = "0.33", default-features = false, features = ["trace
 # OTLP over HTTP with protobuf, on the reqwest and rustls glave already uses (no gRPC stack).
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
 opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
+# P-256 for Web Push's VAPID signatures (glave-push), the curve its encryption is on (already in
+# the tree, under webauthn-rs, with these features).
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "std"] }
 proptest = "1"
 # The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint
 # and to check every part before it is packed. Already in the tree, under calamine.
@@ -208,6 +212,10 @@ uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 # Passkeys (WebAuthn) for the person's own server (glave-identity): kanidm's relying party, its
 # 0.6 line on RustCrypto rather than OpenSSL (a pre-release, so pinned exactly).
 webauthn-rs = { version = "=0.6.1-dev", default-features = false }
+# Web Push's message encryption (RFC 8291, aes128gcm) for glave-push, on RustCrypto crates
+# already in the tree (p256, aes-gcm, hkdf, sha2). No default features: VAPID is signed with p256
+# itself, not jwt-simple.
+web-push-native = { version = "0.5", default-features = false }
 # When a certificate's life begins and ends (glave-acme), so it is renewed with a third left.
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"

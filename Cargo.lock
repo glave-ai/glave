@@ -1396,6 +1396,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ece-native"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6911cc97c62febd8cbcb2cb49ed21c58ccd418a80c43f20df4973ee08484e65d"
+dependencies = [
+ "aes-gcm",
+ "hkdf 0.12.4",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2246,6 +2257,7 @@ dependencies = [
  "jiff",
  "proptest",
  "regex",
+ "reqwest",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -2290,6 +2302,25 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "glave-push"
+version = "0.0.0"
+dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
+ "glave-event",
+ "glave-ports",
+ "jiff",
+ "p256",
+ "reqwest",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+ "web-push-native",
+ "zeroize",
 ]
 
 [[package]]
@@ -6356,6 +6387,20 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "web-push-native"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7628c93e39aeee4c0bca50ae333052b4f174c653e8fca1d0a8e34f9bc4879c0c"
+dependencies = [
+ "aes-gcm",
+ "ece-native",
+ "hkdf 0.13.0",
+ "http",
+ "p256",
+ "sha2 0.11.1",
 ]
 
 [[package]]
