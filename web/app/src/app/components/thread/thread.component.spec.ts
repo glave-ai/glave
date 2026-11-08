@@ -271,7 +271,7 @@ describe('ThreadComponent', () => {
     // There before the thread opened, though read just after: it shows still, never settling in.
     expect(root.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
     // And in the thread's panel, for the whole thread.
-    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(2);
+    expect(root.querySelector('[data-testid="panel-changes-count"]')?.textContent).toBe('2 files');
     const steps = root.querySelector('[data-testid="thread-steps"]');
     const summary = root.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]');
     expect(summary?.querySelector('.state')?.textContent).toBe('Done');
@@ -562,9 +562,7 @@ describe('ThreadComponent', () => {
     const edge = root.querySelector<HTMLElement>('[data-testid="panel-handle"]');
     const button = root.querySelector<HTMLElement>('[data-testid="thread-panel"]');
     expect(panel?.inert).toBe(false);
-    expect(panel?.querySelector('[data-testid="panel-changes-file"]')?.textContent).toContain(
-      'README.md',
-    );
+    expect(panel?.querySelector('[data-testid="panel-changes-count"]')?.textContent).toBe('1 file');
     expect(button?.getAttribute('aria-pressed')).toBe('true');
     expect(edge?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);
     await expectAccessible(root);
@@ -584,12 +582,12 @@ describe('ThreadComponent', () => {
     expect(panel?.inert).toBe(true);
   });
 
-  it('opens a file’s changes in full from the panel and from the turn’s card', async () => {
+  it('opens a file’s changes in full from the turn’s card, and the thread’s in the panel', async () => {
     const { root, fixture } = await open(session(EDITED, README));
     const dialog = (): HTMLDialogElement | null =>
       document.querySelector<HTMLDialogElement>('dialog[data-testid="changes"]');
     expect(dialog()?.open).toBe(false);
-    root.querySelector<HTMLButtonElement>('[data-testid="panel-changes-file"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
     await fixture.whenStable();
     expect(dialog()?.open).toBe(true);
     const files = dialog()?.querySelectorAll('[data-testid="file"]');
@@ -598,6 +596,13 @@ describe('ThreadComponent', () => {
     await expectAccessible(root);
     dialog()?.querySelector<HTMLButtonElement>('[data-testid="changes-close"]')?.click();
     await fixture.whenStable();
+    expect(dialog()?.open).toBe(false);
+    // The panel's Changes tab shows them in place.
+    const tab = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="panel-tabs-tab"]'));
+    tab.find((each) => each.textContent.trim() === 'Changes')?.click();
+    await fixture.whenStable();
+    const panel = root.querySelector('[data-testid="panel-panel"]');
+    expect(panel?.querySelector('[data-testid="file"]')?.textContent).toContain('-teh');
     expect(dialog()?.open).toBe(false);
     root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
     await fixture.whenStable();

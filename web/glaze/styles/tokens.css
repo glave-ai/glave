@@ -221,6 +221,7 @@
   --glz-top-bar-height: 3.5rem;
   --glz-top-bar-surface: var(--glz-surface-page);
   --glz-top-bar-border: var(--glz-border-width) solid var(--glz-color-border);
+  --glz-tabs-inset-inline: 0; /* the tab list's and panel's sides: a pane's inset in a pane */
   --glz-content-width: 47.5rem;
   --glz-composer-lg-width: 45rem;
 

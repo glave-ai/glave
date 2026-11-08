@@ -1,57 +1,69 @@
 import { Service, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
-import type { ChangedFile, ThreadId, WorkspaceBound } from '@glave/client';
+import {
+  ApiError,
+  type ChangedFile,
+  type ProjectId,
+  type ThreadId,
+  type WorkspaceBound,
+} from '@glave/client';
 
-import { type SourceLink, sourceLinks } from '../lib/sources';
+import { sentence, unreached } from '../lib/text';
+import { onChange } from './changes.service';
 import { ChangedFilesService } from './changed-files.service';
 import { CommandsService } from './commands.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
-import { SourcesService } from './sources.service';
+import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
-/** A page a reply drew on: its title, else where it is, and the site it is on. */
-export interface Page extends SourceLink {
-  readonly name: string;
-  readonly host: string;
-}
-
-/** A file the person attached to a message. */
-export interface Attached {
-  readonly key: string;
-  readonly name: string;
-}
-
-/** Changes shown in full: a turn's files or, `null`, the thread's; one file's, or every one's. */
+/** Changes shown in full: a turn's files, one file's or every one's. */
 interface Review {
-  readonly files: readonly ChangedFile[] | null;
+  readonly files: readonly ChangedFile[];
   readonly path: string | null;
 }
 
-function hostOf(link: SourceLink): string {
-  try {
-    return new URL(link.href).host;
-  } catch {
-    return link.address;
-  }
+/** How many of the apps a project's threads use need signing in again, as last listed. */
+interface SignIns {
+  readonly project: ProjectId;
+  readonly again: number;
+}
+
+/** Compacting the thread's context on request: under way, or why it was refused. */
+interface Compacting {
+  readonly thread: ThreadId | null;
+  readonly busy: boolean;
+  readonly problem: string | null;
 }
 
 /**
  * What the open thread's panel shows, each from the server's facts: where it works (a folder
  * of a project; a chat's scratch folder is nowhere the person chose), its plan, the files it
- * changed, its commands running in the background, the pages its replies drew on and the files
- * the person attached. Whether it shows anything at all, so a plain chat has no panel, and
- * whether it shows now; a panel left with nothing closes its sheet. And the changes shown in
- * full: a turn's or the thread's, one file's or all of them. Each thread view provides its own.
+ * changed, its commands running in the background, and how many of the apps its project's
+ * threads use need signing in again (`connector/list`, read as its project is known and again
+ * as the person's connections change). Whether it shows anything at all, so a plain chat has no
+ * panel, and whether it shows now; a panel left with nothing closes its sheet. Compacting its
+ * context on request (`thread/compact`), a refusal in the server's words. And a turn's changes
+ * shown in full, one file's or all of them. Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class ThreadPanelService {
+  private readonly session = inject(SessionService);
   private readonly thread = inject(ThreadService);
   private readonly commands = inject(CommandsService);
   private readonly changed = inject(ChangedFilesService);
-  private readonly sources = inject(SourcesService);
   private readonly plans = inject(PlanService);
   private readonly panel = inject(PanelService);
   private readonly review = signal<Review | null>(null);
+  private readonly signIns = signal<SignIns | null>(null);
+  /** Starts again from nothing in each thread. */
+  private readonly compaction = linkedSignal<ThreadId | null, Compacting>({
+    source: this.thread.thread,
+    computation: (thread) => ({ thread, busy: false, problem: null }),
+  });
+  /** Counts the reads of the sign-ins begun, so an answer a later one overtook is dropped. */
+  private asked = 0;
+  /** The thread's project, once its summary says. */
+  private readonly project = computed(() => this.thread.summary()?.project ?? null);
 
   /** Where it works, once its summary says: a folder the person chose, not a scratch one. */
   readonly workspace = computed<WorkspaceBound | null>(() => {
@@ -67,35 +79,21 @@ export class ThreadPanelService {
   /** What those leave out, in the server's sentence. */
   readonly note = this.changed.note;
   readonly running = this.commands.count;
-  /** The pages its replies drew on, each once, in the order first read. */
-  readonly pages = computed<readonly Page[]>(() => {
-    const links = [...this.sources.byReply().values()].flatMap(sourceLinks);
-    const seen = new Set<string>();
-    return links.flatMap((link) => {
-      if (seen.has(link.href)) {
-        return [];
-      }
-      seen.add(link.href);
-      return [{ ...link, name: link.title ?? link.address, host: hostOf(link) }];
-    });
-  });
-  /** The files the person attached to their messages, in the order they sent them. */
-  readonly attached = computed<readonly Attached[]>(() =>
-    this.thread
-      .turns()
-      .flatMap((turn) => turn.items)
-      .flatMap((item) =>
-        item.kind === 'message' && item.from === 'person'
-          ? item.files.map((file, index) => ({
-              key: `${item.key}-${String(index)}`,
-              name: file.name,
-            }))
-          : [],
-      ),
-  );
   /**
-   * Whether the panel has anything to show: what it has cost alone is not enough, so a plain
-   * chat has no panel.
+   * How many of the apps its project's threads use need signing in again: none until listed,
+   * or when they could not be.
+   */
+  readonly signInAgain = computed(() => {
+    const listed = this.signIns();
+    return listed !== null && listed.project === this.project() ? listed.again : 0;
+  });
+  /** Whether its context is being compacted on request. */
+  readonly compacting = computed(() => this.compaction().busy);
+  /** Why it could not be compacted last, in the server's words. */
+  readonly compactProblem = computed(() => this.compaction().problem);
+  /**
+   * Whether the panel has anything to show: how full its context is alone is not enough, so a
+   * plain chat has no panel.
    */
   readonly shown = computed(
     () =>
@@ -103,9 +101,7 @@ export class ThreadPanelService {
       this.plan() !== null ||
       this.files().length > 0 ||
       this.room().length > 0 ||
-      this.running() > 0 ||
-      this.pages().length > 0 ||
-      this.attached().length > 0,
+      this.running() > 0,
   );
   /**
    * Whether the panel shows now: the thread has one, and it is open, beside the page or, on a
@@ -138,16 +134,16 @@ export class ThreadPanelService {
   /**
    * Whether the thread's history has been read as it opened, so the conversation is drawn from
    * it; at once for a thread whose first message was just sent here, which has none. Nothing
-   * else is waited for: what it changed, the pages its replies drew on, its plan and its
-   * commands each come into their own place as they are read, so a read that is slow, or never
-   * answers, holds back only what it brings. Once read, it stays so in the thread, whatever is
+   * else is waited for: what it changed, its plan, its commands and its project's sign-ins each
+   * come into their own place as they are read, so a read that is slow, or never answers, holds
+   * back only what it brings. Once read, it stays so in the thread, whatever is
    * read again as the person watches.
    */
   readonly read = this.settled.asReadonly();
   /** Whether the changes show in full. */
   readonly reviewing = computed(() => this.review() !== null);
-  /** The files whose changes show in full: a turn's, else the thread's. */
-  readonly reviewedFiles = computed(() => this.review()?.files ?? this.files());
+  /** The files whose changes show in full: a turn's. */
+  readonly reviewedFiles = computed(() => this.review()?.files ?? []);
   /** Whose changes show in full: a file's path, or `null` for every file's. */
   readonly reviewed = computed(() => this.review()?.path ?? null);
 
@@ -160,20 +156,68 @@ export class ThreadPanelService {
         });
       }
     });
+    // Its project's sign-ins, read as soon as its project is known: from the side nav's lists,
+    // before its history is, so they are there as the panel is drawn.
+    effect(() => {
+      const project = this.project();
+      if (project !== null) {
+        untracked(() => void this.readSignIns(project));
+      }
+    });
+    onChange('connections', () => {
+      const project = this.project();
+      if (project !== null) {
+        void this.readSignIns(project);
+      }
+    });
+  }
+
+  /** Shows a turn's changes in full, of `files`: the file at `path`, or every one's with `null`. */
+  showChanges(files: readonly ChangedFile[], path: string | null): void {
+    this.review.set({ files, path });
   }
 
   /**
-   * Shows changes in full: of `files`, a turn's, or the thread's with `null`; the file at `path`,
-   * or every one's with `null`.
+   * Compacts the thread's context now: the server answers once it has, and its summary says how
+   * full the context is from then on; a refusal shows in the server's words.
    */
-  showChanges(files: readonly ChangedFile[] | null, path: string | null): void {
-    this.review.set({ files, path });
+  async compact(): Promise<void> {
+    const thread = this.thread.thread();
+    if (thread === null || this.compacting()) {
+      return;
+    }
+    this.compaction.set({ thread, busy: true, problem: null });
+    let problem: string | null = null;
+    try {
+      await this.session.call('thread/compact', { thread });
+    } catch (error: unknown) {
+      problem = error instanceof ApiError ? sentence(error.message) : unreached();
+    }
+    // Unless another thread opened meanwhile, which starts afresh.
+    this.compaction.update((state) =>
+      state.thread === thread ? { thread, busy: false, problem } : state,
+    );
   }
 
   /** Shows them in full no longer, once `open` is false: the dialog says so as it closes. */
   setReviewing(open: boolean): void {
     if (!open) {
       this.review.set(null);
+    }
+  }
+
+  /** Lists the apps `project`'s threads use, and counts those that need signing in again. */
+  private async readSignIns(project: ProjectId): Promise<void> {
+    this.asked += 1;
+    const asked = this.asked;
+    try {
+      const { connectors } = await this.session.call('connector/list', { used_in: project });
+      const again = connectors.filter((each) => each.status === 'sign_in_again').length;
+      if (asked === this.asked) {
+        this.signIns.set({ project, again });
+      }
+    } catch {
+      // Unread, it says nothing: the Connections page says why when the person opens it.
     }
   }
 

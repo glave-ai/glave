@@ -35,6 +35,12 @@ export class ThreadFilesComponent {
   };
   private readonly locale = inject(LOCALE_ID);
 
+  /** What the `nth` change to the file at `path` is called: `Edited src/main.rs, change 2`. */
+  private named(note: string, path: string, nth: number): string {
+    const number = new Intl.NumberFormat(this.locale).format(nth);
+    return $localize`:@@threadFiles.change:${note}:NOTE: ${path}:PATH:, change ${number}:NUMBER:`;
+  }
+
   protected readonly shown = computed(() => {
     const path = this.path();
     const files = this.files().filter((file) => path === null || file.path === path);
@@ -44,6 +50,8 @@ export class ThreadFilesComponent {
       changes: file.changes.map((change, index) => ({
         key: `${file.path}-${String(index)}`,
         note: this.kinds[change.kind],
+        // Each change named apart, as more than one of a file's may show.
+        label: this.named(this.kinds[change.kind], file.path, index + 1),
         lines: change.lines.map((line) => ({ ...line, sign: SIGNS[line.kind] })),
       })),
     }));

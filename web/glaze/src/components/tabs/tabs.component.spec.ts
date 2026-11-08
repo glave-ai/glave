@@ -77,4 +77,14 @@ describe('GlzTabsComponent', () => {
     await press('a');
     expect(fixture.componentInstance.tab()).toBe(0);
   });
+
+  it('keeps its tab list in place and scrolls its panel under it', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const list = root.querySelector<HTMLElement>('[role="tablist"]');
+    const shown = panel(root);
+    expect(list === null ? null : getComputedStyle(list).flexShrink).toBe('0');
+    expect(shown === null ? null : getComputedStyle(shown).overflowY).toBe('auto');
+  });
 });
