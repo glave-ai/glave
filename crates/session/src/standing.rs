@@ -118,6 +118,10 @@ where
                 ended.as_ref().as_ref().map_err(ApiError::from)?;
             }
         }
+        // Its terminals end as it is put away.
+        if change != Change::Unarchive {
+            self.close_terminals(caller, thread).await;
+        }
         // Its place was found to change it, so it is known by now.
         if change != Change::Unarchive
             && let Some(worktrees) = &self.inner.worktrees

@@ -14,8 +14,8 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
     Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
-    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Screenful, Search, Searched,
+    Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -305,6 +305,12 @@ impl Waking {
         }
     }
 
+    /// The home open on the computer awake, for `terminal` there; not found once it slept.
+    fn awake_home(&self, terminal: TerminalId) -> Result<Real, ComputerError> {
+        self.opened(&*self.planned(self.home.id)?)
+            .ok_or_else(|| ComputerError::NotFound(format!("no terminal {terminal}")))
+    }
+
     /// `opened`, a workspace opened on the computer awake, `home` there, kept as planned on
     /// `computer` under an id of its own.
     fn opened_now(
@@ -558,6 +564,106 @@ impl Computers for Waking {
                 Some(open) => self.done(open.computers.commands(open.workspace).await),
                 None => Ok(Vec::new()),
             }
+        })
+    }
+
+    /// Opened on the computer, woken for it: a terminal is a command of the person's own.
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(async move {
+            if computer != self.home.computer {
+                return Err(ComputerError::NotFound(format!("no computer {computer}")));
+            }
+            let home = self.real(self.home.id).await?;
+            let opened = home
+                .computers
+                .open_terminal(home.computer, folder, owner, size);
+            self.done(opened.await)
+        })
+    }
+
+    /// Those on the computer awake; one asleep has none, and is not woken to say so.
+    fn terminals<'a>(
+        &'a self,
+        _computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(async move {
+            match self.opened(&*self.planned(self.home.id)?) {
+                Some(awake) => self.done(awake.computers.terminals(awake.computer, owner).await),
+                None => Ok(Vec::new()),
+            }
+        })
+    }
+
+    /// Terminals are only on the computer awake: one that slept since has none, and is not
+    /// woken to say so.
+    fn write_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        terminal: TerminalId,
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.awake_home(terminal)?;
+            self.done(
+                awake
+                    .computers
+                    .write_terminal(awake.computer, terminal, input)
+                    .await,
+            )
+        })
+    }
+
+    fn read_terminal(
+        &self,
+        _computer: ComputerId,
+        terminal: TerminalId,
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
+        Box::pin(async move {
+            let awake = self.awake_home(terminal)?;
+            let read = awake
+                .computers
+                .read_terminal(awake.computer, terminal, from, wait);
+            self.done(read.await)
+        })
+    }
+
+    fn resize_terminal(
+        &self,
+        _computer: ComputerId,
+        terminal: TerminalId,
+        size: TerminalSize,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.awake_home(terminal)?;
+            let resized = awake
+                .computers
+                .resize_terminal(awake.computer, terminal, size);
+            self.done(resized.await)
+        })
+    }
+
+    fn close_terminal(
+        &self,
+        _computer: ComputerId,
+        terminal: TerminalId,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.awake_home(terminal)?;
+            self.done(
+                awake
+                    .computers
+                    .close_terminal(awake.computer, terminal)
+                    .await,
+            )
         })
     }
 

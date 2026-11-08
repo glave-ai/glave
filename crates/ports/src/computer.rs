@@ -11,6 +11,7 @@ mod finding;
 mod limits;
 mod refusal;
 mod sandbox;
+mod terminal;
 mod types;
 
 use std::time::Duration;
@@ -29,10 +30,14 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, git_settings, is_kept, is_protected, is_protected_refusal,
     refuse_protected,
 };
+pub use terminal::{
+    MAX_OWNED_TERMINALS, MAX_TERMINALS, Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalInfo,
+    TerminalSize,
+};
 pub use types::{
     Command, CommandId, ComputerError, ComputerId, ComputerInfo, DiskSpace, DiskUse, Ending, Entry,
     EntryKind, FileWrite, Finished, Freed, KeptWorktree, Listed, Listing, OnTimeout, Save, Saved,
-    Sources, State, WorkspaceId, WorkspaceInfo,
+    Sources, State, TerminalId, WorkspaceId, WorkspaceInfo,
 };
 
 /// A person's own computer, awake, and the workspace of their home on it: where their
@@ -196,6 +201,83 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Err(no_background())))
     }
 
+    /// Opens a terminal of the person's own on `computer` for `owner` (a thread, as the caller
+    /// names it) (`terminal/open`): their login shell, at `folder`, on a pseudo-terminal of
+    /// `size`, outside every sandbox, in a session of its own that its computer ends with
+    /// everything in it. It stays open until it is closed, its computer is destroyed or goes
+    /// away, or nothing uses it for [`IDLE`]: nothing printed, read or written. A computer keeps
+    /// at most [`MAX_TERMINALS`] open and [`MAX_OWNED_TERMINALS`] for one owner, and refuses
+    /// one more. A computer that opens no terminals answers unsupported.
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        let _ = (computer, folder, owner, size);
+        Box::pin(std::future::ready(Err(no_terminals())))
+    }
+
+    /// The terminals open on `computer` for `owner`, oldest first, ended ones too
+    /// (`terminal/list`); none where it opens none.
+    fn terminals<'a>(
+        &'a self,
+        computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        let _ = (computer, owner);
+        Box::pin(std::future::ready(Ok(Vec::new())))
+    }
+
+    /// Types `input` into a terminal (`terminal/write`), at most [`TERMINAL_CHUNK`] bytes.
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let _ = (computer, terminal, input);
+        Box::pin(std::future::ready(Err(no_terminals())))
+    }
+
+    /// What a terminal printed from offset `from` (`terminal/read`), at most
+    /// [`TERMINAL_CHUNK`] bytes, waiting up to `wait` (at most [`MAX_WAIT`]) for something to
+    /// read when nothing is there yet (a read that finds nothing does not use it); a `from` past what it printed reads from its end. Never
+    /// forgets it: a terminal whose shell ended stays until it is closed.
+    fn read_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
+        let _ = (computer, terminal, from, wait);
+        Box::pin(std::future::ready(Err(no_terminals())))
+    }
+
+    /// Gives a terminal another size (`terminal/resize`), which its shell is told of.
+    fn resize_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+        size: TerminalSize,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        let _ = (computer, terminal, size);
+        Box::pin(std::future::ready(Err(no_terminals())))
+    }
+
+    /// Closes a terminal (`terminal/close`): hangs it up, as a terminal's hang-up does, ends
+    /// what is left in its session, and forgets it.
+    fn close_terminal(
+        &self,
+        computer: ComputerId,
+        terminal: TerminalId,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        let _ = (computer, terminal);
+        Box::pin(std::future::ready(Err(no_terminals())))
+    }
+
     /// The worktrees it keeps for threads (`computer/worktrees`); none where it keeps none.
     fn worktrees(
         &self,
@@ -278,4 +360,9 @@ fn no_background() -> ComputerError {
     ComputerError::Unsupported(
         "this computer cannot keep commands running in the background".into(),
     )
+}
+
+/// What a computer that opens no terminals answers.
+fn no_terminals() -> ComputerError {
+    ComputerError::Unsupported("this computer opens no terminals".into())
 }

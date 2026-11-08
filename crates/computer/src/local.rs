@@ -20,6 +20,7 @@ mod replace;
 mod sandbox;
 mod scratch;
 mod setup;
+mod terminal;
 mod walk;
 pub(crate) mod worktree;
 
@@ -32,7 +33,8 @@ use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
     DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
     Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
-    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    Screenful, Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo,
+    TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -48,6 +50,8 @@ pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
+use terminal::Terminals;
+pub use terminal::terminal_helper;
 
 /// What measures a disk in place of the system.
 #[derive(Clone)]
@@ -80,8 +84,11 @@ pub struct LocalComputers {
     /// The id this machine goes by as the host computer, kept across runs; a new one each
     /// time when none.
     host: Option<ComputerId>,
-    /// glave's own program, which runs [`crate::sandbox_helper`]: Linux's Landlock fallback.
+    /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback)
+    /// and [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
     helper: Option<PathBuf>,
+    /// The person's terminals open here.
+    terminals: Terminals,
     /// Places on this machine its sandboxed commands may not read, beside the home folder's
     /// credential stores.
     hidden: Arc<[PathBuf]>,
@@ -116,6 +123,7 @@ impl LocalComputers {
             projects: None,
             host: None,
             helper: None,
+            terminals: Terminals::default(),
             hidden: Arc::new([]),
             glave_on_path: None,
             environment: Arc::new(without_secrets(environment)),
@@ -427,6 +435,71 @@ impl Computers for LocalComputers {
         })
     }
 
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let start = terminal::Start {
+                helper: self.helper.as_deref(),
+                processes: &self.processes,
+                environment: &self.environment,
+            };
+            let at = (folder, owner);
+            self.terminals.open(computer, at, size, &start).await
+        })
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(std::future::ready(Ok(self.terminals.list(computer, owner))))
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        id: TerminalId,
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.write(computer, id, input))
+    }
+
+    fn read_terminal(
+        &self,
+        computer: ComputerId,
+        id: TerminalId,
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Screenful, ComputerError>> {
+        Box::pin(self.terminals.read(computer, id, from, wait))
+    }
+
+    fn resize_terminal(
+        &self,
+        computer: ComputerId,
+        id: TerminalId,
+        size: TerminalSize,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(std::future::ready(
+            self.terminals.resize(computer, id, size),
+        ))
+    }
+
+    fn close_terminal(
+        &self,
+        computer: ComputerId,
+        id: TerminalId,
+    ) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(self.terminals.close(computer, id))
+    }
+
     fn worktrees(
         &self,
         computer: ComputerId,
@@ -489,6 +562,7 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.remove_computer(computer)?;
             self.background.stop_all(|on, _| on == computer).await;
+            self.terminals.close_all(computer);
             let copies = self.base.join(computer.to_string());
             match tokio::fs::remove_dir_all(&copies).await {
                 Ok(()) => Ok(()),
