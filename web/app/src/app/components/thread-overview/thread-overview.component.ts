@@ -48,8 +48,9 @@ interface Where {
  * with Compact now, which waits while a turn runs and shows the server's words when it is
  * refused; how many of the apps its project's threads use need signing in again, which leads to
  * Connections; how many lines and files it changed, their room kept as the thread opens until
- * they are read; and its commands running in the background, each with Stop. Its sections are
- * headed a level below the panel's own heading.
+ * they are read; and its commands running in the background, each with Stop, shown once what it
+ * changed is read when no room was kept for that, so it never moves when that comes in above.
+ * Its sections are headed a level below the panel's own heading.
  */
 @Component({
   selector: 'app-thread-overview',
@@ -191,6 +192,12 @@ export class ThreadOverviewComponent {
 
   /** Whether it keeps commands running in the background. */
   protected readonly running = computed(() => this.facts.running() > 0);
+  /**
+   * Whether those are kept from sight, their room kept too, while what it changed is first read
+   * with no room kept for that: its folder can say a command changed files, whose section comes
+   * in above them, so they show once it has, never moving.
+   */
+  protected readonly runningHeld = computed(() => this.facts.unread() && this.room() === null);
 
   /** Compacts its context now, unless it waits. */
   protected compact(): void {

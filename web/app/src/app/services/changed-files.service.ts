@@ -49,12 +49,17 @@ export class ChangedFilesService {
     return changes === null ? null : new Map(changes.turns.map((turn) => [turn.turn, turn.files]));
   });
   /**
+   * Whether they are yet to be first known: while the thread opens and they are read, not once
+   * they cannot be.
+   */
+  readonly unread = computed(() => this.changes() === null && !this.failed());
+  /**
    * Until they are first known, the files the thread's ended turns recorded they changed, each
    * once in the order first changed, nothing counted, whose room is kept; else none, and none
    * once they cannot be read.
    */
   readonly room = computed<readonly ChangedFile[]>(() => {
-    if (this.changes() !== null || this.failed()) {
+    if (!this.unread()) {
       return [];
     }
     const paths = this.thread.turns().flatMap((turn) => turn.result?.changed ?? []);

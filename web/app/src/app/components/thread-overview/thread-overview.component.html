@@ -95,7 +95,7 @@
     </section>
   }
   @if (running()) {
-    <section class="section" data-testid="panel-running">
+    <section class="section" data-testid="panel-running" [class.room]="runningHeld()">
       <h3 class="heading">{{ copy.running }}</h3>
       <app-command-list />
     </section>
