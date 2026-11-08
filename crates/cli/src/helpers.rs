@@ -25,6 +25,9 @@ pub(crate) fn run() -> Option<ExitCode> {
         return Some(code);
     }
     if let Some(failure) = glave_computer::terminal_helper(&args) {
+        if failure.is_empty() {
+            return Some(ExitCode::SUCCESS);
+        }
         eprintln!("glave terminal: {failure}");
         return Some(ExitCode::from(126));
     }

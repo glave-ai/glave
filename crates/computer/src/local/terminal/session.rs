@@ -27,8 +27,10 @@ impl Session {
     /// to each process in the session, the jobs in front and behind among them; what is left
     /// after a second is killed, as it is found then.
     pub(super) async fn hang_up(&self) {
+        // Found while its leader runs, which keeps them on the terminal.
+        let members = self.members().await;
         let _ = kill_process_group(self.leader, Signal::HUP);
-        for member in self.members().await {
+        for member in members {
             let _ = kill_process(member, Signal::HUP);
         }
         let began = tokio::time::Instant::now();
@@ -42,6 +44,26 @@ impl Session {
     /// ended, whose jobs are left.
     pub(super) async fn kill_now(&self) {
         for member in self.members().await {
+            let _ = kill_process(member, Signal::KILL);
+        }
+    }
+
+    /// Ends what is in it but its leader, which asks, blocking: SIGHUP to each, then SIGKILL to
+    /// what is left a second later, as it is found then.
+    pub(super) fn end_others(&self) {
+        let others = || {
+            let mut members = self.members_now();
+            members.retain(|member| *member != self.leader);
+            members
+        };
+        for member in others() {
+            let _ = kill_process(member, Signal::HUP);
+        }
+        let began = std::time::Instant::now();
+        while began.elapsed() < GRACE && !others().is_empty() {
+            std::thread::sleep(LOOK_EVERY);
+        }
+        for member in others() {
             let _ = kill_process(member, Signal::KILL);
         }
     }
