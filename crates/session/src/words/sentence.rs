@@ -422,6 +422,12 @@ sentences! {
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
         "Changes made by commands or other tools are not listed.",
+    ChangesSince = "changes-since"
+        "The thread's files are all that differ from the version it started from, whatever changed them; a turn's are only glave's own edits.",
+    ChangesSinceShortened = "changes-since-shortened"
+        "The thread's files are all that differ from the version it started from, whatever changed them, some shown without their lines; a turn's are only glave's own edits.",
+    ChangesNoHistory = "changes-no-history"
+        "This folder keeps no version history, so only glave's own edits are listed, not what commands or other tools changed.",
 
     // A thread's plan.
     PlanProposed { steps: u64 } = "plan-proposed"

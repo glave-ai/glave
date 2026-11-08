@@ -22,6 +22,11 @@ pub struct WorkspaceBound {
     /// The workspace root, an absolute path as the computer names it. Tool output and glave's
     /// own fields use paths relative to it.
     pub root: String,
+    /// Where its folder's history stood as the thread started there: what the thread's changes
+    /// are read since. Absent for a folder that keeps no history, or whose computer was not
+    /// asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
 }
 
 /// The computer a workspace is on.

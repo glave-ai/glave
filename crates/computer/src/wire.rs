@@ -30,7 +30,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `2026-10-31` added `disk` and `largest` to `computer/status`, and `computer/worktrees` and
 /// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
 /// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
-pub(crate) const PROTOCOL: &str = "2026-11-04";
+/// `2026-11-07` added `files/changes`, what changed in a folder since a point in its history, and
+/// `at`, that point as a workspace opens, on what `workspace/open` answers.
+pub(crate) const PROTOCOL: &str = "2026-11-07";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -138,6 +140,13 @@ pub(crate) enum Request {
         workspace: WorkspaceId,
         search: Search,
     },
+    /// Answered with the `changes`, null for a folder that keeps no history.
+    #[serde(rename = "files/changes")]
+    Changes {
+        workspace: WorkspaceId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        since: Option<String>,
+    },
     #[serde(rename = "workspace/save")]
     Save { workspace: WorkspaceId, save: Save },
 }
@@ -168,6 +177,7 @@ impl Request {
             Self::Stat { .. } => "files/stat",
             Self::Glob { .. } => "files/glob",
             Self::Search { .. } => "files/search",
+            Self::Changes { .. } => "files/changes",
             Self::Save { .. } => "workspace/save",
         }
     }
@@ -197,6 +207,7 @@ const METHODS: &[&str] = &[
     "files/stat",
     "files/glob",
     "files/search",
+    "files/changes",
     "workspace/save",
 ];
 

@@ -96,9 +96,12 @@ export type ChangeKind = "wrote" | "edited" | "edited_every";
 /** A file, with every line its changes added and took out, and each change. */
 export type ChangedFile = {
   readonly added: number;
-  /** Its changes, in order. */
+  /** Its changes, in order: none for a file whose lines are not shown. */
   readonly changes: readonly (FileChange)[];
-  /** Where it is, as the call named it. */
+  /**
+   * Where it is: relative to the workspace's root when its folder says, else as the call
+   * that changed it named it.
+   */
   readonly path: string;
   readonly removed: number;
 };
@@ -470,7 +473,8 @@ export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "
 
 /**
  * One change to a file: a `write` or an `edit` that finished without an error, as its call
- * asked for it, which the tool applied exactly.
+ * asked for it, which the tool applied exactly; or, as its folder says, the whole of a new
+ * file or one stretch of an old one.
  */
 export type FileChange = {
   readonly kind: ChangeKind;
@@ -1225,16 +1229,23 @@ export type TaskKind = "agent";
 /** Whether a task is still going. */
 export type TaskStatus = "running" | "finished" | "elsewhere";
 
-/** The files a thread changed, its subagents' changes with its own, and each turn's. */
+/** The files a thread changed, and each turn's. */
 export type ThreadChanges = {
-  /** Every file it changed, in the order first changed. */
+  /**
+   * Every file in its folder that differs from where the thread started, whatever changed
+   * it, in the order of their paths; where its folder can't say, the files its own `write`
+   * and `edit` calls and its subagents' changed, in the order first changed.
+   */
   readonly files: readonly (ChangedFile)[];
   /**
-   * What they leave out, in a sentence: "Changes made by commands or other tools are not
-   * listed."
+   * What they are and leave out, in a sentence: "Changes made by commands or other tools are
+   * not listed."
    */
   readonly note: string;
-  /** Each turn that changed files, in order. */
+  /**
+   * Each turn that changed files with its own `write` and `edit` calls, or its subagents',
+   * in order.
+   */
   readonly turns: readonly (TurnChanges)[];
 };
 
@@ -1535,6 +1546,12 @@ export type WorkspaceBound = {
    * own fields use paths relative to it.
    */
   readonly root: string;
+  /**
+   * Where its folder's history stood as the thread started there: what the thread's changes
+   * are read since. Absent for a folder that keeps no history, or whose computer was not
+   * asked.
+   */
+  readonly since?: string | null;
   /** The workspace's id, as its computer named it. */
   readonly workspace: string;
 };

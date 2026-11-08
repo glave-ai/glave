@@ -38,6 +38,25 @@ fn a_program_that_ends_in_time_gives_what_it_printed() {
 }
 
 #[test]
+fn a_program_kept_to_a_few_bytes_is_ended_when_it_writes_more() {
+    let processes = Processes::unrecorded();
+    let (short, endless) = glave_ports::block_on!(async {
+        let short = processes
+            .output_at_most(Program::new("printf").arg("done"), AMPLE, 4)
+            .await;
+        // `yes` writes until its pipe closes: only closing it ends it.
+        let endless = processes
+            .output_at_most(&mut Program::new("yes"), AMPLE, 1_000)
+            .await;
+        (short, endless)
+    });
+    assert_eq!(short.unwrap().stdout, b"done", "what fits is kept whole");
+    let endless = endless.unwrap();
+    assert_eq!(endless.stdout.len(), 1_001, "the first bytes and one more");
+    assert!(!endless.status.success(), "ended by its closed pipe");
+}
+
+#[test]
 fn one_still_running_at_its_limit_is_stopped_saying_how_long_it_had() {
     let limit = Duration::from_secs(10);
     let processes = Processes::unrecorded();

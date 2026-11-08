@@ -179,6 +179,7 @@ impl Here {
             sources: Sources::Folder { path },
             home: None,
             temp: None,
+            at: None,
         };
         Waking::home(wake, None, home, &self.scratch(person).to_string_lossy())
     }

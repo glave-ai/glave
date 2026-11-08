@@ -128,6 +128,17 @@ macro_rules! forward {
             })
         }
 
+        fn changes<'a>(
+            &'a self,
+            workspace: WorkspaceId,
+            since: Option<&'a str>,
+        ) -> BoxFuture<'a, Result<Option<glave_ports::computer::Changes>, ComputerError>> {
+            Box::pin(async move {
+                let worker = self.worker_of(workspace)?;
+                self.remote(&worker).await?.changes(workspace, since).await
+            })
+        }
+
         fn save<'a>(
             &'a self,
             workspace: WorkspaceId,

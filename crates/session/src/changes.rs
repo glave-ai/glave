@@ -1,12 +1,18 @@
-//! What a thread changed in files (`specs/session.md`, "Changes"), read from its log: each
-//! `write` or `edit` call that finished without an error is a change, as its arguments asked
-//! for it, which the tool applied exactly; an `agent` call's subagent, which works in its
-//! parent's folder, changes files in the turn that made the call.
+//! What a thread changed in files (`specs/session.md`, "Changes"). The thread's are what its
+//! folder says differs from where the thread started, whatever changed it, read on its computer
+//! through the computer port. Each turn's, and the thread's where its folder can't say, are read
+//! from its log: each `write` or `edit` call that finished without an error is a change, as its
+//! arguments asked for it, which the tool applied exactly; an `agent` call's subagent, which
+//! works in its parent's folder, changes files in the turn that made the call.
+
+use std::sync::Arc;
 
 use glave_event::{Arguments, Body, CallId, RawEvent, Seq, ThreadId, decode};
-use glave_harness::Tool;
+use glave_harness::{Tool, Workspace};
+use glave_ports::computer::Changes;
 use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider};
 
+use crate::held::Slot;
 use crate::protocol::{
     ApiError, ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, Reply, ThreadChanges,
     TurnChanges,
@@ -25,7 +31,7 @@ where
         let mut reading = Reading::default();
         self.read_all(thread, |event| reading.read(event)).await?;
         let mut changes = Vec::with_capacity(reading.found.len());
-        for found in reading.found {
+        for found in std::mem::take(&mut reading.found) {
             match found {
                 Found::Made(change) => changes.push(change),
                 Found::Agent { turn, call } => {
@@ -33,13 +39,59 @@ where
                 }
             }
         }
+        let (files, note) = match self.in_folder(thread, &reading).await {
+            Some(Some(Changes { files, shortened })) => (
+                files,
+                if shortened {
+                    Sentence::ChangesSinceShortened
+                } else {
+                    Sentence::ChangesSince
+                },
+            ),
+            Some(None) => (files_of(changes.iter()), Sentence::ChangesNoHistory),
+            None => (files_of(changes.iter()), Sentence::ChangesLeftOut),
+        };
         Ok(Reply::Changes {
             changes: ThreadChanges {
-                files: files_of(changes.iter()),
+                files,
                 turns: turns_of(&changes),
-                note: Sentence::ChangesLeftOut.into(),
+                note: note.into(),
             },
         })
+    }
+
+    /// What changed in `thread`'s folder since it started there, as its computer says, its log
+    /// read as `reading`; `Some(None)` for a folder that keeps no history, and `None` when it
+    /// can't be asked or doesn't answer.
+    async fn in_folder(&self, thread: ThreadId, reading: &Reading) -> Option<Option<Changes>> {
+        let workspace = self.works_in(thread, reading.archived).await?;
+        match workspace.changes(reading.since.as_deref()).await {
+            Ok(changes) => Some(changes),
+            Err(error) => {
+                tracing::debug!(%error, %thread, "what changed in a thread's folder was not read");
+                None
+            }
+        }
+    }
+
+    /// The workspace `thread` works in, as held here, or read from the log unless it is
+    /// `archived`: opening an archived thread's workspace again would make again a worktree its
+    /// archiving removed. `None` where it can't be opened (a worker released, a project's
+    /// folder gone) or, on its person's own computer, isn't open now.
+    async fn works_in(&self, thread: ThreadId, archived: bool) -> Option<Arc<Workspace>> {
+        let held = |server: &Self| match server.lock().get(&thread) {
+            Some(Slot::Idle { thread: held, .. }) => Some(server.inner.harness.works_in(held)),
+            Some(Slot::Busy { workspace, .. }) => Some(workspace.as_ref().map(Arc::clone)),
+            None => None,
+        };
+        if let Some(workspace) = held(self) {
+            return workspace;
+        }
+        if archived {
+            return None;
+        }
+        self.load(thread).await.ok()?;
+        held(self).flatten()
     }
 
     /// The changes of the subagent `parent`'s `call` started, as `parent`'s `turn`'s: none when
@@ -83,12 +135,15 @@ enum Found {
 }
 
 /// A thread's log read so far: what changed files, the calls that will once they finish
-/// without an error, and the turn it is in.
+/// without an error, and the turn it is in; where its folder's history stood as it started
+/// there, and whether it is archived.
 #[derive(Default)]
 struct Reading {
     found: Vec<Found>,
     asked: Vec<(CallId, String, FileChange)>,
     turn: Option<Seq>,
+    since: Option<String>,
+    archived: bool,
 }
 
 impl Reading {
@@ -96,7 +151,12 @@ impl Reading {
     fn read(&mut self, event: RawEvent) {
         if !matches!(
             event.kind.as_str(),
-            "turn.started" | "tool.call.requested" | "tool.call.completed"
+            "turn.started"
+                | "tool.call.requested"
+                | "tool.call.completed"
+                | "workspace.bound"
+                | "thread.archived"
+                | "thread.unarchived"
         ) {
             return;
         }
@@ -106,6 +166,9 @@ impl Reading {
         };
         match event.body {
             Body::TurnStarted(_) => self.turn = Some(seq),
+            Body::WorkspaceBound(bound) => self.since = bound.since,
+            Body::ThreadArchived(_) => self.archived = true,
+            Body::ThreadUnarchived(_) => self.archived = false,
             Body::ToolCallRequested(requested)
                 if CallKind::of(&requested.tool) == CallKind::Agent =>
             {

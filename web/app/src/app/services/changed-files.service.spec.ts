@@ -62,7 +62,7 @@ describe('ChangedFilesService', () => {
     const fake = new FakeSession().answer('thread/events', {
       events: [
         event(1, 'turn.started', {}),
-        event(2, 'tool.call.requested', { call_id: 'c1', tool: 'bash', arguments: { json: {} } }),
+        event(2, 'tool.call.requested', { call_id: 'c1', tool: 'read', arguments: { json: {} } }),
         event(3, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
       ],
     });

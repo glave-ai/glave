@@ -353,7 +353,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/process/src/waited.rs",
-        "tokio::try_join!(child.wait(), written, drained(stdout), drained(stderr))?;",
+        "tokio::try_join!(child.wait(), written, read.0, read.1)?;",
         1,
         "inside Processes::waited, under the caller's limit",
     ),

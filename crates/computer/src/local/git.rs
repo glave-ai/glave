@@ -144,7 +144,54 @@ impl<'a> Git<'a> {
     /// What git said to `args` within `limit`, or why it said nothing: git still running then
     /// is stopped, and the error says how long it had.
     async fn said(&self, args: &[&str], limit: Duration) -> Result<Said, String> {
-        let unanswered = |error| format!("git {}: {error}", args.first().unwrap_or(&""));
+        let mut command = match self.prepared(args).await? {
+            Ok(command) => command,
+            Err(said) => return Ok(Err(said)),
+        };
+        let output = self
+            .processes
+            .output(&mut command, limit)
+            .await
+            .map_err(|error| unanswered(args, &error))?;
+        Ok(if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        } else {
+            Err(failure(args, &output))
+        })
+    }
+
+    /// What git printed for `args`, a read, within [`READS_WITHIN`]: the first `most` bytes of
+    /// it, and whether it printed more, when git was stopped there; what it said when it failed.
+    pub(crate) async fn printed(
+        &self,
+        args: &[&str],
+        most: usize,
+    ) -> Result<Result<(Vec<u8>, bool), String>, ComputerError> {
+        let mut command = match self.prepared(args).await.map_err(ComputerError::Failed)? {
+            Ok(command) => command,
+            Err(said) => return Ok(Err(said)),
+        };
+        let output = self
+            .processes
+            .output_at_most(&mut command, READS_WITHIN, most);
+        let mut output = output
+            .await
+            .map_err(|error| ComputerError::Failed(unanswered(args, &error)))?;
+        let more = output.stdout.len() > most;
+        output.stdout.truncate(most);
+        Ok(if output.status.success() || more {
+            Ok((output.stdout, more))
+        } else {
+            Err(failure(args, &output))
+        })
+    }
+
+    /// git with `args`, ready to run with every setting a repository named a program under
+    /// blanked; what git said when its settings could not be read; or why it said nothing.
+    async fn prepared(
+        &self,
+        args: &[&str],
+    ) -> Result<Result<glave_process::Program, String>, String> {
         let blanked = if args
             .first()
             .is_some_and(|command| RUNS_NO_FILTER.contains(command))
@@ -157,7 +204,7 @@ impl<'a> Git<'a> {
                 .processes
                 .output(&mut listing, READS_WITHIN)
                 .await
-                .map_err(unanswered)?;
+                .map_err(|error| unanswered(args, &error))?;
             if !listed.status.success() {
                 return Ok(Err(failure(args, &listed)));
             }
@@ -177,16 +224,7 @@ impl<'a> Git<'a> {
                 .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
                 .chain(blanked.iter().flat_map(|key| blanking(key))),
         ));
-        let output = self
-            .processes
-            .output(&mut command, limit)
-            .await
-            .map_err(unanswered)?;
-        Ok(if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-        } else {
-            Err(failure(args, &output))
-        })
+        Ok(Ok(command))
     }
 
     /// git with `args`, in this folder and environment.
@@ -226,6 +264,11 @@ fn blanking(key: &str) -> Vec<(String, String)> {
         settings.push((format!("{driver}.required"), "true".to_owned()));
     }
     settings
+}
+
+/// Why git gave no answer to `args`: `error`.
+fn unanswered(args: &[&str], error: &glave_process::ProcessError) -> String {
+    format!("git {}: {error}", args.first().unwrap_or(&""))
 }
 
 /// What git said when it failed at `args`.

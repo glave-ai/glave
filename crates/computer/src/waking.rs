@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
-    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
+    Globbed, Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched,
+    Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -393,10 +393,12 @@ impl Computers for Waking {
                 _ => None,
             };
             if let Some(root) = root {
+                // Where its history stands is not known without asking the computer.
                 let info = WorkspaceInfo {
                     id: WorkspaceId::from_uuid(crate::local::new_id()?),
                     root,
                     sources: sources.clone(),
+                    at: None,
                     ..self.home.clone()
                 };
                 self.plan(info.clone(), None);
@@ -624,6 +626,25 @@ impl Computers for Waking {
         Box::pin(async move {
             let open = self.real(workspace).await?;
             self.done(open.computers.search(open.workspace, search).await)
+        })
+    }
+
+    /// Asked only of a computer a call went through on lately, where the workspace is open:
+    /// reading what changed never wakes one.
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        Box::pin(async move {
+            let planned = self.planned(workspace)?;
+            let lately = self.last_awake().is_some_and(|(_, lately)| lately);
+            let Some(open) = self.opened(&planned).filter(|_| lately) else {
+                return Err(ComputerError::Unsupported(
+                    "the computer may be asleep, and asking it what changed would wake it".into(),
+                ));
+            };
+            self.done(open.computers.changes(open.workspace, since).await)
         })
     }
 

@@ -84,6 +84,7 @@ fn planned_at(
         },
         home: None,
         temp: None,
+        at: None,
     };
     Waking::home(wake, None, home, planned)
 }
