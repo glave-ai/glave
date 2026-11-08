@@ -7988,6 +7988,41 @@
       },
       "streams": false
     },
+    "thread/fork": {
+      "params": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "thread/get": {
       "params": {
         "properties": {

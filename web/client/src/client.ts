@@ -81,6 +81,7 @@ const SLOW: ReadonlySet<Method> = new Set<Method>([
   'provider/refresh',
   'terminal/open',
   'thread/compact',
+  'thread/fork',
   'thread/start',
   'turn/start',
 ]);

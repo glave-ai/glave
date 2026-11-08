@@ -308,6 +308,8 @@ fn invalid_said(invalid: &Invalid) -> Sentence {
         Invalid::OnlyPlan => Sentence::NothingBuilt,
         Invalid::Steps(_) => crate::plan::steps_invalid(),
         Invalid::Title(most) => Sentence::TitleLength { most: *most },
+        Invalid::ForkPoint => Sentence::ForkPoint,
+        Invalid::ForkSubagent => Sentence::ForkSubagent,
     }
 }
 
@@ -522,6 +524,8 @@ mod tests {
             HarnessError::Invalid(Invalid::ModelId(255)),
             HarnessError::Invalid(Invalid::EffortLevel(32)),
             HarnessError::Invalid(Invalid::Title(80)),
+            HarnessError::Invalid(Invalid::ForkPoint),
+            HarnessError::Invalid(Invalid::ForkSubagent),
         ];
         let mut told: Vec<(String, ApiError)> = harness
             .iter()

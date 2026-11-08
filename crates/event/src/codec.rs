@@ -19,13 +19,13 @@ use crate::payload::{
     PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet,
     ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted,
     SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
-    credits, filters, gateway, grouping, hook, instructions, language, memory, message, model,
-    passkey, people, plan, project, provider, remembering, secrets, service, signup, standing,
-    task, thread, tool, trust, turn, workspace,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
+    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    connector, credential, credits, filters, fork, gateway, grouping, hook, instructions, language,
+    memory, message, model, passkey, people, plan, project, provider, remembering, secrets,
+    service, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -41,6 +41,7 @@ pub trait Payload: Serialize + DeserializeOwned {
 pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 1),
     (thread::COMPACTED, 1),
+    (fork::TYPE, 1),
     (standing::ARCHIVED, 1),
     (standing::UNARCHIVED, 1),
     (standing::DELETED, 1),
@@ -132,6 +133,7 @@ pub struct Event {
 pub enum Body {
     ThreadStarted(ThreadStarted),
     ThreadCompacted(ThreadCompacted),
+    ThreadForked(ThreadForked),
     ThreadArchived(ThreadArchived),
     ThreadUnarchived(ThreadUnarchived),
     ThreadDeleted(ThreadDeleted),
@@ -266,6 +268,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         thread::COMPACTED => {
             thread::decode_compacted(version, data).map(|r| r.map(Body::ThreadCompacted))
         }
+        fork::TYPE => fork::decode(version, data).map(|r| r.map(Body::ThreadForked)),
         standing::ARCHIVED => {
             standing::decode_archived(version, data).map(|r| r.map(Body::ThreadArchived))
         }
@@ -344,6 +347,7 @@ impl Event {
         match &self.body {
             Body::ThreadStarted(payload) => encode(header, payload),
             Body::ThreadCompacted(payload) => encode(header, payload),
+            Body::ThreadForked(payload) => encode(header, payload),
             Body::ThreadArchived(payload) => encode(header, payload),
             Body::ThreadUnarchived(payload) => encode(header, payload),
             Body::ThreadDeleted(payload) => encode(header, payload),
@@ -584,7 +588,6 @@ mod tests {
                 name: "glave".into(),
                 version: "0.0.0".into(),
             },
-            fork: None,
             parent: None,
             for_: None,
             agent: None,

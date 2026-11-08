@@ -68,7 +68,7 @@ where
 
     /// The summary of `thread`, opened or started by `caller`: it raises what its project asks
     /// them to trust, when it asks anything (`trust.rs`).
-    async fn opened(
+    pub(crate) async fn opened(
         &self,
         caller: &Caller,
         scope: Scope,

@@ -19,9 +19,6 @@ pub(crate) const COMPACTED: &str = "thread.compacted";
 #[serde(deny_unknown_fields)]
 pub struct ThreadStarted {
     pub producer: Producer,
-    /// Set when this thread continues another thread's events up to and including `seq`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fork: Option<ForkPoint>,
     /// Set when a tool call in another thread started this one, as a subagent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<ParentCall>,
@@ -95,14 +92,6 @@ pub struct ParentCall {
 pub struct Producer {
     pub name: String,
     pub version: String,
-}
-
-/// The point in a parent thread that a fork continues from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ForkPoint {
-    pub thread: ThreadId,
-    pub seq: Seq,
 }
 
 impl Payload for ThreadStarted {

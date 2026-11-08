@@ -15,6 +15,7 @@ impl Request {
             | Self::ThreadUnarchive { thread }
             | Self::ThreadDelete { thread }
             | Self::ThreadRename { thread, .. }
+            | Self::ThreadFork { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadTurns { thread, .. }
