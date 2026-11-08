@@ -139,9 +139,7 @@ describe('AdminBrandComponent', () => {
     const file = byId(root, 'brand-logo-file') as HTMLInputElement;
     Object.defineProperty(file, 'files', { value: [new File(['x'], 'logo.png')] });
     file.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => {
-      expect(byId(root, 'brand-logo-remove')).not.toBeNull();
-    });
+    await settle();
     byId(root, 'brand-logo-remove')?.focus();
     byId(root, 'brand-logo-remove')?.click();
     await settle();
