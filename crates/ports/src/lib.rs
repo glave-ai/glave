@@ -33,6 +33,7 @@ mod scope;
 pub mod search;
 pub mod secrets;
 pub mod settings;
+mod socket;
 mod spoken;
 mod sse;
 pub mod stream;
@@ -68,6 +69,7 @@ pub use projects::{
 };
 pub use remove::remove_tree;
 pub use scope::{Located, OrgId, ProjectId, Scope};
+pub use socket::MAX_SOCKET_PATH;
 pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{

@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
+use glave_ports::MAX_SOCKET_PATH;
 use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request};
 use tokio::io::BufReader;
@@ -14,13 +15,10 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::home;
 
-/// The longest socket path every system takes (macOS allows 104 bytes with the terminator).
-const MAX_SOCKET: usize = 100;
-
 /// Where a socket meant to be at `usual` listens: there, or in `/tmp/glave-<uid>` when that
 /// path is too long for a socket.
 pub(crate) fn place(usual: PathBuf) -> anyhow::Result<PathBuf> {
-    if usual.as_os_str().len() <= MAX_SOCKET {
+    if usual.as_os_str().len() <= MAX_SOCKET_PATH {
         return Ok(usual);
     }
     let uid = {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 
-use glave_ports::testing::{Running, TempDir, any_secret, read_program};
+use glave_ports::testing::{Running, SocketPath, TempDir, any_secret, read_program};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -66,16 +66,10 @@ pub(crate) struct Lifeline {
     _held: Arc<Listening>,
 }
 
-/// The listener, and its socket's file, removed when it goes.
+/// The listener, and its socket's path, whose file goes after it.
 struct Listening {
     _listener: std::os::unix::net::UnixListener,
-    path: PathBuf,
-}
-
-impl Drop for Listening {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
+    _socket: SocketPath,
 }
 
 impl Lifeline {
@@ -84,35 +78,16 @@ impl Lifeline {
 
     /// A new one for `folder`, listening.
     pub(crate) fn new(folder: &Path) -> Self {
-        let path = socket_path(folder, "lifeline");
-        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let socket = SocketPath::new(folder, "lifeline").unwrap();
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         Self {
-            path: path.clone(),
+            path: socket.to_path_buf(),
             _held: Arc::new(Listening {
                 _listener: listener,
-                path,
+                _socket: socket,
             }),
         }
     }
-}
-
-/// Where a socket named `name` for `folder` goes: in it, or, where that path would be too long
-/// for a socket's (a deep system temp folder), in `/tmp`, named after the temp folder `folder`
-/// is in (`glave-<name>-<pid>-<n>`, this process's own), and any file a killed run left there
-/// removed first.
-pub(crate) fn socket_path(folder: &Path, name: &str) -> PathBuf {
-    let path = folder.join(name);
-    let Some(owner) = folder.parent().and_then(Path::file_name) else {
-        return path;
-    };
-    if path.as_os_str().len() <= 100 {
-        return path;
-    }
-    let mut short = owner.to_os_string();
-    short.push(format!(".{name}"));
-    let short = Path::new("/tmp").join(short);
-    let _ = std::fs::remove_file(&short);
-    short
 }
 
 /// Whether the process `pid` still runs (or waits to be reaped).
