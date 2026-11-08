@@ -158,7 +158,7 @@ impl Kind {
             Self::Person => uuid(0xdead_000a),
             Self::Invite => uuid(0xdead_000b),
             Self::InviteCode => "1".repeat(64),
-            Self::Device => uuid(0xdead_000c),
+            Self::Device => uuid(0xdead_000d),
             Self::Files => String::new(),
         })
     }
