@@ -30,7 +30,8 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `2026-10-31` added `disk` and `largest` to `computer/status`, and `computer/worktrees` and
 /// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
 /// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
-pub(crate) const PROTOCOL: &str = "2026-11-04";
+/// `2026-11-08` added `ports` to `command/list`'s commands: where each running one listens.
+pub(crate) const PROTOCOL: &str = "2026-11-08";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

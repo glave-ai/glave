@@ -226,7 +226,7 @@ where
             let server = self.clone();
             stops.spawn(async move {
                 for command in theirs.commands.running_now().await {
-                    if let Err(error) = theirs.commands.stop_for(command.id, by.clone()).await {
+                    if let Err(error) = theirs.commands.stop_for(command.shown.id, by.clone()).await {
                         tracing::warn!(
                             error = error.message(),
                             "could not stop a removed person's command"

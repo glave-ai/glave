@@ -50,6 +50,12 @@ pub struct Background {
     /// How it ended; `None` while it runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<Ending>,
+    /// The TCP ports its processes listen on while it runs, lowest first, on the computer's
+    /// loopback or on every address, so the computer's own loopback reaches each: where a dev
+    /// server it started serves (`specs/computers.md`, "Background commands"). None where the
+    /// computer cannot tell.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ports: Vec<u16>,
 }
 
 #[expect(

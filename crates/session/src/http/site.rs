@@ -207,7 +207,10 @@ impl fmt::Debug for Site {
 
 /// The policy every answer carries; `nonce` admits the styles Angular adds at run time. Images
 /// come from the app, and from the person's own computer: a file they add to a message is
-/// shown from a `blob:` URL the page makes of it, never fetched from anywhere.
+/// shown from a `blob:` URL the page makes of it, never fetched from anywhere. The one frame it
+/// shows is a thread's preview, at an origin of its own on this computer's loopback
+/// (`previews.rs`), so that and nothing else may be framed; glave's own pages refuse every
+/// frame.
 pub(crate) fn policy(nonce: &str) -> String {
     [
         "default-src 'none'",
@@ -216,6 +219,7 @@ pub(crate) fn policy(nonce: &str) -> String {
         "font-src 'self'",
         "img-src 'self' blob:",
         "connect-src 'self'",
+        "frame-src http://127.0.0.1:*",
         "manifest-src 'self'",
         "base-uri 'self'",
         "form-action 'none'",
@@ -389,6 +393,7 @@ mod tests {
         assert!(!policy.contains("unsafe-inline"));
         assert!(policy.contains(&format!("style-src 'self' 'nonce-{nonce}'")));
         assert!(policy.contains("frame-ancestors 'none'"));
+        assert!(policy.contains("frame-src http://127.0.0.1:*;"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
     }

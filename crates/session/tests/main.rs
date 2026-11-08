@@ -49,6 +49,7 @@ mod people;
 mod permissions;
 mod placement;
 mod plans;
+mod previews;
 mod projects;
 mod providers;
 mod questions;

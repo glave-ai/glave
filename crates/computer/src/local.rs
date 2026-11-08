@@ -711,7 +711,7 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         Box::pin(async move {
             self.registry.workspace(workspace)?;
-            Ok(self.background.list(workspace))
+            Ok(self.background.list(workspace, &self.processes).await)
         })
     }
 

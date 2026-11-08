@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use glave_event::{Body, CommandEnding, Event, Principal};
 use glave_ports::computer::{
-    CommandId, ComputerError, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
+    CommandId, ComputerError, ComputerId, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::task::JoinSet;
@@ -20,7 +20,7 @@ use tokio::task::JoinSet;
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 
-pub use record::{Commands, RunningCommand};
+pub use record::{Commands, Running, RunningCommand};
 pub(crate) use record::{Entry, ending_of};
 
 /// What a batch staged of a thread's command changes: how many, and when each command it
@@ -46,14 +46,18 @@ impl Staged {
 }
 
 impl Commands {
-    /// The record `events` leave, its commands reached through `computers`.
-    pub(crate) fn rebuilt(events: &[Event], computers: &Arc<dyn Computers>) -> Self {
+    /// The record `events` leave, its commands reached through `computers`, on `computer`.
+    pub(crate) fn rebuilt(
+        events: &[Event],
+        computers: &Arc<dyn Computers>,
+        computer: ComputerId,
+    ) -> Self {
         let commands = Self::default();
         for event in events {
             match &event.body {
                 Body::CommandStarted(started) => commands.restore(
                     CommandId::from_uuid(started.command),
-                    WorkspaceId::from_uuid(started.workspace),
+                    (WorkspaceId::from_uuid(started.workspace), computer),
                     Arc::clone(computers),
                     started.script.clone(),
                     event.header.at,
@@ -121,9 +125,11 @@ impl Commands {
     }
 
     /// Asks the computers how the commands still running are, and notes each one that ended,
-    /// or that its computer no longer has. A computer that cannot be reached changes nothing.
-    pub(crate) async fn check(&self) {
+    /// or that its computer no longer has; answers the ports each one still running listens
+    /// on. A computer that cannot be reached changes nothing.
+    pub(crate) async fn check(&self) -> Vec<(CommandId, Vec<u16>)> {
         let running = self.running();
+        let mut listening = Vec::new();
         let mut workspaces: Vec<(WorkspaceId, Arc<dyn Computers>)> = Vec::new();
         for entry in &running {
             if !workspaces.iter().any(|(at, _)| *at == entry.workspace) {
@@ -138,15 +144,15 @@ impl Commands {
             };
             for entry in running.iter().filter(|entry| entry.workspace == workspace) {
                 match listed.iter().find(|listed| listed.id == entry.id) {
-                    Some(listed) => {
-                        if let Some(ending) = listed.ended {
-                            self.end(entry.id, ending_of(ending), Some(listed.millis));
-                        }
-                    }
+                    Some(listed) => match listed.ended {
+                        Some(ending) => self.end(entry.id, ending_of(ending), Some(listed.millis)),
+                        None => listening.push((entry.id, listed.ports.clone())),
+                    },
                     None => self.end(entry.id, CommandEnding::Gone, None),
                 }
             }
         }
+        listening
     }
 
     /// Waits until one of the commands running ends, however it ends (by itself, or killed by
@@ -197,16 +203,29 @@ impl Commands {
         }
     }
 
-    /// The commands running now, after asking their computers.
-    pub async fn running_now(&self) -> Vec<RunningCommand> {
-        self.check().await;
+    /// The commands running now, after asking their computers, each with the ports it listens
+    /// on there.
+    pub async fn running_now(&self) -> Vec<Running> {
+        let mut listening = self.check().await;
         self.running()
             .into_iter()
-            .map(|entry| RunningCommand {
-                id: entry.id,
-                command: entry.script,
-                started_at: entry.started,
-                summary: record::RUNNING.to_owned(),
+            .map(|entry| {
+                let ports = listening
+                    .iter_mut()
+                    .find(|(id, _)| *id == entry.id)
+                    .map(|(_, ports)| std::mem::take(ports))
+                    .unwrap_or_default();
+                let shown = RunningCommand {
+                    id: entry.id,
+                    command: entry.script,
+                    started_at: entry.started,
+                    summary: record::RUNNING.to_owned(),
+                };
+                Running {
+                    shown,
+                    computer: entry.computer,
+                    ports,
+                }
             })
             .collect()
     }
@@ -285,7 +304,7 @@ where
     /// ended meanwhile: as a turn starts, and as a thread resumes.
     pub(crate) async fn check_commands(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         if thread.commands.any_running() {
-            thread.commands.check().await;
+            let _ = thread.commands.check().await;
         }
         self.record_commands(thread).await
     }

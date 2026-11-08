@@ -94,8 +94,9 @@ fn a_resumed_thread_knows_what_still_runs_and_its_next_work_records_what_ended_m
         let resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
         let running = resumed.commands().running_now().await;
         assert_eq!(running.len(), 1);
-        assert_eq!(running[0].command, "sleep 30");
-        assert!(running[0].started_at.is_some());
+        assert_eq!(running[0].shown.command, "sleep 30");
+        assert_eq!(running[0].ports, [] as [u16; 0], "sleep listens on nothing");
+        assert!(running[0].shown.started_at.is_some());
 
         // The person stops it.
         let at = "2026-10-17T10:00:00Z".parse().unwrap();
@@ -103,7 +104,7 @@ fn a_resumed_thread_knows_what_still_runs_and_its_next_work_records_what_ended_m
         let commands = resumed.commands();
         assert!(
             commands
-                .stop_for(running[0].id, person.clone())
+                .stop_for(running[0].shown.id, person.clone())
                 .await
                 .unwrap()
         );

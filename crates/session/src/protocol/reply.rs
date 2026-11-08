@@ -15,7 +15,7 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
+    PersonInfo, PlanInfo, Preview, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
     SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
     Told, TrustAsk, WatchEnd,
 };
@@ -369,8 +369,13 @@ pub enum Reply {
     /// Where the person signs in to a remote server.
     #[schemars(title = "SignIn")]
     SignIn { sign_in: SignInLink },
+    /// The thread's commands running in the background, and the previews of what they serve,
+    /// for whoever may open them on this computer.
     #[schemars(title = "Commands")]
-    Commands { commands: Vec<RunningCommand> },
+    Commands {
+        commands: Vec<RunningCommand>,
+        previews: Vec<Preview>,
+    },
     #[schemars(title = "Device")]
     Device { device: DeviceCode },
     /// A sign-in in the browser still waiting for the person.

@@ -5,8 +5,9 @@
 //! [`glave_ports::computer::IDLE`]; when the
 //! command exits by itself, it stops whatever the command left running. Dropping the registry
 //! drops every watcher, and with it each command's `Child`, which kills its group, so nothing
-//! outlives this machine's computers.
+//! outlives this machine's computers. A listing says which ports each one running listens on.
 
+mod listening;
 mod unread;
 
 use std::collections::HashMap;
@@ -17,6 +18,7 @@ use glave_ports::computer::{
     Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, MAX_BACKGROUND,
     MAX_WAIT, Printed, Refusal, WorkspaceId,
 };
+use glave_process::Processes;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -57,6 +59,8 @@ struct Entry {
     workspace: WorkspaceId,
     script: String,
     started: Instant,
+    /// Its process group, by its leader's id, where the system gave one.
+    group: Option<u32>,
     shared: Arc<Shared>,
     watcher: JoinHandle<()>,
 }
@@ -153,6 +157,7 @@ impl Backgrounds {
             return Err(Box::new(spawned));
         }
         let started = spawned.started;
+        let group = spawned.child.id();
         let (ended, _) = watch::channel(None);
         let shared = Arc::new(Shared {
             unread: Mutex::new(Unread::default()),
@@ -173,6 +178,7 @@ impl Backgrounds {
                 workspace,
                 script,
                 started,
+                group,
                 shared,
                 watcher,
             },
@@ -263,11 +269,29 @@ impl Backgrounds {
             .any(|entry| entry.shared.ended().is_none())
     }
 
-    /// The commands in `workspace`, oldest first.
-    pub(crate) fn list(&self, workspace: WorkspaceId) -> Vec<Background> {
+    /// The commands in `workspace`, oldest first, each running one with the ports its
+    /// processes listen on, which `processes` may run a program to find.
+    pub(crate) async fn list(
+        &self,
+        workspace: WorkspaceId,
+        processes: &Processes,
+    ) -> Vec<Background> {
+        let mut listed = self.listed(workspace);
+        let groups: Vec<u32> = listed.iter().filter_map(|(group, _)| *group).collect();
+        let mut ports = listening::ports(&groups, processes).await;
+        for (group, command) in &mut listed {
+            if let Some(found) = group.and_then(|group| ports.remove(&group)) {
+                command.ports = found;
+            }
+        }
+        listed.into_iter().map(|(_, command)| command).collect()
+    }
+
+    /// The commands in `workspace`, oldest first, each running one with its process group.
+    fn listed(&self, workspace: WorkspaceId) -> Vec<(Option<u32>, Background)> {
         let mut held = self.held();
         prune(&mut held);
-        let mut listed: Vec<(Instant, Background)> = held
+        let mut listed: Vec<(Instant, Option<u32>, Background)> = held
             .iter()
             .filter(|(_, entry)| entry.workspace == workspace)
             .map(|(id, entry)| {
@@ -281,12 +305,17 @@ impl Backgrounds {
                     script: entry.script.clone(),
                     millis,
                     ended: ended.map(|ended| ended.finished.ending),
+                    ports: Vec::new(),
                 };
-                (entry.started, listed)
+                let group = entry.group.filter(|_| ended.is_none());
+                (entry.started, group, listed)
             })
             .collect();
-        listed.sort_by_key(|(started, _)| *started);
-        listed.into_iter().map(|(_, listed)| listed).collect()
+        listed.sort_by_key(|(started, ..)| *started);
+        listed
+            .into_iter()
+            .map(|(_, group, listed)| (group, listed))
+            .collect()
     }
 
     /// Stops every command `which` picks by its computer and workspace, then forgets them: a

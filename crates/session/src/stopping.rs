@@ -47,12 +47,14 @@ impl<P, L, B> Server<P, L, B> {
             cancel.interrupt();
         }
         ended(&running).await;
-        // Ends are recorded no more: what still runs is told at the next start.
+        // Ends are recorded no more: what still runs is told at the next start, and previewed
+        // no more.
         self.inner
             .watched
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
+        self.inner.previews.close_all().done().await;
         let refreshing = self
             .inner
             .refreshing

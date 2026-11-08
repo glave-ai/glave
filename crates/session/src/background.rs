@@ -1,9 +1,10 @@
 //! A thread's commands in the background, for its clients (`specs/session.md`, "Commands in the
-//! background"): `command/list` answers those running, and `command/stop` stops one for the
-//! person who asks, whether a turn holds the thread or not. What either finds ended is recorded
-//! at once when the thread is idle, else by its turn's next record. Each thread held here has
-//! its commands watched, so one that ends however it ends (by itself, or killed by another
-//! command) is recorded as it does, and its clients hear of it.
+//! background"): `command/list` answers those running, with the previews of what they serve
+//! (`previews.rs`), and `command/stop` stops one for the person who asks, whether a turn holds
+//! the thread or not. What either finds ended is recorded at once when the thread is idle, else
+//! by its turn's next record. Each thread held here has its commands watched, so one that ends
+//! however it ends (by itself, or killed by another command) is recorded as it does, its
+//! previews closed, and its clients hear of it.
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, Weak};
@@ -51,20 +52,29 @@ where
         }
     }
 
-    /// Answers `command/list`: none for a thread whose project's folder isn't there anymore,
-    /// where nothing runs.
-    pub(crate) async fn list_commands(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    /// Answers `command/list`, with the previews of what they serve for `caller`: none for a
+    /// thread whose project's folder isn't there anymore, where nothing runs.
+    pub(crate) async fn list_commands(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
         let commands = match self.commands_of(thread).await {
             Err(refused) if crate::gone::is_gone(&refused) => {
                 return Ok(Reply::Commands {
                     commands: Vec::new(),
+                    previews: Vec::new(),
                 });
             }
             commands => commands?,
         };
         let running = commands.running_now().await;
         self.record_commands(thread).await;
-        Ok(Reply::Commands { commands: running })
+        let previews = self.previews_for(caller, thread, &running).await;
+        Ok(Reply::Commands {
+            commands: running.into_iter().map(|command| command.shown).collect(),
+            previews,
+        })
     }
 
     /// Answers `command/stop`.
@@ -84,6 +94,11 @@ where
                 },
             )
         })?;
+        self.inner
+            .previews
+            .keep_running(thread, |command| commands.runs(command))
+            .done()
+            .await;
         self.record_commands(thread).await;
         if stopped {
             Ok(Reply::Done {})
@@ -139,7 +154,7 @@ where
         );
     }
 
-    /// Stops watching `commands`, those of `thread`, let go of here.
+    /// Stops watching `commands`, those of `thread`, let go of here, and closes its previews.
     pub(crate) fn unwatch_commands(&self, thread: ThreadId, commands: &Arc<Commands>) {
         let mut watched = self.watched();
         if watched
@@ -147,6 +162,8 @@ where
             .is_some_and(|watching| Arc::ptr_eq(&watching.commands, commands))
         {
             watched.remove(&thread);
+            // Stopped at once; nothing here waits for them to end.
+            let _ = self.inner.previews.close(thread);
         }
     }
 
@@ -188,6 +205,12 @@ async fn record_endings<P, L, B>(
         let Some(inner) = inner.upgrade() else {
             return;
         };
+        // What it served is no longer there to preview.
+        inner
+            .previews
+            .keep_running(thread, |command| commands.runs(command))
+            .done()
+            .await;
         Server { inner }.record_ended(thread).await;
     }
 }

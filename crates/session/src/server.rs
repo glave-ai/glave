@@ -289,6 +289,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) refreshing: Mutex<Option<JoinHandle<()>>>,
     /// The commands in the background of the threads held here, watched (`background.rs`).
     pub(crate) watched: Mutex<crate::background::Watched>,
+    /// The previews open of what those commands serve (`previews.rs`).
+    pub(crate) previews: crate::previews::Previews,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
     /// Where what a project asks to be trusted is read, and the person's yes kept.
@@ -346,6 +348,10 @@ where
     /// A server for the projects of `org`, its threads working on the computer
     /// `wiring.workspace` is on: in their projects' folders, or scratch folders. It has no
     /// project of its own: a request that names none acts in the caller's Chats.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "a line for each of the server's parts, as `Inner` holds them"
+    )]
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
@@ -407,6 +413,7 @@ where
                 tasks: Mutex::new(Vec::new()),
                 refreshing: Mutex::new(None),
                 watched: Mutex::new(HashMap::new()),
+                previews: crate::previews::Previews::default(),
                 keyed: Keyed::default(),
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),

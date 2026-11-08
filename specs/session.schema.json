@@ -2499,6 +2499,32 @@
         }
       ]
     },
+    "Preview": {
+      "description": "A page a command in the background serves, shown at an address of its own on this\ncomputer, never glave's own (`specs/session.md`, \"Previews\"): opened in a browser here, or\nin a frame of the app.",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/CommandId",
+          "description": "The command that serves it, as `command/list` lists it."
+        },
+        "port": {
+          "description": "The port the command listens on, on its computer.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Where a browser on this computer opens it: `http://127.0.0.1:<its own port>/`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "port",
+        "url"
+      ],
+      "type": "object"
+    },
     "Principal": {
       "additionalProperties": false,
       "description": "A reference to a principal: `{\"kind\": \"person\", \"id\": \"…\"}`. Every kind but `glave` has an\nid.",
@@ -4970,16 +4996,24 @@
         "type": "object"
       },
       "result": {
+        "description": "The thread's commands running in the background, and the previews of what they serve,\nfor whoever may open them on this computer.",
         "properties": {
           "commands": {
             "items": {
               "$ref": "#/$defs/RunningCommand"
             },
             "type": "array"
+          },
+          "previews": {
+            "items": {
+              "$ref": "#/$defs/Preview"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "commands"
+          "commands",
+          "previews"
         ],
         "type": "object"
       },

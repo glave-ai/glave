@@ -99,7 +99,7 @@ async fn running<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) ->
         .await
         .unwrap()
     {
-        Reply::Commands { commands } => commands.len(),
+        Reply::Commands { commands, .. } => commands.len(),
         other => panic!("commands, not {other:?}"),
     }
 }

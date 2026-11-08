@@ -35,7 +35,7 @@ async fn listed<L: glave_ports::EventLog + 'static>(
         .await
         .unwrap()
     {
-        Reply::Commands { commands } => commands,
+        Reply::Commands { commands, .. } => commands,
         other => panic!("commands, not {other:?}"),
     }
 }

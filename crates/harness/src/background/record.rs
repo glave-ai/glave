@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::watch;
 
 use glave_event::{At, CallId, CommandEnded, CommandEnding, CommandStarted};
-use glave_ports::computer::{CommandId, Computers, Ending, WorkspaceId};
+use glave_ports::computer::{CommandId, ComputerId, Computers, Ending, WorkspaceId};
 
 /// A thread's commands in the background. Clones of a thread share it.
 #[derive(Default)]
@@ -39,6 +39,8 @@ pub(crate) struct Entry {
     pub(crate) number: u32,
     pub(crate) id: CommandId,
     pub(crate) workspace: WorkspaceId,
+    /// The computer it runs on.
+    pub(crate) computer: ComputerId,
     pub(crate) computers: Arc<dyn Computers>,
     pub(crate) script: String,
     /// When it was recorded as started; unknown until then.
@@ -64,6 +66,16 @@ pub struct RunningCommand {
     pub summary: String,
 }
 
+/// A command running in the background as the harness knows it: what a client is shown, the
+/// computer it runs on, and the TCP ports on that computer its processes listen on, as it said
+/// when asked just now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Running {
+    pub shown: RunningCommand,
+    pub computer: ComputerId,
+    pub ports: Vec<u16>,
+}
+
 /// The sentence a command running in the background is listed with.
 pub(crate) const RUNNING: &str =
     "Still running: the agent started it, and it runs until it ends or someone stops it.";
@@ -85,12 +97,12 @@ impl Commands {
         self.inner().call = Some(call);
     }
 
-    /// Keeps `id`, started (or `moved` there at its timeout) by the call running now, and
-    /// answers its number.
+    /// Keeps `id`, started in `workspace` on `computer` (or `moved` there at its timeout) by
+    /// the call running now, and answers its number.
     pub(crate) fn add(
         &self,
         id: CommandId,
-        workspace: WorkspaceId,
+        (workspace, computer): (WorkspaceId, ComputerId),
         computers: Arc<dyn Computers>,
         script: String,
         moved: bool,
@@ -111,6 +123,7 @@ impl Commands {
             number,
             id,
             workspace,
+            computer,
             computers,
             script,
             started: None,
@@ -125,11 +138,12 @@ impl Commands {
         self.kept.subscribe()
     }
 
-    /// Keeps a command the log says was started, with nothing to record.
+    /// Keeps a command the log says was started in `workspace` on `computer`, with nothing to
+    /// record.
     pub(super) fn restore(
         &self,
         id: CommandId,
-        workspace: WorkspaceId,
+        (workspace, computer): (WorkspaceId, ComputerId),
         computers: Arc<dyn Computers>,
         script: String,
         started: At,
@@ -140,6 +154,7 @@ impl Commands {
             number,
             id,
             workspace,
+            computer,
             computers,
             script,
             started: Some(started),
@@ -212,6 +227,14 @@ impl Commands {
     /// Whether any command is not known to have ended.
     pub fn any_running(&self) -> bool {
         self.inner().all.iter().any(|entry| entry.ended.is_none())
+    }
+
+    /// Whether the command `id` is one of these and is not known to have ended.
+    pub fn runs(&self, id: CommandId) -> bool {
+        self.inner()
+            .all
+            .iter()
+            .any(|entry| entry.id == id && entry.ended.is_none())
     }
 
     /// The changes waiting to be recorded, in order. They wait until [`Commands::recorded`]

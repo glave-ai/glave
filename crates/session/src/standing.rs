@@ -118,6 +118,10 @@ where
                 ended.as_ref().as_ref().map_err(ApiError::from)?;
             }
         }
+        // Its commands were stopped as it was put away: so are the previews of what they served.
+        if change != Change::Unarchive {
+            self.inner.previews.close(thread).done().await;
+        }
         // Its place was found to change it, so it is known by now.
         if change != Change::Unarchive
             && let Some(worktrees) = &self.inner.worktrees
