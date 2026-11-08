@@ -138,8 +138,14 @@ export class HomeComponent {
     const offered = this.offered();
     return offered !== null && offered.project === this.inFolder() ? offered.copies : null;
   });
-  /** Whether it would start in a project's folder, where the choice keeps its room. */
-  protected readonly inProjectFolder = computed(() => this.inFolder() !== null);
+  /**
+   * Whether it would start in a project, where the choice keeps its room: from the first draw
+   * of a project's page, before the projects are read.
+   */
+  protected readonly inProjectFolder = computed(() => {
+    const where = this.where();
+    return where !== null && where !== this.projects.home();
+  });
   /** Whether no copy is offered there, or not yet known to be. */
   protected readonly unoffered = computed(() => this.copies() === null);
   /** Whether it works on one: as the server would start it, until the person picks. */
