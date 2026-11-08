@@ -339,6 +339,17 @@ A turn is drawn as its steps (#903): the person's message, then what the model s
 - **Live,** each model call of a turn begins with `turn/live`'s `waiting`: the text and reasoning streamed after it are the new step's, and what streamed before it of a call that was not recorded, one tried again, is gone.
 - **Drawn by each client.** The web app draws each run as its line, which opens to its calls, each the line its `tool.call.requested` records. The terminal prints each call as it runs.
 
+## Compaction
+
+A thread keeps within its model's context window by compacting: the whole conversation is summarized, and the thread goes on from the summary, the latest tool results and the person's latest request, recorded as `thread.compacted` (`events.md`); the events before it stay in the log. It compacts on its own before a request that would fill its threshold (80% of the window unless set), when the person presses Compact now in the thread's panel (`thread/compact`), and when they ask for it in their own words.
+
+- **Asked in plain words** (#1253). "Go ahead and compact, and keep the API decisions front and centre", in any words and any language, and the model calls `compact`, one of glave's own tools, its `focus` what they want kept, as Claude Code's `/compact [instructions]` adds its instructions to the summary's prompt. It is listed in every thread of the person's from the thread's first call, so it never changes a prefix (`invariants.md`, 27); a subagent, whom no person talks to, has none; its description tells the model to call it only when asked.
+- **At the next step.** The call only notes the ask and answers at once. At the next boundary between model calls the whole conversation, the call and its result inside it, is summarized as at the threshold, the summary asked to keep the focus front and centre, in full. A turn compacts once for it: another call in the turn is answered that it was already asked for, and compacts nothing.
+- **Done, not asked again.** The restarted conversation opens saying the person asked for it and it is done, and not to compact again unless they ask again; it gives their latest request as one whose compaction is done, and leaves the call out of the latest tool results it keeps. So neither reads as an ask still to answer.
+- **What the person sees**: the call's line ("Compact the conversation, keeping the API decisions"), then the compaction itself, as any other.
+- **False alarms are counted**: an eval attempt counts its `compact` calls in every task that never asks for compaction (`asks_to_compact`, `evals/README.md`), totalled per model in the report.
+- *Partly.* An ask in a response whose other call waits for the person is lost when the turn goes on from that wait, which builds the turn again from its log: it goes on uncompacted. A summary written in the background while the turn goes on waits for a measurement that it cuts waiting (#1299).
+
 ## Sources
 
 What a reply drew on from the web shows under it (#677): the pages the agent read with glave's own `web_fetch` in its turn, before the reply.
@@ -534,6 +545,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Changes' room in the history** (#913): each turn's `turn.ended` records the files it changed, so the web app keeps their room as a thread opens.
 - **The thread's changes from its folder** (#1251): what differs in its folder from where it started, whatever changed it, read on its computer (`files/changes`), with each turn's still glave's own edits; the web app reads them again as a command ends.
 - **Runs of calls in a line** (#903): `thread/steps`, each run of calls with its line, by the kind each call records, and each turn's reply. Not yet: the web app drawing them.
+- **Compaction asked for in plain words** (#1253): `compact`, listed from a thread's first call, which compacts the whole conversation at the next step with what the person wants kept front and centre ("Compaction").
 - **Steps in the server's words** (#851): each call's line recorded in its `tool.call.requested` and drawn by the web app's receipts, a search's as what it searched.
 - **Thoughts of older messages** (#927): a message recorded before its `thought` was kept is sent with its headline, read from its reasoning.
 - **Receipts from the server** (#817): a turn's result recorded in its `turn.ended`, drawn by the web app's receipt as by the terminal's, a model on the server's own computer priced at nothing. Not yet: a running turn's result so far, which shows once it ends.

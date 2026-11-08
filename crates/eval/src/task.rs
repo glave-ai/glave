@@ -78,6 +78,8 @@ pub struct Task {
     /// Whether the person builds the plan the instruction's turn proposed, as Build it does,
     /// before the turns after it.
     pub build: bool,
+    /// Whether a turn asks the model to compact, so its `compact` calls are no false alarm.
+    pub asks_to_compact: bool,
     /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
     pub memory: bool,
     /// The first thread's project setting: `shared` (default), `isolated` or `off`.
@@ -231,6 +233,10 @@ struct Agent {
 /// glave's own section. Harbor ignores it; typos here are errors.
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the task's own switches, each a key of its task.toml"
+)]
 struct Glave {
     #[serde(default)]
     tier: Tier,
@@ -253,6 +259,8 @@ struct Glave {
     steer: Option<Steer>,
     #[serde(default)]
     build: bool,
+    #[serde(default)]
+    asks_to_compact: bool,
     #[serde(default)]
     memory: bool,
     project_memory: Option<String>,
@@ -339,6 +347,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
         steer: glave.steer,
         build: glave.build,
+        asks_to_compact: glave.asks_to_compact,
         memory: glave.memory,
         project_memory: glave.project_memory,
         threads: glave.threads,

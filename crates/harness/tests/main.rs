@@ -18,6 +18,7 @@ mod blobs;
 mod cancel;
 mod checks;
 mod compaction;
+mod compaction_asked;
 mod computers;
 mod connection_places;
 mod faults;

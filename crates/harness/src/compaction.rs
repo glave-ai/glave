@@ -1,12 +1,14 @@
 //! Keeping a thread within the model's context window: estimating how large the next request
-//! will be, and restarting the conversation from a handoff summary when it nears the limit.
-//! The summary is recorded as `thread.compacted`; nothing before it leaves the log.
+//! will be, and restarting the conversation from a handoff summary when it nears the limit, or
+//! when the person asks (`asked.rs`). The summary is recorded as `thread.compacted`; nothing
+//! before it leaves the log.
 
+mod asked;
 mod recent;
 
 use std::fmt::Write as _;
 
-use glave_event::{Arguments, Part, Seq, ThreadCompacted, TurnResult};
+use glave_event::{Arguments, Part, Seq, ThreadCompacted};
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
@@ -18,7 +20,9 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::room::{stated_window, tool_room, trim_oldest};
 use crate::toolset::ToolSet;
-use crate::turn::Live;
+use crate::turn::{Live, Step};
+
+pub(crate) use asked::{Asked, COMPACT, compact_asked, describe as described, spec};
 
 /// When to compact a thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,10 +67,19 @@ const CHARS_PER_TOKEN: u64 = 4;
 /// The longest summary asked for, in tokens.
 const SUMMARY_TOKENS: u32 = 4_000;
 
-const INSTRUCTION: &str = "\
-This conversation is about to outgrow the space available. Write a handoff summary that the \
-work can continue from alone: the conversation above will be replaced by it, and whoever \
-continues will know only what it says. Use these headings:
+/// Why a conversation is compacted, which its summary's instruction and its restart say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Why<'a> {
+    /// It is about to outgrow the space available, or someone pressed Compact now.
+    Full,
+    /// The person asked in their own words, wanting `focus` kept front and centre if they said.
+    Asked { focus: Option<&'a str> },
+}
+
+/// What a summary is asked for, after why it is.
+const HANDOFF: &str = "\
+Write a handoff summary that the work can continue from alone: the conversation above will be \
+replaced by it, and whoever continues will know only what it says. Use these headings:
 
 1. Request and rules: what the person wants, and every rule and constraint they gave, word for \
 word where the wording matters. They hold to the end.
@@ -81,6 +94,27 @@ signatures, values, where things are), so it needn't be read again unless it mus
 
 Keep the exact file paths, names, numbers and error messages that still matter. Leave out \
 anything not needed to continue. Do not call any tools: reply with the summary only.";
+
+/// What the summary call is asked, as the conversation's last message.
+fn instruction(why: Why<'_>) -> String {
+    match why {
+        Why::Full => {
+            format!("This conversation is about to outgrow the space available. {HANDOFF}")
+        }
+        Why::Asked { focus } => {
+            let mut text =
+                format!("The person asked for this conversation to be compacted. {HANDOFF}");
+            if let Some(focus) = focus {
+                let _ = write!(
+                    text,
+                    "\n\nThe person wants this kept front and centre, in full, whatever else is \
+                     left out: {focus}"
+                );
+            }
+            text
+        }
+    }
+}
 
 /// Characters of everything the model sees in `messages`.
 pub(crate) fn chars(messages: &[Message]) -> u64 {
@@ -158,15 +192,34 @@ fn recent_room(window_tokens: u64, at_percent: u8) -> usize {
 }
 
 /// The message a compacted conversation restarts from: the summary, the latest tool results as
-/// they were, and the person's latest request.
-fn restart_text(summary: &str, recent: Option<&str>, request: Option<&str>) -> String {
-    let mut text = format!(
-        "[Earlier parts of this conversation were summarized to save space. The \
-         summary holds what was done and learned: go on from its next step. Read only what that \
-         step needs, one file at a time, not everything again at once, or the space runs out \
-         again before anything is done.]\n\n{}",
-        summary.trim()
-    );
+/// they were, and the person's latest request. After a compaction they asked for, it says it is
+/// done, so neither it nor their request reads as an ask still to answer.
+fn restart_text(
+    why: Why<'_>,
+    summary: &str,
+    recent: Option<&str>,
+    request: Option<&str>,
+) -> String {
+    let (opening, latest) = match why {
+        Why::Full => (
+            "[Earlier parts of this conversation were summarized to save space. The summary holds \
+             what was done and learned: go on from its next step. Read only what that step needs, \
+             one file at a time, not everything again at once, or the space runs out again \
+             before anything is done.]"
+                .to_owned(),
+            "word for word",
+        ),
+        Why::Asked { focus } => (
+            format!(
+                "[The person asked for this conversation to be compacted, and it is done: what \
+                 came before is summarized here{}. Tell them so in a line, and go on with \
+                 anything else they asked. Do not compact again unless they ask again.]",
+                asked::keeping(focus)
+            ),
+            "word for word, its compaction already done",
+        ),
+    };
+    let mut text = format!("{opening}\n\n{}", summary.trim());
     if let Some(recent) = recent {
         let _ = write!(
             text,
@@ -176,7 +229,7 @@ fn restart_text(summary: &str, recent: Option<&str>, request: Option<&str>) -> S
     if let Some(request) = request {
         let _ = write!(
             text,
-            "\n\nThe person's latest request, word for word:\n{request}"
+            "\n\nThe person's latest request, {latest}:\n{request}"
         );
     }
     text
@@ -189,33 +242,58 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Compacts now if the next request would pass the threshold, counting the summary's
-    /// model call in `summary`. A thread with nothing yet to summarize is left alone. A summary
-    /// the provider fails to give is reported and the turn goes on: the request may still fit.
+    /// Compacts now, at a boundary between model calls, if the person asked for it in this
+    /// turn and it has not run yet, or if the next request would pass the threshold, counting
+    /// the summary's model call in `step`'s summary. Past the threshold, a thread with nothing
+    /// yet to summarize is left alone. A summary the provider fails to give is reported and the
+    /// turn goes on: the request may still fit, and one asked for is not tried again.
     pub(crate) async fn compact_if_needed(
         &self,
         thread: &mut Thread,
-        offer: &mut ToolSet,
-        summary: &mut TurnResult,
+        step: &mut Step,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
+        if let Asked::Waiting(focus) = step.compact.run() {
+            let why = Why::Asked {
+                focus: focus.as_deref(),
+            };
+            return self.compact_in_turn(thread, step, why, cancel, live).await;
+        }
         let at_percent = self.settings.compaction.at_percent;
         let window_tokens = self.context_window(&self.model_for(thread));
-        let tokens = next_request_tokens(thread, offer);
+        let tokens = next_request_tokens(thread, &step.toolset);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
         if !full || thread.messages.len() < 3 {
             return Ok(());
         }
-        match self.compact_with(thread, offer, cancel, live).await {
+        self.compact_in_turn(thread, step, Why::Full, cancel, live)
+            .await
+    }
+
+    /// Compacts the whole conversation within a turn, for `why`, counting the summary's model
+    /// call in `step`'s summary.
+    async fn compact_in_turn(
+        &self,
+        thread: &mut Thread,
+        step: &mut Step,
+        why: Why<'_>,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<(), HarnessError> {
+        match self
+            .compact_with(thread, &step.toolset, why, cancel, live)
+            .await
+        {
             Ok(compacted) => {
+                let summary = &mut step.summary;
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 summary.take_in(&compacted.completion.responded());
                 // A thread of its own opens again with the prompt and tools on offer now; a
                 // subagent's are its parent's.
                 if !thread.delegated() {
-                    *offer = self.tools(thread).await;
+                    step.toolset = self.tools(thread).await;
                 }
                 Ok(())
             }
@@ -268,13 +346,17 @@ where
     ) -> Result<Compacted, HarnessError> {
         self.close_left_open(thread).await?;
         let offer = self.tools(thread).await;
-        self.compact_with(thread, &offer, cancel, live).await
+        self.compact_with(thread, &offer, Why::Full, cancel, live)
+            .await
     }
 
+    /// Summarizes the whole conversation, for `why`, and restarts it from the summary, the
+    /// latest tool results and the person's latest request.
     pub(crate) async fn compact_with(
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
+        why: Why<'_>,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
@@ -284,7 +366,7 @@ where
         let mut messages = thread.messages.clone();
         messages.push(Message::User {
             parts: vec![Part::Text {
-                text: INSTRUCTION.to_owned(),
+                text: instruction(why),
             }],
         });
         // The tools stay listed: some providers refuse a conversation with tool calls but no
@@ -326,6 +408,7 @@ where
         let mut parts = thread.opening_parts().unwrap_or_default();
         parts.push(Part::Text {
             text: restart_text(
+                why,
                 &summary,
                 recent::recent(&thread.messages, recent_room(window_tokens, at_percent)).as_deref(),
                 thread.request.as_deref(),
@@ -401,6 +484,7 @@ mod tests {
     #[test]
     fn the_restart_message_keeps_the_request_word_for_word() {
         let text = restart_text(
+            Why::Full,
             "  Did A and B.\n",
             Some("\n\n`read` a:\nA"),
             Some("fix the build"),
@@ -410,8 +494,29 @@ mod tests {
             text.ends_with("]\n\nDid A and B.\n\nYour latest tool calls and what they returned, as they were:\n\n`read` a:\nA\n\nThe person's latest request, word for word:\nfix the build"),
             "{text}"
         );
-        let bare = restart_text("Did A.", None, None);
+        let bare = restart_text(Why::Full, "Did A.", None, None);
         assert!(!bare.contains("word for word") && !bare.contains("latest tool calls"));
+    }
+
+    #[test]
+    fn a_focus_shapes_the_summary_and_the_restart_says_it_is_done() {
+        let asked = Why::Asked {
+            focus: Some("the API decisions"),
+        };
+        let asking = instruction(asked);
+        assert!(asking.starts_with("The person asked for this conversation to be compacted"));
+        assert!(asking.ends_with("whatever else is left out: the API decisions"));
+        assert!(!instruction(Why::Asked { focus: None }).contains("front and centre"));
+        assert!(instruction(Why::Full).starts_with("This conversation is about to outgrow"));
+        let text = restart_text(asked, "Chose REST.", None, Some("compact, keep the API"));
+        assert!(
+            text.contains("it is done") && text.contains("front and centre: the API decisions"),
+            "{text}"
+        );
+        assert!(
+            text.ends_with("word for word, its compaction already done:\ncompact, keep the API"),
+            "{text}"
+        );
     }
 
     #[test]

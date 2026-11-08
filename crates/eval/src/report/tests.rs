@@ -110,7 +110,10 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
             },
             costing("lab/cheap", 2, true, Some(1_000_000)),
             costing("lab/free", 1, true, Some(0)),
-            costing("lab/free", 2, true, Some(0)),
+            Attempt {
+                unasked_compacts: 1,
+                ..costing("lab/free", 2, true, Some(0))
+            },
             costing("lab/failing", 1, false, Some(2_000_000)),
             costing("lab/failing", 2, false, Some(2_000_000)),
         ],
@@ -132,6 +135,7 @@ Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost re
 | tool calls | 4 | 4 | 4 | 4 |
 | asks | 2 | 2 | 2 | 2 |
 | blocked commands | 0 | 0 | 0 | 0 |
+| compacts unasked | 0 | 0 | 1 | 0 |
 | median time | 2.0 s | 2.0 s | 2.0 s | 2.0 s |
 
 Not passed:
