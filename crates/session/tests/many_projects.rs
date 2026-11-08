@@ -393,7 +393,10 @@ fn a_request_that_names_no_project_acts_in_the_person_s_chats_whatever_folder_th
         let got = server.request(Request::ProjectGet {
             project: thread.project,
         });
-        let Reply::Project { project, folder } = got.await.unwrap() else {
+        let Reply::Project {
+            project, folder, ..
+        } = got.await.unwrap()
+        else {
             panic!("a project");
         };
         assert_eq!((project.kind, folder), (ProjectKind::Personal, None));

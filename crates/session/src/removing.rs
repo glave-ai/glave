@@ -97,6 +97,8 @@ where
             .collect();
         let commands = self.interrupt_removed(theirs);
         self.stop_commands(commands).await;
+        // Their terminals too: their shells, on their own computer, which no one could reach.
+        self.close_terminals_of(org, person).await;
         if let Some(accounts) = self.inner.accounts.as_deref() {
             accounts.leave(person, org).await?;
         }

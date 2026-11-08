@@ -35,7 +35,8 @@ impl TempDir {
         Self::within(&std::fs::canonicalize(parent)?, name)
     }
 
-    fn within(parent: &Path, name: &str) -> std::io::Result<Self> {
+    /// Like [`TempDir::new`], but in `parent`.
+    pub(super) fn within(parent: &Path, name: &str) -> std::io::Result<Self> {
         let pid = std::process::id();
         for attempt in 0..ATTEMPTS {
             let outer = parent.join(format!("glave-{name}-{pid}-{attempt}"));

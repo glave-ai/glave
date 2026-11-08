@@ -6,16 +6,19 @@
 //! computer that slept and woke since opens it again. Anything else opened on it (a worktree, a
 //! clone, a new project's folder) needs the computer at once, and wakes it.
 
+mod terminals;
+
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
-    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
+    Globbed, Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Screenful, Search,
+    Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId,
+    WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -23,6 +26,14 @@ use tokio::time::Instant;
 /// Wakes the computer, if it sleeps, and answers it awake with its home: what [`Waking`] asks
 /// before each call that needs the computer.
 pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> + Send + Sync>;
+
+/// Looks whether the computer is awake, never waking it: its home there while this server
+/// reaches it awake; none while it sleeps or is being woken, so nothing from before runs there;
+/// unreachable while it runs where this server does not reach it (driven by another server, or
+/// woken by this one before it restarted). What [`Waking`] asks before a call that must find
+/// what already runs there, such as a person's terminal, and must never wake it.
+pub type Peek =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<Option<Home>, ComputerError>> + Send + Sync>;
 
 /// What a computer may have run short of while a command ran (`specs/computers.md`, decision
 /// 8).
@@ -46,6 +57,7 @@ const TRUSTED: Duration = Duration::from_secs(30);
 /// A person's computer that wakes only for the calls that need it.
 pub struct Waking {
     wake: Wake,
+    peek: Peek,
     /// Grows it when a command runs short, where it can grow.
     grow: Option<Grow>,
     /// The computer as planned, and its home there.
@@ -68,9 +80,29 @@ struct Planned {
     /// Let go of while a command of its ran in the background there: kept for that command
     /// until the computer sleeps, which ends it, then forgotten.
     closing: AtomicBool,
+    /// Where its folder's history stood as it was first opened on the computer awake, which a
+    /// plan made asleep can't know: what changes are read since when none is asked.
+    first_at: Mutex<Option<String>>,
 }
 
 impl Planned {
+    /// Where its folder's history stood as it was first opened on the computer awake.
+    fn first_at(&self) -> Option<String> {
+        self.first_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Keeps `at` as where its folder's history stood when first opened, unless it was opened
+    /// before.
+    fn opened_at(&self, at: Option<&String>) {
+        let mut first = self.first_at.lock().unwrap_or_else(PoisonError::into_inner);
+        if first.is_none() {
+            *first = at.cloned();
+        }
+    }
+
     fn real(&self) -> Option<Real> {
         self.real
             .lock()
@@ -106,12 +138,18 @@ fn reopens(sources: &Sources) -> bool {
 }
 
 impl Waking {
-    /// The computer `wake` wakes, and `grow`, if given, grows, planned as `home`: its home's
-    /// workspace, which names the computer, whose scratch folders are made in the folder
-    /// `scratch`. Nothing is asked of it until a call needs it.
-    pub fn home(wake: Wake, grow: Option<Grow>, home: WorkspaceInfo, scratch: &str) -> Home {
+    /// The computer `wake` wakes, `peek` finds awake without waking it, and `grow`, if given,
+    /// grows, planned as `home`: its home's workspace, which names the computer, whose scratch
+    /// folders are made in the folder `scratch`. Nothing is asked of it until a call needs it.
+    pub fn home(
+        (wake, peek): (Wake, Peek),
+        grow: Option<Grow>,
+        home: WorkspaceInfo,
+        scratch: &str,
+    ) -> Home {
         let waking = Self {
             wake,
+            peek,
             grow,
             home: home.clone(),
             scratch: scratch.trim_end_matches('/').to_owned(),
@@ -129,6 +167,7 @@ impl Waking {
     fn plan(&self, info: WorkspaceInfo, real: Option<Real>) {
         let id = info.id;
         let planned = Arc::new(Planned {
+            first_at: Mutex::new(info.at.clone()),
             info,
             real: Mutex::new(real),
             opening: tokio::sync::Mutex::new(()),
@@ -255,6 +294,7 @@ impl Waking {
                 info.root, planned.info.root
             )));
         }
+        planned.opened_at(info.at.as_ref());
         let open = Real {
             computers: awake.computers,
             computer: awake.home.computer,
@@ -393,10 +433,12 @@ impl Computers for Waking {
                 _ => None,
             };
             if let Some(root) = root {
+                // Where its history stands is not known without asking the computer.
                 let info = WorkspaceInfo {
                     id: WorkspaceId::from_uuid(crate::local::new_id()?),
                     root,
                     sources: sources.clone(),
+                    at: None,
                     ..self.home.clone()
                 };
                 self.plan(info.clone(), None);
@@ -561,6 +603,79 @@ impl Computers for Waking {
         })
     }
 
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(self.open_terminal_woken(computer, (folder, owner), size))
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        _computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(self.terminals_awake(owner))
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            awake
+                .computers
+                .write_terminal(awake.computer, at, input)
+                .await
+        })
+    }
+
+    fn read_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            let read = awake
+                .computers
+                .read_terminal(awake.computer, at, from, wait);
+            read.await
+        })
+    }
+
+    fn resize_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            let resized = awake.computers.resize_terminal(awake.computer, at, size);
+            resized.await
+        })
+    }
+
+    fn close_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            awake.computers.close_terminal(awake.computer, at).await
+        })
+    }
+
     fn read<'a>(
         &'a self,
         workspace: WorkspaceId,
@@ -624,6 +739,35 @@ impl Computers for Waking {
         Box::pin(async move {
             let open = self.real(workspace).await?;
             self.done(open.computers.search(open.workspace, search).await)
+        })
+    }
+
+    /// Asked only of a computer a call went through on lately, where the workspace is open:
+    /// reading what changed never wakes one. With no point asked, since where its folder stood
+    /// as it was first opened awake, which nothing of the thread's changed before.
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        Box::pin(async move {
+            let planned = self.planned(workspace)?;
+            let lately = self.last_awake().is_some_and(|(_, lately)| lately);
+            let Some(open) = self.opened(&planned).filter(|_| lately) else {
+                return Err(ComputerError::Unsupported(
+                    "the computer may be asleep, and asking it what changed would wake it".into(),
+                ));
+            };
+            let first = since.is_none().then(|| planned.first_at()).flatten();
+            let asked = since.or(first.as_deref());
+            let read = open.computers.changes(open.workspace, asked).await;
+            Ok(self.done(read)?.map(|changes| match changes.since {
+                Since::Asked if first.is_some() => Changes {
+                    since: Since::Opened,
+                    ..changes
+                },
+                _ => changes,
+            }))
         })
     }
 

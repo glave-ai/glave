@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { fakeMedia } from '@glave/glaze/testing/media';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -58,6 +59,7 @@ async function render(fake: FakeSession, projectId?: string, narrow = false): Pr
 describe('HomeComponent', () => {
   afterEach(() => {
     document.body.click();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -96,12 +98,11 @@ describe('HomeComponent', () => {
     ]);
     // Nothing is carried to the thread's page in the history, to send again on a return.
     expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
-    navigate.mockRestore();
   });
 
   it('starts in the project the link names, on the model and with the mode picked', async () => {
     const fake = session();
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
     expect(where(root)).toBe('Where: Garden');
     // Opened for a project, the cursor is in the composer, to write the first message.
@@ -120,12 +121,11 @@ describe('HomeComponent', () => {
     expect(fake.paramsOf('thread/start')).toEqual([
       { project: 'p2', model: 'hope-12b', permissions: 'ask' },
     ]);
-    navigate.mockRestore();
   });
 
   it('starts where the person picks: a chat, or a project', async () => {
     const fake = session();
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'me');
     expect(where(root)).toBe('Where: A chat');
     expect(root.querySelector('[data-testid="page-back"]')).toBeNull();
@@ -141,7 +141,42 @@ describe('HomeComponent', () => {
     await send(root, 'Fix the flaky test');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p1' }]);
-    navigate.mockRestore();
+  });
+
+  it('offers a separate copy where the server says a chat may have one, checked as it would start', async () => {
+    const fake = session().answer('project/get', (params) =>
+      (params as { readonly project: string }).project === 'p1'
+        ? { project: record('p1', 'glave'), copies: { by_default: true } }
+        : { project: record('p2', 'Garden') },
+    );
+    vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake, 'p1');
+    const box = (): HTMLInputElement | null =>
+      root.querySelector<HTMLInputElement>('[data-testid="home-separate-input"]');
+    expect(box()?.checked).toBe(true);
+    const label = box()?.getAttribute('aria-labelledby') ?? '';
+    expect(document.getElementById(label)?.textContent).toBe('Work on a separate copy');
+    const hint = box()?.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(hint)?.textContent).toBe(
+      "so it doesn't touch your folder or other chats",
+    );
+    await expectAccessible(root);
+    box()?.click();
+    await send(root, 'Fix the flaky test');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p1', worktree: false }]);
+    expect(fake.paramsOf('project/get')).toEqual([{ project: 'p1' }]);
+    // A project whose folder has no copy to give keeps its room, unseen; a chat offers none and
+    // asks nothing of it.
+    TestBed.resetTestingModule();
+    const garden = await render(fake, 'p2');
+    const unseen = garden.querySelector<HTMLElement>('[data-testid="home-separate"]');
+    expect(getComputedStyle(unseen ?? garden).visibility).toBe('hidden');
+    TestBed.resetTestingModule();
+    const chats = session();
+    const chat = await render(chats);
+    expect(chat.querySelector('[data-testid="home-separate"]')).toBeNull();
+    expect(chats.paramsOf('project/get')).toEqual([]);
   });
 
   it('on a phone, puts where it goes behind the options button with the rest', async () => {
@@ -205,12 +240,11 @@ describe('HomeComponent', () => {
 
 describe('HomeComponent with files', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
   it('keeps a file where the thread starts and sends it with the first turn', async () => {
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
     const sha = 'b'.repeat(64);
     const fake = session().answer('file/upload', {
       file: { sha256: sha, name: 'notes.txt', media_type: 'text/plain', bytes: 2 },
@@ -221,12 +255,10 @@ describe('HomeComponent with files', () => {
     const file = new File(['hi'], 'notes.txt', { type: 'text/plain' });
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     picker?.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('file/upload')).toEqual([
-        { project: 'me', name: 'notes.txt', media_type: 'text/plain', data: 'aGk=' },
-      ]);
-    });
-    await new Promise((resolve) => setTimeout(resolve));
+    await settle();
+    expect(fake.paramsOf('file/upload')).toEqual([
+      { project: 'me', name: 'notes.txt', media_type: 'text/plain', data: 'aGk=' },
+    ]);
     expect(root.querySelector('[data-testid="home-composer-file"]')?.textContent).toContain(
       'notes.txt',
     );
@@ -237,6 +269,5 @@ describe('HomeComponent with files', () => {
       { thread: 't9', prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
     ]);
     expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
-    navigate.mockRestore();
   });
 });

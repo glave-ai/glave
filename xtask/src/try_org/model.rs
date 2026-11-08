@@ -120,6 +120,7 @@ mod tests {
             path: "/v1/chat/completions".to_owned(),
             headers: std::collections::BTreeMap::new(),
             body: body.to_string(),
+            bytes: body.to_string().into_bytes(),
         }
     }
 

@@ -188,6 +188,22 @@ sentences! {
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
     NoCommand = "no-command" "that command is not running in this thread",
+    NoTerminal = "no-terminal" "that terminal is not open in this thread",
+    TerminalNotTheirs = "terminal-not-theirs"
+        "A terminal opens only on your own computer, and this thread doesn't work on yours.",
+    TerminalOnWorker = "terminal-on-worker"
+        "A terminal opens only on your own computer, not on one started for a single task.",
+    TerminalNoFolder = "terminal-no-folder"
+        "This thread has no folder to open a terminal in.",
+    TerminalNoHome = "terminal-no-home"
+        "Your own computer can't be reached from this server right now, so no terminal opens on it.",
+    TerminalMoved = "terminal-moved"
+        "This thread works on a computer this server doesn't reach, so no terminal opens for it.",
+    TerminalUnsupported = "terminal-unsupported"
+        "Terminals don't open on the computer this thread works on.",
+    TerminalUnreachable = "terminal-unreachable"
+        "Your computer can't be reached from this server right now. Try again in a moment.",
+    TerminalFailed = "terminal-failed" "The terminal could not be reached. Try again in a moment.",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
     Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",
@@ -213,6 +229,14 @@ sentences! {
     PromptFailed { reason: String } = "prompt-failed"
         "the command's text could not be had from its server: { $reason }",
     TitleLength { most: usize } = "title-length" "a title is 1 to { $most } characters, not only spaces",
+    ForkedInPlace = "forked-in-place"
+        "Forked here from an earlier thread. Files aren't rewound: this thread works in the same folder, with them as they are now.",
+    ForkedElsewhere = "forked-elsewhere"
+        "Forked here from an earlier thread. Files aren't rewound: this thread works in another folder, without the earlier thread's changes.",
+    ForkPoint = "fork-point"
+        "a thread is forked only between its turns, and that point is within one or past its end",
+    ForkSubagent = "fork-subagent"
+        "a subagent's thread is not forked on its own: fork the thread that started it",
     QueueFull { most: usize } = "queue-full"
         "{ $most } messages are already waiting for the model to read them: wait until it has, or stop it",
     RecordsBusy = "records-busy" "glave's records kept changing while it wrote to them; try again",
@@ -422,6 +446,14 @@ sentences! {
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
         "Changes made by commands or other tools are not listed.",
+    // `since` is which point the folder's answer is read since (`asked`, `opened`, `now`), and
+    // `shortened` whether some files are shown without their lines (`yes`, `no`).
+    ChangesInFolder { since: String, shortened: String } = "changes-in-folder"
+        "The thread's files are glave's own edits and all else that differs from { $since ->\n    [asked] the version it started from\n    [opened] the version its folder was at when glave last opened it\n   *[now] its folder's latest version\n }, whatever changed it{ $shortened ->\n    [yes] {\", some shown without their lines\"}\n   *[no] {\"\"}\n }; a turn's are only glave's own edits.",
+    ChangesUnread = "changes-unread"
+        "What changed in this folder couldn't be read, so only glave's own edits are listed.",
+    ChangesNoHistory = "changes-no-history"
+        "This folder keeps no version history, so only glave's own edits are listed, not what commands or other tools changed.",
 
     // A thread's plan.
     PlanProposed { steps: u64 } = "plan-proposed"

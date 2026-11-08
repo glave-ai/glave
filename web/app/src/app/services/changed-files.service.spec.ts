@@ -62,7 +62,7 @@ describe('ChangedFilesService', () => {
     const fake = new FakeSession().answer('thread/events', {
       events: [
         event(1, 'turn.started', {}),
-        event(2, 'tool.call.requested', { call_id: 'c1', tool: 'bash', arguments: { json: {} } }),
+        event(2, 'tool.call.requested', { call_id: 'c1', tool: 'read', arguments: { json: {} } }),
         event(3, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
       ],
     });
@@ -104,6 +104,24 @@ describe('ChangedFilesService', () => {
     await settle();
     // The edit failed, but what came of it is the server's to say.
     expect(fake.paramsOf('thread/changes')).toHaveLength(2);
+  });
+
+  it('reads one at a time, and once more after for every ask meanwhile', async () => {
+    const fake = new FakeSession().answer('thread/events', { events: [WRITE, WROTE] });
+    const give = fake.held('thread/changes');
+    const { changed, thread } = make(fake);
+    await thread.open('thread-1');
+    TestBed.tick();
+    void changed.refresh();
+    void changed.refresh();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(1);
+    give({ changes: CHANGED });
+    await settle();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(2);
+    give({ changes: CHANGED });
+    await settle();
+    expect(fake.paramsOf('thread/changes')).toHaveLength(2);
+    expect(changed.files()).toBe(CHANGED.files);
   });
 
   it('keeps the room of the files its ended turns recorded until they are read', async () => {

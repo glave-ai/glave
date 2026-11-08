@@ -24,7 +24,7 @@ required-features = ["test-server"]
 # An image's, audio's or resource's bytes, which MCP sends in base64.
 base64.workspace = true
 glave-event.workspace = true
-glave-ports.workspace = true
+glave-ports = { workspace = true, features = ["lookup"] }
 # A stdio server's process: owned, in a group of its own, recorded while it runs.
 glave-process.workspace = true
 # Header types for rmcp's HTTP transport, which does not re-export them.

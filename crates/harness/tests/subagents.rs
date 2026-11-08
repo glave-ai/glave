@@ -6,14 +6,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, StopReason};
-use glave_harness::{AllowAll, Cancel, Harness, Live, Parts};
+use glave_harness::{AllowAll, Cancel, Decision, Harness, HarnessError, Live, Parts};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, Delta, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, ProviderError,
+    Caller, Completion, Delta, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest,
+    ProviderError,
 };
 use serde_json::json;
 use tokio::sync::Barrier;
 
+use crate::network::InTheLog;
 use crate::support::*;
 
 fn with_subagents() -> glave_harness::Settings {
@@ -245,5 +247,89 @@ fn subagents_in_one_response_run_side_by_side() {
             results(thread.messages()),
             ["Done side by side.", "Done side by side."]
         );
+    });
+}
+
+/// What a parent that has a child write x.txt is answered, and the child: the parent's call,
+/// the child's write, which asks in Ask first, and its last word, then the parent's.
+pub(crate) fn a_child_writes() -> Vec<Completion> {
+    let brief = json!({"description": "write it", "prompt": "Write x.txt."});
+    let write = json!({"path": "x.txt", "content": "x"});
+    vec![
+        answer(None, vec![("agent", brief)], StopReason::ToolUse),
+        answer(None, vec![("write", write)], StopReason::ToolUse),
+        answer(Some("Wrote it."), vec![], StopReason::EndTurn),
+        answer(Some("The child wrote it."), vec![], StopReason::EndTurn),
+    ]
+}
+
+/// Ask first, with subagents.
+pub(crate) fn asking_with_subagents() -> glave_harness::Settings {
+    let mut settings = asking();
+    settings.subagents = true;
+    settings
+}
+
+/// Runs a turn of `thread` that has a child write x, until the child waits for its approval
+/// in the log, then allows it there, as a server does: the turn goes on from the log.
+pub(crate) async fn until_the_child_is_allowed<P, L, B, A>(
+    harness: &Harness<P, L, B, A>,
+    thread: &mut glave_harness::Thread,
+) where
+    P: ModelProvider,
+    L: glave_ports::EventLog,
+    B: glave_ports::BlobStore,
+    A: glave_harness::Approver,
+{
+    let started = Mutex::new(None);
+    let mut live = |update: Live| {
+        if let Live::SubagentStarted { thread, .. } = update {
+            *started.lock().unwrap() = Some(thread);
+        }
+    };
+    let stopped = harness
+        .run_turn(thread, "have a child write x", &Cancel::new(), &mut live)
+        .await;
+    assert!(
+        matches!(stopped, Err(HarnessError::Waits(_))),
+        "{stopped:?}"
+    );
+    let child = started.lock().unwrap().unwrap();
+    let call = events(harness.log(), child)
+        .await
+        .iter()
+        .find_map(|event| match &event.body {
+            Body::ApprovalRequested(asked) => Some(asked.call_id.clone()),
+            _ => None,
+        });
+    harness
+        .decide(scope(), child, &call.unwrap(), Decision::AllowOnce, None)
+        .await
+        .unwrap();
+}
+
+#[test]
+fn a_child_that_waited_counts_once_in_its_parent_s_turn() {
+    let dir = folder("subagents-waited");
+    block_on!(async {
+        let log = InMemoryLog::new();
+        let settings = asking_with_subagents();
+        let answers = a_child_writes();
+        let (harness, _) = harness_seeing(&dir, answers, InTheLog, log, 1, settings).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        until_the_child_is_allowed(&harness, &mut thread).await;
+        let turn = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        // Two model calls each, and one call each: the parent's agent and the child's write.
+        let counted = (turn.model_calls, turn.tool_calls, turn.tokens.input);
+        assert_eq!(counted, (4, 2, 400), "{turn:?}");
+        let ended = events(harness.log(), thread.id).await;
+        let ended = ended.iter().find_map(|event| match &event.body {
+            Body::TurnEnded(ended) => Some(ended.clone()),
+            _ => None,
+        });
+        assert_eq!(ended, Some(turn), "the log says the same");
     });
 }

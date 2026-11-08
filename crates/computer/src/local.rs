@@ -4,11 +4,13 @@
 
 mod anchored;
 mod background;
+mod changes;
 mod command;
 mod credentials;
 mod files;
 mod finding;
 pub(crate) mod git;
+mod host;
 mod listing;
 mod on_path;
 mod paths;
@@ -19,6 +21,8 @@ mod registry;
 mod replace;
 mod sandbox;
 mod scratch;
+mod setup;
+mod terminal;
 mod walk;
 pub(crate) mod worktree;
 
@@ -28,10 +32,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
-    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
+    Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Refusal, Save, Saved, Screenful,
+    Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -47,6 +52,8 @@ pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
+use terminal::Terminals;
+pub use terminal::terminal_helper;
 
 /// What measures a disk in place of the system.
 #[derive(Clone)]
@@ -79,8 +86,11 @@ pub struct LocalComputers {
     /// The id this machine goes by as the host computer, kept across runs; a new one each
     /// time when none.
     host: Option<ComputerId>,
-    /// A program that runs [`crate::sandbox_helper`], for Linux's Landlock fallback.
-    sandbox_helper: Option<PathBuf>,
+    /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback)
+    /// and [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
+    helper: Option<PathBuf>,
+    /// The person's terminals open here.
+    terminals: Terminals,
     /// Places on this machine its sandboxed commands may not read, beside the home folder's
     /// credential stores.
     hidden: Arc<[PathBuf]>,
@@ -96,6 +106,15 @@ pub struct LocalComputers {
     /// The cgroup it runs in, where Linux counts the CPU its commands use and sets the limit on
     /// it.
     cgroup: Option<PathBuf>,
+}
+
+/// What a folder is opened as, which says whether to ask git where its history stands (`at`).
+#[derive(Debug, Clone, Copy)]
+enum Opening {
+    /// Where a thread is placed, which its binding records (`workspace.bound`'s `since`).
+    Placed,
+    /// This machine's own folder, which no thread records.
+    Own,
 }
 
 impl LocalComputers {
@@ -114,7 +133,8 @@ impl LocalComputers {
             scratch: None,
             projects: None,
             host: None,
-            sandbox_helper: None,
+            helper: None,
+            terminals: Terminals::default(),
             hidden: Arc::new([]),
             glave_on_path: None,
             environment: Arc::new(without_secrets(environment)),
@@ -142,102 +162,10 @@ impl LocalComputers {
         Self::new(std::env::temp_dir().join("glave-workspaces"), environment)
     }
 
-    /// Keeps threads' worktrees under `folder`, one folder per repository, so a computer here
-    /// can open [`Sources::Worktree`]. They outlive the computer: removing them is the
-    /// person's choice.
-    #[must_use]
-    pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
-        self.worktrees = Some(folder.into());
-        self
-    }
-
-    /// Says of what uses its disk what `largest` holds, which its [`crate::Keeper`] fills.
-    #[must_use]
-    pub fn with_largest(mut self, largest: Largest) -> Self {
-        self.largest = largest;
-        self
-    }
-
-    /// Says its disk holds what `measure` answers, for a test that can't fill one.
-    #[must_use]
-    pub fn with_disk_measure(
-        mut self,
-        measure: impl Fn() -> DiskSpace + Send + Sync + 'static,
-    ) -> Self {
-        self.measure = Some(Measure(Arc::new(measure)));
-        self
-    }
-
-    /// Makes threads' scratch folders under `folder`, so a computer here can open
-    /// [`Sources::Scratch`]. Like worktrees, they outlive the computer.
-    #[must_use]
-    pub fn with_scratch(mut self, folder: impl Into<PathBuf>) -> Self {
-        self.scratch = Some(folder.into());
-        self
-    }
-
-    /// Makes new projects' folders under `folder`, so a computer here can open
-    /// [`Sources::Project`]. They are the person's: nothing glave does removes them.
-    #[must_use]
-    pub fn with_projects(mut self, folder: impl Into<PathBuf>) -> Self {
-        self.projects = Some(folder.into());
-        self
-    }
-
-    /// Opens this machine as the host computer under `id`, one kept across runs, so whatever
-    /// names a computer (a thread's binding, a project's checkout) names this one the same way
-    /// each time.
-    #[must_use]
-    pub fn known_as(mut self, id: ComputerId) -> Self {
-        self.host = Some(id);
-        self
-    }
-
-    /// Names `program` as the sandbox's helper: a program (usually this one, from
-    /// `std::env::current_exe`) that calls [`crate::sandbox_helper`] first thing in `main`.
-    /// Linux needs it to confine `read-only` commands with Landlock where bubblewrap cannot
-    /// start; without it, such a machine refuses sandboxed commands.
-    #[must_use]
-    pub fn with_sandbox_helper(mut self, program: impl Into<PathBuf>) -> Self {
-        self.sandbox_helper = Some(program.into());
-        self
-    }
-
-    /// Records the commands its workspaces start in `processes`' ledger while they run, so a
-    /// glave that starts after this one crashed stops them (`glave_process`). Without it they
-    /// are still stopped with their workspace, only not recorded.
-    #[must_use]
-    pub fn with_processes(mut self, processes: Processes) -> Self {
-        self.processes = processes;
-        self
-    }
-
-    /// Hides `places` from its sandboxed commands too, as the home folder's credential stores
-    /// are, whether they exist yet or not (on Linux, from the next command once they do): the
-    /// evals hide this machine's own crate downloads, so an attempt starts as a fresh computer
-    /// would.
-    #[must_use]
-    pub fn with_hidden(mut self, places: impl IntoIterator<Item = PathBuf>) -> Self {
-        self.hidden = places.into_iter().collect();
-        self
-    }
-
-    /// Puts `folder`, which holds `glave` (see [`crate::glave_on_path`]), first on every
-    /// command's `PATH`, and keeps it readable in every sandbox though it sits in glave's own
-    /// folder, which they hide: a command's `glave` is then the one running it.
-    #[must_use]
-    pub fn with_glave_on_path(mut self, folder: impl Into<PathBuf>) -> Self {
-        self.glave_on_path = Some(folder.into());
-        self
-    }
-
-    /// Whether a command still runs here in the background: for a computer that ends when
-    /// idle ([`crate::Idle`]).
-    pub fn busy(&self) -> bool {
-        self.background.running()
-    }
-
-    /// A host computer made from these computers, with `folder` open on it in place.
+    /// A host computer made from these computers, with `folder` open on it in place. Where the
+    /// folder's history stands is not asked (`at` is none): no thread records this workspace as
+    /// the one it was placed in, since a thread placed in the folder opens it again, and asking
+    /// would run git once or twice at every start, before a thread is read.
     pub async fn open_here(
         self,
         folder: impl AsRef<Path>,
@@ -253,7 +181,9 @@ impl LocalComputers {
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
-        let workspace = computers.open(computer, &sources).await?;
+        let workspace = computers
+            .open_now(computer, &sources, None, Opening::Own)
+            .await?;
         Ok((computers, workspace))
     }
 
@@ -295,6 +225,7 @@ impl LocalComputers {
         computer: ComputerId,
         sources: &Sources,
         credential: Option<&GitCredential>,
+        opening: Opening,
     ) -> Result<WorkspaceInfo, ComputerError> {
         if let Some(credential) = credential {
             credential.check()?;
@@ -321,6 +252,7 @@ impl LocalComputers {
             sources: sources.clone(),
             home: variable("HOME"),
             temp: variable("TMPDIR"),
+            at: None,
         };
         let opened = Opened {
             computer,
@@ -333,6 +265,13 @@ impl LocalComputers {
             pushes: Pushes::of(sources, credential),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
+        };
+        let info = WorkspaceInfo {
+            at: match opening {
+                Opening::Placed => changes::at(&opened).await,
+                Opening::Own => None,
+            },
+            ..info
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
             if copy {
@@ -420,7 +359,7 @@ impl LocalComputers {
         let opened = self.registry.workspace(workspace)?;
         self.background.room(workspace)?;
         let id = CommandId::from_uuid(new_id()?);
-        let helper = self.sandbox_helper.as_deref();
+        let helper = self.helper.as_deref();
         let spawned = command::spawn(&opened, command, helper, None).await?;
         let limit = command.timeout_secs.map(Duration::from_secs);
         let named = (id, command.script.clone());
@@ -473,38 +412,13 @@ pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path)
     first
 }
 
-/// Refuses what a computer on the host cannot honour, rather than quietly ignoring it.
-fn check_host(environment: &Environment) -> Result<(), ComputerError> {
-    if let Image::Oci(image) = &environment.image {
-        return Err(ComputerError::Unsupported(format!(
-            "this machine runs work on the host itself and cannot run the image {image}; \
-             computers made from images come with cloud computers"
-        )));
-    }
-    if !environment.setup.is_empty() {
-        return Err(ComputerError::Unsupported(
-            "setup commands are cached in a snapshot of an image; on the host, run them \
-             yourself"
-                .into(),
-        ));
-    }
-    if matches!(environment.network, Some(Network::Off | Network::Allowlist)) {
-        return Err(ComputerError::Unsupported(
-            "the host cannot limit the network per computer; use the sandbox, or a computer \
-             made from an image"
-                .into(),
-        ));
-    }
-    Ok(())
-}
-
 impl Computers for LocalComputers {
     fn create<'a>(
         &'a self,
         environment: &'a Environment,
     ) -> BoxFuture<'a, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move {
-            check_host(environment)?;
+            host::check(environment)?;
             let id = ComputerId::from_uuid(new_id()?);
             self.registry.add_computer(id, environment.clone())?;
             Ok(Self::describe(id, Some(environment.clone())))
@@ -519,6 +433,71 @@ impl Computers for LocalComputers {
             info.largest = self.largest.get();
             Ok(info)
         })
+    }
+
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let start = terminal::Start {
+                helper: self.helper.as_deref(),
+                processes: &self.processes,
+                environment: &self.environment,
+            };
+            let at = (folder, owner);
+            self.terminals.open(computer, at, size, &start).await
+        })
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(std::future::ready(Ok(self.terminals.list(computer, owner))))
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.write(computer, at, input))
+    }
+
+    fn read_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        Box::pin(self.terminals.read(computer, at, from, wait))
+    }
+
+    fn resize_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(std::future::ready(
+            self.terminals.resize(computer, at, size),
+        ))
+    }
+
+    fn close_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.close(computer, at))
     }
 
     fn worktrees(
@@ -583,6 +562,7 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.remove_computer(computer)?;
             self.background.stop_all(|on, _| on == computer).await;
+            self.terminals.close_all(computer).await;
             let copies = self.base.join(computer.to_string());
             match tokio::fs::remove_dir_all(&copies).await {
                 Ok(()) => Ok(()),
@@ -600,7 +580,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None))
+        Box::pin(self.open_now(computer, sources, None, Opening::Placed))
     }
 
     fn open_with_credential<'a>(
@@ -609,7 +589,7 @@ impl Computers for LocalComputers {
         sources: &'a Sources,
         credential: &'a GitCredential,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, Some(credential)))
+        Box::pin(self.open_now(computer, sources, Some(credential), Opening::Placed))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
@@ -639,7 +619,7 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
-            let helper = self.sandbox_helper.as_deref();
+            let helper = self.helper.as_deref();
             let keep = self.keep(workspace);
             command::run(&opened, command, (output, cancel), helper, None, keep).await
         })
@@ -655,7 +635,7 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
-            let helper = self.sandbox_helper.as_deref();
+            let helper = self.helper.as_deref();
             let keep = self.keep(workspace);
             let io = (output, cancel);
             command::run(&opened, command, io, helper, Some(credentials), keep).await
@@ -778,6 +758,17 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             finding::search(&opened.root, search).await
+        })
+    }
+
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            changes::since(&opened, since, &self.base).await
         })
     }
 

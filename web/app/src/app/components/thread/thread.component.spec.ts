@@ -3,12 +3,14 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import type { Notification } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { ChangesService } from '../../services/changes.service';
 import { PanelService } from '../../services/panel.service';
 import { FakeTurn } from '../../testing/fake-session';
 import { changed, editedFile, event, record, thread } from '../../testing/fixtures';
-import { openThread as open, session, settle, type } from '../../testing/thread-view';
+import { objectUrls } from '../../testing/object-urls';
+import { openThread as open, session, type } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
 
@@ -712,21 +714,15 @@ describe('ThreadComponent', () => {
     const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     picker?.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('file/upload')).toMatchObject([{ name: 'notes.txt', project: 'p1' }]);
-    });
-    await fixture.whenStable();
+    await settle(fixture);
+    expect(fake.paramsOf('file/upload')).toMatchObject([{ name: 'notes.txt', project: 'p1' }]);
   });
 });
 
 describe('ThreadComponent with files', () => {
   beforeEach(() => {
     localStorage.clear();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: () => 'blob:test/1',
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
+    objectUrls();
   });
 
   it('adds a file to the message, keeps it in the project, and sends it with the message', async () => {
@@ -761,10 +757,8 @@ describe('ThreadComponent with files', () => {
     const file = new File(['png'], 'cat.png', { type: 'image/png' });
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     picker?.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('file/upload')).toHaveLength(1);
-    });
-    await fixture.whenStable();
+    await settle(fixture);
+    expect(fake.paramsOf('file/upload')).toHaveLength(1);
     const chip = root.querySelector('[data-testid="thread-composer-file"]');
     expect(chip?.textContent).toContain('cat.png');
     expect(chip?.querySelector('img')?.getAttribute('src')).toBe('blob:test/1');

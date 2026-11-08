@@ -87,3 +87,25 @@ fn only_this_month_s_calls_to_a_connection_s_tools_count_each_to_its_own_server(
         BTreeMap::from([("search".to_owned(), 3), ("search__v2".to_owned(), 1)])
     );
 }
+
+#[test]
+fn a_fork_counts_its_own_calls_and_not_its_copies() {
+    let call = r#"{"call_id":"c","tool":"mcp__search__find","arguments":{"json":{}}}"#;
+    let forked = r#"{"from":{"thread":"0192d6a0-0000-7000-8000-000000000001","seq":2},"files":"same","told":"Forked here."}"#;
+    let prefixes = [(glave_mcp::exposed("search", ""), "search")];
+    let since = at("2026-10-01T00:00:00Z");
+    let copies = [event(
+        2,
+        "2026-10-02T09:00:00Z",
+        ToolCallRequested::TYPE,
+        call,
+    )];
+    let own = [
+        event(3, "2026-10-03T09:00:00Z", ThreadForked::TYPE, forked),
+        event(4, "2026-10-03T09:00:01Z", ToolCallRequested::TYPE, call),
+    ];
+    let mut calls = BTreeMap::new();
+    tally(&copies, since, &prefixes, &mut calls);
+    tally(&own, since, &prefixes, &mut calls);
+    assert_eq!(calls, BTreeMap::from([("search".to_owned(), 1)]));
+}

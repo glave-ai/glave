@@ -22,6 +22,7 @@
       "@glave/glaze/testing": ["./glaze/src/testing/axe.ts"],
       "@glave/glaze/testing/media": ["./glaze/src/testing/media.ts"],
       "@glave/glaze/testing/motion": ["./glaze/src/testing/motion.ts"],
+      "@glave/glaze/testing/settle": ["./glaze/src/testing/settle.ts"],
       "@glave/client": ["./client/src/index.ts"]
     }
   },

@@ -96,9 +96,12 @@ export type ChangeKind = "wrote" | "edited" | "edited_every";
 /** A file, with every line its changes added and took out, and each change. */
 export type ChangedFile = {
   readonly added: number;
-  /** Its changes, in order. */
+  /** Its changes, in order: none for a file whose lines are not shown. */
   readonly changes: readonly (FileChange)[];
-  /** Where it is, as the call named it. */
+  /**
+   * Where it is: relative to the workspace's root when its folder says, else as the call
+   * that changed it named it.
+   */
   readonly path: string;
   readonly removed: number;
 };
@@ -295,6 +298,18 @@ export type ContextUse = {
 };
 
 /**
+ * A new chat in a project may work on a separate copy of its folder, a git worktree on a branch
+ * of its own, which touches neither the folder nor other chats.
+ */
+export type Copies = {
+  /**
+   * Whether it does unless `thread/start` says: the project's own `worktree` choice for the
+   * person on this computer, else the server's.
+   */
+  readonly by_default: boolean;
+};
+
+/**
  * Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git
  * host (`credential.connected`), a connection (`connection.connected`) or a secret
  * (`secret.added`).
@@ -470,7 +485,8 @@ export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "
 
 /**
  * One change to a file: a `write` or an `edit` that finished without an error, as its call
- * asked for it, which the tool applied exactly.
+ * asked for it, which the tool applied exactly; or, as its folder says, the whole of a new
+ * file or one stretch of an old one.
  */
 export type FileChange = {
   readonly kind: ChangeKind;
@@ -1036,6 +1052,19 @@ export type ScheduleInfo = {
   readonly when: When;
 };
 
+/**
+ * What a read of a terminal answers: what it printed from `from`, the offset of the first
+ * byte, up to `next`, the offset to read from next. A `from` past the offset asked for says
+ * the bytes between were dropped, the computer keeping only the latest [`TERMINAL_KEPT`].
+ * `ended` once its shell has ended and all it printed has been read.
+ */
+export type Screenful = {
+  readonly ended?: boolean;
+  readonly from: number;
+  readonly next: number;
+  readonly output: string;
+};
+
 /** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
 export type SearchInfo = {
   readonly kind: "never";
@@ -1225,16 +1254,44 @@ export type TaskKind = "agent";
 /** Whether a task is still going. */
 export type TaskStatus = "running" | "finished" | "elsewhere";
 
-/** The files a thread changed, its subagents' changes with its own, and each turn's. */
+/**
+ * Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by
+ * the computer it runs on).
+ */
+export type TerminalId = string;
+
+/** A terminal open on a computer, as its listing shows it. */
+export type TerminalInfo = {
+  /** Whether its shell has ended; it stays until it is closed. */
+  readonly ended?: boolean;
+  /** The folder its shell started in, as its computer names it. */
+  readonly folder: string;
+  readonly id: TerminalId;
+};
+
+/** How many columns and rows a terminal shows. */
+export type TerminalSize = {
+  readonly cols: number;
+  readonly rows: number;
+};
+
+/** The files a thread changed, and each turn's. */
 export type ThreadChanges = {
-  /** Every file it changed, in the order first changed. */
+  /**
+   * Every file in its folder that differs from where the thread started, whatever changed
+   * it, in the order of their paths; where its folder can't say, the files its own `write`
+   * and `edit` calls and its subagents' changed, in the order first changed.
+   */
   readonly files: readonly (ChangedFile)[];
   /**
-   * What they leave out, in a sentence: "Changes made by commands or other tools are not
-   * listed."
+   * What they are and leave out, in a sentence: "Changes made by commands or other tools are
+   * not listed."
    */
   readonly note: string;
-  /** Each turn that changed files, in order. */
+  /**
+   * Each turn that changed files with its own `write` and `edit` calls, or its subagents',
+   * in order.
+   */
   readonly turns: readonly (TurnChanges)[];
 };
 
@@ -1291,6 +1348,12 @@ export type ThreadSummary = {
   readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
+  /**
+   * Whether its person may open terminals of their own in its folder: their shell, on their
+   * own computer, so never on a worker, nor on the server's for anyone but the person it
+   * works for; never once it is put away (`specs/session.md`, "Terminals").
+   */
+  readonly terminals?: boolean;
   /** The title the person gave it, else the first line of their first message. */
   readonly title?: string | null;
   /** Tokens its own model calls used. */
@@ -1535,6 +1598,12 @@ export type WorkspaceBound = {
    * own fields use paths relative to it.
    */
   readonly root: string;
+  /**
+   * Where its folder's history stood as the thread started there: what the thread's changes
+   * are read since. Absent for a folder that keeps no history, or whose computer was not
+   * asked.
+   */
+  readonly since?: string | null;
   /** The workspace's id, as its computer named it. */
   readonly workspace: string;
 };
@@ -2283,6 +2352,13 @@ export type ProjectCreateParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectCreateResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2307,6 +2383,13 @@ export type ProjectFolderSetParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectFolderSetResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2318,6 +2401,13 @@ export type ProjectGetParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectGetResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2346,6 +2436,13 @@ export type ProjectRenameParams = {
 
 /** A project: one asked for, made or renamed, with its folder when it has one. */
 export type ProjectRenameResult = {
+  /**
+   * Whether a new chat in it may work on a separate copy of its folder, and whether it
+   * does unless told: said by `project/get` alone, and only where it may (its folder in a
+   * git repository with a commit, on this server's computer, its threads working here
+   * rather than on workers).
+   */
+  readonly copies?: Copies | null;
   /** Where its threads work. */
   readonly folder?: ProjectFolder | null;
   readonly project: Project;
@@ -2564,6 +2661,58 @@ export type TasksStopParams = {
 
 export type TasksStopResult = Readonly<Record<string, never>>;
 
+export type TerminalCloseParams = {
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalCloseResult = Readonly<Record<string, never>>;
+
+export type TerminalListParams = {
+  readonly thread: ThreadId;
+};
+
+export type TerminalListResult = {
+  readonly terminals: readonly (TerminalInfo)[];
+};
+
+export type TerminalOpenParams = {
+  readonly size: TerminalSize;
+  readonly thread: ThreadId;
+};
+
+export type TerminalOpenResult = {
+  readonly terminal: TerminalInfo;
+};
+
+export type TerminalReadParams = {
+  readonly from: number;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+  readonly wait_ms?: number;
+};
+
+/** What a terminal printed, from where it was read. */
+export type TerminalReadResult = {
+  readonly screen: Screenful;
+};
+
+export type TerminalResizeParams = {
+  readonly size: TerminalSize;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalResizeResult = Readonly<Record<string, never>>;
+
+export type TerminalWriteParams = {
+  readonly input: string;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalWriteResult = Readonly<Record<string, never>>;
+
 export type ThreadArchiveParams = {
   readonly thread: ThreadId;
 };
@@ -2606,6 +2755,15 @@ export type ThreadEventsResult = {
   readonly events: readonly (RawEvent)[];
   /** Read forward, the `after` of the next page, when there may be one. */
   readonly next?: Seq | null;
+};
+
+export type ThreadForkParams = {
+  readonly at?: Seq | null;
+  readonly thread: ThreadId;
+};
+
+export type ThreadForkResult = {
+  readonly thread: ThreadSummary;
 };
 
 export type ThreadGetParams = {
@@ -2940,11 +3098,18 @@ export interface Methods {
   readonly "signup/start": { readonly params: SignupStartParams; readonly result: SignupStartResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
+  readonly "terminal/close": { readonly params: TerminalCloseParams; readonly result: TerminalCloseResult };
+  readonly "terminal/list": { readonly params: TerminalListParams; readonly result: TerminalListResult };
+  readonly "terminal/open": { readonly params: TerminalOpenParams; readonly result: TerminalOpenResult };
+  readonly "terminal/read": { readonly params: TerminalReadParams; readonly result: TerminalReadResult };
+  readonly "terminal/resize": { readonly params: TerminalResizeParams; readonly result: TerminalResizeResult };
+  readonly "terminal/write": { readonly params: TerminalWriteParams; readonly result: TerminalWriteResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };
   readonly "thread/changes": { readonly params: ThreadChangesParams; readonly result: ThreadChangesResult };
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
+  readonly "thread/fork": { readonly params: ThreadForkParams; readonly result: ThreadForkResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };
   readonly "thread/list/unwatch": { readonly params: ThreadListUnwatchParams; readonly result: ThreadListUnwatchResult };
@@ -3064,6 +3229,8 @@ export const ErrorCode = {
   NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
+  /** No such terminal is open in this thread */
+  NO_TERMINAL: -32038,
   /** No such thread */
   NO_THREAD: -32001,
   /** No such ask waits: the project changed since, or asks nothing now */

@@ -15,6 +15,7 @@ impl Request {
             | Self::ThreadUnarchive { thread }
             | Self::ThreadDelete { thread }
             | Self::ThreadRename { thread, .. }
+            | Self::ThreadFork { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadTurns { thread, .. }
@@ -35,7 +36,13 @@ impl Request {
             | Self::TrustAnswer { thread, .. }
             | Self::TasksStop { thread }
             | Self::CommandList { thread }
-            | Self::CommandStop { thread, .. } => Some(*thread),
+            | Self::CommandStop { thread, .. }
+            | Self::TerminalOpen { thread, .. }
+            | Self::TerminalList { thread }
+            | Self::TerminalWrite { thread, .. }
+            | Self::TerminalRead { thread, .. }
+            | Self::TerminalResize { thread, .. }
+            | Self::TerminalClose { thread, .. } => Some(*thread),
             _ => None,
         }
     }

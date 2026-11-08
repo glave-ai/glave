@@ -284,6 +284,7 @@ where
         Ok(Reply::Project {
             project,
             folder: Some(folder),
+            copies: None,
         })
     }
 
@@ -319,6 +320,7 @@ where
         Ok(Reply::Project {
             project,
             folder: Some(folder),
+            copies: None,
         })
     }
 

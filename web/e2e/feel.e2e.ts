@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 
-import { THREAD, fakeApi } from './fake-api';
+import { PROJECT, THREAD, fakeApi } from './fake-api';
+import { FORMATTED } from './fake-formatted';
 import { LONG, LONG_TURNS } from './fake-long';
 import {
   type Felt,
@@ -12,7 +13,7 @@ import {
   forgetFelt,
   watchFeel,
 } from './feel';
-import { SIGNED_IN, atRest, byTestId, expect, hold, test } from './support';
+import { SIGNED_IN, atRest, builtChunk, byTestId, expect, hold, test } from './support';
 
 // Run in Chromium alone, one at a time once the rest of the run is done (playwright.config.ts,
 // the `feel` project): WebKit, as Safari, reports neither layout shifts nor event timings, nor
@@ -22,6 +23,8 @@ import { SIGNED_IN, atRest, byTestId, expect, hold, test } from './support';
 const OPENED = [
   { name: 'the Chats', path: '/', shown: 'nav-thread' },
   { name: 'a thread', path: `/t/${THREAD}`, shown: 'thread-message' },
+  // Centred, it must not move as the server says a chat there may work on a separate copy.
+  { name: "a project's page", path: `/p/${PROJECT.id}`, shown: 'home-separate-input' },
 ] as const;
 
 /** What the person feels as `page` opens at `path` and comes to rest, `shown` on it. */
@@ -83,6 +86,53 @@ for (const late of ['project/list', 'thread/list'] as const) {
     expectStill(await feltOn(page));
   });
 }
+
+test('nothing moves on opening a thread in a repository when its folder says, late, that a command changed files', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  const held = await hold(page, '/', 'thread/changes');
+  await page.goto(`/t/${FORMATTED}${SIGNED_IN}`);
+  await held.sent;
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Formatted');
+  // What sits under what it changed is on the page before the folder answers.
+  await expect(byTestId(page, 'command-text')).toHaveText('cargo watch -x test');
+  await atRest(page);
+  held.letGo();
+  await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
+  await expect(byTestId(page, 'panel-running')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
+
+test('nothing moves on opening a thread when the switch over the threads comes in just before a frame is drawn', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  // The switch's code, known by the component it defines, stays on its way until the threads
+  // are drawn, then runs to its end in an animation frame: Angular puts its block in the page
+  // as that frame is about to be drawn, and binds it only at its next change detection.
+  const code = builtChunk((each) => /\bas GroupByComponent\}/u.test(each));
+  let letGo = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  await page.route(`**/${code}`, async (route) => {
+    await held;
+    const response = await route.fetch();
+    const late = 'await new Promise((ran) => requestAnimationFrame(ran));';
+    await route.fulfill({ response, body: `${late}\n${await response.text()}` });
+  });
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'nav-thread').first()).toBeVisible();
+  await atRest(page);
+  letGo();
+  await expect(byTestId(page, 'nav-group')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
 
 test('going from thread to thread in the side nav answers each click at once, and nothing moves', async ({
   page,

@@ -36,7 +36,7 @@ use glave_event::{
     At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, Money, OrgRole, PrincipalId,
     ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
-use glave_ports::computer::{CommandId, ComputerId};
+use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
 use glave_ports::{OrgId, ProjectId};
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,7 @@ pub use params::{Answer, Show};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
-pub use projects::{GoneFolder, NewFolder, ProjectFolder};
+pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
 pub use reply::{
     AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
@@ -327,6 +327,17 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cursor: Option<String>,
     } -> [Threads],
+    /// Makes a new thread in the same project whose history is `thread`'s up to and including
+    /// `at`, a point between its turns, to try again from there: `at` is the `seq` of a
+    /// `turn.ended`, or of an event between two turns, or before the first; the latest such
+    /// point when absent. To send an earlier message again changed, fork at the event just
+    /// before its turn's `turn.started`, then send it. The fork has the same model, settings
+    /// and prefix; nothing of `thread` changes, and files are not rewound.
+    "thread/fork" => ThreadFork {
+        thread: ThreadId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Seq>,
+    } -> [Thread],
     /// Gives a thread a title of the person's own.
     "thread/rename" => ThreadRename { thread: ThreadId, title: String } -> [Thread],
     /// Hides a thread from lists, keeping it in the log.
@@ -517,6 +528,20 @@ methods! {
     "command/list" => CommandList { thread: ThreadId } -> [Commands],
     /// Stops one of a thread's commands in the background, and everything it started.
     "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
+    /// Opens a terminal of the caller's own in a thread's folder, on their own computer.
+    "terminal/open" => TerminalOpen { thread: ThreadId, size: TerminalSize } -> [Terminal],
+    /// The terminals open in a thread, oldest first.
+    "terminal/list" => TerminalList { thread: ThreadId } -> [Terminals],
+    /// Types `input` into one of a thread's terminals.
+    "terminal/write" => TerminalWrite { thread: ThreadId, terminal: TerminalId,
+        #[schemars(with = "String")] input: Bytes } -> [Done],
+    /// What one printed from `from`, waiting up to `wait_ms` (at most 25 s) for something.
+    "terminal/read" => TerminalRead { thread: ThreadId, terminal: TerminalId, from: u64,
+        #[serde(default)] wait_ms: u64 } -> [Screen],
+    /// Gives one of a thread's terminals another size.
+    "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
+    /// Closes one of a thread's terminals, ending its shell.
+    "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
     /// Runs a prompt as a task at set times, each run in a new thread
     /// working on a copy of its own.
     "schedule/create" => ScheduleCreate {

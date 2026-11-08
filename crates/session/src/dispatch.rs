@@ -292,6 +292,7 @@ where
                     .await
             }
             Request::ThreadGet { thread } => self.get_thread(caller, thread).await,
+            Request::ThreadFork { thread, at } => self.fork(caller, thread, at).await,
             Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
             Request::ThreadUnarchive { thread } => {
@@ -440,6 +441,36 @@ where
             } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
+            Request::TerminalOpen { thread, size } => {
+                self.open_terminal(caller, thread, size).await
+            }
+            Request::TerminalList { thread } => self.list_terminals(caller, thread).await,
+            Request::TerminalWrite {
+                thread,
+                terminal,
+                input,
+            } => {
+                self.write_terminal(caller, thread, (terminal, &input))
+                    .await
+            }
+            Request::TerminalRead {
+                thread,
+                terminal,
+                from,
+                wait_ms,
+            } => {
+                let wait = std::time::Duration::from_millis(wait_ms);
+                self.read_terminal(caller, thread, (terminal, from), wait)
+                    .await
+            }
+            Request::TerminalResize {
+                thread,
+                terminal,
+                size,
+            } => self.resize_terminal(caller, thread, (terminal, size)).await,
+            Request::TerminalClose { thread, terminal } => {
+                self.close_terminal(caller, thread, terminal).await
+            }
             Request::CommandList { thread } => self.list_commands(thread).await,
             Request::CommandStop { thread, command } => {
                 self.stop_command(caller, thread, command).await

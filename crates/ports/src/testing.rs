@@ -2,9 +2,9 @@
 //! a clock they move, randomness that counts, a cancellation already fired, a fake HTTP server
 //! and a client that stalls mid-request, the core of the model providers' fake servers, a fake
 //! OAuth authorization server, a mailer that keeps what it sends, a command's output kept, fake secrets, a scripted model, an
-//! event log that fails when told, programs they start, stopped when they end, and folders of
-//! their own, removed when they are done. Behind the `conformance` feature, so no production
-//! build carries them.
+//! event log that fails when told, programs they start, stopped when they end, folders of
+//! their own, removed when they are done, and their sockets' paths, short enough for one.
+//! Behind the `conformance` feature, so no production build carries them.
 
 mod asking;
 mod faulty;
@@ -17,6 +17,7 @@ mod output;
 mod process;
 mod scripted;
 mod secret;
+mod socket;
 mod temp;
 
 use std::sync::Arc;
@@ -38,6 +39,7 @@ pub use output::Captured;
 pub use process::{HUNG, Running, read_program};
 pub use scripted::{ScriptedHttp, Written};
 pub use secret::{any_secret, fake_secret};
+pub use socket::SocketPath;
 pub use temp::TempDir;
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.

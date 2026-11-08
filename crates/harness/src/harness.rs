@@ -201,6 +201,9 @@ pub struct Thread {
     /// The system prompt and tools its model calls open with, from its first (`prefix.rs`):
     /// as its log kept them when it was read again, and none once it is compacted.
     pub(crate) prefix: Prefixed,
+    /// How large its next request was estimated, in tokens, when its last compaction failed:
+    /// none is tried again until it grows a little (`compaction.rs`). None once one succeeds.
+    pub(crate) summary_failed: Option<u64>,
 }
 
 impl Thread {
@@ -545,6 +548,29 @@ where
         caller: &Caller,
         place: Option<Place>,
     ) -> Result<Thread, HarnessError> {
+        let origin = Origin::of(if parent.is_some() {
+            OriginKind::Subagent
+        } else {
+            OriginKind::Prompt
+        });
+        let (mut thread, events) = self
+            .staged_start(scope, parent, origin, caller, place)
+            .await?;
+        self.commit(&mut thread, events).await?;
+        Ok(thread)
+    }
+
+    /// A new thread, started by `origin`, with its first events staged and not yet written:
+    /// `thread.started`, recording the call in another thread that started it, if one did,
+    /// and where it works, when `place` is given.
+    pub(crate) async fn staged_start(
+        &self,
+        scope: Scope,
+        parent: Option<ParentCall>,
+        mut origin: Origin,
+        caller: &Caller,
+        place: Option<Place>,
+    ) -> Result<(Thread, Vec<RawEvent>), HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes()?)?;
         let for_ = caller.person.or(self.actors.person);
         let placed = match place {
@@ -562,7 +588,7 @@ where
             .as_ref()
             .filter(|bound| bound.computer.kind != ComputerKind::Person)
             .and_then(|bound| crate::project_folders::project_of(&bound.opened));
-        let mut thread = Thread {
+        let thread = Thread {
             scope,
             id,
             next_seq: Seq::FIRST,
@@ -596,13 +622,9 @@ where
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
+            summary_failed: None,
         };
         let mut events = Vec::new();
-        let mut origin = Origin::of(if parent.is_some() {
-            OriginKind::Subagent
-        } else {
-            OriginKind::Prompt
-        });
         origin.by = Self::other_than_for(&thread, caller.person);
         self.stage(
             &thread,
@@ -613,7 +635,6 @@ where
                     name: "glave".into(),
                     version: env!("CARGO_PKG_VERSION").into(),
                 },
-                fork: None,
                 parent,
                 for_: thread.for_.map(Principal::person),
                 agent: self.actors.agent.map(Principal::agent),
@@ -622,8 +643,7 @@ where
         if let Some(bound) = &bound {
             self.stage(&thread, &mut events, bound)?;
         }
-        self.commit(&mut thread, events).await?;
-        Ok(thread)
+        Ok((thread, events))
     }
 
     /// Records one event on its own.

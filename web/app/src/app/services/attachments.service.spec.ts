@@ -1,29 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileUploadParams } from '@glave/client';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
+import { objectUrls } from '../testing/object-urls';
 import { AttachmentsService } from './attachments.service';
 
 const SHA = 'a'.repeat(64);
-
-/** Object URLs the tests can see made and let go of. */
-function watchUrls(): { readonly made: string[]; readonly revoked: string[] } {
-  const made: string[] = [];
-  const revoked: string[] = [];
-  Object.defineProperty(URL, 'createObjectURL', {
-    configurable: true,
-    value: () => {
-      const url = `blob:test/${String(made.length)}`;
-      made.push(url);
-      return url;
-    },
-  });
-  Object.defineProperty(URL, 'revokeObjectURL', {
-    configurable: true,
-    value: (url: string) => revoked.push(url),
-  });
-  return { made, revoked };
-}
 
 function setUp(fake: FakeSession): AttachmentsService {
   TestBed.configureTestingModule({
@@ -34,14 +17,13 @@ function setUp(fake: FakeSession): AttachmentsService {
 
 /** Until every file has an answer. */
 async function settled(attachments: AttachmentsService): Promise<void> {
-  await vi.waitFor(() => {
-    expect(attachments.waiting()).toBe(false);
-  });
+  await settle();
+  expect(attachments.waiting()).toBe(false);
 }
 
 describe('AttachmentsService', () => {
   it('keeps each file added in the project, showing an image as itself', async () => {
-    const urls = watchUrls();
+    const urls = objectUrls();
     const fake = new FakeSession().answer('file/upload', (params: FileUploadParams) => ({
       file: { sha256: SHA, name: params.name, media_type: params.media_type, bytes: 3 },
     }));
@@ -64,7 +46,6 @@ describe('AttachmentsService', () => {
   });
 
   it("shows the server's reason for a file it refuses, and refuses one too large to send", async () => {
-    watchUrls();
     const refusal = new ApiError({
       code: ErrorCode.INVALID_PARAMS,
       message: "glave can't use videos yet: add a screenshot or a few images instead",
@@ -82,7 +63,6 @@ describe('AttachmentsService', () => {
   });
 
   it('sends the files again when the message is to go to another project', async () => {
-    watchUrls();
     const fake = new FakeSession().answer('file/upload', (params: FileUploadParams) => ({
       file: { sha256: SHA, name: params.name, media_type: params.media_type, bytes: 2 },
     }));

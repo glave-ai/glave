@@ -133,6 +133,7 @@ impl Remote {
 fn answers_within(request: &Request) -> Duration {
     match request {
         Request::ThreadStart { .. }
+        | Request::ThreadFork { .. }
         | Request::ThreadCompact { .. }
         | Request::ProjectCreate { .. }
         | Request::FileUpload { .. }
@@ -140,7 +141,8 @@ fn answers_within(request: &Request) -> Duration {
         | Request::ProviderConnect { .. }
         | Request::ProviderRefresh {}
         | Request::CredentialConnect { .. }
-        | Request::ConnectionStart { .. } => SLOW_ANSWERS_WITHIN,
+        | Request::ConnectionStart { .. }
+        | Request::TerminalOpen { .. } => SLOW_ANSWERS_WITHIN,
         _ => ANSWERS_WITHIN,
     }
 }

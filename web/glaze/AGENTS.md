@@ -12,7 +12,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 - Only CSS custom properties (`styles/tokens.css` lists them all). Never style Glaze's internals by class.
 - The look is monochrome: neutral greys, and one accent, ink by default. A theme sets `--glz-accent-light` and `--glz-accent-dark` alone, on `:root`; the colour on it (`--glz-on-accent`), its hover, its soft tint and the accent as text follow in CSS. Focus has its own quiet ring (`--glz-color-focus`), never the accent.
-- Surfaces, page up: `--glz-surface-page`, `-sidebar`, `-sunken`, `-card`, `-raised`, `-overlay`; `-bubble` under the person's messages. `<glz-card surface="raised">` picks one.
+- Surfaces, page up: `--glz-surface-page`, `-sidebar`, `-sunken`, `-card`, `-raised`, `-overlay`; `-bubble` under the person's messages. `<glz-card surface="raised">` picks one. A terminal is dark in both themes: `--glz-surface-terminal`, `--glz-color-on-terminal` and `--glz-terminal-selection`, and its sixteen colours `--glz-terminal-ansi-0` to `-15`, each 4.5:1 on it: plain colours an emulator reads.
 - Light and dark come from CSS alone (`color-scheme` and `light-dark()`), following the system. To force one, set `data-theme="light"` or `"dark"` on `<html>`; storing the person's choice is the app's job.
 
 ## Space and layout
@@ -36,7 +36,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 ## Forms
 
 - Native controls get `glzInput`: `<input glzInput>`, `<textarea glzInput>`, `<select glzInput>`, `type="date"` too. Angular's own value accessors bind them.
-- Custom controls: `glz-checkbox` (`[(checked)]`), `glz-radio-group` with `glz-radio`. Each works with reactive forms (`formControlName`), `ngModel`, signal forms (`[formField]`) and two-way `model()` binding. A radio's `hint` is a muted line under its label, which describes it to screen readers; `cards` on the group draws each choice as a card, for a few choices that each need that line to tell them apart.
+- Custom controls: `glz-checkbox` (`[(checked)]`), `glz-radio-group` with `glz-radio`. Each works with reactive forms (`formControlName`), `ngModel`, signal forms (`[formField]`) and two-way `model()` binding. A radio's or a checkbox's `hint` is a muted line under its label, which describes it to screen readers; `cards` on the group draws each choice as a card, for a few choices that each need that line to tell them apart.
 - Wrap every control in `<glz-form-field label="…" hint="…">`: it labels it, describes it and shows errors once it is invalid and touched. Reactive forms: project `<glz-error>` per error under `@if`. Signal forms: give validators a `message`; the field shows it.
 - Grow a textarea with its text by CSS: Glaze's composer does; elsewhere use `field-sizing: content` and a `max-height`.
 - A form's submit button is never `disabled` for what its fields hold: `aria-disabled="true"` draws it unavailable, and the submit handler decides from the values. Enter in a field submits through that button, the browser skips it while it is disabled, and its state follows the fields only at the next change detection, so Enter soon after typing would do nothing.

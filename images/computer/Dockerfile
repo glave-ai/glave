@@ -33,7 +33,9 @@ RUN apk upgrade --no-cache && apk add --no-cache \
       bash bubblewrap build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \
       less nodejs-24 npm openssh-client procps python-3.13 ripgrep rustup sed unzip uv zip
 
-# fnm has no Wolfi package: its release, checked against the SHA-256 GitHub records for it.
+# fnm has no Wolfi package: its release, checked against the SHA-256 GitHub records for it, the
+# download tried again for up to five minutes while GitHub fails for a moment (it answered 504
+# for hours on 2026-11-08).
 ARG TARGETARCH
 ARG FNM_VERSION=1.39.0
 ARG FNM_SHA256_AMD64=7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224
@@ -44,7 +46,8 @@ RUN set -eu; \
       arm64) asset=fnm-arm64.zip; sum="$FNM_SHA256_ARM64" ;; \
       *) echo "no fnm for $TARGETARCH" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/fnm.zip "https://github.com/Schniz/fnm/releases/download/v$FNM_VERSION/$asset"; \
+    curl -fsSL --retry 8 --retry-all-errors --retry-max-time 300 --connect-timeout 20 \
+      -o /tmp/fnm.zip "https://github.com/Schniz/fnm/releases/download/v$FNM_VERSION/$asset"; \
     echo "$sum  /tmp/fnm.zip" | sha256sum -c -; \
     unzip -q /tmp/fnm.zip -d /usr/local/bin; \
     chmod 0755 /usr/local/bin/fnm; \

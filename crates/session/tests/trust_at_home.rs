@@ -247,6 +247,15 @@ fn a_project_s_choices_are_read_on_its_person_s_computer_and_kept() {
         next.project_folders = Some(Arc::new(ConfigIsTheModel));
         let (later, next) = later_on(next, &dir, &server);
         let (again, seen) = next.build_on(&dir, log).await;
+        // Nor whether a new chat there may work on a copy, which is never offered there.
+        let got = again
+            .request(Request::ProjectGet { project })
+            .await
+            .unwrap();
+        assert!(
+            matches!(got, Reply::Project { copies: None, .. }),
+            "{got:?}"
+        );
         let thread = started(&again, Some(project)).await;
         turn(&again, thread.id, "hi").await.unwrap();
         assert_eq!(later.asked(), 0, "nothing asked of their computer");

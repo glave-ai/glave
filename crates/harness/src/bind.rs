@@ -55,7 +55,8 @@ pub fn branch_for(thread: ThreadId) -> String {
 
 /// How many of `events` are glave's own record of where the thread works (bindings and
 /// removals), of whether the thread is shown, of the choices made for it, of its commands in
-/// the background, of its plan and of a call beginning, which call ids do not count.
+/// the background, of its plan, of a call beginning and of where a fork begins, which call ids
+/// do not count.
 pub(crate) fn own_records(events: &[Event]) -> u64 {
     let count = events
         .iter()
@@ -76,6 +77,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::PlanUpdated(_)
                     | Body::PlanApproved(_)
                     | Body::ToolCallStarted(_)
+                    | Body::ThreadForked(_)
             )
         })
         .count();
@@ -110,6 +112,7 @@ pub(crate) fn bound(workspace: &Workspace, kind: ComputerKind) -> WorkspaceBound
         },
         opened,
         root: info.root.clone(),
+        since: info.at.clone(),
     }
 }
 
@@ -204,7 +207,12 @@ where
             Some(Opened::Folder { path }) => match (home.folder(path).await, elsewhere(path)) {
                 (Err(ComputerError::NotFound(_)), Some(now)) => {
                     let folder = home.folder(now).await?;
-                    let recorded = bound(&folder, kind);
+                    // The same folder moved: its changes are still read since it started.
+                    let since = latest.and_then(|bound| bound.since.clone());
+                    let recorded = WorkspaceBound {
+                        since,
+                        ..bound(&folder, kind)
+                    };
                     return Ok((Some(Arc::new(folder)), Some(recorded), true));
                 }
                 (opened, _) => Some(opened?),
@@ -317,6 +325,16 @@ where
     /// The workspace `thread`'s tools act on.
     pub(crate) fn workspace_for<'a>(&'a self, thread: &'a Thread) -> &'a Arc<Workspace> {
         thread.workspace.as_ref().unwrap_or(&self.workspace)
+    }
+
+    /// The workspace `thread` works in, as it is open now: what its changes are read in. `None`
+    /// for a thread on its person's own computer that has not opened its workspace there since
+    /// it was read, which this harness's own workspace never stands in for.
+    pub fn works_in(&self, thread: &Thread) -> Option<Arc<Workspace>> {
+        match &thread.home {
+            Some(_) => thread.workspace.as_ref().map(Arc::clone),
+            None => Some(Arc::clone(self.workspace_for(thread))),
+        }
     }
 
     /// The tool source at `index` of `tools`, for `thread`: the built-in tools on its

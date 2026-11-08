@@ -76,6 +76,8 @@ export class ThreadPanelService {
   readonly files = this.changed.files;
   /** Until those are known, the files whose room is kept, nothing counted. */
   readonly room = this.changed.room;
+  /** Whether those are yet to be first read. */
+  readonly unread = this.changed.unread;
   /** What those leave out, in the server's sentence. */
   readonly note = this.changed.note;
   readonly running = this.commands.count;

@@ -50,6 +50,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-memory", Adapter),
     // The email plug over SMTP, through lettre.
     ("glave-mail", Adapter),
+    // Web Push to people's browsers, encrypted through web-push-native.
+    ("glave-push", Adapter),
     // web_fetch as a tool source, over reqwest.
     ("glave-web", Adapter),
     // Office files for `glave doc`: workbooks read with calamine and written with

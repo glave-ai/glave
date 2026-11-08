@@ -1,19 +1,23 @@
 //! The behaviour every [`Computers`] adapter must show, on this machine or across the wire:
 //! the lifecycle, files confined to their workspace, commands streamed and stoppable, commands
-//! kept running in the background, and work leaving a computer only through git.
+//! kept running in the background, work leaving a computer only through git, and what changed
+//! in a folder since a point in its history.
 
 mod background;
+mod changes;
 mod confinement;
 mod credentials;
 mod finding;
 mod helpers;
 mod projects;
+mod terminals;
 mod worktrees;
 
 pub use confinement::{
     Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
 };
 use helpers::{Collect, Trip, failed, files, run, run_quietly};
+pub use terminals::terminals;
 
 use super::{Verdict, ensure};
 use crate::computer::{
@@ -62,6 +66,7 @@ pub async fn computers<C: Computers>(
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
     worktrees::worktrees(computers, made.id, &here.root).await?;
+    changes::changes(computers, made.id, here.id, (&here.root, scratch)).await?;
     projects::projects(computers, made.id).await?;
     confinement::confinement(computers, made.id, here.id, scratch).await?;
     computers

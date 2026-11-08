@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Body, CommandEnded, CommandStarted, EffortChosen, Event,
     MessageAdded, ModelChosen, Payload, PermissionsChosen, PlanApproved, PlanUpdated, Seq,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadId, ThreadRenamed, ThreadStarted,
-    ThreadUnarchived, ToolCallStarted, TurnStarted, WorkspaceBound, WorkspaceRemoved, decode,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadId, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallStarted, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, decode,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
@@ -42,6 +43,7 @@ const RECORDS: &[&str] = &[
     PlanUpdated::TYPE,
     PlanApproved::TYPE,
     ToolCallStarted::TYPE,
+    ThreadForked::TYPE,
 ];
 
 /// What is read back from before a thread's end, and how many at a time.
@@ -155,7 +157,7 @@ where
     }
 
     /// Thread `id`'s events from `from` (or its start), in order.
-    async fn from(
+    pub(crate) async fn from(
         &self,
         scope: &Scope,
         id: ThreadId,

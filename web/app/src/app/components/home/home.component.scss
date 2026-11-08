@@ -28,6 +28,17 @@
   max-width: var(--glz-composer-lg-width);
 }
 
+// Under the composer, lined up with its box: working on a separate copy, and why.
+.separate {
+  width: 100%;
+  max-width: var(--glz-composer-lg-width);
+  font-size: var(--glz-text-sm);
+}
+
+.unseen {
+  visibility: hidden;
+}
+
 .private {
   display: flex;
   align-items: center;

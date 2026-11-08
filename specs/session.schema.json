@@ -231,12 +231,12 @@
       "oneOf": [
         {
           "const": "wrote",
-          "description": "Wrote the whole file (`write`).",
+          "description": "Wrote the whole file (`write`, or a file new since).",
           "type": "string"
         },
         {
           "const": "edited",
-          "description": "Swapped one piece for another (`edit`).",
+          "description": "Swapped one piece for another (`edit`, or a stretch of a file changed since).",
           "type": "string"
         },
         {
@@ -255,14 +255,14 @@
           "type": "integer"
         },
         "changes": {
-          "description": "Its changes, in order.",
+          "description": "Its changes, in order: none for a file whose lines are not shown.",
           "items": {
             "$ref": "#/$defs/FileChange"
           },
           "type": "array"
         },
         "path": {
-          "description": "Where it is, as the call named it.",
+          "description": "Where it is: relative to the workspace's root when its folder says, else as the call\nthat changed it named it.",
           "type": "string"
         },
         "removed": {
@@ -961,6 +961,19 @@
       ],
       "type": "object"
     },
+    "Copies": {
+      "description": "A new chat in a project may work on a separate copy of its folder, a git worktree on a branch\nof its own, which touches neither the folder nor other chats.",
+      "properties": {
+        "by_default": {
+          "description": "Whether it does unless `thread/start` says: the project's own `worktree` choice for the\nperson on this computer, else the server's.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "by_default"
+      ],
+      "type": "object"
+    },
     "CredentialId": {
       "description": "Identifies one sign-in or secret a person keeps, sealed under a key of its own: a git\nhost (`credential.connected`), a connection (`connection.connected`) or a secret\n(`secret.added`).",
       "format": "uuid",
@@ -1385,7 +1398,7 @@
       ]
     },
     "FileChange": {
-      "description": "One change to a file: a `write` or an `edit` that finished without an error, as its call\nasked for it, which the tool applied exactly.",
+      "description": "One change to a file: a `write` or an `edit` that finished without an error, as its call\nasked for it, which the tool applied exactly; or, as its folder says, the whole of a new\nfile or one stretch of an old one.",
       "properties": {
         "kind": {
           "$ref": "#/$defs/ChangeKind"
@@ -2959,6 +2972,33 @@
       ],
       "type": "object"
     },
+    "Screenful": {
+      "description": "What a read of a terminal answers: what it printed from `from`, the offset of the first\nbyte, up to `next`, the offset to read from next. A `from` past the offset asked for says\nthe bytes between were dropped, the computer keeping only the latest [`TERMINAL_KEPT`].\n`ended` once its shell has ended and all it printed has been read.",
+      "properties": {
+        "ended": {
+          "type": "boolean"
+        },
+        "from": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "output",
+        "next"
+      ],
+      "type": "object"
+    },
     "SearchInfo": {
       "description": "Whether the person's agent may search the web (`specs/session.md`, \"Web search\").",
       "oneOf": [
@@ -3544,22 +3584,70 @@
         }
       ]
     },
+    "TerminalId": {
+      "description": "Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by\nthe computer it runs on).",
+      "format": "uuid",
+      "type": "string"
+    },
+    "TerminalInfo": {
+      "description": "A terminal open on a computer, as its listing shows it.",
+      "properties": {
+        "ended": {
+          "description": "Whether its shell has ended; it stays until it is closed.",
+          "type": "boolean"
+        },
+        "folder": {
+          "description": "The folder its shell started in, as its computer names it.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/TerminalId"
+        }
+      },
+      "required": [
+        "id",
+        "folder"
+      ],
+      "type": "object"
+    },
+    "TerminalSize": {
+      "description": "How many columns and rows a terminal shows.",
+      "properties": {
+        "cols": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "type": "object"
+    },
     "ThreadChanges": {
-      "description": "The files a thread changed, its subagents' changes with its own, and each turn's.",
+      "description": "The files a thread changed, and each turn's.",
       "properties": {
         "files": {
-          "description": "Every file it changed, in the order first changed.",
+          "description": "Every file in its folder that differs from where the thread started, whatever changed\nit, in the order of their paths; where its folder can't say, the files its own `write`\nand `edit` calls and its subagents' changed, in the order first changed.",
           "items": {
             "$ref": "#/$defs/ChangedFile"
           },
           "type": "array"
         },
         "note": {
-          "description": "What they leave out, in a sentence: \"Changes made by commands or other tools are not\nlisted.\"",
+          "description": "What they are and leave out, in a sentence: \"Changes made by commands or other tools are\nnot listed.\"",
           "type": "string"
         },
         "turns": {
-          "description": "Each turn that changed files, in order.",
+          "description": "Each turn that changed files with its own `write` and `edit` calls, or its subagents',\nin order.",
           "items": {
             "$ref": "#/$defs/TurnChanges"
           },
@@ -3696,6 +3784,10 @@
         },
         "status": {
           "$ref": "#/$defs/Status"
+        },
+        "terminals": {
+          "description": "Whether its person may open terminals of their own in its folder: their shell, on their\nown computer, so never on a worker, nor on the server's for anyone but the person it\nworks for; never once it is put away (`specs/session.md`, \"Terminals\").",
+          "type": "boolean"
         },
         "title": {
           "description": "The title the person gave it, else the first line of their first message.",
@@ -4452,6 +4544,13 @@
           "description": "The workspace root, an absolute path as the computer names it. Tool output and glave's\nown fields use paths relative to it.",
           "type": "string"
         },
+        "since": {
+          "description": "Where its folder's history stood as the thread started there: what the thread's changes\nare read since. Absent for a folder that keeps no history, or whose computer was not\nasked.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "workspace": {
           "description": "The workspace's id, as its computer named it.",
           "format": "uuid",
@@ -4592,6 +4691,10 @@
     "NO_SIGN_IN": {
       "code": -32013,
       "message": "No valid sign-in (network transports)"
+    },
+    "NO_TERMINAL": {
+      "code": -32038,
+      "message": "No such terminal is open in this thread"
     },
     "NO_THREAD": {
       "code": -32001,
@@ -6742,6 +6845,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6820,6 +6934,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6857,6 +6982,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -6952,6 +7088,17 @@
       "result": {
         "description": "A project: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "copies": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Copies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether a new chat in it may work on a separate copy of its folder, and whether it\ndoes unless told: said by `project/get` alone, and only where it may (its folder in a\ngit repository with a commit, on this server's computer, its threads working here\nrather than on workers)."
+          },
           "folder": {
             "anyOf": [
               {
@@ -7578,6 +7725,176 @@
       },
       "streams": false
     },
+    "terminal/close": {
+      "params": {
+        "properties": {
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/list": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "terminals": {
+            "items": {
+              "$ref": "#/$defs/TerminalInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "terminals"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/open": {
+      "params": {
+        "properties": {
+          "size": {
+            "$ref": "#/$defs/TerminalSize"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "size"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "terminal": {
+            "$ref": "#/$defs/TerminalInfo"
+          }
+        },
+        "required": [
+          "terminal"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/read": {
+      "params": {
+        "properties": {
+          "from": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          },
+          "wait_ms": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "from"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "What a terminal printed, from where it was read.",
+        "properties": {
+          "screen": {
+            "$ref": "#/$defs/Screenful"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/resize": {
+      "params": {
+        "properties": {
+          "size": {
+            "$ref": "#/$defs/TerminalSize"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "size"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "terminal/write": {
+      "params": {
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "terminal": {
+            "$ref": "#/$defs/TerminalId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "terminal",
+          "input"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
     "thread/archive": {
       "params": {
         "properties": {
@@ -7734,6 +8051,41 @@
         },
         "required": [
           "events"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/fork": {
+      "params": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
         ],
         "type": "object"
       },

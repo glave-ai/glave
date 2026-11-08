@@ -123,6 +123,7 @@ where
         Ok(Reply::Project {
             project: found,
             folder: Some(folder),
+            copies: None,
         })
     }
 
@@ -155,6 +156,8 @@ where
             change_standing(log, &scope, thread, now, random, Change::Archive)
                 .await
                 .map_err(|error| ApiError::from(&error))?;
+            // Its terminals end as it is put away, as any thread's do.
+            self.close_terminals(thread).await;
         }
         let by = Some(Principal::person(self.person_of(caller)?));
         self.write_project_ledger(at, |current| {
@@ -223,7 +226,7 @@ where
     }
 
     /// Every thread of `project` that is neither archived nor deleted.
-    async fn active_threads(&self, at: Located) -> Result<Vec<ThreadId>, ApiError> {
+    pub(crate) async fn active_threads(&self, at: Located) -> Result<Vec<ThreadId>, ApiError> {
         // Glave's own: listing a project's threads, for the server to act on.
         let scope = own_scope(at);
         let (mut threads, mut after) = (Vec::new(), None);
