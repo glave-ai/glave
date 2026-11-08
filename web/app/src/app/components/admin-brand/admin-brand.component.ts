@@ -2,7 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  type ElementRef,
+  ElementRef,
   Injector,
   afterNextRender,
   computed,
@@ -103,7 +103,8 @@ export class AdminBrandComponent {
   private readonly service = inject(BrandService);
   private readonly injector = inject(Injector);
   private readonly picker = viewChild.required<ElementRef<HTMLInputElement>>('picker');
-  private readonly pickButton = viewChild.required<ElementRef<HTMLButtonElement>>('pickButton');
+  /** The element: on a `glzButton`, a reference alone is the component. */
+  private readonly pickButton = viewChild.required('pickButton', { read: ElementRef });
 
   protected readonly name = signal('');
   protected readonly accent = signal<string>(PLAIN);
@@ -201,7 +202,10 @@ export class AdminBrandComponent {
     // The button pressed goes: focus goes to the one beside it.
     afterNextRender(
       () => {
-        this.pickButton().nativeElement.focus();
+        const button: unknown = this.pickButton().nativeElement;
+        if (button instanceof HTMLElement) {
+          button.focus();
+        }
       },
       { injector: this.injector },
     );

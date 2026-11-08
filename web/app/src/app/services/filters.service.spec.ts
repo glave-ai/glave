@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type Filters } from '@glave/client';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { MODELS } from '../testing/fixtures';
@@ -97,15 +98,13 @@ describe('FiltersService', () => {
     const first = filters.choose({ sort: 'price' });
     const second = filters.choose({ sort: 'speed' });
     expect(filters.filters()).toEqual({ sort: 'speed' });
-    await vi.waitFor(() => {
-      expect(waiting).toHaveLength(1);
-    });
+    await settle();
+    expect(waiting).toHaveLength(1);
     waiting[0]?.({ filters: { sort: 'price' }, europe: EUROPE });
     expect(await first).toBe(true);
     expect(filters.filters()).toEqual({ sort: 'speed' });
-    await vi.waitFor(() => {
-      expect(waiting).toHaveLength(2);
-    });
+    await settle();
+    expect(waiting).toHaveLength(2);
     waiting[1]?.({ filters: { sort: 'speed' }, europe: EUROPE });
     expect(await second).toBe(true);
     expect(filters.filters()).toEqual({ sort: 'speed' });
@@ -123,9 +122,8 @@ describe('FiltersService', () => {
     const filters = service(fake);
     await filters.load();
     const choosing = filters.choose({ keeps_nothing: true });
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('filters/set')).toHaveLength(1);
-    });
+    await settle();
+    expect(fake.paramsOf('filters/set')).toHaveLength(1);
     TestBed.inject(ChangesService).tell('filters');
     TestBed.tick();
     await filters.load();

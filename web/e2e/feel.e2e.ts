@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 
 import { PROJECT, THREAD, fakeApi } from './fake-api';
+import { FORMATTED } from './fake-formatted';
 import { LONG, LONG_TURNS } from './fake-long';
 import {
   type Felt,
@@ -85,6 +86,25 @@ for (const late of ['project/list', 'thread/list'] as const) {
     expectStill(await feltOn(page));
   });
 }
+
+test('nothing moves on opening a thread in a repository when its folder says, late, that a command changed files', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  const held = await hold(page, '/', 'thread/changes');
+  await page.goto(`/t/${FORMATTED}${SIGNED_IN}`);
+  await held.sent;
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Formatted');
+  // What sits under what it changed is on the page before the folder answers.
+  await expect(byTestId(page, 'command-text')).toHaveText('cargo watch -x test');
+  await atRest(page);
+  held.letGo();
+  await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
+  await expect(byTestId(page, 'panel-running')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
 
 test('going from thread to thread in the side nav answers each click at once, and nothing moves', async ({
   page,

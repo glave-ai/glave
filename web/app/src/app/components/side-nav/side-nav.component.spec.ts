@@ -7,6 +7,7 @@ import {
 import { provideRouter } from '@angular/router';
 import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { AppearanceService } from '../../services/appearance.service';
 import { GroupingService } from '../../services/grouping.service';
@@ -67,16 +68,6 @@ async function render(
   return { root: fixture.nativeElement as HTMLElement, fixture, fake };
 }
 
-/** Lets what the side nav started settle: its calls, and the code it loads late. */
-async function settle(
-  fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>,
-): Promise<void> {
-  for (let turn = 0; turn < 3; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
-  }
-}
-
 describe('SideNavComponent', () => {
   it('names the organization, and asks for no logo when it has none', async () => {
     const organization = { name: 'Acme', accent: 'plain', locked: false };
@@ -105,28 +96,24 @@ describe('SideNavComponent', () => {
 
     fake.answer('appearance/get', { organization: { ...organization, logo: 'one' } });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()?.alt).toBe('Acme');
-      expect(logo()?.src).toMatch(/^blob:/u);
-    });
+    // What reads the logo is code loaded late, which no turn of the side nav brings back.
+    await import('../../services/brand.service');
+    await settle(fixture);
+    expect(logo()?.alt).toBe('Acme');
+    expect(logo()?.src).toMatch(/^blob:/u);
     expect(heading()).toBeNull();
     const first = logo()?.src;
 
     fake.answer('appearance/get', { organization: { ...organization, logo: 'two' } });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()?.src).toMatch(/^blob:/u);
-      expect(logo()?.src).not.toBe(first);
-    });
+    await settle(fixture);
+    expect(logo()?.src).toMatch(/^blob:/u);
+    expect(logo()?.src).not.toBe(first);
 
     fake.answer('appearance/get', { organization });
     await TestBed.inject(AppearanceService).read();
-    await vi.waitFor(async () => {
-      await settle(fixture);
-      expect(logo()).toBeNull();
-    });
+    await settle(fixture);
+    expect(logo()).toBeNull();
     expect(heading()?.textContent).toBe('Acme');
   });
 

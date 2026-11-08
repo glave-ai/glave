@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { AdminComponent } from './admin.component';
@@ -39,9 +40,10 @@ describe('AdminComponent', () => {
     TestBed.configureTestingModule({
       providers: [...provideFakeSession(fake), provideRouter([])],
     });
-    TestBed.createComponent(AdminComponent);
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('thread/list/watch')).toHaveLength(1);
-    });
+    const fixture = TestBed.createComponent(AdminComponent);
+    // What watches the lists is code loaded late, which no turn of the page brings back.
+    await import('../../services/lists-feed');
+    await settle(fixture);
+    expect(fake.paramsOf('thread/list/watch')).toHaveLength(1);
   });
 });
