@@ -203,10 +203,13 @@ where
         let elsewhere = |was: &str| moved.filter(|now| *now != was);
         let opened = latest.map(|bound| &bound.opened);
         let (home, kind) = (&self.workspace, ComputerKind::Local);
+        let at = |path: &str| Sources::Folder {
+            path: path.to_owned(),
+        };
         let workspace = match opened {
-            Some(Opened::Folder { path }) => match (home.folder(path).await, elsewhere(path)) {
+            Some(Opened::Folder { path }) => match (home.again(&at(path)).await, elsewhere(path)) {
                 (Err(ComputerError::NotFound(_)), Some(now)) => {
-                    let folder = home.folder(now).await?;
+                    let folder = home.again(&at(now)).await?;
                     // The same folder moved: its changes are still read since it started.
                     let since = latest.and_then(|bound| bound.since.clone());
                     let recorded = WorkspaceBound {
@@ -218,7 +221,12 @@ where
                 (opened, _) => Some(opened?),
             },
             Some(Opened::Worktree { repository, branch }) => {
-                match home.worktree(repository, branch, Some(&owner)).await {
+                let sources = Sources::Worktree {
+                    path: repository.clone(),
+                    branch: branch.clone(),
+                    owner: Some(owner),
+                };
+                match home.again(&sources).await {
                     Err(ComputerError::NotFound(_)) if elsewhere(repository).is_some() => {
                         return Err(ComputerError::Unsupported(
                             "this thread worked on a copy of its project made before the \
@@ -233,7 +241,11 @@ where
             }
             // Made again, empty, if a cleanup removed it.
             Some(Opened::Scratch { .. }) => {
-                Some(home.scratch(&id.to_string(), Some(&owner)).await?)
+                let sources = Sources::Scratch {
+                    name: id.to_string(),
+                    owner: Some(owner),
+                };
+                Some(home.again(&sources).await?)
             }
             Some(Opened::Clone { .. }) | None => None,
         };
