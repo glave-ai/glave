@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
 use glave_ports::computer::{
-    Bytes, Command, CommandId, ComputerError, Computers, Ending, FileWrite, Finished,
+    Bytes, Changes, Command, CommandId, ComputerError, Computers, Ending, FileWrite, Finished,
     GitCredentials, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
     Sources, Stat, WorkspaceInfo, is_protected, is_protected_refusal, refuse_protected,
 };
@@ -402,6 +402,13 @@ impl Workspace {
         written
             .await
             .map_err(|error| format!("Could not write {path}: {}", error.message()))
+    }
+
+    /// What changed in its folder since `since`, a point in its history its binding recorded,
+    /// whatever changed it; `None` for a folder that keeps no history
+    /// ([`Computers::changes`]).
+    pub async fn changes(&self, since: Option<&str>) -> Result<Option<Changes>, ComputerError> {
+        self.computers.changes(self.info.id, since).await
     }
 
     pub(crate) async fn list(&self, listing: &Listing) -> Result<Listed, ComputerError> {

@@ -1,9 +1,14 @@
-//! Changes (`specs/session.md`, "Changes"): what a thread changed in files with glave's own
-//! `write` and `edit`, read from its log, its subagents' with its own, for the thread and for
-//! each turn, in the caller's language, and each turn's files as its end records them.
+//! Changes (`specs/session.md`, "Changes"): what a thread changed in files. In a repository,
+//! the thread's are everything its folder says differs from where it started, whatever changed
+//! it; elsewhere, and for each turn, what glave's own `write` and `edit` changed, read from its
+//! log, its subagents' with its own, in the caller's language, and each turn's files as its end
+//! records them.
 
 use glave_event::{Body, ThreadId, decode};
-use glave_session::protocol::{ChangeKind, LineKind, Reply, Request, ThreadChanges, code};
+use glave_ports::InMemoryLog;
+use glave_session::protocol::{
+    ChangeKind, ChangedFile, DiffLine, LineKind, Reply, Request, ThreadChanges, code,
+};
 use serde_json::json;
 
 use crate::support::*;
@@ -64,7 +69,9 @@ fn a_thread_s_changes_are_its_writes_and_edits_and_its_subagents_by_turn() {
         let ThreadChanges { files, turns, note } = changes;
         assert_eq!(
             &*note,
-            "Changes made by commands or other tools are not listed."
+            "This folder keeps no version history, so only glave's own edits are listed, not \
+             what commands or other tools changed.",
+            "a folder in no repository, said plainly"
         );
         let counted: Vec<_> = files
             .iter()
@@ -131,5 +138,102 @@ fn a_thread_that_changed_nothing_says_so_and_a_missing_one_is_refused() {
         };
         assert!(changes.files.is_empty() && changes.turns.is_empty());
         assert_eq!(missing.unwrap_err().code, code::NO_THREAD);
+    });
+}
+
+/// In a repository: glave writes a file a formatter then rewrites, commands edit a tracked
+/// file, make a new one and have the repository ignore another, which glave then writes.
+fn script_in_repository() -> Vec<glave_ports::Completion> {
+    let write = json!({"path": "main.rs", "content": "fn  main()  {}\n"});
+    let format = "tr -s ' ' < main.rs > main.rs.new && mv main.rs.new main.rs";
+    let edit = "printf 'Use spaces.\\n' > AGENTS.md && printf 'made\\n' > made.txt && \
+        printf 'skip.txt\\n' > .gitignore";
+    let ignored = json!({"path": "./skip.txt", "content": "kept\n"});
+    vec![
+        answer(None, Some(("write", write))),
+        answer(None, Some(("bash", json!({"command": format})))),
+        answer(None, Some(("bash", json!({"command": edit})))),
+        answer(None, Some(("write", ignored))),
+        answer(Some("Done."), None),
+    ]
+}
+
+/// Each change of `file` as its kind and its lines, each after its sign.
+fn signed(file: &ChangedFile) -> Vec<(ChangeKind, Vec<String>)> {
+    let line = |line: &DiffLine| {
+        let sign = match line.kind {
+            LineKind::Same => ' ',
+            LineKind::Removed => '-',
+            LineKind::Added => '+',
+        };
+        format!("{sign}{}", line.text)
+    };
+    let changes = file.changes.iter();
+    changes
+        .map(|change| (change.kind, change.lines.iter().map(line).collect()))
+        .collect()
+}
+
+#[test]
+fn in_a_repository_a_thread_s_files_are_all_that_differ_from_where_it_started() {
+    block_on!(async {
+        let mut setup = Setup::new(script_in_repository());
+        setup.settings.titles = false;
+        let (server, _seen, _repo, _dir) = setup
+            .build_in_repository("changes-repository", InMemoryLog::new())
+            .await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "write main and tidy up")
+            .await
+            .unwrap();
+        let changed = server.request(Request::ThreadChanges { thread }).await;
+        server.shutdown().await;
+        let Ok(Reply::Changes { changes }) = changed else {
+            panic!("changes, not {changed:?}")
+        };
+        let ThreadChanges { files, turns, note } = changes;
+        let shown: Vec<_> = files
+            .iter()
+            .map(|file| (file.path.as_str(), signed(file)))
+            .collect();
+        let edited = |lines: &[&str]| lines.iter().map(|line| (*line).to_owned()).collect();
+        assert_eq!(
+            shown,
+            [
+                (
+                    ".gitignore",
+                    vec![(ChangeKind::Wrote, edited(&["+skip.txt"]))]
+                ),
+                (
+                    "AGENTS.md",
+                    vec![(ChangeKind::Edited, edited(&["-Use tabs.", "+Use spaces."]))]
+                ),
+                ("made.txt", vec![(ChangeKind::Wrote, edited(&["+made"]))]),
+                (
+                    "main.rs",
+                    vec![(ChangeKind::Wrote, edited(&["+fn main() {}"]))]
+                ),
+                ("./skip.txt", vec![(ChangeKind::Wrote, edited(&["+kept"]))]),
+            ],
+            "a command's edit, new files no one added, what the formatter left, then glave's \
+             own edit of a file the repository ignores"
+        );
+        assert_eq!(
+            &*note,
+            "The thread's files are glave's own edits and all else that differs from the version \
+             it started from, whatever changed it; a turn's are only glave's own edits."
+        );
+        let own: Vec<_> = turns
+            .iter()
+            .flat_map(|turn| turn.files.iter().map(signed))
+            .collect();
+        assert_eq!(
+            own,
+            [
+                vec![(ChangeKind::Wrote, edited(&["+fn  main()  {}"]))],
+                vec![(ChangeKind::Wrote, edited(&["+kept"]))]
+            ],
+            "the turn's own writes, as they asked"
+        );
     });
 }

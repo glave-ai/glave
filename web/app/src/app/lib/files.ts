@@ -59,14 +59,17 @@ export function totalLines(files: readonly ChangedFile[]): {
 /** The mark before each line of a change, so colour is never the only sign of what it is. */
 export const SIGNS: Readonly<Record<LineKind, string>> = { same: ' ', removed: '-', added: '+' };
 
-/** The tools whose calls can change files, as the server counts them: its own, and a subagent. */
-const CHANGING: ReadonlySet<string> = new Set(['write', 'edit', 'agent']);
+/**
+ * The tools whose calls can change files: glave's own, a subagent, and a command, whose changes
+ * the server reads from the folder where it can.
+ */
+const CHANGING: ReadonlySet<string> = new Set(['write', 'edit', 'agent', 'bash']);
 
 /**
- * The `seq` of the latest end of a call that can change files (a `write`, an `edit`, or a
- * subagent's `agent` call), or `null` while there is none: when it changes, the thread may have
- * changed files it had not, and its changes are read again. What changed, if anything, is the
- * server's to say.
+ * The `seq` of the latest end of a call that can change files (a `write`, an `edit`, a
+ * subagent's `agent` call, or a command), or `null` while there is none: when it changes, the
+ * thread may have changed files it had not, and its changes are read again. What changed, if
+ * anything, is the server's to say.
  */
 export function lastChanging(events: readonly RawEvent[]): number | null {
   const asked = new Set<unknown>();

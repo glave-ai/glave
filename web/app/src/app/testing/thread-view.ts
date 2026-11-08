@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { TurnStartParams } from '@glave/client';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { ThreadComponent } from '../components/thread/thread.component';
 import { FirstTurnService } from '../services/first-turn.service';
@@ -28,9 +29,7 @@ export async function openThread(fake: FakeSession, first?: TurnStartParams): Pr
   }
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
-  await fixture.whenStable();
-  await new Promise((resolve) => setTimeout(resolve));
-  await fixture.whenStable();
+  await settle(fixture);
   return { root: fixture.nativeElement as HTMLElement, fixture };
 }
 
@@ -46,9 +45,6 @@ export function session(events: readonly unknown[], changes = changed(1, [])): F
     .answer('project/list', { projects: [record('p1', 'glave')] })
     .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
 }
-
-/** Waits a task, for what is already answered to come in. */
-export const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
 
 /** Types `text` into the thread's composer and sends it. */
 export async function type(root: HTMLElement, text: string): Promise<void> {

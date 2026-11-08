@@ -33,6 +33,10 @@ export class ChangedFilesService {
   });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
+  /** Whether a read is in flight. */
+  private reading = false;
+  /** Whether a read was asked for since the one in flight began. */
+  private again = false;
 
   /** Every file the thread changed, in the order first changed. */
   readonly files = computed<readonly ChangedFile[]>(() => this.changes()?.files ?? []);
@@ -45,12 +49,17 @@ export class ChangedFilesService {
     return changes === null ? null : new Map(changes.turns.map((turn) => [turn.turn, turn.files]));
   });
   /**
+   * Whether they are yet to be first known: while the thread opens and they are read, not once
+   * they cannot be.
+   */
+  readonly unread = computed(() => this.changes() === null && !this.failed());
+  /**
    * Until they are first known, the files the thread's ended turns recorded they changed, each
    * once in the order first changed, nothing counted, whose room is kept; else none, and none
    * once they cannot be read.
    */
   readonly room = computed<readonly ChangedFile[]>(() => {
-    if (this.changes() !== null || this.failed()) {
+    if (!this.unread()) {
       return [];
     }
     const paths = this.thread.turns().flatMap((turn) => turn.result?.changed ?? []);
@@ -77,8 +86,35 @@ export class ChangedFilesService {
     });
   }
 
-  /** Reads what the thread changed. */
+  /**
+   * Reads what the thread changed: at once, or, while a read is in flight, once more after it,
+   * however often it was asked meanwhile, so a run of commands ending costs the server two reads.
+   */
   async refresh(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return;
+    }
+    this.reading = true;
+    this.again = false;
+    try {
+      do {
+        await this.read();
+      } while (this.asked());
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  /** Whether a read was asked for since the last began, taking it as begun. */
+  private asked(): boolean {
+    const asked = this.again;
+    this.again = false;
+    return asked;
+  }
+
+  /** Reads what the thread changed, once. */
+  private async read(): Promise<void> {
     const thread = this.thread.thread();
     if (thread === null) {
       return;

@@ -231,12 +231,12 @@
       "oneOf": [
         {
           "const": "wrote",
-          "description": "Wrote the whole file (`write`).",
+          "description": "Wrote the whole file (`write`, or a file new since).",
           "type": "string"
         },
         {
           "const": "edited",
-          "description": "Swapped one piece for another (`edit`).",
+          "description": "Swapped one piece for another (`edit`, or a stretch of a file changed since).",
           "type": "string"
         },
         {
@@ -255,14 +255,14 @@
           "type": "integer"
         },
         "changes": {
-          "description": "Its changes, in order.",
+          "description": "Its changes, in order: none for a file whose lines are not shown.",
           "items": {
             "$ref": "#/$defs/FileChange"
           },
           "type": "array"
         },
         "path": {
-          "description": "Where it is, as the call named it.",
+          "description": "Where it is: relative to the workspace's root when its folder says, else as the call\nthat changed it named it.",
           "type": "string"
         },
         "removed": {
@@ -1398,7 +1398,7 @@
       ]
     },
     "FileChange": {
-      "description": "One change to a file: a `write` or an `edit` that finished without an error, as its call\nasked for it, which the tool applied exactly.",
+      "description": "One change to a file: a `write` or an `edit` that finished without an error, as its call\nasked for it, which the tool applied exactly; or, as its folder says, the whole of a new\nfile or one stretch of an old one.",
       "properties": {
         "kind": {
           "$ref": "#/$defs/ChangeKind"
@@ -3637,21 +3637,21 @@
       "type": "object"
     },
     "ThreadChanges": {
-      "description": "The files a thread changed, its subagents' changes with its own, and each turn's.",
+      "description": "The files a thread changed, and each turn's.",
       "properties": {
         "files": {
-          "description": "Every file it changed, in the order first changed.",
+          "description": "Every file in its folder that differs from where the thread started, whatever changed\nit, in the order of their paths; where its folder can't say, the files its own `write`\nand `edit` calls and its subagents' changed, in the order first changed.",
           "items": {
             "$ref": "#/$defs/ChangedFile"
           },
           "type": "array"
         },
         "note": {
-          "description": "What they leave out, in a sentence: \"Changes made by commands or other tools are not\nlisted.\"",
+          "description": "What they are and leave out, in a sentence: \"Changes made by commands or other tools are\nnot listed.\"",
           "type": "string"
         },
         "turns": {
-          "description": "Each turn that changed files, in order.",
+          "description": "Each turn that changed files with its own `write` and `edit` calls, or its subagents',\nin order.",
           "items": {
             "$ref": "#/$defs/TurnChanges"
           },
@@ -4543,6 +4543,13 @@
         "root": {
           "description": "The workspace root, an absolute path as the computer names it. Tool output and glave's\nown fields use paths relative to it.",
           "type": "string"
+        },
+        "since": {
+          "description": "Where its folder's history stood as the thread started there: what the thread's changes\nare read since. Absent for a folder that keeps no history, or whose computer was not\nasked.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "workspace": {
           "description": "The workspace's id, as its computer named it.",

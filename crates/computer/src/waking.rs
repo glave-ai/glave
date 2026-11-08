@@ -12,10 +12,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob, Globbed, Home,
-    KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Screenful, Search, Searched,
-    Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
+    Globbed, Home, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved, Screenful, Search,
+    Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId,
+    WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -68,9 +69,29 @@ struct Planned {
     /// Let go of while a command of its ran in the background there: kept for that command
     /// until the computer sleeps, which ends it, then forgotten.
     closing: AtomicBool,
+    /// Where its folder's history stood as it was first opened on the computer awake, which a
+    /// plan made asleep can't know: what changes are read since when none is asked.
+    first_at: Mutex<Option<String>>,
 }
 
 impl Planned {
+    /// Where its folder's history stood as it was first opened on the computer awake.
+    fn first_at(&self) -> Option<String> {
+        self.first_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Keeps `at` as where its folder's history stood when first opened, unless it was opened
+    /// before.
+    fn opened_at(&self, at: Option<&String>) {
+        let mut first = self.first_at.lock().unwrap_or_else(PoisonError::into_inner);
+        if first.is_none() {
+            *first = at.cloned();
+        }
+    }
+
     fn real(&self) -> Option<Real> {
         self.real
             .lock()
@@ -129,6 +150,7 @@ impl Waking {
     fn plan(&self, info: WorkspaceInfo, real: Option<Real>) {
         let id = info.id;
         let planned = Arc::new(Planned {
+            first_at: Mutex::new(info.at.clone()),
             info,
             real: Mutex::new(real),
             opening: tokio::sync::Mutex::new(()),
@@ -255,6 +277,7 @@ impl Waking {
                 info.root, planned.info.root
             )));
         }
+        planned.opened_at(info.at.as_ref());
         let open = Real {
             computers: awake.computers,
             computer: awake.home.computer,
@@ -399,10 +422,12 @@ impl Computers for Waking {
                 _ => None,
             };
             if let Some(root) = root {
+                // Where its history stands is not known without asking the computer.
                 let info = WorkspaceInfo {
                     id: WorkspaceId::from_uuid(crate::local::new_id()?),
                     root,
                     sources: sources.clone(),
+                    at: None,
                     ..self.home.clone()
                 };
                 self.plan(info.clone(), None);
@@ -601,8 +626,7 @@ impl Computers for Waking {
         })
     }
 
-    /// Terminals are only on the computer awake: one that slept since has none, and is not
-    /// woken to say so.
+    /// Only on the computer awake: one that slept since has none, and isn't woken to say so.
     fn write_terminal<'a>(
         &'a self,
         _computer: ComputerId,
@@ -611,12 +635,10 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            self.done(
-                awake
-                    .computers
-                    .write_terminal(awake.computer, terminal, input)
-                    .await,
-            )
+            let written = awake
+                .computers
+                .write_terminal(awake.computer, terminal, input);
+            self.done(written.await)
         })
     }
 
@@ -658,12 +680,8 @@ impl Computers for Waking {
     ) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let awake = self.awake_home(terminal)?;
-            self.done(
-                awake
-                    .computers
-                    .close_terminal(awake.computer, terminal)
-                    .await,
-            )
+            let closed = awake.computers.close_terminal(awake.computer, terminal);
+            self.done(closed.await)
         })
     }
 
@@ -730,6 +748,35 @@ impl Computers for Waking {
         Box::pin(async move {
             let open = self.real(workspace).await?;
             self.done(open.computers.search(open.workspace, search).await)
+        })
+    }
+
+    /// Asked only of a computer a call went through on lately, where the workspace is open:
+    /// reading what changed never wakes one. With no point asked, since where its folder stood
+    /// as it was first opened awake, which nothing of the thread's changed before.
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        Box::pin(async move {
+            let planned = self.planned(workspace)?;
+            let lately = self.last_awake().is_some_and(|(_, lately)| lately);
+            let Some(open) = self.opened(&planned).filter(|_| lately) else {
+                return Err(ComputerError::Unsupported(
+                    "the computer may be asleep, and asking it what changed would wake it".into(),
+                ));
+            };
+            let first = since.is_none().then(|| planned.first_at()).flatten();
+            let asked = since.or(first.as_deref());
+            let read = open.computers.changes(open.workspace, asked).await;
+            Ok(self.done(read)?.map(|changes| match changes.since {
+                Since::Asked if first.is_some() => Changes {
+                    since: Since::Opened,
+                    ..changes
+                },
+                _ => changes,
+            }))
         })
     }
 

@@ -4,11 +4,13 @@
 
 mod anchored;
 mod background;
+mod changes;
 mod command;
 mod credentials;
 mod files;
 mod finding;
 pub(crate) mod git;
+mod host;
 mod listing;
 mod on_path;
 mod paths;
@@ -30,11 +32,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Image, KeptWorktree, Listed, Listing, Network, Output, Printed, Refusal, Save, Saved,
-    Screenful, Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo,
-    TerminalSize, WorkspaceId, WorkspaceInfo,
+    Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
+    Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
+    Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Refusal, Save, Saved, Screenful,
+    Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -235,6 +237,7 @@ impl LocalComputers {
             sources: sources.clone(),
             home: variable("HOME"),
             temp: variable("TMPDIR"),
+            at: None,
         };
         let opened = Opened {
             computer,
@@ -247,6 +250,10 @@ impl LocalComputers {
             pushes: Pushes::of(sources, credential),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
+        };
+        let info = WorkspaceInfo {
+            at: changes::at(&opened).await,
+            ..info
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
             if copy {
@@ -387,38 +394,13 @@ pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path)
     first
 }
 
-/// Refuses what a computer on the host cannot honour, rather than quietly ignoring it.
-fn check_host(environment: &Environment) -> Result<(), ComputerError> {
-    if let Image::Oci(image) = &environment.image {
-        return Err(ComputerError::Unsupported(format!(
-            "this machine runs work on the host itself and cannot run the image {image}; \
-             computers made from images come with cloud computers"
-        )));
-    }
-    if !environment.setup.is_empty() {
-        return Err(ComputerError::Unsupported(
-            "setup commands are cached in a snapshot of an image; on the host, run them \
-             yourself"
-                .into(),
-        ));
-    }
-    if matches!(environment.network, Some(Network::Off | Network::Allowlist)) {
-        return Err(ComputerError::Unsupported(
-            "the host cannot limit the network per computer; use the sandbox, or a computer \
-             made from an image"
-                .into(),
-        ));
-    }
-    Ok(())
-}
-
 impl Computers for LocalComputers {
     fn create<'a>(
         &'a self,
         environment: &'a Environment,
     ) -> BoxFuture<'a, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move {
-            check_host(environment)?;
+            host::check(environment)?;
             let id = ComputerId::from_uuid(new_id()?);
             self.registry.add_computer(id, environment.clone())?;
             Ok(Self::describe(id, Some(environment.clone())))
@@ -758,6 +740,17 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             finding::search(&opened.root, search).await
+        })
+    }
+
+    fn changes<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        since: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Option<Changes>, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            changes::since(&opened, since, &self.base).await
         })
     }
 

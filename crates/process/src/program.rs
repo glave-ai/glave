@@ -286,6 +286,16 @@ impl Program {
         }
     }
 
+    /// Runs it to its end, however long that is, blocking, its streams this process's: only for
+    /// a program this process exists to wait for, as glave's terminal helper waits for the
+    /// person's shell, and outlives it to end what the shell left in its session.
+    pub fn status_blocking(&mut self) -> Result<std::process::ExitStatus, ProcessError> {
+        self.direct()
+            .as_std_mut()
+            .status()
+            .map_err(|error| self.failed(error))
+    }
+
     /// Becomes the program, replacing this process (the sandbox's helper does, once it has
     /// confined itself): it keeps this process's id, group and owner. Returns only on
     /// failure.
