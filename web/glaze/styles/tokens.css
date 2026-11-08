@@ -101,6 +101,35 @@
   --glz-surface-inverse: light-dark(#1b1c1d, #ececec);
   --glz-color-on-inverse: light-dark(#fafafa, #121314);
 
+  /*
+   * A terminal: dark in both themes, as terminals are, its text and its selection on it. Plain
+   * values, not light-dark(), since a terminal's emulator reads them as colours to draw with.
+   */
+  --glz-surface-terminal: #121314;
+  --glz-color-on-terminal: #ececec;
+  --glz-terminal-selection: rgb(236 236 236 / 28%);
+
+  /*
+   * The terminal's sixteen colours, as programs name them (black, red, green, yellow, blue,
+   * magenta, cyan and white, then each bright), each 4.5:1 or more as text on it: black a grey.
+   */
+  --glz-terminal-ansi-0: #8a8d93;
+  --glz-terminal-ansi-1: #f0776b;
+  --glz-terminal-ansi-2: #56c26f;
+  --glz-terminal-ansi-3: #f0b45a;
+  --glz-terminal-ansi-4: #6ea8fe;
+  --glz-terminal-ansi-5: #d48ce8;
+  --glz-terminal-ansi-6: #4fc1c9;
+  --glz-terminal-ansi-7: #d6d7d9;
+  --glz-terminal-ansi-8: #a3a5a9;
+  --glz-terminal-ansi-9: #ff9a90;
+  --glz-terminal-ansi-10: #7fd88f;
+  --glz-terminal-ansi-11: #ffd27f;
+  --glz-terminal-ansi-12: #9cc2ff;
+  --glz-terminal-ansi-13: #e6b0f2;
+  --glz-terminal-ansi-14: #7fdde3;
+  --glz-terminal-ansi-15: #fff;
+
   /* Type: Atkinson Hyperlegible Next for text, its Mono for code. */
   --glz-font-sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --glz-font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', menlo, monospace;

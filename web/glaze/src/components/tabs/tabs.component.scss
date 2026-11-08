@@ -2,6 +2,27 @@
   display: block;
 }
 
+// Filling what holds it: the list at its natural height, the panel the rest, a column of its own.
+:host(.fill) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+:host(.fill) .tablist {
+  flex: none;
+  padding-inline: var(--glz-inset-pane-inline);
+}
+
+:host(.fill) .panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  padding: 0;
+}
+
 .tablist {
   display: flex;
   gap: var(--glz-space-1);

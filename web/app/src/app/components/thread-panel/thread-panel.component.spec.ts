@@ -8,6 +8,7 @@ import { CommandsService } from '../../services/commands.service';
 import { PanelService } from '../../services/panel.service';
 import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
+import { ServerService } from '../../services/server.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
@@ -311,5 +312,17 @@ describe('ThreadPanelComponent', () => {
     expect(root.querySelector('h2')?.classList).not.toContain('glz-visually-hidden');
     root.querySelector<HTMLButtonElement>('[data-testid="panel-close"]')?.click();
     expect(panel.showing()).toBe(false);
+  });
+
+  it('puts its facts in an Overview tab beside a Terminal tab where the person may open one', async () => {
+    const fake = worked().answer('server/discover', { terminals: true });
+    const { root, fixture } = await render(fake, WORKED);
+    expect(root.querySelector('[data-testid="panel-tabs"]')).toBeNull();
+    await TestBed.inject(ServerService).load();
+    await fixture.whenStable();
+    expect(texts(root, 'panel-tabs-tab')).toEqual(['Overview', 'Terminal']);
+    const shown = root.querySelector('[data-testid="panel-tabs-panel"]');
+    expect(shown?.querySelector('[data-testid="panel-facts"]')).not.toBeNull();
+    await expectAccessible(root);
   });
 });

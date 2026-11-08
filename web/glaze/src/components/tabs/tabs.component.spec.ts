@@ -20,6 +20,17 @@ class HostComponent {
   readonly tab = signal(0);
 }
 
+@Component({
+  imports: [GlzTabsComponent, GlzTabComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <glz-tabs testId="tabs" label="Tools" fill>
+      <glz-tab label="Overview">Facts</glz-tab>
+    </glz-tabs>
+  `,
+})
+class FillingComponent {}
+
 function tabs(root: HTMLElement): readonly HTMLButtonElement[] {
   return Array.from(root.querySelectorAll<HTMLButtonElement>('[data-testid="tabs-tab"]'));
 }
@@ -76,5 +87,17 @@ describe('GlzTabsComponent', () => {
     expect(fixture.componentInstance.tab()).toBe(0);
     await press('a');
     expect(fixture.componentInstance.tab()).toBe(0);
+  });
+
+  it('fills what holds it when asked, and only then', async () => {
+    const plain = TestBed.createComponent(HostComponent);
+    await plain.whenStable();
+    const root: HTMLElement = plain.nativeElement;
+    expect(root.querySelector('glz-tabs')?.classList.contains('fill')).toBe(false);
+    const filling = TestBed.createComponent(FillingComponent);
+    await filling.whenStable();
+    const filled: HTMLElement = filling.nativeElement;
+    expect(filled.querySelector('glz-tabs')?.classList.contains('fill')).toBe(true);
+    await expectAccessible(filled);
   });
 });

@@ -65,8 +65,9 @@ const ANSWERS_WITHIN_MS = 2 * 60_000;
 
 /**
  * How long the slow calls wait: those that ask a model (compacting, checking a provider), reach
- * another service (a git host, a connection), make a computer to work on or a folder, or send a
- * file; and a turn to start, whose stream begins once it has.
+ * another service (a git host, a connection), make a computer to work on, a folder or a terminal
+ * (which may wake a computer), or send a file; and a turn to start, whose stream begins once it
+ * has.
  */
 const SLOW_ANSWERS_WITHIN_MS = 15 * 60_000;
 
@@ -78,6 +79,7 @@ const SLOW: ReadonlySet<Method> = new Set<Method>([
   'project/create',
   'provider/connect',
   'provider/refresh',
+  'terminal/open',
   'thread/compact',
   'thread/start',
   'turn/start',

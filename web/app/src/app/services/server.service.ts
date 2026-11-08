@@ -54,6 +54,8 @@ export class ServerService {
   readonly invitesAlone = computed(() => (this.info()?.invites ?? false) && !this.admin());
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
+  /** Whether the person may open terminals of their own here: on their own computer alone. */
+  readonly terminals = computed(() => this.info()?.terminals ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */
   readonly origin = computed<string | null>(() => this.info()?.origin ?? null);
   /**

@@ -4,12 +4,14 @@ import {
   DOCUMENT,
   type ElementRef,
   LOCALE_ID,
+  type TemplateRef,
   afterRenderEffect,
   computed,
   inject,
   output,
   viewChild,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import {
   GlzButtonComponent,
   GlzCardComponent,
@@ -17,6 +19,8 @@ import {
   GlzIconComponent,
   type GlzIconData,
   GlzPlanCardComponent,
+  GlzTabComponent,
+  GlzTabsComponent,
 } from '@glave/glaze';
 import { File, Folder, GitBranch, GitCommitHorizontal, Globe, Laptop, X } from 'lucide';
 
@@ -25,9 +29,11 @@ import { plural } from '../../lib/plural';
 import { spent } from '../../lib/results';
 import { PanelService } from '../../services/panel.service';
 import { ProjectsService } from '../../services/projects.service';
+import { ServerService } from '../../services/server.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { CommandListComponent } from '../command-list/command-list.component';
+import { TerminalTabComponent } from '../terminal-tab/terminal-tab.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 
 /** One part of the line saying where the thread works. */
@@ -47,7 +53,9 @@ interface Part {
  * files it changed, as a turn's card shows them, each opening its changes in full, their room
  * kept as the thread opens until they are read; its commands running in the background, each
  * with Stop; the pages its replies drew on, each opening in a new tab, and the files the person
- * attached; and how full its context is and what it has cost.
+ * attached; and how full its context is and what it has cost. Where the server says the
+ * person may open terminals here, those facts are its Overview tab, beside a Terminal tab: their
+ * own shell in its folder, loaded only once that tab shows.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When Stop takes the last command away with the
  * keyboard's place, that place goes to the heading, or, when the panel goes, `gone` says so.
@@ -61,6 +69,10 @@ interface Part {
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzPlanCardComponent,
+    GlzTabComponent,
+    GlzTabsComponent,
+    NgTemplateOutlet,
+    TerminalTabComponent,
     TurnChangesComponent,
   ],
   templateUrl: './thread-panel.component.html',
@@ -91,6 +103,9 @@ export class ThreadPanelComponent {
     spent: $localize`:@@threadPanel.spent:Context and cost`,
     context: $localize`:@@threadPanel.context:Context`,
     cost: $localize`:@@threadPanel.cost:Cost so far`,
+    tools: $localize`:@@threadPanel.tools:This thread's tools`,
+    overview: $localize`:@@threadPanel.overview:Overview`,
+    terminal: $localize`:@@threadPanel.terminal:Terminal`,
     between: ' · ',
   } as const;
   protected readonly icons = { close: X, folder: Folder, page: Globe, file: File } as const;
@@ -98,6 +113,7 @@ export class ThreadPanelComponent {
   protected readonly facts = inject(ThreadPanelService);
   private readonly thread = inject(ThreadService);
   private readonly projects = inject(ProjectsService);
+  private readonly server = inject(ServerService);
   private readonly locale = inject(LOCALE_ID);
   private readonly document = inject(DOCUMENT);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
@@ -159,6 +175,14 @@ export class ThreadPanelComponent {
       ],
     };
   });
+  /** Whether it has a Terminal tab: the server lets the person open one, in a folder of theirs. */
+  protected readonly terminal = computed(
+    () => this.server.terminals() && this.facts.workspace() !== null,
+  );
+  private readonly overview = viewChild.required<TemplateRef<unknown>>('overview');
+  private readonly tabbed = viewChild.required<TemplateRef<unknown>>('tabbed');
+  /** The facts alone, or beside a Terminal tab where there is one. */
+  protected readonly shown = computed(() => (this.terminal() ? this.tabbed() : this.overview()));
   /** The files it changed, once there are some. */
   protected readonly changes = computed(() => {
     const files = this.facts.files();
