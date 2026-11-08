@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { AppearanceService, PLAIN } from './appearance.service';
@@ -94,15 +95,13 @@ describe('AppearanceService', () => {
     const first = appearance.choose('#111111', true);
     const second = appearance.choose('#0f766e', true);
     expect(appearance.value()).toBe('#0f766e');
-    await vi.waitFor(() => {
-      expect(waiting).toHaveLength(1);
-    });
+    await settle();
+    expect(waiting).toHaveLength(1);
     waiting[0]?.({ chosen: { color: { color: '#111111', adjust: true } }, shades: SHADES });
     await first;
     expect(appearance.value()).toBe('#0f766e');
-    await vi.waitFor(() => {
-      expect(waiting).toHaveLength(2);
-    });
+    await settle();
+    expect(waiting).toHaveLength(2);
     waiting[1]?.({ chosen: TEAL, shades: SHADES });
     await second;
     expect(fake.paramsOf('appearance/set')).toHaveLength(2);
@@ -150,9 +149,8 @@ describe('AppearanceService', () => {
     expect(root('--glz-accent-light')).toBe(SHADES.light);
     const give = fake.held('appearance/set');
     const late = appearance.choose('#222222', true);
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('appearance/set')).toHaveLength(1);
-    });
+    await settle();
+    expect(fake.paramsOf('appearance/set')).toHaveLength(1);
     await TestBed.inject(SessionService).signOut();
     TestBed.tick();
     expect(root('--glz-accent-light')).toBe('');
