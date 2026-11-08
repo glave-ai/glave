@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { fakeMedia } from '@glave/glaze/testing/media';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -258,12 +259,10 @@ describe('HomeComponent with files', () => {
     const file = new File(['hi'], 'notes.txt', { type: 'text/plain' });
     Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
     picker?.dispatchEvent(new Event('change'));
-    await vi.waitFor(() => {
-      expect(fake.paramsOf('file/upload')).toEqual([
-        { project: 'me', name: 'notes.txt', media_type: 'text/plain', data: 'aGk=' },
-      ]);
-    });
-    await new Promise((resolve) => setTimeout(resolve));
+    await settle();
+    expect(fake.paramsOf('file/upload')).toEqual([
+      { project: 'me', name: 'notes.txt', media_type: 'text/plain', data: 'aGk=' },
+    ]);
     expect(root.querySelector('[data-testid="home-composer-file"]')?.textContent).toContain(
       'notes.txt',
     );

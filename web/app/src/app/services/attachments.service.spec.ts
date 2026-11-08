@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileUploadParams } from '@glave/client';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { AttachmentsService } from './attachments.service';
@@ -34,9 +35,8 @@ function setUp(fake: FakeSession): AttachmentsService {
 
 /** Until every file has an answer. */
 async function settled(attachments: AttachmentsService): Promise<void> {
-  await vi.waitFor(() => {
-    expect(attachments.waiting()).toBe(false);
-  });
+  await settle();
+  expect(attachments.waiting()).toBe(false);
 }
 
 describe('AttachmentsService', () => {
