@@ -64,6 +64,8 @@ export const PASSKEYS: Site = {
   address: 'GLAVE_E2E_PASSKEYS_URL',
   home: 'GLAVE_E2E_PASSKEYS_HOME',
 };
+/** A glave that pushes, for the browser it keeps once notifications are on (push.e2e.ts). */
+export const PUSH: Site = { address: 'GLAVE_E2E_PUSH_URL', home: 'GLAVE_E2E_PUSH_HOME' };
 /**
  * A glave whose model is a fake service (fake-model.ts), asking before commands run, for
  * following a thread from two tabs (live.e2e.ts).

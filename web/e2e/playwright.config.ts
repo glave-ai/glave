@@ -21,6 +21,7 @@ import {
   LIVE_MODEL_URL,
   PASSKEYS,
   PASSKEYS_ORIGIN,
+  PUSH,
   SHARED,
   SHARED_WEBKIT,
   SHOWCASE,
@@ -102,8 +103,9 @@ process.env[LIVE_MODEL_URL] = liveModel;
  * at a public origin, to sign in to with passkeys, the app on real glaves reached here alone,
  * to make passkeys on this computer, the app on a real glave whose model is a fake service,
  * with a service of its own that asks the person things, and which asks before commands run, to
- * follow a thread from two tabs, and the app on real
- * glaves whose person has a service of their own to sign in to.
+ * follow a thread from two tabs, the app on real
+ * glaves whose person has a service of their own to sign in to, and the app on a real glave
+ * that keeps the browser notifications are turned on in.
  */
 const SITES: readonly {
   site: Site;
@@ -135,7 +137,7 @@ const SITES: readonly {
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
   },
-  ...[HERE, HERE_WEBKIT, CONNECTIONS, CONNECTIONS_WEBKIT].map((site) => ({
+  ...[HERE, HERE_WEBKIT, CONNECTIONS, CONNECTIONS_WEBKIT, PUSH].map((site) => ({
     site,
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(site), GLAVE_MODEL: 'e2e' },

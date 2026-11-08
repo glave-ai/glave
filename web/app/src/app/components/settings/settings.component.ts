@@ -17,11 +17,13 @@ import { ConnectionsService } from '../../services/connections.service';
 import { CredentialsService } from '../../services/credentials.service';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
+import { PushService } from '../../services/push.service';
 
 import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { AppearanceComponent } from '../appearance/appearance.component';
 import { AwakeComponent } from '../awake/awake.component';
+import { NotificationsComponent } from '../notifications/notifications.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
@@ -29,15 +31,16 @@ import { WebSearchComponent } from '../web-search/web-search.component';
 /**
  * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove), connections (what is
  * connected, and the page where they are) and memory (its own page), whether glave may search
- * the web, the passkeys that sign the person in where glave is reached from elsewhere, whether
- * their own computer stays awake while glave works, the server, signing this browser or every
- * other out.
+ * the web, the passkeys that sign the person in where glave is reached from elsewhere, the
+ * notifications pushed to their browsers, whether their own computer stays awake while glave
+ * works, the server, signing this browser (its notifications stopped first) or every other out.
  */
 @Component({
   selector: 'app-settings',
   imports: [
     AppearanceComponent,
     AwakeComponent,
+    NotificationsComponent,
     PasskeysComponent,
     PageHeaderComponent,
     WebSearchComponent,
@@ -77,6 +80,7 @@ export class SettingsComponent {
     signOutOthersFailed: $localize`:@@settings.signOutOthersFailed:Other browsers could not be signed out. Try again.`,
   } as const;
   private readonly session = inject(SessionService);
+  private readonly push = inject(PushService);
   private readonly router = inject(Router);
   private readonly info = inject(ServerService).info;
   private readonly providers = inject(ProvidersService);
@@ -186,6 +190,7 @@ export class SettingsComponent {
   }
 
   protected async signOut(): Promise<void> {
+    await this.push.signingOut();
     await this.session.signOut();
     await this.router.navigateByUrl('/sign-in');
   }

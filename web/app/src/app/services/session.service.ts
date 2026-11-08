@@ -101,6 +101,8 @@ export class SessionService {
   private readonly atName = passkeysAt(this.document.location.hostname);
   /** Where browsers on this computer make passkeys for it, when it makes them here. */
   private readonly here = signal<string | null>(null);
+  /** Whether the server tells people's browsers when glave needs them, as it said. */
+  private readonly pushes = signal(false);
   /** The version of glave whose app this page is, as the server said when the page loaded. */
   private readonly loaded = signal<string | null>(null);
   private server: string | undefined;
@@ -110,6 +112,11 @@ export class SessionService {
   private readonly recoverLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
+  /**
+   * Whether the server pushes notifications to people's browsers, as it said before the app
+   * started: so whether to offer them is known as a page is first drawn.
+   */
+  readonly push = this.pushes.asReadonly();
   /**
    * The version of glave this page's code is of: the server's when the page loaded, or `null`
    * when it could not be reached then.
@@ -297,6 +304,7 @@ export class SessionService {
     this.ways.set(discovered.signin ?? []);
     this.reachedElsewhere.set(typeof discovered.origin === 'string');
     this.here.set(discovered.here ?? null);
+    this.pushes.set(discovered.push ?? false);
   }
 
   /** Forgets the tab's sign-up link, once it opens nothing. */
