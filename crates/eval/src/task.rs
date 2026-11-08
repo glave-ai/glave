@@ -79,7 +79,7 @@ pub struct Task {
     /// before the turns after it.
     pub build: bool,
     /// Whether a turn asks the model to compact, so its `compact` calls are no false alarm.
-    pub asks_to_compact: bool,
+    pub(crate) asks_to_compact: bool,
     /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
     pub memory: bool,
     /// The first thread's project setting: `shared` (default), `isolated` or `off`.
