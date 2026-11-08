@@ -268,11 +268,22 @@ impl<C: Computers + 'static> Connection<C> {
     }
 
     /// Answers `line`, counted in the computer's activity by `answering` while it runs: but a
-    /// terminal read, which only waits, counts only when it found something printed.
+    /// person's terminal only looked at is no use of it (`specs/computers.md`, "Terminals"):
+    /// listed or resized, as a Terminal tab left open does, or read, which only waits, unless
+    /// the read found something printed.
     async fn answer(&self, line: &str, mut answering: Option<Answering>) -> () {
         let parsed = wire::parse(line);
         let reading = matches!(parsed, Ok((_, Request::TerminalRead { .. })));
-        if reading && let Some(waiting) = answering.take() {
+        let looking = matches!(
+            parsed,
+            Ok((
+                _,
+                Request::TerminalList { .. } | Request::TerminalResize { .. }
+            ))
+        );
+        if (reading || looking)
+            && let Some(waiting) = answering.take()
+        {
             waiting.unused();
         }
         let (id, answered) = match parsed {

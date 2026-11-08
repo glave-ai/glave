@@ -313,6 +313,20 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          at most MAX_WAIT)",
     ),
     (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = hung_up.recv() => None,",
+        1,
+        "a terminal's starter hung up, which ends it however glave ends; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = told.recv() => None,",
+        1,
+        "a terminal's starter told to stop by the lifeline or the ledger; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
         "crates/computer/src/local/terminal/pump.rs",
         "_ = child.wait() => break Stopped::Exited,",
         1,

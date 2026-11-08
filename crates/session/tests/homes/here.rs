@@ -34,6 +34,8 @@ pub(crate) struct Here {
     pub(crate) planned: Mutex<BTreeMap<PrincipalId, Home>>,
     /// The sandbox commands run in there; none, its wall the only one, unless a test sets it.
     pub(crate) sandbox: Option<Sandbox>,
+    /// What starts a terminal's shell there, in a session of its own; none opens without one.
+    pub(crate) helper: Option<PathBuf>,
 }
 
 /// One turn or task holding a computer, counted while it is kept.
@@ -65,6 +67,7 @@ impl Here {
             largest: Largest::default(),
             planned: Mutex::new(BTreeMap::new()),
             sandbox: None,
+            helper: None,
         }
     }
 
@@ -97,6 +100,7 @@ impl Here {
         let folder = self.home_folder(person);
         std::fs::create_dir_all(&folder).unwrap();
         let (scratch, projects) = (self.scratch(person), self.projects(person));
+        let helper = self.helper.clone();
         let (asked, woken, holds, held) = (
             Arc::clone(&self.asked),
             Arc::clone(&self.woken),
@@ -119,6 +123,7 @@ impl Here {
                 Arc::clone(&awake),
             );
             let (scratch, projects, at) = (scratch.clone(), projects.clone(), at.clone());
+            let helper = helper.clone();
             let full_while = Arc::clone(&full_while);
             Box::pin(async move {
                 let mut awake = awake.lock().await;
@@ -151,6 +156,7 @@ impl Here {
                     .with_scratch(scratch)
                     .with_projects(projects)
                     .known_as(ComputerId::from_uuid(person.as_uuid()));
+                let computers = started_by(computers, helper.as_deref());
                 let (computers, info) = computers.open_here(&at).await?;
                 let home = Home {
                     computers: computers as Arc<dyn Computers>,
@@ -172,6 +178,14 @@ impl Here {
         };
         let scratch = self.scratch(person);
         Waking::home((wake, peek), None, home, &scratch.to_string_lossy())
+    }
+}
+
+/// `computers`, its terminals' shells started by `helper` where there is one.
+fn started_by(computers: LocalComputers, helper: Option<&Path>) -> LocalComputers {
+    match helper {
+        Some(helper) => computers.with_helper(helper),
+        None => computers,
     }
 }
 

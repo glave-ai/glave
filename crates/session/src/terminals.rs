@@ -13,12 +13,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::{Body, ComputerKind, Payload as _, PrincipalId, ThreadId, WorkspaceBound};
+use glave_event::{
+    Body, ComputerKind, Payload as _, Principal, PrincipalId, ThreadId, WorkspaceBound,
+};
 use glave_harness::owner_label;
 use glave_ports::computer::{
     Bytes, ComputerError, ComputerId, Computers, Refusal, TerminalId, TerminalSize,
 };
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Standing};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId, Standing};
 
 use crate::protocol::{ApiError, Reply, Told, code};
 use crate::server::Server;
@@ -204,6 +206,37 @@ where
         }
     }
 
+    /// Closes every terminal of `person` in `org`, as they are removed: those in each thread of
+    /// each of their projects, on their own computer.
+    pub(crate) async fn close_terminals_of(&self, org: OrgId, person: PrincipalId) {
+        let whose = Principal::person(person);
+        let listed = self
+            .inner
+            .projects
+            .list(org, &whose, crate::projects::MOST_PROJECTS)
+            .await;
+        let projects = match listed {
+            Ok(projects) => projects,
+            Err(error) => {
+                tracing::warn!(%error, %org, "could not find a removed person's projects");
+                return;
+            }
+        };
+        for project in projects {
+            let at = Located {
+                org,
+                project: project.id,
+            };
+            let Ok(threads) = self.active_threads(at).await else {
+                tracing::warn!(%org, "could not list a removed person's threads");
+                continue;
+            };
+            for thread in threads {
+                self.close_terminals(thread).await;
+            }
+        }
+    }
+
     /// Refuses a thread that is not shown: archived, as it says, or deleted, as no thread.
     async fn shown(&self, thread: ThreadId) -> Result<(), ApiError> {
         match self.standing(thread).await? {
@@ -302,6 +335,10 @@ fn refused(error: ComputerError) -> ApiError {
     match error {
         ComputerError::NotFound(_) => no_terminal(),
         ComputerError::Refused(reason) => match reason.refusal() {
+            // Its folder is something else now: said without its path.
+            Some(Refusal::NotAFolder { .. }) => {
+                ApiError::new(code::NOT_AVAILABLE, Sentence::TerminalNoFolder)
+            }
             Some(refusal) => ApiError::new(refusal_code(refusal), Told::from(&reason)),
             None => failed(&reason),
         },
