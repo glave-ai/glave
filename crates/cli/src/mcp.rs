@@ -26,6 +26,7 @@ use anyhow::{Context as _, bail};
 use glave_config::policy::{Choices, Chosen, Constraints};
 use glave_mcp::{Limits, McpServer, Reachable, Resources};
 use glave_ports::ToolSource;
+use glave_ports::host::PublicOrigin;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::{Owner, Processes};
 
@@ -36,7 +37,8 @@ pub(crate) use written::{Removed, Writer};
 pub(crate) const FILE: &str = "mcp.json";
 
 /// The environment servers' `${VAR}` are filled from: all of it for the person's own, and for a
-/// program a project starts; none of it for a remote server in a project's file.
+/// program a project starts where [`ProjectEnvironment`] says; none of it for a remote server in
+/// a project's file.
 pub(crate) fn environment() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
@@ -74,6 +76,40 @@ fn own_reachable_from(args: &crate::args::Args, reached: bool) -> Reachable {
         reachable_from(args, reached)
     } else {
         Reachable::AlsoPrivate
+    }
+}
+
+/// What a program in a project's file has its `${VAR}` filled from. Decided apart from
+/// [`Reachable`], so that a setting for the private addresses a server may reach changes nothing
+/// here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ProjectEnvironment {
+    /// glave's environment, on a computer people work at: the person's own.
+    #[default]
+    Read,
+    /// Nothing, where people sign in from another computer: the environment is then the
+    /// server's, holding what it runs on, and no repository's file names any of it.
+    Withheld,
+}
+
+/// What a project's file reads here: people sharing this computer by its `localhost` are not
+/// people on another computer.
+pub(crate) fn project_environment(
+    args: &crate::args::Args,
+    choices: &Choices,
+) -> ProjectEnvironment {
+    project_environment_from(args, choices.origin.as_ref().map(|origin| &origin.value))
+}
+
+/// [`project_environment`], for a server at `origin`, when it has one.
+fn project_environment_from(
+    args: &crate::args::Args,
+    origin: Option<&PublicOrigin>,
+) -> ProjectEnvironment {
+    if args.reached_from_elsewhere(origin.is_some_and(|origin| !origin.on_this_computer())) {
+        ProjectEnvironment::Withheld
+    } else {
+        ProjectEnvironment::Read
     }
 }
 
@@ -128,18 +164,25 @@ pub(crate) async fn close(started: &[Arc<McpServer>]) {
 
 /// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
 /// folder, for the threads that work in it: each told, when it asks, that the folder is the
-/// one it works for. A remote one only at an address `reachable` allows.
+/// one it works for. A remote one only at an address `reachable` allows, and a program's `${VAR}`
+/// filled as `reads` says.
 pub(crate) fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
     constraints: &Constraints,
     processes: &Processes,
     reachable: Reachable,
+    reads: ProjectEnvironment,
 ) -> anyhow::Result<Vec<Arc<McpServer>>> {
     let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
     let environment = environment();
-    let configs = glave_ports::settings::mcp::parse_project(&text, &environment)
+    let nothing = BTreeMap::new();
+    let filling = match reads {
+        ProjectEnvironment::Read => &environment,
+        ProjectEnvironment::Withheld => &nothing,
+    };
+    let configs = glave_ports::settings::mcp::parse_project(&text, filling)
         .context("in the project's trusted .mcp.json servers")?;
     let marks = glave_ports::settings::mcp::marks(&text)?;
     Ok(configs
@@ -269,6 +312,33 @@ mod tests {
             Reachable::AlsoPrivate,
             "only the operator writes it there"
         );
+    }
+
+    #[test]
+    fn a_project_s_file_reads_the_environment_unless_people_sign_in_from_another_computer() {
+        use ProjectEnvironment::{Read, Withheld};
+        let args = |words: &[&str]| {
+            crate::args::parse(words.iter().map(|word| (*word).to_owned())).unwrap()
+        };
+        let here = args(&["serve"]);
+        let at = |origin: &str| {
+            let origin = PublicOrigin::parse(origin).unwrap();
+            project_environment_from(&here, Some(&origin))
+        };
+        assert_eq!(project_environment_from(&here, None), Read);
+        assert_eq!(at("http://localhost"), Read, "people share this computer");
+        assert_eq!(at("http://localhost:4180"), Read);
+        assert_eq!(at("https://glave.example.com"), Withheld);
+        let signed_in = args(&[
+            "serve",
+            "--http",
+            "127.0.0.1:0",
+            "--issuer",
+            "https://id.example.com",
+            "--audience",
+            "glave",
+        ]);
+        assert_eq!(project_environment_from(&signed_in, None), Withheld);
     }
 
     #[test]
