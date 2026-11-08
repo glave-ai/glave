@@ -89,7 +89,6 @@ function worked(overrides: Partial<ThreadSummary> = {}): FakeSession {
     .answer('command/list', {
       commands: [command('d1', 'npm run dev')],
       previewed: false,
-      previews: [],
     })
     .answer('connector/list', { connectors: [EXPIRED], categories: [], companies: [], tags: [] })
     .answer('thread/plan', {

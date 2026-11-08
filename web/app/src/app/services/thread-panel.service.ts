@@ -2,13 +2,12 @@ import { Service, computed, effect, inject, linkedSignal, signal, untracked } fr
 import {
   ApiError,
   type ChangedFile,
-  type Preview,
   type ProjectId,
   type ThreadId,
   type WorkspaceBound,
 } from '@glave/client';
 
-import { previewKey } from '../lib/previews';
+import { type Preview, previewKey } from '../lib/previews';
 import { sentence, unreached } from '../lib/text';
 import { onChange } from './changes.service';
 import { ChangedFilesService } from './changed-files.service';

@@ -121,6 +121,8 @@ async fn pages_carry_the_policy_and_their_nonce(served: &Served, site: &str) {
         .unwrap()
         .to_owned();
     assert!(policy.contains("script-src 'self'"), "{policy}");
+    // Served at 127.0.0.1 alone, it previews nothing, so nothing is framed.
+    assert!(policy.contains("frame-src 'none'"), "{policy}");
     assert!(!policy.contains("unsafe-inline"), "{policy}");
     assert!(
         policy.contains("require-trusted-types-for 'script'"),

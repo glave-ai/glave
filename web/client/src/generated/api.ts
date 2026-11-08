@@ -876,24 +876,25 @@ export type PlanStep = {
   readonly step: string;
 };
 
+/**
+ * A port a command listens on, and the preview of what it serves there, where glave
+ * previews it (`specs/session.md`, "Previews").
+ */
+export type Port = {
+  /** Whether a frame of the app shows it too, as its Content Security Policy allows. */
+  readonly framed: boolean;
+  readonly port: number;
+  /** Why a frame can't show it, in a sentence, where it opens in a new tab alone. */
+  readonly unframed?: string | null;
+  /**
+   * Where a browser on this computer opens what it serves: the server's own address, on
+   * this computer's loopback; none where glave previews nothing.
+   */
+  readonly url?: string | null;
+};
+
 /** How precisely a provider serves a model's weights, from how it says they are stored. */
 export type Precision = "unstated" | "four_bit" | "six_bit" | "eight_bit" | "full";
-
-/**
- * A page a command in the background serves, at its own address on this computer, never
- * glave's (`specs/session.md`, "Previews"): opened in a browser here, or in a frame of the app.
- */
-export type Preview = {
-  /** The command that serves it, as `command/list` lists it. */
-  readonly command: CommandId;
-  /** The port it listens on. */
-  readonly port: number;
-  /**
-   * Where a browser on this computer opens it: `http://127.0.0.1:<port>/`, or
-   * `http://[::1]:<port>/` for a server that listens on IPv6 alone.
-   */
-  readonly url: string;
-};
 
 /**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
@@ -1046,11 +1047,14 @@ export type RunningCommand = {
   readonly command: string;
   /** Which command, for `command/stop`. */
   readonly id: CommandId;
+  /** Where it listens, in a sentence, with its ports: "Listening on 4200 and 4201." */
+  readonly listens?: string | null;
   /**
    * The TCP ports it listens on, lowest first, where the caller reaches this computer's
-   * loopback: looked for only then, and on the server's own computer.
+   * loopback: looked for only then, and on the server's own computer (`specs/session.md`,
+   * "Where they listen").
    */
-  readonly ports?: readonly (number)[];
+  readonly ports?: readonly (Port)[];
   /** When it started, once the thread has recorded it. */
   readonly started_at?: At | null;
   /** What it is doing, in plain words. */
@@ -1703,15 +1707,14 @@ export type CommandListParams = {
   readonly thread: ThreadId;
 };
 
-/** The thread's commands running in the background, and the previews of what they serve. */
+/** The thread's commands running in the background, each with where it listens. */
 export type CommandListResult = {
   readonly commands: readonly (RunningCommand)[];
   /**
-   * Whether what they serve is previewed for the caller here: where it isn't, a client
-   * need not look for previews again.
+   * Whether what they serve is previewed for the caller here (each port's `url`): where
+   * it isn't, a client need not look for previews again.
    */
   readonly previewed: boolean;
-  readonly previews: readonly (Preview)[];
 };
 
 export type CommandStopParams = {

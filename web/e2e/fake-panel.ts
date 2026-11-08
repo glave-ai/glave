@@ -162,7 +162,7 @@ const SOURCES: readonly ReplySources[] = [
 export const ABOUT_VERBOSE: Answers<null> = {
   'thread/sources': (params) => (params.thread === VERBOSE ? { sources: SOURCES } : undefined),
   'command/list': (params) =>
-    params.thread === VERBOSE ? { commands: [TESTS], previewed: false, previews: [] } : undefined,
+    params.thread === VERBOSE ? { commands: [TESTS], previewed: false } : undefined,
   'thread/plan': (params) => (params.thread === VERBOSE ? { plan: PLAN } : undefined),
   'thread/compact': (params) =>
     params.thread === VERBOSE ? { before_tokens: 49_920, after_tokens: 8_000 } : undefined,

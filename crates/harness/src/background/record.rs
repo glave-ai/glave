@@ -65,9 +65,31 @@ pub struct RunningCommand {
     /// What it is doing, in plain words.
     pub summary: String,
     /// The TCP ports it listens on, lowest first, where the caller reaches this computer's
-    /// loopback: looked for only then, and on the server's own computer.
+    /// loopback: looked for only then, and on the server's own computer (`specs/session.md`,
+    /// "Where they listen").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ports: Vec<u16>,
+    pub ports: Vec<Port>,
+    /// Where it listens, in a sentence, with its ports: "Listening on 4200 and 4201."
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listens: Option<String>,
+}
+
+/// A port a command listens on, and the preview of what it serves there, where glave
+/// previews it (`specs/session.md`, "Previews").
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub struct Port {
+    pub port: u16,
+    /// Where a browser on this computer opens what it serves: the server's own address, on
+    /// this computer's loopback; none where glave previews nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Whether a frame of the app shows it too, as its Content Security Policy allows.
+    pub framed: bool,
+    /// Why a frame can't show it, in a sentence, where it opens in a new tab alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unframed: Option<String>,
 }
 
 /// The sentence a command running in the background is listed with.

@@ -62,7 +62,6 @@ describe('CommandListComponent', () => {
       .answer('command/list', {
         commands: [command('c1', DEV), command('c2', 'cargo watch', { started_at: null })],
         previewed: false,
-        previews: [],
       })
       .answer(
         'command/stop',
@@ -105,7 +104,7 @@ describe('CommandListComponent', () => {
 
   it("shows a refusal on its row in the server's words", async () => {
     const fake = new FakeSession()
-      .answer('command/list', { commands: [command('c1', DEV)], previewed: false, previews: [] })
+      .answer('command/list', { commands: [command('c1', DEV)], previewed: false })
       .answer(
         'command/stop',
         new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'you may not stop it' }),
@@ -125,7 +124,6 @@ describe('CommandListComponent', () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [],
       previewed: false,
-      previews: [],
     });
     const root = await render(fake);
     expect(all(root, 'command')).toHaveLength(0);
@@ -139,25 +137,37 @@ describe('CommandListComponent', () => {
     await expectAccessible(root);
   });
 
-  it('says the ports a command listens on, where the server says them', async () => {
+  it('says where a command listens, in the server’s words', async () => {
     const fake = new FakeSession().answer('command/list', {
-      commands: [command('c1', DEV, { ports: [4200, 4201] }), command('c2', 'cargo watch')],
+      commands: [
+        command('c1', DEV, {
+          ports: [
+            { port: 4200, framed: false },
+            { port: 4201, framed: false },
+          ],
+          listens: 'Listening on 4200 and 4201.',
+        }),
+        command('c2', 'cargo watch'),
+      ],
       previewed: false,
-      previews: [],
     });
     const root = await render(fake);
     expect(all(root, 'command-listening').map((each) => each.textContent)).toEqual([
-      'listening on 4200 and 4201',
+      'Listening on 4200 and 4201.',
     ]);
+    // Nothing previewed here: nothing to open.
+    expect(all(root, 'command-preview')).toHaveLength(0);
     await expectAccessible(root);
   });
 
   it('opens the preview of a command that serves one in the panel’s Preview tab', async () => {
-    const dev = { command: 'c1', port: 4200, url: 'http://127.0.0.1:4200/' };
+    const url = 'http://127.0.0.1:4200/';
     const fake = new FakeSession().answer('command/list', {
-      commands: [command('c1', DEV), command('c2', 'cargo watch')],
+      commands: [
+        command('c1', DEV, { ports: [{ port: 4200, url, framed: true }] }),
+        command('c2', 'cargo watch'),
+      ],
       previewed: true,
-      previews: [dev],
     });
     const root = await render(fake);
     const open = all(root, 'command-preview');
@@ -168,7 +178,13 @@ describe('CommandListComponent', () => {
     const asked = panel.previewAsked();
     open[0]?.click();
     expect(panel.previewAsked()).toBe(asked + 1);
-    expect(panel.preview()).toEqual(dev);
+    expect(panel.preview()).toEqual({
+      command: 'c1',
+      port: 4200,
+      url,
+      framed: true,
+      unframed: null,
+    });
     await expectAccessible(root);
   });
 });

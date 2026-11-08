@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
-import type { CommandId, Preview } from '@glave/client';
+import type { CommandId } from '@glave/client';
 import { GlzIconButtonComponent, GlzIconComponent, formatDuration } from '@glave/glaze';
 import { AppWindow, LoaderCircle, Square } from 'lucide';
 
+import type { Preview } from '../../lib/previews';
 import { runningFor } from '../../lib/when';
 import { CommandsService } from '../../services/commands.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
@@ -12,8 +13,7 @@ import { ThreadPanelService } from '../../services/thread-panel.service';
  * in monospace, cut short, how long it has run, ticking, Open preview where it serves something
  * the person can open here, which shows it in the panel's Preview tab, and Stop, a quiet button
  * that shows it stopping until it goes. The line opens to the whole command and the server's
- * sentence about it; under it, the ports it listens on where the server says them, and a
- * refusal, in the server's words.
+ * sentence about it; under it, where it listens and a refusal, each in the server's words.
  */
 @Component({
   selector: 'app-command-list',
@@ -44,7 +44,7 @@ export class CommandListComponent {
         command: what,
         summary: command.summary,
         time: ran === null ? null : formatDuration(ran, this.locale),
-        listening: listeningOn(command.ports ?? [], this.locale),
+        listening: command.listens ?? null,
         busy,
         ariaBusy: busy ? 'true' : null,
         actionLabel: busy
@@ -62,16 +62,4 @@ export class CommandListComponent {
   protected open(preview: Preview): void {
     this.panel.showPreview(preview);
   }
-}
-
-/**
- * Where a command listens, in words, on the ports the server says (`listening on 5173`), as
- * the identifiers they are, never grouped as amounts; `null` where it says none.
- */
-function listeningOn(ports: readonly number[], locale: string): string | null {
-  if (ports.length === 0) {
-    return null;
-  }
-  const list = new Intl.ListFormat(locale, { type: 'conjunction' }).format(ports.map(String));
-  return $localize`:@@commandList.listening:listening on ${list}:PORTS:`;
 }

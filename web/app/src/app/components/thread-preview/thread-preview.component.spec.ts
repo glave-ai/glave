@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { Preview } from '@glave/client';
+import type { Port } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession } from '../../testing/fake-session';
@@ -12,17 +12,23 @@ const STARTED = [
   event(2, 'command.started', { command: 'c2', script: 'npm run docs' }),
 ];
 
-const DEV: Preview = { command: 'c1', port: 5173, url: 'http://127.0.0.1:5173/' };
-const DOCS: Preview = { command: 'c2', port: 3000, url: 'http://127.0.0.1:3000/' };
+const DEV = { port: 5173, url: 'http://127.0.0.1:5173/', framed: true } as const;
+const DOCS = { port: 3000, url: 'http://127.0.0.1:3000/', framed: true } as const;
 
-async function render(previews: readonly Preview[]): Promise<{
+/** The panel's preview of `npm run dev` listening at `dev` and `npm run docs` at `docs`. */
+async function render(
+  dev: readonly Port[],
+  docs: readonly Port[] = [],
+): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadPreviewComponent>>;
 }> {
   const fake = new FakeSession().answer('command/list', {
-    commands: [command('c1', 'npm run dev'), command('c2', 'npm run docs')],
+    commands: [
+      command('c1', 'npm run dev', { ports: dev }),
+      command('c2', 'npm run docs', { ports: docs }),
+    ],
     previewed: true,
-    previews,
   });
   await openForPanel(fake, STARTED);
   const fixture = TestBed.createComponent(ThreadPreviewComponent);
@@ -66,7 +72,7 @@ describe('ThreadPreviewComponent', () => {
   });
 
   it('chooses among several, the first until the person chooses', async () => {
-    const { root, fixture } = await render([DEV, DOCS]);
+    const { root, fixture } = await render([DEV], [DOCS]);
     expect(one(root, 'preview-address')?.textContent).toBe(DEV.url);
     const which = one(root, 'preview-which-trigger');
     expect(which?.textContent).toContain('npm run dev, port 5173');
@@ -84,23 +90,20 @@ describe('ThreadPreviewComponent', () => {
     expect(one(root, 'preview-frame')?.getAttribute('src')).toBe(DOCS.url);
   });
 
-  it('frames and links to nothing but a page on this computer’s loopback', async () => {
-    const elsewhere: Preview = { ...DEV, url: 'https://example.com/' };
-    const { root } = await render([elsewhere]);
-    expect(one(root, 'preview-frame')).toBeNull();
-    expect(one(root, 'preview-open')).toBeNull();
-    expect(one(root, 'preview-address')?.textContent).toBe(elsewhere.url);
-  });
-
-  it('opens one on IPv6’s loopback alone in a new tab, and says so', async () => {
-    const six: Preview = { ...DEV, url: 'http://[::1]:5173/' };
+  it('opens one a frame can’t show in a new tab alone, saying why in the server’s words', async () => {
+    const why =
+      "It answers only at ::1, which glave can't show inside its page: open it in a new tab.";
+    const six = { port: 5173, url: 'http://[::1]:5173/', framed: false, unframed: why };
     const { root } = await render([six]);
     expect(one(root, 'preview-frame')).toBeNull();
     expect((one(root, 'preview-open') as HTMLAnchorElement | null)?.href).toBe(six.url);
-    expect(one(root, 'preview-tab-only')?.textContent).toBe(
-      "This app can't be shown here, only in a new tab.",
-    );
+    expect(one(root, 'preview-unframed')?.textContent).toBe(why);
     await expectAccessible(root);
+  });
+
+  it('shows nothing of a port the server previews nothing of', async () => {
+    const { root } = await render([{ port: 9229, framed: false }]);
+    expect(root.textContent.trim()).toBe('');
   });
 
   it('shows nothing while nothing serves', async () => {

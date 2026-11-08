@@ -2469,6 +2469,40 @@
       ],
       "type": "object"
     },
+    "Port": {
+      "description": "A port a command listens on, and the preview of what it serves there, where glave\npreviews it (`specs/session.md`, \"Previews\").",
+      "properties": {
+        "framed": {
+          "description": "Whether a frame of the app shows it too, as its Content Security Policy allows.",
+          "type": "boolean"
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unframed": {
+          "description": "Why a frame can't show it, in a sentence, where it opens in a new tab alone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Where a browser on this computer opens what it serves: the server's own address, on\nthis computer's loopback; none where glave previews nothing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "port",
+        "framed"
+      ],
+      "type": "object"
+    },
     "Precision": {
       "description": "How precisely a provider serves a model's weights, from how it says they are stored.",
       "oneOf": [
@@ -2498,32 +2532,6 @@
           "type": "string"
         }
       ]
-    },
-    "Preview": {
-      "description": "A page a command in the background serves, at its own address on this computer, never\nglave's (`specs/session.md`, \"Previews\"): opened in a browser here, or in a frame of the app.",
-      "properties": {
-        "command": {
-          "$ref": "#/$defs/CommandId",
-          "description": "The command that serves it, as `command/list` lists it."
-        },
-        "port": {
-          "description": "The port it listens on.",
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "url": {
-          "description": "Where a browser on this computer opens it: `http://127.0.0.1:<port>/`, or\n`http://[::1]:<port>/` for a server that listens on IPv6 alone.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "command",
-        "port",
-        "url"
-      ],
-      "type": "object"
     },
     "Principal": {
       "additionalProperties": false,
@@ -2918,13 +2926,17 @@
           "$ref": "#/$defs/CommandId",
           "description": "Which command, for `command/stop`."
         },
+        "listens": {
+          "description": "Where it listens, in a sentence, with its ports: \"Listening on 4200 and 4201.\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "ports": {
-          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer.",
+          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer (`specs/session.md`,\n\"Where they listen\").",
           "items": {
-            "format": "uint16",
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/$defs/Port"
           },
           "type": "array"
         },
@@ -5013,7 +5025,7 @@
         "type": "object"
       },
       "result": {
-        "description": "The thread's commands running in the background, and the previews of what they serve.",
+        "description": "The thread's commands running in the background, each with where it listens.",
         "properties": {
           "commands": {
             "items": {
@@ -5022,20 +5034,13 @@
             "type": "array"
           },
           "previewed": {
-            "description": "Whether what they serve is previewed for the caller here: where it isn't, a client\nneed not look for previews again.",
+            "description": "Whether what they serve is previewed for the caller here (each port's `url`): where\nit isn't, a client need not look for previews again.",
             "type": "boolean"
-          },
-          "previews": {
-            "items": {
-              "$ref": "#/$defs/Preview"
-            },
-            "type": "array"
           }
         },
         "required": [
           "commands",
-          "previewed",
-          "previews"
+          "previewed"
         ],
         "type": "object"
       },

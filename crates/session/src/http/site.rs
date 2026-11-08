@@ -56,6 +56,9 @@ enum Found {
 #[derive(Clone)]
 pub struct Site {
     source: Source,
+    /// Whether its pages may frame a thread's preview: only where the server previews
+    /// (`previews.rs`), never otherwise.
+    frames: bool,
 }
 
 /// Where a site's files are.
@@ -73,6 +76,14 @@ enum Source {
 pub struct NoSite(String);
 
 impl Site {
+    /// The same site, its pages framing a thread's preview where `frames`: where the server
+    /// previews.
+    #[must_use]
+    pub(crate) fn previewing(mut self, frames: bool) -> Self {
+        self.frames = frames;
+        self
+    }
+
     /// The app built into `root`, the folder that holds its `index.html`.
     pub fn folder(root: impl Into<PathBuf>) -> Result<Self, NoSite> {
         let root = root.into();
@@ -81,6 +92,7 @@ impl Site {
         if root.join(INDEX).is_file() {
             Ok(Self {
                 source: Source::Folder(root),
+                frames: false,
             })
         } else {
             Err(NoSite(shown))
@@ -95,6 +107,7 @@ impl Site {
         {
             Ok(Self {
                 source: Source::Memory(files),
+                frames: false,
             })
         } else {
             Err(NoSite("the web app built into glave".into()))
@@ -112,13 +125,14 @@ impl Site {
         let Some(nonce) = fresh_nonce() else {
             return status(StatusCode::INTERNAL_SERVER_ERROR);
         };
+        let policy = policy(&nonce, self.frames);
         let Some(relative) = relative(path) else {
-            return secured(status(StatusCode::NOT_FOUND), &nonce);
+            return secured(status(StatusCode::NOT_FOUND), &policy);
         };
         // A path with an extension names a file; anything else is a route of the app, and so
         // is the page itself, which is never served without this load's nonce.
         if relative.extension().is_some() && relative != Path::new(INDEX) {
-            return secured(self.file(&relative, accepted).await, &nonce);
+            return secured(self.file(&relative, accepted).await, &policy);
         }
         match self.read(Path::new(INDEX)).await {
             Some(Found::Plain(page)) => {
@@ -130,9 +144,9 @@ impl Site {
                     "text/html; charset=utf-8",
                 );
                 set(&mut response, header::CACHE_CONTROL, "no-store");
-                secured(response, &nonce)
+                secured(response, &policy)
             }
-            Some(Found::Gzip(_)) | None => secured(status(StatusCode::NOT_FOUND), &nonce),
+            Some(Found::Gzip(_)) | None => secured(status(StatusCode::NOT_FOUND), &policy),
         }
     }
 
@@ -208,11 +222,16 @@ impl fmt::Debug for Site {
 /// The policy every answer carries; `nonce` admits the styles Angular adds at run time. Images
 /// come from the app, and from the person's own computer: a file they add to a message is
 /// shown from a `blob:` URL the page makes of it, never fetched from anywhere. The one frame it
-/// shows is a thread's preview, a dev server's own address on this computer's loopback
-/// (`previews.rs`), so that alone may be framed: at `127.0.0.1`, since a policy's sources can't
-/// name IPv6's loopback (a preview there opens in a new tab); glave's own pages refuse every
-/// frame.
-pub(crate) fn policy(nonce: &str) -> String {
+/// may show, where the server previews (`frames`), is a thread's preview, a dev server's own
+/// address on this computer's loopback (`previews.rs`): at `127.0.0.1`, since a policy's
+/// sources can't name IPv6's loopback (a preview there opens in a new tab). Elsewhere nothing
+/// is framed, and glave's own pages refuse every frame.
+pub(crate) fn policy(nonce: &str, frames: bool) -> String {
+    let frame_src = if frames {
+        "frame-src http://127.0.0.1:*"
+    } else {
+        "frame-src 'none'"
+    };
     [
         "default-src 'none'",
         "script-src 'self'",
@@ -220,7 +239,7 @@ pub(crate) fn policy(nonce: &str) -> String {
         "font-src 'self'",
         "img-src 'self' blob:",
         "connect-src 'self'",
-        "frame-src http://127.0.0.1:*",
+        frame_src,
         "manifest-src 'self'",
         "base-uri 'self'",
         "form-action 'none'",
@@ -348,9 +367,10 @@ fn set(response: &mut Response<Answer>, name: HeaderName, value: &'static str) {
         .insert(name, HeaderValue::from_static(value));
 }
 
-/// `response` with the security headers every answer from the site carries.
-fn secured(mut response: Response<Answer>, nonce: &str) -> Response<Answer> {
-    if let Ok(policy) = HeaderValue::from_str(&policy(nonce)) {
+/// `response` with the security headers every answer from the site carries, `policy` its
+/// Content Security Policy.
+fn secured(mut response: Response<Answer>, policy: &str) -> Response<Answer> {
+    if let Ok(policy) = HeaderValue::from_str(policy) {
         response
             .headers_mut()
             .insert(header::CONTENT_SECURITY_POLICY, policy);
@@ -389,12 +409,14 @@ mod tests {
     #[test]
     fn the_policy_admits_no_inline_script_and_only_nonced_styles() {
         let nonce = fresh_nonce().unwrap();
-        let policy = policy(&nonce);
+        let policy = policy(&nonce, false);
         assert!(policy.contains("script-src 'self'"));
         assert!(!policy.contains("unsafe-inline"));
         assert!(policy.contains(&format!("style-src 'self' 'nonce-{nonce}'")));
         assert!(policy.contains("frame-ancestors 'none'"));
-        assert!(policy.contains("frame-src http://127.0.0.1:*;"));
+        assert!(policy.contains("frame-src 'none';"));
+        let previewing = super::policy(&nonce, true);
+        assert!(previewing.contains("frame-src http://127.0.0.1:*;"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
     }

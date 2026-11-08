@@ -65,7 +65,6 @@ where
                 return Ok(Reply::Commands {
                     commands: Vec::new(),
                     previewed: false,
-                    previews: Vec::new(),
                 });
             }
             commands => commands?,
@@ -76,26 +75,18 @@ where
             return Ok(Reply::Commands {
                 commands: running,
                 previewed: false,
-                previews: Vec::new(),
             });
         };
+        let previewed = self.previewed_here();
         for command in &mut running {
             if let Some((_, at)) = listening.iter().find(|(id, _)| *id == command.id) {
-                let mut ports: Vec<u16> = at.iter().map(SocketAddr::port).collect();
-                ports.dedup();
-                command.ports = ports;
+                command.ports = crate::previews::ports(at, previewed);
+                command.listens = crate::previews::listens(&command.ports);
             }
         }
-        let previewed = self.previewed_here();
-        let previews = if previewed {
-            crate::previews::of(&listening)
-        } else {
-            Vec::new()
-        };
         Ok(Reply::Commands {
             commands: running,
             previewed,
-            previews,
         })
     }
 
@@ -120,7 +111,7 @@ where
     /// `localhost`, so a preview at `127.0.0.1` or `[::1]` is never the same site as them. Not
     /// where they are opened at `127.0.0.1` itself (a `localhost` origin people share, or a
     /// computer without IPv6's loopback), nor where the server isn't reached over HTTP here.
-    fn previewed_here(&self) -> bool {
+    pub(crate) fn previewed_here(&self) -> bool {
         let reached = self.inner.reached.get();
         self.inner.origin.is_none() && reached.is_some_and(|reached| reached.localhost)
     }

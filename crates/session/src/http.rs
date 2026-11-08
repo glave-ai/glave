@@ -105,7 +105,6 @@ where
         Some(accounts) => signin.with_accounts(accounts),
         None => signin,
     });
-    let site = Arc::new(site);
     // Browsers on this computer make and use passkeys at `localhost`, where only this server
     // answers, unless the server is reached at a public origin, its relying party then.
     if server.inner.origin.is_none()
@@ -117,6 +116,7 @@ where
     let localhost = listeners.localhost().is_some();
     let all = listeners.listening(server.inner.origin.as_ref())?;
     server.reached_at(reached(&all, localhost));
+    let site = Arc::new(site.map(|site| site.previewing(server.previewed_here())));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {

@@ -37,7 +37,7 @@ test('a page a command serves shows in the Preview tab, at an origin of its own'
   await expect(tab).toBeVisible({ timeout: 20_000 });
   // The server's own address, at the port its row says it listens on.
   const listening = await byTestId(page, 'command-listening').textContent();
-  const port = /listening on (?<port>\d+)/u.exec(listening ?? '')?.groups?.['port'];
+  const port = /Listening on (?<port>\d+)\./u.exec(listening ?? '')?.groups?.['port'];
   expect(port).toBeDefined();
   expect(port).not.toBe(new URL(served(LIVE)).port);
   const url = `http://127.0.0.1:${port ?? ''}/`;

@@ -156,7 +156,6 @@ describe('ThreadPanelService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev')],
         previewed: false,
-        previews: [],
       })
       .answer('command/stop', {});
     const panel = await make(
@@ -270,7 +269,6 @@ describe('ThreadPanelService', () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [command('c1', 'npm run dev')],
       previewed: false,
-      previews: [],
     });
     const panel = await make(fake, [
       event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),
@@ -299,12 +297,15 @@ describe('ThreadPanelService', () => {
   });
 
   it('shows the first preview until the person chooses another, and asks for its tab', async () => {
-    const dev = { command: 'c1', port: 5173, url: 'http://127.0.0.1:5173/' };
-    const docs = { command: 'c2', port: 3000, url: 'http://127.0.0.1:3000/' };
+    const at = (port: number): string => `http://127.0.0.1:${String(port)}/`;
+    const dev = { command: 'c1', port: 5173, url: at(5173), framed: true, unframed: null };
+    const docs = { command: 'c2', port: 3000, url: at(3000), framed: true, unframed: null };
     const fake = new FakeSession().answer('command/list', {
-      commands: [command('c1', 'npm run dev'), command('c2', 'npm run docs')],
+      commands: [
+        command('c1', 'npm run dev', { ports: [{ port: 5173, url: at(5173), framed: true }] }),
+        command('c2', 'npm run docs', { ports: [{ port: 3000, url: at(3000), framed: true }] }),
+      ],
       previewed: true,
-      previews: [dev, docs],
     });
     const panel = await make(fake, [
       event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),

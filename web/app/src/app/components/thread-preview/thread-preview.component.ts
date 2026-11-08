@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DOCUMENT,
   type ElementRef,
   afterRenderEffect,
   computed,
@@ -9,7 +8,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import type { Preview } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzIconButtonComponent,
@@ -19,7 +17,7 @@ import {
 } from '@glave/glaze';
 import { ExternalLink, RotateCw } from 'lucide';
 
-import { opened, previewKey } from '../../lib/previews';
+import { type Preview, previewKey } from '../../lib/previews';
 import { CommandsService } from '../../services/commands.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 
@@ -36,12 +34,11 @@ interface Frame {
  * Open in a new tab; under it the page itself, in a frame at the dev server's own address on
  * this computer, never glave's origin nor its site (`specs/session.md`, "Previews"), sandboxed:
  * its scripts, forms and popups run, at its own origin, so a dev server's modules and live
- * reload work; it cannot move this page or open dialogs over it. A page that refuses to be
- * framed stays blank, which the note under it says, and opens in a tab of its own; one on IPv6's
- * loopback alone opens only there, and the tab says so. Only what the server gives as a preview,
- * and only a page on this computer's loopback at another host than this page's (`opened`), is
- * linked to or framed: the frame's address is set on it as it is drawn, since a template's
- * would need Angular's bypass, a Trusted Types policy glave's Content Security Policy refuses.
+ * reload work; it cannot move this page or open dialogs over it. Where the server says a frame
+ * can't show it, the server's sentence says why, and it opens in a new tab alone; a page that
+ * refuses to be framed stays blank, which the note under it says. The frame's address is set on
+ * it as it is drawn, since a template's would need Angular's bypass, a Trusted Types policy
+ * glave's Content Security Policy refuses.
  */
 @Component({
   selector: 'app-thread-preview',
@@ -56,14 +53,11 @@ export class ThreadPreviewComponent {
     reload: $localize`:@@threadPreview.reload:Reload the preview`,
     open: $localize`:@@threadPreview.open:Open in a new tab`,
     note: $localize`:@@threadPreview.note:Some apps refuse to be shown inside another page. If this stays blank, open it in a new tab.`,
-    tabOnly: $localize`:@@threadPreview.tabOnly:This app can't be shown here, only in a new tab.`,
   } as const;
   protected readonly icons = { reload: RotateCw, open: ExternalLink } as const;
   private readonly facts = inject(ThreadPanelService);
   private readonly commands = inject(CommandsService);
   private readonly frame = viewChild<ElementRef<HTMLIFrameElement>>('frame');
-  /** This page's own host, which no preview may share. */
-  private readonly page = inject(DOCUMENT).location.hostname;
   /** Counts the reloads asked for: each draws the frame afresh. */
   private readonly loads = signal(0);
 
@@ -84,30 +78,19 @@ export class ThreadPreviewComponent {
     const preview = this.preview();
     return preview === null ? null : previewKey(preview);
   });
-  /** Where the app may open the preview shown: a link, and whether a frame shows it too. */
-  private readonly where = computed(() => {
-    const preview = this.preview();
-    return preview === null ? { link: null, framed: false } : opened(preview, this.page);
-  });
-  /** Its address, for the link to a new tab. */
-  protected readonly address = computed(() => this.where().link);
-  /** Whether it opens in a new tab alone. */
-  protected readonly tabOnly = computed(() => {
-    const { link, framed } = this.where();
-    return link !== null && !framed;
-  });
+  /** Why a frame can't show the preview shown, in the server's words, where it can't. */
+  protected readonly unframed = computed(() => this.preview()?.unframed ?? null);
   /** The frame of the preview shown, at that address, where a frame shows it. */
   protected readonly frames = computed((): readonly Frame[] => {
     const preview = this.preview();
-    const { link: url, framed } = this.where();
-    if (preview === null || url === null || !framed) {
+    if (!preview?.framed) {
       return [];
     }
     const what = this.serving(preview);
     return [
       {
         key: `${previewKey(preview)}#${String(this.loads())}`,
-        url,
+        url: preview.url,
         title: $localize`:@@threadPreview.title:What ${what}:COMMAND: serves`,
       },
     ];

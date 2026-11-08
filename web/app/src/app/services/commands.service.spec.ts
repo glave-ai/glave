@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ApiError, ErrorCode, type Notification, type Preview, type RawEvent } from '@glave/client';
+import { ApiError, ErrorCode, type Notification, type Port, type RawEvent } from '@glave/client';
 
 import { LOOKS_AGAIN } from '../lib/previews';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
@@ -37,14 +37,16 @@ async function settle(): Promise<void> {
   TestBed.tick();
 }
 
-/** A thread that started `npm run dev`, which serves `previews` as it runs. */
-function devServer(previews: readonly Preview[]): FakeSession {
+/** A thread that started `npm run dev`, which listens at `ports` as it runs, previewed here. */
+function devServer(ports: readonly Port[]): FakeSession {
   return new FakeSession().answer('thread/events', { events: [STARTED] }).answer('command/list', {
-    commands: [command('c1', 'npm run dev')],
+    commands: [command('c1', 'npm run dev', { ports })],
     previewed: true,
-    previews,
   });
 }
+
+/** `npm run dev`'s port 5173, previewed at its own address. */
+const DEV: Port = { port: 5173, url: 'http://127.0.0.1:5173/', framed: true };
 
 function ids(commands: CommandsService): readonly string[] {
   return commands.commands().map((each) => each.id);
@@ -61,7 +63,6 @@ describe('CommandsService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev')],
         previewed: false,
-        previews: [],
       })
       .streams([
         recorded(STARTED),
@@ -113,7 +114,6 @@ describe('CommandsService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev')],
         previewed: false,
-        previews: [],
       });
     const { commands, thread } = make(fake);
     await thread.open('thread-1');
@@ -130,7 +130,6 @@ describe('CommandsService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev'), command('c2', 'cargo watch')],
         previewed: false,
-        previews: [],
       })
       .answer(
         'command/stop',
@@ -164,7 +163,6 @@ describe('CommandsService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev')],
         previewed: false,
-        previews: [],
       })
       .answer(
         'command/stop',
@@ -190,7 +188,6 @@ describe('CommandsService', () => {
       .answer('command/list', {
         commands: [command('c1', 'npm run dev')],
         previewed: false,
-        previews: [],
       });
     const { commands, thread } = make(fake);
     await thread.open('thread-1');
@@ -204,7 +201,7 @@ describe('CommandsService', () => {
     );
     const reading = commands.refresh();
     await commands.stop('c1');
-    answer({ commands: [command('c1', 'npm run dev')], previewed: false, previews: [] });
+    answer({ commands: [command('c1', 'npm run dev')], previewed: false });
     await reading;
     expect(ids(commands)).toEqual([]);
   });
@@ -243,21 +240,22 @@ describe('CommandsService', () => {
     }
   });
 
-  it('reads the previews of what they serve, and drops a stopped command’s', async () => {
-    const dev = { command: 'c1', port: 5173, url: 'http://127.0.0.1:5173/' };
-    const { commands, thread } = make(devServer([dev]).answer('command/stop', {}));
+  it('reads the previews of what they serve from their ports, and drops a stopped command’s', async () => {
+    const { commands, thread } = make(devServer([DEV]).answer('command/stop', {}));
     await thread.open('thread-1');
     await settle();
-    expect(commands.previews()).toEqual([dev]);
+    expect(commands.previews()).toEqual([
+      { command: 'c1', port: 5173, url: DEV.url, framed: true, unframed: null },
+    ]);
     await commands.stop('c1');
     expect(commands.previews()).toEqual([]);
   });
 
-  it('reads them again later and later while one serves no preview and the panel shows', async () => {
+  it('reads them again later and later while previewing and the panel shows, previews or not', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const dev = { command: 'c1', port: 5173, url: 'http://127.0.0.1:5173/' };
-      const fake = devServer([]);
+      // One port previewed already: another, as a second server beside it, may come later.
+      const fake = devServer([DEV]);
       const { commands, thread, panel } = make(fake);
       panel.setShowing(true);
       await thread.open('thread-1');
@@ -274,26 +272,12 @@ describe('CommandsService', () => {
       await vi.advanceTimersByTimeAsync(600_000);
       expect(fake.paramsOf('command/list')).toHaveLength(LOOKS_AGAIN.length + 1);
 
-      // Once it serves one, it is not read again; nor while the panel is hidden.
-      fake.answer('command/list', {
-        commands: [command('c1', 'npm run dev')],
-        previewed: true,
-        previews: [dev],
-      });
-      await commands.refresh();
-      expect(commands.previews()).toEqual([dev]);
-      await vi.advanceTimersByTimeAsync(600_000);
-      expect(fake.paramsOf('command/list')).toHaveLength(LOOKS_AGAIN.length + 2);
-      fake.answer('command/list', {
-        commands: [command('c1', 'npm run dev')],
-        previewed: false,
-        previews: [],
-      });
+      // Read again by hand, it looks again as before; not while the panel is hidden.
       panel.setShowing(false);
       TestBed.tick();
       await commands.refresh();
       await vi.advanceTimersByTimeAsync(600_000);
-      expect(fake.paramsOf('command/list')).toHaveLength(LOOKS_AGAIN.length + 3);
+      expect(fake.paramsOf('command/list')).toHaveLength(LOOKS_AGAIN.length + 2);
     } finally {
       vi.useRealTimers();
     }
@@ -305,16 +289,16 @@ describe('CommandsService', () => {
       const fake = new FakeSession()
         .answer('thread/events', { events: [STARTED] })
         .answer('command/list', {
-          commands: [command('c1', 'npm run dev')],
+          commands: [command('c1', 'npm run dev', { ports: [{ port: 5173, framed: false }] })],
           previewed: false,
-          previews: [],
         });
-      const { thread, panel } = make(fake);
+      const { commands, thread, panel } = make(fake);
       panel.setShowing(true);
       await thread.open('thread-1');
       TestBed.tick();
       await vi.advanceTimersByTimeAsync(600_000);
       expect(fake.paramsOf('command/list')).toHaveLength(1);
+      expect(commands.previews()).toEqual([]);
     } finally {
       vi.useRealTimers();
     }

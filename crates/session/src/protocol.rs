@@ -21,7 +21,6 @@ mod params;
 mod passkeys;
 mod people;
 mod plans;
-mod previews;
 mod projects;
 mod providers;
 mod reply;
@@ -64,7 +63,6 @@ pub use params::{Answer, Show};
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
-pub use previews::Preview;
 pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
 pub use reply::{

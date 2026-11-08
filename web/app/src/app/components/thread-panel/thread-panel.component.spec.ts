@@ -72,7 +72,6 @@ function worked(): FakeSession {
     .answer('command/list', {
       commands: [command('d1', 'npm run dev')],
       previewed: false,
-      previews: [],
     })
     .answer('command/stop', {})
     .answer('thread/changes', {
@@ -188,11 +187,10 @@ describe('ThreadPanelComponent', () => {
   });
 
   it('has a Preview tab last while a command serves one, which Open preview shows', async () => {
-    const dev = { command: 'd1', port: 5173, url: 'http://127.0.0.1:5173/' };
+    const dev = { port: 5173, url: 'http://127.0.0.1:5173/', framed: true };
     const fake = worked().answer('command/list', {
-      commands: [command('d1', 'npm run dev')],
+      commands: [command('d1', 'npm run dev', { ports: [dev] })],
       previewed: true,
-      previews: [dev],
     });
     const { root, fixture } = await render(fake, WORKED);
     expect(tabs(root).map((tab) => [tab.textContent.trim(), tab.ariaSelected])).toEqual([

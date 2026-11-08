@@ -88,9 +88,7 @@ export const ABOUT_FORMATTED: Answers<ThreadSummary> = {
   'thread/get': (params, summary) =>
     params.thread === FORMATTED ? { thread: summary } : undefined,
   'command/list': (params) =>
-    params.thread === FORMATTED
-      ? { commands: [WATCHING], previewed: false, previews: [] }
-      : undefined,
+    params.thread === FORMATTED ? { commands: [WATCHING], previewed: false } : undefined,
   'thread/changes': (params) =>
     params.thread === FORMATTED
       ? {
