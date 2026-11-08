@@ -1,12 +1,15 @@
-// A runner leaves nothing it started (#558), whether it ends on its own or is killed outright:
-// `npm run e2e:killed`. Playwright runs one test (killed.e2e.ts) twice. Once it opens a page and
-// ends, and the runner exits as it does after any run; once it holds its browser open and the
-// runner is sent SIGKILL, as a tool's timeout or a killed `cargo xtask ci` would send it. After
-// each, every process carrying the run's mark (the glaves its config starts and their helpers,
-// the browser, the test worker) must be gone within a guard against a hang; what is left is
-// listed, stopped, and fails the check.
+// A runner leaves nothing it started (#558), whether it ends on its own, is interrupted or is
+// killed outright: `npm run e2e:killed`. Playwright runs one test (killed.e2e.ts) three times.
+// Once it opens a page and ends, and the runner exits as it does after any run; twice it holds
+// its browser open and the runner is sent SIGINT, as Ctrl-C sends it, or SIGKILL, as a tool's
+// timeout or a killed `cargo xtask ci` would send it. After each, every process carrying the
+// run's mark (the glaves its config starts and their helpers, the browser, the test worker)
+// must be gone within a guard against a hang; what is left is listed, stopped, and fails the
+// check. A runner that ended or was interrupted leaves none of the folders it made either (its
+// glaves' homes, its lifeline's); one killed outright can run nothing more to remove them, and
+// they go here with the check's own folder.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -21,9 +24,12 @@ async function until(seconds, done) {
   return done();
 }
 
+/** The signal the runner is sent once the test holds its page, for each way it ends. */
+const SIGNALS = { ended: undefined, interrupted: 'SIGINT', killed: 'SIGKILL' };
+
 /**
- * Runs the test as `how` ('ended' or 'killed') and says what it left running, if anything, as
- * lines of text.
+ * Runs the test as `how` (a key of `SIGNALS`) and says what it left, if anything, as lines of
+ * text.
  */
 async function run(how) {
   // Under /tmp where there is one: the glaves' sockets are made in it, and a socket's path must
@@ -67,8 +73,9 @@ async function run(how) {
   );
   const exited = new Promise((resolve) => runner.on('exit', resolve));
   const holding = await until(180, () => existsSync(join(folder, 'holding')));
-  if (how === 'killed' || !holding) {
-    runner.kill('SIGKILL');
+  const signal = holding ? SIGNALS[how] : 'SIGKILL';
+  if (signal !== undefined) {
+    runner.kill(signal);
   }
   // A runner that does not end on its own within the guard is killed.
   const timer = setTimeout(() => runner.kill('SIGKILL'), 180_000);
@@ -83,19 +90,27 @@ async function run(how) {
       // Gone since it was listed.
     }
   }
+  // Looked at once nothing the run started still runs, so none of it could make one again.
+  const kept =
+    how === 'killed' ? [] : readdirSync(folder).filter((name) => name.startsWith('glave-e2e-'));
   rmSync(folder, { recursive: true, force: true });
   if (!holding) {
     return ['the test never opened its page'];
   }
-  return ended ? [] : left.map(({ pid, command }) => `${pid} ${command}`);
+  return [
+    ...(ended ? [] : left.map(({ pid, command }) => `${pid} ${command}`)),
+    ...kept.map((name) => join(folder, name)),
+  ];
 }
 
-for (const how of ['ended', 'killed']) {
+for (const how of Object.keys(SIGNALS)) {
   const left = await run(how);
   if (left.length === 0) {
-    console.log(`a runner that ${how} left nothing it started`);
+    console.log(`${how}, the runner left nothing behind`);
   } else {
-    console.error(`a runner that ${how} left, now stopped:\n  ${left.join('\n  ')}`);
+    console.error(
+      `${how}, the runner left these, now stopped and removed:\n  ${left.join('\n  ')}`,
+    );
     process.exitCode = 1;
   }
 }
