@@ -249,6 +249,22 @@ async fn on_it(
     (harness, seen, thread)
 }
 
+/// [`on_it`], through one turn of `answers`, whose command in `folder` loses its machine.
+async fn lost_mid_turn(
+    server: &Path,
+    answers: Vec<Completion>,
+    moving: &Arc<Moving>,
+    place: Place,
+    folder: &Path,
+) -> (Moved, Seen, Thread) {
+    let (harness, seen, mut thread) = on_it(server, answers, moving, place).await;
+    tokio::join!(
+        turn(&harness, &mut thread, "build it"),
+        once_started(folder, moving.lose())
+    );
+    (harness, seen, thread)
+}
+
 /// Waits for the command started in `folder` to open its pipe, then does `then` under it.
 async fn once_started(folder: &Path, then: impl Future<Output = ()>) {
     let pipe = folder.join(STARTED);
@@ -272,11 +288,8 @@ fn a_command_cut_off_with_its_machine_says_why_and_the_next_call_runs_on_the_sam
             bash("cat kept.txt; cat runs.txt"),
             done(),
         ];
-        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
-        tokio::join!(
-            turn(&harness, &mut thread, "build it"),
-            once_started(&home, moving.lose())
-        );
+        let (_harness, seen, _thread) =
+            lost_mid_turn(&server, answers, &moving, place, &home).await;
 
         let requests = seen.lock().unwrap().clone();
         let cut_off = last_message(&requests, 1);
@@ -378,11 +391,7 @@ fn the_first_tool_result_after_the_machine_went_names_what_ran_in_the_background
             done(),
             done(),
         ];
-        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
-        tokio::join!(
-            turn(&harness, &mut thread, "start and build"),
-            once_started(&home, moving.lose())
-        );
+        let (harness, seen, thread) = lost_mid_turn(&server, answers, &moving, place, &home).await;
         let requests = seen.lock().unwrap().clone();
         let result = last_message(&requests, 2);
         assert!(result.contains("this command was stopped"), "{result}");
@@ -419,11 +428,8 @@ fn a_computer_killed_for_memory_says_so_and_what_ran_beside_it_is_no_longer_ther
             bash(&format!("echo > {STARTED}; sleep 30")),
             done(),
         ];
-        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
-        tokio::join!(
-            turn(&harness, &mut thread, "start and build"),
-            once_started(&home, moving.lose())
-        );
+        let (_harness, seen, _thread) =
+            lost_mid_turn(&server, answers, &moving, place, &home).await;
         let requests = seen.lock().unwrap().clone();
         let result = last_message(&requests, 2);
         assert!(result.contains("ran out of memory"), "{result}");
