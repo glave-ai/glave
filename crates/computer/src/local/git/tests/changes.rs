@@ -1,3 +1,4 @@
+//! Where a folder's history stands as it opens, asked only of a folder a thread is placed in.
 //! What changed, read beside what a command planted: a repository it put inside the folder,
 //! committed there or not, whose own config names a filter, never has it run, even with the
 //! person's own `diff.submodule` set to look inside; and the person's repository, its index and
@@ -28,6 +29,26 @@ fn as_it_is(planted: &Planted) -> (Vec<u8>, usize) {
         }
     }
     (index, objects)
+}
+
+#[test]
+fn only_a_placed_folder_asks_where_its_history_stands() {
+    let planted = planted();
+    let head = must(&planted, &["rev-parse", "HEAD"]);
+    let computers = LocalComputers::new(planted.dir.join("copies"), environment(&planted.dir));
+    let sources = Sources::Folder {
+        path: planted.repo.to_string_lossy().into_owned(),
+    };
+    let (here, placed) = block_on!(async {
+        let (computers, here) = computers.open_here(&planted.repo).await.unwrap();
+        let placed = computers.open(here.computer, &sources).await.unwrap();
+        (here, placed)
+    });
+    assert_eq!(
+        here.at, None,
+        "the host's own folder, which no thread records"
+    );
+    assert_eq!(placed.at, Some(head), "a folder a thread is placed in");
 }
 
 #[test]

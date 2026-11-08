@@ -145,7 +145,10 @@ impl LocalComputers {
         Self::new(std::env::temp_dir().join("glave-workspaces"), environment)
     }
 
-    /// A host computer made from these computers, with `folder` open on it in place.
+    /// A host computer made from these computers, with `folder` open on it in place. Where the
+    /// folder's history stands is not asked (`at` is none): no thread records this workspace as
+    /// the one it was placed in, since a thread placed in the folder opens it again, and asking
+    /// would run git once or twice at every start, before a thread is read.
     pub async fn open_here(
         self,
         folder: impl AsRef<Path>,
@@ -161,7 +164,7 @@ impl LocalComputers {
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
-        let workspace = computers.open(computer, &sources).await?;
+        let workspace = computers.open_now(computer, &sources, None).await?;
         Ok((computers, workspace))
     }
 
@@ -243,10 +246,6 @@ impl LocalComputers {
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };
-        let info = WorkspaceInfo {
-            at: changes::at(&opened).await,
-            ..info
-        };
         if let Err(error) = self.registry.add_workspace(id, opened) {
             if copy {
                 let _ = tokio::fs::remove_dir_all(&info.root).await;
@@ -254,6 +253,22 @@ impl LocalComputers {
             return Err(error);
         }
         Ok(info)
+    }
+
+    /// Opens `sources` on `computer` as [`LocalComputers::open_now`] does, with where its
+    /// folder's history stands now: what a thread placed there reads its changes since.
+    async fn placed(
+        &self,
+        computer: ComputerId,
+        sources: &Sources,
+        credential: Option<&GitCredential>,
+    ) -> Result<WorkspaceInfo, ComputerError> {
+        let info = self.open_now(computer, sources, credential).await?;
+        let opened = self.registry.workspace(info.id)?;
+        Ok(WorkspaceInfo {
+            at: changes::at(&opened).await,
+            ..info
+        })
     }
 
     /// Where `sources` open as the workspace `id` on `computer`: its root, whether it is a
@@ -488,7 +503,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None))
+        Box::pin(self.placed(computer, sources, None))
     }
 
     fn open_with_credential<'a>(
@@ -497,7 +512,7 @@ impl Computers for LocalComputers {
         sources: &'a Sources,
         credential: &'a GitCredential,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, Some(credential)))
+        Box::pin(self.placed(computer, sources, Some(credential)))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
