@@ -98,6 +98,7 @@ where
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
             prefix: crate::prefix::Prefixed::None,
+            summary_failed: None,
         };
         self.take_history(&mut thread, &events).await;
         Ok(thread)
