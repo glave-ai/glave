@@ -60,11 +60,8 @@ where
         whose: Option<PrincipalId>,
     ) -> bool {
         standing == Standing::Active
-            && bound.is_some_and(|bound| match bound.computer.kind {
-                ComputerKind::Local => whose.is_none_or(|person| Some(person) == self.person()),
-                ComputerKind::Person => true,
-                ComputerKind::Worker => false,
-            })
+            && bound.is_some_and(|bound| bound.computer.kind != ComputerKind::Worker)
+            && self.computer_is_theirs(whose)
     }
 
     /// Answers `terminal/open`: refused in a thread put away, and closed again when it was put
