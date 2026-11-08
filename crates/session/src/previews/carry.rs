@@ -114,9 +114,7 @@ async fn pump(browser: TcpStream, app: TcpStream) {
 }
 
 /// A write, within [`QUIET`]: a side that takes nothing for that long is gone.
-async fn written(
-    write: impl Future<Output = std::io::Result<()>>,
-) -> std::io::Result<()> {
+async fn written(write: impl Future<Output = std::io::Result<()>>) -> std::io::Result<()> {
     tokio::time::timeout(QUIET, write)
         .await
         .unwrap_or_else(|_| Err(std::io::ErrorKind::TimedOut.into()))

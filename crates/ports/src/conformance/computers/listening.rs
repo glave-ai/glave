@@ -54,7 +54,12 @@ async fn listed_with_its_port<C: Computers>(
                 .commands(here)
                 .await
                 .map_err(failed("list the commands in the background"))?;
-            let ports = |id| listed.iter().find(|command| command.id == id).map(|command| &command.ports);
+            let ports = |id| {
+                listed
+                    .iter()
+                    .find(|command| command.id == id)
+                    .map(|command| &command.ports)
+            };
             if ports(listens).is_some_and(|ports| ports.contains(&port)) {
                 return ensure(
                     ports(quiet).is_some_and(Vec::is_empty),

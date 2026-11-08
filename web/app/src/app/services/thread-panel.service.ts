@@ -2,11 +2,13 @@ import { Service, computed, effect, inject, linkedSignal, signal, untracked } fr
 import {
   ApiError,
   type ChangedFile,
+  type Preview,
   type ProjectId,
   type ThreadId,
   type WorkspaceBound,
 } from '@glave/client';
 
+import { previewKey } from '../lib/previews';
 import { sentence, unreached } from '../lib/text';
 import { onChange } from './changes.service';
 import { ChangedFilesService } from './changed-files.service';
@@ -40,7 +42,8 @@ interface Compacting {
  * of a project; a chat's scratch folder is nowhere the person chose), its plan, the files it
  * changed, its commands running in the background, and how many of the apps its project's
  * threads use need signing in again (`connector/list`, read as its project is known and again
- * as the person's connections change). Whether it shows anything at all, so a plain chat has no
+ * as the person's connections change), and the previews of what those commands serve, the one
+ * shown the person's choice. Whether it shows anything at all, so a plain chat has no
  * panel, and whether it shows now; a panel left with nothing closes its sheet. Compacting its
  * context on request (`thread/compact`), a refusal in the server's words. And a turn's changes
  * shown in full, one file's or all of them. Each thread view provides its own.
@@ -79,6 +82,22 @@ export class ThreadPanelService {
   /** What those leave out, in the server's sentence. */
   readonly note = this.changed.note;
   readonly running = this.commands.count;
+  /** The previews of what its commands serve, as the server opened them for this person. */
+  readonly previews = this.commands.previews;
+  /** The preview the person chose last, by its key: the first is shown until they choose. */
+  private readonly choice = linkedSignal<ThreadId | null, string | null>({
+    source: this.thread.thread,
+    computation: () => null,
+  });
+  /** The preview shown: the one chosen while it serves, else the first; none while none does. */
+  readonly preview = computed(() => {
+    const previews = this.previews();
+    const chosen = this.choice();
+    return previews.find((each) => previewKey(each) === chosen) ?? previews[0] ?? null;
+  });
+  /** How many times a preview was asked to be shown in its tab: each ask shows the tab. */
+  private readonly previewAsks = signal(0);
+  readonly previewAsked = this.previewAsks.asReadonly();
   /**
    * How many of the apps its project's threads use need signing in again: none until listed,
    * or when they could not be.
@@ -219,6 +238,17 @@ export class ThreadPanelService {
     } catch {
       // Unread, it says nothing: the Connections page says why when the person opens it.
     }
+  }
+
+  /** Shows the preview whose key is `key` in the Preview tab, from now on. */
+  choosePreview(key: string): void {
+    this.choice.set(key);
+  }
+
+  /** Shows `preview` in the Preview tab, and asks the panel to show that tab. */
+  showPreview(preview: Preview): void {
+    this.choice.set(previewKey(preview));
+    this.previewAsks.update((asks) => asks + 1);
   }
 
   /** Starts another thread afresh: no changes in full, its sheet closed. */

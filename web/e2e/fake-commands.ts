@@ -69,7 +69,7 @@ export function background(
   const running = params['thread'] === SERVING && commands?.running === true ? commands : null;
   switch (method) {
     case 'command/list':
-      return { commands: running === null ? [] : [DOCS] };
+      return { commands: running === null ? [] : [DOCS], previews: [] };
     case 'command/stop':
       if (running === null || params['command'] !== DOCS_COMMAND) {
         return new Refusal(-32027, 'that command is not running in this thread');

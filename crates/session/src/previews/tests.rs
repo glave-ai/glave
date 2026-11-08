@@ -26,7 +26,9 @@ fn thread() -> ThreadId {
 }
 
 fn command(n: u128) -> CommandId {
-    CommandId::from_uuid(uuid::Uuid::from_u128(0x0190_0000_0000_7000_8000_0000_0000_0100 + n))
+    CommandId::from_uuid(uuid::Uuid::from_u128(
+        0x0190_0000_0000_7000_8000_0000_0000_0100 + n,
+    ))
 }
 
 /// An app on loopback, as a dev server is: a page to any request, saying the `Host` it was
@@ -124,7 +126,10 @@ fn a_preview_carries_a_page_and_a_websocket_to_the_command_s_port_unchanged() {
             .unwrap()
             .unwrap();
         assert!(answered.starts_with("HTTP/1.1 200 OK"), "{answered}");
-        assert!(answered.ends_with(&format!("served at 127.0.0.1:{at}")), "{answered}");
+        assert!(
+            answered.ends_with(&format!("served at 127.0.0.1:{at}")),
+            "{answered}"
+        );
 
         // A WebSocket, as live reload opens one: the upgrade, then a frame each way.
         let mut socket = connect(at).await.unwrap();
@@ -151,7 +156,11 @@ fn a_preview_carries_a_page_and_a_websocket_to_the_command_s_port_unchanged() {
         let mask = [1_u8, 2, 3, 4];
         let mut frame = vec![0x81, 0x80 | u8::try_from(text.len()).unwrap()];
         frame.extend(mask);
-        frame.extend(text.iter().enumerate().map(|(at, byte)| byte ^ mask[at % 4]));
+        frame.extend(
+            text.iter()
+                .enumerate()
+                .map(|(at, byte)| byte ^ mask[at % 4]),
+        );
         socket.write_all(&frame).await.unwrap();
         let mut echo = [0_u8; 8];
         tokio::time::timeout(SOON, socket.read_exact(&mut echo))
@@ -175,7 +184,11 @@ fn a_preview_listens_on_loopback_alone_and_closes_once_its_command_no_longer_lis
         let shown = previews.settle(thread(), &listening).await;
         assert_eq!(shown.len(), 2, "one for each command");
         let (first, second) = (port_of(&shown[0]), port_of(&shown[1]));
-        assert_eq!(previews.settle(thread(), &listening).await, shown, "the same ones");
+        assert_eq!(
+            previews.settle(thread(), &listening).await,
+            shown,
+            "the same ones"
+        );
 
         // This computer's address toward elsewhere, found without sending anything: nothing
         // there reaches the preview.
@@ -199,7 +212,10 @@ fn a_preview_listens_on_loopback_alone_and_closes_once_its_command_no_longer_lis
         // The first command no longer listens: its preview closes, the second's stays.
         let left = previews.settle(thread(), &[(command(2), port)]).await;
         assert_eq!(left, shown[1..]);
-        assert!(connect(first).await.is_err(), "a closed preview takes nothing");
+        assert!(
+            connect(first).await.is_err(),
+            "a closed preview takes nothing"
+        );
         assert!(connect(second).await.is_ok());
         // It no longer runs.
         previews

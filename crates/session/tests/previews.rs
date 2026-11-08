@@ -109,7 +109,10 @@ fn a_command_that_listens_has_a_preview_of_its_own_until_it_is_stopped() {
         turn(&server, thread, "serve the page").await.unwrap();
         let preview = previewed(&server, thread, &dir).await;
         let at = port_of(&preview);
-        assert_ne!(at, preview.port, "an address of its own, never the command's");
+        assert_ne!(
+            at, preview.port,
+            "an address of its own, never the command's"
+        );
         let answered = page(at).await.unwrap();
         assert!(answered.starts_with("HTTP/1.0 200"), "{answered}");
         assert!(answered.ends_with("hello from the preview"), "{answered}");
@@ -124,7 +127,10 @@ fn a_command_that_listens_has_a_preview_of_its_own_until_it_is_stopped() {
             command: preview.command,
         };
         server.request(stop).await.unwrap();
-        assert!(page(at).await.is_err(), "a stopped command's preview is closed");
+        assert!(
+            page(at).await.is_err(),
+            "a stopped command's preview is closed"
+        );
         assert_eq!(listed(&server, thread).await, (Vec::new(), Vec::new()));
     });
 }

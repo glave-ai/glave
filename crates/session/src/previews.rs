@@ -116,9 +116,8 @@ impl Previews {
         thread: ThreadId,
         listening: &[(CommandId, u16)],
     ) -> Vec<Preview> {
-        let gone = |key: &Key| {
-            key.thread == thread && !listening.contains(&(key.command, key.port))
-        };
+        let gone =
+            |key: &Key| key.thread == thread && !listening.contains(&(key.command, key.port));
         self.closing(gone).done().await;
         let mut open = self.open();
         for &(command, port) in listening {
@@ -148,7 +147,11 @@ impl Previews {
     }
 
     /// Closes the previews of `thread`'s commands that no longer run, as `runs` says.
-    pub(crate) fn keep_running(&self, thread: ThreadId, runs: impl Fn(CommandId) -> bool) -> Closing {
+    pub(crate) fn keep_running(
+        &self,
+        thread: ThreadId,
+        runs: impl Fn(CommandId) -> bool,
+    ) -> Closing {
         self.closing(|key| key.thread == thread && !runs(key.command))
     }
 

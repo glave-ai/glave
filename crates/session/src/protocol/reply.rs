@@ -15,9 +15,9 @@ use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, Preview, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
-    Told, TrustAsk, WatchEnd,
+    PersonInfo, PlanInfo, Preview, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo,
+    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.

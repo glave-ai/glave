@@ -182,7 +182,10 @@ fn in_hex(hex: &str) -> Option<IpAddr> {
 /// The inode in a link of `/proc/<pid>/fd` to a socket: `socket:[12345]`.
 #[cfg(any(target_os = "linux", test))]
 fn socket_inode(link: &str) -> Option<u64> {
-    link.strip_prefix("socket:[")?.strip_suffix(']')?.parse().ok()
+    link.strip_prefix("socket:[")?
+        .strip_suffix(']')?
+        .parse()
+        .ok()
 }
 
 /// Reading `/proc`, on this machine's own network namespace: a sandboxed command's socket in
@@ -211,7 +214,10 @@ mod proc {
             };
             for file in files.flatten().take(MOST) {
                 let link = fs::read_link(file.path()).ok();
-                if let Some(inode) = link.as_ref().and_then(|link| socket_inode(&link.to_string_lossy())) {
+                if let Some(inode) = link
+                    .as_ref()
+                    .and_then(|link| socket_inode(&link.to_string_lossy()))
+                {
                     sockets.insert(inode, *group);
                 }
             }

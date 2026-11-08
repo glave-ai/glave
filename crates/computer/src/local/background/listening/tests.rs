@@ -32,13 +32,43 @@ fn a_stat_line_names_the_parent_and_the_group_whatever_the_name_holds() {
 fn a_command_s_processes_are_its_group_and_what_they_started_below_it() {
     let processes: HashMap<u32, Process> = [
         // The command's own shell, its group's leader.
-        (100, Process { parent: 1, group: 100 }),
+        (
+            100,
+            Process {
+                parent: 1,
+                group: 100,
+            },
+        ),
         // The sandbox's own session, below it.
-        (101, Process { parent: 100, group: 101 }),
-        (102, Process { parent: 101, group: 101 }),
+        (
+            101,
+            Process {
+                parent: 100,
+                group: 101,
+            },
+        ),
+        (
+            102,
+            Process {
+                parent: 101,
+                group: 101,
+            },
+        ),
         // Another command, and something no command started.
-        (200, Process { parent: 1, group: 200 }),
-        (300, Process { parent: 1, group: 300 }),
+        (
+            200,
+            Process {
+                parent: 1,
+                group: 200,
+            },
+        ),
+        (
+            300,
+            Process {
+                parent: 1,
+                group: 300,
+            },
+        ),
     ]
     .into_iter()
     .collect();

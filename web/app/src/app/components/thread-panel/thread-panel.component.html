@@ -34,6 +34,9 @@
         @case ('changes') {
           <app-thread-files [files]="facts.files()" [note]="facts.note()" />
         }
+        @case ('preview') {
+          <app-thread-preview />
+        }
       }
     </glz-tab>
   }

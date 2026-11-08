@@ -80,7 +80,7 @@ function summary(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
 function worked(overrides: Partial<ThreadSummary> = {}): FakeSession {
   return new FakeSession()
     .answer('thread/get', { thread: summary(overrides) })
-    .answer('command/list', { commands: [command('d1', 'npm run dev')] })
+    .answer('command/list', { commands: [command('d1', 'npm run dev')], previews: [] })
     .answer('connector/list', { connectors: [EXPIRED], categories: [], companies: [], tags: [] })
     .answer('thread/plan', {
       plan: {

@@ -69,7 +69,7 @@ function tabs(root: HTMLElement): readonly HTMLButtonElement[] {
 function worked(): FakeSession {
   return new FakeSession()
     .answer('thread/get', { thread: thread('thread-1', 'Add --verbose', { workspace: FOLDER }) })
-    .answer('command/list', { commands: [command('d1', 'npm run dev')] })
+    .answer('command/list', { commands: [command('d1', 'npm run dev')], previews: [] })
     .answer('command/stop', {})
     .answer('thread/changes', {
       changes: { files: FILES, turns: [], note: 'Changes made by commands are not listed.' },
@@ -181,5 +181,32 @@ describe('ThreadPanelComponent', () => {
     expect(root.querySelector('h2')?.classList).not.toContain('glz-visually-hidden');
     root.querySelector<HTMLButtonElement>('[data-testid="panel-close"]')?.click();
     expect(panel.showing()).toBe(false);
+  });
+
+  it('has a Preview tab last while a command serves one, which Open preview shows', async () => {
+    const dev = { command: 'd1', port: 5173, url: 'http://127.0.0.1:61234/' };
+    const fake = worked().answer('command/list', {
+      commands: [command('d1', 'npm run dev')],
+      previews: [dev],
+    });
+    const { root, fixture } = await render(fake, WORKED);
+    expect(tabs(root).map((tab) => [tab.textContent.trim(), tab.ariaSelected])).toEqual([
+      ['Overview', 'true'],
+      ['Changes', 'false'],
+      ['Preview', 'false'],
+    ]);
+    root.querySelector<HTMLButtonElement>('[data-testid="command-preview"]')?.click();
+    await drawn(fixture);
+    expect(tabs(root)[2]?.ariaSelected).toBe('true');
+    expect(root.querySelector('[data-testid="preview-frame"]')?.getAttribute('src')).toBe(dev.url);
+    // Axe can't look inside a frame here; the end-to-end tests check the page with it.
+    await expectAccessible(root.querySelector('[role="tablist"]') ?? root);
+    // Chosen again by hand, Overview stays until a preview is asked for again.
+    tabs(root)[0]?.click();
+    await fixture.whenStable();
+    expect(tabs(root)[0]?.ariaSelected).toBe('true');
+    root.querySelector<HTMLButtonElement>('[data-testid="command-preview"]')?.click();
+    await drawn(fixture);
+    expect(tabs(root)[2]?.ariaSelected).toBe('true');
   });
 });

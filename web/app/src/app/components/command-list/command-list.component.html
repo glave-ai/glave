@@ -16,6 +16,17 @@
           <code class="whole">{{ row.command }}</code>
           <p class="summary" data-testid="command-summary">{{ row.summary }}</p>
         </details>
+        @if (row.preview; as preview) {
+          <button
+            glzIconButton
+            size="sm"
+            data-testid="command-preview"
+            [label]="row.previewLabel"
+            (click)="open(preview)"
+          >
+            <glz-icon [icon]="icons.preview" />
+          </button>
+        }
         <button
           glzIconButton
           size="sm"
