@@ -1,11 +1,17 @@
 :host {
-  display: block;
+  // Given a height, as a side pane gives it, the tab list stays and the panel scrolls under it;
+  // given none, the panel is as tall as what it holds.
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .tablist {
   display: flex;
+  flex: none;
   gap: var(--glz-space-1);
   overflow-x: auto;
+  padding-inline: var(--glz-tabs-inset-inline);
   border-bottom: var(--glz-border-width) solid var(--glz-color-border);
 }
 
@@ -45,10 +51,18 @@
 }
 
 .panel {
-  padding: var(--glz-space-4) 0;
+  // A scroll container holds what is positioned inside it, so nothing hidden for screen readers
+  // far down it reaches past it and makes what holds it scroll.
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--glz-space-4);
+  padding-inline: var(--glz-tabs-inset-inline);
 }
 
+// Inside its edge, which a pane that holds it may clip.
 .panel:focus-visible {
   outline: 2px solid var(--glz-color-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }

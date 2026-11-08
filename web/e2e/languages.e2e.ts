@@ -32,6 +32,8 @@ const NOT_THE_APPS = new Set([
   'src/parse.rs',
   'tests/empty.rs',
   'glave',
+  // Where the project's folder is, as its computer names it.
+  '/work/glave',
   'GitHub',
   'OpenRouter',
   '5 minutes ago',
@@ -106,7 +108,7 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await expectAccessible(page);
   // The thread's panel beside it, and a dialog over it.
   await expect(byTestId(page, 'panel-changes').locator('h3')).toHaveText(
-    PSEUDO['threadPanel.changes'] ?? '',
+    PSEUDO['threadOverview.changes'] ?? '',
   );
   expect(await skipped(page)).toEqual([]);
   await byTestId(page, 'thread-rename').click();

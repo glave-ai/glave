@@ -1,14 +1,6 @@
 import { fakeApi } from './fake-api';
 import { DINNER, TESTS, VERBOSE } from './fake-panel';
-import {
-  SIGNED_IN,
-  byTestId,
-  expect,
-  expectAccessible,
-  expectDialogShown,
-  test,
-  watchForProblems,
-} from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`a coding thread shows its facts beside it, each section with something (${colorScheme})`, async ({
@@ -22,48 +14,44 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${VERBOSE}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-message').last()).toContainText('the tests are running');
 
-    // Shown at first, beside the conversation, its button pressed.
+    // Shown at first, beside the conversation, its button pressed, on Overview.
     await expect(byTestId(page, 'panel-panel')).toBeVisible();
     await expect(byTestId(page, 'thread-panel')).toHaveAttribute('aria-pressed', 'true');
+    const tabs = byTestId(page, 'panel-tabs-tab');
+    await expect(tabs).toHaveText(['Overview', 'Changes']);
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
     await expect(byTestId(page, 'panel-where-part')).toHaveText([
       /^(Your Mac|This computer)$/u,
-      'glave',
-      'Auto',
+      'glave · /work/glave',
+      'glave/add-verbose · a separate copy',
     ]);
     await expect(byTestId(page, 'panel-plan')).toContainText('Plan: 1 of 4 steps done');
     await expect(byTestId(page, 'panel-plan-step')).toHaveCount(4);
     // The plan being built is the panel's to show: the conversation has no card of it.
     await expect(byTestId(page, 'thread-plan')).toHaveCount(0);
-    // Both the count and each file's lines show at the panel's width.
-    await expect(byTestId(page, 'panel-changes-count')).toBeVisible();
+    await expect(byTestId(page, 'panel-context')).toHaveText('39% used');
+    await expect(byTestId(page, 'panel-sign-in')).toHaveText('1 needs signing in again');
     await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
-    await expect(byTestId(page, 'panel-changes-file').first().locator('.counts')).toBeVisible();
-    await expect(byTestId(page, 'panel-changes-file')).toHaveCount(2);
+    await expect(byTestId(page, 'panel-changes')).toContainText('10 lines added, 4 removed');
     await expect(byTestId(page, 'command-text')).toHaveText('cargo test');
     await expect(byTestId(page, 'command-time')).toHaveText('42s');
     await expect(byTestId(page, 'command-stop')).toHaveAccessibleName('Stop cargo test');
-    await expect(byTestId(page, 'panel-page')).toContainText('clap: Arg::action');
-    await expect(byTestId(page, 'panel-page')).toHaveAttribute('target', '_blank');
-    await expect(byTestId(page, 'panel-attached')).toContainText('terminal-output.png');
-    await expect(byTestId(page, 'panel-context')).toHaveText('39% used');
-    await expect(byTestId(page, 'panel-cost')).toHaveText('$0.01 · 2 turns');
     await expectAccessible(page);
-    // The folder's full path is a key or a tap away.
-    const path = byTestId(page, 'panel-path');
-    await expect(path).toBeHidden();
-    await byTestId(page, 'panel-folder').locator('summary').focus();
-    await page.keyboard.press('Enter');
-    await expect(path).toHaveText('/work/glave');
+    // Compact now asks the server to compact the thread's context.
+    const compacted = page.waitForRequest(
+      (request) => request.headers()['glave-method'] === 'thread/compact',
+    );
+    await byTestId(page, 'panel-compact').click();
+    expect((await compacted).postDataJSON()).toMatchObject({ params: { thread: VERBOSE } });
+    await expect(byTestId(page, 'panel-compact')).toHaveText('Compact now');
 
-    // A file opens its changes in full over the page.
-    await byTestId(page, 'panel-changes-file').first().click();
-    await expect(byTestId(page, 'changes')).toBeVisible();
-    await expect(byTestId(page, 'file')).toHaveCount(1);
-    await expect(byTestId(page, 'file-change')).toContainText('pub verbose: bool');
-    await expectDialogShown(page, 'changes', ['file']);
+    // Changes shows the thread's files in full, in the panel itself.
+    await tabs.filter({ hasText: 'Changes' }).click();
+    const shown = byTestId(page, 'panel-tabs-panel');
+    await expect(shown.getByTestId('file')).toHaveCount(2);
+    await expect(shown.getByTestId('file-change').first()).toContainText('pub verbose: bool');
     await expectAccessible(page);
-    await page.keyboard.press('Escape');
-    await expect(byTestId(page, 'changes')).toBeHidden();
+    await tabs.filter({ hasText: 'Overview' }).click();
 
     // Stop on the last command by keyboard: the keyboard's place goes to the panel's heading.
     await byTestId(page, 'command-stop').focus();
