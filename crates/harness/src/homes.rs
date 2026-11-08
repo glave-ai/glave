@@ -124,7 +124,8 @@ where
             Opened::Clone { .. } => return Ok(()),
         };
         let events = self.load(&thread.scope, thread.id).await?;
-        thread.commands = Arc::new(Commands::rebuilt(&events, workspace.computers()));
+        let computer = workspace.info().computer;
+        thread.commands = Arc::new(Commands::rebuilt(&events, workspace.computers(), computer));
         thread.workspace = Some(Arc::new(workspace));
         Ok(())
     }

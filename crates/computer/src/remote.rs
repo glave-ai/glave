@@ -9,8 +9,8 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed,
-    GitCredential, GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed,
-    Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    GitCredential, GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output,
+    Printed, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -578,6 +578,21 @@ impl Computers for RemoteComputers {
         Box::pin(async move {
             let listed: Listed = self.typed(&request).await?;
             Ok(listed.commands)
+        })
+    }
+
+    fn listening(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Found {
+            listening: Vec<Listening>,
+        }
+        let request = Request::Listening { workspace };
+        Box::pin(async move {
+            let found: Found = self.typed(&request).await?;
+            Ok(found.listening)
         })
     }
 

@@ -441,7 +441,7 @@ where
             } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
-            Request::CommandList { thread } => self.list_commands(thread).await,
+            Request::CommandList { thread } => self.list_commands(caller, thread).await,
             Request::CommandStop { thread, command } => {
                 self.stop_command(caller, thread, command).await
             }

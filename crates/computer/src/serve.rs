@@ -336,7 +336,8 @@ impl<C: Computers + 'static> Connection<C> {
             | Request::Output { .. }
             | Request::Ended { .. }
             | Request::Stop { .. }
-            | Request::Commands { .. }) => self.background(request).await,
+            | Request::Commands { .. }
+            | Request::Listening { .. }) => self.background(request).await,
             Request::Read { workspace, path } => reply(
                 computers
                     .read(workspace, &path)
@@ -395,6 +396,12 @@ impl<C: Computers + 'static> Connection<C> {
                     .commands(workspace)
                     .await
                     .map(|commands| json!({"commands": commands})),
+            ),
+            Request::Listening { workspace } => reply(
+                computers
+                    .listening(workspace)
+                    .await
+                    .map(|listening| json!({"listening": listening})),
             ),
             other => Err(wire::failure(
                 code::INVALID_REQUEST,

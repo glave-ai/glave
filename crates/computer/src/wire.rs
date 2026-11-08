@@ -31,8 +31,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
 /// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
 /// `2026-11-07` added `files/changes`, what changed in a folder since a point in its history, and
-/// `at`, that point as a workspace opens, on what `workspace/open` answers.
-pub(crate) const PROTOCOL: &str = "2026-11-07";
+/// `at`, that point as a workspace opens, on what `workspace/open` answers. `2026-11-08` added
+/// `command/listening`, where a workspace's commands in the background listen.
+pub(crate) const PROTOCOL: &str = "2026-11-08";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -113,6 +114,9 @@ pub(crate) enum Request {
     /// Answered with the workspace's `commands` in the background.
     #[serde(rename = "command/list")]
     Commands { workspace: WorkspaceId },
+    /// Answered with where the workspace's commands in the background listen, as `listening`.
+    #[serde(rename = "command/listening")]
+    Listening { workspace: WorkspaceId },
     #[serde(rename = "files/read")]
     Read {
         workspace: WorkspaceId,
@@ -171,6 +175,7 @@ impl Request {
             Self::Ended { .. } => "command/ended",
             Self::Stop { .. } => "command/stop",
             Self::Commands { .. } => "command/list",
+            Self::Listening { .. } => "command/listening",
             Self::Read { .. } => "files/read",
             Self::Write { .. } => "files/write",
             Self::List { .. } => "files/list",
@@ -201,6 +206,7 @@ const METHODS: &[&str] = &[
     "command/ended",
     "command/stop",
     "command/list",
+    "command/listening",
     "files/read",
     "files/write",
     "files/list",

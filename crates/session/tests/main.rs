@@ -14,6 +14,7 @@ mod brand;
 mod browsers;
 mod changes;
 mod choices;
+mod command_ports;
 mod commands;
 mod conformance;
 mod connections;

@@ -33,8 +33,8 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
-    Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Refusal, Save, Saved, Search,
-    Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output, Printed, Refusal, Save, Saved,
+    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -600,6 +600,16 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.workspace(workspace)?;
             Ok(self.background.list(workspace))
+        })
+    }
+
+    fn listening(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Listening>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            Ok(self.background.listening(workspace, &self.processes).await)
         })
     }
 
