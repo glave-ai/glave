@@ -43,28 +43,15 @@ impl Session {
         self.leader
     }
 
-    /// Hangs everything in it up, as a terminal's hang-up does: SIGHUP to the shell's group and
-    /// to each process in the session, the jobs in front and behind among them; what is left
-    /// after a second is killed, as it is found then.
-    pub(super) async fn hang_up(&self) {
-        // Found while its leader runs, which keeps them on the terminal.
-        let members = self.members().await;
-        let _ = kill_process_group(self.leader, Signal::HUP);
-        for member in members {
-            let _ = kill_process(member, Signal::HUP);
-        }
-        let began = tokio::time::Instant::now();
-        while began.elapsed() < GRACE && !self.members().await.is_empty() {
-            tokio::time::sleep(LOOK_EVERY).await;
-        }
-        self.kill_now().await;
-    }
-
-    /// Kills what is in it now, as it is found now: for a terminal dropped, or a shell that
-    /// ended, whose jobs are left.
-    pub(super) async fn kill_now(&self) {
-        for member in self.members().await {
-            let _ = kill_process(member, Signal::KILL);
+    /// Hangs everything in it up, as a terminal's hang-up does, in the order macOS needs: what
+    /// its leader started first, while the leader still holds the terminal they are found by
+    /// (`end_others`, off the async threads), then the leader's group, its leader once reaped
+    /// left alone.
+    pub(super) async fn hang_up(&self, leader_reaped: bool) {
+        let session = self.clone();
+        let _ = tokio::task::spawn_blocking(move || session.end_others()).await;
+        if !leader_reaped {
+            let _ = kill_process_group(self.leader, Signal::HUP);
         }
     }
 
@@ -88,16 +75,8 @@ impl Session {
         }
     }
 
-    /// The processes in it now, the shell's among them while it runs.
-    async fn members(&self) -> Vec<Pid> {
-        let session = self.clone();
-        tokio::task::spawn_blocking(move || session.members_now())
-            .await
-            .unwrap_or_default()
-    }
-
     /// The processes in it now; blocking.
-    pub(super) fn members_now(&self) -> Vec<Pid> {
+    fn members_now(&self) -> Vec<Pid> {
         platform(self)
     }
 }
