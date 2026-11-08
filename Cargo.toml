@@ -253,6 +253,30 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
+# Built for size: packages with much code of their own that run rarely, between waits on a network
+# or a person: signing to a bucket or a cluster, office files, sign-in, reading a shell command.
+# Never one that event append or replay, stream parsing, the gateway's requests or sealing runs on.
+[profile.release.package]
+aws-sigv4.opt-level = "z"
+calamine.opt-level = "z"
+html5ever.opt-level = "z"
+instant-acme.opt-level = "z"
+k8s-openapi.opt-level = "z"
+kube-client.opt-level = "z"
+lettre.opt-level = "z"
+lopdf.opt-level = "z"
+object_store.opt-level = "z"
+quick-xml.opt-level = "z"
+rcgen.opt-level = "z"
+rust_xlsxwriter.opt-level = "z"
+tree-sitter.opt-level = "z"
+tree-sitter-bash.opt-level = "z"
+webauthn-attestation-ca.opt-level = "z"
+webauthn-rs-core.opt-level = "z"
+x509-cert.opt-level = "z"
+x509-parser.opt-level = "z"
+zip.opt-level = "z"
+
 # Releases (dist-workspace.toml): dist builds with a profile of its own name, the release one.
 [profile.dist]
 inherits = "release"
