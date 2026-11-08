@@ -7,11 +7,8 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use glave_harness::Port;
-
-/// Why a preview opens in a new tab alone, as a client is told it.
-const UNFRAMED: &str =
-    "It answers only at ::1, which glave can't show inside its page: open it in a new tab.";
+use crate::protocol::{Port, Told};
+use crate::words::Sentence;
 
 /// The ports listened on at `at`, lowest first, as its computer found them; each with its
 /// preview where the server previews (`previewed`).
@@ -37,27 +34,36 @@ pub(crate) fn ports(at: &[SocketAddr], previewed: bool) -> Vec<Port> {
                 port,
                 url: previewed.then_some(url),
                 framed: previewed && four,
-                unframed: (previewed && !four).then(|| UNFRAMED.to_owned()),
+                unframed: (previewed && !four).then(|| Sentence::PreviewInNewTab.into()),
             }
         })
         .collect()
 }
 
-/// Where a command listens, in a sentence, from `ports`: "Listening on 3000, 4200 and 4201.";
-/// none where it listens nowhere.
-pub(crate) fn listens(ports: &[Port]) -> Option<String> {
-    let named: Vec<String> = ports.iter().map(|port| port.port.to_string()).collect();
-    let (last, rest) = named.split_last()?;
-    Some(if rest.is_empty() {
-        format!("Listening on {last}.")
-    } else {
-        format!("Listening on {} and {last}.", rest.join(", "))
-    })
+/// Where a command listens, in a sentence, from `ports`: "Listening on 3000, 4200 and 4201.",
+/// a clause for each port; none where it listens nowhere.
+pub(crate) fn listens(ports: &[Port]) -> Option<Told> {
+    let last = ports.len().checked_sub(1)?;
+    let clauses = ports.iter().enumerate().map(|(at, port)| {
+        let how = match (at, at == last) {
+            (0, true) => "only",
+            (0, false) => "first",
+            (_, false) => "then",
+            (_, true) => "last",
+        };
+        Sentence::ListensOn {
+            how: how.to_owned(),
+            port: port.port.to_string(),
+        }
+    });
+    Some(Told::joined(clauses.collect()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::{ListedCommand, Reply};
+    use crate::words::{self, Language};
 
     fn at(addresses: &[&str]) -> Vec<SocketAddr> {
         addresses
@@ -115,6 +121,40 @@ mod tests {
         let not = ports(&both, false);
         assert_eq!(shown(&not), [(3000, None, false), (4000, None, false)]);
         assert!(not.iter().all(|port| port.unframed.is_none()));
+    }
+
+    #[test]
+    fn where_commands_listen_is_written_again_in_the_callers_language() {
+        let ports = ports(&at(&["127.0.0.1:3000", "[::1]:4201"]), true);
+        let command = glave_harness::RunningCommand {
+            id: glave_ports::computer::CommandId::from_uuid(uuid::Uuid::nil()),
+            command: "npm run dev".into(),
+            started_at: None,
+            summary: "Still running".into(),
+        };
+        let listens = listens(&ports);
+        let commands = vec![ListedCommand {
+            command,
+            ports,
+            listens,
+        }];
+        let mut answered = Ok(Reply::Commands {
+            commands,
+            previewed: true,
+        });
+        assert!(words::says(&answered));
+        words::translate(&mut answered, Language::Accented);
+        let Ok(Reply::Commands { commands, .. }) = answered else {
+            panic!("commands")
+        };
+        let listens = commands[0].listens.as_deref().unwrap_or_default();
+        assert!(listens.starts_with("[Ļîšţéñîñĝ öñ 3000"), "{listens}");
+        assert!(listens.contains(" åñð 4201."), "{listens}");
+        let unframed = commands[0].ports[1].unframed.as_deref().unwrap_or_default();
+        assert!(
+            unframed.starts_with("[Îţ åñšŵéŕš öñļý åţ ::1"),
+            "{unframed}"
+        );
     }
 
     #[test]

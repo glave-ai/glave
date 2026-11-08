@@ -1,4 +1,4 @@
-import type { RunningCommand } from '@glave/client';
+import type { ListedCommand } from '@glave/client';
 
 import { Refusal, bound, call, done, event } from './fake-records';
 
@@ -50,7 +50,7 @@ export interface Commands {
 }
 
 /** The docs site, as `command/list` lists it. */
-const DOCS: RunningCommand = {
+const DOCS: ListedCommand = {
   id: DOCS_COMMAND,
   command: DOCS_SERVER,
   started_at: DOCS_STARTED,

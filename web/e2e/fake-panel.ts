@@ -2,7 +2,7 @@ import type {
   ConnectorInfo,
   PlanInfo,
   ReplySources,
-  RunningCommand,
+  ListedCommand,
   ThreadSummary,
 } from '@glave/client';
 
@@ -23,7 +23,7 @@ const PAGE = {
 };
 
 /** What it keeps running in the background. */
-export const TESTS: RunningCommand = {
+export const TESTS: ListedCommand = {
   id: '01900000-0000-7000-8000-0000000000d2',
   command: 'cargo test',
   started_at: '2026-10-11T10:04:00.000Z',

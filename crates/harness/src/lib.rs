@@ -56,7 +56,7 @@ mod waits;
 mod worker;
 
 pub use approval::{ASKS, AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};
-pub use background::{Commands, Port, RunningCommand};
+pub use background::{Commands, RunningCommand};
 pub use bind::{Place, branch_for};
 pub use cancel::Cancel;
 pub use commands::{Command, FoundCommands, command_folders, find_commands};

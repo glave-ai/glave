@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 
-pub use record::{Commands, Port, RunningCommand};
+pub use record::{Commands, RunningCommand};
 pub(crate) use record::{Entry, ending_of};
 
 /// What a batch staged of a thread's command changes: how many, and when each command it
@@ -213,8 +213,6 @@ impl Commands {
                 command: entry.script,
                 started_at: entry.started,
                 summary: record::RUNNING.to_owned(),
-                ports: Vec::new(),
-                listens: None,
             })
             .collect()
     }

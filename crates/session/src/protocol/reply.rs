@@ -5,7 +5,6 @@ use glave_event::{
     Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
-use glave_harness::RunningCommand;
 use glave_ports::computer::DiskUse;
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
@@ -14,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
-    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
-    Told, TrustAsk, WatchEnd,
+    InviteInfo, ListedCommand, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary,
+    Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo,
+    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -372,7 +371,7 @@ pub enum Reply {
     /// The thread's commands running in the background, each with where it listens.
     #[schemars(title = "Commands")]
     Commands {
-        commands: Vec<RunningCommand>,
+        commands: Vec<ListedCommand>,
         /// Whether what they serve is previewed for the caller here (each port's `url`): where
         /// it isn't, a client need not look for previews again.
         previewed: bool,

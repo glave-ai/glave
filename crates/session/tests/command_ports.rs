@@ -82,8 +82,9 @@ fn a_command_that_serves_is_listed_with_its_port_for_the_person_on_this_computer
             commands[0].listens.as_deref(),
             Some(format!("Listening on {port}.").as_str())
         );
-        // Not reached over HTTP here, so nothing is previewed.
+        // Not reached over HTTP here, so nothing is previewed, nor said of a frame.
         assert_eq!(commands[0].ports[0].url, None);
+        assert_eq!(commands[0].ports[0].unframed, None);
     });
 }
 

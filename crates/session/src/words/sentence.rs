@@ -190,6 +190,13 @@ sentences! {
     NoCommand = "no-command" "that command is not running in this thread",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
+    // Where a command in the background listens, in a line ("Listening on 3000, 4200 and
+    // 4201."): a clause for each port, `how` saying where it comes (`only`, `first`, `then`,
+    // `last`); the port as it is written, never as a number a language groups.
+    ListensOn { how: String, port: String } = "listens-on"
+        "{ $how ->\n    [only] Listening on { $port }.\n    [first] Listening on { $port }\n    [then] {\", \"}{ $port }\n   *[last] {\" \"}and { $port }.\n }",
+    PreviewInNewTab = "preview-in-new-tab"
+        "It answers only at ::1, which glave can't show inside its page: open it in a new tab.",
     Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",
     NoOpenTurn { thread: String } = "no-open-turn" "no turn is open in thread { $thread }",
     NoApproval { approval: String } = "no-approval" "no approval { $approval } is pending",

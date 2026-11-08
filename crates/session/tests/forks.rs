@@ -349,18 +349,6 @@ fn a_fork_numbers_its_calls_as_the_original_would_have() {
 /// A command that never ends by itself, so only a stop ends it.
 const SERVES: &str = "tail -f /dev/null";
 
-/// The commands `thread` keeps in the background.
-async fn running(server: &Tested, thread: ThreadId) -> Vec<glave_harness::RunningCommand> {
-    match server
-        .request(Request::CommandList { thread })
-        .await
-        .unwrap()
-    {
-        Reply::Commands { commands, .. } => commands,
-        other => panic!("commands, not {other:?}"),
-    }
-}
-
 #[test]
 fn a_fork_keeps_none_of_the_original_s_commands_and_numbers_its_own_after_them() {
     let dir = folder("forks-commands");
@@ -380,7 +368,7 @@ fn a_fork_keeps_none_of_the_original_s_commands_and_numbers_its_own_after_them()
         turn(&server, original, "start the server").await.unwrap();
         let forked = fork(&server, original, None).await.unwrap();
         assert_eq!(
-            running(&server, forked.id).await,
+            listed(&server, forked.id).await,
             [],
             "the original's runs for it alone"
         );
@@ -402,11 +390,11 @@ fn a_fork_keeps_none_of_the_original_s_commands_and_numbers_its_own_after_them()
             "after the copy's command 1: {results:?}"
         );
         for thread in [original, forked.id] {
-            let kept = running(&server, thread).await;
+            let kept = listed(&server, thread).await;
             assert_eq!(kept.len(), 1, "{kept:?}");
             let stop = Request::CommandStop {
                 thread,
-                command: kept[0].id,
+                command: kept[0].command.id,
             };
             server.request(stop).await.unwrap();
         }

@@ -18,7 +18,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::held::{Slot, Use, finished};
-use crate::protocol::{ApiError, Reply, code};
+use crate::protocol::{ApiError, ListedCommand, Reply, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::words::Sentence;
 
@@ -69,23 +69,23 @@ where
             }
             commands => commands?,
         };
-        let mut running = commands.running_now().await;
+        let running = commands.running_now().await;
         self.record_commands(thread).await;
-        let Some(listening) = self.listening(caller, &commands).await else {
-            return Ok(Reply::Commands {
-                commands: running,
-                previewed: false,
-            });
-        };
-        let previewed = self.previewed_here();
-        for command in &mut running {
-            if let Some((_, at)) = listening.iter().find(|(id, _)| *id == command.id) {
-                command.ports = crate::previews::ports(at, previewed);
-                command.listens = crate::previews::listens(&command.ports);
+        let listening = self.listening(caller, &commands).await;
+        let previewed = listening.is_some() && self.previewed_here();
+        let listening = listening.unwrap_or_default();
+        let listed = running.into_iter().map(|command| {
+            let at = listening.iter().find(|(id, _)| *id == command.id);
+            let ports = at.map_or_else(Vec::new, |(_, at)| crate::previews::ports(at, previewed));
+            let listens = crate::previews::listens(&ports);
+            ListedCommand {
+                command,
+                ports,
+                listens,
             }
-        }
+        });
         Ok(Reply::Commands {
-            commands: running,
+            commands: listed.collect(),
             previewed,
         })
     }

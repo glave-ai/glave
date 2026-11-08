@@ -1,4 +1,4 @@
-import type { CommandId, Port, RunningCommand } from '@glave/client';
+import type { CommandId, Port, ListedCommand } from '@glave/client';
 
 /**
  * How long after the commands are read they are read again while the server previews and one
@@ -26,7 +26,7 @@ export function previewKey(preview: Pick<Preview, 'command' | 'port'>): string {
 }
 
 /** The previews of what `commands` serve, oldest command first, each at its ports in order. */
-export function previewsOf(commands: readonly RunningCommand[]): readonly Preview[] {
+export function previewsOf(commands: readonly ListedCommand[]): readonly Preview[] {
   return commands.flatMap((command) =>
     (command.ports ?? []).flatMap((port: Port) =>
       typeof port.url === 'string'

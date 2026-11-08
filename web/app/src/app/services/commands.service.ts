@@ -7,7 +7,7 @@ import {
   linkedSignal,
   untracked,
 } from '@angular/core';
-import type { CommandId, RunningCommand, ThreadId } from '@glave/client';
+import type { CommandId, ListedCommand, ThreadId } from '@glave/client';
 
 import { alreadyEnded, commandProblem } from '../lib/commands';
 import { LOOKS_AGAIN, previewsOf } from '../lib/previews';
@@ -18,7 +18,7 @@ import { PanelService } from './panel.service';
 
 /** What is known of the open thread's commands in the background. */
 interface State {
-  readonly commands: readonly RunningCommand[];
+  readonly commands: readonly ListedCommand[];
   /** Whether the server previews what they serve for this person here. */
   readonly previewed: boolean;
   /** Whether they have been read once for this thread. */
