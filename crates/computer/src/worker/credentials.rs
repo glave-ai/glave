@@ -190,11 +190,6 @@ mod tests {
             "theirs",
             "test \"$1\" = get || exit 0\nprintf 'username=someone\\npassword=%s\\n' \"$GH_TOKEN\"",
         );
-        // Once before the limit on a helper: macOS checks a new program at its first run, for
-        // as long as that takes (21 to 25 s on a busy Mac), which isn't the helper's time.
-        let mut first = glave_process::Program::new(&theirs);
-        glave_ports::block_on!(Processes::unrecorded().output(&mut first, Duration::from_secs(60)))
-            .unwrap();
         let config = |helper: &Path| {
             format!(
                 "[credential]\n\thelper =\n\thelper = !{}\n",
