@@ -21,7 +21,21 @@ interface Drawn {
   /** What it was told to send as bytes, as xterm.js reports a mouse a program asked for. */
   sent: ((data: string) => void) | null;
   styles: HTMLStyleElement[];
+  focused: number;
   disposed: boolean;
+}
+
+/** Nothing drawn yet. */
+function nothingDrawn(): Drawn {
+  return {
+    options: null,
+    written: [],
+    typed: null,
+    sent: null,
+    styles: [],
+    focused: 0,
+    disposed: false,
+  };
 }
 
 /** An emulator that draws nothing: it keeps what it is given, and adds a style as it opens. */
@@ -52,7 +66,7 @@ function fakeEmulator(drawn: Drawn): Emulator {
       return { dispose: () => undefined };
     }
     focus(): void {
-      // Nothing to focus.
+      drawn.focused += 1;
     }
     dispose(): void {
       drawn.disposed = true;
@@ -79,14 +93,7 @@ async function settle(): Promise<void> {
 
 describe('TerminalScreenComponent', () => {
   it('draws what its shell prints, sends what is typed, and gives the styles it adds the nonce', async () => {
-    const drawn: Drawn = {
-      options: null,
-      written: [],
-      typed: null,
-      sent: null,
-      styles: [],
-      disposed: false,
-    };
+    const drawn = nothingDrawn();
     let reads = 0;
     const fake = new FakeSession()
       .answer('thread/events', { events: [] })
@@ -114,6 +121,8 @@ describe('TerminalScreenComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
 
     expect(drawn.written).toEqual(['hello']);
+    // The keyboard's place was elsewhere: it stays there.
+    expect(drawn.focused).toBe(0);
     expect(drawn.styles.map((style) => style.nonce)).toEqual(['n0nce']);
     // Only while it opened: a style made after it has none.
     expect(document.createElement('style').nonce).not.toBe('n0nce');
@@ -136,5 +145,64 @@ describe('TerminalScreenComponent', () => {
     await expectAccessible(root);
     fixture.destroy();
     expect(drawn.disposed).toBe(true);
+  });
+
+  it('sends what is typed on it before the emulator loads, in order, then gives it the keyboard', async () => {
+    const drawn = nothingDrawn();
+    let loaded: (emulator: Emulator) => void = () => undefined;
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('terminal/write', {})
+      .answer('terminal/resize', {})
+      .answer('terminal/read', () => new Promise(() => undefined));
+    const load = (): Promise<Emulator> =>
+      new Promise((resolve) => {
+        loaded = resolve;
+      });
+    TestBed.configureTestingModule({
+      providers: [
+        ...provideFakeSession(fake),
+        ThreadService,
+        TerminalsService,
+        { provide: TERMINAL_EMULATOR, useValue: load },
+      ],
+    });
+    await TestBed.inject(ThreadService).open('thread-1');
+    const fixture = TestBed.createComponent(TerminalScreenComponent);
+    fixture.componentRef.setInput('terminal', 't1');
+    await settle();
+    const root = fixture.nativeElement as HTMLElement;
+    const screen = root.querySelector<HTMLElement>('[data-testid="terminal-screen"]');
+    const press = (key: string, more: KeyboardEventInit = {}): void => {
+      screen?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...more }));
+    };
+    const written = (): readonly unknown[] =>
+      fake.calls.filter((call) => call.method === 'terminal/write').map((call) => call.params);
+    const input = (text: string): unknown => ({
+      thread: 'thread-1',
+      terminal: 't1',
+      input: btoa(text),
+    });
+
+    screen?.focus();
+    expect(document.activeElement).toBe(screen);
+    press('l');
+    press('s');
+    press('Backspace');
+    press('Enter');
+    // Neither a key that types nothing nor the browser's own shortcut.
+    press('Shift');
+    press('r', { metaKey: true });
+    await settle();
+    expect(written()).toEqual([input('l'), input('s'), input('\x7f'), input('\r')]);
+
+    loaded(fakeEmulator(drawn));
+    await settle();
+    expect(drawn.focused).toBe(1);
+    // Drawn, what is typed comes from the terminal alone.
+    press('x');
+    await settle();
+    expect(written()).toHaveLength(4);
+    await expectAccessible(root);
   });
 });
