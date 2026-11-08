@@ -106,13 +106,13 @@ async fn claim(store: &Store, at: &str) -> Option<serde_json::Value> {
         .read(&own, stream.unwrap(), None, 10)
         .await
         .unwrap();
-    let opened = read
+    let mut opened = read
         .into_iter()
         .filter_map(|raw| match decode(raw).ok()?.body {
             Body::PushClaimed(claimed) => Some(serde_json::to_value(claimed).unwrap()),
             _ => None,
         });
-    opened.last()
+    opened.next_back()
 }
 
 #[test]
