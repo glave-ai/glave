@@ -188,6 +188,22 @@ sentences! {
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
     NoCommand = "no-command" "that command is not running in this thread",
+    NoTerminal = "no-terminal" "that terminal is not open in this thread",
+    TerminalNotTheirs = "terminal-not-theirs"
+        "A terminal opens only on your own computer, and this thread doesn't work on yours.",
+    TerminalOnWorker = "terminal-on-worker"
+        "A terminal opens only on your own computer, not on one started for a single task.",
+    TerminalNoFolder = "terminal-no-folder"
+        "This thread has no folder to open a terminal in.",
+    TerminalNoHome = "terminal-no-home"
+        "Your own computer can't be reached from this server right now, so no terminal opens on it.",
+    TerminalMoved = "terminal-moved"
+        "This thread works on a computer this server doesn't reach, so no terminal opens for it.",
+    TerminalUnsupported = "terminal-unsupported"
+        "Terminals don't open on the computer this thread works on.",
+    TerminalUnreachable = "terminal-unreachable"
+        "Your computer can't be reached from this server right now. Try again in a moment.",
+    TerminalFailed = "terminal-failed" "The terminal could not be reached. Try again in a moment.",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
     // Where a command in the background listens, in a line ("Listening on 3000, 4200 and

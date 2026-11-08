@@ -45,13 +45,13 @@ regex.workspace = true
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
 # Process calls on Linux: the Landlock helper's own session and the user id that names the
 # sandbox's folder and tmux's; rtnetlink, for a Docker worker's routes that refuse cloud metadata.
-rustix = { workspace = true, features = ["net", "process"] }
+rustix = { workspace = true, features = ["net", "process", "pty", "termios"] }
 # TLS between the harness and a worker (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 tokio-rustls.workspace = true
 # A computer running another version of glave than the server's, said in the server's log.
 tracing.workspace = true

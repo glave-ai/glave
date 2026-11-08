@@ -22,6 +22,7 @@ mod replace;
 mod sandbox;
 mod scratch;
 mod setup;
+mod terminal;
 mod walk;
 pub(crate) mod worktree;
 
@@ -34,7 +35,8 @@ use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
     Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output, Printed, Refusal, Save, Saved,
-    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    Screenful, Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo,
+    TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -50,6 +52,8 @@ pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{sandbox_available, sandbox_helper};
+use terminal::Terminals;
+pub use terminal::terminal_helper;
 
 /// What measures a disk in place of the system.
 #[derive(Clone)]
@@ -82,8 +86,11 @@ pub struct LocalComputers {
     /// The id this machine goes by as the host computer, kept across runs; a new one each
     /// time when none.
     host: Option<ComputerId>,
-    /// glave's own program, which runs [`crate::sandbox_helper`]: Linux's Landlock fallback.
+    /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback)
+    /// and [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
     helper: Option<PathBuf>,
+    /// The person's terminals open here.
+    terminals: Terminals,
     /// Places on this machine its sandboxed commands may not read, beside the home folder's
     /// credential stores.
     hidden: Arc<[PathBuf]>,
@@ -99,6 +106,15 @@ pub struct LocalComputers {
     /// The cgroup it runs in, where Linux counts the CPU its commands use and sets the limit on
     /// it.
     cgroup: Option<PathBuf>,
+}
+
+/// What a folder is opened as, which says whether to ask git where its history stands (`at`).
+#[derive(Debug, Clone, Copy)]
+enum Opening {
+    /// Where a thread is placed, which its binding records (`workspace.bound`'s `since`).
+    Placed,
+    /// This machine's own folder, which no thread records.
+    Own,
 }
 
 impl LocalComputers {
@@ -118,6 +134,7 @@ impl LocalComputers {
             projects: None,
             host: None,
             helper: None,
+            terminals: Terminals::default(),
             hidden: Arc::new([]),
             glave_on_path: None,
             environment: Arc::new(without_secrets(environment)),
@@ -145,7 +162,10 @@ impl LocalComputers {
         Self::new(std::env::temp_dir().join("glave-workspaces"), environment)
     }
 
-    /// A host computer made from these computers, with `folder` open on it in place.
+    /// A host computer made from these computers, with `folder` open on it in place. Where the
+    /// folder's history stands is not asked (`at` is none): no thread records this workspace as
+    /// the one it was placed in, since a thread placed in the folder opens it again, and asking
+    /// would run git once or twice at every start, before a thread is read.
     pub async fn open_here(
         self,
         folder: impl AsRef<Path>,
@@ -161,7 +181,9 @@ impl LocalComputers {
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
-        let workspace = computers.open(computer, &sources).await?;
+        let workspace = computers
+            .open_now(computer, &sources, None, Opening::Own)
+            .await?;
         Ok((computers, workspace))
     }
 
@@ -203,6 +225,7 @@ impl LocalComputers {
         computer: ComputerId,
         sources: &Sources,
         credential: Option<&GitCredential>,
+        opening: Opening,
     ) -> Result<WorkspaceInfo, ComputerError> {
         if let Some(credential) = credential {
             credential.check()?;
@@ -244,7 +267,10 @@ impl LocalComputers {
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };
         let info = WorkspaceInfo {
-            at: changes::at(&opened).await,
+            at: match opening {
+                Opening::Placed => changes::at(&opened).await,
+                Opening::Own => None,
+            },
             ..info
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
@@ -368,22 +394,12 @@ impl LocalComputers {
                 .map(|(name, value)| (name.into(), value.into())),
         );
         if let Some(folder) = &self.glave_on_path {
-            let path = first_on_path(&all, folder);
+            let path = on_path::first_on_path(&all, folder);
             all.retain(|(name, _)| name != "PATH");
             all.push(("PATH".into(), path));
         }
         Arc::new(all)
     }
-}
-
-/// `environment`'s `PATH` with `folder` first.
-pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path) -> OsString {
-    let mut first = folder.as_os_str().to_owned();
-    if let Some((_, path)) = environment.iter().find(|(name, _)| name == "PATH") {
-        first.push(":");
-        first.push(path);
-    }
-    first
 }
 
 impl Computers for LocalComputers {
@@ -407,6 +423,71 @@ impl Computers for LocalComputers {
             info.largest = self.largest.get();
             Ok(info)
         })
+    }
+
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(async move {
+            self.registry.environment(computer)?;
+            let start = terminal::Start {
+                helper: self.helper.as_deref(),
+                processes: &self.processes,
+                environment: &self.environment,
+            };
+            let at = (folder, owner);
+            self.terminals.open(computer, at, size, &start).await
+        })
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(std::future::ready(Ok(self.terminals.list(computer, owner))))
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.write(computer, at, input))
+    }
+
+    fn read_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        Box::pin(self.terminals.read(computer, at, from, wait))
+    }
+
+    fn resize_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(std::future::ready(
+            self.terminals.resize(computer, at, size),
+        ))
+    }
+
+    fn close_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        at: (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(self.terminals.close(computer, at))
     }
 
     fn worktrees(
@@ -471,6 +552,7 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             self.registry.remove_computer(computer)?;
             self.background.stop_all(|on, _| on == computer).await;
+            self.terminals.close_all(computer).await;
             let copies = self.base.join(computer.to_string());
             match tokio::fs::remove_dir_all(&copies).await {
                 Ok(()) => Ok(()),
@@ -488,7 +570,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None))
+        Box::pin(self.open_now(computer, sources, None, Opening::Placed))
     }
 
     fn open_with_credential<'a>(
@@ -497,7 +579,7 @@ impl Computers for LocalComputers {
         sources: &'a Sources,
         credential: &'a GitCredential,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, Some(credential)))
+        Box::pin(self.open_now(computer, sources, Some(credential), Opening::Placed))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {

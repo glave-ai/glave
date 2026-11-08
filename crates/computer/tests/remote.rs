@@ -14,7 +14,9 @@ use glave_computer::{
     listen_socket, serve, serve_socket, serve_tcp, serve_tls,
 };
 use glave_ports::auth::Secret;
-use glave_ports::computer::{Command, ComputerError, ComputerId, Computers, Environment, Freed};
+use glave_ports::computer::{
+    Command, ComputerError, ComputerId, Computers, Environment, Freed, TerminalId, TerminalSize,
+};
 use glave_ports::testing::{SocketPath, any_secret};
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
@@ -312,15 +314,20 @@ async fn tls(copies: &PathBuf, token: Token) -> (std::net::SocketAddr, Identity,
 
 type JoinHandle = tokio::task::JoinHandle<std::io::Result<()>>;
 
+/// A runtime on paused time: a limit passes without waiting for it.
+fn paused() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+}
+
 #[test]
 fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() {
     let (dir, _work, copies) = scratch("idle");
     // On paused time: the limit passes without waiting for it.
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
+    let runtime = paused();
     runtime.block_on(async {
         let socket = SocketPath::new(&dir, "glave.sock").unwrap();
         let listener = listen_socket(&socket).unwrap();
@@ -350,6 +357,57 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         assert!(
             took >= Duration::from_mins(9) && took <= Duration::from_mins(11),
             "ended {took:?} after the command did"
+        );
+    });
+}
+
+/// A person's terminals only looked at, as a Terminal tab left open looks every 15 seconds
+/// (listed, resized, read finding nothing), never hold off a computer's idle limit.
+#[test]
+fn a_computer_whose_terminals_are_only_looked_at_ends_once_idle() {
+    let (dir, _work, copies) = scratch("idle-terminals");
+    let runtime = paused();
+    runtime.block_on(async {
+        let socket = SocketPath::new(&dir, "glave.sock").unwrap();
+        let listener = listen_socket(&socket).unwrap();
+        let idle = Idle {
+            after: Duration::from_mins(10),
+            busy: Box::new(|| false),
+        };
+        let now = SystemTime::from(SystemClock.now());
+        let token = Token::mint(now, Duration::from_secs(600)).unwrap();
+        let secret = token.secret().to_owned();
+        let mut serving = tokio::spawn(serve_socket(
+            local(&copies),
+            listener,
+            token,
+            Some(idle),
+            None,
+        ));
+        let (remote, _carried) = bridged(&socket);
+        remote.authenticate(&secret).await.unwrap();
+        let computer = remote.create(&Environment::host()).await.unwrap().id;
+        let started = tokio::time::Instant::now();
+        let stray = (TerminalId::from_uuid(uuid::Uuid::nil()), "t");
+        let size = TerminalSize { cols: 80, rows: 24 };
+        let looking = async {
+            for _ in 0..200 {
+                let _ = remote.terminals(computer, "t").await;
+                let _ = remote.resize_terminal(computer, stray, size).await;
+                let _ = remote
+                    .read_terminal(computer, stray, 0, Duration::ZERO)
+                    .await;
+                tokio::time::sleep(Duration::from_secs(15)).await;
+            }
+        };
+        tokio::select! {
+            ended = &mut serving => assert!(matches!(ended, Ok(Ok(()))), "{ended:?}"),
+            () = looking => panic!("it served on, looked at for 50 minutes"),
+        }
+        let took = started.elapsed();
+        assert!(
+            took >= Duration::from_mins(9) && took <= Duration::from_mins(11),
+            "ended {took:?} after it was last used"
         );
     });
 }
@@ -418,11 +476,7 @@ fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_b
 fn a_bridge_with_no_computer_to_reach_says_so() {
     let (dir, _work, _copies) = scratch("no-socket");
     // On paused time: the bridge's wait passes without waiting for it.
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
+    let runtime = paused();
     runtime.block_on(async {
         let (input, output) = (tokio::io::empty(), tokio::io::sink());
         let socket = SocketPath::new(&dir, "glave.sock").unwrap();

@@ -31,8 +31,8 @@ use crate::cancel::CancelSwitch;
 use crate::token::{Token, Tokens};
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 use asking::{Asking, Asks};
-use idle::Activity;
 pub use idle::Idle;
+use idle::{Activity, Answering};
 pub use socket::{bridge, listen_socket, serve_socket};
 
 /// Lines written ahead of a slow client.
@@ -161,8 +161,7 @@ where
         let connection = Arc::clone(connection);
         let answering = connection.activity.as_ref().map(Activity::begin);
         running.spawn(async move {
-            let _answering = answering;
-            connection.answer(&line).await;
+            connection.answer(&line, answering).await;
         });
         while running.try_join_next().is_some() {}
     };
@@ -268,8 +267,26 @@ impl<C: Computers + 'static> Connection<C> {
         self.seen.lock().is_ok_and(|mut seen| seen.first(id))
     }
 
-    async fn answer(&self, line: &str) -> () {
-        let (id, answered) = match wire::parse(line) {
+    /// Answers `line`, counted in the computer's activity by `answering` while it runs: but a
+    /// person's terminal only looked at is no use of it (`specs/computers.md`, "Terminals"):
+    /// listed or resized, as a Terminal tab left open does, or read, which only waits, unless
+    /// the read found something printed.
+    async fn answer(&self, line: &str, mut answering: Option<Answering>) -> () {
+        let parsed = wire::parse(line);
+        let reading = matches!(parsed, Ok((_, Request::TerminalRead { .. })));
+        let looking = matches!(
+            parsed,
+            Ok((
+                _,
+                Request::TerminalList { .. } | Request::TerminalResize { .. }
+            ))
+        );
+        if (reading || looking)
+            && let Some(waiting) = answering.take()
+        {
+            waiting.unused();
+        }
+        let (id, answered) = match parsed {
             // A second copy of a request is dropped unanswered: the first is (or was)
             // answered, and running it again could do the work twice.
             Ok((Some(id), _)) if !self.first(&id) => return,
@@ -283,6 +300,18 @@ impl<C: Computers + 'static> Connection<C> {
             // read either (JSON-RPC's null id), so the client knows at once.
             Err((id, failure)) => (id, Err(failure)),
         };
+        let printed = answered
+            .as_ref()
+            .ok()
+            .and_then(|read| read.get("output")?.as_str())
+            .is_some_and(|output| !output.is_empty());
+        if reading
+            && printed
+            && let Some(activity) = &self.activity
+        {
+            activity.touch();
+        }
+        drop(answering);
         let _ = self.lines.send(wire::respond(id.as_ref(), answered)).await;
     }
 
@@ -321,23 +350,19 @@ impl<C: Computers + 'static> Connection<C> {
                 run,
                 credentials,
             } => self.run(workspace, &command, run, credentials).await,
-            Request::Cancel { run } => {
-                if let Some(switch) = self
-                    .runs
-                    .lock()
-                    .ok()
-                    .and_then(|runs| runs.get(&run).cloned())
-                {
-                    switch.cancel();
-                }
-                Ok(json!({}))
-            }
+            Request::Cancel { run } => Ok(self.cancel(&run)),
             request @ (Request::Start { .. }
             | Request::Output { .. }
             | Request::Ended { .. }
             | Request::Stop { .. }
             | Request::Commands { .. }
             | Request::Listening { .. }) => self.background(request).await,
+            request @ (Request::TerminalOpen { .. }
+            | Request::TerminalList { .. }
+            | Request::TerminalWrite { .. }
+            | Request::TerminalRead { .. }
+            | Request::TerminalResize { .. }
+            | Request::TerminalClose { .. }) => self.terminal(request).await,
             Request::Read { workspace, path } => reply(
                 computers
                     .read(workspace, &path)
@@ -406,6 +431,80 @@ impl<C: Computers + 'static> Connection<C> {
             other => Err(wire::failure(
                 code::INVALID_REQUEST,
                 &format!("{} is not about commands in the background", other.method()),
+            )),
+        }
+    }
+
+    /// Stops the run `run`, if it still runs.
+    fn cancel(&self, run: &str) -> Value {
+        if let Some(switch) = self
+            .runs
+            .lock()
+            .ok()
+            .and_then(|runs| runs.get(run).cloned())
+        {
+            switch.cancel();
+        }
+        json!({})
+    }
+
+    /// Answers a request about a person's terminals.
+    async fn terminal(&self, request: Request) -> Result<Value, Value> {
+        let computers = &*self.computers;
+        match request {
+            Request::TerminalOpen {
+                computer,
+                folder,
+                owner,
+                size,
+            } => reply(
+                computers
+                    .open_terminal(computer, &folder, &owner, size)
+                    .await
+                    .map(|terminal| json!({"terminal": terminal})),
+            ),
+            Request::TerminalList { computer, owner } => reply(
+                computers
+                    .terminals(computer, &owner)
+                    .await
+                    .map(|terminals| json!({"terminals": terminals})),
+            ),
+            Request::TerminalWrite {
+                computer,
+                terminal,
+                owner,
+                input,
+            } => {
+                let at = (terminal, owner.as_str());
+                reply(computers.write_terminal(computer, at, &input).await)
+            }
+            Request::TerminalRead {
+                computer,
+                terminal,
+                owner,
+                from,
+                wait_ms,
+            } => {
+                let (at, wait) = ((terminal, owner.as_str()), Duration::from_millis(wait_ms));
+                reply(computers.read_terminal(computer, at, from, wait).await)
+            }
+            Request::TerminalResize {
+                computer,
+                terminal,
+                owner,
+                size,
+            } => {
+                let at = (terminal, owner.as_str());
+                reply(computers.resize_terminal(computer, at, size).await)
+            }
+            Request::TerminalClose {
+                computer,
+                terminal,
+                owner,
+            } => reply(computers.close_terminal(computer, (terminal, &owner)).await),
+            other => Err(wire::failure(
+                code::INVALID_REQUEST,
+                &format!("{} is not about terminals", other.method()),
             )),
         }
     }

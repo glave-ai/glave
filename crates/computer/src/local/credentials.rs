@@ -115,7 +115,7 @@ pub(crate) async fn offer(
             let script = wrapper::wrapper(tool, host, &places, environment);
             write_script(&bin.join(tool.name()), &script).await?;
         }
-        let first = super::first_on_path(environment, &bin);
+        let first = super::on_path::first_on_path(environment, &bin);
         offered.environment.push(("PATH".into(), first));
     }
     Ok(Some(offered))

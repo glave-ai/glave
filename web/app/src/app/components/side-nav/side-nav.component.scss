@@ -96,20 +96,22 @@
   opacity: 1;
 }
 
-// How the threads are grouped, always in view above them, as they scroll; until its code is
-// in, its room, as tall as the switch (Glaze's segmented control, a small control's height, a
-// finger's on a phone, in its track).
+// How the threads are grouped, always in view above them, as they scroll, in a room as tall as
+// the switch (Glaze's segmented control, a small control's height, a finger's on a phone, in
+// its track) whether or not it is in yet; none without a project to group by.
 .grouping {
+  display: none;
   flex: none;
 }
 
-.room {
-  block-size: var(--glz-control-height-sm);
+.grouping.shown {
+  display: block;
+  min-block-size: var(--glz-control-height-sm);
 }
 
 @media (width <= 48rem) {
-  .room {
-    block-size: calc(var(--glz-control-height-touch) + 2 * var(--glz-space-half));
+  .grouping.shown {
+    min-block-size: calc(var(--glz-control-height-touch) + 2 * var(--glz-space-half));
   }
 }
 

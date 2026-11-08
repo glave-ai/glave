@@ -5,8 +5,9 @@
 //! its own, `credentials/request`, which the caller answers on the same connection.
 
 use glave_ports::computer::{
-    Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment,
-    FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
+    Bytes, Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost,
+    Environment, FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, TerminalId,
+    TerminalSize, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -31,8 +32,11 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `computer/free_worktree`, which a server frees room with. `2026-11-04` made `protect` on a
 /// file of `files/write` the sandbox it is under: what is kept read-only depends on its folders.
 /// `2026-11-07` added `files/changes`, what changed in a folder since a point in its history, and
-/// `at`, that point as a workspace opens, on what `workspace/open` answers. `2026-11-08` added
-/// `command/listening`, where a workspace's commands in the background listen.
+/// `at`, that point as a workspace opens, on what `workspace/open` answers.
+/// `2026-11-08` added a person's terminals: `terminal/open`, `terminal/list`, `terminal/write`,
+/// `terminal/read`, `terminal/resize` and `terminal/close`, each naming the terminal's owner,
+/// which the computer checks; and `command/listening`, where a workspace's commands in the
+/// background listen.
 pub(crate) const PROTOCOL: &str = "2026-11-08";
 
 /// The notification that carries a command's output.
@@ -117,6 +121,47 @@ pub(crate) enum Request {
     /// Answered with where the workspace's commands in the background listen, as `listening`.
     #[serde(rename = "command/listening")]
     Listening { workspace: WorkspaceId },
+    /// Answered with the `terminal` it opened.
+    #[serde(rename = "terminal/open")]
+    TerminalOpen {
+        computer: ComputerId,
+        folder: String,
+        owner: String,
+        size: TerminalSize,
+    },
+    /// Answered with the owner's `terminals`.
+    #[serde(rename = "terminal/list")]
+    TerminalList { computer: ComputerId, owner: String },
+    #[serde(rename = "terminal/write")]
+    TerminalWrite {
+        computer: ComputerId,
+        terminal: TerminalId,
+        owner: String,
+        input: Bytes,
+    },
+    /// Waits up to `wait_ms` for something printed from `from` before answering.
+    #[serde(rename = "terminal/read")]
+    TerminalRead {
+        computer: ComputerId,
+        terminal: TerminalId,
+        owner: String,
+        from: u64,
+        #[serde(default)]
+        wait_ms: u64,
+    },
+    #[serde(rename = "terminal/resize")]
+    TerminalResize {
+        computer: ComputerId,
+        terminal: TerminalId,
+        owner: String,
+        size: TerminalSize,
+    },
+    #[serde(rename = "terminal/close")]
+    TerminalClose {
+        computer: ComputerId,
+        terminal: TerminalId,
+        owner: String,
+    },
     #[serde(rename = "files/read")]
     Read {
         workspace: WorkspaceId,
@@ -176,6 +221,12 @@ impl Request {
             Self::Stop { .. } => "command/stop",
             Self::Commands { .. } => "command/list",
             Self::Listening { .. } => "command/listening",
+            Self::TerminalOpen { .. } => "terminal/open",
+            Self::TerminalList { .. } => "terminal/list",
+            Self::TerminalWrite { .. } => "terminal/write",
+            Self::TerminalRead { .. } => "terminal/read",
+            Self::TerminalResize { .. } => "terminal/resize",
+            Self::TerminalClose { .. } => "terminal/close",
             Self::Read { .. } => "files/read",
             Self::Write { .. } => "files/write",
             Self::List { .. } => "files/list",
@@ -207,6 +258,12 @@ const METHODS: &[&str] = &[
     "command/stop",
     "command/list",
     "command/listening",
+    "terminal/open",
+    "terminal/list",
+    "terminal/write",
+    "terminal/read",
+    "terminal/resize",
+    "terminal/close",
     "files/read",
     "files/write",
     "files/list",

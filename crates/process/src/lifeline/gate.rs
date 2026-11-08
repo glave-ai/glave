@@ -3,7 +3,8 @@
 //! environment and process group, its input a pipe glave writes `go` to once the lifeline's
 //! helper holds that group and the ledger records it; this then becomes the program, in the
 //! same process, reading that pipe on (`pipe`) or nothing (`none`, the system's null device,
-//! as a program started directly would). A glave that ends before then, however it ends,
+//! as a program started directly would, or `tty`, the terminal its output goes to, for a shell
+//! of the person's own). A glave that ends before then, however it ends,
 //! closes the pipe with nothing said, and the program never runs: nothing it would have
 //! started is left for the helper to miss.
 
@@ -22,9 +23,11 @@ use super::{READY_WITHIN, WAITS};
 /// it reads.
 pub(crate) const START_ARG: &str = "--glave-start-1";
 
-/// What the program reads once it runs: the pipe glave said go on, or nothing.
+/// What the program reads once it runs: the pipe glave said go on, nothing, or the terminal
+/// its output goes to.
 pub(crate) const PIPE: &str = "pipe";
 pub(crate) const NONE: &str = "none";
+pub(crate) const TTY: &str = "tty";
 
 /// What glave writes once the program may run.
 pub(crate) const GO: &[u8] = b"go\n";
@@ -53,13 +56,20 @@ pub(crate) fn start(rest: &[OsString]) -> ExitCode {
     let Some((program, arguments)) = rest.split_first() else {
         return ExitCode::from(NOT_STARTED);
     };
-    if (input != PIPE && input != NONE) || !told_go(std::io::stdin().as_fd(), GO_WITHIN) {
+    if ![PIPE, NONE, TTY].contains(&input.to_str().unwrap_or_default())
+        || !told_go(std::io::stdin().as_fd(), GO_WITHIN)
+    {
         return ExitCode::from(NOT_STARTED);
     }
     let mut becomes = std::process::Command::new(program);
     becomes.args(arguments);
     if input == NONE {
         becomes.stdin(Stdio::null());
+    } else if input == TTY {
+        match std::io::stdout().as_fd().try_clone_to_owned() {
+            Ok(terminal) => becomes.stdin(Stdio::from(terminal)),
+            Err(_) => return ExitCode::from(NOT_RUN),
+        };
     }
     let _failed = becomes.exec();
     ExitCode::from(NOT_RUN)

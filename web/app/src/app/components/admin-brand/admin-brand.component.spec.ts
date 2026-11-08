@@ -5,6 +5,7 @@ import { settle } from '@glave/glaze/testing/settle';
 
 import { ChangesService } from '../../services/changes.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { objectUrls } from '../../testing/object-urls';
 import { AdminBrandComponent } from './admin-brand.component';
 
 const SHADES = { light: '#0f766e', dark: '#59c5b8' };
@@ -198,6 +199,7 @@ describe('AdminBrandComponent', () => {
     });
 
     it('draws their logo, not a file picked here and saved, once they keep another', async () => {
+      objectUrls();
       const fake = withLogo(kept(), 'abc').answer('brand/logo/upload', { sha256: 'ghi' });
       const { root, settle } = await render(fake);
       const first = (byId(root, 'brand-logo') as HTMLImageElement).src;
