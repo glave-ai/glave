@@ -601,7 +601,9 @@ function ableToMove(): readonly string[] {
  * halfway through any of them its text would fail. What was already moving as motion went off
  * finishes first. What is on the page as it looks, and could still move with motion off, fails
  * here by name; this cannot see what arrives later, whose stylesheets stylelint and review keep to
- * the motion tokens.
+ * the motion tokens. A frame's own page is not glave's (a thread's preview is a dev server's), so
+ * axe stays out of frames: it would message one with this page's origin as the target, which a
+ * frame at another origin refuses, and WebKit says so as an error.
  */
 export async function expectAccessible(page: Page): Promise<void> {
   const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -612,6 +614,7 @@ export async function expectAccessible(page: Page): Promise<void> {
   const violations = await page.evaluate(async (tags) => {
     const results = await (window as unknown as WithAxe).axe.run(document, {
       runOnly: { type: 'tag', values: [...tags] },
+      iframes: false,
     });
     return results.violations;
   }, WCAG);

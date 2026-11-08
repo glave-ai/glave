@@ -101,7 +101,8 @@ export const ABOUT_GONE: Answers<Gone> = {
   'thread/list': (params, gone) =>
     params.project === PLAYGROUND.id ? { threads: gone.removed ? [] : [lost(gone)] } : undefined,
   'thread/get': (params, gone) => (params.thread === LOST ? { thread: lost(gone) } : undefined),
-  'command/list': (params) => (params.thread === LOST ? { commands: [] } : undefined),
+  'command/list': (params) =>
+    params.thread === LOST ? { commands: [], previewed: false, previews: [] } : undefined,
   'project/folder/set': (params, gone) => {
     if (params.project !== PLAYGROUND.id || !gone.missing) {
       return new Refusal(-32602, 'this project’s folder is still where it was');

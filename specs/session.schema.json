@@ -2499,6 +2499,32 @@
         }
       ]
     },
+    "Preview": {
+      "description": "A page a command in the background serves, at its own address on this computer, never\nglave's (`specs/session.md`, \"Previews\"): opened in a browser here, or in a frame of the app.",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/CommandId",
+          "description": "The command that serves it, as `command/list` lists it."
+        },
+        "port": {
+          "description": "The port it listens on.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "Where a browser on this computer opens it: `http://127.0.0.1:<port>/`, or\n`http://[::1]:<port>/` for a server that listens on IPv6 alone.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "port",
+        "url"
+      ],
+      "type": "object"
+    },
     "Principal": {
       "additionalProperties": false,
       "description": "A reference to a principal: `{\"kind\": \"person\", \"id\": \"…\"}`. Every kind but `glave` has an\nid.",
@@ -4987,16 +5013,29 @@
         "type": "object"
       },
       "result": {
+        "description": "The thread's commands running in the background, and the previews of what they serve.",
         "properties": {
           "commands": {
             "items": {
               "$ref": "#/$defs/RunningCommand"
             },
             "type": "array"
+          },
+          "previewed": {
+            "description": "Whether what they serve is previewed for the caller here: where it isn't, a client\nneed not look for previews again.",
+            "type": "boolean"
+          },
+          "previews": {
+            "items": {
+              "$ref": "#/$defs/Preview"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "commands"
+          "commands",
+          "previewed",
+          "previews"
         ],
         "type": "object"
       },

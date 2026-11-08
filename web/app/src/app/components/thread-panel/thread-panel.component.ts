@@ -24,9 +24,16 @@ import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 import { ThreadOverviewComponent } from '../thread-overview/thread-overview.component';
+import { ThreadPreviewComponent } from '../thread-preview/thread-preview.component';
 
 /** The panel's tabs, each by what it shows. */
-type Tab = 'overview' | 'changes';
+type Tab = 'overview' | 'changes' | 'preview';
+
+/** What the tab chosen follows: the thread, and each ask to show a preview. */
+interface Asked {
+  readonly thread: ThreadId | null;
+  readonly preview: number;
+}
 
 /** A tab as the panel shows it. */
 interface Shown {
@@ -40,8 +47,9 @@ const FIRST: Tab = 'overview';
 /**
  * The open thread's panel, beside it: tabs, each only once it has something to show, in this
  * order: Overview, the thread at a glance, which it opens on (`app-thread-overview`); then the
- * files it changed, in full. The tab chosen is this view's to remember, and each thread opens on
- * Overview again.
+ * files it changed, in full; then, while one of its commands serves something the person can
+ * open here, the Preview (`app-thread-preview`), which an Open preview elsewhere in the panel
+ * shows. The tab chosen is this view's to remember, and each thread opens on Overview again.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When what had the keyboard's place goes from it, as
  * Stop takes the last command away or Compact now the context's section, that place goes to the
@@ -56,6 +64,7 @@ const FIRST: Tab = 'overview';
     GlzTabsComponent,
     ThreadFilesComponent,
     ThreadOverviewComponent,
+    ThreadPreviewComponent,
   ],
   templateUrl: './thread-panel.component.html',
   styleUrl: './thread-panel.component.scss',
@@ -76,6 +85,7 @@ export class ThreadPanelComponent {
     tabs: $localize`:@@threadPanel.tabs:What this thread shows`,
     overview: $localize`:@@threadPanel.overview:Overview`,
     changes: $localize`:@@threadPanel.changes:Changes`,
+    preview: $localize`:@@threadPanel.preview:Preview`,
   } as const;
   protected readonly icons = { close: X } as const;
   private readonly panel = inject(PanelService);
@@ -94,15 +104,26 @@ export class ThreadPanelComponent {
   /** The tabs it has now, in order, each with its label. */
   protected readonly tabs = computed((): readonly Shown[] => {
     const changes = this.facts.files().length > 0;
+    const preview = this.facts.previews().length > 0;
     return [
       { key: 'overview', label: this.copy.overview },
       ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
+      ...(preview ? [{ key: 'preview', label: this.copy.preview } as const] : []),
     ];
   });
-  /** The tab chosen, by what it shows: Overview again in each thread. */
-  private readonly chosen = linkedSignal<ThreadId | null, Tab>({
-    source: this.thread.thread,
-    computation: () => FIRST,
+  /**
+   * The tab chosen, by what it shows: Overview again in each thread, and the Preview each time
+   * a preview is asked to be shown.
+   */
+  private readonly chosen = linkedSignal<Asked, Tab>({
+    source: () => ({ thread: this.thread.thread(), preview: this.facts.previewAsked() }),
+    computation: (now, before) => {
+      const same = before?.source.thread === now.thread;
+      if (same && before.source.preview !== now.preview) {
+        return 'preview';
+      }
+      return same ? before.value : FIRST;
+    },
   });
   /** Where the chosen tab is among those it has, or the first's when it has it no longer. */
   protected readonly selected = computed(() =>

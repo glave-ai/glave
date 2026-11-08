@@ -356,7 +356,7 @@ async fn running(server: &Tested, thread: ThreadId) -> Vec<glave_harness::Runnin
         .await
         .unwrap()
     {
-        Reply::Commands { commands } => commands,
+        Reply::Commands { commands, .. } => commands,
         other => panic!("commands, not {other:?}"),
     }
 }

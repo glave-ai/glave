@@ -114,9 +114,9 @@ where
     {
         tracing::warn!(%error, "browsers here cannot sign in with passkeys");
     }
+    let localhost = listeners.localhost().is_some();
     let all = listeners.listening(server.inner.origin.as_ref())?;
-    let here = all.iter().find_map(Listening::loopback);
-    server.reached_at(here.map(|at| format!("http://{at}")));
+    server.reached_at(reached(&all, localhost));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -181,6 +181,17 @@ where
     connections.abort_all();
     while connections.join_next().await.is_some() {}
     Ok(())
+}
+
+/// Where a browser on this computer reaches a server listening on `all`: `http://` and its
+/// loopback listener's address, and, where it holds both of this computer's loopback
+/// addresses at one port, `localhost` too.
+fn reached(all: &[Listening], localhost: bool) -> crate::connections::Reached {
+    let here = all.iter().find_map(Listening::loopback);
+    crate::connections::Reached {
+        at: here.map(|at| format!("http://{at}")),
+        localhost,
+    }
 }
 
 /// Answers one HTTP request, which came in at `door` from `peer`, to a listener serving HTTPS

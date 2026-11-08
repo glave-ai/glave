@@ -276,7 +276,7 @@ pub(crate) async fn listed<L: EventLog + 'static>(
         .await
         .unwrap()
     {
-        Reply::Commands { commands } => commands,
+        Reply::Commands { commands, .. } => commands,
         other => panic!("commands, not {other:?}"),
     }
 }

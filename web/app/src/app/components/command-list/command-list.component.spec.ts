@@ -2,8 +2,11 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { ChangedFilesService } from '../../services/changed-files.service';
 import { TICK_MS } from '../../services/clock';
 import { CommandsService } from '../../services/commands.service';
+import { PlanService } from '../../services/plan.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { command, event } from '../../testing/fixtures';
@@ -13,7 +16,14 @@ const DEV = 'npm run dev -- --port 4200 --host 127.0.0.1 --open';
 
 async function render(fake: FakeSession): Promise<HTMLElement> {
   TestBed.configureTestingModule({
-    providers: [...provideFakeSession(fake), ThreadService, CommandsService],
+    providers: [
+      ...provideFakeSession(fake),
+      ThreadService,
+      CommandsService,
+      ChangedFilesService,
+      PlanService,
+      ThreadPanelService,
+    ],
   });
   fake.answer('thread/events', {
     events: [event(1, 'command.started', { command: 'c1', script: DEV })],
@@ -51,6 +61,8 @@ describe('CommandListComponent', () => {
     const fake = new FakeSession()
       .answer('command/list', {
         commands: [command('c1', DEV), command('c2', 'cargo watch', { started_at: null })],
+        previewed: false,
+        previews: [],
       })
       .answer(
         'command/stop',
@@ -93,7 +105,7 @@ describe('CommandListComponent', () => {
 
   it("shows a refusal on its row in the server's words", async () => {
     const fake = new FakeSession()
-      .answer('command/list', { commands: [command('c1', DEV)] })
+      .answer('command/list', { commands: [command('c1', DEV)], previewed: false, previews: [] })
       .answer(
         'command/stop',
         new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'you may not stop it' }),
@@ -110,7 +122,11 @@ describe('CommandListComponent', () => {
   });
 
   it('says why it could not read them, in plain words', async () => {
-    const fake = new FakeSession().answer('command/list', { commands: [] });
+    const fake = new FakeSession().answer('command/list', {
+      commands: [],
+      previewed: false,
+      previews: [],
+    });
     const root = await render(fake);
     expect(all(root, 'command')).toHaveLength(0);
     fake.answer(
@@ -126,11 +142,33 @@ describe('CommandListComponent', () => {
   it('says the ports a command listens on, where the server says them', async () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [command('c1', DEV, { ports: [4200, 4201] }), command('c2', 'cargo watch')],
+      previewed: false,
+      previews: [],
     });
     const root = await render(fake);
     expect(all(root, 'command-listening').map((each) => each.textContent)).toEqual([
       'listening on 4200 and 4201',
     ]);
+    await expectAccessible(root);
+  });
+
+  it('opens the preview of a command that serves one in the panel’s Preview tab', async () => {
+    const dev = { command: 'c1', port: 4200, url: 'http://127.0.0.1:4200/' };
+    const fake = new FakeSession().answer('command/list', {
+      commands: [command('c1', DEV), command('c2', 'cargo watch')],
+      previewed: true,
+      previews: [dev],
+    });
+    const root = await render(fake);
+    const open = all(root, 'command-preview');
+    expect(open.map((each) => each.getAttribute('aria-label'))).toEqual([
+      `Open the preview of ${DEV}`,
+    ]);
+    const panel = TestBed.inject(ThreadPanelService);
+    const asked = panel.previewAsked();
+    open[0]?.click();
+    expect(panel.previewAsked()).toBe(asked + 1);
+    expect(panel.preview()).toEqual(dev);
     await expectAccessible(root);
   });
 });

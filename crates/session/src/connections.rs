@@ -183,9 +183,9 @@ where
     /// does not listen over HTTP.
     fn redirect(&self) -> Option<String> {
         let origin = self.inner.origin.as_ref();
-        self.inner.reached.get().and_then(|here| {
+        self.inner.reached.get().and_then(|reached| {
             let base = origin.map(|origin| origin.as_str().to_owned());
-            let base = base.or_else(|| here.clone())?;
+            let base = base.or_else(|| reached.at.clone())?;
             Some(format!("{base}{CALLBACK}"))
         })
     }
@@ -294,12 +294,23 @@ where
         }
     }
 
-    /// Records that the server listens over HTTP, and its address on this computer, `http://`
-    /// and its loopback listener's, when it has one: where a browser here comes back to from a
-    /// sign-in.
-    pub(crate) fn reached_at(&self, here: Option<String>) {
-        let _ = self.inner.reached.set(here);
+    /// Records that the server listens over HTTP, and where a browser on this computer reaches
+    /// it.
+    pub(crate) fn reached_at(&self, reached: Reached) {
+        let _ = self.inner.reached.set(reached);
     }
+}
+
+/// Where a browser on this computer reaches a server that listens over HTTP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Reached {
+    /// `http://` and its loopback listener's address, when it has one: where a browser here
+    /// comes back to from a sign-in.
+    pub(crate) at: Option<String>,
+    /// Whether it is reached here as `localhost`, at both of this computer's loopback
+    /// addresses: where glave's own links open its pages unless people share it at a public
+    /// origin (`specs/one-server.md`, "Finding it").
+    pub(crate) localhost: bool,
 }
 
 #[cfg(test)]

@@ -880,6 +880,22 @@ export type PlanStep = {
 export type Precision = "unstated" | "four_bit" | "six_bit" | "eight_bit" | "full";
 
 /**
+ * A page a command in the background serves, at its own address on this computer, never
+ * glave's (`specs/session.md`, "Previews"): opened in a browser here, or in a frame of the app.
+ */
+export type Preview = {
+  /** The command that serves it, as `command/list` lists it. */
+  readonly command: CommandId;
+  /** The port it listens on. */
+  readonly port: number;
+  /**
+   * Where a browser on this computer opens it: `http://127.0.0.1:<port>/`, or
+   * `http://[::1]:<port>/` for a server that listens on IPv6 alone.
+   */
+  readonly url: string;
+};
+
+/**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
  * id.
  */
@@ -1687,8 +1703,15 @@ export type CommandListParams = {
   readonly thread: ThreadId;
 };
 
+/** The thread's commands running in the background, and the previews of what they serve. */
 export type CommandListResult = {
   readonly commands: readonly (RunningCommand)[];
+  /**
+   * Whether what they serve is previewed for the caller here: where it isn't, a client
+   * need not look for previews again.
+   */
+  readonly previewed: boolean;
+  readonly previews: readonly (Preview)[];
 };
 
 export type CommandStopParams = {

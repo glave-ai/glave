@@ -1,13 +1,17 @@
 //! Where a thread's commands in the background listen, through the API: `command/list` gives
 //! a command that serves on loopback its port, for the person on this computer, and none where a
-//! browser of the caller's would be elsewhere, at a public origin.
+//! browser of the caller's would be elsewhere, at a public origin; and a preview of it at its own
+//! address only where glave's pages are opened at `localhost`, never at `127.0.0.1` itself.
 
 use std::path::Path;
 
 use glave_ports::host::PublicOrigin;
 use glave_session::protocol::Request;
-use serde_json::json;
+use glave_session::signin::{LocalToken, SignIn};
+use serde_json::{Value, json};
 
+use crate::support::issuer::fixed_clock;
+use crate::support::web::{Served, Web, asked, serve_here, serve_with};
 use crate::support::*;
 
 /// A page and a server for it, on loopback at a port the system picks, as a dev server is,
@@ -75,5 +79,56 @@ fn a_server_reached_at_a_public_origin_says_no_port_of_this_computer_s_loopback(
         let commands = listed(&server, thread).await;
         assert_eq!(commands.len(), 1, "{commands:?}");
         assert_eq!(commands[0].ports, [] as [u16; 0]);
+    });
+}
+
+/// What `command/list` answers over HTTP for a thread of a server in `dir` whose command
+/// serves, the server served by `serve` with a local token's sign-in; and the port it serves on.
+async fn listed_when_served<F>(dir: &Path, serve: impl FnOnce(Tested, SignIn) -> F) -> (Value, u16)
+where
+    F: Future<Output = Served>,
+{
+    let (server, _) = Setup::new(serves()).build(dir).await;
+    let thread = start(&server, false).await;
+    turn(&server, thread, "serve the page").await.unwrap();
+    let token = LocalToken::new([3; 32]);
+    let serving = serve(
+        server,
+        SignIn::local(token.clone(), Box::new(fixed_clock())),
+    )
+    .await;
+    let mut here = Web::new(&serving, Some(token.reveal().to_owned()));
+    let listed = asked(&mut here, &Request::CommandList { thread }).await;
+    serving.close().await;
+    (listed, said(dir))
+}
+
+#[test]
+fn a_preview_is_the_server_s_own_address_where_glave_is_opened_at_localhost() {
+    let dir = folder("previews-localhost");
+    block_on!(async {
+        // At both of this computer's loopback addresses, glave's pages are at `localhost`.
+        let (listed, port) = listed_when_served(&dir, serve_here).await;
+        assert_eq!(listed["previewed"], true, "{listed}");
+        let command = &listed["commands"][0];
+        assert_eq!(command["ports"], json!([port]));
+        let url = format!("http://127.0.0.1:{port}/");
+        assert_eq!(
+            listed["previews"],
+            json!([{"command": command["id"], "port": port, "url": url}])
+        );
+    });
+}
+
+#[test]
+fn no_preview_where_glave_is_opened_at_127_0_0_1_itself() {
+    let dir = folder("previews-address");
+    block_on!(async {
+        // A preview at 127.0.0.1 would be the same site as glave's own pages there.
+        let serve = |server, signin| serve_with(server, signin, None);
+        let (listed, port) = listed_when_served(&dir, serve).await;
+        assert_eq!(listed["previewed"], false, "{listed}");
+        assert_eq!(listed["previews"], json!([]));
+        assert_eq!(listed["commands"][0]["ports"], json!([port]));
     });
 }
