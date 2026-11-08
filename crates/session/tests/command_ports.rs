@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use glave_ports::host::PublicOrigin;
-use glave_session::protocol::{Reply, Request};
+use glave_session::protocol::Request;
 use serde_json::json;
 
 use crate::support::*;
@@ -41,20 +41,6 @@ fn said(dir: &Path) -> u16 {
         .unwrap()
         .parse()
         .unwrap()
-}
-
-async fn listed(
-    server: &Tested,
-    thread: glave_event::ThreadId,
-) -> Vec<glave_harness::RunningCommand> {
-    match server
-        .request(Request::CommandList { thread })
-        .await
-        .unwrap()
-    {
-        Reply::Commands { commands } => commands,
-        other => panic!("commands, not {other:?}"),
-    }
 }
 
 #[test]
