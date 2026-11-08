@@ -12,7 +12,8 @@ name: budgets
 # they slow each other down: so each has a runner of its own, at the same time, and a third
 # measures, in seconds.
 # The numbers are wall-clock, and depend on the kind of machine the measuring job is given,
-# which it names.
+# which it names. Beside them it reports the instructions one resume of the 10,000-event thread
+# takes, which don't depend on the machine: reported only, so it can't fail the job (#1286).
 on:
   push:
     branches: [main]
@@ -133,6 +134,23 @@ jobs:
           benchmark/budgets
         env:
           GLAVE_BUDGETS_BINARY: glave/glave
+      # After the milliseconds, so it can't disturb them, and whether they passed or not. The
+      # thread is recorded at full speed and only the resume runs under Valgrind, which counts
+      # in software and needs nothing from the runner. The total needs no symbols.
+      - name: Count the instructions of one resume (reported, not a budget)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends valgrind
+          benchmark/budgets record "$RUNNER_TEMP/thread"
+          timeout 2m valgrind --tool=cachegrind --cache-sim=no \
+            --cachegrind-out-file=/dev/null --log-file="$RUNNER_TEMP/counted" \
+            benchmark/budgets resume "$RUNNER_TEMP/thread"
+          instructions=$(sed -n 's/.*I *refs: *//p' "$RUNNER_TEMP/counted")
+          test -n "$instructions"
+          echo "resume 10,000 events: $instructions instructions" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # The check the ruleset requires: on a pull request it passes at once, and everywhere else
   # only when `measure` did.
