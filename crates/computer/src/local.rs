@@ -113,8 +113,8 @@ pub struct LocalComputers {
 enum Opening {
     /// Where a thread is placed, which its binding records (`workspace.bound`'s `since`).
     Placed,
-    /// This machine's own folder, which no thread records.
-    Own,
+    /// Recorded already or never: a thread's, whose log has it, or this machine's own folder.
+    Unasked,
 }
 
 impl LocalComputers {
@@ -182,7 +182,7 @@ impl LocalComputers {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
         let workspace = computers
-            .open_now(computer, &sources, None, Opening::Own)
+            .open_now(computer, &sources, None, Opening::Unasked)
             .await?;
         Ok((computers, workspace))
     }
@@ -269,7 +269,7 @@ impl LocalComputers {
         let info = WorkspaceInfo {
             at: match opening {
                 Opening::Placed => changes::at(&opened).await,
-                Opening::Own => None,
+                Opening::Unasked => None,
             },
             ..info
         };
@@ -571,6 +571,14 @@ impl Computers for LocalComputers {
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
         Box::pin(self.open_now(computer, sources, None, Opening::Placed))
+    }
+
+    fn reopen<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        Box::pin(self.open_now(computer, sources, None, Opening::Unasked))
     }
 
     fn open_with_credential<'a>(

@@ -90,6 +90,17 @@ pub trait Computers: Send + Sync {
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>>;
 
+    /// Opens `sources` again as [`Computers::open`] does, for a thread whose log already says
+    /// where their history stood: nothing reads [`WorkspaceInfo::at`], which a computer for
+    /// which asking costs something leaves out.
+    fn reopen<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        self.open(computer, sources)
+    }
+
     /// Opens `sources` as [`Computers::open`] does, fetching (and later saving) them with
     /// `credential` (`workspace/open` with a `credential`). The computer keeps it in memory for
     /// the workspace's life and hands it to git through a credential helper for each use; it

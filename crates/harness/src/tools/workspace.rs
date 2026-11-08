@@ -266,6 +266,19 @@ impl Workspace {
     /// with the same credentials.
     async fn beside(&self, sources: &Sources) -> Result<Self, ComputerError> {
         let info = self.computers.open(self.info.computer, sources).await?;
+        self.sharing_info(info).await
+    }
+
+    /// `sources` a thread's log records, opened again as [`Workspace::beside`] opens them,
+    /// without asking where their history stands: the log says.
+    pub(crate) async fn again(&self, sources: &Sources) -> Result<Self, ComputerError> {
+        let info = self.computers.reopen(self.info.computer, sources).await?;
+        self.sharing_info(info).await
+    }
+
+    /// `info`, opened just now on the same computer, in the same sandbox and with the same
+    /// credentials.
+    async fn sharing_info(&self, info: WorkspaceInfo) -> Result<Self, ComputerError> {
         let opened = self.sharing(Self::new(Arc::clone(&self.computers), info));
         match &self.sandbox {
             Some(sandbox) => opened.with_sandbox(sandbox).await,

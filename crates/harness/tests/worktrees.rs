@@ -212,6 +212,46 @@ fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_proje
     });
 }
 
+/// Reading a thread again asks git nothing of its folder, whose log says where it stood: none
+/// of what placing it asked, in a repository and in a folder outside one. `GIT_TRACE` writes a
+/// line for each run of git.
+#[test]
+fn reading_a_thread_again_runs_no_git() {
+    let (dir, repo, base) = repository("worktrees-read-again");
+    let trace = dir.join("git-trace");
+    let runs = || {
+        let traced = std::fs::read_to_string(&trace).unwrap_or_default();
+        traced.matches("trace: built-in: git").count()
+    };
+    let scratch = base.with_file_name("scratch");
+    block_on!(async {
+        let traced = [("GIT_TRACE".into(), trace.clone().into_os_string())];
+        let (computers, info) = LocalComputers::for_here(environment().into_iter().chain(traced))
+            .with_scratch(&scratch)
+            .open_here(&repo)
+            .await
+            .unwrap();
+        let (harness, _) = harness_with(
+            Workspace::new(computers, info),
+            Vec::new(),
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let mut read_again = Vec::new();
+        for place in [Place::Folder(at(&repo)), Place::Scratch] {
+            let before = runs();
+            let thread = thread_in(&harness, place).await;
+            let placed = runs();
+            assert!(placed > before, "placing a thread asks where it stands");
+            harness.resume_thread(scope(), thread.id).await.unwrap();
+            read_again.push(runs() - placed);
+        }
+        assert_eq!(read_again, [0, 0], "git runs reading each thread again");
+    });
+}
+
 #[test]
 fn threads_started_together_get_their_own_worktrees() {
     let (_dir, repo, base) = repository("worktrees-together");
