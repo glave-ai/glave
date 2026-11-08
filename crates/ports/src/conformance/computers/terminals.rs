@@ -250,6 +250,15 @@ async fn nothing_outlives_it<C: Computers>(
 ) -> Verdict {
     let closed = At::open(computers, computer, folder, OWNER).await?;
     let job = closed.number("sleep 600 & echo bg-$!", "bg").await?;
+    let deaf = closed
+        .number("nohup sleep 603 >/dev/null 2>&1 & echo nohup-$!", "nohup")
+        .await?;
+    let ignoring = closed
+        .number(
+            "(trap '' HUP; exec sleep 604) & echo ignoring-$!",
+            "ignoring",
+        )
+        .await?;
     let front = closed
         .number("sh -c 'echo fg-$$; exec sleep 601'", "fg")
         .await?;
@@ -262,6 +271,8 @@ async fn nothing_outlives_it<C: Computers>(
     let probe = At::open(computers, computer, folder, OWNER).await?;
     for (pid, what) in [
         (&job, "a job in the background"),
+        (&deaf, "a job under nohup"),
+        (&ignoring, "a job that ignores hang-ups"),
         (&front, "a program in front"),
     ] {
         gone(&probe, pid, what).await?;

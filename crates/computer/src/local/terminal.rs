@@ -26,7 +26,7 @@ use glave_ports::computer::{
     Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalId, TerminalInfo, TerminalSize,
 };
 use glave_process::{Processes, Program};
-use rustix::process::{Pid, Signal, kill_process, kill_process_group};
+use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::net::unix::pipe;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -91,15 +91,14 @@ struct Terminal {
 }
 
 impl Drop for Terminal {
-    /// Dropped before it ended (its computer destroyed, glave ending): everything in its session
-    /// goes at once, then its pump, whose shell goes with its group.
+    /// Dropped before it ended (its computer destroyed, glave ending): what its shell started
+    /// goes first, while its leader still holds the terminal, then the leader, then its pump,
+    /// whose starter goes with its group.
     fn drop(&mut self) {
         if !self.shared.ended.load(Ordering::SeqCst) {
             let session = &self.shared.session;
+            session.end_others();
             let _ = kill_process_group(session.leader(), Signal::HUP);
-            for member in session.members_now() {
-                let _ = kill_process(member, Signal::KILL);
-            }
         }
         self.pump.abort();
     }

@@ -55,13 +55,13 @@ pub(super) async fn pump(shared: Arc<Shared>, output: pipe::Receiver, mut child:
     };
     match stopped {
         Stopped::HungUp | Stopped::Closed => {
-            shared.session.hang_up().await;
+            shared.session.hang_up(false).await;
             child.stop().await;
         }
         Stopped::Exited => {
             let _ = tokio::time::timeout(DRAIN, drain(&shared, &output, &mut buffer)).await;
             // What it started is left, in jobs of their own: they end with it.
-            shared.session.hang_up().await;
+            shared.session.hang_up(true).await;
             child.stop_left().await;
         }
     }
