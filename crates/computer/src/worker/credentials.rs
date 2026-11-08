@@ -160,10 +160,9 @@ pub fn https_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt as _;
     use std::path::Path;
 
-    use glave_ports::testing::TempDir;
+    use glave_ports::testing::{TempDir, new_script};
 
     use super::*;
 
@@ -180,8 +179,7 @@ mod tests {
         std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         let script = |name: &str, text: &str| {
             let path = home.join("bin").join(name);
-            std::fs::write(&path, format!("#!/bin/sh\n{text}\n")).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            new_script(&path, format!("#!/bin/sh\n{text}\n")).unwrap();
             path
         };
         let ran = dir.join("ran");
