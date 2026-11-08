@@ -6,6 +6,8 @@
 //! computer that slept and woke since opens it again. Anything else opened on it (a worktree, a
 //! clone, a new project's folder) needs the computer at once, and wakes it.
 
+mod terminals;
+
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -14,8 +16,9 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Home, KeptWorktree, Listed, Listening, Listing, Output, Printed, Save, Saved, Search,
-    Searched, Since, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    Globbed, Home, KeptWorktree, Listed, Listening, Listing, Output, Printed, Save, Saved,
+    Screenful, Search, Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use tokio::time::Instant;
@@ -23,6 +26,14 @@ use tokio::time::Instant;
 /// Wakes the computer, if it sleeps, and answers it awake with its home: what [`Waking`] asks
 /// before each call that needs the computer.
 pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> + Send + Sync>;
+
+/// Looks whether the computer is awake, never waking it: its home there while this server
+/// reaches it awake; none while it sleeps or is being woken, so nothing from before runs there;
+/// unreachable while it runs where this server does not reach it (driven by another server, or
+/// woken by this one before it restarted). What [`Waking`] asks before a call that must find
+/// what already runs there, such as a person's terminal, and must never wake it.
+pub type Peek =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<Option<Home>, ComputerError>> + Send + Sync>;
 
 /// What a computer may have run short of while a command ran (`specs/computers.md`, decision
 /// 8).
@@ -46,6 +57,7 @@ const TRUSTED: Duration = Duration::from_secs(30);
 /// A person's computer that wakes only for the calls that need it.
 pub struct Waking {
     wake: Wake,
+    peek: Peek,
     /// Grows it when a command runs short, where it can grow.
     grow: Option<Grow>,
     /// The computer as planned, and its home there.
@@ -126,12 +138,18 @@ fn reopens(sources: &Sources) -> bool {
 }
 
 impl Waking {
-    /// The computer `wake` wakes, and `grow`, if given, grows, planned as `home`: its home's
-    /// workspace, which names the computer, whose scratch folders are made in the folder
-    /// `scratch`. Nothing is asked of it until a call needs it.
-    pub fn home(wake: Wake, grow: Option<Grow>, home: WorkspaceInfo, scratch: &str) -> Home {
+    /// The computer `wake` wakes, `peek` finds awake without waking it, and `grow`, if given,
+    /// grows, planned as `home`: its home's workspace, which names the computer, whose scratch
+    /// folders are made in the folder `scratch`. Nothing is asked of it until a call needs it.
+    pub fn home(
+        (wake, peek): (Wake, Peek),
+        grow: Option<Grow>,
+        home: WorkspaceInfo,
+        scratch: &str,
+    ) -> Home {
         let waking = Self {
             wake,
+            peek,
             grow,
             home: home.clone(),
             scratch: scratch.trim_end_matches('/').to_owned(),
@@ -594,6 +612,79 @@ impl Computers for Waking {
                 Some(open) => self.done(open.computers.listening(open.workspace).await),
                 None => Ok(Vec::new()),
             }
+        })
+    }
+
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        Box::pin(self.open_terminal_woken(computer, (folder, owner), size))
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        _computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        Box::pin(self.terminals_awake(owner))
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            awake
+                .computers
+                .write_terminal(awake.computer, at, input)
+                .await
+        })
+    }
+
+    fn read_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            let read = awake
+                .computers
+                .read_terminal(awake.computer, at, from, wait);
+            read.await
+        })
+    }
+
+    fn resize_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            let resized = awake.computers.resize_terminal(awake.computer, at, size);
+            resized.await
+        })
+    }
+
+    fn close_terminal<'a>(
+        &'a self,
+        _computer: ComputerId,
+        at: (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let awake = self.terminal_awake(at.0).await?;
+            awake.computers.close_terminal(awake.computer, at).await
         })
     }
 

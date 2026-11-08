@@ -9,6 +9,7 @@ import { ChangesService } from '../../services/changes.service';
 import { PanelService } from '../../services/panel.service';
 import { FakeTurn } from '../../testing/fake-session';
 import { changed, editedFile, event, record, thread } from '../../testing/fixtures';
+import { objectUrls } from '../../testing/object-urls';
 import { openThread as open, session, type } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
@@ -721,11 +722,7 @@ describe('ThreadComponent', () => {
 describe('ThreadComponent with files', () => {
   beforeEach(() => {
     localStorage.clear();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: () => 'blob:test/1',
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
+    objectUrls();
   });
 
   it('adds a file to the message, keeps it in the project, and sends it with the message', async () => {

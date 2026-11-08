@@ -3,6 +3,7 @@
 //! limit ([`crate::Processes::output`]), or as a glave of its own ([`Program::detach`]).
 
 use std::ffi::OsStr;
+use std::os::fd::OwnedFd;
 use std::path::Path;
 use std::process::{Output, Stdio};
 use std::time::Duration;
@@ -22,6 +23,8 @@ pub struct Program {
     pub(crate) grouped: bool,
     /// What it reads.
     pub(crate) input: Input,
+    /// The terminal it reads, when it runs in one, until it starts.
+    terminal: Option<OwnedFd>,
     /// Where its output and its errors go, until it starts; as this process's when unset.
     stdout: Option<Stdio>,
     stderr: Option<Stdio>,
@@ -40,6 +43,8 @@ pub(crate) enum Input {
     Nothing,
     /// A pipe glave writes to.
     Piped,
+    /// The terminal its output goes to ([`Program::in_terminal`]).
+    Terminal,
 }
 
 impl Program {
@@ -52,6 +57,7 @@ impl Program {
             command,
             grouped: true,
             input: Input::Inherited,
+            terminal: None,
             stdout: None,
             stderr: None,
             cleared: false,
@@ -110,6 +116,19 @@ impl Program {
         self
     }
 
+    /// It runs in `terminal`, the pseudo-terminal's side a program holds: what it reads,
+    /// prints and says went wrong. It must make the terminal its own, in a session of its own,
+    /// first thing (glave's terminal helper does), so glave gives it no process group: a
+    /// group's leader cannot start a session. The session is its group all the same.
+    pub fn in_terminal(&mut self, terminal: OwnedFd) -> std::io::Result<&mut Self> {
+        self.stdout = Some(Stdio::from(terminal.try_clone()?));
+        self.stderr = Some(Stdio::from(terminal.try_clone()?));
+        self.terminal = Some(terminal);
+        self.input = Input::Terminal;
+        self.grouped = false;
+        Ok(self)
+    }
+
     pub fn stdout(&mut self, stdout: impl Into<Stdio>) -> &mut Self {
         self.stdout = Some(stdout.into());
         self
@@ -130,6 +149,11 @@ impl Program {
             Input::Piped => {
                 self.command.stdin(Stdio::piped());
             }
+            Input::Terminal => {
+                if let Some(terminal) = self.terminal.take() {
+                    self.command.stdin(Stdio::from(terminal));
+                }
+            }
         }
         if let Some(stdout) = self.stdout.take() {
             self.command.stdout(stdout);
@@ -146,14 +170,16 @@ impl Program {
     /// writes to first that it may go (`lifeline/gate.rs`). It becomes the program then, in the
     /// same process, reading that pipe on or nothing.
     pub(crate) fn gated(&mut self, starter: &Path) -> tokio::process::Command {
-        use crate::lifeline::gate::{NONE, PIPE, START_ARG};
+        use crate::lifeline::gate::{NONE, PIPE, START_ARG, TTY};
         let real = self.command.as_std();
         let mut gate = tokio::process::Command::new(starter);
-        let input = if self.input == Input::Piped {
-            PIPE
-        } else {
-            NONE
+        let input = match self.input {
+            Input::Piped => PIPE,
+            // It reads the terminal its output goes to, which the gate hands it once told go.
+            Input::Terminal => TTY,
+            Input::Inherited | Input::Nothing => NONE,
         };
+        self.terminal = None;
         // Named as the program is, while it waits to become it.
         gate.arg0(real.get_program())
             .arg(START_ARG)
@@ -258,6 +284,16 @@ impl Program {
             Ok(None) => Err(self.late(limit)),
             Err(error) => Err(self.failed(error)),
         }
+    }
+
+    /// Runs it to its end, however long that is, blocking, its streams this process's: only for
+    /// a program this process exists to wait for, as glave's terminal helper waits for the
+    /// person's shell, and outlives it to end what the shell left in its session.
+    pub fn status_blocking(&mut self) -> Result<std::process::ExitStatus, ProcessError> {
+        self.direct()
+            .as_std_mut()
+            .status()
+            .map_err(|error| self.failed(error))
     }
 
     /// Becomes the program, replacing this process (the sandbox's helper does, once it has

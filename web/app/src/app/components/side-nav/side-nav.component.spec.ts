@@ -14,6 +14,7 @@ import { GroupingService } from '../../services/grouping.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { record, task, thread } from '../../testing/fixtures';
+import { objectUrls } from '../../testing/object-urls';
 import { SideNavComponent } from './side-nav.component';
 
 /**
@@ -78,15 +79,7 @@ describe('SideNavComponent', () => {
   });
 
   it('loads what reads a logo once the organization has one, and follows it', async () => {
-    // Its own, each URL new: run in one worker, another spec's stub that gives one URL stays.
-    let made = 0;
-    const urls = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
-      made += 1;
-      return `blob:side-nav/${String(made)}`;
-    });
-    onTestFinished(() => {
-      urls.mockRestore();
-    });
+    objectUrls();
     const organization = { name: 'Acme', accent: 'plain', locked: false };
     const { root, fake, fixture } = await render([], { look: { organization } });
     const heading = (): Element | null => root.querySelector('[data-testid="nav-heading"]');
@@ -215,15 +208,14 @@ describe('SideNavComponent', () => {
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
     expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(tasks);
-    // Read before the switch's code is in, the switch's room is kept above them.
-    expect(root.querySelector('app-projects-nav')?.previousElementSibling?.className).toBe(
-      'grouping room',
-    );
+    // Read before the switch's code is in, the switch's room is kept above them, decided with
+    // them, and the switch fills it once its code is in: no swap of the block can move them.
+    const room = root.querySelector('app-projects-nav')?.previousElementSibling;
+    expect(room?.className).toBe('grouping shown');
+    expect(room?.querySelector('app-group-by')).toBeNull();
     await (await fixture.getDeferBlocks())[0]?.render(DeferBlockState.Complete);
-    expect(root.querySelector('.room')).toBeNull();
-    expect(root.querySelector('app-group-by')?.nextElementSibling?.tagName).toBe(
-      'APP-PROJECTS-NAV',
-    );
+    expect(root.querySelector('app-projects-nav')?.previousElementSibling).toBe(room);
+    expect(room?.querySelector('app-group-by')).not.toBeNull();
     await expectAccessible(root);
   });
 
@@ -237,8 +229,8 @@ describe('SideNavComponent', () => {
     expect(root.querySelector('[data-testid="nav-projects"]')).not.toBeNull();
     expect(root.querySelector('app-status-nav')).toBeNull();
     // Above the threads, as they scroll.
-    const group = root.querySelector('app-group-by');
-    expect(group?.nextElementSibling?.tagName.toLowerCase()).toBe('app-projects-nav');
+    const room = root.querySelector('app-group-by')?.parentElement;
+    expect(room?.nextElementSibling?.tagName.toLowerCase()).toBe('app-projects-nav');
     await expectAccessible(root);
     radio('Status')?.click();
     await settle(fixture);
@@ -281,7 +273,10 @@ describe('SideNavComponent', () => {
       projects: [record('me', 'Personal', 'personal')],
       grouping: 'status',
     });
+    // Neither the switch nor a room for it.
     expect(root.querySelector('[data-testid="nav-group"]')).toBeNull();
+    const room = root.querySelector('.grouping');
+    expect(room === null ? null : getComputedStyle(room).display).toBe('none');
     expect(root.querySelector('app-status-nav')).toBeNull();
     expect(root.querySelector('[data-testid="nav-chats"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="nav-thread-line"]')).toBeNull();

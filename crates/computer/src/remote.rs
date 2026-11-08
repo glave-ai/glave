@@ -10,7 +10,8 @@ use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed,
     GitCredential, GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output,
-    Printed, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    Printed, Save, Saved, Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalInfo,
+    TerminalSize, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -391,7 +392,9 @@ fn deadline(request: &Request) -> Duration {
         Request::Run { command, .. } => command
             .timeout_secs
             .map_or(SLOW, |secs| Duration::from_secs(secs).saturating_add(GRACE)),
-        Request::Output { wait_ms, .. } | Request::Ended { wait_ms, .. } => {
+        Request::Output { wait_ms, .. }
+        | Request::Ended { wait_ms, .. }
+        | Request::TerminalRead { wait_ms, .. } => {
             QUICK.max(Duration::from_millis(*wait_ms).saturating_add(GRACE))
         }
         Request::Create { .. }
@@ -596,6 +599,106 @@ impl Computers for RemoteComputers {
         })
     }
 
+    fn open_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        folder: &'a str,
+        owner: &'a str,
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<TerminalId, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Opened {
+            terminal: TerminalId,
+        }
+        let (folder, owner) = (folder.to_owned(), owner.to_owned());
+        let request = Request::TerminalOpen {
+            computer,
+            folder,
+            owner,
+            size,
+        };
+        Box::pin(async move { Ok(self.typed::<Opened>(&request).await?.terminal) })
+    }
+
+    fn terminals<'a>(
+        &'a self,
+        computer: ComputerId,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<TerminalInfo>, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Listed {
+            terminals: Vec<TerminalInfo>,
+        }
+        let owner = owner.to_owned();
+        let request = Request::TerminalList { computer, owner };
+        Box::pin(async move { Ok(self.typed::<Listed>(&request).await?.terminals) })
+    }
+
+    fn write_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        (terminal, owner): (TerminalId, &'a str),
+        input: &'a Bytes,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let (owner, input) = (owner.to_owned(), input.clone());
+        let request = Request::TerminalWrite {
+            computer,
+            terminal,
+            owner,
+            input,
+        };
+        Box::pin(async move { self.call(&request).await.map(drop) })
+    }
+
+    fn read_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        (terminal, owner): (TerminalId, &'a str),
+        from: u64,
+        wait: Duration,
+    ) -> BoxFuture<'a, Result<Screenful, ComputerError>> {
+        let wait_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX);
+        let owner = owner.to_owned();
+        let request = Request::TerminalRead {
+            computer,
+            terminal,
+            owner,
+            from,
+            wait_ms,
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn resize_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        (terminal, owner): (TerminalId, &'a str),
+        size: TerminalSize,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let owner = owner.to_owned();
+        let request = Request::TerminalResize {
+            computer,
+            terminal,
+            owner,
+            size,
+        };
+        Box::pin(async move { self.call(&request).await.map(drop) })
+    }
+
+    fn close_terminal<'a>(
+        &'a self,
+        computer: ComputerId,
+        (terminal, owner): (TerminalId, &'a str),
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        let owner = owner.to_owned();
+        let request = Request::TerminalClose {
+            computer,
+            terminal,
+            owner,
+        };
+        Box::pin(async move { self.call(&request).await.map(drop) })
+    }
+
     fn read<'a>(
         &'a self,
         workspace: WorkspaceId,
@@ -705,22 +808,4 @@ impl Computers for RemoteComputers {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::other_glave;
-
-    #[test]
-    fn another_glave_on_a_computer_is_told_to_the_admin_with_the_one_to_set() {
-        let ours = env!("CARGO_PKG_VERSION");
-        assert_eq!(other_glave(Some(ours)), None);
-        assert_eq!(
-            other_glave(Some("9.9.9")),
-            Some(format!(
-                "a computer runs glave 9.9.9, but this server runs glave {ours}, whose skills \
-                 may teach commands that one lacks: set [workers] glave to a Linux build of \
-                 glave {ours}; each computer takes it at its next start or wake"
-            ))
-        );
-        let unknown = other_glave(None).unwrap_or_default();
-        assert!(unknown.starts_with("a computer runs an unknown version of glave, but"));
-    }
-}
+mod tests;

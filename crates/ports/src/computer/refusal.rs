@@ -57,6 +57,18 @@ worded! {
             "this computer already keeps { $most } commands running in the background; stop one first",
         NoRoom = "computer-no-room" "there is no room for it",
 
+        // Terminals.
+        TerminalSize { most, cols, rows } = "computer-terminal-size"
+            "a terminal is 1 to { $most } columns and rows, not { $cols } by { $rows }",
+        TerminalInput { most } = "computer-terminal-input"
+            "a terminal takes at most { $most } bytes at once",
+        TooManyTerminals { most } = "computer-too-many-terminals"
+            "{ $most } terminals are already open on this computer; close one first",
+        TooManyOwnedTerminals { most } = "computer-too-many-owned-terminals"
+            "{ $most } terminals are already open in this thread; close one first",
+        NoLoginShell = "computer-no-login-shell"
+            "this account's login shell opens no shell, so no terminal opens for it",
+
         // Workers.
         NeedsIsolation = "computer-needs-isolation"
             "policy requires workers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this backend has none: run workers on Kubernetes with [workers] runtime_class set (gVisor or Kata)",
@@ -207,6 +219,11 @@ mod tests {
             "<most> commands are already running in the background here; stop one first",
             "this computer already keeps <most> commands running in the background; stop one first",
             "there is no room for it",
+            "a terminal is 1 to <most> columns and rows, not <cols> by <rows>",
+            "a terminal takes at most <most> bytes at once",
+            "<most> terminals are already open on this computer; close one first",
+            "<most> terminals are already open in this thread; close one first",
+            "this account's login shell opens no shell, so no terminal opens for it",
             "policy requires workers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this backend has none: run workers on Kubernetes with [workers] runtime_class set (gVisor or Kata)",
             "this worker has no network, so it cannot clone a repository; give it the network, or open a folder on it",
             "a worker runs an image; this environment names the host. Name an image in devcontainer.json or .glave/environment.toml",

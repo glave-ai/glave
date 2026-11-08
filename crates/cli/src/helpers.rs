@@ -1,6 +1,8 @@
 //! glave started again as a helper of its own: the lifeline's, which stops what glave started
-//! once glave ends however it ends (`specs/one-server.md`, "No orphaned processes"), and the
-//! Linux sandbox's, which confines itself and then becomes a command (`specs/sandbox.md`).
+//! once glave ends however it ends (`specs/one-server.md`, "No orphaned processes"), the
+//! Linux sandbox's, which confines itself and then becomes a command (`specs/sandbox.md`), and
+//! a terminal's, which takes its terminal in a session of its own and runs the person's shell
+//! in it, staying the session's leader (`specs/computers.md`, "Terminals").
 //! Each is run first thing in `main`, before glave starts a thread. And this glave, first on
 //! every command's `PATH`, so the `glave doc` a skill teaches is the glave that taught it.
 
@@ -15,12 +17,19 @@ use glave_computer::LocalComputers;
 const ON_PATH: &str = "bin";
 
 /// Runs glave as one of its helpers when it was started as one, and then returns the code to
-/// exit with: the lifeline's once what glave left running is stopped, the sandbox's only when
-/// confining itself or starting the command failed.
+/// exit with: the lifeline's once what glave left running is stopped, the sandbox's and a
+/// terminal's only when confining itself, taking the terminal or starting the program failed.
 pub(crate) fn run() -> Option<ExitCode> {
     let args: Vec<OsString> = std::env::args_os().collect();
     if let Some(code) = glave_process::lifeline_helper(&args) {
         return Some(code);
+    }
+    if let Some(failure) = glave_computer::terminal_helper(&args) {
+        if failure.is_empty() {
+            return Some(ExitCode::SUCCESS);
+        }
+        eprintln!("glave terminal: {failure}");
+        return Some(ExitCode::from(126));
     }
     let failure = glave_computer::sandbox_helper(&args)?;
     eprintln!("glave sandbox: {failure}");
@@ -28,7 +37,7 @@ pub(crate) fn run() -> Option<ExitCode> {
 }
 
 /// `computers` with this program as glave's own, which Linux needs to sandbox commands where
-/// bubblewrap cannot start.
+/// bubblewrap cannot start, and every computer to open a terminal.
 pub(crate) fn with_helper(computers: LocalComputers) -> LocalComputers {
     match glave_process::this_program() {
         Ok(program) => computers.with_helper(program),
