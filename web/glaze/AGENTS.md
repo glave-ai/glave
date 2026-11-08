@@ -12,7 +12,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 - Only CSS custom properties (`styles/tokens.css` lists them all). Never style Glaze's internals by class.
 - The look is monochrome: neutral greys, and one accent, ink by default. A theme sets `--glz-accent-light` and `--glz-accent-dark` alone, on `:root`; the colour on it (`--glz-on-accent`), its hover, its soft tint and the accent as text follow in CSS. Focus has its own quiet ring (`--glz-color-focus`), never the accent.
-- Surfaces, page up: `--glz-surface-page`, `-sidebar`, `-sunken`, `-card`, `-raised`, `-overlay`; `-bubble` under the person's messages. `<glz-card surface="raised">` picks one.
+- Surfaces, page up: `--glz-surface-page`, `-sidebar`, `-sunken`, `-card`, `-raised`, `-overlay`; `-bubble` under the person's messages. `<glz-card surface="raised">` picks one. A terminal is dark in both themes: `--glz-surface-terminal`, `--glz-color-on-terminal` and `--glz-terminal-selection`, and its sixteen colours `--glz-terminal-ansi-0` to `-15`, each 4.5:1 on it: plain colours an emulator reads.
 - Light and dark come from CSS alone (`color-scheme` and `light-dark()`), following the system. To force one, set `data-theme="light"` or `"dark"` on `<html>`; storing the person's choice is the app's job.
 
 ## Space and layout

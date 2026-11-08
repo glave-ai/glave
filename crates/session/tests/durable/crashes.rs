@@ -3,13 +3,14 @@
 //! up to what a whole run makes; a server started on the same store finds each turn waiting or
 //! closes it `interrupted`, and answering what waits then takes every turn to its end. A turn
 //! whose start never landed has nothing to repair: its request failed. Alone and with two
-//! subagents side by side, no call ever runs twice. A call begins once, on the record: however
-//! its result is lost, and whoever goes on after, it is never run again.
+//! subagents side by side, no call ever runs twice, and the turn's end counts each model call
+//! once. A call begins once, on the record: however its result is lost, and whoever goes on
+//! after, it is never run again.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::{Arguments, ThreadId};
+use glave_event::{Arguments, Body, ThreadId, decode};
 use glave_ports::testing::{FaultyLog, ScriptedModel};
 use glave_ports::{
     BoxFuture, Completion, Effect, EventLog, InMemoryLeases, InMemoryProjects, InMemoryTools,
@@ -190,9 +191,37 @@ async fn left_open<L: EventLog + 'static>(server: &Tested<L>, root: ThreadId) ->
     open
 }
 
+/// The model calls the logs of `root` and its subagents have, each one turn, and how many the
+/// end of `root`'s turn counted.
+async fn model_calls<L: EventLog + 'static>(
+    server: &Tested<L>,
+    root: ThreadId,
+) -> (u32, Option<u32>) {
+    let mut threads = vec![root];
+    threads.extend(super::children_of(server, root).await);
+    let mut responded = 0;
+    for thread in threads {
+        let events = events(server, thread).await;
+        let calls = events
+            .iter()
+            .filter(|event| event.kind.as_str() == "model.responded");
+        responded += u32::try_from(calls.count()).unwrap();
+    }
+    let ended =
+        events(server, root)
+            .await
+            .into_iter()
+            .find_map(|raw| match decode(raw).unwrap().body {
+                Body::TurnEnded(ended) => Some(ended.model_calls),
+                _ => None,
+            });
+    (responded, ended)
+}
+
 /// `script` stopped after `appends` appends, then taken to its end by a server on the same
-/// store: every turn left open waits or is closed, then ends, and no deploy runs twice. How
-/// often each deploy ran when the run was whole, its server never stopped.
+/// store: every turn left open waits or is closed, then ends, counting each model call once, and
+/// no deploy runs twice. How often each deploy ran when the run was whole, its server never
+/// stopped.
 async fn stopped_after(
     name: &str,
     script: fn() -> Vec<(&'static str, Vec<Completion>)>,
@@ -266,6 +295,14 @@ async fn stopped_after(
         ran.iter().all(|(_, n)| *n <= 1),
         "stopped after {appends} appends: a call ran twice: {ran:?}"
     );
+    if begun {
+        let (responded, counted) = model_calls(&second, root).await;
+        assert_eq!(
+            counted,
+            Some(responded),
+            "stopped after {appends} appends: its end counts each model call once"
+        );
+    }
     (!log.stopped()).then_some(ran)
 }
 

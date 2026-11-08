@@ -372,6 +372,15 @@ A turn is drawn as its steps (#903): the person's message, then what the model s
 - **Live,** each model call of a turn begins with `turn/live`'s `waiting`: the text and reasoning streamed after it are the new step's, and what streamed before it of a call that was not recorded, one tried again, is gone.
 - **Drawn by each client.** The web app draws each run as its line, which opens to its calls, each the line its `tool.call.requested` records. The terminal prints each call as it runs.
 
+## Compaction
+
+A thread keeps within its model's context window by compacting: before a request that would fill its threshold (80% of the window unless set), the whole conversation is summarized, and the thread goes on from the summary, the latest tool results and the person's latest request, recorded as `thread.compacted` (`events.md`); the events before it stay in the log.
+
+- **On the thread's cache** (#1296). The summary is asked with what the thread's own calls send: its prompt, its tools offered as they are (told to call none, DeepSeek leaves them out of the prompt and read 256 tokens from its cache where it read 2,304 with them offered, on the `compaction` eval), its conversation with memory and files as they go, and its reasoning level; then the instruction, which asks for text only. So the provider's cache holds all but the instruction. The instruction says to leave out what the memory block holds, which opens the restarted conversation again; a model that keeps a memory's text anyway keeps it in the thread's history, which Forget leaves as it is (`memory.md`, "Forget erases the memory; chats are history").
+- **A summary that cannot stand in for the conversation** (cut off at its cap, a tool called instead, reasoning alone, or nothing) is asked for once more: for half the words when it was cut off, with less reasoning (`low`) too when it reasoned first or only reasoned, and without tools when it called one. One cut off again with words in it stands in, as the best there is: before #1296 every cut summary did, unasked again. The instruction states the cap the request is sent with: half as many words as its tokens (4,000, or a quarter of the window if less). Why it failed is logged, without its content.
+- **Every summary call counts**, one that failed too: each is recorded (`model.responded`) and counted in its turn's calls, tokens and cost.
+- **When both fail** the turn goes on, and no summary is asked for again until the request has grown by 5% of the window or the provider refuses it as too long.
+
 ## Sources
 
 What a reply drew on from the web shows under it (#677): the pages the agent read with glave's own `web_fetch` in its turn, before the reply.
@@ -568,6 +577,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Changes' room in the history** (#913): each turn's `turn.ended` records the files it changed, so the web app keeps their room as a thread opens.
 - **The thread's changes from its folder** (#1251): what differs in its folder from where it started, whatever changed it, read on its computer (`files/changes`), with each turn's still glave's own edits; the web app reads them again as a command ends.
 - **Runs of calls in a line** (#903): `thread/steps`, each run of calls with its line, by the kind each call records, and each turn's reply. Not yet: the web app drawing them.
+- **Compaction's cost** (#1296): a failed summary recorded, counted and asked for once more, then not again until the request grows; summaries sent as the thread's calls are, on its cache ("Compaction").
 - **Steps in the server's words** (#851): each call's line recorded in its `tool.call.requested` and drawn by the web app's receipts, a search's as what it searched.
 - **Thoughts of older messages** (#927): a message recorded before its `thought` was kept is sent with its headline, read from its reasoning.
 - **Receipts from the server** (#817): a turn's result recorded in its `turn.ended`, drawn by the web app's receipt as by the terminal's, a model on the server's own computer priced at nothing. Not yet: a running turn's result so far, which shows once it ends.

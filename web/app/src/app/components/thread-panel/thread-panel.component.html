@@ -31,6 +31,9 @@
         @case ('overview') {
           <app-thread-overview />
         }
+        @case ('terminal') {
+          <app-terminal-tab />
+        }
         @case ('changes') {
           <app-thread-files [files]="facts.files()" [note]="facts.note()" />
         }

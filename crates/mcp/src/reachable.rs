@@ -2,14 +2,15 @@
 //! after its name is looked up, so a name cannot resolve to a public address when checked and a
 //! private one when connected. An address in the URL itself is looked up by no one, so it is
 //! checked apart, with this computer's own name ([`Reachable::refuses`]). The rule is glave's one list
-//! ([`glave_ports::host::reachable`]), which `web_fetch` holds to too; a name resolved through a
-//! proxy is not seen here, so where only public addresses will do the client takes no proxy.
+//! ([`glave_ports::host::reachable`]), and names are looked up as `web_fetch` looks them up
+//! ([`Lookup`]); a name resolved through a proxy is not seen here, so where only public addresses
+//! will do the client takes no proxy.
 
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::Arc;
 
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
+use glave_ports::host::Lookup;
 
 /// The addresses a remote server may be at. Cloud metadata is out of reach in both, as a tool
 /// server is never there.
@@ -49,9 +50,26 @@ impl Reachable {
         })
     }
 
+    /// The lookup of names under this rule, refusing a name that leads only to addresses out
+    /// of its reach in its own words.
+    fn lookup(self) -> Lookup<Refused> {
+        let refused: fn(&str) -> Refused = match self {
+            Self::AlsoPrivate => |host| Refused {
+                host: host.to_owned(),
+                reachable: Self::AlsoPrivate,
+            },
+            Self::OnlyPublic => |host| Refused {
+                host: host.to_owned(),
+                reachable: Self::OnlyPublic,
+            },
+        };
+        let private_ok = self == Self::AlsoPrivate;
+        Lookup::new(move |_| private_ok, refused)
+    }
+
     /// A client whose names are looked up under this rule.
     pub(crate) fn client(self) -> reqwest::ClientBuilder {
-        let client = reqwest::Client::builder().dns_resolver(Arc::new(Guarded { reachable: self }));
+        let client = reqwest::Client::builder().dns_resolver(Arc::new(self.lookup()));
         match self {
             Self::AlsoPrivate => client,
             Self::OnlyPublic => client.no_proxy(),
@@ -87,50 +105,13 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// Looks names up with the system resolver, keeping only the addresses allowed.
-#[derive(Clone, Copy)]
-struct Guarded {
-    reachable: Reachable,
-}
-
-impl Guarded {
-    /// Of `found`, the addresses allowed, or why there are none.
-    fn kept(
-        self,
-        host: &str,
-        found: impl Iterator<Item = SocketAddr>,
-    ) -> Result<Vec<SocketAddr>, Refused> {
-        let kept: Vec<SocketAddr> = found
-            .filter(|addr| self.reachable.allows(addr.ip()))
-            .collect();
-        if kept.is_empty() {
-            return Err(Refused {
-                host: host.to_owned(),
-                reachable: self.reachable,
-            });
-        }
-        Ok(kept)
-    }
-}
-
-impl Resolve for Guarded {
-    fn resolve(&self, name: Name) -> Resolving {
-        let host = name.as_str().to_owned();
-        let guarded = *self;
-        Box::pin(async move {
-            let found = tokio::net::lookup_host((host.as_str(), 0)).await?;
-            let kept = guarded.kept(&host, found)?;
-            let addrs: Addrs = Box::new(kept.into_iter());
-            Ok(addrs)
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::error::Error;
+    use std::net::SocketAddr;
 
     use glave_ports::testing::FakeHttp;
+    use reqwest::dns::{Name, Resolve as _};
 
     use super::*;
 
@@ -138,7 +119,7 @@ mod tests {
         let found = found
             .iter()
             .map(|ip| SocketAddr::new(ip.parse().unwrap(), 0));
-        let kept = Guarded { reachable }.kept("a.example.com", found)?;
+        let kept = reachable.lookup().kept("a.example.com", found)?;
         Ok(kept.iter().map(|addr| addr.ip().to_string()).collect())
     }
 
@@ -223,7 +204,7 @@ mod tests {
     fn a_name_that_looks_up_to_this_computer_is_refused_only_where_people_sign_in_from_elsewhere() {
         glave_ports::block_on!(async {
             let name = |text: &str| text.parse::<Name>().unwrap();
-            let looked_up = |reachable| Guarded { reachable }.resolve(name("localhost"));
+            let looked_up = |reachable: Reachable| reachable.lookup().resolve(name("localhost"));
             let refused = looked_up(Reachable::OnlyPublic).await.err().unwrap();
             assert!(refused.downcast_ref::<Refused>().is_some(), "{refused}");
             let found: Vec<SocketAddr> = looked_up(Reachable::AlsoPrivate)

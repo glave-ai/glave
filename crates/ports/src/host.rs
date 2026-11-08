@@ -5,6 +5,8 @@
 
 mod address;
 mod inside;
+#[cfg(feature = "lookup")]
+mod lookup;
 mod metadata;
 
 use std::fmt;
@@ -12,6 +14,8 @@ use std::net::IpAddr;
 
 pub use address::reachable;
 pub use inside::{INSIDE, is_inside};
+#[cfg(feature = "lookup")]
+pub use lookup::Lookup;
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any
