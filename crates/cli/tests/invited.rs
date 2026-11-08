@@ -35,7 +35,7 @@ async fn from_browser(url: &str, origin: &str, method: &str, params: Value) -> V
 }
 
 /// Someone who opened an invite `owner` made, with a passkey of their own, signed in.
-async fn invited(owner: &Remote, url: &str, origin: &str) -> Remote {
+pub(crate) async fn invited(owner: &Remote, url: &str, origin: &str) -> Remote {
     let made = request("invite/create", json!({"role": "member"}));
     let made = serde_json::to_value(owner.request(&made).await.unwrap()).unwrap();
     let params = json!({"code": made["code"], "link": "invite"});

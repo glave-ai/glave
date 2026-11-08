@@ -36,7 +36,7 @@ use glave_event::{
     At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, Money, OrgRole, PrincipalId,
     ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
-use glave_ports::computer::{CommandId, ComputerId};
+use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
 use glave_ports::{OrgId, ProjectId};
 use serde::{Deserialize, Serialize};
 
@@ -528,6 +528,20 @@ methods! {
     "command/list" => CommandList { thread: ThreadId } -> [Commands],
     /// Stops one of a thread's commands in the background, and everything it started.
     "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
+    /// Opens a terminal of the caller's own in a thread's folder, on their own computer.
+    "terminal/open" => TerminalOpen { thread: ThreadId, size: TerminalSize } -> [Terminal],
+    /// The terminals open in a thread, oldest first.
+    "terminal/list" => TerminalList { thread: ThreadId } -> [Terminals],
+    /// Types `input` into one of a thread's terminals.
+    "terminal/write" => TerminalWrite { thread: ThreadId, terminal: TerminalId,
+        #[schemars(with = "String")] input: Bytes } -> [Done],
+    /// What one printed from `from`, waiting up to `wait_ms` (at most 25 s) for something.
+    "terminal/read" => TerminalRead { thread: ThreadId, terminal: TerminalId, from: u64,
+        #[serde(default)] wait_ms: u64 } -> [Screen],
+    /// Gives one of a thread's terminals another size.
+    "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
+    /// Closes one of a thread's terminals, ending its shell.
+    "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
     /// Runs a prompt as a task at set times, each run in a new thread
     /// working on a copy of its own.
     "schedule/create" => ScheduleCreate {

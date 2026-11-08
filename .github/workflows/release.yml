@@ -69,6 +69,8 @@ jobs:
         # failing. otherwise `sh` won't catch that `curl` returned non-0
         shell: bash
         run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-installer.sh | sh"
+        env:
+          CURL_HOME: "${{ github.workspace }}/.github/curl"
       - name: Cache dist
         uses: actions/upload-artifact@v7
         with:
@@ -147,6 +149,8 @@ jobs:
           "TARGET": "${{ join(matrix.targets, ' ') }}"
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
+        env:
+          CURL_HOME: "${{ github.workspace }}/.github/curl"
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@v8

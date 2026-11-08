@@ -34,7 +34,8 @@ env:
   CARGO_INCREMENTAL: "0"
 
 # Every job has a timeout of about three times its longest run (October 2026), so a hang fails
-# in minutes rather than holding the merge queue for GitHub's six hours.
+# in minutes rather than holding the merge queue for GitHub's six hours. A step that installs
+# tools with install-action has ten minutes (ci.yml says why).
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -51,6 +52,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' && matrix.way == 'public' }}
       - uses: taiki-e/install-action@v2
+        timeout-minutes: 10
         with:
           tool: cargo-nextest
       - name: Build glave, and the test that signs in to it

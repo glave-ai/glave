@@ -1052,6 +1052,19 @@ export type ScheduleInfo = {
   readonly when: When;
 };
 
+/**
+ * What a read of a terminal answers: what it printed from `from`, the offset of the first
+ * byte, up to `next`, the offset to read from next. A `from` past the offset asked for says
+ * the bytes between were dropped, the computer keeping only the latest [`TERMINAL_KEPT`].
+ * `ended` once its shell has ended and all it printed has been read.
+ */
+export type Screenful = {
+  readonly ended?: boolean;
+  readonly from: number;
+  readonly next: number;
+  readonly output: string;
+};
+
 /** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
 export type SearchInfo = {
   readonly kind: "never";
@@ -1241,6 +1254,27 @@ export type TaskKind = "agent";
 /** Whether a task is still going. */
 export type TaskStatus = "running" | "finished" | "elsewhere";
 
+/**
+ * Identifies a person's terminal open on a computer, unique everywhere (UUID v7, minted by
+ * the computer it runs on).
+ */
+export type TerminalId = string;
+
+/** A terminal open on a computer, as its listing shows it. */
+export type TerminalInfo = {
+  /** Whether its shell has ended; it stays until it is closed. */
+  readonly ended?: boolean;
+  /** The folder its shell started in, as its computer names it. */
+  readonly folder: string;
+  readonly id: TerminalId;
+};
+
+/** How many columns and rows a terminal shows. */
+export type TerminalSize = {
+  readonly cols: number;
+  readonly rows: number;
+};
+
 /** The files a thread changed, and each turn's. */
 export type ThreadChanges = {
   /**
@@ -1314,6 +1348,12 @@ export type ThreadSummary = {
   readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
+  /**
+   * Whether its person may open terminals of their own in its folder: their shell, on their
+   * own computer, so never on a worker, nor on the server's for anyone but the person it
+   * works for; never once it is put away (`specs/session.md`, "Terminals").
+   */
+  readonly terminals?: boolean;
   /** The title the person gave it, else the first line of their first message. */
   readonly title?: string | null;
   /** Tokens its own model calls used. */
@@ -2621,6 +2661,58 @@ export type TasksStopParams = {
 
 export type TasksStopResult = Readonly<Record<string, never>>;
 
+export type TerminalCloseParams = {
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalCloseResult = Readonly<Record<string, never>>;
+
+export type TerminalListParams = {
+  readonly thread: ThreadId;
+};
+
+export type TerminalListResult = {
+  readonly terminals: readonly (TerminalInfo)[];
+};
+
+export type TerminalOpenParams = {
+  readonly size: TerminalSize;
+  readonly thread: ThreadId;
+};
+
+export type TerminalOpenResult = {
+  readonly terminal: TerminalInfo;
+};
+
+export type TerminalReadParams = {
+  readonly from: number;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+  readonly wait_ms?: number;
+};
+
+/** What a terminal printed, from where it was read. */
+export type TerminalReadResult = {
+  readonly screen: Screenful;
+};
+
+export type TerminalResizeParams = {
+  readonly size: TerminalSize;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalResizeResult = Readonly<Record<string, never>>;
+
+export type TerminalWriteParams = {
+  readonly input: string;
+  readonly terminal: TerminalId;
+  readonly thread: ThreadId;
+};
+
+export type TerminalWriteResult = Readonly<Record<string, never>>;
+
 export type ThreadArchiveParams = {
   readonly thread: ThreadId;
 };
@@ -3006,6 +3098,12 @@ export interface Methods {
   readonly "signup/start": { readonly params: SignupStartParams; readonly result: SignupStartResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
+  readonly "terminal/close": { readonly params: TerminalCloseParams; readonly result: TerminalCloseResult };
+  readonly "terminal/list": { readonly params: TerminalListParams; readonly result: TerminalListResult };
+  readonly "terminal/open": { readonly params: TerminalOpenParams; readonly result: TerminalOpenResult };
+  readonly "terminal/read": { readonly params: TerminalReadParams; readonly result: TerminalReadResult };
+  readonly "terminal/resize": { readonly params: TerminalResizeParams; readonly result: TerminalResizeResult };
+  readonly "terminal/write": { readonly params: TerminalWriteParams; readonly result: TerminalWriteResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };
   readonly "thread/changes": { readonly params: ThreadChangesParams; readonly result: ThreadChangesResult };
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
@@ -3131,6 +3229,8 @@ export const ErrorCode = {
   NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
+  /** No such terminal is open in this thread */
+  NO_TERMINAL: -32038,
   /** No such thread */
   NO_THREAD: -32001,
   /** No such ask waits: the project changed since, or asks nothing now */
