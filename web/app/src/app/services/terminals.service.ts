@@ -20,6 +20,19 @@ const READ_WAIT_MS = 20_000;
 const RETRY_FIRST_MS = 1_000;
 const RETRY_LONGEST_MS = 30_000;
 
+/** How often the thread's terminals are listed again while the tab shows. */
+const RELIST_MS = 15_000;
+
+/** The most bytes one write takes, as the server says (`TERMINAL_CHUNK`): a paste goes in pieces. */
+const WRITE_MOST = 64 * 1024;
+
+/** `bytes` in pieces of at most `most`, in order. */
+function piecesOf(bytes: Uint8Array, most: number): readonly Uint8Array[] {
+  return Array.from({ length: Math.ceil(bytes.length / most) }, (_, index) =>
+    bytes.subarray(index * most, (index + 1) * most),
+  );
+}
+
 /** Resolves after `ms`, or as `stop` aborts. */
 function pause(ms: number, stop: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -76,10 +89,11 @@ function problemOf(error: unknown): string {
 
 /**
  * The open thread's terminals (`terminal/*`): the person's own shell in its folder, on their own
- * computer. Listed when the Terminal tab first shows, one opened when there are none, another on
- * asking; what one prints is read on from where it was, so a terminal shown again shows what it
- * printed while hidden, and the keys typed go to it in order. Nothing of it is kept in the page
- * but what its screen shows. Each thread view provides its own.
+ * computer. Listed when the Terminal tab first shows and again every so often while it does, one
+ * opened when there are none, another on asking; a screen reads what its terminal printed from
+ * its start, as much as its computer keeps, so a terminal shown again shows what it printed while
+ * hidden, and the keys typed go to it in order. Nothing of it is kept in the page but what its
+ * screen shows. Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class TerminalsService {
@@ -93,6 +107,11 @@ export class TerminalsService {
   });
   /** The keys typed into each terminal, sent one call after another. */
   private readonly sending = new Map<TerminalId, Promise<void>>();
+  /**
+   * Each terminal whose size is being sent, and the size it took since, if any, sent once that
+   * call is done: only the latest of a drag's many sizes goes.
+   */
+  private readonly resizing = new Map<TerminalId, Size | null>();
 
   readonly terminals = computed(() => this.state().terminals);
   readonly shown = computed(() => {
@@ -151,6 +170,49 @@ export class TerminalsService {
       }
     } catch (error: unknown) {
       this.failed(thread, error);
+      // Refused, as past the most a thread keeps: show those it has.
+      await this.relist(thread);
+    }
+  }
+
+  /**
+   * Lists the open thread's terminals again every so often until `stop` aborts, while the page
+   * is shown, so one that ended or went with its computer shows so here.
+   */
+  async watch(stop: AbortSignal): Promise<void> {
+    // Read as it is now each time: it can be stopped while it waits.
+    const stopped = (): boolean => stop.aborted;
+    while (!stopped()) {
+      await pause(RELIST_MS, stop);
+      if (this.document.hidden) {
+        await shownAgain(this.document, stop);
+        continue;
+      }
+      const thread = this.thread.thread();
+      if (thread !== null && !stopped()) {
+        await this.relist(thread);
+      }
+    }
+  }
+
+  /** Lists `thread`'s terminals again, keeping the one shown where it is still there. */
+  private async relist(thread: ThreadId): Promise<void> {
+    try {
+      const { terminals } = await this.session.call('terminal/list', { thread });
+      if (this.thread.thread() !== thread) {
+        return;
+      }
+      const ended = terminals.filter((each) => each.ended === true).map((each) => each.id);
+      this.state.update((state) => ({
+        ...state,
+        terminals,
+        shown: terminals.some((each) => each.id === state.shown)
+          ? state.shown
+          : (terminals.at(-1)?.id ?? null),
+        ended: new Set([...state.ended, ...ended]),
+      }));
+    } catch (error: unknown) {
+      this.failed(thread, error);
     }
   }
 
@@ -174,7 +236,10 @@ export class TerminalsService {
     try {
       await this.session.call('terminal/close', { thread, terminal });
     } catch (error: unknown) {
-      this.failed(thread, error);
+      // One already gone is closed, as asked.
+      if (!(error instanceof ApiError && error.code === ErrorCode.NO_TERMINAL)) {
+        this.failed(thread, error);
+      }
     }
   }
 
@@ -230,35 +295,54 @@ export class TerminalsService {
     }
   }
 
-  /** Types `bytes` into `terminal`, after what was typed before. */
+  /**
+   * Types `bytes` into `terminal`, after what was typed before: a paste larger than one write
+   * takes goes in pieces, in order, and stops at the first that fails.
+   */
   type(terminal: TerminalId, bytes: Uint8Array): void {
     const thread = this.thread.thread();
     if (thread === null) {
       return;
     }
-    const input = base64Of(bytes);
+    const inputs = piecesOf(bytes, WRITE_MOST).map(base64Of);
     const before = this.sending.get(terminal) ?? Promise.resolve();
     const sent = before.then(async () => {
-      try {
-        await this.session.call('terminal/write', { thread, terminal, input });
-      } catch (error: unknown) {
-        this.failed(thread, error);
+      for (const input of inputs) {
+        try {
+          await this.session.call('terminal/write', { thread, terminal, input });
+        } catch (error: unknown) {
+          this.failed(thread, error);
+          return;
+        }
       }
     });
     this.sending.set(terminal, sent);
   }
 
-  /** Gives `terminal` another size. */
+  /**
+   * Gives `terminal` another size: at once when none is being sent, else once that is done, and
+   * then only the latest it took meanwhile.
+   */
   async resize(terminal: TerminalId, size: Size): Promise<void> {
     const thread = this.thread.thread();
     if (thread === null) {
       return;
     }
-    try {
-      await this.session.call('terminal/resize', { thread, terminal, size });
-    } catch (error: unknown) {
-      this.failed(thread, error);
+    if (this.resizing.has(terminal)) {
+      this.resizing.set(terminal, size);
+      return;
     }
+    let next: Size | null = size;
+    while (next !== null) {
+      this.resizing.set(terminal, null);
+      try {
+        await this.session.call('terminal/resize', { thread, terminal, size: next });
+      } catch (error: unknown) {
+        this.failed(thread, error);
+      }
+      next = this.resizing.get(terminal) ?? null;
+    }
+    this.resizing.delete(terminal);
   }
 
   /** Says why a call in `thread` failed, while it is the thread open. */

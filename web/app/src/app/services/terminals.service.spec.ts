@@ -104,6 +104,81 @@ describe('TerminalsService', () => {
     expect(service.problem()).toBe('A terminal opens only on your own computer.');
   });
 
+  it('sends only the latest of the sizes a terminal took while one was being sent', async () => {
+    const fake = new FakeSession();
+    const give = fake.held('terminal/resize');
+    const service = await opened(fake);
+    const first = service.resize('t1', { cols: 81, rows: 24 });
+    await new Promise((resolve) => setTimeout(resolve));
+    void service.resize('t1', { cols: 90, rows: 24 });
+    void service.resize('t1', { cols: 100, rows: 30 });
+    give({});
+    await new Promise((resolve) => setTimeout(resolve));
+    give({});
+    await first;
+    expect(asked(fake, 'terminal/resize').map((params) => params['size'])).toEqual([
+      { cols: 81, rows: 24 },
+      { cols: 100, rows: 30 },
+    ]);
+  });
+
+  it('types a paste larger than one write takes in pieces, in order', async () => {
+    const fake = new FakeSession().answer('terminal/write', {});
+    const service = await opened(fake);
+    const paste = new Uint8Array(64 * 1024 * 2 + 3).fill(97);
+    service.type('t1', paste);
+    await new Promise((resolve) => setTimeout(resolve));
+    const sent = asked(fake, 'terminal/write').map((params) => atob(String(params['input'])));
+    expect(sent.map((piece) => piece.length)).toEqual([64 * 1024, 64 * 1024, 3]);
+  });
+
+  it('lists the terminals again after one is refused, and counts one gone as closed', async () => {
+    const refused = new ApiError({
+      code: ErrorCode.LIMIT,
+      message: '4 terminals are already open in this thread; close one first',
+    });
+    const gone = new ApiError({ code: ErrorCode.NO_TERMINAL, message: 'no terminal' });
+    let lists = 0;
+    const fake = new FakeSession()
+      .answer('terminal/list', () => {
+        lists += 1;
+        return { terminals: lists === 1 ? [] : [GLAVE] };
+      })
+      .answer('terminal/open', () => refused)
+      .answer('terminal/close', () => gone);
+    const service = await opened(fake);
+    await service.start(SIZE);
+    expect(lists).toBe(2);
+    expect(service.shown()).toEqual(GLAVE);
+    expect(service.problem()).toBe('4 terminals are already open in this thread; close one first.');
+    await service.close('t1');
+    expect(service.terminals()).toEqual([]);
+    expect(service.problem()).toBe('4 terminals are already open in this thread; close one first.');
+  });
+
+  it('lists the terminals again every so often while it is watched, and not once stopped', async () => {
+    let lists = 0;
+    const fake = new FakeSession().answer('terminal/list', () => {
+      lists += 1;
+      return { terminals: [{ ...GLAVE, ended: true }] };
+    });
+    const service = await opened(fake);
+    vi.useFakeTimers();
+    const stop = new AbortController();
+    const watching = service.watch(stop.signal);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(lists).toBe(1);
+    expect(service.shown()?.id).toBe('t1');
+    expect(service.ended()).toBe(true);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(lists).toBe(2);
+    stop.abort();
+    await watching;
+    await vi.advanceTimersByTimeAsync(15_000);
+    vi.useRealTimers();
+    expect(lists).toBe(2);
+  });
+
   it('reads again a while after a read fails, saying why meanwhile, and not while hidden', async () => {
     let reads = 0;
     const fake = new FakeSession().answer('terminal/read', () => {

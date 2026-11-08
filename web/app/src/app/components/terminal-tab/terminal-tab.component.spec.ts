@@ -48,27 +48,26 @@ describe('TerminalTabComponent', () => {
     expect(texts(root, 'terminal-folder')).toEqual(['/work/glave']);
     expect(texts(root, 'terminal-who')).toEqual(["Your shell, not the agent's"]);
     expect(root.querySelectorAll('app-terminal-screen')).toHaveLength(1);
-    expect(root.querySelector('[data-testid="terminal-choice"]')).toBeNull();
+    expect(root.querySelector('[data-testid="terminal-choices"]')).toBeNull();
     await expectAccessible(root);
 
     root.querySelector<HTMLButtonElement>('[data-testid="terminal-new"]')?.click();
     await settle();
+    expect(texts(root, 'terminal-choices-label')).toEqual(['Terminals']);
+    expect(texts(root, 'terminal-choices-option')).toEqual(['1', '2']);
     const choices = Array.from(
-      root.querySelectorAll<HTMLButtonElement>('[data-testid="terminal-choice"]'),
+      root.querySelectorAll<HTMLInputElement>('[data-testid="terminal-choices-option"] input'),
     );
-    expect(choices.map((choice) => choice.getAttribute('aria-label'))).toEqual([
-      'Terminal 1',
-      'Terminal 2',
-    ]);
-    expect(choices.map((choice) => choice.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    expect(choices.map((choice) => choice.checked)).toEqual([false, true]);
     await expectAccessible(root);
     choices[0]?.click();
     await settle();
+    expect(choices.map((choice) => choice.checked)).toEqual([true, false]);
     root.querySelector<HTMLButtonElement>('[data-testid="terminal-close"]')?.click();
     await settle();
     const closed = fake.calls.filter((call) => call.method === 'terminal/close');
     expect(closed.map((call) => call.params)).toEqual([{ thread: 'thread-1', terminal: 't1' }]);
-    expect(root.querySelector('[data-testid="terminal-choice"]')).toBeNull();
+    expect(root.querySelector('[data-testid="terminal-choices"]')).toBeNull();
   });
 
   it('says why no terminal opens, in the server’s words', async () => {

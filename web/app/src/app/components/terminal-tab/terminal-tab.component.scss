@@ -34,34 +34,6 @@
   white-space: nowrap;
 }
 
-.choices {
-  display: flex;
-  gap: var(--glz-space-half);
-}
-
-.choice {
-  min-inline-size: var(--glz-control-height-sm);
-  min-block-size: var(--glz-control-height-sm);
-  border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-control);
-  background: none;
-  color: var(--glz-color-text-muted);
-  font: inherit;
-  font-size: var(--glz-text-sm);
-  cursor: pointer;
-}
-
-// The one shown: its border in the marker of what is chosen, not its fill alone.
-.choice[aria-pressed='true'] {
-  border-color: var(--glz-selected-marker);
-  color: var(--glz-color-text);
-}
-
-.choice:focus-visible {
-  outline: 2px solid var(--glz-color-focus);
-  outline-offset: 2px;
-}
-
 .box {
   flex: 1;
 }

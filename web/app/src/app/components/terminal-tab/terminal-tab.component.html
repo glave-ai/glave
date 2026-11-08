@@ -6,22 +6,13 @@
     <span class="who" data-testid="terminal-who">{{ copy.who }}</span>
   </p>
   @if (choices(); as choices) {
-    <div class="choices" role="group" [attr.aria-label]="copy.terminals">
-      @for (choice of choices; track choice.id) {
-        <button
-          type="button"
-          class="choice"
-          inert
-          data-testid="terminal-choice"
-          [attr.aria-label]="choice.label"
-          [attr.aria-pressed]="choice.pressed"
-          [attr.inert]="null"
-          (click)="show(choice.id)"
-        >
-          {{ choice.number }}
-        </button>
-      }
-    </div>
+    <glz-segmented
+      testId="terminal-choices"
+      [label]="copy.terminals"
+      [options]="choices"
+      [value]="chosen()"
+      (valueChange)="show($event)"
+    />
   }
   <button
     glzIconButton

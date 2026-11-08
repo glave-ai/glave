@@ -18,6 +18,8 @@ interface Drawn {
   options: ITerminalOptions | null;
   written: string[];
   typed: ((data: string) => void) | null;
+  /** What it was told to send as bytes, as xterm.js reports a mouse a program asked for. */
+  sent: ((data: string) => void) | null;
   styles: HTMLStyleElement[];
   disposed: boolean;
 }
@@ -43,6 +45,10 @@ function fakeEmulator(drawn: Drawn): Emulator {
     }
     onData(typed: (data: string) => void): { dispose: () => void } {
       drawn.typed = typed;
+      return { dispose: () => undefined };
+    }
+    onBinary(sent: (data: string) => void): { dispose: () => void } {
+      drawn.sent = sent;
       return { dispose: () => undefined };
     }
     focus(): void {
@@ -73,7 +79,14 @@ async function settle(): Promise<void> {
 
 describe('TerminalScreenComponent', () => {
   it('draws what its shell prints, sends what is typed, and gives the styles it adds the nonce', async () => {
-    const drawn: Drawn = { options: null, written: [], typed: null, styles: [], disposed: false };
+    const drawn: Drawn = {
+      options: null,
+      written: [],
+      typed: null,
+      sent: null,
+      styles: [],
+      disposed: false,
+    };
     let reads = 0;
     const fake = new FakeSession()
       .answer('thread/events', { events: [] })
@@ -112,10 +125,13 @@ describe('TerminalScreenComponent', () => {
     ]);
 
     drawn.typed?.('ls\r');
+    // Bytes as xterm.js gives them, one to a character, none of them UTF-8's.
+    drawn.sent?.('\x1b[M\xff!');
     await settle();
     const typed = fake.calls.filter((call) => call.method === 'terminal/write');
     expect(typed.map((call) => call.params)).toEqual([
       { thread: 'thread-1', terminal: 't1', input: 'bHMN' },
+      { thread: 'thread-1', terminal: 't1', input: 'G1tN/yE=' },
     ]);
     await expectAccessible(root);
     fixture.destroy();

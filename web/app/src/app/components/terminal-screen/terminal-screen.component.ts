@@ -208,8 +208,17 @@ export class TerminalScreenComponent {
     const typed = drawn.onData((data) => {
       this.service.type(id, encoder.encode(data));
     });
+    // What xterm.js sends as bytes, not text (a mouse report a program asked for): each
+    // character one byte.
+    const sent = drawn.onBinary((data) => {
+      this.service.type(
+        id,
+        Uint8Array.from(data, (character) => character.charCodeAt(0) % 256),
+      );
+    });
     this.destroyed.onDestroy(() => {
       typed.dispose();
+      sent.dispose();
       drawn.dispose();
     });
     let size: Size | null = null;

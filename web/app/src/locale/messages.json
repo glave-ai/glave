@@ -698,7 +698,6 @@
     "terminalTab.close": "Close this terminal",
     "terminalTab.ended": "This shell has ended. Close it, or open another.",
     "terminalTab.opening": "Opening your terminal…",
-    "terminalTab.show": "Terminal {$NUMBER}",
     "terminalTab.terminals": "Terminals",
     "terminalTab.who": "Your shell, not the agent's",
     "text.removeFailed": "glave could not remove that account. Try again in a moment.",
