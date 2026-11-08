@@ -47,7 +47,7 @@ pub(crate) struct Entry {
     pub(crate) started: Option<At>,
     /// How it ended, once glave knows.
     pub(crate) ended: Option<CommandEnding>,
-    /// Whether the model was told it stopped with its computer, once that is why it ended.
+    /// Whether the model was told it is no longer on its computer, once that is how it ended.
     pub(crate) told: bool,
 }
 
@@ -160,9 +160,9 @@ impl Commands {
         });
     }
 
-    /// Notes that the turn beginning now told the model of every command known to have ended
-    /// by then, as the log has it.
-    pub(super) fn told_at_a_turn(&self) {
+    /// Notes that the model was told of every command known to have ended by now, as the log
+    /// has it: a turn's message or a tool's result, recorded after them, names them.
+    pub(super) fn told_so_far(&self) {
         for entry in &mut self.inner().all {
             entry.told |= entry.ended.is_some();
         }
@@ -241,7 +241,7 @@ impl Commands {
             .collect()
     }
 
-    /// Notes that the model was told the commands numbered `told` stopped with their computer.
+    /// Notes that the model was told the commands numbered `told` are no longer there.
     pub(crate) fn told(&self, told: &[u32]) {
         for entry in &mut self.inner().all {
             entry.told |= told.contains(&entry.number);

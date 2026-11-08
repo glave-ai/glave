@@ -123,6 +123,22 @@ impl Waking {
             .insert(id, planned);
     }
 
+    /// `workspace` as planned here, for a call about what runs there: one this server never
+    /// planned may be another server's, whose commands still run on the computer it drives, so
+    /// that is said (`peek`) rather than that they are gone.
+    async fn planned_for_commands(
+        &self,
+        workspace: WorkspaceId,
+    ) -> Result<Arc<Planned>, ComputerError> {
+        let planned = self.planned(workspace);
+        if planned.is_err()
+            && let Err(elsewhere) = (self.peek)().await
+        {
+            return Err(elsewhere);
+        }
+        planned
+    }
+
     fn planned(&self, workspace: WorkspaceId) -> Result<Arc<Planned>, ComputerError> {
         self.workspaces
             .lock()
@@ -490,7 +506,7 @@ impl Computers for Waking {
         wait: Duration,
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
-            match self.opened(&*self.planned(workspace)?) {
+            match self.opened(&*self.planned_for_commands(workspace).await?) {
                 Some(open) => {
                     self.gone_with_it(open.computers.output(open.workspace, command, wait).await)
                         .await
@@ -507,7 +523,7 @@ impl Computers for Waking {
         wait: Duration,
     ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
         Box::pin(async move {
-            match self.opened(&*self.planned(workspace)?) {
+            match self.opened(&*self.planned_for_commands(workspace).await?) {
                 Some(open) => {
                     self.gone_with_it(open.computers.ended(open.workspace, command, wait).await)
                         .await
@@ -523,7 +539,7 @@ impl Computers for Waking {
         command: CommandId,
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
-            match self.opened(&*self.planned(workspace)?) {
+            match self.opened(&*self.planned_for_commands(workspace).await?) {
                 Some(open) => {
                     self.gone_with_it(open.computers.stop(open.workspace, command).await)
                         .await
@@ -538,7 +554,7 @@ impl Computers for Waking {
         workspace: WorkspaceId,
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         Box::pin(async move {
-            match self.opened(&*self.planned(workspace)?) {
+            match self.opened(&*self.planned_for_commands(workspace).await?) {
                 Some(open) => {
                     self.gone_with_it(open.computers.commands(open.workspace).await)
                         .await

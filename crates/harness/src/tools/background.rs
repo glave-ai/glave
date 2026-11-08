@@ -7,9 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::CommandEnding;
-use glave_ports::computer::{
-    ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, MOVED, Printed,
-};
+use glave_ports::computer::{ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, Printed};
 use glave_ports::secrets::KnownSecrets;
 use glave_ports::{Cancellation, unless_cancelled};
 use serde::Deserialize;
@@ -25,7 +23,11 @@ use crate::toolset::one_line;
 /// hold up the turn.
 const FIRST_LOOK: Duration = Duration::from_secs(2);
 
-/// The most of a stopped command's script the model is told, in characters.
+/// All that is known of a command no longer on a computer that can start again: it may have
+/// finished first, or been stopped by that.
+const RESTARTED: &str = "your computer restarted since";
+
+/// The most of such a command's script the model is told, in characters.
 const NAMED_SCRIPT: usize = 120;
 
 /// What reading again or stopping looks like, for the model.
@@ -65,7 +67,7 @@ pub(crate) fn named(arguments: &glave_event::Arguments) -> Option<u32> {
 }
 
 pub(crate) async fn command_output(
-    (commands, moves): (&Commands, bool),
+    (commands, restarts): (&Commands, bool),
     args: OutputArgs,
     (room, hidden): (usize, &KnownSecrets),
     cancel: &dyn Cancellation,
@@ -97,7 +99,7 @@ pub(crate) async fn command_output(
             let ended = commands.numbered(number).and_then(|entry| entry.ended);
             ToolOutcome::ok(format!(
                 "Command {number} {}: there is no more of its output.",
-                ended_as(ended.as_ref(), moves)
+                ended_as(ended.as_ref(), restarts)
             ))
         }
         Err(error) => ToolOutcome::error(explain(&error)),
@@ -234,11 +236,14 @@ fn took(millis: u64) -> String {
     }
 }
 
-/// How a command glave knows has ended did, after "Command 2", on a computer that `moves` or
-/// not: no longer on one that can move, it stopped when that did.
-fn ended_as(ending: Option<&CommandEnding>, moves: bool) -> String {
+/// How a command glave knows has ended did, after "Command 2", on a computer that `restarts` or
+/// not: no longer on one that can, it finished or was stopped, and glave can't say which.
+fn ended_as(ending: Option<&CommandEnding>, restarts: bool) -> String {
     match ending {
-        Some(CommandEnding::Gone) if moves => format!("was stopped when {MOVED}"),
+        Some(CommandEnding::Gone) if restarts => format!(
+            "no longer runs ({RESTARTED}, and it finished or was stopped; check before starting \
+             it again)"
+        ),
         Some(CommandEnding::Exited { code }) => format!("exited with code {code}"),
         Some(CommandEnding::Signalled) => "was stopped by a signal".to_owned(),
         Some(CommandEnding::Stopped { by: None }) => "was stopped".to_owned(),
@@ -252,11 +257,11 @@ fn ended_as(ending: Option<&CommandEnding>, moves: bool) -> String {
     }
 }
 
-/// What the model is told of `stopped`, commands that stopped when their computer moved, if any
-/// did: what each ran, so it can start again what it still wants. glave never starts them
-/// itself (`specs/invariants.md`, 4).
-pub(crate) fn stopped_with_it(stopped: &[Entry]) -> Option<String> {
-    let named: Vec<String> = stopped
+/// What the model is told of `gone`, commands no longer on a computer that started again, if any
+/// are: what each ran, and that it finished or was stopped, for the model to check before it
+/// starts any again. glave never starts them itself (`specs/invariants.md`, 4).
+pub(crate) fn no_longer_there(gone: &[Entry]) -> Option<String> {
+    let named: Vec<String> = gone
         .iter()
         .map(|entry| {
             let script = one_line(&entry.script, NAMED_SCRIPT);
@@ -265,8 +270,9 @@ pub(crate) fn stopped_with_it(stopped: &[Entry]) -> Option<String> {
         .collect();
     (!named.is_empty()).then(|| {
         format!(
-            "glave: {MOVED}, which stopped what ran on it in the background: {}. glave does not \
-             start them again. Your files are kept, so start any you still want.",
+            "glave: {RESTARTED} you last looked, so these no longer run in the background: {}. \
+             Each finished or was stopped, and glave can't say which. It doesn't start them \
+             again: check what each did before starting it yourself.",
             named.join(", ")
         )
     })

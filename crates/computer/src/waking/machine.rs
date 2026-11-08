@@ -6,9 +6,12 @@
 use std::sync::Arc;
 
 use glave_ports::BoxFuture;
-use glave_ports::computer::{ComputerError, Finished, MOVED, Output};
+use glave_ports::computer::{ComputerError, Finished, Output};
 
 use super::Waking;
+
+/// What happened to a computer whose Pod has ended or gone, as the call cut off by it is told.
+const MOVED: &str = "your computer moved to another machine";
 
 /// What a computer may have run short of while a command ran (`specs/computers.md`, decision
 /// 8).
@@ -77,7 +80,8 @@ impl Waking {
         answer: Result<T, ComputerError>,
     ) -> Result<T, ComputerError> {
         let lost = ComputerError::Failed(format!(
-            "glave: {MOVED}, so this was not finished. Your files are kept. Try it again."
+            "glave: {MOVED}, so this may not have finished. Your files are kept: check what it \
+             changed, then try it again if it is still needed."
         ));
         self.unless_lost(answer, lost).await
     }
@@ -89,7 +93,7 @@ impl Waking {
         &self,
         answer: Result<T, ComputerError>,
     ) -> Result<T, ComputerError> {
-        let lost = ComputerError::NotFound(MOVED.to_owned());
+        let lost = ComputerError::NotFound("its computer started again".to_owned());
         self.unless_lost(answer, lost).await
     }
 

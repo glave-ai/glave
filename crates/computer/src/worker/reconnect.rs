@@ -93,7 +93,7 @@ impl Connection {
         };
         if let Some(why) = failed.as_ref() {
             return Err(ComputerError::Unreachable(format!(
-                "the connection to worker {name} died ({died}) and could not be opened again: \
+                "the connection to the computer died ({died}) and could not be opened again: \
                  {why}"
             )));
         }
@@ -107,12 +107,17 @@ impl Connection {
             }
             Err(error) => {
                 let why = error.to_string();
-                if !matches!(self.door, Door::Bridge) {
+                let said = if matches!(self.door, Door::Bridge) {
+                    // The cluster's own words, which name its objects, are for the server's log.
+                    tracing::warn!(%why, "a computer's connection could not be opened again");
+                    "it did not answer".to_owned()
+                } else {
                     *failed = Some(why.clone());
-                }
+                    why
+                };
                 Err(ComputerError::Unreachable(format!(
-                    "the connection to worker {name} died ({died}) and could not be opened \
-                     again: {why}"
+                    "the connection to the computer died ({died}) and could not be opened \
+                     again: {said}"
                 )))
             }
         }

@@ -29,6 +29,10 @@ const GONE_WAIT: Duration = Duration::from_mins(1);
 /// How long a computer that went away as a command ran has to show how its container ended:
 /// its Pod says so within seconds.
 const ENDED_WITHIN: Duration = Duration::from_secs(20);
+/// Why a computer could not wake while what was left of it would not go: true of a machine that
+/// stopped answering, whose Pod stays, holding the disk, until the cluster lets go of it.
+const STUCK: &str = "its last machine stopped answering and hasn't let go of its disk yet, which \
+     can take several minutes. Your files are kept; try again in a few minutes.";
 /// The longest key a person's computer is named by, so its objects' names stay labels.
 const KEY_LENGTH: usize = 40;
 
@@ -152,7 +156,13 @@ impl PersonComputer {
             ..spec.clone()
         };
         self.claim().await?;
-        self.sleep().await?;
+        if let Err(error) = self.sleep().await {
+            // A Pod on a machine that stopped answering stays until the machine goes.
+            return Err(match self.cluster.pods().get_opt(&self.name()).await {
+                Ok(Some(_)) => ComputerError::Failed(STUCK.to_owned()),
+                _ => error,
+            });
+        }
         let (glave, digest) = self.cluster.glave_and_digest().await?;
         let name = self.name();
         let claim = self.claim_name();

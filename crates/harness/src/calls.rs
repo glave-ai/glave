@@ -98,10 +98,8 @@ where
             {
                 step.summary.changed_file(path);
             }
-            let (output, told) = self.saying_what_stopped(thread, output).await;
             self.record_result(thread, first.call_id.clone(), output)
                 .await?;
-            thread.commands.told(&told);
             rest = rest.get(1..).unwrap_or_default();
         }
         Ok(())
@@ -666,6 +664,8 @@ where
         let outcome = self.gated(&thread.scope, thread.id, outcome).await;
         let outcome = fit(outcome, self.tool_room(thread));
         let outcome = self.keep_files(thread, outcome).await;
+        // After what cuts a result to fit, and with nothing awaited before what it names is staged.
+        let (outcome, told) = self.saying_what_stopped(thread, outcome).await;
         let completed = completed(call_id, outcome);
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
@@ -678,6 +678,7 @@ where
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
         staged.recorded(thread);
+        thread.commands.told(&told);
         if let Some(plan) = &plan {
             // Glave's own record: call ids do not count it, so the model is sent the same.
             thread.unnumbered = thread.unnumbered.saturating_add(1);

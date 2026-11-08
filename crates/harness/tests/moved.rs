@@ -1,7 +1,7 @@
 //! A person's computer that loses its machine (`specs/computers.md`, decision 16): the call it
 //! cut off says what stopped it and why, the next call starts a new machine on the same disk,
-//! and what ran in the background is told as stopped, never started again, in the first tool
-//! result since or the note before the person's next message: always at the end of the
+//! and what ran in the background is told as no longer there, never started again, in the first
+//! tool result since or the note before the person's next message: always at the end of the
 //! conversation, never by changing what every call opens with.
 
 use std::io;
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use glave_computer::{Grow, LocalComputers, Lost, Peek, Wake, Waking};
 use glave_event::{Body, CommandEnding, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Harness, Homes, Place, Thread};
-use glave_ports::computer::{Command, ComputerError, Home, MOVED, Sandbox};
+use glave_ports::computer::{Command, ComputerError, Home, Sandbox};
 use glave_ports::testing::{Captured, TempDir};
 use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, NeverCancelled, OrgId};
 use serde_json::{Value, json};
@@ -21,6 +21,16 @@ use tokio::task::JoinHandle;
 
 use crate::support::*;
 use crate::wire::home_across_the_wire;
+
+/// What the call a lost machine cut off is told.
+const MOVED: &str = "your computer moved to another machine";
+
+/// All that is known of a command no longer on its computer.
+const RESTARTED: &str = "your computer restarted since";
+
+/// What a computer killed for memory says of it.
+const OUT_OF_MEMORY: &str = "glave: this computer ran out of memory at 512 MiB and restarts with \
+     1 GiB; anything it ran in the background stopped. Run the command again.";
 
 /// The harness these tests run a thread on.
 type Moved = Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>;
@@ -58,6 +68,10 @@ struct Moving {
     machine: Arc<Mutex<Option<Machine>>>,
     lost: Arc<AtomicBool>,
     woken: Arc<AtomicUsize>,
+    /// Whether its next loss is its being killed for memory.
+    out_of_memory: Arc<AtomicBool>,
+    /// Whether another server drives it, which this one cannot reach.
+    elsewhere: Arc<AtomicBool>,
 }
 
 impl Moving {
@@ -84,12 +98,27 @@ impl Moving {
                 Ok(new.home.clone())
             })
         });
-        let seen = Arc::clone(&machine);
+        let elsewhere = Arc::new(AtomicBool::new(false));
+        let (seen, driven) = (Arc::clone(&machine), Arc::clone(&elsewhere));
         let peek: Peek = Arc::new(move || {
-            let seen = Arc::clone(&seen);
-            Box::pin(async move { Ok(seen.lock().await.as_ref().map(|m| m.home.clone())) })
+            let (seen, driven) = (Arc::clone(&seen), Arc::clone(&driven));
+            Box::pin(async move {
+                if driven.load(Ordering::SeqCst) {
+                    return Err(ComputerError::Unreachable(
+                        "your computer runs, but not through this server".into(),
+                    ));
+                }
+                Ok(seen.lock().await.as_ref().map(|m| m.home.clone()))
+            })
         });
-        let grow: Grow = Arc::new(|_| Box::pin(std::future::ready(None)));
+        let out_of_memory = Arc::new(AtomicBool::new(false));
+        let killed = Arc::clone(&out_of_memory);
+        let grow: Grow = Arc::new(move |_| {
+            let said = killed
+                .load(Ordering::SeqCst)
+                .then(|| OUT_OF_MEMORY.to_owned());
+            Box::pin(std::future::ready(said))
+        });
         let looks = Arc::clone(&lost);
         let is_lost: Lost = Arc::new(move || {
             let lost = looks.load(Ordering::SeqCst);
@@ -102,7 +131,15 @@ impl Moving {
             machine,
             lost,
             woken,
+            out_of_memory,
+            elsewhere,
         })
+    }
+
+    /// Takes its machine away unnoticed: asked, the server still says it is awake.
+    async fn lose_unnoticed(&self) {
+        self.lost.store(true, Ordering::SeqCst);
+        self.drop_connection().await;
     }
 
     /// Takes its machine away, and what ran on it.
@@ -262,7 +299,8 @@ fn a_command_cut_off_with_its_machine_says_why_and_the_next_call_runs_on_the_sam
 }
 
 #[test]
-fn what_ran_in_the_background_is_told_as_stopped_once_in_the_note_before_the_next_message() {
+fn what_ran_in_the_background_is_told_as_no_longer_there_once_in_the_note_before_the_next_message()
+{
     let (server, computer) = (folder("moved-note-server"), folder("moved-note-computer"));
     let (home, place) = place_at(&computer);
     block_on!(async {
@@ -295,23 +333,29 @@ fn what_ran_in_the_background_is_told_as_stopped_once_in_the_note_before_the_nex
         let told = last_message(&requests, 2);
         assert!(told.starts_with("<system-reminder>\n"), "{told}");
         assert!(told.contains("is it up?"), "{told}");
-        assert!(told.contains(&format!("glave: {MOVED}")), "{told}");
+        assert!(told.contains(&format!("glave: {RESTARTED}")), "{told}");
+        assert!(!told.contains(MOVED), "nothing known of a machine: {told}");
         assert!(told.contains("command 1 (sleep 30)"), "{told}");
         assert!(
-            told.contains("does not start them again"),
+            told.contains("It doesn't start them again"),
             "never started again by glave: {told}"
+        );
+        assert!(
+            told.contains("Each finished or was stopped"),
+            "says only what is known: {told}"
         );
 
         // Reading it says the same.
         let read = last_message(&requests, 3);
         assert!(
             read.contains(&format!(
-                "Command 1 was stopped when {MOVED}: there is no more of its output."
+                "Command 1 no longer runs ({RESTARTED}, and it finished or was stopped; check \
+                 before starting it again): there is no more of its output."
             )),
             "{read}"
         );
         let later = last_message(&requests, 4);
-        assert!(!later.contains(MOVED), "told once: {later}");
+        assert!(!later.contains(RESTARTED), "told once: {later}");
         assert_eq!(moving.woken(), 0, "only a call that needs it starts one");
         prefix_is_unchanged(&requests);
     });
@@ -349,7 +393,88 @@ fn the_first_tool_result_after_the_machine_went_names_what_ran_in_the_background
         assert!(!result.contains("a second line"), "one line each: {result}");
         let next = last_message(&requests, 3);
         assert!(!next.contains("command 1"), "told once: {next}");
+
+        // Told by a tool's result, as the log has it, so a thread read again isn't told again.
+        let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        turn(&harness, &mut resumed, "and now?").await;
+        let requests = seen.lock().unwrap().clone();
+        let later = last_message(&requests, 4);
+        assert!(!later.contains(RESTARTED), "told once: {later}");
         prefix_is_unchanged(&requests);
+    });
+}
+
+/// Killed for memory, a command in the background with it: the call says so, and what ran in the
+/// background is told only as no longer there.
+#[test]
+fn a_computer_killed_for_memory_says_so_and_what_ran_beside_it_is_no_longer_there() {
+    let (server, computer) = (folder("moved-oom-server"), folder("moved-oom-computer"));
+    let (home, place) = place_at(&computer);
+    block_on!(async {
+        let moving = Moving::new(&computer, &home).await;
+        moving.out_of_memory.store(true, Ordering::SeqCst);
+        moving.run(&format!("mkfifo {STARTED}")).await;
+        let answers = vec![
+            background("sleep 31"),
+            bash(&format!("echo > {STARTED}; sleep 30")),
+            done(),
+        ];
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
+        tokio::join!(
+            turn(&harness, &mut thread, "start and build"),
+            once_started(&home, moving.lose())
+        );
+        let requests = seen.lock().unwrap().clone();
+        let result = last_message(&requests, 2);
+        assert!(result.contains("ran out of memory"), "{result}");
+        assert!(result.contains("command 1 (sleep 31)"), "{result}");
+        assert!(result.contains(RESTARTED), "{result}");
+        assert!(!result.contains(MOVED), "one cause, the true one: {result}");
+    });
+}
+
+/// A call cut off with its machine, its answer lost, may have done its work: the words don't say
+/// it did not.
+#[test]
+fn a_call_cut_off_with_its_machine_says_it_may_not_have_finished() {
+    let (server, computer) = (folder("moved-may-server"), folder("moved-may-computer"));
+    let (home, place) = place_at(&computer);
+    block_on!(async {
+        let moving = Moving::new(&computer, &home).await;
+        let answers = vec![bash("echo a > a.txt"), done(), reads("a.txt"), done()];
+        let (harness, seen, mut thread) = on_it(&server, answers, &moving, place).await;
+        turn(&harness, &mut thread, "write it").await;
+        moving.lose_unnoticed().await;
+        turn(&harness, &mut thread, "read it").await;
+        let requests = seen.lock().unwrap().clone();
+        let result = last_message(&requests, 3);
+        assert!(result.contains(MOVED), "{result}");
+        assert!(result.contains("may not have finished"), "{result}");
+        assert!(!result.contains("was not finished"), "{result}");
+    });
+}
+
+/// A thread read by a server that doesn't drive its computer: the command runs on there, on the
+/// other server's lease, so nothing says it is gone.
+#[test]
+fn a_command_on_a_computer_another_server_drives_is_not_told_as_gone() {
+    let (server, computer) = (folder("moved-two-server"), folder("moved-two-computer"));
+    let (home, place) = place_at(&computer);
+    block_on!(async {
+        let first = Moving::new(&computer, &home).await;
+        let answers = vec![background("sleep 30"), done(), done()];
+        let (harness, seen, mut thread) = on_it(&server, answers, &first, place).await;
+        turn(&harness, &mut thread, "start the server").await;
+
+        let other = Moving::new(&computer, &home).await;
+        other.elsewhere.store(true, Ordering::SeqCst);
+        let harness = harness.with_homes(Some(Arc::clone(&other) as Arc<dyn Homes>));
+        let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        turn(&harness, &mut resumed, "is it up?").await;
+        let requests = seen.lock().unwrap().clone();
+        let told = last_message(&requests, 2);
+        assert!(!told.contains(RESTARTED), "{told}");
+        assert_eq!(resumed.commands().running_now().await.len(), 1, "it runs");
     });
 }
 
@@ -375,7 +500,7 @@ fn a_server_s_rollout_tells_a_thread_read_from_its_log_what_stopped() {
         let requests = seen.lock().unwrap().clone();
         let told = last_message(&requests, 2);
         assert!(told.contains("command 1 (sleep 30)"), "{told}");
-        assert!(told.contains(MOVED), "{told}");
+        assert!(told.contains(RESTARTED), "{told}");
 
         // Told at the turn its log recorded, so a server that reads the thread again doesn't
         // tell it twice.
@@ -383,7 +508,7 @@ fn a_server_s_rollout_tells_a_thread_read_from_its_log_what_stopped() {
         turn(&harness, &mut again, "and now?").await;
         let requests = seen.lock().unwrap().clone();
         let later = last_message(&requests, 3);
-        assert!(!later.contains(MOVED), "told once: {later}");
+        assert!(!later.contains(RESTARTED), "told once: {later}");
         prefix_is_unchanged(&requests);
     });
 }
@@ -412,7 +537,7 @@ fn a_command_gone_from_a_computer_that_cannot_move_is_told_as_ever() {
             .flat_map(texts)
             .collect();
         assert!(
-            !everything.iter().any(|text| text.contains(MOVED)),
+            !everything.iter().any(|text| text.contains(RESTARTED)),
             "{everything:?}"
         );
     });
