@@ -12,7 +12,6 @@ mod credentials;
 mod credits;
 mod error;
 mod files;
-mod listening;
 mod live;
 mod meta;
 mod methods;
@@ -56,7 +55,6 @@ pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
 pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, Sha256, TurnResult};
 pub use glave_event::{Forge, ProviderKind};
-pub use listening::{ListedCommand, Port};
 pub use live::Update;
 pub use meta::{IdempotencyKey, Meta};
 pub use models::{EndpointInfo, ModelInfo};
@@ -68,8 +66,8 @@ pub use plans::PlanInfo;
 pub use projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use providers::ProviderInfo;
 pub use reply::{
-    AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
-    Status, ThreadSummary,
+    AwakeInfo, ContextUse, DiskShort, Exists, ListedCommand, Port, QueuedMessage, RememberingInfo,
+    Reply, ServerInfo, Status, ThreadSummary,
 };
 pub use secrets::SecretInfo;
 pub use settings::Setting;

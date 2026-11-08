@@ -13,11 +13,15 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    InviteInfo, ListedCommand, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary,
-    Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo,
-    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
-    ThreadSteps, Told, TrustAsk, WatchEnd,
+    InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
+    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, ReplySources, ScheduleInfo, SearchInfo,
+    SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps,
+    Told, TrustAsk, WatchEnd,
 };
+
+mod listening;
+
+pub use listening::{ListedCommand, Port};
 
 /// What the server is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
