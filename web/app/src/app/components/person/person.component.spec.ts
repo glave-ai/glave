@@ -36,8 +36,10 @@ describe('PersonComponent', () => {
     expect(navigated).toBe(1);
     const session = TestBed.inject(SessionService);
     expect(session.signedIn()).toBe(true);
+    // What signing out loads first, which no turn brings back.
+    await import('../../services/push.service');
     root.querySelector<HTMLButtonElement>('[data-testid="person-sign-out"]')?.click();
-    await new Promise((resolve) => setTimeout(resolve));
+    await settle(fixture);
     expect(session.signedIn()).toBe(false);
   });
 

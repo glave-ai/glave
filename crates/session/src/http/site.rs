@@ -221,11 +221,13 @@ impl fmt::Debug for Site {
 
 /// The policy every answer carries; `nonce` admits the styles Angular adds at run time. Images
 /// come from the app, and from the person's own computer: a file they add to a message is
-/// shown from a `blob:` URL the page makes of it, never fetched from anywhere. The one frame it
-/// may show, where the server previews (`frames`), is a thread's preview, a dev server's own
-/// address on this computer's loopback (`previews.rs`): at `127.0.0.1`, since a policy's
-/// sources can't name IPv6's loopback (a preview there opens in a new tab). Elsewhere nothing
-/// is framed, and glave's own pages refuse every frame.
+/// shown from a `blob:` URL the page makes of it, never fetched from anywhere. Beside Angular's
+/// own, one Trusted Types policy, `glave-push`, names the app's one service worker, which shows
+/// its notifications (`script-src` covers the worker). The one frame it may show, where the
+/// server previews (`frames`), is a thread's preview, a dev server's own address on this
+/// computer's loopback (`previews.rs`): at `127.0.0.1`, since a policy's sources can't name
+/// IPv6's loopback (a preview there opens in a new tab). Elsewhere nothing is framed, and
+/// glave's own pages refuse every frame.
 pub(crate) fn policy(nonce: &str, frames: bool) -> String {
     let frame_src = if frames {
         "frame-src http://127.0.0.1:*"
@@ -245,7 +247,7 @@ pub(crate) fn policy(nonce: &str, frames: bool) -> String {
         "form-action 'none'",
         "frame-ancestors 'none'",
         "require-trusted-types-for 'script'",
-        "trusted-types angular angular#bundler",
+        "trusted-types angular angular#bundler glave-push",
     ]
     .join("; ")
 }
@@ -419,6 +421,8 @@ mod tests {
         assert!(previewing.contains("frame-src http://127.0.0.1:*;"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
+        // Angular's two, and the one that names the service worker, alone.
+        assert!(policy.ends_with("; trusted-types angular angular#bundler glave-push"));
     }
 
     #[test]
