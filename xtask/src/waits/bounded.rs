@@ -324,6 +324,39 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     // A limit around it, set elsewhere.
     (
+        "crates/computer/src/local/terminal.rs",
+        "let changed = shared.changed.notified();",
+        1,
+        "what a terminal prints next, awaited within the read's wait (`timeout(left, changed)`, \
+         at most MAX_WAIT)",
+    ),
+    (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = hung_up.recv() => None,",
+        1,
+        "a terminal's starter hung up, which ends it however glave ends; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/helper.rs",
+        "_ = told.recv() => None,",
+        1,
+        "a terminal's starter told to stop by the lifeline or the ledger; the shell, which the \
+         person ends, is the arm beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/pump.rs",
+        "_ = child.wait() => break Stopped::Exited,",
+        1,
+        "a terminal's shell, until it is hung up or nothing used it for IDLE, the arms beside it",
+    ),
+    (
+        "crates/computer/src/local/terminal/pump.rs",
+        "() = shared.hang_up.notified() => break Stopped::HungUp,",
+        1,
+        "a terminal being closed, whose idle limit is the arm beside it",
+    ),
+    (
         "crates/computer/src/local/background.rs",
         "status = child.wait() => break status.map_or(Ending::Signalled, exited),",
         1,

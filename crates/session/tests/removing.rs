@@ -12,6 +12,7 @@ use std::time::Duration;
 use glave_event::{
     Body, CommandEnding, OrgRole, Outcome, PrincipalKind, RawEvent, Secret, ThreadId, When, decode,
 };
+use glave_ports::computer::{Bytes, TerminalId, TerminalSize};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::HUNG;
 use glave_ports::{Caller, EventLog as _, OrgId, Scope};
@@ -405,6 +406,104 @@ fn someone_removed_has_their_commands_in_the_background_stopped() {
             panic!("stopped by whoever removed her, not {ending:?}");
         };
         assert_eq!(by.kind, PrincipalKind::Person);
+    });
+}
+
+/// A terminal's starter standing in for glave's own, which these tests have no build of: a
+/// session of its own, then the shell in it, as the starter runs it (perl, on every machine
+/// the tests run on).
+fn starter(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let path = dir.join("starter");
+    let script = "#!/usr/bin/perl\nuse POSIX ();\nPOSIX::setsid() or die \"setsid: $!\";\n\
+                  shift @ARGV;\nexec @ARGV or die \"exec: $!\";\n";
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+/// The process id `thread`'s terminal `terminal` prints after `pid-`, read through the
+/// session as `caller`.
+async fn shell_of(
+    server: &Tested<Shared>,
+    caller: &Caller,
+    thread: ThreadId,
+    terminal: TerminalId,
+) -> String {
+    let input = Bytes::new("printf 'pid-%s-done\\n' $$\r");
+    let write = Request::TerminalWrite {
+        thread,
+        terminal,
+        input,
+    };
+    server.request_as(caller, write).await.unwrap();
+    let (mut seen, mut from) = (String::new(), 0);
+    for _ in 0..100 {
+        let read = Request::TerminalRead {
+            thread,
+            terminal,
+            from,
+            wait_ms: 300,
+        };
+        let Ok(Reply::Screen { screen }) = server.request_as(caller, read).await else {
+            panic!("a terminal of theirs is read");
+        };
+        seen.push_str(&String::from_utf8_lossy(screen.output.as_slice()));
+        from = screen.next;
+        let found = seen.match_indices("pid-").find_map(|(at, _)| {
+            let after = seen.get(at + 4..)?;
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            after
+                .get(digits.len()..)?
+                .starts_with("-done")
+                .then_some(digits)
+        });
+        if let Some(pid) = found.filter(|pid| !pid.is_empty()) {
+            return pid;
+        }
+    }
+    panic!("never printed its shell's id: {seen}");
+}
+
+/// Whether process `pid` still runs, as `kill -0` finds it.
+fn runs(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[test]
+fn someone_removed_has_their_terminals_closed() {
+    block_on!(async {
+        let dir = folder("removal-terminals");
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        let mut homes = crate::homes::Here::new(&dir.join("people"));
+        homes.helper = Some(starter(&dir));
+        setup.homes = Some(Arc::new(homes) as Arc<dyn glave_harness::Homes>);
+        let server = setup.build_on(&dir, Shared::default()).await.0;
+        let ada = signed_in("ada");
+        let (thread, _) = chat(&server, &ada, false).await;
+        let size = TerminalSize { cols: 80, rows: 24 };
+        let opened = server
+            .request_as(&ada, Request::TerminalOpen { thread, size })
+            .await;
+        let Ok(Reply::Terminal { terminal }) = opened else {
+            panic!("a terminal opens on her own computer: {opened:?}");
+        };
+        let shell = shell_of(&server, &ada, thread, terminal.id).await;
+        assert!(runs(&shell));
+
+        remove(&server, &Caller::default(), "ada").await.unwrap();
+
+        let mut tries = 0;
+        while runs(&shell) && tries < 100 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            tries += 1;
+        }
+        assert!(!runs(&shell), "her shell outlived her removal");
     });
 }
 

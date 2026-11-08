@@ -72,6 +72,7 @@ mod steps;
 mod stopping;
 mod streamed;
 mod tasks;
+mod terminals;
 mod thought;
 mod titles;
 mod trace;

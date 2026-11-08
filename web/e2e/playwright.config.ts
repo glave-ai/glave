@@ -29,25 +29,45 @@ import {
   TEST_SERVER,
 } from './support';
 
+/** The folders the run made in the system's temporary folder ({@link temporary}). */
+const made: string[] = [];
+
+// Removed when the run exits. By then each glave that writes to them has ended: when the tests
+// end, and when the run is interrupted (SIGINT), Playwright sends each server's process group
+// SIGKILL and waits for it to close before the run exits. A run killed outright can remove
+// nothing. Its workers, which read this file again, made none, and remove none.
+process.on('exit', () => {
+  for (const folder of made) {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+/** A new folder in the system's temporary folder, named from `prefix`, gone when the run exits. */
+function temporary(prefix: string): string {
+  const folder = mkdtempSync(join(tmpdir(), prefix));
+  made.push(folder);
+  return folder;
+}
+
 /**
  * A home of its own for the glave of `site`, with `settings` as its config.toml, so the tests
  * touch nothing of the person's: made once, in the run that starts the servers, whose workers
- * read this file again with its variable set.
+ * read this file again with its variable set, and removed when that run exits.
  */
 function home(site: Site, settings?: string, services?: object): string {
   const kept = process.env[site.home];
   if (kept !== undefined) {
     return kept;
   }
-  const made = mkdtempSync(join(tmpdir(), 'glave-e2e-'));
+  const folder = temporary('glave-e2e-');
   if (settings !== undefined) {
-    writeFileSync(join(made, 'config.toml'), settings);
+    writeFileSync(join(folder, 'config.toml'), settings);
   }
   if (services !== undefined) {
-    writeFileSync(join(made, 'mcp.json'), JSON.stringify({ mcpServers: services }));
+    writeFileSync(join(folder, 'mcp.json'), JSON.stringify({ mcpServers: services }));
   }
-  process.env[site.home] = made;
-  return made;
+  process.env[site.home] = folder;
+  return folder;
 }
 
 /**
@@ -62,8 +82,7 @@ function lifeline(): string {
   if (kept !== undefined) {
     return kept;
   }
-  const folder = mkdtempSync(join(tmpdir(), 'glave-e2e-lifeline-'));
-  const path = join(folder, 'lifeline');
+  const path = join(temporary('glave-e2e-lifeline-'), 'lifeline');
   const held: Socket[] = [];
   // Neither the listener nor a connection keeps the run from ending.
   createServer((connection) => {
@@ -72,9 +91,6 @@ function lifeline(): string {
   })
     .listen(path)
     .unref();
-  process.on('exit', () => {
-    rmSync(folder, { recursive: true, force: true });
-  });
   process.env[LIFELINE] = path;
   return path;
 }

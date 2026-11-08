@@ -6,7 +6,7 @@ use glave_event::{
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::RunningCommand;
-use glave_ports::computer::DiskUse;
+use glave_ports::computer::{DiskUse, Screenful, TerminalInfo};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -180,6 +180,11 @@ pub struct ThreadSummary {
     /// the server last found it so; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk: Option<Box<DiskShort>>,
+    /// Whether its person may open terminals of their own in its folder: their shell, on their
+    /// own computer, so never on a worker, nor on the server's for anyone but the person it
+    /// works for; never once it is put away (`specs/session.md`, "Terminals").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub terminals: bool,
 }
 
 /// A person's computer short of room, more than 90% of its disk used and nothing more glave can
@@ -375,6 +380,13 @@ pub enum Reply {
     SignIn { sign_in: SignInLink },
     #[schemars(title = "Commands")]
     Commands { commands: Vec<RunningCommand> },
+    #[schemars(title = "Terminal")]
+    Terminal { terminal: TerminalInfo },
+    #[schemars(title = "Terminals")]
+    Terminals { terminals: Vec<TerminalInfo> },
+    /// What a terminal printed, from where it was read.
+    #[schemars(title = "Screen")]
+    Screen { screen: Screenful },
     #[schemars(title = "Device")]
     Device { device: DeviceCode },
     /// A sign-in in the browser still waiting for the person.

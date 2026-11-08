@@ -26,6 +26,26 @@ impl Output for Collect {
     }
 }
 
+/// `glave computer serve --stdio` with `env` over this test's own, and the client reaching it,
+/// its protocol checked.
+pub(crate) async fn served_on_stdio(
+    env: &[(&str, &std::ffi::OsStr)],
+) -> (tokio::process::Child, RemoteComputers) {
+    let mut child = tokio::process::Command::new(GLAVE)
+        .args(["computer", "serve", "--stdio"])
+        .envs(env.iter().copied())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let input = child.stdout.take().unwrap();
+    let output = child.stdin.take().unwrap();
+    let remote = RemoteComputers::connect(input, output);
+    remote.check_protocol().await.unwrap();
+    (child, remote)
+}
+
 #[test]
 fn the_binary_serves_a_computer_that_passes_the_suite() {
     let dir = TempDir::new("e2e-computer").unwrap();
@@ -34,19 +54,12 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
     let key = any_secret();
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let mut child = tokio::process::Command::new(GLAVE)
-            .args(["computer", "serve", "--stdio"])
-            .env("GLAVE_HOME", dir.join("home"))
-            .env("GLAVE_API_KEY", &key)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let input = child.stdout.take().unwrap();
-        let output = child.stdin.take().unwrap();
-        let remote = RemoteComputers::connect(input, output);
-        remote.check_protocol().await.unwrap();
+        let home = dir.join("home");
+        let env = [
+            ("GLAVE_HOME", home.as_os_str()),
+            ("GLAVE_API_KEY", key.as_ref()),
+        ];
+        let (mut child, remote) = served_on_stdio(&env).await;
 
         let made = remote.create(&Environment::host()).await.unwrap();
         let path = work.to_string_lossy().into_owned();

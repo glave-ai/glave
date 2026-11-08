@@ -17,6 +17,8 @@ pub(super) enum Kind {
     Ask,
     /// A command a thread keeps running in the background.
     Command,
+    /// A person's terminal open in a thread.
+    Terminal,
     Schedule,
     Memory,
     /// A model account.
@@ -50,13 +52,14 @@ pub(super) enum Kind {
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 19] = [
+    pub(super) const ALL: [Self; 20] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
         Self::Question,
         Self::Ask,
         Self::Command,
+        Self::Terminal,
         Self::Schedule,
         Self::Memory,
         Self::Provider,
@@ -81,6 +84,7 @@ impl Kind {
             Self::Question => "@question",
             Self::Ask => "@ask",
             Self::Command => "@command",
+            Self::Terminal => "@terminal",
             Self::Schedule => "@schedule",
             Self::Memory => "@memory",
             Self::Provider => "@provider",
@@ -111,6 +115,7 @@ impl Kind {
             Self::Project => Some("ProjectId"),
             Self::Approval | Self::Question => Some("CallId"),
             Self::Command => Some("CommandId"),
+            Self::Terminal => Some("TerminalId"),
             Self::Schedule => Some("ScheduleId"),
             Self::Memory => Some("MemoryId"),
             Self::Provider => Some("ProviderId"),
@@ -141,6 +146,7 @@ impl Kind {
             Self::Approval | Self::Question => "call_nobody".to_owned(),
             Self::Ask => "nobody's ask".to_owned(),
             Self::Command => uuid(0xdead_0003),
+            Self::Terminal => uuid(0xdead_000c),
             Self::Schedule => uuid(0xdead_0004),
             Self::Memory => uuid(0xdead_0005),
             Self::Provider => uuid(0xdead_0006),
@@ -173,6 +179,10 @@ pub(super) const NOT_HELD: &[(Kind, &str)] = &[
     (
         Kind::Command,
         "no command is left running in the background",
+    ),
+    (
+        Kind::Terminal,
+        "no terminal opens: the suite's computer has no glave of its own to start a shell",
     ),
     (
         Kind::Computer,
@@ -418,6 +428,29 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "command/stop",
             vec![json!({"thread": "@thread", "command": "@command"})],
+        ),
+        (
+            "terminal/open",
+            vec![json!({"thread": "@thread", "size": {"cols": 80, "rows": 24}})],
+        ),
+        ("terminal/list", on_thread()),
+        (
+            "terminal/write",
+            vec![json!({"thread": "@thread", "terminal": "@terminal", "input": "bHM="})],
+        ),
+        (
+            "terminal/read",
+            vec![json!({"thread": "@thread", "terminal": "@terminal", "from": 0})],
+        ),
+        (
+            "terminal/resize",
+            vec![json!({
+                "thread": "@thread", "terminal": "@terminal", "size": {"cols": 80, "rows": 24}
+            })],
+        ),
+        (
+            "terminal/close",
+            vec![json!({"thread": "@thread", "terminal": "@terminal"})],
         ),
         (
             "schedule/create",

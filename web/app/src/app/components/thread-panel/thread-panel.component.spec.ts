@@ -103,6 +103,25 @@ describe('ThreadPanelComponent', () => {
     await expectAccessible(root);
   });
 
+  it('has a Terminal tab between Overview and Changes where the thread says one opens', async () => {
+    const summary = thread('thread-1', 'Add --verbose', { workspace: FOLDER, terminals: true });
+    const fake = worked()
+      .answer('thread/get', { thread: summary })
+      .answer('terminal/list', { terminals: [] })
+      .answer('terminal/open', { terminal: { id: 't1', folder: '/work/glave' } });
+    const { root, fixture } = await render(fake, WORKED);
+    expect(tabs(root).map((tab) => tab.textContent.trim())).toEqual([
+      'Overview',
+      'Terminal',
+      'Changes',
+    ]);
+    tabs(root)[1]?.click();
+    await drawn(fixture);
+    expect(root.querySelector('app-thread-overview')).toBeNull();
+    expect(root.querySelector('app-terminal-tab')).not.toBeNull();
+    await expectAccessible(root);
+  });
+
   it('has no Changes tab before the thread changed files, and Overview again in each thread', async () => {
     const fake = worked();
     const give = fake.held('thread/changes');
