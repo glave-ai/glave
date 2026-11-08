@@ -3181,10 +3181,6 @@
           },
           "type": "array"
         },
-        "terminals": {
-          "description": "Whether the caller may open terminals of their own in their threads' folders: their\nshell, on their own computer, never on the server's for anyone but the person it works\nfor (`specs/session.md`, \"Terminals\").",
-          "type": "boolean"
-        },
         "unsandboxed": {
           "description": "Why Auto asks before every change and command here, in a sentence, when it does:\nno sandbox can run on this computer (Ask first then asks so too), or only one that keeps\nfiles as they are.",
           "type": [
@@ -3788,6 +3784,10 @@
         },
         "status": {
           "$ref": "#/$defs/Status"
+        },
+        "terminals": {
+          "description": "Whether its person may open terminals of their own in its folder: their shell, on their\nown computer, so never on a worker, nor on the server's for anyone but the person it\nworks for; never once it is put away (`specs/session.md`, \"Terminals\").",
+          "type": "boolean"
         },
         "title": {
           "description": "The title the person gave it, else the first line of their first message.",

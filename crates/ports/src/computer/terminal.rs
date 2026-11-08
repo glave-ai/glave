@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bytes::Bytes;
+use super::refusal::Refusal;
 use super::types::{ComputerError, TerminalId};
 
 /// The most terminals one computer keeps open at once: a few for its person, as a terminal
@@ -43,10 +44,11 @@ impl TerminalSize {
             Ok(self)
         } else {
             Err(ComputerError::Refused(
-                format!(
-                    "a terminal is 1 to {TERMINAL_MAX_SIDE} columns and rows, not {} by {}",
-                    self.cols, self.rows
-                )
+                Refusal::TerminalSize {
+                    most: TERMINAL_MAX_SIDE.to_string(),
+                    cols: self.cols.to_string(),
+                    rows: self.rows.to_string(),
+                }
                 .into(),
             ))
         }

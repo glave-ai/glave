@@ -26,6 +26,7 @@ struct At<'a, C> {
     computers: &'a C,
     computer: ComputerId,
     id: TerminalId,
+    owner: &'a str,
 }
 
 impl<'a, C: Computers> At<'a, C> {
@@ -33,7 +34,7 @@ impl<'a, C: Computers> At<'a, C> {
         computers: &'a C,
         computer: ComputerId,
         folder: &str,
-        owner: &str,
+        owner: &'a str,
     ) -> Result<Self, String> {
         let id = computers
             .open_terminal(computer, folder, owner, SIZE)
@@ -43,14 +44,20 @@ impl<'a, C: Computers> At<'a, C> {
             computers,
             computer,
             id,
+            owner,
         })
+    }
+
+    /// It, as its owner names it.
+    fn at(&self) -> (TerminalId, &'a str) {
+        (self.id, self.owner)
     }
 
     /// Types `line` and a return.
     async fn typed(&self, line: &str) -> Verdict {
         let input = Bytes::new(format!("{line}\r"));
         self.computers
-            .write_terminal(self.computer, self.id, &input)
+            .write_terminal(self.computer, self.at(), &input)
             .await
             .map_err(|error| format!("type {line:?} into a terminal: {error}"))
     }
@@ -73,7 +80,7 @@ impl<'a, C: Computers> At<'a, C> {
         while began.elapsed() < SOON {
             let read = self
                 .computers
-                .read_terminal(self.computer, self.id, at, POLL)
+                .read_terminal(self.computer, self.at(), at, POLL)
                 .await
                 .map_err(failed("read a terminal"))?;
             ensure(
@@ -100,7 +107,7 @@ impl<'a, C: Computers> At<'a, C> {
     async fn end(&self) -> Result<u64, String> {
         let read = self
             .computers
-            .read_terminal(self.computer, self.id, u64::MAX, Duration::ZERO);
+            .read_terminal(self.computer, self.at(), u64::MAX, Duration::ZERO);
         Ok(read.await.map_err(failed("read where a terminal is"))?.next)
     }
 
@@ -117,7 +124,7 @@ impl<'a, C: Computers> At<'a, C> {
 
     async fn close(&self) -> Verdict {
         self.computers
-            .close_terminal(self.computer, self.id)
+            .close_terminal(self.computer, self.at())
             .await
             .map_err(failed("close a terminal"))
     }
@@ -159,12 +166,13 @@ pub async fn terminals<C: Computers>(computers: &C, computer: ComputerId, folder
         .await
         .map_err(failed("list terminals"))?;
     ensure(others.is_empty(), "no other owner's terminal is listed")?;
+    not_another_owner_s(&terminal).await?;
     ended_by_its_shell(&terminal).await?;
     terminal.close().await?;
     ensure(
         matches!(
             computers
-                .read_terminal(computer, terminal.id, 0, Duration::ZERO)
+                .read_terminal(computer, terminal.at(), 0, Duration::ZERO)
                 .await,
             Err(ComputerError::NotFound(_))
         ),
@@ -176,7 +184,7 @@ pub async fn terminals<C: Computers>(computers: &C, computer: ComputerId, folder
 
 /// A read from where the terminal began shows it all again; one at its end, nothing.
 async fn read_again<C: Computers>(terminal: &At<'_, C>, at: u64) -> Verdict {
-    let (computers, computer, id) = (terminal.computers, terminal.computer, terminal.id);
+    let (computers, computer, id) = (terminal.computers, terminal.computer, terminal.at());
     let again = computers
         .read_terminal(computer, id, 0, Duration::ZERO)
         .await
@@ -191,9 +199,35 @@ async fn read_again<C: Computers>(terminal: &At<'_, C>, at: u64) -> Verdict {
     )
 }
 
+/// Another owner reaches no terminal by its id: not to read, type into, resize or close it.
+async fn not_another_owner_s<C: Computers>(terminal: &At<'_, C>) -> Verdict {
+    let (computers, computer) = (terminal.computers, terminal.computer);
+    let theirs = (terminal.id, "suite/nobody");
+    let read = computers.read_terminal(computer, theirs, 0, Duration::ZERO);
+    let exit = Bytes::new("exit\r");
+    let typed = computers.write_terminal(computer, theirs, &exit);
+    let resized = computers.resize_terminal(computer, theirs, SIZE);
+    let (read, typed, resized) = (read.await.err(), typed.await.err(), resized.await.err());
+    let closed = computers.close_terminal(computer, theirs).await.err();
+    let reached =
+        |error: &Option<ComputerError>| !matches!(error, Some(ComputerError::NotFound(_)));
+    ensure(
+        !reached(&read) && !reached(&typed) && !reached(&resized) && !reached(&closed),
+        "another owner's call on a terminal is not found",
+    )?;
+    let listed = computers.terminals(computer, terminal.owner).await;
+    ensure(
+        listed
+            .map_err(failed("list terminals"))?
+            .iter()
+            .any(|each| each.id == terminal.id && !each.ended),
+        "a terminal another owner tried to close stays open",
+    )
+}
+
 /// A terminal given another size tells its shell, which sees it.
 async fn resized<C: Computers>(terminal: &At<'_, C>) -> Verdict {
-    let (computers, computer, id) = (terminal.computers, terminal.computer, terminal.id);
+    let (computers, computer, id) = (terminal.computers, terminal.computer, terminal.at());
     let at = terminal.end().await?;
     let size = TerminalSize {
         cols: 101,
@@ -223,7 +257,7 @@ async fn ended_by_its_shell<C: Computers>(terminal: &At<'_, C>) -> Verdict {
     while began.elapsed() < SOON {
         let read = terminal
             .computers
-            .read_terminal(terminal.computer, terminal.id, at, POLL)
+            .read_terminal(terminal.computer, terminal.at(), at, POLL)
             .await
             .map_err(failed("read a terminal whose shell exits"))?;
         at = read.next;
@@ -311,7 +345,8 @@ async fn bounded<C: Computers>(computers: &C, computer: ComputerId, folder: &str
             "suite/another"
         };
         let opened = computers.open_terminal(computer, folder, owner, SIZE).await;
-        open.push(opened.map_err(failed("open as many terminals as a computer keeps"))?);
+        let opened = opened.map_err(failed("open as many terminals as a computer keeps"))?;
+        open.push((opened, owner));
     }
     let one_more = computers
         .open_terminal(computer, folder, "suite/third", SIZE)
@@ -334,7 +369,7 @@ async fn bounded<C: Computers>(computers: &C, computer: ComputerId, folder: &str
     let one_more = computers.open_terminal(computer, folder, OWNER, SIZE).await;
     for terminal in &owned {
         computers
-            .close_terminal(computer, *terminal)
+            .close_terminal(computer, (*terminal, OWNER))
             .await
             .map_err(failed("close a terminal"))?;
     }
@@ -361,7 +396,7 @@ async fn bounded<C: Computers>(computers: &C, computer: ComputerId, folder: &str
     let stray = TerminalId::from_uuid(uuid::Uuid::nil());
     ensure(
         matches!(
-            computers.close_terminal(computer, stray).await,
+            computers.close_terminal(computer, (stray, OWNER)).await,
             Err(ComputerError::NotFound(_))
         ),
         "closing a terminal the computer doesn't have is not found",

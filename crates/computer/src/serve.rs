@@ -454,29 +454,36 @@ impl<C: Computers + 'static> Connection<C> {
             Request::TerminalWrite {
                 computer,
                 terminal,
+                owner,
                 input,
-            } => reply(computers.write_terminal(computer, terminal, &input).await),
+            } => {
+                let at = (terminal, owner.as_str());
+                reply(computers.write_terminal(computer, at, &input).await)
+            }
             Request::TerminalRead {
                 computer,
                 terminal,
+                owner,
                 from,
                 wait_ms,
             } => {
-                let wait = Duration::from_millis(wait_ms);
-                reply(
-                    computers
-                        .read_terminal(computer, terminal, from, wait)
-                        .await,
-                )
+                let (at, wait) = ((terminal, owner.as_str()), Duration::from_millis(wait_ms));
+                reply(computers.read_terminal(computer, at, from, wait).await)
             }
             Request::TerminalResize {
                 computer,
                 terminal,
+                owner,
                 size,
-            } => reply(computers.resize_terminal(computer, terminal, size).await),
-            Request::TerminalClose { computer, terminal } => {
-                reply(computers.close_terminal(computer, terminal).await)
+            } => {
+                let at = (terminal, owner.as_str());
+                reply(computers.resize_terminal(computer, at, size).await)
             }
+            Request::TerminalClose {
+                computer,
+                terminal,
+                owner,
+            } => reply(computers.close_terminal(computer, (terminal, &owner)).await),
             other => Err(wire::failure(
                 code::INVALID_REQUEST,
                 &format!("{} is not about terminals", other.method()),

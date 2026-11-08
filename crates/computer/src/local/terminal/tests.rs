@@ -39,7 +39,7 @@ fn without_glave_s_own_program_no_terminal_opens_and_none_is_found() {
             "{opened:?}"
         );
 
-        let stray = TerminalId::from_uuid(uuid::Uuid::nil());
+        let stray = (TerminalId::from_uuid(uuid::Uuid::nil()), "t");
         let input = Bytes::new(b"ls\r".to_vec());
         let not_found =
             |result: Result<(), ComputerError>| matches!(result, Err(ComputerError::NotFound(_)));

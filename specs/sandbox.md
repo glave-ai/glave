@@ -84,7 +84,7 @@ Cargo's home is left alone. It holds the person's settings, installed tools and 
 - Full access is never offered (`server/discover`'s modes) and is refused when asked for, in plain words ("Full access is only for this server's owner, since its commands could reach the server's own files"); a mode chosen before, a project's, or the server's own above Auto runs as Auto, and a thread's summary says Auto.
 - `bash` is never offered `outside_sandbox` in their threads, nor the blocked-command note to use it; only `network`, where the sandbox has none and the policy lets commands ask. A call that asks anyway is refused without asking anyone, the model told only the owner's commands may run outside the sandbox.
 - Where no sandbox runs on the server's computer at all (or Auto's cannot, with only the read-only one there), none of their commands runs: their approval would let it out. Ask first and Plan keep the read-only sandbox where it runs. `server/discover` tells them so in its own sentence (`unsandboxed`).
-- A terminal of their own, which is a shell outside the sandbox, never opens there: `server/discover` says they open none (`terminals`), and `terminal/open` is refused in plain words (#355, `session.md`, "Terminals").
+- A terminal of their own, which is a shell outside the sandbox, never opens there: their threads' summaries say none opens in them (`terminals`), and `terminal/open` is refused in plain words (#355, `session.md`, "Terminals").
 - On a computer of their own (`computers.md`) or a worker, that wall is theirs, and none of this applies.
 
 The server's sandbox already hides glave's folder from every sandboxed command (*Reads*; `invariants.md`, 23), so what was missing was only who may leave it (`invariants.md`, 28).

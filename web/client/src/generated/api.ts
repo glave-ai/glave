@@ -1153,12 +1153,6 @@ export type ServerInfo = {
    */
   readonly signin?: readonly (SignInWay)[];
   /**
-   * Whether the caller may open terminals of their own in their threads' folders: their
-   * shell, on their own computer, never on the server's for anyone but the person it works
-   * for (`specs/session.md`, "Terminals").
-   */
-  readonly terminals?: boolean;
-  /**
    * Why Auto asks before every change and command here, in a sentence, when it does:
    * no sandbox can run on this computer (Ask first then asks so too), or only one that keeps
    * files as they are.
@@ -1354,6 +1348,12 @@ export type ThreadSummary = {
   readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
+  /**
+   * Whether its person may open terminals of their own in its folder: their shell, on their
+   * own computer, so never on a worker, nor on the server's for anyone but the person it
+   * works for; never once it is put away (`specs/session.md`, "Terminals").
+   */
+  readonly terminals?: boolean;
   /** The title the person gave it, else the first line of their first message. */
   readonly title?: string | null;
   /** Tokens its own model calls used. */

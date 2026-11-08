@@ -1,9 +1,10 @@
 //! A person's terminals on this machine (`specs/computers.md`, "Terminals"): their login shell
-//! on a pseudo-terminal, started by glave's own program (`terminal_helper`), which makes the
-//! terminal its own in a session of its own, then becomes the shell, through glave-process, so
-//! it is recorded and stopped with glave. What it prints is read as it comes into a ring of the
-//! latest [`TERMINAL_KEPT`] bytes. A terminal ends, with everything in its session, when it is
-//! closed, its shell exits, it is dropped, or nothing used it for [`IDLE`].
+//! on a pseudo-terminal, started by glave's own program (`terminal_helper`) through
+//! glave-process, so it is recorded and stopped with glave: the helper makes the terminal its
+//! own in a session of its own and runs the shell in it, staying the session's leader. What it
+//! prints is read as it comes into a ring of the latest [`TERMINAL_KEPT`] bytes. A terminal
+//! ends, with everything in its session, when it is closed, its shell exits, it is dropped, or
+//! nothing used it for [`IDLE`]: no read found something printed, and nothing was written.
 
 mod helper;
 mod pump;
@@ -22,7 +23,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Bytes, ComputerError, ComputerId, IDLE, MAX_OWNED_TERMINALS, MAX_TERMINALS, MAX_WAIT,
+    Bytes, ComputerError, ComputerId, IDLE, MAX_OWNED_TERMINALS, MAX_TERMINALS, MAX_WAIT, Refusal,
     Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalId, TerminalInfo, TerminalSize,
 };
 use glave_process::{Processes, Program};
@@ -90,6 +91,22 @@ struct Terminal {
     pump: JoinHandle<()>,
 }
 
+impl Terminal {
+    /// Whether it is open on `computer` for `owner`.
+    fn is(&self, computer: ComputerId, owner: &str) -> bool {
+        self.computer == computer && self.owner == owner
+    }
+
+    /// Hangs it up through its pump, which ends everything in its session off the async
+    /// threads, and waits for that, at most [`CLOSES_WITHIN`]; one not ended by then is ended
+    /// as it drops, which asks the system, so off them too.
+    async fn hung_up(mut self) {
+        self.shared.hang_up.notify_one();
+        let _ = tokio::time::timeout(CLOSES_WITHIN, &mut self.pump).await;
+        let _ = tokio::task::spawn_blocking(move || drop(self)).await;
+    }
+}
+
 impl Drop for Terminal {
     /// Dropped before it ended (its computer destroyed, glave ending): what its shell started
     /// goes first, while its leader still holds the terminal, then the leader, then its pump,
@@ -115,7 +132,7 @@ struct Shared {
     changed: Notify,
     /// Told to hang it up.
     hang_up: Notify,
-    /// When it was last used: something printed, read or written.
+    /// When it was last used: a read that found something printed, or a write.
     used: Mutex<Instant>,
     /// Whether its pump has ended it, and everything in its session.
     ended: AtomicBool,
@@ -134,9 +151,9 @@ impl Shared {
         self.printed.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Keeps what it printed, which is no use of it until a read finds it.
     fn print(&self, bytes: &[u8]) {
         self.ring().push(bytes);
-        self.touch();
         self.changed.notify_waiters();
     }
 
@@ -161,12 +178,6 @@ impl Drop for Opening<'_> {
     }
 }
 
-fn refused(most: usize, whose: &str) -> ComputerError {
-    ComputerError::Refused(
-        format!("{most} terminals are already open {whose}; close one first").into(),
-    )
-}
-
 impl Terminals {
     /// Opens a terminal of `size` at `folder` on `computer` for `owner`, its shell started as
     /// `start` says.
@@ -184,7 +195,12 @@ impl Terminals {
                 "this computer opens terminals only with glave's own program to start them".into(),
             ));
         };
-        let shell = shell::login_shell(start.environment)?;
+        // The user database may be a program to ask (Directory Services), so never on an
+        // async thread.
+        let environment = start.environment.to_vec();
+        let shell = tokio::task::spawn_blocking(move || shell::login_shell(&environment))
+            .await
+            .map_err(failed)??;
         let _place = self.hold(owner)?;
         let pty = shell::pseudo_terminal(size).map_err(failed)?;
         let (master, terminal) = (pty.master, pty.terminal);
@@ -240,10 +256,16 @@ impl Terminals {
     fn hold(&self, owner: &str) -> Result<Opening<'_>, ComputerError> {
         let mut held = self.lock();
         if held.all() >= MAX_TERMINALS {
-            return Err(refused(MAX_TERMINALS, "here"));
+            let most = MAX_TERMINALS.to_string();
+            return Err(ComputerError::Refused(
+                Refusal::TooManyTerminals { most }.into(),
+            ));
         }
         if held.owned(owner) >= MAX_OWNED_TERMINALS {
-            return Err(refused(MAX_OWNED_TERMINALS, "for it"));
+            let most = MAX_OWNED_TERMINALS.to_string();
+            return Err(ComputerError::Refused(
+                Refusal::TooManyOwnedTerminals { most }.into(),
+            ));
         }
         held.opening.push(owner.to_owned());
         Ok(Opening {
@@ -270,16 +292,17 @@ impl Terminals {
     pub(crate) async fn write(
         &self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &str),
         input: &Bytes,
     ) -> Result<(), ComputerError> {
         let input = input.as_slice();
         if input.len() > TERMINAL_CHUNK {
+            let most = TERMINAL_CHUNK.to_string();
             return Err(ComputerError::Refused(
-                format!("a terminal takes at most {TERMINAL_CHUNK} bytes at once").into(),
+                Refusal::TerminalInput { most }.into(),
             ));
         }
-        let shared = self.shared(computer, id)?;
+        let shared = self.shared(computer, at)?;
         shared.touch();
         match tokio::time::timeout(TAKES_WITHIN, pump::write_all(&shared.input, input)).await {
             Ok(written) => written.map_err(failed),
@@ -296,11 +319,11 @@ impl Terminals {
     pub(crate) async fn read(
         &self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &str),
         from: u64,
         wait: Duration,
     ) -> Result<Screenful, ComputerError> {
-        let shared = self.shared(computer, id)?;
+        let shared = self.shared(computer, at)?;
         let deadline = Instant::now() + wait.min(MAX_WAIT);
         loop {
             let changed = shared.changed.notified();
@@ -322,16 +345,15 @@ impl Terminals {
         }
     }
 
-    /// Gives the terminal another size, which its shell is told of.
+    /// Gives the terminal another size, which its shell is told of; no use of it.
     pub(crate) fn resize(
         &self,
         computer: ComputerId,
-        id: TerminalId,
+        at: (TerminalId, &str),
         size: TerminalSize,
     ) -> Result<(), ComputerError> {
         let size = size.checked()?;
-        let shared = self.shared(computer, id)?;
-        shared.touch();
+        let shared = self.shared(computer, at)?;
         rustix::termios::tcsetwinsize(&shared.input, shell::winsize(size)).map_err(failed)
     }
 
@@ -339,31 +361,45 @@ impl Terminals {
     pub(crate) async fn close(
         &self,
         computer: ComputerId,
-        id: TerminalId,
+        (id, owner): (TerminalId, &str),
     ) -> Result<(), ComputerError> {
-        let mut terminal = {
+        let terminal = {
             let mut held = self.lock();
             match held.open.get(&id) {
-                Some(terminal) if terminal.computer == computer => held.open.remove(&id),
+                Some(terminal) if terminal.is(computer, owner) => held.open.remove(&id),
                 _ => None,
             }
         }
         .ok_or_else(|| no_terminal(id))?;
-        terminal.shared.hang_up.notify_one();
-        let _ = tokio::time::timeout(CLOSES_WITHIN, &mut terminal.pump).await;
+        terminal.hung_up().await;
         Ok(())
     }
 
-    /// Ends every terminal open on `computer`, as it is destroyed.
-    pub(crate) fn close_all(&self, computer: ComputerId) {
-        self.lock()
-            .open
-            .retain(|_, terminal| terminal.computer != computer);
+    /// Ends every terminal open on `computer`, as it is destroyed: each hung up as closing it
+    /// does, none while the terminals are held.
+    pub(crate) async fn close_all(&self, computer: ComputerId) {
+        let closing: Vec<Terminal> = {
+            let mut held = self.lock();
+            let ids: Vec<TerminalId> = held
+                .open
+                .iter()
+                .filter(|(_, terminal)| terminal.computer == computer)
+                .map(|(id, _)| *id)
+                .collect();
+            ids.iter().filter_map(|id| held.open.remove(id)).collect()
+        };
+        for terminal in closing {
+            terminal.hung_up().await;
+        }
     }
 
-    fn shared(&self, computer: ComputerId, id: TerminalId) -> Result<Arc<Shared>, ComputerError> {
+    fn shared(
+        &self,
+        computer: ComputerId,
+        (id, owner): (TerminalId, &str),
+    ) -> Result<Arc<Shared>, ComputerError> {
         match self.lock().open.get(&id) {
-            Some(terminal) if terminal.computer == computer => Ok(Arc::clone(&terminal.shared)),
+            Some(terminal) if terminal.is(computer, owner) => Ok(Arc::clone(&terminal.shared)),
             _ => Err(no_terminal(id)),
         }
     }

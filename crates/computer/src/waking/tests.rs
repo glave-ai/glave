@@ -51,6 +51,18 @@ fn planned_at(
     let (wakes, again) = (Arc::clone(wakes), Arc::clone(again));
     let awake: Arc<tokio::sync::Mutex<Option<(usize, Home)>>> = Arc::default();
     let root = base.join("home");
+    let (seen, slept) = (Arc::clone(&awake), Arc::clone(&again));
+    let peek: Peek = Arc::new(move || {
+        let (seen, slept) = (Arc::clone(&seen), Arc::clone(&slept));
+        Box::pin(async move {
+            let seen = seen.lock().await;
+            let generation = slept.load(Ordering::SeqCst);
+            Ok(seen
+                .as_ref()
+                .filter(|(woke, _)| *woke == generation)
+                .map(|(_, home)| home.clone()))
+        })
+    });
     let wake: Wake = Arc::new(move || {
         let (wakes, again, awake) = (Arc::clone(&wakes), Arc::clone(&again), Arc::clone(&awake));
         let (scratch, root) = (scratch.clone(), root.clone());
@@ -86,7 +98,7 @@ fn planned_at(
         temp: None,
         at: None,
     };
-    Waking::home(wake, None, home, planned)
+    Waking::home((wake, peek), None, home, planned)
 }
 
 /// The scratch folder `name`, planned on `home`.

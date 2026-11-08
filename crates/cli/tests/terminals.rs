@@ -1,11 +1,19 @@
 //! A person's terminals, opened by glave's own program, which starts their shell in a session
 //! of its own: this machine's computers pass the terminals suite with the real binary as their
 //! helper, started directly and through the lifeline's gate, and so does
-//! `glave computer serve --stdio`, across the protocol. The person's server opens theirs in a
+//! `glave computer serve --stdio`, across the protocol. A person's computer as a server holds
+//! it finds them as it is awake, never woken to say so. The person's server opens theirs in a
 //! thread's folder over the session API, and never one for someone else on its computer.
 
-use glave_computer::LocalComputers;
-use glave_ports::computer::{Bytes, Computers, Environment, Screenful};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::time::Duration;
+
+use glave_computer::{LocalComputers, Peek, Wake, Waking};
+use glave_ports::computer::{
+    Bytes, ComputerError, ComputerId, Computers, Environment, Home, Screenful, Sources, TerminalId,
+    TerminalSize,
+};
 use glave_ports::testing::{TempDir, read_program};
 use glave_ports::{block_on, conformance};
 use glave_process::Processes;
@@ -76,6 +84,134 @@ fn the_binary_serves_terminals_across_the_protocol() {
     });
 }
 
+const SIZE: TerminalSize = TerminalSize { cols: 80, rows: 24 };
+
+/// How a person's computer stands, as [`Waking`]'s peek finds it.
+const AWAKE: u8 = 0;
+const ASLEEP: u8 = 1;
+const ELSEWHERE: u8 = 2;
+
+/// `home` as a server holds a person's computer: woken by `wakes` (each counted) and found as
+/// `stands` says without waking it.
+fn held(home: &Home, stands: &Arc<AtomicU8>, wakes: &Arc<AtomicUsize>) -> Home {
+    let (found, woken) = (home.clone(), Arc::clone(wakes));
+    let wake: Wake = Arc::new(move || {
+        woken.fetch_add(1, Ordering::SeqCst);
+        Box::pin(std::future::ready(Ok(found.clone())))
+    });
+    let (found, stands) = (home.clone(), Arc::clone(stands));
+    let peek: Peek = Arc::new(move || {
+        let now = match stands.load(Ordering::SeqCst) {
+            AWAKE => Ok(Some(found.clone())),
+            ASLEEP => Ok(None),
+            _ => Err(ComputerError::Unreachable("another server's".into())),
+        };
+        Box::pin(std::future::ready(now))
+    });
+    Waking::home((wake, peek), None, home.home.clone(), "/nowhere")
+}
+
+/// What `terminal` on `home`'s computer printed until it printed `marker`.
+async fn printed(home: &Home, terminal: (TerminalId, &str), marker: &str) -> String {
+    let (computer, mut seen, mut from) = (home.home.computer, Vec::new(), 0);
+    for _ in 0..100 {
+        let read =
+            home.computers
+                .read_terminal(computer, terminal, from, Duration::from_millis(300));
+        let read = read.await.unwrap();
+        seen.extend_from_slice(read.output.as_slice());
+        from = read.next;
+        if String::from_utf8_lossy(&seen).contains(marker) {
+            return String::from_utf8_lossy(&seen).into_owned();
+        }
+    }
+    panic!(
+        "never printed {marker:?}: {}",
+        String::from_utf8_lossy(&seen)
+    );
+}
+
+#[test]
+fn a_person_s_computer_finds_its_terminals_as_it_is_awake_and_never_wakes_to_say_so() {
+    let dir = TempDir::new("terminals-waking").unwrap();
+    let folder = dir.join("work");
+    std::fs::create_dir_all(&folder).unwrap();
+    read_program(GLAVE).unwrap();
+    block_on!(async {
+        let computers = LocalComputers::new(dir.join("copies"), shell_in(&dir)).with_helper(GLAVE);
+        let computers: Arc<dyn Computers> = Arc::new(computers);
+        let computer: ComputerId = computers.create(&Environment::host()).await.unwrap().id;
+        let path = folder.to_string_lossy().into_owned();
+        let sources = Sources::Folder { path: path.clone() };
+        let opened = computers.open(computer, &sources).await.unwrap();
+        let home = Home {
+            computers,
+            home: opened,
+        };
+        let stands = Arc::new(AtomicU8::new(AWAKE));
+        let (first_wakes, then_wakes) = (Arc::default(), Arc::default());
+        let first = held(&home, &stands, &first_wakes);
+        let owner = "org/project/thread";
+        let id = first
+            .computers
+            .open_terminal(computer, &path, owner, SIZE)
+            .await
+            .unwrap();
+        assert_eq!(
+            first_wakes.load(Ordering::SeqCst),
+            1,
+            "opening one wakes it"
+        );
+        let terminal = (id, owner);
+
+        // A server that never opened it, restarted or another, finds it where it is.
+        let then = held(&home, &stands, &then_wakes);
+        let listed = then.computers.terminals(computer, owner).await.unwrap();
+        assert_eq!(listed.iter().map(|each| each.id).collect::<Vec<_>>(), [id]);
+        let input = Bytes::new("echo found-$((40+2))\r");
+        then.computers
+            .write_terminal(computer, terminal, &input)
+            .await
+            .unwrap();
+        printed(&then, terminal, "found-42").await;
+
+        // Asleep, it has none; out of this server's reach, it says so, never that it has none.
+        stands.store(ASLEEP, Ordering::SeqCst);
+        assert_eq!(then.computers.terminals(computer, owner).await.unwrap(), []);
+        let read = then
+            .computers
+            .read_terminal(computer, terminal, 0, Duration::ZERO);
+        assert!(matches!(read.await, Err(ComputerError::NotFound(_))));
+        stands.store(ELSEWHERE, Ordering::SeqCst);
+        let listed = then.computers.terminals(computer, owner).await;
+        assert!(
+            matches!(listed, Err(ComputerError::Unreachable(_))),
+            "{listed:?}"
+        );
+        let closed = then.computers.close_terminal(computer, terminal).await;
+        assert!(
+            matches!(closed, Err(ComputerError::Unreachable(_))),
+            "{closed:?}"
+        );
+        assert_eq!(
+            then_wakes.load(Ordering::SeqCst),
+            0,
+            "nothing but opening wakes it"
+        );
+
+        stands.store(AWAKE, Ordering::SeqCst);
+        then.computers
+            .close_terminal(computer, terminal)
+            .await
+            .unwrap();
+        assert_eq!(
+            first.computers.terminals(computer, owner).await.unwrap(),
+            []
+        );
+        home.computers.destroy(computer).await.unwrap();
+    });
+}
+
 /// What `caller`'s `method` with `params` answers, as JSON, or its error's.
 async fn asked(caller: &Remote, method: &str, params: Value) -> Result<Value, Value> {
     match caller.request(&request(method, params)).await {
@@ -126,9 +262,8 @@ fn the_person_s_server_opens_their_terminal_in_a_thread_s_folder_and_no_one_else
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     block_on!(async {
         let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
-        let found = asked(&owner, "server/discover", json!({})).await.unwrap();
-        assert_eq!(found["terminals"], true, "{found}");
         let started = asked(&owner, "thread/start", json!({})).await.unwrap();
+        assert_eq!(started["thread"]["terminals"], true, "{started}");
         let thread = started["thread"]["id"].clone();
         let size = json!({"cols": 80, "rows": 24});
         let params = json!({"thread": thread, "size": size});
@@ -151,9 +286,8 @@ fn the_person_s_server_opens_their_terminal_in_a_thread_s_folder_and_no_one_else
 
         // Someone invited may open none: not on the server's computer, not in its owner's thread.
         let theirs = invited(&owner, &url, &origin).await;
-        let found = asked(&theirs, "server/discover", json!({})).await.unwrap();
-        assert!(found.get("terminals").is_none(), "{found}");
         let own = asked(&theirs, "thread/start", json!({})).await.unwrap();
+        assert!(own["thread"].get("terminals").is_none(), "{own}");
         let params = json!({"thread": own["thread"]["id"], "size": size});
         let refused = asked(&theirs, "terminal/open", params).await.unwrap_err();
         assert_eq!(refused["code"], -32012, "{refused}");

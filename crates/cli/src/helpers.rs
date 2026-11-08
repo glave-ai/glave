@@ -1,8 +1,8 @@
 //! glave started again as a helper of its own: the lifeline's, which stops what glave started
 //! once glave ends however it ends (`specs/one-server.md`, "No orphaned processes"), the
 //! Linux sandbox's, which confines itself and then becomes a command (`specs/sandbox.md`), and
-//! a terminal's, which takes its terminal in a session of its own and becomes the person's
-//! shell (`specs/computers.md`, "Terminals").
+//! a terminal's, which takes its terminal in a session of its own and runs the person's shell
+//! in it, staying the session's leader (`specs/computers.md`, "Terminals").
 //! Each is run first thing in `main`, before glave starts a thread. And this glave, first on
 //! every command's `PATH`, so the `glave doc` a skill teaches is the glave that taught it.
 
