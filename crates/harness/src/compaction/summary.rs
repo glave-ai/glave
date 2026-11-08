@@ -135,10 +135,13 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The request for `thread`'s summary: its prompt, tools, messages (memory and files as its
-    /// calls send them) and reasoning, as its own calls are sent, so the provider's cache holds
-    /// all they share; then the instruction. The tools stay listed, since some providers refuse
-    /// a conversation with tool calls but no tools; the instruction asks for text only.
+    /// The request for `thread`'s summary: its prompt, tools and tool choice, messages (memory
+    /// and files as its calls send them) and reasoning, as its own calls are sent, so the
+    /// provider's cache holds all they share; then the instruction, which asks for text only.
+    /// Tools offered but not to be called would change the prefix: a provider that leaves them
+    /// out of the prompt then (DeepSeek's read 256 tokens from its cache so, 2,304 with them
+    /// offered, on the `compaction` eval) shares nothing past the first message, and some refuse
+    /// a conversation with tool calls but no tools.
     async fn summary_request(&self, thread: &Thread, offer: &ToolSet) -> (ModelRequest, u32) {
         let model = self.model_for(thread);
         let cap = self.summary_tokens(&model);
@@ -157,7 +160,7 @@ where
             system: offer.system.clone(),
             messages,
             tools: offer.specs.clone(),
-            tool_choice: ToolChoice::None,
+            tool_choice: ToolChoice::Auto,
             purpose: Purpose::Summary,
             files,
             effort: thread.effort.clone(),

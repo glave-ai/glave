@@ -154,7 +154,10 @@ fn opened_alike(requests: &[ModelRequest]) {
     assert_eq!(summary.purpose, Purpose::Summary);
     assert!(summary.messages.starts_with(&built.messages));
     assert_eq!(summary.messages.len(), built.messages.len() + 2);
-    assert_eq!(summary.effort, built.effort);
+    assert_eq!(
+        (summary.effort.as_ref(), summary.tool_choice),
+        (built.effort.as_ref(), built.tool_choice)
+    );
     let compacted = prefix(&requests[5]);
     assert!(
         compacted != first,
