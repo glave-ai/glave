@@ -1,0 +1,78 @@
+// The line naming where it is, then the screen, filling what is left of the tab, whose panel
+// gives it its insets.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+.where {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--glz-space-1) var(--glz-space-2);
+  min-inline-size: 0;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.folder {
+  overflow: hidden;
+  color: var(--glz-color-text);
+  font-family: var(--glz-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choices {
+  display: flex;
+  gap: var(--glz-space-half);
+}
+
+.choice {
+  min-inline-size: var(--glz-control-height-sm);
+  min-block-size: var(--glz-control-height-sm);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-control);
+  background: none;
+  color: var(--glz-color-text-muted);
+  font: inherit;
+  font-size: var(--glz-text-sm);
+  cursor: pointer;
+}
+
+// The one shown: its border in the marker of what is chosen, not its fill alone.
+.choice[aria-pressed='true'] {
+  border-color: var(--glz-selected-marker);
+  color: var(--glz-color-text);
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 2px;
+}
+
+.box {
+  flex: 1;
+}
+
+.problem {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
+
+.opening,
+.ended {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

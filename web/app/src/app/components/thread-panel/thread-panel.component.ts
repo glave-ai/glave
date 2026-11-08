@@ -20,13 +20,15 @@ import {
 import { X } from 'lucide';
 
 import { PanelService } from '../../services/panel.service';
+import { ServerService } from '../../services/server.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
+import { TerminalTabComponent } from '../terminal-tab/terminal-tab.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 import { ThreadOverviewComponent } from '../thread-overview/thread-overview.component';
 
 /** The panel's tabs, each by what it shows. */
-type Tab = 'overview' | 'changes';
+type Tab = 'overview' | 'terminal' | 'changes';
 
 /** A tab as the panel shows it. */
 interface Shown {
@@ -39,8 +41,9 @@ const FIRST: Tab = 'overview';
 
 /**
  * The open thread's panel, beside it: tabs, each only once it has something to show, in this
- * order: Overview, the thread at a glance, which it opens on (`app-thread-overview`); then the
- * files it changed, in full. The tab chosen is this view's to remember, and each thread opens on
+ * order: Overview, the thread at a glance, which it opens on (`app-thread-overview`); then, where
+ * the server says the person opens terminals and the thread works in a project's folder, the
+ * Terminal, their own shell there (`app-terminal-tab`); then the files it changed, in full. The tab chosen is this view's to remember, and each thread opens on
  * Overview again.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When what had the keyboard's place goes from it, as
@@ -54,6 +57,7 @@ const FIRST: Tab = 'overview';
     GlzIconComponent,
     GlzTabComponent,
     GlzTabsComponent,
+    TerminalTabComponent,
     ThreadFilesComponent,
     ThreadOverviewComponent,
   ],
@@ -75,12 +79,14 @@ export class ThreadPanelComponent {
     close: $localize`:@@threadPanel.close:Close the panel`,
     tabs: $localize`:@@threadPanel.tabs:What this thread shows`,
     overview: $localize`:@@threadPanel.overview:Overview`,
+    terminal: $localize`:@@threadPanel.terminal:Terminal`,
     changes: $localize`:@@threadPanel.changes:Changes`,
   } as const;
   protected readonly icons = { close: X } as const;
   private readonly panel = inject(PanelService);
   protected readonly facts = inject(ThreadPanelService);
   private readonly thread = inject(ThreadService);
+  private readonly server = inject(ServerService);
   private readonly document = inject(DOCUMENT);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
@@ -94,8 +100,13 @@ export class ThreadPanelComponent {
   /** The tabs it has now, in order, each with its label. */
   protected readonly tabs = computed((): readonly Shown[] => {
     const changes = this.facts.files().length > 0;
+    // Never on a computer started for a single task, where none opens.
+    const workspace = this.facts.workspace();
+    const terminal =
+      this.server.terminals() && workspace !== null && workspace.computer.kind !== 'worker';
     return [
       { key: 'overview', label: this.copy.overview },
+      ...(terminal ? [{ key: 'terminal', label: this.copy.terminal } as const] : []),
       ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
     ];
   });

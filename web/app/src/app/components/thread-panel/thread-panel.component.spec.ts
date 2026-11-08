@@ -5,6 +5,7 @@ import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { PanelService } from '../../services/panel.service';
 import { ProjectsService } from '../../services/projects.service';
+import { ServerService } from '../../services/server.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession } from '../../testing/fake-session';
 import { command, event, thread } from '../../testing/fixtures';
@@ -100,6 +101,29 @@ describe('ThreadPanelComponent', () => {
     expect(root.querySelector('[data-testid="files-note"]')?.textContent).toBe(
       'Changes made by commands are not listed.',
     );
+    await expectAccessible(root);
+  });
+
+  it('has a Terminal tab between Overview and Changes where the person may open terminals', async () => {
+    const here = { ...FOLDER, computer: { id: 'c1', kind: 'local' } } as const;
+    const fake = worked()
+      .answer('thread/get', { thread: thread('thread-1', 'Add --verbose', { workspace: here }) })
+      .answer('server/discover', { terminals: true })
+      .answer('terminal/list', { terminals: [] })
+      .answer('terminal/open', { terminal: { id: 't1', folder: '/work/glave' } });
+    const { root, fixture } = await render(fake, WORKED);
+    expect(tabs(root).map((tab) => tab.textContent.trim())).toEqual(['Overview', 'Changes']);
+    await TestBed.inject(ServerService).load();
+    await drawn(fixture);
+    expect(tabs(root).map((tab) => tab.textContent.trim())).toEqual([
+      'Overview',
+      'Terminal',
+      'Changes',
+    ]);
+    tabs(root)[1]?.click();
+    await drawn(fixture);
+    expect(root.querySelector('app-thread-overview')).toBeNull();
+    expect(root.querySelector('app-terminal-tab')).not.toBeNull();
     await expectAccessible(root);
   });
 
