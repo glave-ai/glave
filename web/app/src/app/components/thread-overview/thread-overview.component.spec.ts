@@ -69,6 +69,12 @@ function texts(root: HTMLElement, testId: string): readonly string[] {
   );
 }
 
+/** How the element at `testId` shows: `hidden` while its room is kept unseen. */
+function visibilityOf(root: HTMLElement, testId: string): string {
+  const element = root.querySelector(`[data-testid="${testId}"]`);
+  return element === null ? 'absent' : getComputedStyle(element).visibility;
+}
+
 function summary(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return thread('thread-1', 'Add a --verbose flag', {
     workspace: WORKTREE,
@@ -184,6 +190,8 @@ describe('ThreadOverviewComponent', () => {
     expect(kept?.textContent).toContain('2 files');
     expect(getComputedStyle(kept ?? root).visibility).toBe('hidden');
     expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
+    // What runs under that room shows at once: nothing comes in above it.
+    expect(visibilityOf(root, 'panel-running')).toBe('visible');
     await expectAccessible(root);
     give({
       changes: {
@@ -198,6 +206,37 @@ describe('ThreadOverviewComponent', () => {
     expect(root.querySelector('[data-testid="panel-changes-room"]')).toBeNull();
     expect(texts(root, 'panel-changes-count')).toEqual(['1 file']);
     expect(root.querySelector('[data-testid="panel-changes"] .plus')?.textContent).toBe('+3');
+  });
+
+  it('keeps what runs in the background from sight while what changed is first read, with no room kept for it', async () => {
+    const fake = worked();
+    const give = fake.held('thread/changes');
+    const { root, fixture } = await render(fake, WORKED);
+    expect(texts(root, 'command-text')).toEqual(['npm run dev']);
+    expect(visibilityOf(root, 'panel-running')).toBe('hidden');
+    expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
+    await expectAccessible(root);
+    // Its folder says a command changed a file: that comes in above, and then what runs shows.
+    give({
+      changes: {
+        files: [{ path: 'src/args.rs', added: 3, removed: 1, changes: [] }],
+        turns: [],
+        note: '',
+      },
+    });
+    await drawn(fixture);
+    expect(texts(root, 'panel-changes-count')).toEqual(['1 file']);
+    expect(visibilityOf(root, 'panel-running')).toBe('visible');
+  });
+
+  it('shows what runs in the background once what changed cannot be read', async () => {
+    const fake = worked().answer(
+      'thread/changes',
+      new ApiError({ code: ErrorCode.INTERNAL, message: 'The folder could not be read.' }),
+    );
+    const { root } = await render(fake, WORKED);
+    expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
+    expect(visibilityOf(root, 'panel-running')).toBe('visible');
   });
 
   it('names the point a clone is at, and a folder worked in place as no branch', async () => {

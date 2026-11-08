@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::ComputerError;
 use glave_process::Processes;
 
-use crate::local::git::Git;
+use crate::local::git::{Git, LEAVE_SUBMODULES};
 use crate::local::worktree::{Record, read_record, record_path, write_record};
 
 pub use trash::Trash;
@@ -185,6 +185,7 @@ pub(crate) async fn only_rebuildable(
         "--porcelain",
         "--untracked-files=normal",
         "--ignored=traditional",
+        // [`holds_a_submodule`] counts for what it would have seen.
         LEAVE_SUBMODULES,
     ];
     let said = git.must(&args).await?;
@@ -216,11 +217,6 @@ pub(crate) async fn recorded(base: &Path) -> Result<Vec<(PathBuf, Record)>, Comp
     found.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(found)
 }
-
-/// `status` looks inside a repository the index tracks by running git there, with that
-/// repository's config, which a command in the worktree may have written, and which glave's git
-/// has not read. So it isn't asked to; [`holds_a_submodule`] counts for what it would have seen.
-const LEAVE_SUBMODULES: &str = "--ignore-submodules=dirty";
 
 /// Whether the worktree at `root` has a repository checked out where its index tracks one, which
 /// may hold work that nothing else here sees; anything git can't answer counts as yes.

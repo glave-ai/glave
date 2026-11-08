@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use glave_ports::computer::Bytes;
+use glave_ports::computer::{Bytes, Image, Network};
 use glave_ports::testing::fake_secret;
 use glave_ports::{block_on, conformance};
 

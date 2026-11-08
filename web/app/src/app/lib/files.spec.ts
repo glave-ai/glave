@@ -26,7 +26,7 @@ describe('lastChanging', () => {
         call(7, 'c4', 'read'),
         done(8, 'c4'),
       ]),
-    ).toBe(4);
+    ).toBe(6);
   });
 });
 

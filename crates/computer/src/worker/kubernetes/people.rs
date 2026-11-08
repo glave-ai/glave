@@ -322,6 +322,7 @@ fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
         },
         home: Some(PERSON_HOME.into()),
         temp: None,
+        at: None,
     })
 }
 

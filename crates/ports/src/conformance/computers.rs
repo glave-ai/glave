@@ -1,9 +1,10 @@
 //! The behaviour every [`Computers`] adapter must show, on this machine or across the wire:
 //! the lifecycle, files confined to their workspace, commands streamed and stoppable, commands
-//! kept running in the background and the ports they listen on, and work leaving a computer only
-//! through git.
+//! kept running in the background and the ports they listen on, work leaving a computer only
+//! through git, and what changed in a folder since a point in its history.
 
 mod background;
+mod changes;
 mod confinement;
 mod credentials;
 mod finding;
@@ -65,6 +66,7 @@ pub async fn computers<C: Computers>(
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
     worktrees::worktrees(computers, made.id, &here.root).await?;
+    changes::changes(computers, made.id, here.id, (&here.root, scratch)).await?;
     projects::projects(computers, made.id).await?;
     confinement::confinement(computers, made.id, here.id, scratch).await?;
     computers

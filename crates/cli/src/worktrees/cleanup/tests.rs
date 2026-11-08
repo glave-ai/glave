@@ -76,6 +76,7 @@ async fn thread(log: &InMemoryLog, n: u8, at: Timestamp) -> ThreadId {
         },
         opened: Opened::Folder { path: "/".into() },
         root: "/".into(),
+        since: None,
     };
     log.append(&scope(), &[encode(header, &bound).unwrap()])
         .await

@@ -16,6 +16,7 @@ import { type Awake, KEPT_AWAKE } from './fake-awake';
 import { KEPT_REMEMBERING, type Remembering } from './fake-remembering';
 import { changesOf } from './fake-changes';
 import { stepsOf } from './fake-steps';
+import { ABOUT_FORMATTED, FORMATTED, FORMATTED_HISTORY, FORMATTED_SUMMARY } from './fake-formatted';
 import { ABOUT_LONG } from './fake-long';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
@@ -150,6 +151,9 @@ const VERBOSE_THREAD = thread(VERBOSE, 'Add a --verbose flag to the CLI', 'idle'
   ...VERBOSE_SUMMARY,
   updated_at: '2026-10-11T10:08:00.000Z',
 });
+
+/** The thread that changed files only by a command, as `thread/get` shows it. */
+const FORMATTED_THREAD = thread(FORMATTED, 'Format the code', 'idle', PROJECT, FORMATTED_SUMMARY);
 
 export const HISTORY = [
   event(1, 'thread.started', {}),
@@ -317,6 +321,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [VERBOSE]: VERBOSE_HISTORY,
   [DINNER]: DINNER_HISTORY,
   [PLANNING]: PLANNING_HISTORY,
+  [FORMATTED]: FORMATTED_HISTORY,
 };
 
 /** The thread that proposed a plan, as the lists show it: in Plan until it is built. */
@@ -685,6 +690,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
   }
   return (
     (known.panel ? answerFrom(ABOUT_VERBOSE, method, params, null) : undefined) ??
+    answerFrom(ABOUT_FORMATTED, method, params, FORMATTED_THREAD) ??
     background(method, params, commands) ??
     (gone === null ? undefined : answerFrom(ABOUT_GONE, method, params, gone)) ??
     (known.plan === null ? undefined : answerFrom(PLANNED, method, params, known.plan)) ??

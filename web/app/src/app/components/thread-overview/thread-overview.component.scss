@@ -26,7 +26,8 @@
   visibility: hidden;
 }
 
-// What it changed, unseen, keeping its room until it is read.
+// Unseen, keeping its room, until what it changed is read: that section, and what is under it
+// when that has no room kept.
 .room {
   visibility: hidden;
 }

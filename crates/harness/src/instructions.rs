@@ -362,7 +362,9 @@ mod tests {
         use std::sync::Arc;
 
         let root = folder("gone-home");
+        // With its IO: opening a folder asks git where its history stands.
         let read = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
             .build()
             .unwrap()
             .block_on(async {
