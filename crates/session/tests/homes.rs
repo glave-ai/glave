@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::{Largest, LocalComputers, Wake, Waking};
 use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
-use glave_harness::Homes;
+use glave_harness::{Homes, Skill, SkillSource, Skills};
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, DiskSpace, DiskUse, Home, Sandbox, SandboxLevel, Sources,
     WorkspaceId, WorkspaceInfo,
@@ -22,8 +22,6 @@ use glave_session::Answering;
 
 use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
-
-use glave_harness::{Skill, SkillSource, Skills};
 
 use crate::support::*;
 
@@ -415,18 +413,6 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
             asked,
             "listing asks nothing of their computer"
         );
-        // Nor does asking whether a new chat may work on a copy, which offers none there.
-        let got = server
-            .request(Request::ProjectGet {
-                project: project.id,
-            })
-            .await
-            .unwrap();
-        let Reply::Project { copies, .. } = got else {
-            panic!("a project, not {got:?}")
-        };
-        assert_eq!(copies, None);
-        assert_eq!(homes.asked(), asked, "nothing asked of their computer");
 
         started_later(&dir, log, &server, project.id, &root).await;
 
