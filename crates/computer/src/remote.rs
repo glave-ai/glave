@@ -23,8 +23,10 @@ use tokio::task::JoinHandle;
 
 use crate::wire::{self, Given, Request};
 use reader::{Answer, Ask, Shared};
+use version::other_glave;
 
 mod reader;
+mod version;
 
 /// Messages queued ahead of a slow connection.
 const QUEUE: usize = 256;
@@ -361,25 +363,6 @@ async fn write<W: AsyncWrite + Unpin>(
         }
     }
     let _ = output.shutdown().await;
-}
-
-/// What to tell the admin when a computer whose glave reports `theirs` runs another version
-/// than this glave: nothing for the same version, compared alone, never the commit, so a
-/// developer's own Linux build of the same version serves.
-fn other_glave(theirs: Option<&str>) -> Option<String> {
-    let ours = env!("CARGO_PKG_VERSION");
-    if theirs == Some(ours) {
-        return None;
-    }
-    let theirs = theirs.map_or_else(
-        || "an unknown version of glave".to_owned(),
-        |version| format!("glave {version}"),
-    );
-    Some(format!(
-        "a computer runs {theirs}, but this server runs glave {ours}, whose skills may teach \
-         commands that one lacks: set [workers] glave to a Linux build of glave {ours}; each \
-         computer takes it at its next start or wake"
-    ))
 }
 
 fn unreachable(message: &str) -> ComputerError {

@@ -394,22 +394,12 @@ impl LocalComputers {
                 .map(|(name, value)| (name.into(), value.into())),
         );
         if let Some(folder) = &self.glave_on_path {
-            let path = first_on_path(&all, folder);
+            let path = on_path::first_on_path(&all, folder);
             all.retain(|(name, _)| name != "PATH");
             all.push(("PATH".into(), path));
         }
         Arc::new(all)
     }
-}
-
-/// `environment`'s `PATH` with `folder` first.
-pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path) -> OsString {
-    let mut first = folder.as_os_str().to_owned();
-    if let Some((_, path)) = environment.iter().find(|(name, _)| name == "PATH") {
-        first.push(":");
-        first.push(path);
-    }
-    first
 }
 
 impl Computers for LocalComputers {
