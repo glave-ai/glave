@@ -68,6 +68,21 @@ describe('PermissionsComponent', () => {
     expect(fixture.componentInstance.value()).toBe('full-access');
   });
 
+  it('draws a check by the mode the next turn runs with, and no other', async () => {
+    const fixture = await render(SERVER);
+    const checked = (): readonly boolean[] =>
+      options().map((option) => option.querySelector('.check glz-icon') !== null);
+    trigger(fixture.nativeElement as HTMLElement)?.click();
+    await fixture.whenStable();
+    expect(checked()).toEqual([true, false, false, false]);
+    fixture.componentRef.setInput('current', 'ask');
+    await fixture.whenStable();
+    expect(checked()).toEqual([false, false, true, false]);
+    fixture.componentInstance.value.set('full-access');
+    await fixture.whenStable();
+    expect(checked()).toEqual([false, false, false, true]);
+  });
+
   it('offers only what the server allows', async () => {
     const fixture = await render({ ...SERVER, modes: ['auto', 'ask'] });
     trigger(fixture.nativeElement as HTMLElement)?.click();

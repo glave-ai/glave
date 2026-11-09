@@ -2,11 +2,12 @@
 //! from `{"mcpServers": {"name": {...}}}`. `${VAR}` and `${VAR:-default}` in a server's command,
 //! arguments, environment, URL and headers are filled from the environment, but for a remote
 //! server in a project's file: a repository chose its address, so nothing from the environment
-//! goes there.
+//! goes there. Where people sign in from elsewhere, a project's file reads none of it: there the
+//! environment is the server's.
 
 mod edit;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -89,7 +90,9 @@ pub fn parse(
 /// Reads the servers in a project's `.mcp.json`: a program it starts here has `${VAR}` filled
 /// from `environment`, as the person's own does; a remote server's URL and headers read every
 /// `${VAR}` as empty, or as its default, so a repository cannot send what the environment holds
-/// to an address it chose. [`withheld`] names what such a server asked for.
+/// to an address it chose. [`withheld`] finds such a server that asked for one. Where a project's
+/// file may read none of the environment, `environment` is empty, and
+/// [`withheld_from_programs`] finds the programs that asked for one.
 pub fn parse_project(
     text: &str,
     environment: &BTreeMap<String, String>,
@@ -98,24 +101,42 @@ pub fn parse_project(
 }
 
 /// The remote servers in a project's `.mcp.json` whose URL or headers name a variable with no
-/// default, each with those names in order: what [`parse_project`] read as empty.
-pub fn withheld(text: &str) -> Result<BTreeMap<String, Vec<String>>, McpSettingsError> {
+/// default: what [`parse_project`] read as empty.
+pub fn withheld(text: &str) -> Result<BTreeSet<String>, McpSettingsError> {
+    naming(text, |raw| {
+        let url = raw.url.as_ref()?;
+        Some(std::iter::once(url).chain(raw.headers.values()).collect())
+    })
+}
+
+/// The programs in a project's `.mcp.json` whose command, arguments or environment name a
+/// variable with no default: what [`parse_project`] reads as empty when it is given no
+/// environment.
+pub fn withheld_from_programs(text: &str) -> Result<BTreeSet<String>, McpSettingsError> {
+    naming(text, |raw| {
+        let command = raw.command.as_ref()?;
+        let values = std::iter::once(command).chain(&raw.args);
+        Some(values.chain(raw.env.values()).collect())
+    })
+}
+
+/// The servers in `text` of which what `values` gives names a variable with no default.
+/// `values` gives nothing for a server of another kind.
+fn naming(
+    text: &str,
+    values: impl Fn(&Raw) -> Option<Vec<&String>>,
+) -> Result<BTreeSet<String>, McpSettingsError> {
     let settings: File =
         serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
     Ok(settings
         .servers
         .into_iter()
         .filter_map(|(name, raw)| {
-            let url = raw.url?;
-            let mut names = Vec::new();
-            for value in std::iter::once(&url).chain(raw.headers.values()) {
-                walk(value, |_, variable, default| {
-                    if default.is_none() && !names.iter().any(|name| name == variable) {
-                        names.push(variable.to_owned());
-                    }
-                });
+            let mut names_one = false;
+            for value in values(&raw)? {
+                walk(value, |_, _, default| names_one |= default.is_none());
             }
-            (!names.is_empty()).then_some((name, names))
+            names_one.then_some(name)
         })
         .collect())
 }
@@ -277,23 +298,63 @@ mod tests {
         );
     }
 
+    fn named(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
     #[test]
-    fn what_a_project_s_remote_server_asked_for_is_named() {
+    fn a_project_s_remote_server_naming_a_variable_is_found() {
         assert_eq!(
             withheld(BOTH).unwrap(),
-            BTreeMap::from([(
-                "remote".to_owned(),
-                vec!["TOKEN".to_owned(), "OTHER".to_owned()]
-            )]),
-            "named once each, and never one with a default or a program's"
+            named(&["remote"]),
+            "never a program"
         );
         let in_url = r#"{"mcpServers": {"at": {"url": "https://x/${WHERE}"}}}"#;
-        assert_eq!(
-            withheld(in_url).unwrap(),
-            BTreeMap::from([("at".to_owned(), vec!["WHERE".to_owned()])])
-        );
+        assert_eq!(withheld(in_url).unwrap(), named(&["at"]));
+        let defaulted = r#"{"mcpServers": {"it": {"url": "https://${A:-x}"}}}"#;
+        assert_eq!(withheld(defaulted).unwrap(), named(&[]));
         let plain = r#"{"mcpServers": {"plain": {"url": "https://x", "headers": {"A": "b"}}}}"#;
-        assert!(withheld(plain).unwrap().is_empty());
+        assert_eq!(withheld(plain).unwrap(), named(&[]));
+    }
+
+    #[test]
+    fn a_project_s_program_naming_a_variable_is_found() {
+        assert_eq!(
+            withheld_from_programs(BOTH).unwrap(),
+            named(&["local"]),
+            "never a remote server"
+        );
+        let each = r#"{"mcpServers": {
+            "command": {"command": "${A}"},
+            "argument": {"command": "x", "args": ["--key=${B}"]},
+            "environment": {"command": "x", "env": {"KEY": "${C}"}},
+            "defaulted": {"command": "${D:-x}", "args": ["${E:-}"]},
+            "plain": {"command": "x", "args": ["y"]},
+            "not-its-own": {"command": "x", "headers": {"A": "${F}"}}
+        }}"#;
+        assert_eq!(
+            withheld_from_programs(each).unwrap(),
+            named(&["argument", "command", "environment"])
+        );
+        assert_eq!(
+            withheld(each).unwrap(),
+            named(&[]),
+            "a program is never taken for a remote server"
+        );
+    }
+
+    #[test]
+    fn a_project_s_file_given_no_environment_reads_none_of_it() {
+        let servers = parse_project(BOTH, &BTreeMap::new()).unwrap();
+        assert!(!format!("{servers:?}").contains("t0k"));
+        assert_eq!(
+            servers["local"],
+            ServerConfig::Stdio {
+                command: String::new(),
+                args: vec!["--key".into(), String::new()],
+                env: BTreeMap::from([("GITHUB_TOKEN".into(), String::new())]),
+            }
+        );
     }
 
     #[test]

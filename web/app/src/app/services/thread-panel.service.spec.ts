@@ -153,7 +153,10 @@ describe('ThreadPanelService', () => {
 
   it('closes its sheet once it has nothing left, so it never comes back over the page', async () => {
     const fake = new FakeSession()
-      .answer('command/list', { commands: [command('c1', 'npm run dev')] })
+      .answer('command/list', {
+        commands: [command('c1', 'npm run dev')],
+        previewed: false,
+      })
       .answer('command/stop', {});
     const panel = await make(
       fake,
@@ -265,6 +268,7 @@ describe('ThreadPanelService', () => {
   it('shows the commands it keeps running, and a turn’s changes in full', async () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [command('c1', 'npm run dev')],
+      previewed: false,
     });
     const panel = await make(fake, [
       event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),
@@ -290,5 +294,30 @@ describe('ThreadPanelService', () => {
     // Another thread starts afresh.
     panel.reset();
     expect(panel.reviewing()).toBe(false);
+  });
+
+  it('shows the first preview until the person chooses another, and asks for its tab', async () => {
+    const at = (port: number): string => `http://127.0.0.1:${String(port)}/`;
+    const dev = { command: 'c1', port: 5173, url: at(5173), framed: true, unframed: null };
+    const docs = { command: 'c2', port: 3000, url: at(3000), framed: true, unframed: null };
+    const fake = new FakeSession().answer('command/list', {
+      commands: [
+        command('c1', 'npm run dev', { ports: [{ port: 5173, url: at(5173), framed: true }] }),
+        command('c2', 'npm run docs', { ports: [{ port: 3000, url: at(3000), framed: true }] }),
+      ],
+      previewed: true,
+    });
+    const panel = await make(fake, [
+      event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),
+    ]);
+    expect([panel.previews(), panel.preview()]).toEqual([[dev, docs], dev]);
+    panel.choosePreview('c2:3000');
+    expect(panel.preview()).toEqual(docs);
+    const asked = panel.previewAsked();
+    panel.showPreview(dev);
+    expect([panel.preview(), panel.previewAsked()]).toEqual([dev, asked + 1]);
+    // A choice that serves no more falls back to the first.
+    panel.choosePreview('c9:1');
+    expect(panel.preview()).toEqual(dev);
   });
 });

@@ -200,16 +200,6 @@ macro_rules! forward {
                 self.remote(&worker).await?.commands(workspace).await
             })
         }
-
-        fn listening(
-            &self,
-            workspace: WorkspaceId,
-        ) -> BoxFuture<'_, Result<Vec<glave_ports::computer::Listening>, ComputerError>> {
-            Box::pin(async move {
-                let worker = self.worker_of(workspace)?;
-                self.remote(&worker).await?.listening(workspace).await
-            })
-        }
     };
 }
 

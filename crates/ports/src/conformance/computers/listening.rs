@@ -22,8 +22,16 @@ const LISTENS: &str = "python3 -c \"import socket, time; s = socket.socket(); \
      time.sleep(300)\" & wait";
 
 /// Runs this part of the suite in `here`: outside the sandbox, then in it with the network,
-/// where the computer can run one.
+/// where the computer can run one; none where it cannot tell where its commands listen, which it
+/// says.
 pub(super) async fn listening<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
+    match computers.listening(here).await {
+        Err(ComputerError::Unsupported(_)) => return Ok(()),
+        asked => ensure(
+            asked.is_ok_and(|found| found.is_empty()),
+            "a workspace with no command in the background is found listening nowhere",
+        )?,
+    }
     listed_with_its_port(computers, here, None).await?;
     let sandbox = Sandbox {
         level: SandboxLevel::Project,

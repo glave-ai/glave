@@ -117,18 +117,31 @@ async fn isolated<L: EventLog + Clone + 'static>(name: &str, parts: Parts<L>) {
     );
 }
 
+/// The stack the suite runs in on SQLite: half of the 2 MiB a test thread has. An unoptimized
+/// build's frames grow with the code, and this suite calls every method there is, so what would
+/// overflow on Postgres, which only CI runs, overflows here first, on any computer (#208). An
+/// overflow means a frame to shrink, as `Server::answer` keeps each method's future out of its
+/// own; it is never a reason to raise this.
+const STACK: usize = 1024 * 1024;
+
 #[test]
 fn on_sqlite_no_one_reaches_anothers_data() {
-    block_on!(async {
-        let root = InMemoryRoot::new().unwrap();
-        let store =
-            glave_store_sqlite::Store::open_in_memory(KeySettings::new(Arc::new(root))).unwrap();
-        let parts = Parts {
-            log: store.log(),
-            projects: Arc::new(store.projects()),
-            eraser: store.keyring(),
-        };
-        isolated("isolation-sqlite", parts).await;
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(STACK)
+            .spawn_scoped(scope, || {
+                block_on!(async {
+                    let keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
+                    let store = glave_store_sqlite::Store::open_in_memory(keys).unwrap();
+                    let parts = Parts {
+                        log: store.log(),
+                        projects: Arc::new(store.projects()),
+                        eraser: store.keyring(),
+                    };
+                    isolated("isolation-sqlite", parts).await;
+                });
+            })
+            .unwrap();
     });
 }
 

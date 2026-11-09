@@ -98,6 +98,10 @@ describe('GlzMenuSelectComponent', () => {
     expect(menu?.getAttribute('aria-label')).toBe('Model');
     const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
     expect(items.map((item) => item.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(items.map((item) => item.querySelector('.check glz-icon') !== null)).toEqual([
+      true,
+      false,
+    ]);
     expect(items[0]?.textContent).toContain('Default');
     if (menu !== null) {
       await expectAccessible(menu);

@@ -93,8 +93,8 @@
 
   /*
    * The marker beside what is chosen: a bar in a vertical list, an underline under a tab, a
-   * check by a picked option. The accent as it reads on the page, so 3:1 or more against the
-   * side panes, the page and the selected surface (WCAG 1.4.11).
+   * check by a picked option. The accent as it reads on the page, so 3:1 or more against every
+   * surface, a popover's and the panel's among them, and a row's fill on it (WCAG 1.4.11).
    */
   --glz-selected-marker: var(--glz-accent-text);
   --glz-surface-hover: light-dark(rgb(27 28 29 / 5%), rgb(236 236 236 / 6%));

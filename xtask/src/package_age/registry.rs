@@ -1,11 +1,14 @@
 //! When a package version was published, as its registry says: crates.io's API, a version's
 //! `created_at`, asked as its crawler policy asks (a User-Agent that says who is asking, at
 //! most one request a second); and the npm registry's document for a package, its `time` for
-//! each version. Asked with curl, as xtask asks git and cargo.
+//! each version. Asked with curl, as xtask asks git and cargo. A registry's bad moment is
+//! tried again a few times ([`WAITS`]), not with curl's own `--retry`, which leaves the failed
+//! try's body in the output ahead of the answer.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+use glave_ports::spoken;
 use jiff::Timestamp;
 use serde_json::Value;
 
@@ -20,6 +23,15 @@ const CRATES_IO_EVERY: Duration = Duration::from_secs(1);
 /// What curl writes after the body: the HTTP status, three digits (`000` when none came).
 const STATUS: &str = "%{http_code}";
 
+/// How long to wait before each try after the first: seconds for a registry's bad moment,
+/// and then a plain failure. Each is longer than [`CRATES_IO_EVERY`], so crates.io's crawler
+/// policy holds for a retried request too.
+const WAITS: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
+
 /// Why a version's publication isn't known, in a sentence.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Unknown {
@@ -27,6 +39,16 @@ pub(super) enum Unknown {
     Unanswered(String),
     /// It answered, and doesn't list the version.
     Unlisted(String),
+}
+
+/// Why a try at a registry got no answer, in a sentence.
+#[derive(Debug, PartialEq, Eq)]
+enum Failed {
+    /// Trouble that may pass: nothing came back, or a status that says the registry is having
+    /// a bad moment.
+    Passing(String),
+    /// An answer another try wouldn't change.
+    Settled(String),
 }
 
 /// The registries, asked one request at a time.
@@ -87,8 +109,49 @@ impl Registries {
 }
 
 /// What `registry` answered to a GET of `url`, which asks when `about` was published: the
-/// body, or `None` when it has no such page.
+/// body, or `None` when it has no such page. Tried again after each of [`WAITS`] while the
+/// trouble may pass.
 fn get(registry: Registry, url: &str, about: &str) -> Result<Option<String>, Unknown> {
+    let started = Instant::now();
+    retried(
+        &WAITS,
+        || get_once(registry, url, about),
+        std::thread::sleep,
+    )
+    .map_err(|failed| gave_up(failed, started.elapsed()))
+}
+
+/// What `ask` answers: asked again, after `pause`ing for each of `waits` in turn, while it
+/// fails in a way that may pass, and once more after the last wait, whatever that says.
+fn retried<T>(
+    waits: &[Duration],
+    mut ask: impl FnMut() -> Result<T, Failed>,
+    mut pause: impl FnMut(Duration),
+) -> Result<T, Failed> {
+    for wait in waits {
+        match ask() {
+            Err(Failed::Passing(_)) => pause(*wait),
+            answer => return answer,
+        }
+    }
+    ask()
+}
+
+/// Why no answer came, when the last try ended in `failed`, `took` after the first began;
+/// never an answer, so a version not dated this way can't pass.
+fn gave_up(failed: Failed, took: Duration) -> Unknown {
+    Unknown::Unanswered(match failed {
+        Failed::Settled(why) => why,
+        Failed::Passing(why) => format!(
+            "{why} (the last of {} tries, over {})",
+            WAITS.len() + 1,
+            spoken(took)
+        ),
+    })
+}
+
+/// One try at a GET of `url`, as [`get`] says.
+fn get_once(registry: Registry, url: &str, about: &str) -> Result<Option<String>, Failed> {
     let said = crate::cmd::query(
         "curl",
         &[
@@ -107,17 +170,27 @@ fn get(registry: Registry, url: &str, about: &str) -> Result<Option<String>, Unk
         ],
     )
     .map_err(|err| {
-        Unknown::Unanswered(format!(
+        Failed::Passing(format!(
             "could not reach {} to ask when {about} was published ({err})",
             registry.name()
         ))
     })?;
-    answered(&said).map_err(|status| {
-        Unknown::Unanswered(format!(
-            "{} answered HTTP {status} when asked when {about} was published",
-            registry.name()
-        ))
-    })
+    answered(&said).map_err(|status| refused(registry, &status, about))
+}
+
+/// Why a try failed that `registry` answered with `status`, when asked when `about` was
+/// published: one that may pass for a request timed out, a rate limited or a server's own
+/// trouble.
+fn refused(registry: Registry, status: &str, about: &str) -> Failed {
+    let why = format!(
+        "{} answered HTTP {status} when asked when {about} was published",
+        registry.name()
+    );
+    if matches!(status, "408" | "429") || status.starts_with('5') {
+        Failed::Passing(why)
+    } else {
+        Failed::Settled(why)
+    }
 }
 
 /// curl's output, a body and then [`STATUS`]: the body when the status is 200, `None` for a
@@ -214,6 +287,96 @@ mod tests {
         assert_eq!(answered("busy503"), Err("503".to_owned()));
         assert_eq!(answered("000"), Err("000".to_owned()));
         assert_eq!(answered(""), Err(String::new()));
+    }
+
+    /// Runs `retried` over `tries`, answers in order, with waits recorded rather than slept:
+    /// what it came to, how many tries it took, and what it waited.
+    fn retrying(
+        tries: Vec<Result<&'static str, Failed>>,
+    ) -> (Result<&'static str, Failed>, usize, Vec<Duration>) {
+        let mut tries = tries.into_iter();
+        let mut asked = 0;
+        let mut waited = Vec::new();
+        let came_to = retried(
+            &WAITS,
+            || {
+                asked += 1;
+                tries.next().unwrap()
+            },
+            |wait| waited.push(wait),
+        );
+        (came_to, asked, waited)
+    }
+
+    fn passing(why: &str) -> Failed {
+        Failed::Passing(why.to_owned())
+    }
+
+    fn settled(why: &str) -> Failed {
+        Failed::Settled(why.to_owned())
+    }
+
+    #[test]
+    fn a_registry_s_bad_moment_is_tried_again_waiting_longer_each_time() {
+        let (came_to, asked, waited) = retrying(vec![
+            Err(passing("503")),
+            Err(passing("429")),
+            Err(passing("timed out")),
+            Ok("the answer"),
+        ]);
+        assert_eq!(came_to, Ok("the answer"));
+        assert_eq!(asked, 4);
+        assert_eq!(waited, WAITS);
+    }
+
+    #[test]
+    fn a_first_answer_is_asked_for_once() {
+        assert_eq!(retrying(vec![Ok("at once")]), (Ok("at once"), 1, vec![]));
+    }
+
+    #[test]
+    fn trouble_that_lasts_stops_at_the_last_try_and_says_what_was_asked_and_how_long() {
+        let why = "crates.io answered HTTP 503 when asked when tokio 1.48.0 was published";
+        // A fifth answer waits for a fifth try, which must not come.
+        let (came_to, asked, waited) = retrying(vec![
+            Err(passing(why)),
+            Err(passing(why)),
+            Err(passing(why)),
+            Err(passing(why)),
+            Ok("too late"),
+        ]);
+        assert_eq!(asked, 4, "bounded");
+        assert_eq!(waited, WAITS);
+        assert_eq!(
+            gave_up(came_to.unwrap_err(), Duration::from_secs(14)),
+            Unknown::Unanswered(format!("{why} (the last of 4 tries, over 14 seconds)"))
+        );
+    }
+
+    #[test]
+    fn an_answer_another_try_would_not_change_is_not_asked_for_again() {
+        let (came_to, asked, waited) = retrying(vec![Err(settled("403")), Ok("never asked")]);
+        assert_eq!(came_to, Err(settled("403")));
+        assert_eq!((asked, waited), (1, vec![]));
+        assert_eq!(
+            gave_up(settled("HTTP 403"), Duration::from_secs(1)),
+            Unknown::Unanswered("HTTP 403".to_owned()),
+            "one try says nothing of tries"
+        );
+    }
+
+    #[test]
+    fn a_timeout_a_rate_limit_or_a_server_s_trouble_may_pass_and_nothing_else() {
+        let said = |status| refused(Registry::Crates, status, "tokio 1.48.0");
+        let why = |status| {
+            format!("crates.io answered HTTP {status} when asked when tokio 1.48.0 was published")
+        };
+        for status in ["408", "429", "500", "502", "503", "504"] {
+            assert_eq!(said(status), Failed::Passing(why(status)), "{status}");
+        }
+        for status in ["301", "400", "401", "403", "410", "000", ""] {
+            assert_eq!(said(status), Failed::Settled(why(status)), "{status}");
+        }
     }
 
     #[test]

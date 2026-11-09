@@ -1,5 +1,5 @@
 //! Other terminals, under the real sandbox: a command opens no terminal's device but its own
-//! (`specs/invariants.md`, 33).
+//! (`specs/invariants.md`, 34).
 
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt as _;

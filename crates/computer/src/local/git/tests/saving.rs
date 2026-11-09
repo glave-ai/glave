@@ -31,13 +31,14 @@ fn worker() -> Worker {
         &["clone", "-q", "--bare", ".", &origin.to_string_lossy()],
     );
     let told = planted.dir.join("told");
-    executable(
+    new_script(
         &planted.program,
-        &format!(
+        format!(
             "#!/bin/sh\necho \"ran $GLAVE_GIT_PASSWORD\" >> '{}'\nexit 1\n",
             told.display()
         ),
-    );
+    )
+    .unwrap();
     let secret = fake_secret("");
     let credential = GitCredential::new("glave-user", &secret).unwrap();
     let computers = LocalComputers::new(planted.dir.join("copies"), environment(&planted.dir));

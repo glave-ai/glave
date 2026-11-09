@@ -33,15 +33,16 @@ fn a_command_is_listed_while_it_runs_and_stopped_by_the_person() {
         let (server, _) = Setup::new(starts_a_server()).build(&dir).await;
         let thread = start(&server, false).await;
         turn(&server, thread, "start the server").await.unwrap();
-        let running = listed(&server, thread).await;
-        assert_eq!(running.len(), 1, "{running:?}");
-        assert_eq!(running[0].command, SERVES);
-        assert!(running[0].started_at.is_some());
-        assert!(running[0].summary.starts_with("Still running"));
+        let commands = listed(&server, thread).await;
+        assert_eq!(commands.len(), 1, "{commands:?}");
+        let running = &commands[0].command;
+        assert_eq!(running.command, SERVES);
+        assert!(running.started_at.is_some());
+        assert!(running.summary.starts_with("Still running"));
 
         let stop = Request::CommandStop {
             thread,
-            command: running[0].id,
+            command: running.id,
         };
         assert!(matches!(
             server.request(stop.clone()).await,

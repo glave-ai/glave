@@ -68,6 +68,22 @@ describe('ModelPickerComponent', () => {
     expect(names()).toEqual(['GPT-6 Luna', 'OpenAI · GPT-6 Sol', 'Hope']);
   });
 
+  it('draws a check by the model the next turn goes to, and no other', async () => {
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    const checked = (): readonly boolean[] =>
+      Array.from(
+        root.querySelectorAll('[data-testid="model-picker-option"]'),
+        (option) => option.querySelector('.check glz-icon') !== null,
+      );
+    trigger(root)?.click();
+    await fixture.whenStable();
+    expect(checked()).toEqual([true, false]);
+    fixture.componentRef.setInput('current', 'hope-12b');
+    await fixture.whenStable();
+    expect(checked()).toEqual([false, true]);
+  });
+
   it('opens the model dialog, with the filters, where a router serves a model', async () => {
     const fixture = await render(ROUTED);
     const root: HTMLElement = fixture.nativeElement;

@@ -2,8 +2,9 @@
 //! a clock they move, randomness that counts, a cancellation already fired, a fake HTTP server
 //! and a client that stalls mid-request, the core of the model providers' fake servers, a fake
 //! OAuth authorization server, a mailer that keeps what it sends, a command's output kept, fake secrets, a scripted model, an
-//! event log that fails when told, programs they start, stopped when they end, folders of
-//! their own, removed when they are done, and their sockets' paths, short enough for one.
+//! event log that fails when told, programs they start, stopped when they end, scripts they
+//! write, whose first run no limit counts, folders of their own, removed when they are done,
+//! and their sockets' paths, short enough for one.
 //! Behind the `conformance` feature, so no production build carries them.
 
 mod asking;
@@ -36,7 +37,7 @@ pub use model::{Answer, ScriptedModel, Seen};
 pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
 pub use outbox::Outbox;
 pub use output::Captured;
-pub use process::{HUNG, Running, read_program};
+pub use process::{HUNG, Running, new_script, read_program};
 pub use scripted::{ScriptedHttp, Written};
 pub use secret::{any_secret, fake_secret};
 pub use socket::SocketPath;

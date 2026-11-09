@@ -38,6 +38,11 @@
   gap: var(--glz-space-1);
 }
 
+// The check by the model in use, in the marker of every picked option.
+.current {
+  color: var(--glz-selected-marker);
+}
+
 .name,
 .title {
   font-weight: var(--glz-weight-bold);

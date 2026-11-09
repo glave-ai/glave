@@ -2,7 +2,9 @@
 
 use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
-use std::process::{Child, Output};
+use std::os::unix::fs::PermissionsExt as _;
+use std::path::Path;
+use std::process::{Child, Command, Output};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
@@ -20,6 +22,20 @@ pub fn read_program(program: &str) -> io::Result<()> {
         io::copy(&mut std::fs::File::open(read)?, &mut io::sink())?;
     }
     Ok(())
+}
+
+/// Makes a script at `path` holding `text`, ready to run, having run none of it. macOS checks
+/// a file the first time it runs, and holds that run until it is done: tens of seconds on a
+/// loaded machine, which is not what a test's limit is there to measure (#1305). So a script
+/// that does nothing runs here first, waited for to its end, since starting it returns before
+/// the check is over, with no limit but the test runner's; `text` then goes into that same
+/// file, which macOS does not check again, whatever the new text. The programs a build makes
+/// are checked before the tests start (`xtask/src/nextest.rs`).
+pub fn new_script(path: &Path, text: impl AsRef<[u8]>) -> io::Result<()> {
+    std::fs::write(path, "#!/bin/sh\n")?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    Command::new(path).status()?;
+    std::fs::write(path, text)
 }
 
 /// A program a test started, killed and waited for when this drops, so a test that fails, or
@@ -155,9 +171,22 @@ fn everything(pipe: Option<impl Read>, into: &Mutex<Vec<u8>>) -> io::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     use super::*;
+    use crate::testing::TempDir;
+
+    #[test]
+    fn a_new_script_holds_its_text_and_has_run_none_of_it() {
+        let dir = TempDir::new("new-script").unwrap();
+        let (script, ran) = (dir.join("script"), dir.join("ran"));
+        let text = format!("#!/bin/sh\n: > '{}'\necho \"$1\"\n", ran.display());
+        new_script(&script, text).unwrap();
+        assert!(!ran.exists(), "making it ran what it says");
+        let said = Command::new(&script).arg("hello").output().unwrap();
+        assert_eq!(said.stdout, b"hello\n");
+        assert!(ran.exists());
+    }
 
     #[test]
     fn a_program_is_waited_for_with_what_it_printed() {

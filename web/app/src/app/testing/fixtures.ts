@@ -2,7 +2,7 @@ import type {
   ChangedFile,
   ModelInfo,
   RawEvent,
-  RunningCommand,
+  ListedCommand,
   ScheduleInfo,
   Project,
   TaskInfo,
@@ -118,8 +118,8 @@ export function task(threadId: string, title: string, overrides: Partial<TaskInf
 export function command(
   id: string,
   script: string,
-  overrides: Partial<RunningCommand> = {},
-): RunningCommand {
+  overrides: Partial<ListedCommand> = {},
+): ListedCommand {
   return {
     id,
     command: script,

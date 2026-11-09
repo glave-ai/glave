@@ -1,0 +1,51 @@
+@if (preview(); as preview) {
+  <div class="bar" data-testid="preview-bar">
+    @if (choosing()) {
+      <glz-menu-select
+        outlined
+        align="start"
+        testId="preview-which"
+        [label]="copy.which"
+        [options]="options()"
+        [value]="chosen()"
+        (valueChange)="choose($event)"
+      />
+    }
+    <code class="address" data-testid="preview-address">{{ preview.url }}</code>
+    <button
+      glzIconButton
+      size="sm"
+      data-testid="preview-reload"
+      [label]="copy.reload"
+      (click)="reload()"
+    >
+      <glz-icon [icon]="icons.reload" />
+    </button>
+    <a
+      glzButton
+      size="sm"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="preview-open"
+      [href]="preview.url"
+    >
+      {{ copy.open }}
+      <glz-icon class="glz-mirrored" [icon]="icons.open" />
+    </a>
+  </div>
+  @for (shown of frames(); track shown.key) {
+    <iframe
+      #frame
+      class="frame"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      referrerpolicy="no-referrer"
+      data-testid="preview-frame"
+      [title]="shown.title"
+    ></iframe>
+  }
+  @if (unframed(); as why) {
+    <p class="note" data-testid="preview-unframed">{{ why }}</p>
+  } @else {
+    <p class="note">{{ copy.note }}</p>
+  }
+}

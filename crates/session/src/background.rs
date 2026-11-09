@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, PoisonError, Weak};
 
 use glave_event::{Principal, ThreadId};
-use glave_harness::{Commands, RunningCommand};
+use glave_harness::Commands;
 use glave_ports::computer::CommandId;
 use glave_ports::host::PublicOrigin;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
@@ -18,7 +18,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::held::{Slot, Use, finished};
-use crate::protocol::{ApiError, Reply, code};
+use crate::protocol::{ApiError, ListedCommand, Reply, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::words::Sentence;
 
@@ -64,39 +64,56 @@ where
             Err(refused) if crate::gone::is_gone(&refused) => {
                 return Ok(Reply::Commands {
                     commands: Vec::new(),
+                    previewed: false,
                 });
             }
             commands => commands?,
         };
-        let mut running = commands.running_now().await;
+        let running = commands.running_now().await;
         self.record_commands(thread).await;
-        self.add_ports(caller, &commands, &mut running).await;
-        Ok(Reply::Commands { commands: running })
+        let listening = self.listening(caller, &commands).await;
+        let previewed = listening.is_some() && self.previewed_here();
+        let listening = listening.unwrap_or_default();
+        let listed = running.into_iter().map(|command| {
+            let at = listening.iter().find(|(id, _)| *id == command.id);
+            let ports = at.map_or_else(Vec::new, |(_, at)| crate::previews::ports(at, previewed));
+            let listens = crate::previews::listens(&ports);
+            ListedCommand {
+                command,
+                ports,
+                listens,
+            }
+        });
+        Ok(Reply::Commands {
+            commands: listed.collect(),
+            previewed,
+        })
     }
 
-    /// Gives each of `running` the ports it listens on, where `caller` reaches them: only then
-    /// is it looked for, as finding them reads every process's sockets, and only of commands on
-    /// the server's own computer, whose loopback is the one they reach.
-    async fn add_ports(
+    /// Where `commands` listen, where `caller` reaches them: only then is it looked for, as
+    /// finding them reads every process's sockets, and only of commands on the server's own
+    /// computer, whose loopback is the one they reach.
+    async fn listening(
         &self,
         caller: &Caller,
         commands: &Commands,
-        running: &mut [RunningCommand],
-    ) {
+    ) -> Option<Vec<(CommandId, Vec<SocketAddr>)>> {
         let theirs = self.computer_is_theirs(caller.person);
         let origin = self.inner.origin.as_ref();
         if !reached_here(origin, self.inner.homes.is_some(), theirs) {
-            return;
+            return None;
         }
         let here = self.inner.harness.workspace().info().computer;
-        let listening = commands.listening(here).await;
-        for command in running {
-            if let Some((_, at)) = listening.iter().find(|(id, _)| *id == command.id) {
-                let mut ports: Vec<u16> = at.iter().map(SocketAddr::port).collect();
-                ports.dedup();
-                command.ports = ports;
-            }
-        }
+        Some(commands.listening(here).await)
+    }
+
+    /// Whether what commands here serve is previewed: glave's own pages are opened here at
+    /// `localhost`, so a preview at `127.0.0.1` or `[::1]` is never the same site as them. Not
+    /// where they are opened at `127.0.0.1` itself (a `localhost` origin people share, or a
+    /// computer without IPv6's loopback), nor where the server isn't reached over HTTP here.
+    pub(crate) fn previewed_here(&self) -> bool {
+        let reached = self.inner.reached.get();
+        self.inner.origin.is_none() && reached.is_some_and(|reached| reached.localhost)
     }
 
     /// Answers `command/stop`.

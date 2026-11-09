@@ -7,7 +7,12 @@ import {
 } from '@angular/core';
 
 /**
- * One tab in a `<glz-tabs>`: its label, and its content, made only while it is selected.
+ * One tab in a `<glz-tabs>`: its label and its content.
+ *
+ * The content is made with the tab, selected or not, and lives as long as the tab does:
+ * `<glz-tabs>` only puts the selected tab's content on the page and takes it off again. Content
+ * that should do nothing until its tab is chosen (start a shell, open a connection) goes
+ * behind an `@if` in the template that holds the tab.
  *
  * ```html
  * <glz-tab label="Events">…</glz-tab>
