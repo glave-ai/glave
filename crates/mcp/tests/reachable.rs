@@ -140,3 +140,52 @@ fn sign_in_goes_nowhere_a_server_s_metadata_names_that_may_not_be_reached() {
     });
     assert!(!here.received().is_empty(), "the server was asked");
 }
+
+/// A server on this computer that is its own authorization server, whose metadata names
+/// `register` as where glave registers.
+fn naming_registration(register: &'static str) -> FakeHttp {
+    let address = Arc::new(OnceLock::new());
+    let its: Arc<OnceLock<String>> = Arc::clone(&address);
+    let here = FakeHttp::answering(move |_, path| {
+        let here = its.get().cloned().unwrap_or_default();
+        let answer = if path.contains("oauth-protected-resource") {
+            json!({"resource": format!("{here}/mcp"), "authorization_servers": [here]})
+        } else if path.contains("oauth-authorization-server") {
+            json!({
+                "issuer": here,
+                "authorization_endpoint": format!("{here}/authorize"),
+                "registration_endpoint": register,
+                "token_endpoint": format!("{here}/token"),
+                "response_types_supported": ["code"],
+                "code_challenge_methods_supported": ["S256"],
+            })
+        } else {
+            return (404, "{}".to_owned());
+        };
+        (200, answer.to_string())
+    })
+    .unwrap();
+    address.set(here.url.clone()).unwrap();
+    here
+}
+
+#[test]
+fn sign_in_registers_nowhere_an_authorization_server_names_that_may_not_be_reached() {
+    // rmcp checks the addresses discovery finds as they are written; the endpoints an
+    // authorization server names are reached through glave's client alone (RUSTSEC-2026-0457).
+    block_on!(async {
+        for register in [
+            "http://[::ffff:169.254.169.254]/register",
+            "http://[fd00:ec2::254]/register",
+        ] {
+            let here = naming_registration(register);
+            let url = format!("{}/mcp", here.url);
+            let started = SignIn::start(&url, "docs", REDIRECT, &[], Reachable::AlsoPrivate).await;
+            let Err(SignInError::Refused { message, .. }) = started else {
+                panic!("{register}: it registered");
+            };
+            assert!(message.contains("credentials"), "{register}: {message}");
+            assert!(!here.received().is_empty(), "the server was asked");
+        }
+    });
+}

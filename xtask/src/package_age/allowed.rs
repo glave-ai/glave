@@ -15,7 +15,14 @@ use super::locked::Registry;
 pub(super) type Entry = (Registry, &'static str, &'static str, &'static str);
 
 /// The versions let in early.
-pub(super) const ALLOWED: &[Entry] = &[];
+pub(super) const ALLOWED: &[Entry] = &[(
+    Registry::Crates,
+    "rmcp",
+    "3.9.0",
+    "RUSTSEC-2026-0462 (unbounded response bodies in the Streamable HTTP client), fixed first \
+     in 3.9.0, with RUSTSEC-2026-0457 and RUSTSEC-2026-0461: cargo deny fails on every branch \
+     until it comes in",
+)];
 
 #[cfg(test)]
 mod tests {
