@@ -75,7 +75,9 @@ fn asks_more(err: &(dyn Error + 'static)) -> Option<String> {
 }
 
 /// `err`, then each thing that caused it.
-fn causes<'a>(err: &'a (dyn Error + 'static)) -> impl Iterator<Item = &'a (dyn Error + 'static)> {
+pub(crate) fn causes<'a>(
+    err: &'a (dyn Error + 'static),
+) -> impl Iterator<Item = &'a (dyn Error + 'static)> {
     std::iter::successors(Some(err), |&err| err.source())
 }
 

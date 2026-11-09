@@ -155,6 +155,13 @@ async fn signed_in(url: &str) -> glave_mcp::Granted {
     signin.finish(&field(&back, "code"), None).await.unwrap()
 }
 
+/// Whether a refresh token was sent to `auth` to be spent.
+fn spent(auth: &FakeAuthServer) -> bool {
+    auth.received()
+        .iter()
+        .any(|(_, _, body)| body.contains("refresh_token="))
+}
+
 fn field(url: &reqwest::Url, name: &str) -> String {
     url.query_pairs()
         .find(|(field, _)| field == name)
@@ -352,11 +359,28 @@ fn a_server_that_no_longer_says_where_its_sign_in_is_is_sent_no_refresh_token() 
         asked.iter().all(|asked| asked.method != "POST"),
         "nothing was sent there: {asked:?}"
     );
-    let renewals = auth.received();
-    let spent = renewals
-        .iter()
-        .any(|(_, _, body)| body.contains("refresh_token="));
-    assert!(!spent, "the refresh token is unspent");
+    assert!(!spent(&auth), "the refresh token is unspent");
+}
+
+#[test]
+fn a_server_that_cannot_answer_for_now_is_asked_again_later_with_its_refresh_token_kept() {
+    let tokens = Tokens::new();
+    let auth = FakeAuthServer::start(tokens.grants()).unwrap();
+    let listening = tokens.served(&auth);
+    let busy = FakeHttp::always(503, "{}").unwrap();
+    block_on!(async {
+        let granted = signed_in(&listening.url).await;
+        let refresh = granted.refresh.as_ref().unwrap();
+        // As if the server at that address could not answer for a while.
+        let down = format!("{}/mcp", busy.url);
+        let renewed = renew(&down, &granted.client, refresh, HERE).await;
+        let Err(SignInError::Unreachable { message, .. }) = renewed else {
+            panic!("asked again later: {renewed:?}");
+        };
+        assert!(message.contains("503"), "says why: {message}");
+    });
+    assert!(!busy.received().is_empty(), "the server was asked");
+    assert!(!spent(&auth), "the refresh token is unspent");
 }
 
 #[test]
