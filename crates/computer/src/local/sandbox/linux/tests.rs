@@ -15,6 +15,7 @@ use glave_ports::computer::{
 };
 
 use super::landlocked;
+use crate::local::sandbox::tests::terminals::AnotherTerminal;
 use crate::local::sandbox_available;
 use crate::{CancelSwitch, LocalComputers};
 
@@ -321,6 +322,54 @@ fn landlock_confines_read_only_commands() {
     assert_eq!(open.matches("canary").count(), 3, "{open}");
     assert!(open.contains("environ-read"), "{open}");
     assert!(dir.join("outside.txt").exists());
+}
+
+/// Under Landlock a command opens no other session's terminal either, though the same script
+/// outside the sandbox opens it both ways. (bubblewrap's `/dev` is its own:
+/// `sandbox/tests/terminals.rs`.)
+#[test]
+fn landlock_hides_other_terminals() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-terminals");
+    let other = AnotherTerminal::open();
+    let script = format!("{}; tty; echo done", other.opens());
+    let (_, said) = run(
+        &dir,
+        Some((SandboxLevel::ReadOnly, false)),
+        Some(&helper),
+        &script,
+    )
+    .unwrap();
+    assert!(
+        said.contains("not a tty") && said.contains("done"),
+        "{said}"
+    );
+    assert!(!said.contains("opened"), "{said}");
+    let (_, open) = run(&dir, None, None, &script).unwrap();
+    assert!(
+        open.contains("read-opened") && open.contains("write-opened"),
+        "{open}"
+    );
+}
+
+/// Landlock's plan names every terminal's device but `tty`, the command's own.
+#[test]
+fn every_terminal_but_the_command_s_own_is_named() {
+    let dev = glave_ports::testing::TempDir::new("dev").unwrap();
+    for name in ["tty", "tty1", "ttyS0", "ptyp0", "ptmx", "null"] {
+        std::fs::write(dev.join(name), "").unwrap();
+    }
+    std::fs::create_dir(dev.join("pts")).unwrap();
+    let mut named = super::other_terminals(&dev);
+    named.sort();
+    let mut expected: Vec<PathBuf> = ["pts", "tty1", "ttyS0", "ptyp0"]
+        .iter()
+        .map(|name| dev.join(name))
+        .collect();
+    expected.sort();
+    assert_eq!(named, expected);
 }
 
 /// Commands in bubblewrap have processes of their own: none of glave's, or anything else on
