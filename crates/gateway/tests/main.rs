@@ -5,7 +5,6 @@
 #[path = "support/fake.rs"]
 mod support;
 
-mod budgets;
 mod credits;
 mod fallback;
 mod filters;

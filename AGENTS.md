@@ -50,7 +50,7 @@ crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Message
 crates/azure/       glave-azure: Azure OpenAI's v1 endpoint, and Microsoft Entra tokens from AKS workload identity (a hand-rolled exchange)
 crates/aws/         glave-aws: Amazon Bedrock's OpenAI-compatible endpoints and Anthropic Messages route, and SigV4 (aws-sigv4) with keys from the environment, IRSA or EKS Pod Identity
 crates/google/      glave-google: Google Vertex AI's endpoints, and Application Default Credentials as a refreshing bearer token (the GKE metadata server, service account keys, gcloud's user credentials, workload identity federation), hand-rolled
-crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
+crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, credits, metering
 crates/keys/        glave-keys: the key hierarchy (root, organization, project, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
 crates/bucket/      glave-bucket: blobs' sealed bytes, apart from their records, in a folder in glave's folder or an S3-compatible bucket (`[store] bucket`), through object_store
 crates/store-sqlite/  glave-store-sqlite: the event log, blobs' records, wrapped keys and leases on one local SQLite file, content sealed

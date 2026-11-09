@@ -186,10 +186,6 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
         ProviderError::Unserved { reason, .. } => Sentence::NoModelServes {
             reason: reason.clone(),
         },
-        ProviderError::OverBudget { budget, detail } => Sentence::OverBudget {
-            budget: budget.clone(),
-            detail: detail.clone(),
-        },
         ProviderError::Unpaid(unpaid) => unpaid_said(unpaid),
     };
     vec![said]
@@ -446,10 +442,6 @@ mod tests {
             ProviderError::Unserved {
                 failure: Failure::Rejected,
                 reason: "the route has no targets".into(),
-            },
-            ProviderError::OverBudget {
-                budget: "person p".into(),
-                detail: "5 of 4 committed".into(),
             },
             ProviderError::Unpaid(Unpaid::Spent),
             ProviderError::Unpaid(Unpaid::Short {

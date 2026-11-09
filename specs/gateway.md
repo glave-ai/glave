@@ -71,7 +71,7 @@ The same model can be reached at several services (Claude Haiku from Anthropic o
 
 - **One name across services:** the id without its maker's prefix, in lower case, dots as hyphens, without a date at its end, so `claude-haiku-5-5-20261007` and `anthropic/claude-haiku-5.5` are one model. Ids that differ more show once per service.
 - **Route order:** the settings' model (an organization's cloud contract) first, then the maker's own API (OpenAI, Anthropic), then an aggregator (OpenRouter), then any other server. A later service serves only when the one before fails in a way that may pass, by the fallback above; the entry's `id` is the first service's.
-- **What `model/list` says of it** comes from the catalogs: its own name and maker (OpenRouter's `Anthropic: Claude Haiku 5.5`; a name the settings give over it, which may name its maker the same way), and where neither names it, the server writes them from its id as its maker would (`openai/gpt-6-luna` is OpenAI's `GPT-6 Luna`), so every entry has a name and no client names a model from its id; the services in that order, its context, longest answer, images and reasoning levels from its first service's catalog, else from another's for the same model (the levels its first target is sent, where that target has some of its own, as a cloud contract's Claude does with no catalog), and its price and the level it is sent unasked from the first service's alone, since that is where a call goes. The gateway checks requests against the same context and images, reserves budgets at that price, and records it as the price list (`<service> catalog <date>`) when the provider reports no cost of its own.
+- **What `model/list` says of it** comes from the catalogs: its own name and maker (OpenRouter's `Anthropic: Claude Haiku 5.5`; a name the settings give over it, which may name its maker the same way), and where neither names it, the server writes them from its id as its maker would (`openai/gpt-6-luna` is OpenAI's `GPT-6 Luna`), so every entry has a name and no client names a model from its id; the services in that order, its context, longest answer, images and reasoning levels from its first service's catalog, else from another's for the same model (the levels its first target is sent, where that target has some of its own, as a cloud contract's Claude does with no catalog), and its price and the level it is sent unasked from the first service's alone, since that is where a call goes. The gateway checks requests against the same context and images, holds credits at that price, and records it as the price list (`<service> catalog <date>`) when the provider reports no cost of its own.
 
 ## Reasoning effort
 
@@ -111,12 +111,9 @@ Decided by the owner, 2026-10-24 (#703): when a model's default level is known, 
 
 ## Budgets
 
-- **One kind can be kept:** each signed-in caller's spending per period, in money. Only calls with a known cost count: a configured price before sending, the provider's reported cost or that price after. No setting sets one today: the per-person daily budget went with the gateway service (#1318), and an organization's spending is held by its credits (below).
-- **The others wait for the first organization that needs them:** a person's per month that groups set (#662), an organization's, a project's, a thread's within the threads above it, a worker's, and limits in tokens. Each will be read back from the log after a restart, as credits are.
-- **Reserve, then settle.** Before sending, reserve the worst case (input tokens plus the output limit, at the target's price); when the call ends, settle to the actual cost. Parallel calls can therefore never overshoot a limit.
-- A call that would exceed a budget is refused before it is sent, as a typed error naming the budget.
-- **Exact, and never past the limit of what can be counted.** A hold and a cost are nanos. A cost rounds up to the next nano, so a call that cost anything never counts as free. A sum that would not fit in 64 bits stops at the most there can be, and a hold that would not fit is refused.
-- An organization's credits (below) are held and settled the same way, beside any budget.
+- **No budget is kept today.** An organization's spending is held by its credits ("Credits", below); the per-person daily budget went with the gateway service (#1318).
+- **A person's monthly budget (#662) and the others** (an organization's, a project's, a thread's within the threads above it, a worker's, limits in tokens) **wait for the first organization that needs them.** Each will be held and settled as credits are, and read back from the log after a restart.
+- **Exact, and never past the limit of what can be counted.** A hold and a cost are nanos. A cost rounds up to the next nano, so a call that cost anything never counts as free. A sum that would not fit in 64 bits stops at the most there can be.
 
 ## Credits
 

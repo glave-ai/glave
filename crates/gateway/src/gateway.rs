@@ -1,33 +1,32 @@
 //! The gateway as a model provider: each call goes by its purpose's route, to the first target
-//! that can serve it, within budget, and comes back saying who served it.
+//! that can serve it and its credits can pay for, and comes back saying who served it.
 
 use std::sync::Arc;
 
-use glave_event::{Currency, Money, Nanos};
+use glave_event::{Currency, Money};
 use glave_ports::{
     Completion, Delta, EventLog, Failure, ModelProvider, ModelRequest, ProviderError, Route,
     Served, Unpaid,
 };
 use tracing::Instrument as _;
 
-use crate::budget::{BudgetKey, Budgets, Charge, Ledger, OverBudget};
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
 use crate::filtering::{Filtering, Keeping};
 use crate::plan::{candidates, prepare};
+use crate::price::Price;
 use crate::routes::Routes;
 use crate::target::Target;
 use crate::telemetry;
 use glave_event::Filters;
 
-/// The output a budget reserves when neither the request nor the target sets a limit.
+/// The output a call's worst case counts when neither the request nor the target sets a limit.
 const DEFAULT_OUTPUT_TOKENS: u32 = 32_768;
 
-/// Model calls routed by purpose, with fallback, budgets, credits and metering.
+/// Model calls routed by purpose, with fallback, credits and metering.
 #[derive(Debug)]
 pub struct Gateway {
     routes: Routes,
-    ledger: Ledger,
     /// The organizations' credits each call with a payer is charged to; none where the
     /// server keeps none.
     credits: Option<Arc<dyn Charging>>,
@@ -40,11 +39,10 @@ pub struct Gateway {
 }
 
 impl Gateway {
-    /// A gateway over `routes`, with no budgets.
+    /// A gateway over `routes`, charging no credits.
     pub fn new(routes: Routes) -> Self {
         Self {
             routes,
-            ledger: Ledger::default(),
             credits: None,
             filters: None,
             floor: None,
@@ -72,39 +70,13 @@ impl Gateway {
         self
     }
 
-    /// Keeps calls within `budgets`.
-    #[must_use]
-    pub fn with_budgets(mut self, budgets: Budgets) -> Self {
-        self.ledger = Ledger::new(budgets);
-        self
-    }
-
     pub fn routes(&self) -> &Routes {
         &self.routes
     }
 
-    /// What `caller` has spent so far in this process, in billionths of their budget's
-    /// currency.
-    pub fn spent(&self, caller: BudgetKey) -> Nanos {
-        self.ledger.spent(caller)
-    }
-
-    /// Serves `request` for `caller`, a signed-in person whose own budget it counts in, on
-    /// `targets` when given (tried in order, as a route's) or else on its purpose's route.
-    pub async fn complete_for(
-        &self,
-        caller: BudgetKey,
-        targets: Option<&[Target]>,
-        request: &ModelRequest,
-        on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> Result<Completion, ProviderError> {
-        let targets = targets.unwrap_or_else(|| self.routes.targets(request.purpose));
-        self.serve(Some(caller), targets, request, on_delta).await
-    }
-
+    /// Serves `request` on `targets`, tried in order.
     async fn serve(
         &self,
-        caller: Option<BudgetKey>,
         targets: &[Target],
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
@@ -120,18 +92,9 @@ impl Gateway {
         let keeping = Keeping::within(self.floor.as_ref(), filters);
         let targets = candidates(targets, request, &keeping, &needs)?;
         let mut failed: Option<ProviderError> = None;
-        let mut over: Option<OverBudget> = None;
         let mut unpaid: Option<ProviderError> = None;
         for (target, route) in targets {
-            let worst = worst(target, request, &needs);
-            let hold = match self.ledger.reserve(caller, worst) {
-                Ok(hold) => hold,
-                Err(refused) => {
-                    over.get_or_insert(refused);
-                    continue;
-                }
-            };
-            let paying = match self.pay(request, target, worst, &needs).await {
+            let paying = match self.pay(request, target, &needs).await {
                 Ok(paying) => paying,
                 Err(error) if error.is_transient() => {
                     failed = Some(error);
@@ -146,7 +109,6 @@ impl Gateway {
             let sent = Self::send_to(target, sent, &needs, paying.as_ref(), on_delta).await;
             match sent {
                 Ok(completion) => {
-                    hold.settle(actual(&completion));
                     if let Some(paying) = paying {
                         let cost = completion.cost.as_ref().map(|cost| cost.amount);
                         paying.settle(cost, &completion.usage.counts()).await;
@@ -165,10 +127,9 @@ impl Gateway {
                 }
             }
         }
-        Err(match (failed, unpaid, over) {
-            (Some(error), _, _) | (None, Some(error), _) => error,
-            (None, None, Some(over)) => over.into(),
-            (None, None, None) => ProviderError::Unserved {
+        Err(match (failed, unpaid) {
+            (Some(error), _) | (None, Some(error)) => error,
+            (None, None) => ProviderError::Unserved {
                 failure: Failure::Rejected,
                 reason: format!("the {} route has no targets", request.purpose.id()),
             },
@@ -220,14 +181,13 @@ impl Gateway {
         sent
     }
 
-    /// Holds a call's `worst` case at `target` against the credits of the organization whose
+    /// Holds a call's worst case at `target` against the credits of the organization whose
     /// work it is, where this gateway keeps credits and the call says whose it is. A target
     /// with no price in dollars can't be held, so it is refused.
     async fn pay<'a>(
         &'a self,
         request: &ModelRequest,
         target: &'a Target,
-        worst: Charge,
         needs: &Needs<'_>,
     ) -> Result<Option<Paying<'a>>, ProviderError> {
         let (Some(credits), Some(payer)) = (self.credits.as_deref(), request.payer) else {
@@ -241,10 +201,7 @@ impl Gateway {
             let model = target.model.clone();
             return Err(ProviderError::Unpaid(Unpaid::Unpriced { model }));
         };
-        let worst = Money {
-            nanos: worst.0.map_or(Nanos::ZERO, |(nanos, _)| nanos),
-            currency: Currency::USD,
-        };
+        let worst = worst(target, request, needs, price);
         let input = needs.fit_tokens();
         Paying::hold(credits, payer, worst, price, input)
             .await
@@ -259,13 +216,13 @@ impl ModelProvider for Gateway {
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
         let targets = self.routes.for_model(request.purpose, &request.model);
-        self.serve(None, &targets, request, on_delta).await
+        self.serve(&targets, request, on_delta).await
     }
 }
 
-/// The most a call to `target` could cost: the input, estimated cautiously, and the longest
-/// answer allowed, at the target's price when it has one.
-fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>) -> Charge {
+/// The most a call to `target` could cost at its `price`, in dollars: the input, estimated
+/// cautiously, and the longest answer allowed.
+fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = request
         .max_output_tokens
         .or(target.can.max_output_tokens)
@@ -275,20 +232,8 @@ fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>) -> Charge {
         output: u64::from(output),
         ..glave_event::TokenCounts::default()
     };
-    Charge(
-        target
-            .price
-            .as_ref()
-            .map(|price| (price.nanos(&counts), price.currency)),
-    )
-}
-
-/// What a finished call cost, when known.
-fn actual(completion: &Completion) -> Charge {
-    Charge(
-        completion
-            .cost
-            .as_ref()
-            .map(|cost| (cost.amount.nanos, cost.amount.currency)),
-    )
+    Money {
+        nanos: price.nanos(&counts),
+        currency: Currency::USD,
+    }
 }
