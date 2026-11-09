@@ -75,8 +75,6 @@ pub struct Choices {
     pub workers: Option<Chosen<WorkersFile>>,
     /// Each person's own computer, if people have one; none, threads work on the server's.
     pub computers: Option<Chosen<ComputersFile>>,
-    /// The gateway elsewhere model calls go to, if any: its URL.
-    pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
     /// This project's memory setting: shared by default.
@@ -203,11 +201,6 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
             file.telemetry
                 .as_ref()
                 .map(|telemetry| telemetry.otlp.trim().to_owned())
-        }),
-        gateway: nearest(layers, "gateway", |file| {
-            file.gateway
-                .as_ref()
-                .map(|gateway| gateway.url.trim().to_owned())
         }),
         web: defaulted(
             nearest(layers, "web", |file| file.web.clone()),

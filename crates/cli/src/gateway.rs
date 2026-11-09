@@ -2,15 +2,11 @@
 //! the `main` route, and `GLAVE_JUDGE_MODEL`, when it names another model at the same
 //! endpoint, a choice the judge's calls name. Every purpose uses `main` unless a call names a
 //! choice, and there are no budgets, so nothing changes for anyone who sets nothing new. A policy's `[models]` rules are kept
-//! here: a target they do not allow is refused before the gateway exists. With `[gateway]
-//! url`, the endpoint is the organization's gateway, which keeps them itself, for each caller.
-//! The judge model and each of `[[models]]` are choices a thread may make instead of the main
-//! model (`model/list`), checked against the policy as the main model is, and so are the
-//! models of the accounts the person connected (`providers`), leaving out those it refuses.
-//! The gateway in use is replaced whole when those accounts change ([`GatewaySwitch`]).
-
-pub(crate) mod remote;
-pub(crate) mod serve;
+//! here: a target they do not allow is refused before the gateway exists. The judge model and
+//! each of `[[models]]` are choices a thread may make instead of the main model
+//! (`model/list`), checked against the policy as the main model is, and so are the models of
+//! the accounts the person connected (`providers`), leaving out those it refuses. The gateway
+//! in use is replaced whole when those accounts change ([`GatewaySwitch`]).
 
 use std::sync::{Arc, PoisonError, RwLock};
 
@@ -28,8 +24,8 @@ use glave_config::policy::{Constraints, ModelEntry, RouterFloorFile, Source, che
 use glave_session::PersonFilters;
 use glave_session::protocol::ModelInfo;
 
-/// What a model on this computer costs, called straight rather than through a gateway
-/// elsewhere: nothing, so its calls report $0.00 as any other's report their cost.
+/// What a model on this computer costs: nothing, so its calls report $0.00 as any other's
+/// report their cost.
 fn free_here() -> Price {
     Price {
         list: "this computer".to_owned(),
@@ -43,7 +39,7 @@ fn free_here() -> Price {
 /// `target` at `endpoint`, priced at nothing when it runs on this computer and nothing else
 /// prices it.
 pub(crate) fn free_if_here(target: Target, endpoint: &Endpoint) -> Target {
-    if endpoint.local && endpoint.gateway.is_none() && target.price.is_none() {
+    if endpoint.local && target.price.is_none() {
         target.with_price(free_here())
     } else {
         target
@@ -99,20 +95,14 @@ pub(crate) fn gateway(
     };
     let mut main = at(&endpoint.model);
     let chosen = allowed.main.unwrap_or(&Source::Default);
-    // A gateway elsewhere keeps the policy's models itself, for each caller.
-    let checks = endpoint.gateway.is_none();
-    if checks {
-        check_model(&main.name, chosen, allowed.constraints)?;
-    }
+    check_model(&main.name, chosen, allowed.constraints)?;
     let same = identity(&endpoint.model);
     let mut fallbacks = Vec::new();
     let mut choices: Vec<Target> = Vec::new();
     // The judge's calls name its model, so a project's judge is found among the choices too.
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
         let target = at(model);
-        if checks {
-            check_model(&target.name, allowed.judge, allowed.constraints)?;
-        }
+        check_model(&target.name, allowed.judge, allowed.constraints)?;
         choices.push(target);
     }
     for entry in offered {
@@ -121,9 +111,7 @@ pub(crate) fn gateway(
             continue;
         }
         let target = at(id);
-        if checks {
-            check_model(&target.name, allowed.models, allowed.constraints)?;
-        }
+        check_model(&target.name, allowed.models, allowed.constraints)?;
         choices.push(target);
     }
     for target in accounts {
@@ -294,7 +282,6 @@ pub(crate) mod tests {
             provider,
             claude: None,
             model: "big".into(),
-            gateway: None,
             at: "GLAVE_BASE_URL".into(),
             key_from: "GLAVE_API_KEY",
         }

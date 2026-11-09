@@ -1,5 +1,5 @@
 //! glave's own streams in the event log, beside the threads: its ledgers, each under a reserved
-//! id in every project, and the gateway's stream of each person. A stream is read by folding
+//! id in every project. A stream is read by folding
 //! its events in order, and written by any number of glave processes at once: an append that
 //! meets another writer's `(thread, seq)` reads what was written and tries again after it.
 

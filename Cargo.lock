@@ -1848,7 +1848,6 @@ name = "glave"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "aws-lc-rs",
  "flate2",
  "getrandom 0.4.3",
  "glave-acme",
@@ -1859,7 +1858,6 @@ dependencies = [
  "glave-config",
  "glave-event",
  "glave-gateway",
- "glave-gateway-service",
  "glave-google",
  "glave-harness",
  "glave-identity",
@@ -2065,33 +2063,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "glave-gateway-service"
-version = "0.0.0"
-dependencies = [
- "aws-lc-rs",
- "bytes",
- "glave-event",
- "glave-gateway",
- "glave-identity",
- "glave-mcp",
- "glave-ports",
- "glave-process",
- "glave-provider-anthropic",
- "glave-provider-openai",
- "http",
- "http-body-util",
- "hyper",
- "hyper-util",
- "jiff",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
 ]
 
 [[package]]

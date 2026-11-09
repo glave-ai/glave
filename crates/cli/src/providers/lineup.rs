@@ -17,7 +17,6 @@ use glave_session::protocol::ModelInfo;
 use jiff::Timestamp;
 
 use crate::config::Endpoint;
-use crate::gateway::remote::Remote;
 use crate::gateway::{Allowed, free_if_here, gateway, offered, routing_if_router};
 use crate::model::Model;
 use crate::setup::Setup;
@@ -75,10 +74,7 @@ impl Lineup {
     /// theirs, so its models have prices for credits and providers for filters. No one
     /// connected it, so it is never kept and never listed as anyone's.
     pub(crate) fn own_account(&self) -> Option<ProviderConnected> {
-        let endpoint = self
-            .configured
-            .as_ref()
-            .filter(|endpoint| endpoint.gateway.is_none())?;
+        let endpoint = self.configured.as_ref()?;
         let provider = &endpoint.provider;
         if provider.provider != "openrouter" || !super::at_openrouter(&provider.base_url) {
             return None;
@@ -190,33 +186,18 @@ impl Lineup {
     }
 }
 
-/// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
-/// that gateway, or the model chosen, if any is.
-pub(crate) fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
-    let remote = choices
-        .gateway
-        .as_ref()
-        .map(Remote::from_choice)
-        .transpose()?;
-    let model = choices.model.as_ref().map(|m| m.value.clone());
-    let endpoint = match (&remote, model) {
-        (Some(remote), model) => Some(remote.endpoint(model)?),
-        (None, Some(model)) => Some(crate::config::endpoint(
-            Some(model),
-            choices.provider.as_ref(),
-        )?),
-        (None, None) => None,
-    };
+/// The endpoint model calls go to: the model chosen's, if any is.
+pub(crate) fn endpoint(choices: &Choices) -> anyhow::Result<Option<Endpoint>> {
     let idle = crate::config::idle_timeout()?;
-    Ok((
-        remote,
-        endpoint.map(|mut endpoint| {
-            if let Some(idle) = idle {
-                endpoint.provider.idle_timeout = idle;
-            }
-            endpoint
-        }),
-    ))
+    let Some(model) = &choices.model else {
+        return Ok(None);
+    };
+    let mut endpoint =
+        crate::config::endpoint(Some(model.value.clone()), choices.provider.as_ref())?;
+    if let Some(idle) = idle {
+        endpoint.provider.idle_timeout = idle;
+    }
+    Ok(Some(endpoint))
 }
 
 impl Lineup {
@@ -290,7 +271,6 @@ mod tests {
                 provider: config,
                 claude: None,
                 model: model.to_owned(),
-                gateway: None,
                 at: String::new(),
                 key_from: "",
             }),

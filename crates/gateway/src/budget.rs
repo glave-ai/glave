@@ -1,8 +1,8 @@
 //! Budgets, reserve then settle: before a signed-in caller's call is sent its worst case is
 //! held against their budget, and when it ends the hold becomes what it really cost. A call
 //! that could exceed it is refused before it is sent, so calls side by side never overshoot.
-//! One kind is kept, the one a deployment sets: each caller's money in each period, a UTC day
-//! (`[budget] person_per_day_usd`), by a gateway serving many.
+//! One kind is kept: each caller's money in each period, as whoever calls numbers them. No
+//! setting of glave's sets one yet (`specs/gateway.md`, "Budgets").
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
@@ -12,7 +12,7 @@ use glave_ports::ProviderError;
 use thiserror::Error;
 
 /// Callers' accounts kept at once. Past this, an account with nothing in flight from the
-/// earliest period is forgotten; its spending stays in the log, from which it is read again.
+/// earliest period is forgotten.
 const MOST_CALLERS: usize = 100_000;
 
 /// The budgets calls count in.
@@ -111,10 +111,6 @@ impl Ledger {
         }
     }
 
-    pub(crate) fn limits(&self) -> Budgets {
-        self.limits
-    }
-
     /// Holds `worst` in `caller`'s budget, or refuses it, holding nothing. A call for no one
     /// signed in counts in none.
     pub(crate) fn reserve(
@@ -155,14 +151,6 @@ impl Ledger {
         accounts
             .get(&caller)
             .map_or(Nanos::ZERO, |account| account.spent)
-    }
-
-    /// Counts `amount`, in billionths of the limit's currency, as already spent by `caller`:
-    /// spending read back from the log after a restart.
-    pub(crate) fn add_spent(&self, caller: BudgetKey, amount: Nanos) {
-        let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        let account = entry(&mut accounts, caller);
-        account.spent = account.spent.saturating_add(amount.max(Nanos::ZERO));
     }
 
     fn release(&self, caller: BudgetKey, held: Nanos, spent: Nanos) {
@@ -277,12 +265,7 @@ mod tests {
         assert_eq!(more.committed, Nanos::MAX);
         assert_eq!(more.needed, Nanos::new(1));
         all.settle(Charge(Some((Nanos::MAX, Currency::USD))));
-        ledger.add_spent(caller(), Nanos::new(1));
-        assert_eq!(
-            ledger.spent(caller()),
-            Nanos::MAX,
-            "stops at the most there can be"
-        );
+        assert_eq!(ledger.spent(caller()), Nanos::MAX);
         assert!(ledger.reserve(Some(caller()), charge(1)).is_err());
     }
 
@@ -308,7 +291,6 @@ mod tests {
         let ledger = ledger(Nanos::new(1));
         let hold = ledger.reserve(Some(caller()), charge(-5)).unwrap();
         hold.settle(charge(-5));
-        ledger.add_spent(caller(), Nanos::new(-5));
         assert_eq!(ledger.spent(caller()), Nanos::ZERO);
     }
 }

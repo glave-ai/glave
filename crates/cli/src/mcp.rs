@@ -5,11 +5,9 @@
 //! project's `.mcp.json` servers start in its folder (`project_folders.rs`). A `config.toml` may turn
 //! on only some of them, and a policy may forbid them.
 //!
-//! The organization's catalog (`[mcp] catalog`) comes from its gateway when `[gateway] url` is
-//! set: one source, first, so a catalog tool wins over a server of the person's with the same
-//! name. Without a gateway, the servers of `mcp.json` the catalog names are the catalog's, and
-//! only the others are the person's own, which `[mcp] own = false` forbids. glave writes to
-//! `mcp.json` only when the person turns web search on, or off (`written.rs`).
+//! The servers of `mcp.json` the organization's catalog (`[mcp] catalog`) names are the
+//! catalog's, and only the others are the person's own, which `[mcp] own = false` forbids.
+//! glave writes to `mcp.json` only when the person turns web search on, or off (`written.rs`).
 //!
 //! The connectors of glave's catalog the person connected start beside their own servers,
 //! named by their ids, unless `mcp.json` has a server of that name or at that address. A policy
@@ -49,7 +47,7 @@ pub(crate) fn environment() -> BTreeMap<String, String> {
 /// people sign in from elsewhere, here at `origin` or through an identity provider, so that no
 /// address reaches this server's own network; else also private ones, the person's own computer
 /// and network. A setting naming ranges a company may reach waits for a server that needs it: a
-/// company's own tool servers go in its gateway's file.
+/// company's own tool servers go in its server's own file ([`own_reachable`]).
 pub(crate) fn reachable(args: &crate::args::Args, choices: &Choices) -> Reachable {
     reachable_from(args, choices.origin.is_some())
 }

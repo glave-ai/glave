@@ -89,17 +89,6 @@ impl Gateway {
         self.ledger.spent(caller)
     }
 
-    /// Counts `amount`, in billionths of the budget's currency, as spent by `caller` already:
-    /// what a gateway serving many reads back from its log when a caller first returns.
-    pub fn add_spent(&self, caller: BudgetKey, amount: Nanos) {
-        self.ledger.add_spent(caller, amount);
-    }
-
-    /// The budgets calls count in.
-    pub fn budgets(&self) -> Budgets {
-        self.ledger.limits()
-    }
-
     /// Serves `request` for `caller`, a signed-in person whose own budget it counts in, on
     /// `targets` when given (tried in order, as a route's) or else on its purpose's route.
     pub async fn complete_for(
