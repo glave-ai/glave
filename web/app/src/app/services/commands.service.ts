@@ -1,7 +1,16 @@
-import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
-import type { CommandId, RunningCommand, ThreadId } from '@glave/client';
+import {
+  DestroyRef,
+  Service,
+  computed,
+  effect,
+  inject,
+  linkedSignal,
+  untracked,
+} from '@angular/core';
+import type { CommandId, ListedCommand, ThreadId } from '@glave/client';
 
 import { alreadyEnded, commandProblem } from '../lib/commands';
+import { LOOKS_AGAIN, previewsOf } from '../lib/previews';
 import { clock } from './clock';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
@@ -9,7 +18,9 @@ import { PanelService } from './panel.service';
 
 /** What is known of the open thread's commands in the background. */
 interface State {
-  readonly commands: readonly RunningCommand[];
+  readonly commands: readonly ListedCommand[];
+  /** Whether the server previews what they serve for this person here. */
+  readonly previewed: boolean;
   /** Whether they have been read once for this thread. */
   readonly loaded: boolean;
   /** Why they could not be read, in words for the person. */
@@ -22,6 +33,7 @@ interface State {
 
 const NOTHING_YET: State = {
   commands: [],
+  previewed: false,
   loaded: false,
   error: null,
   stopping: new Set(),
@@ -37,9 +49,12 @@ function without<K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> {
  * (`command/stop`): the row shows it stopping, then goes; a command that had already ended goes
  * too, and any other refusal stays on its row in the server's words. Read once the thread has
  * recorded one starting, again whenever it records one starting or ending, and each time its
- * panel is shown again; no timer reads them, since the thread's events say when they change.
- * While the panel shows, a clock moves on each second for how long each has run. Each thread
- * view provides its own.
+ * panel is shown again, since the thread's events say when they change; and, where the server
+ * previews what they serve, while the panel shows and one runs, a moment later, then later
+ * still (`LOOKS_AGAIN`), since nothing records when a server starts listening, nor when
+ * another starts beside it; never where the server says it previews nothing. Each one's
+ * previews come with its ports. While the panel shows, a clock moves on each second for how
+ * long each has run. Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class CommandsService {
@@ -53,8 +68,14 @@ export class CommandsService {
   });
   /** Counts the reads and stops begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
+  /** How many times they were read again since they changed, while the server previews. */
+  private looked = 0;
+  /** The next of those reads, while one waits. */
+  private again: ReturnType<typeof setTimeout> | undefined;
 
   readonly commands = computed(() => this.state().commands);
+  /** The previews of what they serve, from each one's ports, as the server gives them. */
+  readonly previews = computed(() => previewsOf(this.commands()));
   readonly loaded = computed(() => this.state().loaded);
   readonly error = computed(() => this.state().error);
   readonly stopping = computed(() => this.state().stopping);
@@ -68,6 +89,9 @@ export class CommandsService {
   readonly now = clock(() => this.panel.showing() && this.timed());
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.again);
+    });
     // The thread's history says when a command started or ended, live while a turn streams in.
     effect(() => {
       const thread = this.thread.thread();
@@ -87,19 +111,33 @@ export class CommandsService {
     });
   }
 
-  /** Reads the thread's commands running now. */
-  async refresh(): Promise<void> {
+  /**
+   * Reads the thread's commands running now; `again` when it is one of the reads that follow a
+   * read while the server previews.
+   */
+  async refresh(again = false): Promise<void> {
     const thread = this.thread.thread();
     if (thread === null) {
       return;
+    }
+    if (!again) {
+      this.looked = 0;
     }
     this.latest += 1;
     const ticket = this.latest;
     const current = (): boolean => ticket === this.latest && this.thread.thread() === thread;
     try {
-      const { commands } = await this.session.call('command/list', { thread });
+      const listed = await this.session.call('command/list', { thread });
+      const { commands, previewed } = listed;
       if (current()) {
-        this.state.update((state) => ({ ...state, commands, loaded: true, error: null }));
+        this.state.update((state) => ({
+          ...state,
+          commands,
+          previewed,
+          loaded: true,
+          error: null,
+        }));
+        this.lookAgain();
       }
     } catch (error: unknown) {
       if (current()) {
@@ -141,5 +179,25 @@ export class CommandsService {
       commands: state.commands.filter((each) => each.id !== command),
       stopping,
     }));
+  }
+
+  /**
+   * Reads them again a moment later while the server previews, the panel shows and one runs,
+   * each time later than the last, until `LOOKS_AGAIN` has no more.
+   */
+  private lookAgain(): void {
+    clearTimeout(this.again);
+    const wait = LOOKS_AGAIN[this.looked];
+    const waiting = this.state().previewed && this.commands().length > 0;
+    if (wait === undefined || !waiting || !this.panel.showing()) {
+      return;
+    }
+    this.looked += 1;
+    const thread = this.thread.thread();
+    this.again = setTimeout(() => {
+      if (this.thread.thread() === thread) {
+        void this.refresh(true);
+      }
+    }, wait);
   }
 }

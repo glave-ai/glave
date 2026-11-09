@@ -3,12 +3,12 @@
 //! whole folders and cannot take it back below them, so it cannot keep protected paths
 //! read-only inside a writable project; a `project` sandbox is refused instead.
 //!
-//! Reads are granted everywhere except secret locations by granting every neighbour on the
-//! way down to them instead of their parent (folders stay listable). Writes go to the run's
-//! temp folder and `/tmp`, never the project through them (a project inside `/tmp` then
-//! costs new files directly in `/tmp`). With the network off, TCP is refused too where the
-//! kernel can (ABI 4), on top of seccomp; signals and abstract Unix sockets stay inside the
-//! sandbox where it can (ABI 6).
+//! Reads are granted everywhere except secret locations and other terminals' devices by
+//! granting every neighbour on the way down to them instead of their parent (folders stay
+//! listable). Writes go to the run's temp folder and `/tmp`, never the project through them
+//! (a project inside `/tmp` then costs new files directly in `/tmp`). With the network off,
+//! TCP is refused too where the kernel can (ABI 4), on top of seccomp; signals and abstract
+//! Unix sockets stay inside the sandbox where it can (ABI 6).
 
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};

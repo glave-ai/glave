@@ -2,7 +2,7 @@ import type {
   ConnectorInfo,
   PlanInfo,
   ReplySources,
-  RunningCommand,
+  ListedCommand,
   ThreadSummary,
 } from '@glave/client';
 
@@ -23,7 +23,7 @@ const PAGE = {
 };
 
 /** What it keeps running in the background. */
-export const TESTS: RunningCommand = {
+export const TESTS: ListedCommand = {
   id: '01900000-0000-7000-8000-0000000000d2',
   command: 'cargo test',
   started_at: '2026-10-11T10:04:00.000Z',
@@ -161,7 +161,8 @@ const SOURCES: readonly ReplySources[] = [
 /** Calls about the coding thread. */
 export const ABOUT_VERBOSE: Answers<null> = {
   'thread/sources': (params) => (params.thread === VERBOSE ? { sources: SOURCES } : undefined),
-  'command/list': (params) => (params.thread === VERBOSE ? { commands: [TESTS] } : undefined),
+  'command/list': (params) =>
+    params.thread === VERBOSE ? { commands: [TESTS], previewed: false } : undefined,
   'thread/plan': (params) => (params.thread === VERBOSE ? { plan: PLAN } : undefined),
   'thread/compact': (params) =>
     params.thread === VERBOSE ? { before_tokens: 49_920, after_tokens: 8_000 } : undefined,

@@ -277,7 +277,6 @@ pub(crate) fn endpoint_of(account: &ProviderConnected, model: &str) -> Option<En
         provider,
         claude: None,
         model: model.to_owned(),
-        gateway: None,
         at: AT.to_owned(),
         key_from: KEY_FROM,
     })

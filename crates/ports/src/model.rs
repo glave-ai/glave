@@ -336,9 +336,6 @@ pub enum ProviderError {
     /// terms a provider's own refusal would have used.
     #[error("no model could serve the request: {reason}")]
     Unserved { failure: Failure, reason: String },
-    /// A gateway sent nothing: the call could exceed this budget.
-    #[error("the {budget} budget would be exceeded: {detail}")]
-    OverBudget { budget: String, detail: String },
     /// A gateway sent nothing: the organization's credits could not pay for the call.
     #[error(transparent)]
     Unpaid(Unpaid),

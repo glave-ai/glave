@@ -1,6 +1,6 @@
 [package]
 name = "glave-gateway"
-description = "glave's gateway, in-process: routes model calls by purpose, falls back safely, meters every call and keeps budgets"
+description = "glave's gateway, in-process: routes model calls by purpose, falls back safely, meters every call and charges organizations' credits"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

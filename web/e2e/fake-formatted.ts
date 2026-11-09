@@ -1,4 +1,4 @@
-import type { ChangedFile, RunningCommand, ThreadSummary } from '@glave/client';
+import type { ChangedFile, ListedCommand, ThreadSummary } from '@glave/client';
 
 import { type Answers, WORKSPACE, call, done, event } from './fake-records';
 
@@ -10,7 +10,7 @@ import { type Answers, WORKSPACE, call, done, event } from './fake-records';
 export const FORMATTED = '01900000-0000-7000-8000-000000000151';
 
 /** What it keeps running in the background. */
-const WATCHING: RunningCommand = {
+const WATCHING: ListedCommand = {
   id: '01900000-0000-7000-8000-0000000000d3',
   command: 'cargo watch -x test',
   started_at: '2026-10-11T10:02:00.000Z',
@@ -87,7 +87,8 @@ const FILES: readonly ChangedFile[] = [
 export const ABOUT_FORMATTED: Answers<ThreadSummary> = {
   'thread/get': (params, summary) =>
     params.thread === FORMATTED ? { thread: summary } : undefined,
-  'command/list': (params) => (params.thread === FORMATTED ? { commands: [WATCHING] } : undefined),
+  'command/list': (params) =>
+    params.thread === FORMATTED ? { commands: [WATCHING], previewed: false } : undefined,
   'thread/changes': (params) =>
     params.thread === FORMATTED
       ? {

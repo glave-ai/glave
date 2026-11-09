@@ -38,12 +38,12 @@ pub use payload::{
 };
 pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkFiles,
-    ForkPoint, GatewayToolCalled, HookPoint, HookRan, HookResult, Lifted, MemoryEdited,
-    MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied,
-    MessageAdded, ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome,
-    OutsideSandbox, ParentCall, Part, Permissions, PermissionsChosen, Principal, PrincipalKind,
-    Producer, Role, StopReason, Thought, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
+    ForkPoint, HookPoint, HookRan, HookResult, Lifted, MemoryEdited, MemoryForgotten,
+    MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied, MessageAdded,
+    ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, OutsideSandbox,
+    ParentCall, Part, Permissions, PermissionsChosen, Principal, PrincipalKind, Producer, Role,
+    StopReason, Thought, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
     ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
     Usage, Verdict, WebPage,
 };

@@ -162,7 +162,6 @@ mod tests {
             provider,
             claude: None,
             model: "m".into(),
-            gateway: None,
             at: "GLAVE_BASE_URL".into(),
             key_from: "GLAVE_API_KEY",
         };
@@ -199,7 +198,6 @@ mod tests {
                 models,
             }),
             model: "m".into(),
-            gateway: None,
             at: "[provider]".into(),
             key_from: "GLAVE_API_KEY",
         };
@@ -272,7 +270,6 @@ mod tests {
             }),
             provider,
             model: "google/gemini-3.5-flash".into(),
-            gateway: None,
             at: "[provider]".into(),
             key_from: "GLAVE_API_KEY",
         };

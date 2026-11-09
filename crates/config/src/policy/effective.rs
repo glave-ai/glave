@@ -10,12 +10,8 @@ use crate::policy::choices::{Choices, Chosen, Source};
 use crate::policy::files::JudgeRule;
 use crate::policy::rules::Constraints;
 
-/// `choices`, kept within `constraints`. Fails on a choice outside them, and on any rule glave
-/// cannot enforce yet.
+/// `choices`, kept within `constraints`. Fails on a choice outside them.
 pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::Result<Choices> {
-    if let Some((rule, why)) = constraints.not_enforced().first() {
-        refuse!("glave will not run under {rule}: it is not enforced yet ({why})");
-    }
     choices.permissions = permissions(choices.permissions, constraints)?;
     choices.judge = judge(choices.judge, constraints)?;
     choices.network = network(choices.network, constraints)?;

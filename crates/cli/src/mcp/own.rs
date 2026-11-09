@@ -23,7 +23,6 @@ use glave_session::KeptConnector;
 
 use super::{FILE, Offered, environment, mine_untrusted, turned_on};
 use crate::connected::{Connected, Signed};
-use crate::gateway::remote::Remote;
 use crate::terminal::Printer;
 
 /// One of the person's servers as their settings describe it: started again when this
@@ -76,12 +75,11 @@ impl Wanted {
 /// names, or every one, those `constraints` allow, how far each is trusted, and whether the
 /// person is signed in to it, at one of the addresses `signed` holds; then the connectors
 /// `signed` holds that `chosen` names, or every one, that `constraints` offer, in the order of
-/// their ids. `through_gateway`: the person uses a gateway's catalog.
+/// their ids.
 pub(crate) async fn wanted(
     home: &Path,
     chosen: Option<&Chosen<Vec<String>>>,
     constraints: &Constraints,
-    through_gateway: bool,
     signed: &Signed,
 ) -> anyhow::Result<Vec<Wanted>> {
     let path = home.join(FILE);
@@ -109,11 +107,10 @@ pub(crate) async fn wanted(
         .collect();
     let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
     let configs = turned_on(own, chosen, &ids, &path)?;
-    // Without a gateway, the catalog's servers are the ones in mcp.json it names.
-    let catalog = match constraints.mcp_catalog() {
-        Some((names, _)) if !through_gateway => names,
-        _ => Vec::new(),
-    };
+    // The catalog's servers are the ones in mcp.json it names.
+    let catalog = constraints
+        .mcp_catalog()
+        .map_or_else(Vec::new, |(names, _)| names);
     let on: Vec<&str> = mine
         .iter()
         .filter(|name| configs.contains_key(*name) && !catalog.contains(name))
@@ -202,10 +199,8 @@ struct Running {
     retired: Vec<Arc<McpServer>>,
 }
 
-/// The person's own servers, for their threads everywhere; first the catalog of the gateway
-/// they use, when there is one.
+/// The person's own servers, for their threads everywhere.
 pub(crate) struct Servers {
-    catalog: Option<Arc<McpServer>>,
     running: Mutex<Running>,
     /// Where they start: the person's home folder.
     root: PathBuf,
@@ -219,19 +214,16 @@ pub(crate) struct Servers {
 }
 
 impl Servers {
-    /// Starts `wanted` in `root`, after the catalog of the `remote` gateway, when there is one,
-    /// remote ones signed in with what the person `connected`, each only at an address
-    /// `reachable` allows.
+    /// Starts `wanted` in `root`, remote ones signed in with what the person `connected`, each
+    /// only at an address `reachable` allows.
     pub(crate) fn start(
         wanted: Vec<Wanted>,
         root: &Path,
-        remote: Option<&Remote>,
         processes: &Processes,
         connected: Option<Arc<Connected>>,
         reachable: Reachable,
     ) -> Self {
         let servers = Self {
-            catalog: remote.map(|remote| Arc::new(remote.catalog())),
             running: Mutex::default(),
             root: root.to_owned(),
             reported: AtomicBool::new(false),
@@ -351,18 +343,16 @@ impl Servers {
         &self.processes
     }
 
-    /// Every server running, the catalog first.
+    /// Every server running.
     fn all(&self) -> Vec<Arc<McpServer>> {
         let running = self.lock();
-        self.catalog
-            .iter()
-            .cloned()
-            .chain(running.servers.iter().map(|(_, server)| Arc::clone(server)))
+        (running.servers.iter())
+            .map(|(_, server)| Arc::clone(server))
             .collect()
     }
 
-    /// The servers as tool sources, for the threads of each place: the catalog first, then
-    /// those used there in the order of their names, then their resources. A place with
+    /// The servers as tool sources, for the threads of each place: those used there in the
+    /// order of their names, then their resources. A place with
     /// connectors of its own has them beside those used everywhere, its own account of a
     /// service in the place of the one used everywhere, so a thread never has two of one
     /// service; every other place has only those used everywhere.
@@ -370,9 +360,8 @@ impl Servers {
         let running = self.lock();
         let of_place = |place: Option<ProjectId>| -> Placed {
             let here = serving(&running.servers, place);
-            let servers: Vec<Arc<McpServer>> = (self.catalog.iter().cloned())
-                .chain(here.iter().map(|(_, server)| Arc::clone(server)))
-                .collect();
+            let servers: Vec<Arc<McpServer>> =
+                here.iter().map(|(_, server)| Arc::clone(server)).collect();
             let connections = (here.iter())
                 .filter(|(wanted, _)| matches!(wanted.from, From::Connector { .. }))
                 .map(|(wanted, _)| wanted.name.clone())
@@ -463,7 +452,7 @@ mod tests {
             .build()
             .unwrap();
         let start =
-            |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, false, &Signed::default()));
+            |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, &Signed::default()));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -476,7 +465,7 @@ mod tests {
         assert_eq!(start(Some(&none)).unwrap(), Vec::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
         let started = runtime
-            .block_on(wanted(&home, None, &offered, false, &Signed::default()))
+            .block_on(wanted(&home, None, &offered, &Signed::default()))
             .unwrap();
         assert_eq!(
             started
@@ -484,7 +473,7 @@ mod tests {
                 .map(|wanted| wanted.name.as_str())
                 .collect::<Vec<_>>(),
             ["mine"],
-            "without a gateway, a server of mcp.json the catalog names is the catalog's"
+            "a server of mcp.json the catalog names is the catalog's"
         );
     }
 
@@ -519,7 +508,7 @@ mod tests {
             .unwrap();
         let names = |policy: &str, chosen: Option<&Chosen<Vec<String>>>| {
             let rules = constraints(policy);
-            let wanted = runtime.block_on(wanted(&home, chosen, &rules, false, &signed));
+            let wanted = runtime.block_on(wanted(&home, chosen, &rules, &signed));
             let wanted = wanted.unwrap();
             let signed_in: Vec<bool> = wanted.iter().map(|it| it.signed_in).collect();
             let from: Vec<From> = wanted.iter().map(|it| it.from).collect();
@@ -625,7 +614,6 @@ mod tests {
             let servers = Servers::start(
                 started.clone(),
                 &root,
-                None,
                 &unrecorded,
                 None,
                 Reachable::default(),

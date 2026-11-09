@@ -63,6 +63,8 @@ kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:glave-event"]
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
+# A pseudo-terminal of the sandbox tests' own, standing in for another session's terminal.
+rustix = { workspace = true, features = ["pty"] }
 # Paused time, so fault tests stall and time out on a clock they move, never a real one.
 tokio = { workspace = true, features = ["test-util"] }
 

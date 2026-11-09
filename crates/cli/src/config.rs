@@ -33,8 +33,6 @@ pub(crate) struct Endpoint {
     pub model: String,
     /// True when the model runs on this computer, so a missing cost means $0.
     pub local: bool,
-    /// The gateway elsewhere the endpoint is, when `[gateway] url` sends calls to one.
-    pub gateway: Option<String>,
     /// The setting that says where the endpoint is: `GLAVE_BASE_URL`, or `[provider]` and
     /// its file.
     pub at: String,
@@ -64,7 +62,6 @@ pub(crate) fn endpoint(
             provider: reached.provider,
             claude: reached.claude,
             model,
-            gateway: None,
             at: format!("[provider] (from {})", chosen.from),
             key_from: reached.key_from.unwrap_or(KEY),
         });
@@ -85,51 +82,13 @@ pub(crate) fn endpoint(
         provider,
         claude: None,
         model,
-        gateway: None,
         at: "GLAVE_BASE_URL".to_owned(),
         key_from: KEY,
     })
 }
 
-/// `[provider]` in the `config.toml` in glave's folder, for a command that reads no project
-/// settings, such as `glave gateway serve`: a project never chooses it.
-pub(crate) async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
-    let Some((file, path)) = file_here().await? else {
-        return Ok(None);
-    };
-    Ok(file.provider.map(|value| Chosen {
-        value,
-        from: glave_config::policy::Source::File(path),
-    }))
-}
-
-/// `[router_floor]` in glave's own settings file, for `glave gateway serve`, which reads no other
-/// choices from it.
-pub(crate) async fn router_floor_here()
--> anyhow::Result<Option<glave_config::policy::RouterFloorFile>> {
-    Ok(file_here().await?.and_then(|(file, _)| file.router_floor))
-}
-
-/// Glave's own settings file and where it is; none when there is none.
-async fn file_here()
--> anyhow::Result<Option<(glave_config::policy::ConfigFile, std::path::PathBuf)>> {
-    let path = crate::home::folder()?.join(glave_config::policy::CONFIG);
-    let text = match tokio::fs::read_to_string(&path).await {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(error).with_context(|| format!("could not read {}", path.display()));
-        }
-    };
-    let file = glave_config::policy::config(&text, &path)?;
-    Ok(Some((file, path)))
-}
-
 /// What to change when a model call fails in a way the person can fix, naming the setting.
 pub(crate) fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
-    if let Some(gateway) = &endpoint.gateway {
-        return through_gateway(failure, gateway, &endpoint.model);
-    }
     let host = endpoint
         .provider
         .host()
@@ -183,34 +142,6 @@ pub(crate) fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
     })
 }
 
-/// What to change when a call through the gateway at `gateway` fails: the gateway holds the
-/// keys and the policy, so the person's part is their sign-in and their choices.
-fn through_gateway(failure: Failure, gateway: &str, model: &str) -> Option<String> {
-    Some(match failure {
-        Failure::Refused => format!(
-            "the gateway at {gateway} refused: renew your sign-in in GLAVE_GATEWAY_TOKEN, or ask \
-             whether your organization's policy allows {model}"
-        ),
-        Failure::NoCredit | Failure::OverBudget => {
-            "a budget the gateway keeps for you is spent: it says which".to_owned()
-        }
-        Failure::UnknownModel => format!(
-            "the gateway has no model {model}: choose another with --model or model in \
-             config.toml, or leave it unset for the gateway's own"
-        ),
-        Failure::Unreachable => {
-            format!("check the network, and [gateway] url in your config.toml ({gateway})")
-        }
-        Failure::TooLong => "the conversation is longer than the model's context window: run \
-             /compact, or start a new thread"
-            .to_owned(),
-        Failure::RateLimited | Failure::Unavailable | Failure::Silent | Failure::Malformed => {
-            format!("the gateway at {gateway} could not get an answer: try again shortly")
-        }
-        Failure::Rejected => return None,
-    })
-}
-
 /// How long the model may send nothing, from `GLAVE_IDLE_TIMEOUT` in seconds, when it is set.
 pub(crate) fn idle_timeout() -> anyhow::Result<Option<Duration>> {
     match std::env::var("GLAVE_IDLE_TIMEOUT") {
@@ -255,7 +186,6 @@ mod tests {
             provider,
             claude: None,
             model: "anthropic/claude-haiku-5.5".into(),
-            gateway: None,
             at: "GLAVE_BASE_URL".into(),
             key_from: KEY,
         }

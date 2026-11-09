@@ -27,7 +27,6 @@ use crate::connected::{Connected, WebSearch};
 use crate::credentials::Hosts;
 use crate::data::{Data, DataLog};
 use crate::gateway::GatewaySwitch;
-use crate::gateway::remote::Remote;
 use crate::mcp::Servers;
 use crate::project_folders::ProjectFolders;
 use crate::providers::{Built, Lineup, ModelAccounts};
@@ -79,11 +78,9 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
 }
 
 /// The MCP servers the setup turns on for the person's threads everywhere, in their home
-/// folder: their own, after the catalog of the gateway elsewhere, remote ones signed in with
-/// what the person `connected`.
+/// folder: their own, remote ones signed in with what the person `connected`.
 async fn mcp_servers(
     setup: &Setup,
-    remote: Option<&Remote>,
     processes: &Processes,
     connected: Option<&Arc<Connected>>,
     reachable: glave_mcp::Reachable,
@@ -95,12 +92,11 @@ async fn mcp_servers(
         Some(connected) => connected.signed().await,
         None => crate::connected::Signed::default(),
     };
-    let through_gateway = remote.is_some();
-    let wanted = crate::mcp::wanted(&home, chosen, constraints, through_gateway, &signed).await?;
+    let wanted = crate::mcp::wanted(&home, chosen, constraints, &signed).await?;
     let root = home::person()?;
     let connected = connected.map(Arc::clone);
     Ok(Arc::new(Servers::start(
-        wanted, &root, remote, processes, connected, reachable,
+        wanted, &root, processes, connected, reachable,
     )))
 }
 
@@ -127,21 +123,19 @@ pub(crate) async fn wire(
     let processes = home::reaped().await?;
     let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
-    let (remote, configured) = crate::providers::endpoint(choices)?;
+    let configured = crate::providers::endpoint(choices)?;
     let store = store(&setup, &processes).await?;
     let identity = identity::load_or_make(&store).await?;
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let credits = credits(choices, &store);
     let floor = choices.router_floor.as_ref().map(|floor| &floor.value);
-    let through_gateway = remote.is_some();
     let lined = line_up(
         args,
         lineup,
         &store,
         identity.person,
         (credits.as_ref(), floor),
-        through_gateway,
     );
     let lined = lined.await?;
     let (workspace, hosts, connected) =
@@ -151,7 +145,6 @@ pub(crate) async fn wire(
     let root = workspace.root().to_owned();
     let servers = mcp_servers(
         &setup,
-        remote.as_ref(),
         &processes,
         connected.as_ref(),
         crate::mcp::own_reachable(args, choices),
@@ -479,10 +472,9 @@ fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<DataLog>>> {
 }
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
-/// may connect here unless an organization sets up the models: through its gateway
-/// (`through_gateway`), or on a server people sign in to with OIDC, unless it is the server's
-/// own OpenRouter, whose catalog is kept the same way. Their calls are charged to `credits`,
-/// where the server keeps them.
+/// may connect here unless an organization sets up the models: on a server people sign in to
+/// with OIDC, unless it is the server's own OpenRouter, whose catalog is kept the same way.
+/// Their calls are charged to `credits`, where the server keeps them.
 async fn line_up(
     args: &Args,
     lineup: Lineup,
@@ -492,10 +484,9 @@ async fn line_up(
         Option<&Arc<Credits<DataLog>>>,
         Option<&policy::RouterFloorFile>,
     ),
-    through_gateway: bool,
 ) -> anyhow::Result<Lined> {
     let no_ledgers = !args.issuers.is_empty() && lineup.own_account().is_none();
-    let ledgers = if through_gateway || no_ledgers {
+    let ledgers = if no_ledgers {
         None
     } else {
         crate::providers::check_stand_in()?;

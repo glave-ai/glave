@@ -3,7 +3,9 @@
 //! 10,000-event thread from SQLite: one never compacted, read whole, and one compacted as its
 //! window fills, read from its end.
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
-//! on an idle machine, since these are wall-clock numbers.
+//! on an idle machine, since these are wall-clock numbers. The resume of the thread never
+//! compacted is the exception: its milliseconds are reported, and its budget is the instructions
+//! it takes, which unlike its milliseconds don't depend on the CPU (#1286).
 //!
 //! The size and the answered command are measured on the glave program `GLAVE_BUDGETS_BINARY`
 //! names when it is set: in CI, glave as the release builds it for x86-64 Linux
@@ -12,10 +14,10 @@
 //! but without the web app inside. The threads are recorded and resumed in this program, on
 //! glave's own allocator.
 //!
-//! `budgets record <folder>` and `budgets resume <folder>` count a resume's instructions, which
-//! unlike its milliseconds don't depend on the CPU (#1286): the first records the 10,000-event
-//! thread there at full speed, and the second, run under Valgrind, only resumes it, so what
-//! Valgrind counts is the resume (`budgets.yml`).
+//! `budgets record <folder>` and `budgets resume <folder>` count those instructions: the first
+//! records the 10,000-event thread there at full speed, and the second, run under Valgrind, only
+//! resumes it, so what Valgrind counts is the resume. `budgets instructions <count>` holds the
+//! count Valgrind gave to its budget (`budgets.yml`).
 //!
 //! It lives in a package with no program of its own, so building it links no second glave.
 
@@ -55,6 +57,11 @@ const RESUMES: usize = 10;
 /// The release binary's budget in MB (AGENTS.md), the one place it is set: the merge queue,
 /// `main` and a weekly run all run this benchmark (`budgets.yml`).
 const BINARY_MB: f64 = 50.0;
+/// The instructions one resume of the thread never compacted may take: AGENTS.md's resume
+/// budget as CI holds it, since a runner's CPU moves its milliseconds 2x and its count 0.1%
+/// (#1286). About 10% over the 454 million it took on every CPU measured in November 2026, and
+/// about the 100 ms of the table on the slowest of them.
+const RESUME_INSTRUCTIONS: u64 = 500_000_000;
 /// The environment variable naming the glave program to measure: in CI, the build that ships.
 const BINARY: &str = "GLAVE_BUDGETS_BINARY";
 /// How long glave has to start serving, to answer a command, and to stop once told: guards
@@ -71,6 +78,7 @@ fn main() -> anyhow::Result<()> {
     match arguments.as_slice() {
         ["record", folder] => runtime()?.block_on(record_to_count(Path::new(folder))),
         ["resume", folder] => runtime()?.block_on(resume_to_count(Path::new(folder))),
+        ["instructions", counted] => instructions(counted),
         // The budgets: with no arguments, or the `--bench` that `cargo bench` passes.
         _ => {
             let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
@@ -123,9 +131,12 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
         ),
         (
             "resume 10,000 events",
-            "< 100 ms",
-            format!("{:.1} ms (median of {RESUMES})", ms(resume)),
-            ms(resume) < 100.0,
+            "-",
+            format!(
+                "{:.1} ms (median of {RESUMES}), its budget in instructions",
+                ms(resume)
+            ),
+            true,
         ),
         (
             "resume it, compacted",
@@ -144,8 +155,29 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
             true,
         ),
     ];
+    report(&rows)
+}
+
+/// `budgets instructions <count>`: the instructions Valgrind counted in `budgets resume`,
+/// written as it prints them (`453,614,470`), held to their budget.
+fn instructions(counted: &str) -> anyhow::Result<()> {
+    let count: u64 = counted
+        .replace(',', "")
+        .parse()
+        .with_context(|| format!("{counted:?} is not a count of instructions"))?;
+    let budget = format!("<= {:.0} M", millions(RESUME_INSTRUCTIONS));
+    report(&[(
+        "resume 10,000 events",
+        budget.as_str(),
+        format!("{:.1} M instructions (one resume)", millions(count)),
+        count <= RESUME_INSTRUCTIONS,
+    )])
+}
+
+/// Prints each measurement beside its budget, and fails when any is over it.
+fn report(rows: &[(&str, &str, String, bool)]) -> anyhow::Result<()> {
     println!("\n{:<26} {:<10} measured", "budget", "target");
-    for (name, target, measured, within) in &rows {
+    for (name, target, measured, within) in rows {
         let mark = if *within { "" } else { "  OVER BUDGET" };
         println!("{name:<26} {target:<10} {measured}{mark}");
     }
@@ -489,4 +521,12 @@ fn ms(duration: Duration) -> f64 {
 )]
 fn mb(bytes: u64) -> f64 {
     bytes as f64 / 1_048_576.0
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a count in millions, for reading"
+)]
+fn millions(count: u64) -> f64 {
+    count as f64 / 1_000_000.0
 }

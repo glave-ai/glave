@@ -50,9 +50,6 @@ pub struct ConfigFile {
     /// Commands to run at points of a turn. They add up across files rather than the
     /// nearest winning: the person's run, and a trusted project's run too.
     pub hooks: Option<HooksFile>,
-    /// A gateway elsewhere to send model calls to, and to take the tool catalog from. Only
-    /// the person's own file may set it: the person's sign-in goes there.
-    pub gateway: Option<GatewayFile>,
     /// This project's memory: shared with the person's, isolated, or off.
     pub project_memory: Option<ProjectChoice>,
     /// Where spans and metrics go. Only the person's or the server's own file sets it.
@@ -361,22 +358,6 @@ pub struct ModelEntry {
     pub name: Option<String>,
 }
 
-/// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GatewayFile {
-    /// Where it is, such as `https://gateway.example.com`: https, or http only on this
-    /// computer.
-    pub url: String,
-}
-
-impl GatewayFile {
-    /// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
-    fn safe(&self) -> bool {
-        safe_to_send(&self.url, &[])
-    }
-}
-
 /// `[hooks]`: each point's hooks, under the names Claude Code and Codex give the points.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -440,8 +421,6 @@ pub struct PolicyFile {
     pub sandbox: SandboxRules,
     #[serde(default)]
     pub mcp: McpRules,
-    #[serde(default)]
-    pub budget: BudgetRules,
     #[serde(default)]
     pub projects: ProjectRules,
     #[serde(default)]
@@ -562,14 +541,6 @@ pub struct McpRules {
     pub trusted: Vec<String>,
 }
 
-/// `[budget]`.
-#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BudgetRules {
-    #[serde(default, deserialize_with = "dollars")]
-    pub person_per_day_usd: Option<Money>,
-}
-
 /// US dollars, none or more, as the number was written: `20`, or `5.5`, which TOML reads as
 /// a float, whose shortest form is the decimal written. No arithmetic is done on the float.
 fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Money>, D::Error> {
@@ -597,16 +568,6 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
     if let Some(hooks) = &file.hooks {
         Hooks::new(hooks.hooks())
             .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
-    }
-    if let Some(gateway) = &file.gateway
-        && !gateway.safe()
-    {
-        invalid!(
-            "{}: [gateway] url = {:?} is not https (http only to this computer): your sign-in \
-             goes there",
-            path.display(),
-            gateway.url
-        );
     }
     if let Some(telemetry) = &file.telemetry {
         let url = telemetry.otlp.trim();

@@ -7,10 +7,9 @@
 //! - **Fallback** is capability-checked (a target that cannot honour the request is skipped,
 //!   never sent a degraded one), sticky to the provider whose opaque reasoning the conversation
 //!   holds, and moves on only after failures that may pass.
-//! - **Budgets**: a signed-in caller's reserves a call's worst case before it is sent and
-//!   settles to what it cost, so calls running side by side never overshoot it.
-//! - **Credits**: where a server keeps them, each organization's money paid ahead, held and
-//!   settled the same way for every call that says whose work it is.
+//! - **Credits**: where a server keeps them, each organization's money paid ahead: every call
+//!   that says whose work it is holds its worst case before it is sent and settles to what it
+//!   cost, so calls running side by side never overshoot.
 //! - **Filters**: where a host keeps people's choices of who serves their models, each call
 //!   that says whose work it is goes only where they allow, at a router to the providers that
 //!   fit.
@@ -18,7 +17,6 @@
 //!
 //! The contract is `specs/gateway.md`.
 
-mod budget;
 mod credits;
 mod estimate;
 mod filtering;
@@ -29,7 +27,6 @@ mod routes;
 mod target;
 mod telemetry;
 
-pub use budget::{BudgetKey, Budgets, OverBudget};
 pub use credits::{Account, Credits, CreditsError};
 pub use filtering::{Facts, Filtering, Router, hidden_by};
 pub use gateway::Gateway;

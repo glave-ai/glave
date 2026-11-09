@@ -16,8 +16,8 @@ pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
 use crate::protocol::{
-    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, PushInfo, Reply,
-    SearchInfo, ThreadSummary, Told, Usage,
+    ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, ListedCommand, PushInfo,
+    Reply, SearchInfo, ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -47,6 +47,10 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
+        Ok(Reply::Commands { commands, .. }) => commands
+            .iter()
+            .flat_map(listening_told)
+            .any(Told::translatable),
         Ok(Reply::Passkeys {
             notice: Some(notice),
             ..
@@ -117,6 +121,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
+        Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
             notice: Some(notice),
             ..
@@ -143,6 +148,20 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
     }
 }
 
+/// Writes what `commands` say of where they listen in `language`.
+fn commands_in(commands: &mut [ListedCommand], language: Language) {
+    for command in commands {
+        if let Some(listens) = &mut command.listens {
+            listens.translate(language);
+        }
+        for port in &mut command.ports {
+            if let Some(unframed) = &mut port.unframed {
+                unframed.translate(language);
+            }
+        }
+    }
+}
+
 /// Writes the server's own sentences in `events` in `language`.
 fn events_in(events: &mut [glave_event::RawEvent], language: Language) {
     for event in events {
@@ -150,6 +169,15 @@ fn events_in(events: &mut [glave_event::RawEvent], language: Language) {
             *event = written;
         }
     }
+}
+
+/// What `command` says of where it listens.
+fn listening_told(command: &ListedCommand) -> impl Iterator<Item = &Told> {
+    let unframed = command
+        .ports
+        .iter()
+        .filter_map(|port| port.unframed.as_ref());
+    command.listens.iter().chain(unframed)
 }
 
 /// Writes the catalog's words for `categories`, `tags` and `connectors` in `language`.

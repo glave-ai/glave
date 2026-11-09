@@ -5,7 +5,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use glave_event::{Money, Permissions};
+use glave_event::Permissions;
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
@@ -41,8 +41,6 @@ pub enum Kind {
     McpUntrusted(Vec<String>),
     /// These MCP servers are vouched for, though remote or a project's.
     McpTrusted(Vec<String>),
-    /// Each person's budget per UTC day, in US dollars.
-    PersonPerDayUsd(Money),
     /// Projects at these paths (globs) are trusted without asking.
     ProjectsTrusted(Vec<String>),
     /// People and projects may not run hooks of their own.
@@ -76,9 +74,6 @@ impl fmt::Display for Kind {
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::McpUntrusted(names) => write!(f, "[mcp] untrusted = {}", quoted(names)),
             Self::McpTrusted(names) => write!(f, "[mcp] trusted = {}", quoted(names)),
-            Self::PersonPerDayUsd(usd) => {
-                write!(f, "[budget] person_per_day_usd = {}", usd.decimal())
-            }
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::PushOff => f.write_str("[notifications] push = false"),
@@ -150,9 +145,6 @@ impl Constraints {
             }
             if !file.mcp.trusted.is_empty() {
                 add(Kind::McpTrusted(file.mcp.trusted.clone()));
-            }
-            if let Some(usd) = file.budget.person_per_day_usd {
-                add(Kind::PersonPerDayUsd(usd));
             }
             if !file.projects.trusted.is_empty() {
                 add(Kind::ProjectsTrusted(file.projects.trusted.clone()));
@@ -302,26 +294,6 @@ impl Constraints {
         })
     }
 
-    /// The smallest daily budget per person, and the rule that set it.
-    pub fn person_per_day_usd(&self) -> Option<&Rule> {
-        self.rules
-            .iter()
-            .filter_map(|rule| match rule.kind {
-                Kind::PersonPerDayUsd(usd) => Some((usd, rule)),
-                _ => None,
-            })
-            .min_by_key(|(usd, _)| usd.nanos)
-            .map(|(_, rule)| rule)
-    }
-
-    /// The smallest daily budget per person.
-    pub fn person_per_day(&self) -> Option<Money> {
-        self.person_per_day_usd().and_then(|rule| match rule.kind {
-            Kind::PersonPerDayUsd(usd) => Some(usd),
-            _ => None,
-        })
-    }
-
     /// The servers every `[mcp] catalog` rule offers (each narrows the one before), and the
     /// first such rule; `None` when no rule names a catalog.
     pub fn mcp_catalog(&self) -> Option<(Vec<String>, &Rule)> {
@@ -340,27 +312,6 @@ impl Constraints {
             }
         }
         found
-    }
-
-    /// The rules glave cannot enforce yet, with why. glave refuses to run under any of them,
-    /// rather than quietly not keeping them.
-    pub(crate) fn not_enforced(&self) -> Vec<(&Rule, &'static str)> {
-        let budget = self.person_per_day_usd().map(|rule| {
-            (
-                rule,
-                "glave keeps a daily budget only as a gateway serving many (glave gateway \
-                 serve)",
-            )
-        });
-        budget.into_iter().collect()
-    }
-
-    /// The rules a gateway serving many cannot enforce yet: the daily budget it keeps.
-    pub fn not_enforced_by_the_gateway(&self) -> Vec<(&Rule, &'static str)> {
-        self.not_enforced()
-            .into_iter()
-            .filter(|(rule, _)| !matches!(rule.kind, Kind::PersonPerDayUsd(_)))
-            .collect()
     }
 
     /// The limits every `[tasks]` rule sets at once: the smallest of each.

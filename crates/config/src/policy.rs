@@ -159,14 +159,12 @@ fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<
 }
 
 /// The layer of a project's `config.toml` at `path`, choosing `values` less what a project
-/// never chooses. A project never chooses the gateway: the person's sign-in would go where it
-/// said. Nor where telemetry goes,
+/// never chooses. A project never chooses where telemetry goes,
 /// nor where history is kept, nor where people's computers run, nor which server to sign in to, nor where people reach this one,
 /// nor which cloud the organization's credentials go to, nor which app their GitHub sign-in
 /// goes to, nor which mail server sign-in links go through, nor who pays for models. It may take the network away from sandboxed commands, never give it back.
 fn project_layer(path: &Path, values: ConfigFile) -> Layer {
     let values = ConfigFile {
-        gateway: None,
         telemetry: None,
         store: None,
         computers: None,
@@ -211,7 +209,7 @@ pub fn constraints(text: &str, path: &Path) -> crate::Result<Constraints> {
 }
 
 /// The files of `paths` that exist, read as policies, in order.
-pub async fn policy_files(paths: &[PathBuf]) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
+pub(crate) async fn policy_files(paths: &[PathBuf]) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
     let mut policies = Vec::new();
     for path in paths {
         if let Some(text) = read(path).await? {

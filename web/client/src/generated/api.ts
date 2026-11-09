@@ -607,6 +607,25 @@ export type LineKind = "same" | "removed" | "added";
 /** Which link's code a passkey is made with (`passkey/create_options`). */
 export type LinkKind = "setup" | "invite" | "signup" | "recovery";
 
+/** A command a thread keeps running in the background, with where it listens. */
+export type ListedCommand = {
+  /** What it runs, as the agent wrote it. */
+  readonly command: string;
+  /** Which command, for `command/stop`. */
+  readonly id: CommandId;
+  /** Where it listens, in a sentence: "Listening on 4200 and 4201." */
+  readonly listens?: string | null;
+  /**
+   * The TCP ports it listens on, lowest first, where the caller reaches this computer's
+   * loopback: looked for only then, and on the server's own computer.
+   */
+  readonly ports?: readonly (Port)[];
+  /** When it started, once the thread has recorded it. */
+  readonly started_at?: At | null;
+  /** What it is doing, in plain words. */
+  readonly summary: string;
+};
+
 /** A logo's content. */
 export type Logo = {
   /** In base64. */
@@ -880,6 +899,23 @@ export type PlanStep = {
   readonly step: string;
 };
 
+/**
+ * A port a command listens on, and the preview of what it serves there, where glave
+ * previews it.
+ */
+export type Port = {
+  /** Whether a frame of the app shows it too, as its Content Security Policy allows. */
+  readonly framed: boolean;
+  readonly port: number;
+  /** Why a frame can't show it, in a sentence, where it opens in a new tab alone. */
+  readonly unframed?: string | null;
+  /**
+   * Where a browser on this computer opens what it serves: the server's own address, on
+   * this computer's loopback; none where glave previews nothing.
+   */
+  readonly url?: string | null;
+};
+
 /** How precisely a provider serves a model's weights, from how it says they are stored. */
 export type Precision = "unstated" | "four_bit" | "six_bit" | "eight_bit" | "full";
 
@@ -1046,26 +1082,6 @@ export type ReplySources = {
   readonly reply: Seq;
   /** What they are, in a sentence: "Sources: 3 pages". */
   readonly sentence: string;
-};
-
-/**
- * A command a thread keeps running in the background, as a client lists it: what it runs,
- * since when, and a sentence saying so (`command/list`).
- */
-export type RunningCommand = {
-  /** What it runs, as the agent wrote it. */
-  readonly command: string;
-  /** Which command, for `command/stop`. */
-  readonly id: CommandId;
-  /**
-   * The TCP ports it listens on, lowest first, where the caller reaches this computer's
-   * loopback: looked for only then, and on the server's own computer.
-   */
-  readonly ports?: readonly (number)[];
-  /** When it started, once the thread has recorded it. */
-  readonly started_at?: At | null;
-  /** What it is doing, in plain words. */
-  readonly summary: string;
 };
 
 /** Identifies one schedule: a prompt that runs as a task at set times. */
@@ -1759,8 +1775,14 @@ export type CommandListParams = {
   readonly thread: ThreadId;
 };
 
+/** The thread's commands running in the background, each with where it listens. */
 export type CommandListResult = {
-  readonly commands: readonly (RunningCommand)[];
+  readonly commands: readonly (ListedCommand)[];
+  /**
+   * Whether what they serve is previewed for the caller here (each port's `url`): where
+   * it isn't, a client need not look for previews again.
+   */
+  readonly previewed: boolean;
 };
 
 export type CommandStopParams = {
