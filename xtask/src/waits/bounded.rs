@@ -460,10 +460,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/computer/src/worker/reconnect.rs",
-        "let mut failed = self.failed.lock().await;",
+        "let _reopening = self.reopening.lock().await;",
         1,
-        "held while the connection to a worker is opened again, within the worker's START_WAIT \
-         and the remote computer's deadlines",
+        "held while the connection to a worker is opened again, within BRIDGE_AGAIN and the \
+         remote computer's deadlines",
     ),
     (
         "crates/cli/src/reread.rs",

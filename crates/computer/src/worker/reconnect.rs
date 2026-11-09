@@ -1,11 +1,9 @@
-//! A worker's connection, opened again when it dies: once, with a fresh token the backend
-//! gives the worker (the first one only opens connections for its first ten minutes). The
-//! call that saw it die is never sent again; the next call goes over the new connection, so
-//! releasing a worker still reaches it to save its work. A worker reached over its standard
-//! input and output (no network, on Docker) cannot be reached again: that stream was its only
-//! door.
+//! A worker's connection, opened again when it dies: through a new bridge into it, with a fresh
+//! token the backend gives the worker (the first one only opens connections for its first ten
+//! minutes), tried again at each call, since a bridge costs one exec and the worker goes on
+//! without one. The call that saw it die is never sent again; the next call goes over the new
+//! connection, so releasing a worker still reaches it to save its work.
 
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -16,7 +14,6 @@ use tokio::time::Instant;
 use super::TOKEN_LIFETIME;
 use super::backend::Backend;
 use crate::remote::RemoteComputers;
-use crate::tls::{Fingerprint, connect_tls};
 use crate::token::Token;
 
 /// How long a bridge is tried again while the cluster's API server does not answer, as while
@@ -25,24 +22,11 @@ const BRIDGE_AGAIN: Duration = Duration::from_mins(1);
 /// How often it is tried in that time.
 const BRIDGE_RETRY: Duration = Duration::from_secs(1);
 
-/// How a worker's connection is opened again.
-pub(crate) enum Door {
-    /// Over TLS at the address it listens on, trusting only the certificate it shows.
-    Tls(SocketAddr, Fingerprint),
-    /// Through a new bridge into it ([`Backend::bridge`]): tried again at each call, since a
-    /// bridge costs one exec and the worker goes on without one.
-    Bridge,
-    /// Not at all: its standard input and output were its only door.
-    None,
-}
-
 /// One worker's connection.
 pub(crate) struct Connection {
     remote: Mutex<Arc<RemoteComputers>>,
-    door: Door,
-    /// Why opening the connection again failed: then it is not tried again, but through a
-    /// bridge.
-    failed: tokio::sync::Mutex<Option<String>>,
+    /// Held while the connection is opened again, so one call opens it and the others use it.
+    reopening: tokio::sync::Mutex<()>,
 }
 
 /// Connects to glave in the worker `name` through a new bridge into it, signed in with `token`.
@@ -59,11 +43,10 @@ pub(crate) async fn bridged(
 }
 
 impl Connection {
-    pub(crate) fn new(remote: RemoteComputers, door: Door) -> Self {
+    pub(crate) fn new(remote: RemoteComputers) -> Self {
         Self {
             remote: Mutex::new(Arc::new(remote)),
-            door,
-            failed: tokio::sync::Mutex::new(None),
+            reopening: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -85,19 +68,13 @@ impl Connection {
         if remote.closed().is_none() {
             return Ok(remote);
         }
-        let mut failed = self.failed.lock().await;
+        let _reopening = self.reopening.lock().await;
         // Another call may have opened it again while this one waited.
         let remote = self.now()?;
         let Some(died) = remote.closed() else {
             return Ok(remote);
         };
-        if let Some(why) = failed.as_ref() {
-            return Err(ComputerError::Unreachable(format!(
-                "the connection to worker {name} died ({died}) and could not be opened again: \
-                 {why}"
-            )));
-        }
-        match self.again(name, backend).await {
+        match bridged_again(name, backend).await {
             Ok(fresh) => {
                 let fresh = Arc::new(fresh);
                 if let Ok(mut remote) = self.remote.lock() {
@@ -105,36 +82,10 @@ impl Connection {
                 }
                 Ok(fresh)
             }
-            Err(error) => {
-                let why = error.to_string();
-                if !matches!(self.door, Door::Bridge) {
-                    *failed = Some(why.clone());
-                }
-                Err(ComputerError::Unreachable(format!(
-                    "the connection to worker {name} died ({died}) and could not be opened \
-                     again: {why}"
-                )))
-            }
-        }
-    }
-
-    /// Gives the worker a fresh token and connects with it.
-    async fn again(
-        &self,
-        name: &str,
-        backend: &dyn Backend,
-    ) -> Result<RemoteComputers, ComputerError> {
-        match &self.door {
-            Door::Tls(address, fingerprint) => {
-                let token = renewed(name, backend).await?;
-                connect_tls(*address, fingerprint, token.secret()).await
-            }
-            Door::Bridge => bridged_again(name, backend).await,
-            Door::None => Err(ComputerError::Unsupported(
-                "the worker has no network: glave reached it over its standard input and \
-                 output, which cannot be opened again"
-                    .into(),
-            )),
+            Err(error) => Err(ComputerError::Unreachable(format!(
+                "the connection to worker {name} died ({died}) and could not be opened again: \
+                 {error}"
+            ))),
         }
     }
 }

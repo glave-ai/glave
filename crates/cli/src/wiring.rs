@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_computer::WorkerComputers;
 use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_gateway::Credits;
@@ -55,8 +54,6 @@ pub(crate) struct Wired {
     pub(crate) choices: Choices,
     /// The most a sandbox here allows, which each mode narrows: for the banner and receipts.
     pub(crate) sandbox: Option<Sandbox>,
-    /// The workers threads work on, with `--on cloud`.
-    pub(crate) workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
     pub(crate) memory: Option<crate::memory::Running>,
     /// The store's log, for the daily work of the person's server.
@@ -153,17 +150,9 @@ pub(crate) async fn wire(
         crate::mcp::own_reachable(args, choices),
     )
     .await?;
-    let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
+    let scope = scope_here(args, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
-    let (on_workers, workers, homes) = crate::cloud::workers(
-        choices,
-        constraints,
-        &folder,
-        scope.project(),
-        &processes,
-        store.leases(),
-    )
-    .await?;
+    let homes = crate::cloud::homes(choices, constraints, store.leases()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(
         &setup,
@@ -191,7 +180,6 @@ pub(crate) async fn wire(
         own: servers.tools(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
-        workers: on_workers,
         identity_provider: !args.issuers.is_empty(),
         tasks: task_limits(constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
@@ -222,7 +210,7 @@ pub(crate) async fn wire(
     server.answer_filters(&filters);
     tidy(memory.as_ref(), &tidier, tidy_model);
     let reach = crate::serving::reach(args, choices, &store, identity.person).await?;
-    if start_folder(args, &setup.choices, &folder) {
+    if start_folder(args, &folder) {
         keep_here(&server, scope.project(), &root).await?;
     }
     Ok(Wired {
@@ -233,7 +221,6 @@ pub(crate) async fn wire(
         root,
         choices: setup.choices,
         sandbox: setup.sandbox,
-        workers,
         memory,
         log: store.log(),
         store: store.clone(),
@@ -255,13 +242,12 @@ async fn say(told: &[String], projects: &ProjectFolders, folder: &Path) {
 /// `person`'s Chats.
 async fn scope_here(
     args: &Args,
-    choices: &Choices,
     store: &Data,
     folder: &Path,
     root: &Path,
     person: glave_event::PrincipalId,
 ) -> anyhow::Result<glave_ports::Scope> {
-    if start_folder(args, choices, folder) {
+    if start_folder(args, folder) {
         crate::projects::here(store, root, person).await
     } else {
         crate::projects::personal(store, person).await
@@ -269,16 +255,11 @@ async fn scope_here(
 }
 
 /// Whether `folder`, the folder glave starts in, is a project of its own: for a turn run in
-/// it, or a program's own server; for the person's server, which has no folder of its own
-/// (`specs/one-server.md`), only where its threads go to workers, which clone that folder's
-/// repository; never for a server that only answers a command's requests ([`here`]), and
-/// never where the folder is never a project.
-fn start_folder(args: &Args, choices: &Choices, folder: &Path) -> bool {
-    let own = if args.person_s_server() {
-        choices.on.value == policy::On::Cloud
-    } else {
-        args.stdio || args.turn()
-    };
+/// it, or a program's own server; never for the person's server, which has no folder of its
+/// own (`specs/one-server.md`), nor for a server that only answers a command's requests
+/// ([`here`]), nor where the folder is never a project.
+fn start_folder(args: &Args, folder: &Path) -> bool {
+    let own = !args.person_s_server() && (args.stdio || args.turn());
     own && !crate::projects::never_a_project(folder)
 }
 
@@ -561,11 +542,8 @@ pub(crate) async fn here() -> anyhow::Result<Wired> {
 }
 
 impl Wired {
-    /// Lets go of what the server started: workers, MCP servers, projects' tools, memory.
+    /// Lets go of what the server started: MCP servers, projects' tools, memory.
     pub(crate) async fn close(&self) {
-        if let Some(workers) = &self.workers {
-            crate::cloud::release(&self.server, workers).await;
-        }
         self.servers.close().await;
         self.projects.close().await;
         if let Some(memory) = &self.memory {

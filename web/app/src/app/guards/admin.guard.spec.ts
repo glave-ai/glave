@@ -25,14 +25,14 @@ describe('adminGuard', () => {
   }
 
   it('lets an organization’s admins and owners in', async () => {
-    const organization = { exists: { organization: true, workers: false } };
+    const organization = { exists: { organization: true } };
     expect(await run({ ...organization, role: 'admin' })).toBe(true);
     TestBed.resetTestingModule();
     expect(await run({ ...organization, role: 'owner' })).toBe(true);
   });
 
   it('sends a member to their Chats', async () => {
-    const said = { exists: { organization: true, workers: false }, role: 'member' };
+    const said = { exists: { organization: true }, role: 'member' };
     expect(sentTo(await run(said))).toBe('/');
   });
 

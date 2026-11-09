@@ -1,18 +1,15 @@
-//! Turns and releases on a computer that fails the way remote ones do. A computer that dies
-//! in the middle of a command gives the model a failed tool result and the turn ends as
-//! usual, and the thread resumes. Releasing a worker whose connection died still saves its
-//! work when it can be reached again, and when it cannot, what was lost is recorded and
-//! returned, never dropped silently.
+//! Turns on a computer that fails the way remote ones do. A computer that dies in the middle of
+//! a command gives the model a failed tool result and the turn ends as usual, and the thread
+//! resumes.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::support::*;
-use crate::worker::{branches, hands_back, origin};
 use glave_computer::{LocalComputers, RemoteComputers, serve};
-use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
-use glave_harness::{AllowAll, Cancel, Place, Workers, Workspace, wip_branch};
+use glave_event::{Body, Event, Outcome, StopReason};
+use glave_harness::{AllowAll, Cancel, Workspace};
 use glave_ports::computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
     FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel, Save,
@@ -288,87 +285,5 @@ fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
             .filter(|event| matches!(event.body, Body::TurnEnded(_)))
             .count();
         assert_eq!(endings, 2);
-    });
-}
-
-/// A thread on a worker that wrote a file and handed one back, its computers `faulty`.
-async fn worked(
-    dir: &Path,
-    origin: &Path,
-    faulty: &Arc<Faulty>,
-) -> (
-    glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
-    glave_harness::Thread,
-) {
-    let (harness, _) = harness_with(
-        workspace(dir).await,
-        hands_back(),
-        AllowAll,
-        InMemoryLog::new(),
-        1,
-        settings(),
-    );
-    let harness = harness.with_workers(Workers {
-        computers: Arc::clone(faulty) as Arc<dyn Computers>,
-        sources: Sources::Git {
-            url: origin.to_string_lossy().into_owned(),
-            at: Some("main".into()),
-        },
-        attachments: Vec::new(),
-    });
-    let place = Place::Worker(Environment::host());
-    let mut thread = thread_in(&harness, place).await;
-    turn(&harness, &mut thread, "do it").await;
-    (harness, thread)
-}
-
-#[test]
-fn a_worker_reached_again_after_its_connection_died_is_still_saved() {
-    let dir = folder("faults-release-again");
-    let origin = origin(&dir);
-    block_on!(async {
-        let faulty = Arc::new(Faulty::new(local(&dir)));
-        let (harness, mut thread) = worked(&dir, &origin, &faulty).await;
-        // The call that finds the connection dead fails; the next one is reached again.
-        faulty.failing.store(1, Ordering::SeqCst);
-        let released = harness.release_worker(&mut thread).await.unwrap().unwrap();
-        let wip = wip_branch(thread.id);
-        assert_eq!(released.branch.as_deref(), Some(wip.as_str()));
-        assert!(branches(&origin).contains(&wip));
-        assert_eq!(
-            released.files,
-            vec![("report.md".to_owned(), Bytes::new(b"done\n"))],
-            "reading handed-back files is tried again: it changes nothing"
-        );
-        assert_eq!(released.lost, None);
-    });
-}
-
-#[test]
-fn a_worker_that_cannot_be_reached_again_records_and_returns_what_was_lost() {
-    let dir = folder("faults-release-lost");
-    let origin = origin(&dir);
-    block_on!(async {
-        let faulty = Arc::new(Faulty::new(local(&dir)));
-        let (harness, mut thread) = worked(&dir, &origin, &faulty).await;
-        faulty.failing.store(u32::MAX, Ordering::SeqCst);
-        let released = harness.release_worker(&mut thread).await.unwrap().unwrap();
-        assert_eq!(released.branch, None);
-        let lost = released.lost.unwrap();
-        assert!(lost.contains("could not be pushed to glave/wip/"), "{lost}");
-        assert!(lost.contains("could not be opened again"), "{lost}");
-        assert!(!branches(&origin).contains("glave/wip"));
-        let recorded = events(harness.log(), thread.id).await;
-        let removed = recorded.iter().find_map(|event| match &event.body {
-            Body::WorkspaceRemoved(removed) => Some(removed.clone()),
-            _ => None,
-        });
-        let removed = removed.unwrap();
-        assert_eq!(removed.reason, RemovedReason::Released);
-        assert_eq!(
-            removed.lost.as_deref(),
-            Some(lost.as_str()),
-            "recorded, not only said"
-        );
     });
 }

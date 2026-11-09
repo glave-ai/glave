@@ -1,9 +1,7 @@
 //! `glave computer serve`: this machine as a computer for a harness elsewhere, over the
-//! computer protocol (`specs/computers.md`) on stdio, on TCP at 127.0.0.1, over TLS at any
-//! address (how a worker on Docker is reached), or on a Unix socket; and `glave computer
-//! bridge`, which carries one connection between its standard input and output and that socket
-//! (how a computer in a Pod is reached, through an exec); and `glave computer fence`, which
-//! refuses cloud metadata in its network namespace (how a worker on Docker is kept from it).
+//! computer protocol (`specs/computers.md`) on stdio, over TLS at any address, or on a Unix
+//! socket; and `glave computer bridge`, which carries one connection between its standard
+//! input and output and that socket (how a computer in a Pod is reached, through an exec).
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -11,10 +9,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
 use glave_computer::{
-    Identity, Idle, Keeper, Largest, LocalComputers, MIN_SECRET, Tokens, bridge, listen_socket,
-    serve, serve_socket, serve_tcp, serve_tls,
+    Identity, Idle, Keeper, Largest, LocalComputers, Tokens, bridge, listen_socket, serve,
+    serve_socket, serve_tls,
 };
 use glave_ports::computer::Computers;
 use glave_ports::{Clock as _, SystemClock};
@@ -30,17 +28,14 @@ glave computer: this machine as a computer for a harness elsewhere
 Usage:
   glave computer serve --stdio       serve the computer protocol (JSON-RPC 2.0, one message
                                      per line) to the program that started glave
-  glave computer serve --tcp <port>  serve it on 127.0.0.1:<port> to clients that first send
-                                     connection/authenticate with $GLAVE_COMPUTER_TOKEN
   glave computer serve --tls <host:port> <folder> [--until-input-ends]
                                      serve it over TLS on any address, with cert.pem, key.pem
                                      and token in <folder> (the token file: the secret, then
                                      how many seconds it opens connections, counted on this
                                      machine's clock from when glave first reads it; read
-                                     again for each connection, so it can be renewed); how
-                                     a harness reaches a worker on Docker. With
+                                     again for each connection, so it can be renewed). With
                                      --until-input-ends, it ends when its standard input
-                                     does, as a worker ends with the glave that started it
+                                     does, as it ends with the program that started it
   glave computer serve --socket <path> <folder> [--idle <minutes>] [--keep-disk]
                                      serve it on a Unix socket at <path>, open to this user
                                      alone, to clients that first send the token in <folder>
@@ -57,9 +52,6 @@ Usage:
                                      and the computer serving on the socket at <path>,
                                      waiting up to 30 seconds for it to be there; it ends
                                      when the computer closes the connection
-  glave computer fence               refuse cloud metadata addresses in this network
-                                     namespace (Linux, with NET_ADMIN), all but DNS on port
-                                     53; how a worker on Docker is kept from them
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -71,15 +63,12 @@ enum Asked {
     Serve(Transport),
     /// Carry one connection to the computer serving on the socket at the path.
     Bridge(PathBuf),
-    /// Refuse cloud metadata in this network namespace.
-    Fence,
 }
 
 /// How to serve.
 #[derive(Debug, PartialEq, Eq)]
 enum Transport {
     Stdio,
-    Tcp(SocketAddr),
     /// The address, the folder of the identity and token, and until when it serves.
     Tls(SocketAddr, PathBuf, Until),
     /// The socket's path, the folder of the token, and how a person's computer runs.
@@ -99,8 +88,7 @@ struct Person {
 enum Until {
     /// Until accepting fails, or it is stopped.
     Stopped,
-    /// Until its standard input ends, as a worker on Docker ends with the glave that started
-    /// it.
+    /// Until its standard input ends, as it ends with the program that started it.
     InputEnds,
 }
 
@@ -144,17 +132,6 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
     let serving = |transport| Ok(Asked::Serve(transport));
     match arguments {
         [serve, stdio] if serve == "serve" && stdio == "--stdio" => serving(Transport::Stdio),
-        [serve, tcp, at] if serve == "serve" && tcp == "--tcp" => {
-            let address = address(at, "--tcp")?;
-            if address.ip().is_loopback() {
-                serving(Transport::Tcp(address))
-            } else {
-                Err(format!(
-                    "--tcp {address} is not on this machine; serving computers across machines \
-                     needs --tls"
-                ))
-            }
-        }
         [serve, tls, at, folder, rest @ ..] if serve == "serve" && tls == "--tls" => {
             let until = match rest {
                 [] => Until::Stopped,
@@ -175,12 +152,10 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
             ))
         }
         [bridge, path] if bridge == "bridge" => Ok(Asked::Bridge(PathBuf::from(path))),
-        [fence] if fence == "fence" => Ok(Asked::Fence),
         _ => Err(
-            "expected: glave computer serve --stdio, --tcp <port>, --tls <host:port> <folder> \
+            "expected: glave computer serve --stdio, --tls <host:port> <folder> \
              [--until-input-ends], or --socket <path> <folder> [--idle <minutes>] [--keep-disk]; \
-             or glave \
-             computer bridge <path>, or glave computer fence"
+             or glave computer bridge <path>"
                 .into(),
         ),
     }
@@ -220,9 +195,6 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
             carried.with_context(|| format!("bridging to {}", path.display()))
         }
         Asked::Serve(transport) => runtime.block_on(run(transport)),
-        Asked::Fence => {
-            glave_computer::fence().context("could not refuse cloud metadata in this namespace")
-        }
     };
     match ran {
         Ok(()) => ExitCode::SUCCESS,
@@ -253,7 +225,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
     // the socket, which a sandboxed command with the network may otherwise reach.
     let hidden: Vec<PathBuf> = match &transport {
         Transport::Socket(path, folder, _) => vec![folder.clone(), path.clone()],
-        Transport::Stdio | Transport::Tcp(_) | Transport::Tls(..) => Vec::new(),
+        Transport::Stdio | Transport::Tls(..) => Vec::new(),
     };
     let computers = crate::helpers::with_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
@@ -271,23 +243,6 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             serve(computers, input, tokio::io::stdout(), None)
                 .await
                 .context("serving on stdio")
-        }
-        Transport::Tcp(address) => {
-            let Some(token) = std::env::var("GLAVE_COMPUTER_TOKEN")
-                .ok()
-                .filter(|token| token.len() >= MIN_SECRET)
-            else {
-                bail!(
-                    "glave computer serve --tcp needs GLAVE_COMPUTER_TOKEN, at least \
-                     {MIN_SECRET} characters: a listener never runs without one"
-                );
-            };
-            let listener = TcpListener::bind(address)
-                .await
-                .with_context(|| format!("could not listen on {address}"))?;
-            serve_tcp(computers, listener, token)
-                .await
-                .with_context(|| format!("serving on {address}"))
         }
         Transport::Tls(address, folder, until) => {
             let tls = Identity::acceptor(
@@ -386,18 +341,12 @@ mod tests {
     }
 
     #[test]
-    fn serve_takes_one_transport_and_only_tls_leaves_this_machine() {
+    fn serve_takes_one_transport() {
         assert_eq!(
             parse(&words("serve --stdio")),
             Ok(Asked::Serve(Transport::Stdio))
         );
-        assert_eq!(
-            parse(&words("serve --tcp 7070")),
-            Ok(Asked::Serve(Transport::Tcp(
-                "127.0.0.1:7070".parse().unwrap()
-            )))
-        );
-        assert!(parse(&words("serve --tcp 0.0.0.0:7070")).is_err());
+        assert!(parse(&words("serve --tcp 7070")).is_err());
         assert_eq!(
             parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls")),
             Ok(Asked::Serve(Transport::Tls(
@@ -420,7 +369,7 @@ mod tests {
         assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --other")).is_err());
         assert!(parse(&words("serve --tls 0.0.0.0:7070")).is_err());
         assert!(parse(&words("serve")).is_err());
-        assert!(parse(&words("serve --stdio --tcp 1")).is_err());
+        assert!(parse(&words("serve --stdio --tls 1")).is_err());
         assert!(parse(&words("run")).is_err());
     }
 
@@ -479,8 +428,7 @@ mod tests {
             parse(&words("bridge /opt/glave/glave.sock")),
             Ok(Asked::Bridge(socket()))
         );
-        assert_eq!(parse(&words("fence")), Ok(Asked::Fence));
-        assert!(parse(&words("fence --now")).is_err());
+        assert!(parse(&words("fence")).is_err());
         assert!(parse(&words("bridge")).is_err());
         assert!(parse(&words("bridge a b")).is_err());
     }

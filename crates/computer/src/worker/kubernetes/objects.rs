@@ -367,17 +367,17 @@ pub(crate) fn memory(mib: u32) -> String {
 pub(crate) fn files(glave: &[u8], spec: &Spec) -> Result<Vec<u8>, TooLong> {
     let token = spec.token.to_file();
     archive(&[
-        Entry::File {
+        Entry {
             name: "opt/glave/glave",
             mode: 0o755,
             content: glave,
         },
-        Entry::File {
+        Entry {
             name: TOKEN,
             mode: 0o600,
             content: token.as_bytes(),
         },
-        Entry::File {
+        Entry {
             name: READY,
             mode: 0o644,
             content: b"",

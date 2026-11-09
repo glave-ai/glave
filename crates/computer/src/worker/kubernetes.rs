@@ -34,10 +34,7 @@ use kube::{Api, Client, Config};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{
-    Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started, Stream, saying,
-};
-use super::docker::elf_machine;
+use super::backend::{Backend, COPIED_WITHIN, Listed, STARTED_BY, Spec, Started, Stream, saying};
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Resized, Shape};
 pub use people::{Holding, Leasing, People, person_sandbox};
@@ -266,7 +263,7 @@ impl Kubernetes {
         name: &str,
         spec: &Spec,
         glave: &[u8],
-    ) -> Result<Link, ComputerError> {
+    ) -> Result<(), ComputerError> {
         self.start_on(name, spec, glave, None).await
     }
 
@@ -278,7 +275,7 @@ impl Kubernetes {
         spec: &Spec,
         glave: &[u8],
         home: Option<Home<'_>>,
-    ) -> Result<Link, ComputerError> {
+    ) -> Result<(), ComputerError> {
         let arch = objects::arch(elf_machine(glave));
         let shape = Shape {
             name,
@@ -309,13 +306,12 @@ impl Kubernetes {
         if let Some(home) = home
             && self.serves_its_image_glave(name, spec, &home).await?
         {
-            return Ok(Link::Bridged);
+            return Ok(());
         }
         let files = objects::files(glave, spec).map_err(|long| {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
-        self.copy_in(name, &files, "glave").await?;
-        Ok(Link::Bridged)
+        self.copy_in(name, &files, "glave").await
     }
 
     /// Waits for the worker's container to run.
@@ -504,6 +500,15 @@ impl Kubernetes {
     }
 }
 
+/// The ELF machine of a 64-bit little-endian executable; `None` for anything else.
+fn elf_machine(bytes: &[u8]) -> Option<u16> {
+    let head = bytes.first_chunk::<20>()?;
+    let [0x7f, b'E', b'L', b'F', 2, 1, .., low, high] = *head else {
+        return None;
+    };
+    Some(u16::from_le_bytes([low, high]))
+}
+
 /// The namespace of the service account a Pod runs as, in every container of one.
 const POD_NAMESPACE: &str = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
 
@@ -541,7 +546,7 @@ impl Backend for Kubernetes {
                 Err(error) => Err(error),
             };
             match started {
-                Ok(link) => Ok(Started { name, link }),
+                Ok(()) => Ok(Started { name }),
                 Err(error) => {
                     let said = self.logs(&name).await;
                     let _ = self.remove(&name).await;

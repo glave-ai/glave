@@ -44,13 +44,11 @@ jobs:
         include:
           - libc: glibc
             runner: ubuntu-latest
-            worker-glave: target/debug/glave
           # On the runner the release builds x86-64 Linux on (dist's plan), so with its C
           # compiler and musl, as budgets.yml builds it too.
           - libc: musl
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-musl
-            worker-glave: target/x86_64-unknown-linux-musl/debug/glave
     # A real Postgres, so the Postgres store runs its conformance suites here instead of
     # skipping them.
     services:
@@ -65,10 +63,6 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
-    # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
-    # alpine image pinned by digest, a stub in glave's place). Everything they make is
-    # labelled glave.test=<run id>, which this job sweeps, and glave.test.case=<id> per test,
-    # which each test checks so it never sees the containers of a test running beside it.
     env:
       # glave signs in as a role of its own, which row-level security binds, as the store
       # requires; the tests look at every organization's rows as the superuser.
@@ -77,12 +71,6 @@ jobs:
       # The S3-compatible bucket a step below starts, so the bucket's suites run here too.
       GLAVE_TEST_S3_URL: s3://glave-test
       GLAVE_TEST_S3_ENDPOINT: http://localhost:8333
-      GLAVE_TEST_DOCKER: "1"
-      # A real worker too: the glave this job builds (Linux, the runner's processor), in a
-      # pinned image with bash and git whose glibc is Ubuntu 24.04's, as the glibc build's
-      # runner is; the musl build is static, and runs in any image.
-      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/${{ matrix.worker-glave }}
-      GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
       # The flags dist sets for a musl target (today's defaults, which dist keeps in case they
       # change), as the target's own, which only what is built for musl reads: never the
       # programs the tests build for the runner (the eval graders' `cargo build`).
@@ -187,25 +175,6 @@ jobs:
       - name: Disk space after the build
         if: always()
         run: df -h /
-      - name: Nothing the Docker tests made is left behind
-        if: always()
-        run: |
-          label="label=glave.test=${{ github.run_id }}"
-          left="$(docker ps -aq --filter "$label")$(docker ps -aq --filter label=glave.worker)$(docker volume ls -q --filter "$label")$(docker network ls -q --filter "$label")"
-          # The worker image is shared by two tests running at once, so it is removed here.
-          docker image rm "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1 || true
-          if docker image inspect "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1; then
-            echo "the worker image is left behind"
-            exit 1
-          fi
-          if [ -n "$left" ]; then
-            echo "left behind: $left"
-            exit 1
-          fi
-          if docker image inspect "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507" >/dev/null 2>&1; then
-            echo "the test image is left behind"
-            exit 1
-          fi
 
   linux:
     if: always()

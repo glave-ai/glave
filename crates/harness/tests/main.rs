@@ -5,9 +5,6 @@
 #[path = "support/script.rs"]
 mod support;
 
-#[path = "support/worker.rs"]
-mod worker;
-
 #[path = "support/wire.rs"]
 mod wire;
 
@@ -50,5 +47,4 @@ mod tool_search;
 mod turn;
 mod untrusted;
 mod untrusted_after;
-mod workers;
 mod worktrees;

@@ -9,7 +9,6 @@ mod served;
 #[path = "support/binary.rs"]
 mod support;
 
-mod cloud;
 mod computer;
 mod config;
 mod connected;

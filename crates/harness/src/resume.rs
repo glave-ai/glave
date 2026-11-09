@@ -79,7 +79,6 @@ where
             plan: crate::plan::Planning::default(),
             workspace,
             unnumbered: 0,
-            note: None,
             standing: crate::standing::standing_after(glave_ports::Standing::Active, &events),
             removed: false,
             untrusted: false,

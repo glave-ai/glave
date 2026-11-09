@@ -12,10 +12,9 @@ use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryRules, ProjectChoice};
-use crate::policy::placement::PlacementRules;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
-use crate::policy::workers::{ComputersFile, On, WorkerRules, WorkersFile};
+use crate::policy::workers::{ComputersFile, WorkerRules, WorkersFile};
 use serde::Deserialize;
 
 /// The only version of `policy.toml` there is.
@@ -41,11 +40,9 @@ pub struct ConfigFile {
     pub worktree: Option<bool>,
     /// Whether a model titles each thread after its first exchange.
     pub titles: Option<bool>,
-    /// Where new threads work: here, or on a worker of their own.
-    pub on: Option<On>,
-    /// The backend workers run on.
+    /// The Kubernetes cluster people's computers run on.
     pub workers: Option<WorkersFile>,
-    /// Each person's own computer, on the cluster workers run on. Only the person's or the
+    /// Each person's own computer, on the cluster `workers` names. Only the person's or the
     /// server's own file sets it.
     pub computers: Option<ComputersFile>,
     /// What `web_fetch` may reach.
@@ -434,8 +431,6 @@ pub struct PolicyFile {
     pub tasks: TaskRules,
     #[serde(default)]
     pub memory: MemoryRules,
-    #[serde(default)]
-    pub placement: PlacementRules,
     #[serde(default)]
     pub notifications: NotificationRules,
 }

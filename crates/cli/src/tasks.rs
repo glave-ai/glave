@@ -29,9 +29,8 @@ Usage:
   glave --background <prompt>, or -b
                               start one: the turn runs in glave running for you in the
                               background, on a worktree of its own (so the folder must be a
-                              git repository with a commit), or a worker with
-                              on = \"cloud\", so you can close the terminal; --budget
-                              <tokens> stops the turn at that many tokens
+                              git repository with a commit), so you can close the terminal;
+                              --budget <tokens> stops the turn at that many tokens
 
 Read a task's thread with `glave threads`, or continue it in a session with --continue.";
 

@@ -1,7 +1,7 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
 //! computers suite runs against it across the protocol, and its commands never see glave's
-//! secrets. And `--tls` as a worker runs it, ending when its input does, and `--socket` as a
-//! computer in a Pod runs it, reached through bridges that each end alone.
+//! secrets. And `--tls`, ending when its input does, and `--socket` as a computer in a Pod runs
+//! it, reached through bridges that each end alone.
 
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -93,7 +93,7 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
 }
 
 #[test]
-fn a_worker_s_glave_serving_tls_ends_when_its_input_does() {
+fn a_glave_serving_tls_ends_when_its_input_does() {
     let dir = TempDir::new("e2e-computer-tls").unwrap();
     let tls = dir.join("tls");
     std::fs::create_dir_all(&tls).unwrap();

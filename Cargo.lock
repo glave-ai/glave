@@ -1965,16 +1965,11 @@ dependencies = [
 name = "glave-computer"
 version = "0.0.0"
 dependencies = [
- "bytes",
  "getrandom 0.4.3",
  "glave-event",
  "glave-ports",
  "glave-process",
  "globset",
- "http",
- "http-body-util",
- "hyper",
- "hyper-util",
  "ignore",
  "k8s-openapi",
  "kube",
@@ -1988,10 +1983,8 @@ dependencies = [
  "seccompiler",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
- "toml",
  "tracing",
  "uuid",
 ]

@@ -15,12 +15,7 @@ use super::locked::Registry;
 pub(super) type Entry = (Registry, &'static str, &'static str, &'static str);
 
 /// The versions let in early.
-pub(super) const ALLOWED: &[Entry] = &[(
-    Registry::Crates,
-    "calamine",
-    "0.38.0",
-    "RUSTSEC-2026-0436: a crafted workbook panics or exhausts memory while being read; cargo deny fails every pull request until it is fixed",
-)];
+pub(super) const ALLOWED: &[Entry] = &[];
 
 #[cfg(test)]
 mod tests {

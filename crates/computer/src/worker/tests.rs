@@ -1,7 +1,6 @@
-//! Workers without Docker: a backend that serves this machine's computers in-process, over
-//! TLS exactly as a container would (or a stream, for a worker with no network), or on a Unix
-//! socket reached through bridges as a Pod is, so the adapter's lifecycle, limits and routing
-//! are tested on every machine.
+//! Workers without a cluster: a backend that serves this machine's computers in-process, on a
+//! Unix socket reached through bridges as a Pod is, so the adapter's lifecycle, limits and
+//! routing are tested on every machine.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,13 +8,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use glave_ports::block_on;
 use glave_ports::computer::{Bytes, Glob, Image, Isolation, Network, Save};
-use glave_ports::testing::{ManualClock, SocketPath, TempDir};
-use tokio::io::BufReader;
-use tokio::net::TcpListener;
+use glave_ports::testing::{SocketPath, TempDir};
+use tokio::task::JoinHandle;
 
 use super::backend::Listed;
 use super::*;
-use crate::{CancelSwitch, LocalComputers, bridge, listen_socket, serve, serve_socket, serve_tls};
+use crate::{CancelSwitch, LocalComputers, bridge, listen_socket, serve_socket};
 
 mod reconnect;
 
@@ -26,14 +24,14 @@ fn scratch(name: &str) -> TempDir {
     TempDir::new(&format!("worker-{name}")).unwrap()
 }
 
-/// Workers served in-process: what a container would run, without the container. A worker
-/// with a network reads its token from a file, as glave in a container does, and is reached
-/// through a door whose connections a test can cut, as a network fault would.
+/// Workers served in-process: what a Pod would run, without the Pod. A worker reads its token
+/// from a file, as glave in a Pod does, and is reached through bridges whose connections a test
+/// can cut, as a fault of the cluster's API server would.
 struct InProcess {
     copies: PathBuf,
     serving: Mutex<HashMap<String, JoinHandle<()>>>,
     started: Mutex<Vec<Spec>>,
-    /// Connections open through each worker's door.
+    /// Bridges open into each worker.
     links: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// Times a worker was to be given a new token after it started.
     renewed: AtomicU64,
@@ -41,10 +39,7 @@ struct InProcess {
     renewing_fails: std::sync::atomic::AtomicBool,
     /// Each worker running, with the glave it is labelled with.
     labelled: Mutex<std::collections::BTreeMap<String, Option<String>>>,
-    /// Whether every worker serves on a Unix socket, reached through bridges, as on
-    /// Kubernetes.
-    bridged: bool,
-    /// The socket each worker serving on one listens at.
+    /// The socket each worker listens at.
     sockets: Mutex<std::collections::BTreeMap<String, SocketPath>>,
 }
 
@@ -58,37 +53,22 @@ impl InProcess {
             renewed: AtomicU64::new(0),
             renewing_fails: std::sync::atomic::AtomicBool::new(false),
             labelled: Mutex::default(),
-            bridged: false,
             sockets: Mutex::default(),
-        }
-    }
-
-    /// Workers reached through bridges to their sockets, as on Kubernetes.
-    fn bridged(copies: &Path) -> Self {
-        Self {
-            bridged: true,
-            ..Self::new(copies)
         }
     }
 
     /// Serves `computers` as the worker `name` on a socket, its token in a file, reached
     /// through bridges ([`Self::bridged_into`]).
-    fn on_socket(
-        &self,
-        name: &str,
-        spec: &Spec,
-        computers: Arc<LocalComputers>,
-    ) -> (Link, JoinHandle<()>) {
+    fn on_socket(&self, name: &str, spec: &Spec, computers: Arc<LocalComputers>) -> JoinHandle<()> {
         std::fs::create_dir_all(&self.copies).unwrap();
         std::fs::write(self.token_file(name), spec.token.to_file()).unwrap();
         let socket = SocketPath::new(&self.copies, &format!("{name}.sock")).unwrap();
         let listener = listen_socket(&socket).unwrap();
         self.sockets.lock().unwrap().insert(name.to_owned(), socket);
         let tokens = crate::Tokens::file(self.token_file(name));
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             let _ = serve_socket(computers, listener, tokens, None, None).await;
-        });
-        (Link::Bridged, task)
+        })
     }
 
     fn socket(&self, name: &str) -> PathBuf {
@@ -129,22 +109,6 @@ impl InProcess {
         if let Some(task) = self.serving.lock().unwrap().get(name) {
             task.abort();
         }
-    }
-}
-
-/// Moves bytes between each connection to `door` and the worker listening at `inside`.
-async fn door(
-    door: TcpListener,
-    inside: std::net::SocketAddr,
-    links: Arc<Mutex<Vec<JoinHandle<()>>>>,
-) {
-    while let Ok((mut outer, _)) = door.accept().await {
-        let link = tokio::spawn(async move {
-            if let Ok(mut inner) = tokio::net::TcpStream::connect(inside).await {
-                let _ = tokio::io::copy_bidirectional(&mut outer, &mut inner).await;
-            }
-        });
-        links.lock().unwrap().push(link);
     }
 }
 
@@ -198,47 +162,9 @@ impl Backend for InProcess {
                 .with_worktrees(self.copies.join(format!("{name}-worktrees")))
                 .with_projects(self.copies.join(format!("{name}-projects")));
             let computers = Arc::new(computers);
-            let (link, task) = if self.bridged {
-                self.on_socket(&name, spec, computers)
-            } else if spec.network {
-                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let inside = listener.local_addr().unwrap();
-                let entrance = TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let address = entrance.local_addr().unwrap();
-                let tls = Identity::acceptor(&spec.identity.certificate, &spec.identity.key)?;
-                std::fs::create_dir_all(&self.copies).unwrap();
-                std::fs::write(self.token_file(&name), spec.token.to_file()).unwrap();
-                let tokens = crate::Tokens::file(self.token_file(&name));
-                let links = Arc::clone(&self.links);
-                let task = tokio::spawn(async move {
-                    tokio::select! {
-                        _ = serve_tls(computers, listener, tls, tokens) => {}
-                        () = door(entrance, inside, links) => {}
-                    }
-                });
-                let link = Link::Tls {
-                    address,
-                    fingerprint: spec.identity.fingerprint.clone(),
-                    forward: None,
-                };
-                (link, task)
-            } else {
-                let (ours, theirs) = tokio::io::duplex(64 * 1024);
-                let (read, write) = tokio::io::split(theirs);
-                let task = tokio::spawn(async move {
-                    let _ = serve(computers, BufReader::new(read), write, None).await;
-                });
-                let (read, write) = tokio::io::split(ours);
-                let pump = tokio::spawn(std::future::pending());
-                let link = Link::Stream {
-                    read: Box::new(read),
-                    write: Box::new(write),
-                    task: pump,
-                };
-                (link, task)
-            };
+            let task = self.on_socket(&name, spec, computers);
             self.serving.lock().unwrap().insert(name.clone(), task);
-            Ok(Started { name, link })
+            Ok(Started { name })
         })
     }
 
@@ -323,11 +249,7 @@ fn workers_pass_the_computers_suite() {
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
     let backend = InProcess::new(&dir.join("copies"));
-    let workers = WorkerComputers::on(
-        Box::new(backend),
-        Limits::default(),
-        WorkerCredentials::None,
-    );
+    let workers = WorkerComputers::on(Box::new(backend), Limits::default());
     let image = Environment {
         image: Image::Oci(IMAGE.into()),
         ..Environment::host()
@@ -350,7 +272,7 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
         memory_gb: Some(4),
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits);
     block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         assert_eq!(made.environment, Some(environment()));
@@ -391,58 +313,10 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
 }
 
 #[test]
-fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
-    let dir = scratch("minutes");
-    let url = origin(&dir);
-    let now = ManualClock::at_second(1_000);
-    let limits = Limits {
-        max_minutes: Some(5),
-        per_person: Some(1),
-        ..Limits::default()
-    };
-    let backend = InProcess::new(&dir.join("copies"));
-    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None)
-        .with_clock(Arc::new(now.clone()));
-    block_on!(async {
-        let made = workers.create(&environment()).await.unwrap();
-        let second = workers.create(&environment()).await;
-        assert!(
-            matches!(&second, Err(ComputerError::Refused(m)) if m.contains("per_person")),
-            "{second:?}"
-        );
-        let sources = Sources::Git { url, at: None };
-        let opened = workers.open(made.id, &sources).await.unwrap();
-        now.advance_seconds(5 * 60);
-        let late = workers
-            .run(
-                opened.id,
-                &Command::new("true"),
-                &Quiet,
-                &CancelSwitch::default(),
-            )
-            .await;
-        assert!(
-            matches!(&late, Err(ComputerError::Refused(m)) if m.contains("max_minutes")),
-            "{late:?}"
-        );
-        let save = Save {
-            branch: "glave/wip/late".into(),
-            message: "wip".into(),
-        };
-        assert!(workers.save(opened.id, &save).await.unwrap().pushed);
-        workers.destroy_all().await.unwrap();
-    });
-}
-
-#[test]
-fn a_worker_with_no_network_is_reached_by_stream_and_clones_nothing() {
+fn a_worker_with_no_network_clones_nothing() {
     let dir = scratch("offline");
     let backend = InProcess::new(&dir.join("copies"));
-    let workers = WorkerComputers::on(
-        Box::new(backend),
-        Limits::default(),
-        WorkerCredentials::None,
-    );
+    let workers = WorkerComputers::on(Box::new(backend), Limits::default());
     let mut offline = environment();
     offline.network = Some(Network::Off);
     offline.setup.clear();
@@ -486,7 +360,7 @@ fn a_policy_requiring_vm_isolation_refuses_a_backend_without_it() {
         isolation: Isolation::Vm,
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits);
     block_on!(async {
         let refused = workers.create(&environment()).await;
         assert!(
@@ -505,7 +379,7 @@ fn a_failed_setup_says_why() {
         cpus: Some(2),
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits);
     let mut broken = environment();
     broken.setup = vec!["echo missing tool >&2; exit 3".into()];
     block_on!(async {
@@ -531,12 +405,8 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
     let dir = scratch("reap");
     let backend = Arc::new(InProcess::new(&dir.join("copies")));
     let workers = |starter: Option<Glave>| {
-        WorkerComputers::on(
-            Box::new(Shared(Arc::clone(&backend))),
-            Limits::default(),
-            WorkerCredentials::None,
-        )
-        .started_by(starter)
+        WorkerComputers::on(Box::new(Shared(Arc::clone(&backend))), Limits::default())
+            .started_by(starter)
     };
     let this = Glave::this().unwrap();
     let ended = changed(&this, "start", "the start of a glave that ended");
@@ -549,7 +419,7 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
             workers(starter).create(&offline).await.unwrap();
         }
         let next = workers(Some(this));
-        next.create(&offline).await.unwrap();
+        let own = next.create(&offline).await.unwrap();
         assert_eq!(next.reap().await.unwrap(), 1);
         let left: Vec<String> = backend.labelled.lock().unwrap().keys().cloned().collect();
         assert_eq!(
@@ -558,7 +428,7 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
             "only the worker of the glave that ended goes"
         );
         assert_eq!(next.reap().await.unwrap(), 0);
-        next.destroy_all().await.unwrap();
+        next.destroy(own.id).await.unwrap();
         for name in ["w1", "w2"] {
             backend.remove(name).await.unwrap();
         }

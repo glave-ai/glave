@@ -1,22 +1,16 @@
-//! A tar archive of a few folders and files, as Docker's archive endpoint takes them: enough to
-//! put glave and its TLS identity into a worker. ustar headers, owned by root, no timestamps.
+//! A tar archive of a few files, as `tar -x` in a Pod takes them: enough to put glave and its
+//! token into a worker. ustar headers, owned by root, no timestamps.
 
 /// One block of a tar archive.
 const BLOCK: usize = 512;
 /// The longest name a plain ustar header holds.
 const MAX_NAME: usize = 99;
 
-/// An entry to archive.
-pub(crate) enum Entry<'a> {
-    Folder {
-        name: &'a str,
-        mode: u32,
-    },
-    File {
-        name: &'a str,
-        mode: u32,
-        content: &'a [u8],
-    },
+/// A file to archive.
+pub(crate) struct Entry<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) mode: u32,
+    pub(crate) content: &'a [u8],
 }
 
 /// Why an archive could not be made.
@@ -26,21 +20,16 @@ pub(crate) struct TooLong(pub(crate) String);
 /// The archive of `entries`, in order.
 pub(crate) fn archive(entries: &[Entry<'_>]) -> Result<Vec<u8>, TooLong> {
     let mut out = Vec::new();
-    for entry in entries {
-        let (name, mode, kind, content): (String, u32, u8, &[u8]) = match entry {
-            Entry::Folder { name, mode } => {
-                (format!("{}/", name.trim_end_matches('/')), *mode, b'5', &[])
-            }
-            Entry::File {
-                name,
-                mode,
-                content,
-            } => ((*name).to_owned(), *mode, b'0', content),
-        };
+    for Entry {
+        name,
+        mode,
+        content,
+    } in entries
+    {
         if name.len() > MAX_NAME {
-            return Err(TooLong(name));
+            return Err(TooLong((*name).to_owned()));
         }
-        out.extend_from_slice(&header(&name, mode, kind, content.len()));
+        out.extend_from_slice(&header(name, *mode, content.len()));
         out.extend_from_slice(content);
         let pad = (BLOCK - content.len() % BLOCK) % BLOCK;
         out.resize(out.len().saturating_add(pad), 0);
@@ -56,7 +45,7 @@ pub(crate) fn token_file(
     token: &crate::token::Token,
 ) -> Result<Vec<u8>, glave_ports::computer::ComputerError> {
     let file = token.to_file();
-    archive(&[Entry::File {
+    archive(&[Entry {
         name: at,
         mode: 0o600,
         content: file.as_bytes(),
@@ -83,7 +72,8 @@ fn octal(value: u64, width: usize) -> Vec<u8> {
     text
 }
 
-fn header(name: &str, mode: u32, kind: u8, size: usize) -> [u8; BLOCK] {
+/// A regular file's header.
+fn header(name: &str, mode: u32, size: usize) -> [u8; BLOCK] {
     let mut header = [0u8; BLOCK];
     put(&mut header, 0, name.as_bytes());
     put(&mut header, 100, &octal(u64::from(mode), 7));
@@ -96,7 +86,7 @@ fn header(name: &str, mode: u32, kind: u8, size: usize) -> [u8; BLOCK] {
     );
     put(&mut header, 136, &octal(0, 11));
     put(&mut header, 148, b"        ");
-    put(&mut header, 156, &[kind]);
+    put(&mut header, 156, b"0");
     put(&mut header, 257, b"ustar\x0000");
     put(&mut header, 265, b"root");
     put(&mut header, 297, b"root");
@@ -118,17 +108,13 @@ mod tests {
         let dir = glave_ports::testing::TempDir::new("tar").unwrap();
         let big = vec![b'x'; 1500];
         let bytes = archive(&[
-            Entry::Folder {
-                name: "opt/glave",
-                mode: 0o755,
-            },
-            Entry::File {
+            Entry {
                 name: "opt/glave/run",
                 mode: 0o755,
                 content: b"#!/bin/sh\n",
             },
-            Entry::File {
-                name: "opt/glave/key.pem",
+            Entry {
+                name: "opt/glave/token",
                 mode: 0o600,
                 content: &big,
             },
@@ -151,16 +137,17 @@ mod tests {
             std::fs::metadata(&run).unwrap().permissions().mode() & 0o777,
             0o755
         );
-        let key = dir.join("opt/glave/key.pem");
-        assert_eq!(std::fs::read(&key).unwrap(), big);
+        let token = dir.join("opt/glave/token");
+        assert_eq!(std::fs::read(&token).unwrap(), big);
         assert_eq!(
-            std::fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+            std::fs::metadata(&token).unwrap().permissions().mode() & 0o777,
             0o600
         );
         assert!(
-            archive(&[Entry::Folder {
+            archive(&[Entry {
                 name: &"n".repeat(120),
-                mode: 0o755
+                mode: 0o644,
+                content: b"",
             }])
             .is_err()
         );
