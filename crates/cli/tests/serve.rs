@@ -324,7 +324,11 @@ mod reached {
         block_on!(async {
             let answer = discover(&url).await;
             let exists = &answer["result"]["exists"];
-            assert_eq!(*exists, json!({"organization": true}), "{answer}");
+            assert_eq!(
+                *exists,
+                serde_json::json!({"organization": true}),
+                "{answer}"
+            );
         });
     }
 
