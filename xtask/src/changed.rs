@@ -13,10 +13,7 @@ const READ_BY: &[(&str, &str)] = &[("evals/", "glave-eval")];
 
 /// Crates whose tests run a program another crate builds, and that crate: checked with them,
 /// so the program is built from today's code (glave-mcp's test server).
-const RUNS: &[(&str, &str)] = &[
-    ("glave", "glave-mcp"),
-    ("glave-gateway-service", "glave-mcp"),
-];
+const RUNS: &[(&str, &str)] = &[("glave", "glave-mcp")];
 
 /// The session API's schema, which the web client's types are made from.
 const SCHEMA: &str = "specs/session.schema.json";

@@ -147,12 +147,6 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "the connections, aborted the line before",
     ),
     (
-        "crates/gateway-service/src/http.rs",
-        "while connections.join_next().await.is_some() {}",
-        1,
-        "the connections, aborted the line before",
-    ),
-    (
         "crates/computer/src/serve.rs",
         "connections.join_next().await;",
         2,

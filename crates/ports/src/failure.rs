@@ -55,7 +55,7 @@ impl ProviderError {
             Self::AfterOutput(error) => error.failure(),
             Self::Protocol(_) => Failure::Malformed,
             Self::Unserved { failure, .. } => *failure,
-            Self::OverBudget { .. } | Self::Unpaid(_) => Failure::OverBudget,
+            Self::Unpaid(_) => Failure::OverBudget,
         }
     }
 
@@ -164,11 +164,10 @@ mod tests {
             reason: "longer than every model's context".into(),
         };
         assert_eq!(unserved.failure(), Failure::TooLong);
-        let over = ProviderError::OverBudget {
-            budget: "person".into(),
-            detail: "x".into(),
-        };
-        assert_eq!(over.failure(), Failure::OverBudget);
+        assert_eq!(
+            ProviderError::Unpaid(crate::Unpaid::Spent).failure(),
+            Failure::OverBudget
+        );
     }
 
     #[test]

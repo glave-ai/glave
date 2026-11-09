@@ -80,8 +80,6 @@ const LAYERS: &[(&str, Layer)] = &[
     // The session API: the harness served in-process, over stdio and over HTTP. It serves the
     // harness and verifies callers with glave-identity, so it is wired from both, as the binary is.
     ("glave-session", Binary),
-    // The gateway served over HTTP, with sign-in.
-    ("glave-gateway-service", Binary),
     // The command-line binary, which wires everything.
     ("glave", Binary),
     // The harness run on the eval tasks against real models.

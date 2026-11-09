@@ -20,7 +20,7 @@ Partly built (issue #22). Each piece built has one line, which the pull requests
 - **A thread read from its end** (#1058): the event log reads a thread back from its end (`EventLog::read_back`: newest first, before a place, of some types or all) on SQLite, Postgres and in memory, one conformance suite for all three; resuming a thread reads its end and, of what came before, only what outlasts a compaction ("A thread read from its end"). What #1058 asks of archived threads (leaving the list, their search kept fast) is a piece of its own.
 - **A client opens a thread from its end** (#1058): `thread/turns` reads a client its latest 20 turns back from the end, and the turns before them a page at a time as the person goes back (`session.md`, "Opening a thread from its end"); the web app opens every thread this way.
 - **The search index's rows go with their chat** (#1186): appending `thread.deleted` removes the thread's rows of `event_search` in the same transaction, on SQLite, Postgres and in memory (`glave_ports::search::deletes_thread`, `conformance::search`); no project or key erasure removes threads today, so none has rows to take. Sealing the index itself waits for Glave Cloud (#1186).
-- **Not yet:** `glave gateway serve` on Postgres, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
+- **Not yet:** promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
 
 Settled while building, within this contract:
 

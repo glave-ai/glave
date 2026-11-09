@@ -7,7 +7,7 @@ use glave_ports::{Message, ModelRequest};
 /// Bytes per token when judging whether a request fits a target's window: generous, so a
 /// request that may fit is sent, and the provider has the last word.
 pub(crate) const FIT_BYTES_PER_TOKEN: u64 = 4;
-/// Bytes per token when reserving a budget: cautious, since code and other languages run
+/// Bytes per token when holding a call's worst case: cautious, since code and other languages run
 /// closer to 3, and settling corrects it.
 const RESERVE_BYTES_PER_TOKEN: u64 = 3;
 
@@ -86,7 +86,7 @@ impl<'a> Needs<'a> {
         self.bytes.div_ceil(FIT_BYTES_PER_TOKEN)
     }
 
-    /// The request's input, estimated cautiously: what a budget reserves.
+    /// The request's input, estimated cautiously: what a call's worst case holds.
     pub(crate) fn reserve_tokens(&self) -> u64 {
         self.bytes.div_ceil(RESERVE_BYTES_PER_TOKEN)
     }

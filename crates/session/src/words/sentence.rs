@@ -277,8 +277,6 @@ sentences! {
     ProviderSilent { seconds: String } = "provider-silent"
         "the model provider sent nothing for { $seconds } s",
     NoModelServes { reason: String } = "no-model-serves" "no model could serve the request: { $reason }",
-    OverBudget { budget: String, detail: String } = "over-budget"
-        "the { $budget } budget would be exceeded: { $detail }",
     OutOfCredits = "out-of-credits" "you're out of credits: add credits to keep going",
     CreditsShort { free: String, needs: String } = "credits-short"
         "this could cost up to { $needs }, more than the { $free } of credits free now: add credits, or choose a cheaper model",

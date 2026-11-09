@@ -130,11 +130,10 @@ impl Rereading {
     /// forbids them puts them all away; a `mcp.json` that no longer reads leaves them running.
     async fn own_servers(&self, setup: &Setup) -> Option<OwnTools> {
         let constraints = &setup.loaded.constraints;
-        let through_gateway = self.start.gateway.is_some();
         let mcp = setup.choices.mcp.as_ref();
         self.servers.offer(mcp::Offered::by(constraints));
         let signed = self.servers.signed().await;
-        let wanted = mcp::wanted(&self.home, mcp, constraints, through_gateway, &signed);
+        let wanted = mcp::wanted(&self.home, mcp, constraints, &signed);
         let wanted = match wanted.await {
             Ok(wanted) => wanted,
             Err(error) if constraints.own_mcp_forbidden().is_some() => {
@@ -157,7 +156,7 @@ impl Rereading {
 
     /// The models of `setup`, run from now on.
     async fn models(&self, setup: &Setup) -> anyhow::Result<Models> {
-        let (_, configured) = crate::providers::endpoint(&setup.choices)?;
+        let configured = crate::providers::endpoint(&setup.choices)?;
         let lineup = Lineup::new(setup, configured);
         if let Some(accounts) = &self.accounts {
             return accounts.relined(lineup).await;
@@ -196,8 +195,7 @@ async fn reloaded(args: &Args, locations: &Locations, start: &Choices) -> anyhow
 /// `now`, with what only a start applies as glave started with it (`start`), said in the log
 /// when it differs.
 fn as_started(start: &Choices, now: Choices) -> Choices {
-    let waits = start.gateway != now.gateway
-        || start.provider != now.provider
+    let waits = start.provider != now.provider
         || start.store != now.store
         || start.telemetry != now.telemetry
         || start.workers != now.workers
@@ -210,12 +208,11 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
     if waits {
         tracing::warn!(
             "glave's settings changed where only a restart applies them (the store, the \
-             gateway, the provider, telemetry, workers, people's computers, which providers it allows, GitHub or where people reach glave); \
+             provider, telemetry, workers, people's computers, which providers it allows, GitHub or where people reach glave); \
              restart glave for them"
         );
     }
     Choices {
-        gateway: start.gateway.clone(),
         provider: start.provider.clone(),
         store: start.store.clone(),
         telemetry: start.telemetry.clone(),
