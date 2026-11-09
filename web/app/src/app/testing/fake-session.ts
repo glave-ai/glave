@@ -264,7 +264,7 @@ function unanswered(method: Method, params: unknown): Answer {
     return { steps: { runs: [], replies: [] } };
   }
   if (method === 'command/list') {
-    return { commands: [] };
+    return { commands: [], previewed: false };
   }
   if (method === 'connector/list') {
     return { companies: [], categories: [], tags: [], connectors: [] };

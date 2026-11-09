@@ -23,6 +23,17 @@ export const RAN = 'Ran it.';
 export const COMMAND = 'mkdir journey && rmdir journey';
 
 /**
+ * The server it asks to keep running in the background when asked to serve a page: a page of its
+ * own, served on loopback at a port the system picks, as a dev server is; outside the sandbox,
+ * so it asks in Ask first with a sandbox or without one.
+ */
+export const SERVES =
+  "printf '<h1>Hello from the preview</h1>' > index.html && exec python3 -m http.server 0 --bind 127.0.0.1";
+
+/** What the page it serves says. */
+export const SERVED = 'Hello from the preview';
+
+/**
  * What it asks to change when asked to touch a file: writing `live.txt`, a change that asks in
  * Ask first, as the approval shows it.
  */
@@ -111,6 +122,28 @@ function run(response: ServerResponse): void {
   ]);
 }
 
+/** A reply asking to keep `SERVES` running in the background. */
+function serve(response: ServerResponse): void {
+  const call = {
+    index: 0,
+    id: 'call_serve',
+    type: 'function',
+    function: {
+      name: 'bash',
+      arguments: JSON.stringify({
+        command: SERVES,
+        background: true,
+        outside_sandbox: true,
+        reason: 'To serve the page for a preview',
+      }),
+    },
+  };
+  stream(response, [
+    { id: 'gen-serve', model: LIVE_MODEL, choices: [{ index: 0, delta: { tool_calls: [call] } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: USAGE },
+  ]);
+}
+
 /** A reply asking to call `SERVICE`'s tool that asks the person something. */
 function ask(response: ServerResponse): void {
   const call = {
@@ -193,6 +226,8 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
         ask(response);
       } else if (text.toLowerCase().includes('run a command')) {
         run(response);
+      } else if (text.toLowerCase().includes('serve a page')) {
+        serve(response);
       } else if (text.toLowerCase().includes('touch')) {
         write(response);
       } else {
@@ -212,8 +247,8 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
  * Starts a model service real glaves talk to in the end-to-end tests (live.e2e.ts and
  * consumer.e2e.ts), on a port the system picks, and answers its OpenAI-compatible address.
  * Asked to touch a file, it asks to write one; once that call has a result, it says it left the
- * file alone. Asked to run a command, it asks to run one; once that has a result, it says it ran
- * it. To anything else, it says hello. A prompt that holds its reply (`holding`) waits for the
+ * file alone. Asked to run a command, it asks to run one, and asked to serve a page, to keep a
+ * server running; once that has a result, it says it ran it. To anything else, it says hello. A prompt that holds its reply (`holding`) waits for the
  * test to let it go. It does not keep the process alive.
  */
 export async function startFakeModel(): Promise<string> {

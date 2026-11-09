@@ -51,6 +51,7 @@ mod notify;
 mod organizations;
 mod people;
 mod plan;
+mod previews;
 mod projects;
 pub mod protocol;
 mod providers;

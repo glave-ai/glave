@@ -5,7 +5,6 @@ use glave_event::{
     Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
-use glave_harness::RunningCommand;
 use glave_ports::computer::{DiskUse, Screenful, TerminalInfo};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
@@ -19,6 +18,10 @@ use super::{
     SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
     ThreadSteps, Told, TrustAsk, WatchEnd,
 };
+
+mod listening;
+
+pub use listening::{ListedCommand, Port};
 
 /// What the server is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -378,8 +381,14 @@ pub enum Reply {
     /// Where the person signs in to a remote server.
     #[schemars(title = "SignIn")]
     SignIn { sign_in: SignInLink },
+    /// The thread's commands running in the background, each with where it listens.
     #[schemars(title = "Commands")]
-    Commands { commands: Vec<RunningCommand> },
+    Commands {
+        commands: Vec<ListedCommand>,
+        /// Whether what they serve is previewed for the caller here (each port's `url`): where
+        /// it isn't, a client need not look for previews again.
+        previewed: bool,
+    },
     #[schemars(title = "Terminal")]
     Terminal { terminal: TerminalInfo },
     #[schemars(title = "Terminals")]

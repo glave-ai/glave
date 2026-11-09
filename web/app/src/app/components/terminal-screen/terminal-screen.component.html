@@ -1,1 +1,8 @@
-<div #screen class="screen" dir="ltr" data-testid="terminal-screen"></div>
+<div
+  #screen
+  class="screen"
+  dir="ltr"
+  tabindex="-1"
+  data-testid="terminal-screen"
+  (keydown)="typedEarly($event)"
+></div>

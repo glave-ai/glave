@@ -273,9 +273,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
     /// Where sign-ins to connections are kept, when the person here may sign in.
     pub(crate) connections: Option<Arc<dyn Connections>>,
-    /// Once it listens over HTTP, its address on this computer when it listens on loopback:
-    /// where a browser here comes back to from signing in to a remote server.
-    pub(crate) reached: OnceLock<Option<String>>,
+    /// Once it listens over HTTP, where a browser on this computer reaches it.
+    pub(crate) reached: OnceLock<crate::connections::Reached>,
     /// The project's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,

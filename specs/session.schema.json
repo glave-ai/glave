@@ -1749,6 +1749,54 @@
         }
       ]
     },
+    "ListedCommand": {
+      "description": "A command a thread keeps running in the background, with where it listens.",
+      "properties": {
+        "command": {
+          "description": "What it runs, as the agent wrote it.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/CommandId",
+          "description": "Which command, for `command/stop`."
+        },
+        "listens": {
+          "description": "Where it listens, in a sentence: \"Listening on 4200 and 4201.\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ports": {
+          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer.",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When it started, once the thread has recorded it."
+        },
+        "summary": {
+          "description": "What it is doing, in plain words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "summary"
+      ],
+      "type": "object"
+    },
     "Logo": {
       "additionalProperties": false,
       "description": "A logo's content.",
@@ -2474,6 +2522,40 @@
       ],
       "type": "object"
     },
+    "Port": {
+      "description": "A port a command listens on, and the preview of what it serves there, where glave\npreviews it.",
+      "properties": {
+        "framed": {
+          "description": "Whether a frame of the app shows it too, as its Content Security Policy allows.",
+          "type": "boolean"
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unframed": {
+          "description": "Why a frame can't show it, in a sentence, where it opens in a new tab alone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Where a browser on this computer opens what it serves: the server's own address, on\nthis computer's loopback; none where glave previews nothing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "port",
+        "framed"
+      ],
+      "type": "object"
+    },
     "Precision": {
       "description": "How precisely a provider serves a model's weights, from how it says they are stored.",
       "oneOf": [
@@ -2957,50 +3039,6 @@
         "reply",
         "sentence",
         "pages"
-      ],
-      "type": "object"
-    },
-    "RunningCommand": {
-      "description": "A command a thread keeps running in the background, as a client lists it: what it runs,\nsince when, and a sentence saying so (`command/list`).",
-      "properties": {
-        "command": {
-          "description": "What it runs, as the agent wrote it.",
-          "type": "string"
-        },
-        "id": {
-          "$ref": "#/$defs/CommandId",
-          "description": "Which command, for `command/stop`."
-        },
-        "ports": {
-          "description": "The TCP ports it listens on, lowest first, where the caller reaches this computer's\nloopback: looked for only then, and on the server's own computer.",
-          "items": {
-            "format": "uint16",
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "type": "array"
-        },
-        "started_at": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/At"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "When it started, once the thread has recorded it."
-        },
-        "summary": {
-          "description": "What it is doing, in plain words.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "command",
-        "summary"
       ],
       "type": "object"
     },
@@ -5158,16 +5196,22 @@
         "type": "object"
       },
       "result": {
+        "description": "The thread's commands running in the background, each with where it listens.",
         "properties": {
           "commands": {
             "items": {
-              "$ref": "#/$defs/RunningCommand"
+              "$ref": "#/$defs/ListedCommand"
             },
             "type": "array"
+          },
+          "previewed": {
+            "description": "Whether what they serve is previewed for the caller here (each port's `url`): where\nit isn't, a client need not look for previews again.",
+            "type": "boolean"
           }
         },
         "required": [
-          "commands"
+          "commands",
+          "previewed"
         ],
         "type": "object"
       },

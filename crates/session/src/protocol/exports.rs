@@ -26,8 +26,8 @@ pub use super::projects::{Copies, GoneFolder, NewFolder, ProjectFolder};
 pub use super::providers::ProviderInfo;
 pub use super::push::{PushDevice, PushInfo, PushSubscription};
 pub use super::reply::{
-    AwakeInfo, ContextUse, DiskShort, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo,
-    Status, ThreadSummary,
+    AwakeInfo, ContextUse, DiskShort, Exists, ListedCommand, Port, QueuedMessage, RememberingInfo,
+    Reply, ServerInfo, Status, ThreadSummary,
 };
 pub use super::secrets::SecretInfo;
 pub use super::settings::Setting;
