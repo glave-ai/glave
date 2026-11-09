@@ -409,13 +409,6 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "reaps a program just killed, which has ended",
     ),
     (
-        "crates/process/src/within.rs",
-        "reading.join()",
-        2,
-        "the readers of a program's output, whose pipes close once its group has ended or been \
-         killed at its limit",
-    ),
-    (
         "crates/process/src/lifeline.rs",
         "match pending.wait_for(Option::is_some).await.as_deref() {",
         1,
