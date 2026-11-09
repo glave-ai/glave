@@ -43,7 +43,6 @@ rustix = { workspace = true, features = ["process", "pty", "termios"] }
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 tokio-rustls.workspace = true
 # A computer running another version of glave than the server's, said in the server's log.
