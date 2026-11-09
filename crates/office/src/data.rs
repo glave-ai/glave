@@ -199,11 +199,7 @@ fn answer(connection: &Connection, sql: &str) -> rusqlite::Result<Option<Rows>> 
             statement.execute([])?;
             continue;
         }
-        let columns: Vec<String> = statement
-            .column_names()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
+        let columns: Vec<String> = statement.column_names().map(str::to_owned).collect();
         let width = columns.len();
         let mut rows = Vec::new();
         let mut found = statement.query([])?;
