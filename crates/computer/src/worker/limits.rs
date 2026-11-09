@@ -14,7 +14,6 @@ pub(crate) struct Decided {
     pub(crate) cpus: Option<u32>,
     pub(crate) memory_gb: Option<u32>,
     pub(crate) network: bool,
-    pub(crate) max_minutes: Option<u32>,
 }
 
 fn unsupported(message: &str) -> ComputerError {
@@ -33,13 +32,8 @@ pub(crate) fn pinned(reference: &str) -> bool {
         })
 }
 
-/// Checks `environment` against `limits` with `running` workers already held, and says what
-/// the worker will be.
-pub(crate) fn decide(
-    environment: &Environment,
-    limits: &Limits,
-    running: usize,
-) -> Result<Decided, ComputerError> {
+/// Checks `environment` against `limits`, and says what the worker will be.
+pub(crate) fn decide(environment: &Environment, limits: &Limits) -> Result<Decided, ComputerError> {
     let Image::Oci(image) = &environment.image else {
         return Err(ComputerError::Refused(Refusal::HostNotImage.into()));
     };
@@ -47,17 +41,6 @@ pub(crate) fn decide(
         return Err(ComputerError::Refused(
             Refusal::NotPinned {
                 image: image.clone(),
-            }
-            .into(),
-        ));
-    }
-    if let Some(most) = limits.per_person
-        && running >= usize::try_from(most).unwrap_or(usize::MAX)
-    {
-        return Err(ComputerError::Refused(
-            Refusal::TooManyWorkers {
-                running: running.to_string(),
-                most: most.to_string(),
             }
             .into(),
         ));
@@ -74,7 +57,7 @@ pub(crate) fn decide(
     )?;
     if environment.size.disk_gb.is_some() {
         return Err(unsupported(
-            "disk size is not enforced on Docker workers yet; remove it from the environment",
+            "disk size is not enforced on workers yet; remove it from the environment",
         ));
     }
     let network = network(environment, limits)?;
@@ -104,7 +87,6 @@ pub(crate) fn decide(
         cpus,
         memory_gb,
         network,
-        max_minutes: limits.max_minutes,
     })
 }
 
@@ -170,21 +152,19 @@ mod tests {
                 ..Environment::host()
             },
             &Limits::default(),
-            0,
         );
         assert!(matches!(refused, Err(ComputerError::Refused(m)) if m.contains("digest")));
-        assert!(decide(&Environment::host(), &Limits::default(), 0).is_err());
+        assert!(decide(&Environment::host(), &Limits::default()).is_err());
     }
 
     #[test]
-    fn sizes_and_counts_stay_within_policy() {
+    fn sizes_stay_within_policy() {
         let limits = Limits {
             cpus: Some(2),
             memory_gb: Some(4),
-            per_person: Some(1),
             ..Limits::default()
         };
-        let decided = decide(&environment(), &limits, 0).unwrap();
+        let decided = decide(&environment(), &limits).unwrap();
         assert_eq!((decided.cpus, decided.memory_gb), (Some(2), Some(4)));
         assert!(
             decided.network,
@@ -192,10 +172,8 @@ mod tests {
         );
         let mut big = environment();
         big.size.cpus = Some(8);
-        let refused = decide(&big, &limits, 0).unwrap_err();
+        let refused = decide(&big, &limits).unwrap_err();
         assert!(refused.message().contains("[workers] cpu"), "{refused}");
-        let refused = decide(&environment(), &limits, 1).unwrap_err();
-        assert!(refused.message().contains("per_person"), "{refused}");
     }
 
     #[test]
@@ -204,20 +182,20 @@ mod tests {
             network: Some(Network::Off),
             ..Limits::default()
         };
-        assert!(!decide(&environment(), &off, 0).unwrap().network);
+        assert!(!decide(&environment(), &off).unwrap().network);
         let mut wants = environment();
         wants.network = Some(Network::On);
         assert!(matches!(
-            decide(&wants, &off, 0),
+            decide(&wants, &off),
             Err(ComputerError::Refused(_))
         ));
         wants.network = Some(Network::Allowlist);
         assert!(matches!(
-            decide(&wants, &Limits::default(), 0),
+            decide(&wants, &Limits::default()),
             Err(ComputerError::Unsupported(_))
         ));
         wants.network = Some(Network::Off);
-        assert!(!decide(&wants, &Limits::default(), 0).unwrap().network);
+        assert!(!decide(&wants, &Limits::default()).unwrap().network);
     }
 
     #[test]
@@ -225,19 +203,19 @@ mod tests {
         let mut secrets = environment();
         secrets.secrets = vec!["GITHUB_TOKEN".into()];
         assert!(matches!(
-            decide(&secrets, &Limits::default(), 0),
+            decide(&secrets, &Limits::default()),
             Err(ComputerError::Unsupported(_))
         ));
         let mut disk = environment();
         disk.size.disk_gb = Some(50);
-        assert!(decide(&disk, &Limits::default(), 0).is_err());
+        assert!(decide(&disk, &Limits::default()).is_err());
         let mut idle = environment();
         idle.idle_minutes = Some(30);
-        assert!(decide(&idle, &Limits::default(), 0).is_err());
+        assert!(decide(&idle, &Limits::default()).is_err());
         let mut leaky = environment();
         leaky.env.insert("API_TOKEN".into(), "x".into());
         assert!(matches!(
-            decide(&leaky, &Limits::default(), 0),
+            decide(&leaky, &Limits::default()),
             Err(ComputerError::Refused(_))
         ));
     }

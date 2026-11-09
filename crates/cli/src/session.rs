@@ -166,9 +166,6 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             .await
             .map_err(anyhow::Error::from)
     };
-    if wired.workers.is_some() {
-        wired.server.shutdown().await;
-    }
     wired.close().await;
     drop(lock); // Last, once everything it ran has stopped.
     served?;

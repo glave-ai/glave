@@ -160,7 +160,6 @@ where
                     signin: self.signin_ways(),
                     exists: crate::protocol::Exists {
                         organization,
-                        workers: self.inner.worker.is_some(),
                         credits: self.inner.credits.is_some(),
                     },
                     role,

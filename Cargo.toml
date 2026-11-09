@@ -171,7 +171,7 @@ proptest = "1"
 # The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint
 # and to check every part before it is packed. Already in the tree, under calamine.
 quick-xml = "0.42"
-# Self-signed certificates for workers, on aws-lc-rs, the crypto rustls already uses.
+# Self-signed certificates for computers served over TLS, on aws-lc-rs, the crypto rustls already uses.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = "1"
 rmcp = { version = "3.5.1", default-features = false }

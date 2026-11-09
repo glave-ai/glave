@@ -10,10 +10,6 @@ pub struct Limits {
     pub cpus: Option<u32>,
     /// The most memory, in GB; also its size when its environment names none.
     pub memory_gb: Option<u32>,
-    /// How long a worker may run, in minutes, before it refuses new work.
-    pub max_minutes: Option<u32>,
-    /// How many workers one person may have at once.
-    pub per_person: Option<u32>,
     /// The most network a worker may have; `None` allows it all. An allow-list is not
     /// enforced yet, so a policy asking for one is refused before workers start.
     pub network: Option<Network>,

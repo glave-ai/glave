@@ -224,7 +224,6 @@ fn flags(args: &Args) -> ConfigFile {
         network: args.network,
         worktree: args.worktree.then_some(true),
         titles: one_shot.then_some(false),
-        on: args.on,
         server: args.server.clone().map(|url| ServerFile { url }),
         ..ConfigFile::default()
     }

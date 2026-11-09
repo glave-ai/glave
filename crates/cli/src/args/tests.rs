@@ -37,7 +37,6 @@ fn how_glave_runs_is_the_server_s_to_choose_never_one_turn_s() {
     for flags in [
         &["--network"][..],
         &["--no-network"],
-        &["--on", "cloud"],
         &["--max-steps", "3"],
     ] {
         let refused = parse_words(&[flags, &["go"]].concat()).unwrap_err();

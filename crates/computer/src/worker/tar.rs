@@ -1,5 +1,5 @@
-//! A tar archive of a few folders and files, as Docker's archive endpoint takes them: enough to
-//! put glave and its TLS identity into a worker. ustar headers, owned by root, no timestamps.
+//! A tar archive of a few folders and files, as `tar -x` in a Pod takes them: enough to put
+//! glave and its token into a worker. ustar headers, owned by root, no timestamps.
 
 /// One block of a tar archive.
 const BLOCK: usize = 512;

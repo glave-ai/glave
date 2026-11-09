@@ -20,7 +20,7 @@ pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::
     choices.judge = judge(choices.judge, constraints)?;
     choices.network = network(choices.network, constraints)?;
     crate::policy::memory::settle(&choices, constraints)?;
-    crate::policy::placement::settle(choices, constraints)
+    Ok(choices)
 }
 
 /// `choices` within `constraints` for a server that already runs, and so cannot refuse to

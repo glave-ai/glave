@@ -33,9 +33,6 @@ pub enum Place {
     /// A git worktree of its own of the repository around the folder at `path`, on the branch
     /// [`branch_for`] names, outside the repository.
     Worktree(String),
-    /// A worker of its own, made from this environment by the harness's workers (see
-    /// [`crate::Workers`]), with the project's repository cloned into it.
-    Worker(Environment),
     /// A folder of its own, made empty on the harness's computer, in the same sandbox: for a
     /// thread with no project folder, such as a one-off chat in a person's own project.
     Scratch,
@@ -148,7 +145,6 @@ where
         person: Option<PrincipalId>,
     ) -> Result<(Option<Arc<Workspace>>, WorkspaceBound), HarnessError> {
         let opened = match place {
-            Place::Worker(environment) => return self.place_worker(&environment).await,
             Place::Computer(computer) => {
                 return Err(Invalid::ComputerNotYet(computer.to_string()).into());
             }
@@ -160,9 +156,9 @@ where
             Place::Folder(path) => home.folder(&path).await?,
             Place::Worktree(path) => home.worktree(&path, &branch_for(id), Some(&owner)).await?,
             Place::Scratch => home.scratch(&id.to_string(), Some(&owner)).await?,
-            Place::Worker(_) | Place::Computer(_) => {
+            Place::Computer(_) => {
                 return Err(HarnessError::Event(
-                    "a worker or a computer was placed as a folder".into(),
+                    "a computer was placed as a folder".into(),
                 ));
             }
         };

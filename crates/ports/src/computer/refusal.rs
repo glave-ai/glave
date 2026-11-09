@@ -75,11 +75,9 @@ worded! {
         NoNetworkToClone = "computer-no-network-to-clone"
             "this worker has no network, so it cannot clone a repository; give it the network, or open a folder on it",
         HostNotImage = "computer-host-not-image"
-            "a worker runs an image; this environment names the host. Name an image in devcontainer.json or .glave/environment.toml",
+            "a worker runs an image, and this environment names the host",
         NotPinned { image } = "computer-not-pinned"
             "workers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not { $image }",
-        TooManyWorkers { running, most } = "computer-too-many-workers"
-            "you already have { $running } workers, and policy allows { $most } at once ([workers] per_person); release one first",
         TooManyCpus { asked, most } = "computer-too-many-cpus"
             "the environment asks for { $asked } CPUs, and policy allows at most { $most } ([workers] cpu)",
         TooMuchMemory { asked, most } = "computer-too-much-memory"
@@ -226,9 +224,8 @@ mod tests {
             "this account's login shell opens no shell, so no terminal opens for it",
             "policy requires workers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this backend has none: run workers on Kubernetes with [workers] runtime_class set (gVisor or Kata)",
             "this worker has no network, so it cannot clone a repository; give it the network, or open a folder on it",
-            "a worker runs an image; this environment names the host. Name an image in devcontainer.json or .glave/environment.toml",
+            "a worker runs an image, and this environment names the host",
             "workers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not <image>",
-            "you already have <running> workers, and policy allows <most> at once ([workers] per_person); release one first",
             "the environment asks for <asked> CPUs, and policy allows at most <most> ([workers] cpu)",
             "the environment asks for <asked> GB of memory, and policy allows at most <most> ([workers] memory_gb)",
             "the environment asks for the network, and policy allows workers none ([workers] network = \"off\", or [sandbox] network = false)",

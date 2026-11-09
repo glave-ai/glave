@@ -7,7 +7,6 @@ mod effective;
 mod explain;
 mod files;
 mod memory;
-mod placement;
 mod provider;
 mod redact;
 mod rules;
@@ -32,12 +31,11 @@ pub use files::{
     RouterFloorFile, ServeFile, ServerFile, StoreFile, TaskRules, TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
-pub use placement::{Placement, PlacementRules};
 pub use provider::{ApiChoice, BedrockEndpointChoice, ProviderFile};
 pub use redact::{has_password, redacted};
 pub use rules::Constraints;
 pub use web::WebFile;
-pub use workers::{Backend, ComputersFile, On, WorkersFile};
+pub use workers::{ComputersFile, WorkersFile};
 
 /// The choices file, in glave's folder and in a project's `.glave/`.
 pub const CONFIG: &str = "config.toml";

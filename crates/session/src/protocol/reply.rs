@@ -84,8 +84,6 @@ pub struct ServerInfo {
 pub struct Exists {
     /// An organization of people, who sign in through its identity provider (OIDC).
     pub organization: bool,
-    /// Workers: a fresh machine for each thread of the project whose settings chose them.
-    pub workers: bool,
     /// Credits: each organization pays ahead for what it uses, and its model calls are
     /// charged to them (`credits/get`). Absent where they are not, so what a server that
     /// keeps none says is as it was.

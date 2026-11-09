@@ -1,137 +1,24 @@
-//! `--on cloud`: each new thread on a worker of its own (`specs/computers.md`). The worker is
-//! made from the project's environment on the backend `[workers]` in `config.toml` names,
-//! within the organization's `[workers]` limits, with this repository cloned in at the current
-//! commit (which must be pushed, so the worker can fetch it). When the session ends, every
-//! worker is released: files it handed back are saved under `GLAVE_HOME/out/<thread>`, unpushed
-//! work goes to a glave/wip/ branch, and the worker is destroyed.
+//! People's computers in the cloud (`specs/computers.md`, "A person's computer in the cloud"):
+//! where the server's settings give each person a computer of their own on a Kubernetes
+//! cluster (`[computers]`, on the cluster `[workers]` reaches), every thread of theirs works
+//! there; without them, threads work on the server's own computer, as on a laptop.
 
-use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context as _, bail};
-use glave_computer::{
-    Docker, DockerSettings, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers,
-    WorkerCredentials, ask_repository, https_url, person_sandbox, read_environment,
-};
+use anyhow::bail;
+use glave_computer::{Kubernetes, KubernetesSettings, Leasing, People, person_sandbox};
 use glave_event::PrincipalId;
-use glave_harness::{Homes, Workers};
-use glave_ports::computer::{ComputerError, Home, Sandbox, Sources};
-use glave_ports::{Holder, Leases, OrgId, OsEntropy, ProjectId, SystemClock};
-use glave_process::Processes;
-use glave_session::OnWorkers;
+use glave_harness::Homes;
+use glave_ports::computer::{ComputerError, Home, Sandbox};
+use glave_ports::{Holder, Leases, OrgId, OsEntropy, SystemClock};
 
-use crate::client::Glave;
-use crate::home;
-use glave_config::policy::{Backend, Choices, ComputersFile, Constraints, On, WorkersFile};
-
-/// Where threads work: each person's on their own computer where the server's settings give
-/// people one ([`homes`]); and the threads of `project`, the project of `folder`, on workers,
-/// when its settings say `on` is `cloud`, git asked about the repository and for credentials
-/// as one of `processes`: what the session server needs, and the workers themselves, to remove
-/// any left at the end. Tasks too work on workers only then; otherwise on a worktree here,
-/// like any thread asking for a copy.
-pub(crate) async fn workers(
-    choices: &Choices,
-    constraints: &Constraints,
-    folder: &Path,
-    project: ProjectId,
-    processes: &Processes,
-    leases: Arc<dyn Leases>,
-) -> anyhow::Result<(
-    Option<OnWorkers>,
-    Option<Arc<WorkerComputers>>,
-    Option<Arc<dyn Homes>>,
-)> {
-    let homes = homes(choices, constraints, leases).await?;
-    if choices.on.value != On::Cloud {
-        return Ok((None, None, homes));
-    }
-    let Some(backend) = &choices.workers else {
-        bail!(
-            "--on cloud (from {}) needs a worker backend: set [workers] backend = \"docker\" (or \
-             \"kubernetes\") and glave = \"<a Linux build of glave>\" in config.toml",
-            choices.on.from
-        );
-    };
-    let found = read_environment(folder).await?.with_context(|| {
-        format!(
-            "--on cloud needs an environment for the worker: {} has no \
-             .devcontainer/devcontainer.json or .glave/environment.toml naming an image",
-            folder.display()
-        )
-    })?;
-    let sources = sources(processes, folder).await?;
-    let computers = Arc::new(computers(&backend.value, constraints, processes).await?);
-    let on = OnWorkers {
-        workers: Workers {
-            computers: Arc::<WorkerComputers>::clone(&computers),
-            sources,
-            attachments: Vec::new(),
-        },
-        environment: found.environment,
-        project,
-    };
-    Ok((Some(on), Some(computers), homes))
-}
-
-/// Workers on the backend `file` names, within the constraints' limits, once those a glave
-/// that is gone left there are removed.
-async fn computers(
-    file: &WorkersFile,
-    constraints: &Constraints,
-    processes: &Processes,
-) -> anyhow::Result<WorkerComputers> {
-    if let Some(key) = file.misplaced() {
-        bail!(
-            "[workers] {key} is not used by the {} backend; remove it from config.toml",
-            file.backend.name()
-        );
-    }
-    let limits = constraints.worker_limits();
-    let computers = match file.backend {
-        Backend::Docker => {
-            let docker = Docker::new(
-                DockerSettings {
-                    socket: file.socket.clone(),
-                    glave: file.glave.clone(),
-                },
-                std::env::var_os("HOME").map(PathBuf::from).as_deref(),
-            );
-            WorkerComputers::docker(
-                docker,
-                limits,
-                WorkerCredentials::HostGit(processes.clone()),
-            )
-        }
-        Backend::Kubernetes => {
-            let kubernetes = Kubernetes::connect(KubernetesSettings {
-                kubeconfig: file.kubeconfig.clone(),
-                namespace: file.namespace.clone(),
-                runtime_class: file.runtime_class.clone(),
-                glave: file.glave.clone(),
-            })
-            .await?;
-            let credentials = WorkerCredentials::HostGit(processes.clone());
-            WorkerComputers::kubernetes(kubernetes, limits, credentials)
-        }
-    };
-    // As glave starts: what a glave that ended without removing its workers left.
-    match computers.reap().await {
-        Ok(0) => {}
-        Ok(removed) => eprintln!("glave: removed {removed} workers a glave that ended had left"),
-        Err(error) => eprintln!(
-            "glave: could not look for workers a glave that ended left: {}",
-            error.message()
-        ),
-    }
-    Ok(computers)
-}
+use glave_config::policy::{Choices, ComputersFile, Constraints};
 
 /// Each person's own computer, where the server's settings give people one (`[computers]`,
 /// on the Kubernetes cluster `[workers]` reaches), within the organization's `[workers]`
 /// limits, each driven only by the server holding its lease in `leases`; none otherwise, and
 /// threads work on the server's own computer, as on a laptop.
-async fn homes(
+pub(crate) async fn homes(
     choices: &Choices,
     constraints: &Constraints,
     leases: Arc<dyn Leases>,
@@ -139,18 +26,14 @@ async fn homes(
     let Some(computers) = &choices.computers else {
         return Ok(None);
     };
-    let cluster = match &choices.workers {
-        Some(workers) if workers.value.backend == Backend::Kubernetes => &workers.value,
-        _ => bail!(
+    let Some(cluster) = &choices.workers else {
+        bail!(
             "[computers] (from {}) puts people's computers on the Kubernetes cluster [workers] \
-             reaches: set [workers] backend = \"kubernetes\" and glave = \"<a Linux build of \
-             glave>\" in config.toml",
+             reaches: set [workers] glave = \"<a Linux build of glave>\" in config.toml",
             computers.from
-        ),
+        );
     };
-    if let Some(key) = cluster.misplaced() {
-        bail!("[workers] {key} is not used by the kubernetes backend; remove it from config.toml");
-    }
+    let cluster = &cluster.value;
     let kubernetes = Kubernetes::connect(KubernetesSettings {
         kubeconfig: cluster.kubeconfig.clone(),
         namespace: cluster.namespace.clone(),
@@ -210,195 +93,13 @@ impl Homes for OnCluster {
     }
 }
 
-/// This repository as a worker clones it: its `origin` over HTTPS, at the current commit,
-/// which must already be on a remote.
-async fn sources(processes: &Processes, folder: &Path) -> anyhow::Result<Sources> {
-    let url = ask_repository(processes, folder, &["remote", "get-url", "origin"])
-        .await
-        .context("--on cloud clones this repository's origin, and it has none")?;
-    let commit = ask_repository(processes, folder, &["rev-parse", "HEAD"]).await?;
-    let unpushed = ask_repository(
-        processes,
-        folder,
-        &["rev-list", "HEAD", "--not", "--remotes"],
-    )
-    .await?;
-    if !unpushed.is_empty() {
-        bail!(
-            "the current commit {commit} is not pushed, so a worker cannot fetch it: push it \
-             first"
-        );
-    }
-    Ok(Sources::Git {
-        url: https_url(&url),
-        at: Some(commit),
-    })
-}
-
-/// Where a handed-back file goes: under `folder`, never outside it.
-fn inside(folder: &Path, name: &str) -> Option<PathBuf> {
-    let relative = Path::new(name);
-    relative
-        .components()
-        .all(|part| matches!(part, Component::Normal(_)))
-        .then(|| folder.join(relative))
-}
-
-/// Releases every worker the session's threads work on, says what each left, and removes any
-/// worker still running.
-pub(crate) async fn release(server: &Glave, workers: &WorkerComputers) {
-    for (thread, released) in server.release_workers().await {
-        match released {
-            Ok(left) => {
-                if let Some(branch) = &left.branch {
-                    eprintln!("glave: the worker's unpushed work is on the branch {branch}");
-                }
-                if let Some(lost) = &left.lost {
-                    eprintln!("glave: work on the worker of {thread} could not be kept: {lost}");
-                }
-                if !left.files.is_empty() {
-                    match save(&thread.to_string(), &left.files).await {
-                        Ok(folder) => eprintln!(
-                            "glave: {} file(s) the worker handed back are in {}",
-                            left.files.len(),
-                            folder.display()
-                        ),
-                        Err(error) => eprintln!("glave: could not keep the files: {error:#}"),
-                    }
-                }
-                eprintln!("glave: the worker for thread {thread} is released");
-            }
-            Err(error) => eprintln!("glave: could not release the worker of {thread}: {error}"),
-        }
-    }
-    if let Err(error) = workers.destroy_all().await {
-        eprintln!("glave: could not remove a worker: {error}");
-    }
-}
-
-/// Saves handed-back files under `GLAVE_HOME/out/<thread>`.
-async fn save(
-    thread: &str,
-    files: &[(String, glave_ports::computer::Bytes)],
-) -> anyhow::Result<PathBuf> {
-    let folder = home::folder()?.join("out").join(thread);
-    for (name, content) in files {
-        let Some(path) = inside(&folder, name) else {
-            continue;
-        };
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::write(&path, content.as_slice())
-            .await
-            .with_context(|| format!("could not write {}", path.display()))?;
-    }
-    Ok(folder)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Where threads work, without the people's computers, which have no `Debug`.
-    async fn placed(
-        choices: &Choices,
-        constraints: &Constraints,
-        folder: &Path,
-        project: ProjectId,
-        processes: &Processes,
-    ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
-        let leases = leases();
-        let (on, workers, _) =
-            workers(choices, constraints, folder, project, processes, leases).await?;
-        Ok((on, workers))
-    }
-
     /// Leases kept in memory, as a server alone on its store keeps them.
     fn leases() -> Arc<dyn Leases> {
         Arc::new(glave_ports::InMemoryLeases::new(Arc::new(SystemClock)))
-    }
-
-    #[test]
-    fn on_cloud_without_a_backend_or_an_environment_says_what_is_missing() {
-        use glave_config::policy::{Layer, Level, assemble};
-        let dir = glave_ports::testing::TempDir::new("cloud").unwrap();
-        let chosen = |text: &str| {
-            let layer = Layer {
-                level: Level::File(dir.join("config.toml")),
-                values: glave_config::policy::config(text, &dir).unwrap(),
-            };
-            assemble(&[layer], &[], None).choices
-        };
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let constraints = Constraints::default();
-        let project = ProjectId::from_uuid(uuid::Uuid::from_u128(1));
-        let processes = Processes::unrecorded();
-        let here = runtime
-            .block_on(workers(
-                &chosen(""),
-                &constraints,
-                &dir,
-                project,
-                &processes,
-                leases(),
-            ))
-            .unwrap();
-        assert!(
-            here.0.is_none() && here.1.is_none() && here.2.is_none(),
-            "here by default"
-        );
-        let no_backend = runtime
-            .block_on(placed(
-                &chosen("on = \"cloud\"\n"),
-                &constraints,
-                &dir,
-                project,
-                &processes,
-            ))
-            .unwrap_err();
-        assert!(
-            no_backend.to_string().contains("[workers] backend"),
-            "{no_backend}"
-        );
-        let backend = "on = \"cloud\"\n[workers]\nbackend = \"docker\"\nglave = \"/x\"\n";
-        let no_environment = runtime
-            .block_on(placed(
-                &chosen(backend),
-                &constraints,
-                &dir,
-                project,
-                &processes,
-            ))
-            .unwrap_err();
-        assert!(
-            no_environment.to_string().contains("devcontainer.json"),
-            "{no_environment}"
-        );
-        let docker_with_a_runtime_class = WorkersFile {
-            backend: Backend::Docker,
-            glave: "/x".into(),
-            socket: None,
-            kubeconfig: None,
-            namespace: None,
-            runtime_class: Some("gvisor".into()),
-        };
-        let refused = runtime
-            .block_on(computers(
-                &docker_with_a_runtime_class,
-                &constraints,
-                &processes,
-            ))
-            .unwrap_err();
-        assert!(
-            refused
-                .to_string()
-                .contains("runtime_class is not used by the docker"),
-            "{refused}"
-        );
     }
 
     #[test]
@@ -415,22 +116,15 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
+        let constraints = Constraints::default();
+        let here = runtime
+            .block_on(homes(&assemble(&[], &[], None).choices, &constraints, leases()))
+            .unwrap();
+        assert!(here.is_none(), "here by default");
         let refused = runtime
-            .block_on(homes(&choices, &Constraints::default(), leases()))
+            .block_on(homes(&choices, &constraints, leases()))
             .err()
             .unwrap();
-        assert!(
-            refused.to_string().contains("backend = \"kubernetes\""),
-            "{refused}"
-        );
-    }
-
-    #[test]
-    fn handed_back_files_stay_in_their_folder() {
-        let folder = Path::new("/home/me/.glave/out/t");
-        assert_eq!(inside(folder, "report.md"), Some(folder.join("report.md")));
-        assert_eq!(inside(folder, "a/b.txt"), Some(folder.join("a/b.txt")));
-        assert_eq!(inside(folder, "../escape"), None);
-        assert_eq!(inside(folder, "/etc/passwd"), None);
+        assert!(refused.to_string().contains("[workers] glave"), "{refused}");
     }
 }

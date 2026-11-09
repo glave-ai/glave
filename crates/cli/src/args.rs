@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use glave_harness::Permissions;
 
-use glave_config::policy::On;
 
 pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
@@ -65,7 +64,7 @@ Usage:
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
-  glave computer serve --stdio | --tcp <port>
+  glave computer serve --stdio | --socket <path> <folder>
                                 serve this machine as a computer to a harness elsewhere
                                 (glave computer --help)
   glave policy explain [options] show every setting and where it came from, and every
@@ -127,10 +126,6 @@ anything that would ask is declined.
 How glave runs is its settings, set in config.toml or given to glave serve:
   --no-network       keep sandboxed commands off the network
   --network          let sandboxed commands use the network (the default)
-  --on <place>       where threads work: here (the default), or cloud: a disposable worker
-                     of their own, made from the project's devcontainer.json or
-                     .glave/environment.toml, with this repository cloned in at its
-                     current commit; work comes back as pushed branches
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
 
@@ -158,8 +153,7 @@ Environment:
                      model; `off` to always ask)
 
 Settings: config.toml in GLAVE_HOME may set model, judge_model, permissions, network,
-worktree (true or false), on (here or cloud), [workers] (backend = \"docker\" and glave,
-a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) and
+worktree (true or false), mcp (the servers in mcp.json to turn on) and
 [telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
 feature: spans and metrics, never content), [store] (url = a postgres:// database, over TLS
 off this computer) and [serve] (origin = the https address people reach glave at from
@@ -227,8 +221,6 @@ pub(crate) struct Args {
     pub network: Option<bool>,
     /// Work in a worktree of the repository of its own, on a new branch.
     pub worktree: bool,
-    /// Where new threads work: here, or on a worker (`--on cloud`).
-    pub on: Option<On>,
     /// Model calls one turn may make; no limit when not given.
     pub max_steps: Option<u32>,
     /// Continue the most recent thread in this folder instead of starting one.
@@ -300,7 +292,6 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             "--network" => args.network = Some(true),
             "--no-network" => args.network = Some(false),
             "--worktree" => args.worktree = true,
-            "--on" => args.on = Some(place(rest.next())?),
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
             "--background" | "-b" => args.background = true,
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
@@ -353,7 +344,6 @@ fn settings_only(args: &Args) -> Result<(), String> {
     let given = [
         (args.network == Some(true), "--network"),
         (args.network == Some(false), "--no-network"),
-        (args.on.is_some(), "--on"),
         (args.max_steps.is_some(), "--max-steps"),
     ];
     match given
@@ -478,12 +468,6 @@ fn mode(value: Option<String>) -> Result<Permissions, String> {
 }
 
 /// The value of `--max-steps`: a whole number of model calls, at least one.
-/// Where threads work, as `--on` names it.
-fn place(value: Option<String>) -> Result<On, String> {
-    let place = value.ok_or("--on needs a place: here or cloud")?;
-    On::named(&place).ok_or_else(|| format!("unknown place {place:?}: use here or cloud"))
-}
-
 fn steps(value: Option<String>) -> Result<u32, String> {
     let value = value.ok_or("--max-steps needs a number of model calls")?;
     match value.parse::<u32>() {
