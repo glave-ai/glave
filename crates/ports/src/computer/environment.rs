@@ -1,5 +1,5 @@
-//! An environment: the recipe a computer is made from, however it was written down
-//! (`.glave/environment.toml` or a devcontainer.json).
+//! An environment: the recipe a computer is made from, such as the image a person's computer
+//! runs (`[computers]`).
 
 use std::collections::BTreeMap;
 use std::fmt;
