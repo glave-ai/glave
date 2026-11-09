@@ -87,7 +87,8 @@ where
             .filter(|_| opening)
             .unwrap_or_default();
         // What changed since the model was told, before the person's words (`prefix.rs`).
-        parts.extend(crate::prefix::news(offer));
+        let (stopped, told) = self.what_stopped(thread);
+        parts.extend(crate::prefix::news(offer, stopped));
         parts.push(Part::Text {
             text: prompt.to_owned(),
         });
@@ -120,6 +121,7 @@ where
         }
         self.commit(thread, events).await?;
         crate::prefix::heard(thread, offer);
+        thread.commands.told(&told);
         thread.turns = thread.turns.saturating_add(1);
         thread.messages.push(Message::User { parts });
         if by_glave {

@@ -31,7 +31,7 @@ pub use remote::RemoteComputers;
 pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{Token, Tokens};
-pub use waking::{Grow, Peek, Short, Wake, Waking};
+pub use waking::{Grow, Lost, Peek, Short, Wake, Waking};
 #[cfg(feature = "kubernetes")]
 pub use worker::{
     Holding, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers, person_sandbox,

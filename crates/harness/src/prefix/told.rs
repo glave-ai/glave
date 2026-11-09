@@ -114,12 +114,7 @@ impl Told {
                 waiting.join(", ")
             ));
         }
-        (!notes.is_empty()).then(|| {
-            format!(
-                "<system-reminder>\n{}\n</system-reminder>",
-                notes.join("\n\n")
-            )
-        })
+        (!notes.is_empty()).then(|| notes.join("\n\n"))
     }
 
     /// What `now` offers that the model was never told of, sorted by whether `listed`, a

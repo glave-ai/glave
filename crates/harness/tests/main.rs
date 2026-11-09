@@ -27,6 +27,7 @@ mod instructions;
 mod judge;
 mod log_failures;
 mod modes;
+mod moved;
 mod network;
 mod outside_sandbox;
 mod plan;

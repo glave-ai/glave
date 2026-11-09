@@ -15,12 +15,20 @@ use serde::Deserialize;
 use super::ToolOutcome;
 use super::captured::Captured;
 use super::workspace::{Workspace, explain};
-use crate::background::Commands;
+use crate::background::{Commands, Entry};
+use crate::toolset::one_line;
 
 /// How long a command started in the background is watched before the call answers: long
 /// enough for most servers to print their address, or fail to start, and short enough not to
 /// hold up the turn.
 const FIRST_LOOK: Duration = Duration::from_secs(2);
+
+/// All that is known of a command no longer on a computer that can start again: it may have
+/// finished first, or been stopped by that.
+const RESTARTED: &str = "your computer restarted since";
+
+/// The most of such a command's script the model is told, in characters.
+const NAMED_SCRIPT: usize = 120;
 
 /// What reading again or stopping looks like, for the model.
 const NEXT: &str = "see what it prints next with command_output, or stop it with command_output \
@@ -59,7 +67,7 @@ pub(crate) fn named(arguments: &glave_event::Arguments) -> Option<u32> {
 }
 
 pub(crate) async fn command_output(
-    commands: &Commands,
+    (commands, restarts): (&Commands, bool),
     args: OutputArgs,
     (room, hidden): (usize, &KnownSecrets),
     cancel: &dyn Cancellation,
@@ -91,7 +99,7 @@ pub(crate) async fn command_output(
             let ended = commands.numbered(number).and_then(|entry| entry.ended);
             ToolOutcome::ok(format!(
                 "Command {number} {}: there is no more of its output.",
-                ended_as(ended.as_ref())
+                ended_as(ended.as_ref(), restarts)
             ))
         }
         Err(error) => ToolOutcome::error(explain(&error)),
@@ -228,9 +236,14 @@ fn took(millis: u64) -> String {
     }
 }
 
-/// How a command glave knows has ended did, after "Command 2".
-fn ended_as(ending: Option<&CommandEnding>) -> String {
+/// How a command glave knows has ended did, after "Command 2", on a computer that `restarts` or
+/// not: no longer on one that can, it finished or was stopped, and glave can't say which.
+fn ended_as(ending: Option<&CommandEnding>, restarts: bool) -> String {
     match ending {
+        Some(CommandEnding::Gone) if restarts => format!(
+            "no longer runs ({RESTARTED}, and it finished or was stopped; check before starting \
+             it again)"
+        ),
         Some(CommandEnding::Exited { code }) => format!("exited with code {code}"),
         Some(CommandEnding::Signalled) => "was stopped by a signal".to_owned(),
         Some(CommandEnding::Stopped { by: None }) => "was stopped".to_owned(),
@@ -242,6 +255,27 @@ fn ended_as(ending: Option<&CommandEnding>) -> String {
         Some(CommandEnding::TimedOut) => "was stopped at its time limit".to_owned(),
         Some(CommandEnding::Gone) | None => "has ended".to_owned(),
     }
+}
+
+/// What the model is told of `gone`, commands no longer on a computer that started again, if any
+/// are: what each ran, and that it finished or was stopped, for the model to check before it
+/// starts any again. glave never starts them itself (`specs/invariants.md`, 4).
+pub(crate) fn no_longer_there(gone: &[Entry]) -> Option<String> {
+    let named: Vec<String> = gone
+        .iter()
+        .map(|entry| {
+            let script = one_line(&entry.script, NAMED_SCRIPT);
+            format!("command {} ({script})", entry.number)
+        })
+        .collect();
+    (!named.is_empty()).then(|| {
+        format!(
+            "glave: {RESTARTED} you last looked, so these no longer run in the background: {}. \
+             Each finished or was stopped, and glave can't say which. It doesn't start them \
+             again: check what each did before starting it yourself.",
+            named.join(", ")
+        )
+    })
 }
 
 /// The commands still running, as the model is told them.

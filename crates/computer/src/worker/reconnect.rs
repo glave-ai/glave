@@ -82,10 +82,14 @@ impl Connection {
                 }
                 Ok(fresh)
             }
-            Err(error) => Err(ComputerError::Unreachable(format!(
-                "the connection to worker {name} died ({died}) and could not be opened again: \
-                 {error}"
-            ))),
+            Err(error) => {
+                // The cluster's own words, which name its objects, are for the server's log.
+                tracing::warn!(why = %error, "a computer's connection could not be opened again");
+                Err(ComputerError::Unreachable(format!(
+                    "the connection to the computer died ({died}) and could not be opened \
+                     again: it did not answer"
+                )))
+            }
         }
     }
 }

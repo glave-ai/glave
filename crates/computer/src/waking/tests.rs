@@ -170,20 +170,17 @@ fn a_scratch_folder_is_planned_asleep_and_its_first_command_wakes_the_computer_o
     });
 }
 
+/// Woken again as another computer, its disk kept, however lately a call on the one before went
+/// through: the server having let go of it, `TRUSTED` never stands in for it.
 #[test]
-fn a_computer_woken_again_opens_its_workspaces_again() {
+fn a_computer_woken_again_opens_its_workspaces_again_however_lately_a_call_went_through() {
     let (_dir, base) = folder("waking-again");
     let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
     block_on!(async {
         let home = waking(&base, &wakes, &again);
         let chat = planned(&home, "chat").await;
         run(&home, chat.id, "echo kept > kept.txt").await;
-        // It slept and woke as another computer, its disk kept; the next call comes after a
-        // quiet spell, so it asks.
         again.fetch_add(1, Ordering::SeqCst);
-        tokio::time::pause();
-        tokio::time::advance(TRUSTED + Duration::from_secs(1)).await;
-        tokio::time::resume();
         let read = home.computers.read(chat.id, "kept.txt").await.unwrap();
         assert_eq!(read, Bytes::new(b"kept\n"));
         assert_eq!(wakes.load(Ordering::SeqCst), 2);

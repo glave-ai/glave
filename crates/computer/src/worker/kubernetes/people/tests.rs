@@ -346,6 +346,74 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
     });
 }
 
+/// A computer whose machine is taken away under a command says why, its commands in the
+/// background gone with it, and the next call starts it again on its disk, as a Pod of its own.
+#[test]
+fn a_person_s_computer_that_loses_its_machine_says_why_and_starts_again_on_its_disk() {
+    let Some(image) = computer_image() else {
+        return;
+    };
+    block_on!(async {
+        let Some((cluster, limits)) = on_cluster("lost").await else {
+            return;
+        };
+        let people = People::new(cluster.clone(), &image, &limits, 1, alone()).unwrap();
+        let (org, person, key) = someone();
+        let pod = format!("glave-computer-{key}");
+        let home = people.home(org, person).unwrap();
+        let chat = home
+            .computers
+            .open(
+                home.home.computer,
+                &Sources::Scratch {
+                    name: "lost".into(),
+                    owner: None,
+                },
+            )
+            .await
+            .unwrap();
+        let wrote = command(&home, chat.id, "echo kept > kept.txt").await;
+        let background = home
+            .computers
+            .start(chat.id, &Command::new("sleep 300"))
+            .await
+            .unwrap();
+        let first = uid(&cluster, &pod).await;
+        // Gone at once, as a machine that is taken back goes: no grace for the command.
+        let cut = async {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let _ = cluster
+                .pods()
+                .delete(&pod, &kube::api::DeleteParams::default().grace_period(0))
+                .await;
+        };
+        let (running, ()) = tokio::join!(outcome(&home, chat.id, "sleep 300"), cut);
+        let read = home
+            .computers
+            .output(chat.id, background, std::time::Duration::ZERO)
+            .await;
+        let back = command(&home, chat.id, "cat kept.txt").await;
+        let again = uid(&cluster, &pod).await;
+        let (destroyed, left) = gone(people, &cluster, &key).await;
+        wrote.unwrap();
+        let said = running.unwrap_err();
+        assert!(
+            said.contains("your computer moved to another machine")
+                && said.contains("this command was stopped"),
+            "{said}"
+        );
+        assert!(
+            matches!(read, Err(glave_ports::computer::ComputerError::NotFound(_))),
+            "gone with it: {read:?}"
+        );
+        assert_eq!(back.unwrap().trim(), "kept", "on the same disk");
+        assert!(first.is_some());
+        assert_ne!(first, again, "started again, as a Pod of its own");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
+}
+
 /// A new person in a new organization, and the key their computer is named by.
 fn someone() -> (OrgId, PrincipalId, String) {
     let org = OrgId::from_uuid(crate::local::new_id().unwrap());

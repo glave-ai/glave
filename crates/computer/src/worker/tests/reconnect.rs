@@ -76,8 +76,9 @@ fn a_worker_that_cannot_be_reached_again_says_so_and_the_next_call_tries_again()
             let failed = read_after_death(&workers, opened.id, "setup.txt").await;
             assert!(
                 matches!(&failed, Err(ComputerError::Unreachable(m))
-                    if m.contains("could not be opened again") && m.contains("no worker w0")),
-                "{failed:?}"
+                    if m.contains("could not be opened again: it did not answer")
+                        && !m.contains("no worker w0")),
+                "the cluster's own words go to the log, not the person: {failed:?}"
             );
         }
         assert_eq!(

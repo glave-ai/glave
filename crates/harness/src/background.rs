@@ -10,17 +10,18 @@ mod record;
 
 use std::sync::Arc;
 
-use glave_event::{Body, CommandEnding, Event, Principal};
+use glave_event::{Body, CommandEnding, Event, Part, Principal};
 use std::net::SocketAddr;
 
 use glave_ports::computer::{
     CommandId, ComputerError, ComputerId, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
 };
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, ToolOutput};
 use tokio::task::JoinSet;
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::tools::no_longer_there;
 
 pub use record::{Commands, RunningCommand};
 pub(crate) use record::{Entry, ending_of};
@@ -68,6 +69,8 @@ impl Commands {
                     commands.restore_end(CommandId::from_uuid(ended.command), &ended.ending);
                 }
                 Body::ThreadForked(forked) => commands.numbered_after(forked.commands),
+                // Each names what ended before it, as it was recorded.
+                Body::TurnStarted(_) | Body::ToolCallCompleted(_) => commands.told_so_far(),
                 _ => {}
             }
         }
@@ -323,6 +326,39 @@ where
             thread.commands.check().await;
         }
         self.record_commands(thread).await
+    }
+
+    /// `output`, a call's in `thread`, with what the model is told of its commands no longer on
+    /// a computer that started again since (`specs/computers.md`, decision 16), which nothing told
+    /// it of yet, after asking the computer what still runs; and their numbers, to count as told
+    /// once `output` is recorded. A computer that can't start again has nothing to tell.
+    pub(crate) async fn saying_what_stopped(
+        &self,
+        thread: &Thread,
+        mut output: ToolOutput,
+    ) -> (ToolOutput, Vec<u32>) {
+        if self.workspace_for(thread).may_restart() {
+            thread.commands.check().await;
+        }
+        let (note, told) = self.what_stopped(thread);
+        if let Some(note) = note {
+            output.parts.push(Part::Text {
+                text: format!("[{note}]"),
+            });
+        }
+        (output, told)
+    }
+
+    /// What the model is told of `thread`'s commands no longer on a computer that started again
+    /// since, which nothing told it of yet, and their numbers: none where there are none, or
+    /// where its computer can't start again.
+    pub(crate) fn what_stopped(&self, thread: &Thread) -> (Option<String>, Vec<u32>) {
+        if !self.workspace_for(thread).may_restart() {
+            return (None, Vec::new());
+        }
+        let stopped = thread.commands.gone_untold();
+        let told = stopped.iter().map(|entry| entry.number).collect();
+        (no_longer_there(&stopped), told)
     }
 
     /// Stops the thread's commands still running, recording why, as glave's own decision.
