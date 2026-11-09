@@ -14,13 +14,13 @@ use glave_harness::{
     Harness, HarnessError, Homes, Parts, Place, ProjectFolders, Settings, Workspace,
 };
 use glave_identity::signin::{Accounts, Browsers};
-use glave_ports::computer::{ComputerError, Environment};
+use glave_ports::computer::ComputerError;
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
     BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Lease, Leases, Mailer,
-    ModelProvider, OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
+    ModelProvider, OrgId, OsEntropy, Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -157,7 +157,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// A server's wiring with what it cannot do without: its models, its store's log, blobs
     /// and projects, and the workspace on the computer its threads work on. Everything else
     /// starts off or empty: the system clock and the operating system's randomness; no
-    /// `web_fetch`, other tools, hooks, workers, identity provider, memory, model accounts, git
+    /// `web_fetch`, other tools, hooks, identity provider, memory, model accounts, git
     /// hosts, connections, rereading, project folders, trust, browsers or worktrees to let go
     /// of; no limit on tasks; no notifications pushed;
     /// only the settings' own model and mode; threads in their project's folder rather than a
@@ -357,13 +357,13 @@ where
         };
         let harness = Harness::new(parts, settings)
             .with_web(wiring.web)
-        .with_tools(wiring.tools)
-        .with_skills(wiring.skills)
-        .with_own_tools(wiring.own)
-        .with_hooks(wiring.hooks)
-        .with_memory_if(wiring.memory)
-        .with_project_folders(wiring.project_folders)
-        .with_homes(wiring.homes.clone());
+            .with_tools(wiring.tools)
+            .with_skills(wiring.skills)
+            .with_own_tools(wiring.own)
+            .with_hooks(wiring.hooks)
+            .with_memory_if(wiring.memory)
+            .with_project_folders(wiring.project_folders)
+            .with_homes(wiring.homes.clone());
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {

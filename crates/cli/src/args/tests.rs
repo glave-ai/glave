@@ -34,11 +34,7 @@ fn the_network_is_a_choice_of_its_own_in_the_sandbox() {
 
 #[test]
 fn how_glave_runs_is_the_server_s_to_choose_never_one_turn_s() {
-    for flags in [
-        &["--network"][..],
-        &["--no-network"],
-        &["--max-steps", "3"],
-    ] {
+    for flags in [&["--network"][..], &["--no-network"], &["--max-steps", "3"]] {
         let refused = parse_words(&[flags, &["go"]].concat()).unwrap_err();
         assert!(
             refused.contains("set it in config.toml"),

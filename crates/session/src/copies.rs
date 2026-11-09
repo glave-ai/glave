@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{Copies, ProjectFolder};
 use crate::server::Server;

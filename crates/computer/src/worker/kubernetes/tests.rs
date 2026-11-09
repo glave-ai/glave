@@ -392,8 +392,8 @@ fn a_real_worker_runs_a_command_through_a_bridge_with_a_network_or_without() {
     });
 }
 
-/// Starts a worker of `starter`, the stub waiting in it, and lets go of the link to it, as a
-/// glave killed outright does. It asks for no CPU or memory: four at once asking for a CPU each
+/// Starts a worker of `starter`, the stub waiting in it, and lets go of it, as a glave killed
+/// outright does. It asks for no CPU or memory: four at once asking for a CPU each
 /// would not fit on the one node of CI's cluster beside the other tests' workers.
 async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) -> String {
     let name = name();
@@ -403,7 +403,7 @@ async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) ->
         memory_mib: None,
         ..spec(true)
     };
-    drop(cluster.start_with(&name, &spec, STUB).await.unwrap());
+    cluster.start_with(&name, &spec, STUB).await.unwrap();
     name
 }
 

@@ -1,5 +1,5 @@
 //! Where a thread works: a folder worked on in place, such as its project's, a git worktree
-//! of its own of one on a `glave/<thread>` branch, a worker, or a scratch folder. The binding
+//! of its own of one on a `glave/<thread>` branch, or a scratch folder. The binding
 //! is recorded as `workspace.bound`, and resuming the thread reads it to find the workspace
 //! again, and the instructions it opens with. A thread let go of closes the workspace opened
 //! for it, once nothing of its commands is left there.
@@ -10,7 +10,7 @@ use std::sync::{Arc, PoisonError};
 use glave_event::{
     Body, ComputerKind, ComputerRef, Event, Opened, PrincipalId, ThreadId, WorkspaceBound,
 };
-use glave_ports::computer::{ComputerError, ComputerId, Environment, Sources};
+use glave_ports::computer::{ComputerError, ComputerId, Sources};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, ToolSource};
 
 use crate::approval::Approver;

@@ -1,6 +1,6 @@
 //! Tasks: a turn run in a thread with no one attached, in any project its caller works in,
-//! always on a copy of the project's folder (a worktree, a worker or a scratch
-//! folder), never in the folder itself. The server starts the work as it would for a client,
+//! always on a copy of the project's folder (a worktree or a scratch folder), never in the
+//! folder itself. The server starts the work as it would for a client,
 //! answers its approvals "no one there" (in auto mode the judge still clears what the person
 //! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
 //! it records, stops a turn at its budget, and records the task's start and end in its project's

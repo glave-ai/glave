@@ -482,8 +482,6 @@ export type Exists = {
   readonly credits?: boolean;
   /** An organization of people, who sign in through its identity provider (OIDC). */
   readonly organization: boolean;
-  /** Workers: a fresh machine for each thread of the project whose settings chose them. */
-  readonly workers: boolean;
 };
 
 /** The kind of a failed model request. */
@@ -2394,8 +2392,7 @@ export type ProjectCreateResult = {
   /**
    * Whether a new chat in it may work on a separate copy of its folder, and whether it
    * does unless told: said by `project/get` alone, and only where it may (its folder in a
-   * git repository with a commit, on this server's computer, its threads working here
-   * rather than on workers).
+   * git repository with a commit, on this server's computer).
    */
   readonly copies?: Copies | null;
   /** Where its threads work. */
@@ -2425,8 +2422,7 @@ export type ProjectFolderSetResult = {
   /**
    * Whether a new chat in it may work on a separate copy of its folder, and whether it
    * does unless told: said by `project/get` alone, and only where it may (its folder in a
-   * git repository with a commit, on this server's computer, its threads working here
-   * rather than on workers).
+   * git repository with a commit, on this server's computer).
    */
   readonly copies?: Copies | null;
   /** Where its threads work. */
@@ -2443,8 +2439,7 @@ export type ProjectGetResult = {
   /**
    * Whether a new chat in it may work on a separate copy of its folder, and whether it
    * does unless told: said by `project/get` alone, and only where it may (its folder in a
-   * git repository with a commit, on this server's computer, its threads working here
-   * rather than on workers).
+   * git repository with a commit, on this server's computer).
    */
   readonly copies?: Copies | null;
   /** Where its threads work. */
@@ -2478,8 +2473,7 @@ export type ProjectRenameResult = {
   /**
    * Whether a new chat in it may work on a separate copy of its folder, and whether it
    * does unless told: said by `project/get` alone, and only where it may (its folder in a
-   * git repository with a commit, on this server's computer, its threads working here
-   * rather than on workers).
+   * git repository with a commit, on this server's computer).
    */
   readonly copies?: Copies | null;
   /** Where its threads work. */
@@ -2924,8 +2918,7 @@ export type ThreadSourcesResult = {
 export type ThreadStartParams = {
   /**
    * For a thread that runs as a task: in a project with a folder it works on a copy
-   * of its own, a worktree (or a worker, where every thread works on one), never in
-   * the folder itself, so `worktree: false` is refused.
+   * of its own, a worktree, never in the folder itself, so `worktree: false` is refused.
    */
   readonly background?: boolean;
   /**

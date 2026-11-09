@@ -14,7 +14,7 @@ use glave_ports::computer::ComputerError;
 /// Random bytes in a minted token.
 const MINTED_BYTES: usize = 32;
 /// The shortest secret a listener accepts.
-pub const MIN_SECRET: usize = 16;
+pub(crate) const MIN_SECRET: usize = 16;
 
 /// A secret, and when it stops opening connections. A connection opened before then lasts.
 #[derive(Clone, PartialEq, Eq)]

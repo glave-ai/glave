@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::support::*;
 use glave_computer::{LocalComputers, RemoteComputers, serve};
-use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
-use glave_harness::{AllowAll, Cancel, Place, Workers, Workspace, wip_branch};
+use glave_event::{Body, Event, Outcome, StopReason};
+use glave_harness::{AllowAll, Cancel, Workspace};
 use glave_ports::computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
     FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel, Save,
@@ -287,4 +287,3 @@ fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
         assert_eq!(endings, 2);
     });
 }
-

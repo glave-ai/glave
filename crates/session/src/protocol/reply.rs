@@ -298,8 +298,7 @@ pub enum Reply {
         folder: Option<ProjectFolder>,
         /// Whether a new chat in it may work on a separate copy of its folder, and whether it
         /// does unless told: said by `project/get` alone, and only where it may (its folder in a
-        /// git repository with a commit, on this server's computer, its threads working here
-        /// rather than on workers).
+        /// git repository with a commit, on this server's computer).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         copies: Option<Copies>,
     },

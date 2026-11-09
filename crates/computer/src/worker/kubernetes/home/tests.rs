@@ -123,8 +123,7 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             isolation: cluster.isolation(),
             ..Limits::default()
         };
-        let computers =
-            WorkerComputers::on(Box::new(person), limits.clone());
+        let computers = WorkerComputers::on(Box::new(person), limits.clone());
         let environment = Environment {
             image: Image::Oci(image),
             network: Some(Network::On),
@@ -141,8 +140,7 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             let folder = glave_ports::testing::TempDir::new("another-glave").unwrap();
             let cluster = another_glave(&cluster, &folder);
             let person = PersonComputer::new(cluster.clone(), &key, 1).unwrap();
-            let computers =
-                WorkerComputers::on(Box::new(person), limits.clone());
+            let computers = WorkerComputers::on(Box::new(person), limits.clone());
             let which = "echo \"link=$(readlink /opt/glave/glave)\"; \
                 test -x /opt/glave/glave && echo copied";
             awake(&computers, &environment, &[which]).await

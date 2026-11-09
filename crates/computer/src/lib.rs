@@ -30,7 +30,7 @@ pub use local::{
 pub use remote::RemoteComputers;
 pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
-pub use token::{MIN_SECRET, Token, Tokens};
+pub use token::{Token, Tokens};
 pub use waking::{Grow, Peek, Short, Wake, Waking};
 #[cfg(feature = "kubernetes")]
 pub use worker::{

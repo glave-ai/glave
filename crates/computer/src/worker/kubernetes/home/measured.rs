@@ -14,8 +14,8 @@ use super::super::sizing::Size;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
 use super::tests::ran;
-use crate::worker::backend::Backend as _;
 use crate::WorkerComputers;
+use crate::worker::backend::Backend as _;
 
 /// Whether bubblewrap starts as glave's sandbox starts it for a command without the network
 /// (`local/sandbox/linux/bubblewrap.rs`'s probe), and what it says when it does not.

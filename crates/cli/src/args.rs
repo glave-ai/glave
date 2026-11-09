@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use glave_harness::Permissions;
 
-
 pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
 

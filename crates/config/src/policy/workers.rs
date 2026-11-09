@@ -24,8 +24,9 @@ pub struct WorkersFile {
 }
 
 /// `[computers]` in the server's `config.toml`: each person gets a computer of their own on the
-/// cluster `[workers]` reaches, from this image, with a disk of this size kept while it sleeps (`specs/computers.md`, "A person's computer in the cloud").
-/// Unset, threads work on the server's own computer.
+/// cluster `[workers]` reaches, from this image, with a disk of this size kept while it sleeps
+/// (`specs/computers.md`, "A person's computer in the cloud"). Unset, threads work on the
+/// server's own computer.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComputersFile {

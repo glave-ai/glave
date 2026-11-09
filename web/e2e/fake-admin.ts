@@ -110,7 +110,7 @@ export async function fakeAdmin(
         origin: 'https://glave.example',
         email: true,
         invites: true,
-        exists: { organization: true, workers: false },
+        exists: { organization: true },
         role: 'owner',
       };
   await page.route('**/*', async (route: Route) => {

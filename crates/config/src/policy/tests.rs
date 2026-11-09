@@ -450,7 +450,10 @@ fn worker_limits_narrow() {
     assert_eq!(limits.network, Some(glave_ports::computer::Network::Off));
     assert!(effective::settle(no_choices(), &rules).is_ok());
     for unknown in ["cpus = 2", "max_minutes = 90", "network = \"allowlist\""] {
-        let refused = files::policy(&format!("version = 1\n[workers]\n{unknown}\n"), Path::new(ORG));
+        let refused = files::policy(
+            &format!("version = 1\n[workers]\n{unknown}\n"),
+            Path::new(ORG),
+        );
         assert!(refused.is_err(), "{unknown}");
     }
 }

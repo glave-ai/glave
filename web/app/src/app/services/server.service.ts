@@ -7,13 +7,13 @@ import { SessionService } from './session.service';
  * What the glave that served the app says about itself (`server/discover`): its name and
  * version, the mode a thread runs with when it chooses none, the modes a thread may choose,
  * where no sandbox can run, the sentence saying so, and what exists beyond a person's own
- * server (an organization, workers), which every part of the app reads here and draws only
+ * server (an organization), which every part of the app reads here and draws only
  * when the server says so. Read once, when first asked; its
  * version is asked again when a part of the app could not load, to tell whether glave was
  * updated meanwhile.
  */
 /** What a server that has said nothing beyond a person's own has: none of it. */
-const NONE: Exists = { organization: false, workers: false };
+const NONE: Exists = { organization: false };
 
 @Service()
 export class ServerService {

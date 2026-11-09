@@ -5,7 +5,6 @@
 #[path = "support/script.rs"]
 mod support;
 
-
 #[path = "support/wire.rs"]
 mod wire;
 

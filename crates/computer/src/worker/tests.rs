@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use glave_ports::block_on;
 use glave_ports::computer::{Bytes, Glob, Image, Isolation, Network, Save};
-use glave_ports::testing::{ManualClock, SocketPath, TempDir};
+use glave_ports::testing::{SocketPath, TempDir};
 use tokio::task::JoinHandle;
 
 use super::backend::Listed;
@@ -406,7 +406,7 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
     let backend = Arc::new(InProcess::new(&dir.join("copies")));
     let workers = |starter: Option<Glave>| {
         WorkerComputers::on(Box::new(Shared(Arc::clone(&backend))), Limits::default())
-        .started_by(starter)
+            .started_by(starter)
     };
     let this = Glave::this().unwrap();
     let ended = changed(&this, "start", "the start of a glave that ended");

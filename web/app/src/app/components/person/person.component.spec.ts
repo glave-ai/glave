@@ -44,7 +44,7 @@ describe('PersonComponent', () => {
   });
 
   it('offers Admin only to an admin of an organization the server shows', async () => {
-    const shown = { ...SERVER, exists: { organization: true, workers: false }, invites: true };
+    const shown = { ...SERVER, exists: { organization: true }, invites: true };
     for (const [said, offered] of [
       [{ ...shown, role: 'admin' }, true],
       [{ ...shown, role: 'member' }, false],
@@ -92,7 +92,7 @@ describe('PersonComponent', () => {
 
   it('gives way to Admin once the person’s first invite waits, as the server then says', async () => {
     const alone = { ...SERVER, origin: 'https://glave.example', invites: true };
-    const shown = { ...alone, exists: { organization: true, workers: false }, role: 'owner' };
+    const shown = { ...alone, exists: { organization: true }, role: 'owner' };
     const made = {
       id: 'i',
       role: 'member',

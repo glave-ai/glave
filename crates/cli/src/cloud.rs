@@ -118,7 +118,11 @@ mod tests {
             .unwrap();
         let constraints = Constraints::default();
         let here = runtime
-            .block_on(homes(&assemble(&[], &[], None).choices, &constraints, leases()))
+            .block_on(homes(
+                &assemble(&[], &[], None).choices,
+                &constraints,
+                leases(),
+            ))
             .unwrap();
         assert!(here.is_none(), "here by default");
         let refused = runtime

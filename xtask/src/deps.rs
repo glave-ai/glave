@@ -38,7 +38,7 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-shell", Domain),
     // Every operating-system process glave starts, owned and recorded, over tokio and rustix.
     ("glave-process", Adapter),
-    // The computer port: this machine, and workers on Docker or Kubernetes.
+    // The computer port: this machine, and people's computers and workers on Kubernetes.
     ("glave-computer", Adapter),
     // The verified caller: OIDC (jsonwebtoken), passkeys (webauthn-rs) and local sign-in.
     ("glave-identity", Adapter),
