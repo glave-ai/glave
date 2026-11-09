@@ -317,20 +317,6 @@ impl Workspace {
         &self.computers
     }
 
-    /// Runs `script` for glave itself, not the model: its output whole, and how it ended.
-    pub(crate) async fn quietly(&self, script: &str) -> Result<(Finished, String), ComputerError> {
-        let output = Collected::default();
-        let finished = self
-            .run(
-                script.to_owned(),
-                (120, OnTimeout::Stop),
-                &output,
-                &Cancel::new(),
-            )
-            .await?;
-        Ok((finished, output.text()))
-    }
-
     /// The sandbox commands run in, if one was asked for.
     pub(crate) fn sandbox(&self) -> Option<&Sandbox> {
         self.sandbox.as_ref()

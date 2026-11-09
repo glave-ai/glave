@@ -38,7 +38,7 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-shell", Domain),
     // Every operating-system process glave starts, owned and recorded, over tokio and rustix.
     ("glave-process", Adapter),
-    // The computer port: this machine, and workers on Docker or Kubernetes.
+    // The computer port: this machine, and people's computers and workers on Kubernetes.
     ("glave-computer", Adapter),
     // The verified caller: OIDC (jsonwebtoken), passkeys (webauthn-rs) and local sign-in.
     ("glave-identity", Adapter),
@@ -80,8 +80,6 @@ const LAYERS: &[(&str, Layer)] = &[
     // The session API: the harness served in-process, over stdio and over HTTP. It serves the
     // harness and verifies callers with glave-identity, so it is wired from both, as the binary is.
     ("glave-session", Binary),
-    // The gateway served over HTTP, with sign-in.
-    ("glave-gateway-service", Binary),
     // The command-line binary, which wires everything.
     ("glave", Binary),
     // The harness run on the eval tasks against real models.

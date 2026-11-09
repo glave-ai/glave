@@ -53,7 +53,6 @@ mod toolset;
 mod turn;
 mod untrusted;
 mod waits;
-mod worker;
 
 pub use approval::{ASKS, AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use background::{Commands, RunningCommand};
@@ -89,4 +88,3 @@ pub use title::{TitleCase, Titled};
 pub use tools::workspace::{Inside, Looked, Workspace};
 pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, Said};
-pub use worker::{ReleasedWorker, Workers, wip_branch};

@@ -27,7 +27,7 @@ type Subcommand = fn(&[String]) -> ExitCode;
 
 /// The commands that are their first word, each reading the words after it. Only as the
 /// first word: a prompt starting with one goes after `--`.
-const SUBCOMMANDS: [(&str, Subcommand); 14] = [
+const SUBCOMMANDS: [(&str, Subcommand); 13] = [
     ("server", crate::server::main),
     ("computer", crate::computer::main),
     ("worktrees", crate::worktrees::main),
@@ -40,7 +40,6 @@ const SUBCOMMANDS: [(&str, Subcommand); 14] = [
     ("doc", crate::doc::main),
     ("tasks", crate::tasks::tasks_main),
     ("schedule", crate::tasks::schedule_main),
-    ("gateway", crate::gateway::serve::main),
     ("credits", crate::credits::main),
 ];
 
@@ -166,9 +165,6 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             .await
             .map_err(anyhow::Error::from)
     };
-    if wired.workers.is_some() {
-        wired.server.shutdown().await;
-    }
     wired.close().await;
     drop(lock); // Last, once everything it ran has stopped.
     served?;

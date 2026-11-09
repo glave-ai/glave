@@ -147,12 +147,6 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "the connections, aborted the line before",
     ),
     (
-        "crates/gateway-service/src/http.rs",
-        "while connections.join_next().await.is_some() {}",
-        1,
-        "the connections, aborted the line before",
-    ),
-    (
         "crates/computer/src/serve.rs",
         "connections.join_next().await;",
         2,
@@ -466,10 +460,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/computer/src/worker/reconnect.rs",
-        "let mut failed = self.failed.lock().await;",
+        "let _reopening = self.reopening.lock().await;",
         1,
-        "held while the connection to a worker is opened again, within the worker's START_WAIT \
-         and the remote computer's deadlines",
+        "held while the connection to a worker is opened again, within BRIDGE_AGAIN and the \
+         remote computer's deadlines",
     ),
     (
         "crates/cli/src/reread.rs",

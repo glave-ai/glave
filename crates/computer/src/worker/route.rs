@@ -79,7 +79,6 @@ macro_rules! forward {
         ) -> BoxFuture<'a, Result<(), ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
-                self.check_time(&worker)?;
                 self.remote(&worker).await?.write(workspace, files).await
             })
         }

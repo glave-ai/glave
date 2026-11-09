@@ -11,7 +11,6 @@ Settings (the nearest wins: flags, environment, project, person, default)
   models          none besides model  from default
   worktree        off                 from default
   titles          on                  from default
-  on              here                from default
   web             fetch on            from default
   project_memory  shared              from default
 

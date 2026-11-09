@@ -1,6 +1,6 @@
 [package]
 name = "glave-computer"
-description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, workers on Docker or Kubernetes, and computers served and reached over JSON-RPC"
+description = "glave's computers: this machine as a computer, people's computers on Kubernetes, and computers served and reached over JSON-RPC"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,8 +15,6 @@ name = "computer"
 path = "tests/main.rs"
 
 [dependencies]
-# Request and response bodies for the Docker Engine API (already in the tree via reqwest).
-bytes.workspace = true
 # The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
 # Whose a person's computer is, as its lease names them.
@@ -26,37 +24,29 @@ glave-ports.workspace = true
 glave-process.workspace = true
 # File patterns as models write them, for files/glob and files/search.
 globset.workspace = true
-# The Docker Engine API, over its Unix socket (already in the tree via reqwest).
-http.workspace = true
-http-body-util.workspace = true
-hyper = { workspace = true, features = ["client", "http1"] }
-hyper-util = { workspace = true, features = ["tokio"] }
-# Workers on Kubernetes, only with the `kubernetes` feature (the CLI turns it on), so library
-# users who never start a worker on a cluster do not build a Kubernetes client.
+# People's computers and workers on Kubernetes, only with the `kubernetes` feature (the CLI turns
+# it on), so library users who never start one on a cluster do not build a Kubernetes client.
 k8s-openapi = { workspace = true, optional = true }
 kube = { workspace = true, optional = true }
 # Walking a workspace the way git sees it, leaving out what it ignores.
 ignore.workspace = true
-# A self-signed certificate per worker, whose fingerprint the harness pins.
+# A self-signed certificate for a computer served over TLS, whose fingerprint the harness pins.
 rcgen.workspace = true
 # The expressions files/search looks for.
 regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
 # Process calls on Linux: the Landlock helper's own session and the user id that names the
-# sandbox's folder and tmux's; rtnetlink, for a Docker worker's routes that refuse cloud metadata.
-rustix = { workspace = true, features = ["net", "process", "pty", "termios"] }
-# TLS between the harness and a worker (already in the tree via reqwest).
+# sandbox's folder and tmux's.
+rustix = { workspace = true, features = ["process", "pty", "termios"] }
+# TLS between the harness and a computer served across machines (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 tokio-rustls.workspace = true
 # A computer running another version of glave than the server's, said in the server's log.
 tracing.workspace = true
-# Reading .glave/environment.toml.
-toml.workspace = true
 uuid.workspace = true
 
 # The sandbox on Linux: Landlock where bubblewrap cannot start, and the seccomp filter that
@@ -67,12 +57,14 @@ libc.workspace = true
 seccompiler.workspace = true
 
 [features]
-# The worker backend on Kubernetes.
+# People's computers, and workers, on Kubernetes.
 kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:glave-event"]
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
+# A pseudo-terminal of the sandbox tests' own, standing in for another session's terminal.
+rustix = { workspace = true, features = ["pty"] }
 # Paused time, so fault tests stall and time out on a clock they move, never a real one.
 tokio = { workspace = true, features = ["test-util"] }
 

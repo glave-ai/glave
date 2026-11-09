@@ -42,8 +42,8 @@ pub struct Capabilities {
     pub images: bool,
     /// Its context window, in tokens.
     pub context_tokens: Option<u64>,
-    /// The longest answer it gives when a request sets no limit, in tokens: what a budget
-    /// reserves for the answer.
+    /// The longest answer it gives when a request sets no limit, in tokens: what a call's
+    /// worst case holds for the answer.
     pub max_output_tokens: Option<u32>,
 }
 

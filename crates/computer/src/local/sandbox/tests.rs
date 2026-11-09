@@ -23,6 +23,8 @@ mod nested_repository;
 
 mod own_settings;
 
+pub(super) mod terminals;
+
 fn enforced() -> bool {
     let available = sandbox_available();
     assert!(

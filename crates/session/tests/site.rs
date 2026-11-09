@@ -121,6 +121,8 @@ async fn pages_carry_the_policy_and_their_nonce(served: &Served, site: &str) {
         .unwrap()
         .to_owned();
     assert!(policy.contains("script-src 'self'"), "{policy}");
+    // Served at 127.0.0.1 alone, it previews nothing, so nothing is framed.
+    assert!(policy.contains("frame-src 'none'"), "{policy}");
     assert!(!policy.contains("unsafe-inline"), "{policy}");
     assert!(
         policy.contains("require-trusted-types-for 'script'"),
@@ -257,4 +259,46 @@ fn an_app_without_its_page_is_refused() {
     let refused =
         Site::built_in(&[("main-ABCD1234.js", Stored::Plain(b"console.log(1)"))]).unwrap_err();
     assert!(refused.to_string().contains("npm run build"));
+}
+
+/// glave keeps no sign-in in a cookie (`specs/one-server.md`, "Finding it"), so a page another
+/// program serves on this computer, a thread's preview among them (`specs/session.md`,
+/// "Previews"), is sent none and overwrites none: no answer, a page's or the API's, signed in
+/// or not, sets one.
+#[test]
+fn no_answer_sets_a_cookie() {
+    block_on!(async {
+        let dir = folder("http-no-cookie");
+        let [site, _] = sites(&dir);
+        let served = serve(&dir, site).await;
+        for target in [
+            "/",
+            "/t/123",
+            "/main-ABCD1234.js",
+            "/missing.js",
+            "/../secret.txt",
+        ] {
+            let answer = raw_answer(served.address, target, "").await;
+            assert!(!answer.contains("\r\nset-cookie:"), "{target}: {answer}");
+        }
+        let http = reqwest::Client::new();
+        let url = format!("http://{}/", served.address);
+        let token = LocalToken::new([7; 32]);
+        for (signed_in, method) in [
+            (false, "server/discover"),
+            (false, "thread/list"),
+            (true, "thread/list"),
+            (true, "signin/link"),
+        ] {
+            let message =
+                serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": {}});
+            let mut post = http.post(&url).json(&message);
+            if signed_in {
+                post = post.bearer_auth(token.reveal());
+            }
+            let answer = post.send().await.unwrap();
+            assert!(answer.headers().get("set-cookie").is_none(), "{method}");
+        }
+        served.close().await;
+    });
 }

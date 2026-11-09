@@ -129,7 +129,6 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         },
         switch("worktree", &choices.worktree),
         switch("titles", &choices.titles),
-        row("on", choices.on.value.name().to_owned(), &choices.on.from),
         row("web", choices.web.value.describe(), &choices.web.from),
         row(
             "project_memory",
@@ -137,9 +136,6 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.project_memory.from,
         ),
     ];
-    if let Some(gateway) = &choices.gateway {
-        rows.push(row("gateway", gateway.value.clone(), &gateway.from));
-    }
     if let Some(server) = &choices.server {
         rows.push(row("server", server.value.clone(), &server.from));
     }
@@ -188,15 +184,11 @@ fn models(choices: &Choices) -> (String, &Source) {
     }
 }
 
-/// Why the main and judge models are refused, if they are. Through a gateway elsewhere, the
-/// gateway decides, by its own policy, for each caller.
+/// Why the main and judge models are refused, if they are.
 fn refused_models(choices: &Choices, provider: &str, loaded: &Loaded) -> Vec<String> {
     let Some(main) = &choices.model else {
         return Vec::new();
     };
-    if choices.gateway.is_some() {
-        return Vec::new();
-    }
     let mut models = vec![(main.value.clone(), &main.from)];
     if let Some(judge) = choices.judge.value.model(&main.value)
         && judge != main.value

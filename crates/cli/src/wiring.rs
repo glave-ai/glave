@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_computer::WorkerComputers;
 use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_gateway::Credits;
@@ -28,7 +27,6 @@ use crate::connected::{Connected, WebSearch};
 use crate::credentials::Hosts;
 use crate::data::{Data, DataLog};
 use crate::gateway::GatewaySwitch;
-use crate::gateway::remote::Remote;
 use crate::mcp::Servers;
 use crate::project_folders::ProjectFolders;
 use crate::providers::{Built, Lineup, ModelAccounts};
@@ -56,8 +54,6 @@ pub(crate) struct Wired {
     pub(crate) choices: Choices,
     /// The most a sandbox here allows, which each mode narrows: for the banner and receipts.
     pub(crate) sandbox: Option<Sandbox>,
-    /// The workers threads work on, with `--on cloud`.
-    pub(crate) workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
     pub(crate) memory: Option<crate::memory::Running>,
     /// The store's log, for the daily work of the person's server.
@@ -82,11 +78,9 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
 }
 
 /// The MCP servers the setup turns on for the person's threads everywhere, in their home
-/// folder: their own, after the catalog of the gateway elsewhere, remote ones signed in with
-/// what the person `connected`.
+/// folder: their own, remote ones signed in with what the person `connected`.
 async fn mcp_servers(
     setup: &Setup,
-    remote: Option<&Remote>,
     processes: &Processes,
     connected: Option<&Arc<Connected>>,
     reachable: glave_mcp::Reachable,
@@ -98,12 +92,11 @@ async fn mcp_servers(
         Some(connected) => connected.signed().await,
         None => crate::connected::Signed::default(),
     };
-    let through_gateway = remote.is_some();
-    let wanted = crate::mcp::wanted(&home, chosen, constraints, through_gateway, &signed).await?;
+    let wanted = crate::mcp::wanted(&home, chosen, constraints, &signed).await?;
     let root = home::person()?;
     let connected = connected.map(Arc::clone);
     Ok(Arc::new(Servers::start(
-        wanted, &root, remote, processes, connected, reachable,
+        wanted, &root, processes, connected, reachable,
     )))
 }
 
@@ -130,21 +123,19 @@ pub(crate) async fn wire(
     let processes = home::reaped().await?;
     let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
-    let (remote, configured) = crate::providers::endpoint(choices)?;
+    let configured = crate::providers::endpoint(choices)?;
     let store = store(&setup, &processes).await?;
     let identity = identity::load_or_make(&store).await?;
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let credits = credits(choices, &store);
     let floor = choices.router_floor.as_ref().map(|floor| &floor.value);
-    let through_gateway = remote.is_some();
     let lined = line_up(
         args,
         lineup,
         &store,
         identity.person,
         (credits.as_ref(), floor),
-        through_gateway,
     );
     let lined = lined.await?;
     let (workspace, hosts, connected) =
@@ -154,23 +145,14 @@ pub(crate) async fn wire(
     let root = workspace.root().to_owned();
     let servers = mcp_servers(
         &setup,
-        remote.as_ref(),
         &processes,
         connected.as_ref(),
         crate::mcp::own_reachable(args, choices),
     )
     .await?;
-    let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
+    let scope = scope_here(args, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
-    let (on_workers, workers, homes) = crate::cloud::workers(
-        choices,
-        constraints,
-        &folder,
-        scope.project(),
-        &processes,
-        store.leases(),
-    )
-    .await?;
+    let homes = crate::cloud::homes(choices, constraints, store.leases()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(
         &setup,
@@ -198,7 +180,6 @@ pub(crate) async fn wire(
         own: servers.tools(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
-        workers: on_workers,
         identity_provider: !args.issuers.is_empty(),
         tasks: task_limits(constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
@@ -229,7 +210,7 @@ pub(crate) async fn wire(
     server.answer_filters(&filters);
     tidy(memory.as_ref(), &tidier, tidy_model);
     let reach = crate::serving::reach(args, choices, &store, identity.person).await?;
-    if start_folder(args, &setup.choices, &folder) {
+    if start_folder(args, &folder) {
         keep_here(&server, scope.project(), &root).await?;
     }
     Ok(Wired {
@@ -240,7 +221,6 @@ pub(crate) async fn wire(
         root,
         choices: setup.choices,
         sandbox: setup.sandbox,
-        workers,
         memory,
         log: store.log(),
         store: store.clone(),
@@ -262,13 +242,12 @@ async fn say(told: &[String], projects: &ProjectFolders, folder: &Path) {
 /// `person`'s Chats.
 async fn scope_here(
     args: &Args,
-    choices: &Choices,
     store: &Data,
     folder: &Path,
     root: &Path,
     person: glave_event::PrincipalId,
 ) -> anyhow::Result<glave_ports::Scope> {
-    if start_folder(args, choices, folder) {
+    if start_folder(args, folder) {
         crate::projects::here(store, root, person).await
     } else {
         crate::projects::personal(store, person).await
@@ -276,16 +255,11 @@ async fn scope_here(
 }
 
 /// Whether `folder`, the folder glave starts in, is a project of its own: for a turn run in
-/// it, or a program's own server; for the person's server, which has no folder of its own
-/// (`specs/one-server.md`), only where its threads go to workers, which clone that folder's
-/// repository; never for a server that only answers a command's requests ([`here`]), and
-/// never where the folder is never a project.
-fn start_folder(args: &Args, choices: &Choices, folder: &Path) -> bool {
-    let own = if args.person_s_server() {
-        choices.on.value == policy::On::Cloud
-    } else {
-        args.stdio || args.turn()
-    };
+/// it, or a program's own server; never for the person's server, which has no folder of its
+/// own (`specs/one-server.md`), nor for a server that only answers a command's requests
+/// ([`here`]), nor where the folder is never a project.
+fn start_folder(args: &Args, folder: &Path) -> bool {
+    let own = !args.person_s_server() && (args.stdio || args.turn());
     own && !crate::projects::never_a_project(folder)
 }
 
@@ -498,10 +472,9 @@ fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<DataLog>>> {
 }
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
-/// may connect here unless an organization sets up the models: through its gateway
-/// (`through_gateway`), or on a server people sign in to with OIDC, unless it is the server's
-/// own OpenRouter, whose catalog is kept the same way. Their calls are charged to `credits`,
-/// where the server keeps them.
+/// may connect here unless an organization sets up the models: on a server people sign in to
+/// with OIDC, unless it is the server's own OpenRouter, whose catalog is kept the same way.
+/// Their calls are charged to `credits`, where the server keeps them.
 async fn line_up(
     args: &Args,
     lineup: Lineup,
@@ -511,10 +484,9 @@ async fn line_up(
         Option<&Arc<Credits<DataLog>>>,
         Option<&policy::RouterFloorFile>,
     ),
-    through_gateway: bool,
 ) -> anyhow::Result<Lined> {
     let no_ledgers = !args.issuers.is_empty() && lineup.own_account().is_none();
-    let ledgers = if through_gateway || no_ledgers {
+    let ledgers = if no_ledgers {
         None
     } else {
         crate::providers::check_stand_in()?;
@@ -570,11 +542,8 @@ pub(crate) async fn here() -> anyhow::Result<Wired> {
 }
 
 impl Wired {
-    /// Lets go of what the server started: workers, MCP servers, projects' tools, memory.
+    /// Lets go of what the server started: MCP servers, projects' tools, memory.
     pub(crate) async fn close(&self) {
-        if let Some(workers) = &self.workers {
-            crate::cloud::release(&self.server, workers).await;
-        }
         self.servers.close().await;
         self.projects.close().await;
         if let Some(memory) = &self.memory {

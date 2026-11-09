@@ -182,10 +182,7 @@ impl McpServer {
                 Self::program(name, program, processes.clone(), root, limits)
             }
             ServerConfig::Http { url, headers } => {
-                let opening = Opening {
-                    catalog: false,
-                    root,
-                };
+                let opening = Opening { root };
                 Self::http(name, url, headers, Auth::None, limits, opening)
                     .unwrap_or_else(|error| Self::failed(name, error, limits))
             }
@@ -233,28 +230,8 @@ impl McpServer {
                 Ok((pipes, Some(child)))
             }
         };
-        let opening = Opening {
-            catalog: false,
-            root,
-        };
+        let opening = Opening { root };
         Self::open(name, transport, limits, opening, true)
-    }
-
-    /// A gateway's catalog at `url` (its `/mcp`), sent `headers` with every request: one
-    /// server whose tools are named `<server>__<tool>` after the servers that offer them, so
-    /// the model sees each as `mcp__<server>__<tool>`, as if the server were the person's own.
-    pub fn catalog(
-        name: &str,
-        url: &str,
-        headers: &BTreeMap<String, String>,
-        limits: Limits,
-    ) -> Self {
-        let opening = Opening {
-            catalog: true,
-            root: None,
-        };
-        Self::http(name, url, headers, Auth::None, limits, opening)
-            .unwrap_or_else(|error| Self::failed(name, error, limits))
     }
 
     /// A server over Streamable HTTP, sent `headers` and what `auth` gives with every
@@ -542,28 +519,10 @@ impl McpServer {
         }
     }
 
-    /// The server's tools exactly as it lists them, once started: for a gateway that serves
-    /// them on, annotations and all.
-    pub async fn listing(&self) -> Result<Vec<rmcp::model::Tool>, McpError> {
-        let connection = self.connection().await?;
-        connection
-            .listing()
-            .await
-            .map_err(|message| McpError::start(&self.name, message))
-    }
-
     /// Calls the server's `tool` with `arguments`, within the call limit, giving back the
-    /// server's own result: for a gateway that serves its tools on. Why it failed otherwise.
-    pub async fn forward(
-        &self,
-        tool: &str,
-        arguments: Option<rmcp::model::JsonObject>,
-    ) -> Result<rmcp::model::CallToolResult, String> {
-        self.forward_with(tool, arguments, None).await
-    }
-
-    /// Calls the server's `tool` as [`McpServer::forward`] does, sending `meta` as the
-    /// request's `_meta`: who and where the call is for, when glave's own server needs it.
+    /// server's own result, sending `meta` as the request's `_meta`: who and where the call is
+    /// for, when glave's own server needs it. No one is there to answer what the server asks,
+    /// so it is declined. Why it failed otherwise.
     pub async fn forward_with(
         &self,
         tool: &str,

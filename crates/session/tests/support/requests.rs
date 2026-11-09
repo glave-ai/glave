@@ -270,13 +270,13 @@ pub(crate) fn id(subject: &str) -> glave_event::PrincipalId {
 pub(crate) async fn listed<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
-) -> Vec<glave_harness::RunningCommand> {
+) -> Vec<glave_session::protocol::ListedCommand> {
     match server
         .request(Request::CommandList { thread })
         .await
         .unwrap()
     {
-        Reply::Commands { commands } => commands,
+        Reply::Commands { commands, .. } => commands,
         other => panic!("commands, not {other:?}"),
     }
 }

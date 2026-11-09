@@ -17,7 +17,7 @@ const MADE: InviteInfo = {
 };
 
 /** What the server says of an organization it shows its Owner, the caller. */
-const SHOWN = { exists: { organization: true, workers: false }, role: 'owner' } as const;
+const SHOWN = { exists: { organization: true }, role: 'owner' } as const;
 
 async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
   for (let turn = 0; turn < 5; turn += 1) {

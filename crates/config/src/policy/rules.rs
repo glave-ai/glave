@@ -5,13 +5,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use glave_event::{Money, Permissions};
+use glave_event::Permissions;
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
 use crate::policy::memory::MemoryRules;
-use crate::policy::placement::Placement;
-use crate::policy::workers::{NetworkRule, WorkerRules, limits};
+use crate::policy::workers::{WorkerRules, limits};
 
 /// One rule, from one policy file.
 #[derive(Debug, Clone, PartialEq)]
@@ -42,20 +41,16 @@ pub enum Kind {
     McpUntrusted(Vec<String>),
     /// These MCP servers are vouched for, though remote or a project's.
     McpTrusted(Vec<String>),
-    /// Each person's budget per UTC day, in US dollars.
-    PersonPerDayUsd(Money),
     /// Projects at these paths (globs) are trusted without asking.
     ProjectsTrusted(Vec<String>),
     /// People and projects may not run hooks of their own.
     HooksOwnForbidden,
-    /// What workers may be.
+    /// What people's computers may be.
     Workers(WorkerRules),
     /// How many tasks may run, and schedules be kept.
     Tasks(TaskRules),
     /// What memory may be.
     Memory(MemoryRules),
-    /// Where threads may work.
-    Placement(Vec<Placement>),
     /// The server pushes no notifications to people's browsers.
     PushOff,
 }
@@ -79,18 +74,11 @@ impl fmt::Display for Kind {
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::McpUntrusted(names) => write!(f, "[mcp] untrusted = {}", quoted(names)),
             Self::McpTrusted(names) => write!(f, "[mcp] trusted = {}", quoted(names)),
-            Self::PersonPerDayUsd(usd) => {
-                write!(f, "[budget] person_per_day_usd = {}", usd.decimal())
-            }
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::PushOff => f.write_str("[notifications] push = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
             Self::Memory(rules) => f.write_str(&rules.describe()),
-            Self::Placement(places) => {
-                let names: Vec<String> = places.iter().map(|p| p.name().to_owned()).collect();
-                write!(f, "[placement] allowed = {}", quoted(&names))
-            }
             Self::Tasks(rules) => {
                 let parts: Vec<String> = [
                     ("max_running", rules.max_running),
@@ -158,9 +146,6 @@ impl Constraints {
             if !file.mcp.trusted.is_empty() {
                 add(Kind::McpTrusted(file.mcp.trusted.clone()));
             }
-            if let Some(usd) = file.budget.person_per_day_usd {
-                add(Kind::PersonPerDayUsd(usd));
-            }
             if !file.projects.trusted.is_empty() {
                 add(Kind::ProjectsTrusted(file.projects.trusted.clone()));
             }
@@ -175,9 +160,6 @@ impl Constraints {
             }
             if !file.memory.is_empty() {
                 add(Kind::Memory(file.memory.clone()));
-            }
-            if let Some(allowed) = &file.placement.allowed {
-                add(Kind::Placement(allowed.clone()));
             }
             if file.notifications.push == Some(false) {
                 add(Kind::PushOff);
@@ -312,26 +294,6 @@ impl Constraints {
         })
     }
 
-    /// The smallest daily budget per person, and the rule that set it.
-    pub fn person_per_day_usd(&self) -> Option<&Rule> {
-        self.rules
-            .iter()
-            .filter_map(|rule| match rule.kind {
-                Kind::PersonPerDayUsd(usd) => Some((usd, rule)),
-                _ => None,
-            })
-            .min_by_key(|(usd, _)| usd.nanos)
-            .map(|(_, rule)| rule)
-    }
-
-    /// The smallest daily budget per person.
-    pub fn person_per_day(&self) -> Option<Money> {
-        self.person_per_day_usd().and_then(|rule| match rule.kind {
-            Kind::PersonPerDayUsd(usd) => Some(usd),
-            _ => None,
-        })
-    }
-
     /// The servers every `[mcp] catalog` rule offers (each narrows the one before), and the
     /// first such rule; `None` when no rule names a catalog.
     pub fn mcp_catalog(&self) -> Option<(Vec<String>, &Rule)> {
@@ -352,40 +314,6 @@ impl Constraints {
         found
     }
 
-    /// The rules glave cannot enforce yet, with why. glave refuses to run under any of them,
-    /// rather than quietly not keeping them.
-    pub(crate) fn not_enforced(&self) -> Vec<(&Rule, &'static str)> {
-        let budget = self.person_per_day_usd().map(|rule| {
-            (
-                rule,
-                "glave keeps a daily budget only as a gateway serving many (glave gateway \
-                 serve)",
-            )
-        });
-        self.rules
-            .iter()
-            .filter_map(|rule| match rule.kind {
-                Kind::Workers(WorkerRules {
-                    network: Some(NetworkRule::Allowlist),
-                    ..
-                }) => Some((
-                    rule,
-                    "an allow-list of hosts is not enforced on workers yet",
-                )),
-                _ => None,
-            })
-            .chain(budget)
-            .collect()
-    }
-
-    /// The rules a gateway serving many cannot enforce yet: the daily budget it keeps.
-    pub fn not_enforced_by_the_gateway(&self) -> Vec<(&Rule, &'static str)> {
-        self.not_enforced()
-            .into_iter()
-            .filter(|(rule, _)| !matches!(rule.kind, Kind::PersonPerDayUsd(_)))
-            .collect()
-    }
-
     /// The limits every `[tasks]` rule sets at once: the smallest of each.
     pub fn task_limits(&self) -> TaskRules {
         let smallest = |a: Option<usize>, b: Option<usize>| match (a, b) {
@@ -403,7 +331,7 @@ impl Constraints {
     }
 
     /// The limits every `[workers]` rule sets at once, and a rule that takes the network from
-    /// commands takes it from workers too: theirs is set when they start, so none asks.
+    /// commands takes it from people's computers too: theirs is set when they start.
     pub fn worker_limits(&self) -> glave_ports::computer::Limits {
         let mut limits = limits(self.rules.iter().filter_map(|rule| match &rule.kind {
             Kind::Workers(rules) => Some(rules),

@@ -1,6 +1,6 @@
 //! The macOS sandbox profile for one project: Codex's deny-everything base, then reads everywhere
-//! except secret locations, writes to the project and temp folder except protected paths, and
-//! the network only when allowed.
+//! except secret locations and other terminals, writes to the project and temp folder except
+//! protected paths, and the network only when allowed.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -38,6 +38,12 @@ pub(crate) fn home_secrets(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
         .chain(MACOS_HOME_SECRETS)
         .map(move |secret| home.join(secret))
 }
+
+/// Every terminal's device but `/dev/tty`, the command's own controlling terminal, if it has
+/// one: another's (the person's Terminal tab, Terminal.app's windows, an ssh session's) would
+/// let a command read what is typed there. A terminal the command makes itself (`script`, a
+/// test runner's) stays its own, through the base profile's `com.apple.sandbox.pty` rule.
+const OTHER_TERMINALS: &str = r#"(require-not (regex #"^/dev/(tty|pty)."))"#;
 
 /// When the network is allowed: the internet and local servers, and name lookups, but not
 /// other Unix sockets (`docker.sock` is root on the machine; the ssh agent signs as the person).
@@ -96,7 +102,7 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: bool) -> Pr
 }
 
 fn reads(profile: &mut Profile, places: &Places) {
-    let mut conditions = vec![r#"(subpath "/")"#.to_owned()];
+    let mut conditions = vec![r#"(subpath "/")"#.to_owned(), OTHER_TERMINALS.to_owned()];
     for (index, path) in places.hidden.iter().cloned().enumerate() {
         let name = format!("SECRET_{index}");
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
@@ -145,7 +151,7 @@ fn reads(profile: &mut Profile, places: &Places) {
     ));
     let _ = writeln!(
         profile.text,
-        "; reads: everywhere except secret locations\n(allow file-read*\n  (require-all\n    {}))",
+        "; reads: everywhere except other terminals and secret locations\n(allow file-read*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
     if let Some(glave_home) = &places.glave_home {

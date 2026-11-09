@@ -22,7 +22,7 @@ mod signed;
 mod signin;
 
 pub use error::McpError;
-pub use names::{catalog, exposed};
+pub use names::exposed;
 pub use output::output as tool_output;
 pub use reachable::Reachable;
 pub use resources::Resources;

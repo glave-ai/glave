@@ -216,7 +216,6 @@ impl Commands {
                 command: entry.script,
                 started_at: entry.started,
                 summary: record::RUNNING.to_owned(),
-                ports: Vec::new(),
             })
             .collect()
     }

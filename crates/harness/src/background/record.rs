@@ -66,10 +66,6 @@ pub struct RunningCommand {
     pub started_at: Option<At>,
     /// What it is doing, in plain words.
     pub summary: String,
-    /// The TCP ports it listens on, lowest first, where the caller reaches this computer's
-    /// loopback: looked for only then, and on the server's own computer.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ports: Vec<u16>,
 }
 
 /// The sentence a command running in the background is listed with.

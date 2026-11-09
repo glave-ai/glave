@@ -263,11 +263,11 @@ fn a_service_named_as_glave_asks_no_one() {
 }
 
 #[test]
-fn a_gateway_serving_a_tool_on_declines_what_it_asks() {
+fn a_call_forwarded_with_no_one_to_answer_declines_what_it_asks() {
     block_on!(async {
         let server = start(&[]).await;
         let what = json!({"what": "form"}).as_object().cloned();
-        let result = server.forward("ask", what).await.unwrap();
+        let result = server.forward_with("ask", what, None).await.unwrap();
         let said = glave_mcp::tool_output(&result);
         assert_eq!(text(&said), "You said: decline");
         server.close().await;

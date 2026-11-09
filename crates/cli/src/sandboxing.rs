@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use glave_computer::LocalComputers;
-use glave_config::policy::{Choices, On};
+use glave_config::policy::Choices;
 use glave_harness::{Permissions, Workspace};
 use glave_ports::computer::{Sandbox, SandboxLevel};
 use glave_process::Processes;
@@ -82,7 +82,7 @@ pub(crate) async fn workspace(
         Permissions::Ask => setup.sandbox.is_none(),
         Permissions::Plan | Permissions::FullAccess => false,
     };
-    if asks_all && setup.choices.on.value != On::Cloud && !elsewhere {
+    if asks_all && !elsewhere {
         eprintln!("glave: {}", unsandboxed_notice(&why));
     }
     Ok(workspace)

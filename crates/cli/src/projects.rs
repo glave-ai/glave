@@ -91,17 +91,6 @@ pub(crate) async fn personal(store: &Data, person: PrincipalId) -> anyhow::Resul
     Ok(Scope::glaves_own(org, project.id))
 }
 
-/// The scope glave keeps a record of its own under `name`, such as the gateway's, which no
-/// person works in.
-pub(crate) async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
-    let org = org(store).await?;
-    let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave())?;
-    let keys = [FolderKey::Path(name.to_owned())];
-    let project = store.projects().folder(org, &keys, &new).await?;
-    // Glave's own: a record no person works in.
-    Ok(Scope::glaves_own(org, project.id))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -17,7 +17,6 @@ use rmcp::ClientHandler as _;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, JsonObject,
     MetaObject, Prompt, ReadResourceRequestParams, RequestMetaObject, Resource, ResourceContents,
-    Tool,
 };
 use rmcp::service::{ClientServiceExt as _, Peer, RoleClient, RunningService};
 use rmcp::transport::IntoTransport;
@@ -26,7 +25,7 @@ use tokio::task::JoinHandle;
 use crate::McpError;
 use crate::call::{Answerer, Ran, Unanswered, Waits, call};
 use crate::client::{Client, subscribe, watch_tools};
-use crate::names::{catalog, exposed};
+use crate::names::exposed;
 use crate::output::output;
 use crate::probe::probe;
 use crate::reason::{failed, reason};
@@ -37,8 +36,6 @@ pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
 /// What glave tells a server as it connects.
 #[derive(Default, Clone)]
 pub(crate) struct Opening {
-    /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
-    pub(crate) catalog: bool,
     /// The project folder it works for, told when it asks (MCP's roots).
     pub(crate) root: Option<PathBuf>,
 }
@@ -46,8 +43,6 @@ pub(crate) struct Opening {
 /// An open connection.
 pub(crate) struct Connection {
     name: String,
-    /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
-    catalog: bool,
     peer: Peer<RoleClient>,
     /// glave's side, which answers what the server asks for inside a call.
     client: Arc<Client>,
@@ -122,7 +117,6 @@ impl Connection {
             .map(|subscription| tokio::spawn(watch_tools(subscription, Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
-            catalog: opening.catalog,
             peer,
             client,
             service: Mutex::new(Some(service)),
@@ -189,11 +183,7 @@ impl Connection {
         let mut named = HashMap::new();
         let mut infos = Vec::with_capacity(tools.len());
         for tool in tools {
-            let model_name = if self.catalog {
-                catalog(&tool.name)
-            } else {
-                exposed(&self.name, &tool.name)
-            };
+            let model_name = exposed(&self.name, &tool.name);
             let read_only = tool
                 .annotations
                 .as_ref()
@@ -232,17 +222,8 @@ impl Connection {
         Ok(infos)
     }
 
-    /// The server's tools exactly as it lists them, for a gateway that serves them on.
-    pub(crate) async fn listing(&self) -> Result<Vec<Tool>, String> {
-        self.peer
-            .list_all_tools()
-            .await
-            .map_err(|err| format!("{}: {err}", self.name))
-    }
-
-    /// Calls `tool` with `arguments` within `waits`, giving back the server's own result, for a
-    /// gateway that serves its tools on, with no way to reach the person: what the server asks is
-    /// declined. A call that is dropped leaves the server to finish it.
+    /// Calls `tool` with `arguments` within `waits`, giving back the server's own result, with no
+    /// way to reach the person: what the server asks is declined. A call that is dropped leaves the server to finish it.
     pub(crate) async fn forward(
         &self,
         tool: &str,

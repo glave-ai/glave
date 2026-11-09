@@ -239,11 +239,34 @@ async fn choose(
     )))
 }
 
+/// Every terminal's device in `dev` but `tty`, the command's own controlling terminal: `pts`,
+/// where every pseudo-terminal is (the person's Terminal tab, a terminal window's, an ssh
+/// session's), and the consoles and serial lines beside it (`tty1`, `ttyS0`), any of which
+/// would let a command read what is typed there. bubblewrap's `/dev` is the sandbox's own,
+/// holding none of them. Blocking.
+fn other_terminals(dev: &Path) -> Vec<PathBuf> {
+    let mut terminals = vec![dev.join("pts")];
+    if let Ok(entries) = std::fs::read_dir(dev) {
+        terminals.extend(
+            entries
+                .flatten()
+                .map(|entry| entry.file_name())
+                .filter(|name| {
+                    let name = name.to_string_lossy();
+                    name != "tty" && (name.starts_with("tty") || name.starts_with("pty"))
+                })
+                .map(|name| dev.join(name)),
+        );
+    }
+    terminals
+}
+
 /// What the Landlock helper restricts itself to, from the workspace as it is now, for a
 /// command whose temp folder is `temp`. Blocking.
 fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, String> {
     let mut unreadable: Vec<PathBuf> = mounts::hidden(layout)?;
     unreadable.extend(layout.glave_home.iter().cloned());
+    unreadable.extend(other_terminals(Path::new("/dev")));
     let rereadable = layout
         .glave_home
         .iter()

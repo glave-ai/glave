@@ -25,9 +25,16 @@ import { ThreadService } from '../../services/thread.service';
 import { TerminalTabComponent } from '../terminal-tab/terminal-tab.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 import { ThreadOverviewComponent } from '../thread-overview/thread-overview.component';
+import { ThreadPreviewComponent } from '../thread-preview/thread-preview.component';
 
 /** The panel's tabs, each by what it shows. */
-type Tab = 'overview' | 'terminal' | 'changes';
+type Tab = 'overview' | 'terminal' | 'changes' | 'preview';
+
+/** What the tab chosen follows: the thread, and each ask to show a preview. */
+interface Asked {
+  readonly thread: ThreadId | null;
+  readonly preview: number;
+}
 
 /** A tab as the panel shows it. */
 interface Shown {
@@ -42,8 +49,10 @@ const FIRST: Tab = 'overview';
  * The open thread's panel, beside it: tabs, each only once it has something to show, in this
  * order: Overview, the thread at a glance, which it opens on (`app-thread-overview`); then, where
  * the thread's summary says a terminal opens in it, the Terminal, the person's own shell in its
- * folder (`app-terminal-tab`); then the files it changed, in full. The tab chosen is this view's
- * to remember, and each thread opens on Overview again.
+ * folder (`app-terminal-tab`); then the files it changed, in full; then, while one of its
+ * commands serves something the person can open here, the Preview (`app-thread-preview`), which
+ * an Open preview elsewhere in the panel shows. The tab chosen is this view's to remember, and
+ * each thread opens on Overview again.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When what had the keyboard's place goes from it, as
  * Stop takes the last command away or Compact now the context's section, that place goes to the
@@ -59,6 +68,7 @@ const FIRST: Tab = 'overview';
     TerminalTabComponent,
     ThreadFilesComponent,
     ThreadOverviewComponent,
+    ThreadPreviewComponent,
   ],
   templateUrl: './thread-panel.component.html',
   styleUrl: './thread-panel.component.scss',
@@ -80,6 +90,7 @@ export class ThreadPanelComponent {
     overview: $localize`:@@threadPanel.overview:Overview`,
     terminal: $localize`:@@threadPanel.terminal:Terminal`,
     changes: $localize`:@@threadPanel.changes:Changes`,
+    preview: $localize`:@@threadPanel.preview:Preview`,
   } as const;
   protected readonly icons = { close: X } as const;
   private readonly panel = inject(PanelService);
@@ -98,18 +109,29 @@ export class ThreadPanelComponent {
   /** The tabs it has now, in order, each with its label. */
   protected readonly tabs = computed((): readonly Shown[] => {
     const changes = this.facts.files().length > 0;
+    const preview = this.facts.previews().length > 0;
     // As the server says: only on the person's own computer, never once it is put away.
     const terminal = this.thread.summary()?.terminals ?? false;
     return [
       { key: 'overview', label: this.copy.overview },
       ...(terminal ? [{ key: 'terminal', label: this.copy.terminal } as const] : []),
       ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
+      ...(preview ? [{ key: 'preview', label: this.copy.preview } as const] : []),
     ];
   });
-  /** The tab chosen, by what it shows: Overview again in each thread. */
-  private readonly chosen = linkedSignal<ThreadId | null, Tab>({
-    source: this.thread.thread,
-    computation: () => FIRST,
+  /**
+   * The tab chosen, by what it shows: Overview again in each thread, and the Preview each time
+   * a preview is asked to be shown.
+   */
+  private readonly chosen = linkedSignal<Asked, Tab>({
+    source: () => ({ thread: this.thread.thread(), preview: this.facts.previewAsked() }),
+    computation: (now, before) => {
+      const same = before?.source.thread === now.thread;
+      if (same && before.source.preview !== now.preview) {
+        return 'preview';
+      }
+      return same ? before.value : FIRST;
+    },
   });
   /** Where the chosen tab is among those it has, or the first's when it has it no longer. */
   protected readonly selected = computed(() =>
@@ -117,6 +139,13 @@ export class ThreadPanelComponent {
       0,
       this.tabs().findIndex((tab) => tab.key === this.chosen()),
     ),
+  );
+  /**
+   * Whether the Terminal is the tab shown. What a tab holds is made whether it is shown or not,
+   * and making the Terminal starts a shell, which only choosing its tab may.
+   */
+  protected readonly terminalChosen = computed(
+    () => this.tabs()[this.selected()]?.key === 'terminal',
   );
 
   constructor() {

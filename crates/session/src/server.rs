@@ -11,17 +11,16 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
 use glave_gateway::Credits;
 use glave_harness::{
-    Harness, HarnessError, Homes, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
-    Workspace,
+    Harness, HarnessError, Homes, Parts, Place, ProjectFolders, Settings, Workspace,
 };
 use glave_identity::signin::{Accounts, Browsers};
-use glave_ports::computer::{ComputerError, Environment};
+use glave_ports::computer::ComputerError;
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
     BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Lease, Leases, Mailer,
-    ModelProvider, OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
+    ModelProvider, OrgId, OsEntropy, Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -76,10 +75,6 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn of the person the server works for.
     pub hooks: Hooks,
-    /// When set, every new thread in the project whose settings chose workers works on a
-    /// worker of its own (`on = "cloud"`) unless `thread/start` asks for a worktree; none by
-    /// default.
-    pub workers: Option<OnWorkers>,
     /// Whether people sign in through an identity provider (OIDC), whose organization the server
     /// is then: off where it works for one person.
     pub identity_provider: bool,
@@ -162,7 +157,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// A server's wiring with what it cannot do without: its models, its store's log, blobs
     /// and projects, and the workspace on the computer its threads work on. Everything else
     /// starts off or empty: the system clock and the operating system's randomness; no
-    /// `web_fetch`, other tools, hooks, workers, identity provider, memory, model accounts, git
+    /// `web_fetch`, other tools, hooks, identity provider, memory, model accounts, git
     /// hosts, connections, rereading, project folders, trust, browsers or worktrees to let go
     /// of; no limit on tasks; no notifications pushed;
     /// only the settings' own model and mode; threads in their project's folder rather than a
@@ -188,7 +183,6 @@ impl<P, L, B> Wiring<P, L, B> {
             own: glave_harness::OwnTools::default(),
             worktree: false,
             hooks: Hooks::default(),
-            workers: None,
             identity_provider: false,
             tasks: TaskLimits::default(),
             memory: None,
@@ -216,15 +210,6 @@ impl<P, L, B> Wiring<P, L, B> {
             router_floor: None,
         }
     }
-}
-
-/// Threads on workers: where workers come from, the environment each is made from, and the
-/// project whose settings chose them, whose repository they clone.
-#[derive(Debug, Clone)]
-pub struct OnWorkers {
-    pub workers: Workers,
-    pub environment: Environment,
-    pub project: ProjectId,
 }
 
 /// A session server for the projects of the organizations its callers work in, its own first,
@@ -256,9 +241,6 @@ pub(crate) struct Inner<P, L, B> {
     /// Whether new threads in a project's folder get a worktree when `thread/start` does not
     /// say: the person's choice, which follows their settings.
     pub(crate) worktree: AtomicBool,
-    /// The environment new threads' workers are made from, and the project whose threads go
-    /// to them, when threads work on workers.
-    pub(crate) worker: Option<(ProjectId, Environment)>,
     /// Whether people sign in through an identity provider, as an organization's do.
     pub(crate) identity_provider: bool,
     /// The models threads may be sent to, the default first; none until one is set up.
@@ -273,9 +255,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
     /// Where sign-ins to connections are kept, when the person here may sign in.
     pub(crate) connections: Option<Arc<dyn Connections>>,
-    /// Once it listens over HTTP, its address on this computer when it listens on loopback:
-    /// where a browser here comes back to from signing in to a remote server.
-    pub(crate) reached: OnceLock<Option<String>>,
+    /// Once it listens over HTTP, where a browser on this computer reaches it.
+    pub(crate) reached: OnceLock<crate::connections::Reached>,
     /// The project's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -373,24 +354,20 @@ where
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
-        let harness = match wiring.workers.clone() {
-            Some(on) => Harness::new(parts, settings).with_workers(on.workers),
-            None => Harness::new(parts, settings),
-        }
-        .with_web(wiring.web)
-        .with_tools(wiring.tools)
-        .with_skills(wiring.skills)
-        .with_own_tools(wiring.own)
-        .with_hooks(wiring.hooks)
-        .with_memory_if(wiring.memory)
-        .with_project_folders(wiring.project_folders)
-        .with_homes(wiring.homes.clone());
+        let harness = Harness::new(parts, settings)
+            .with_web(wiring.web)
+            .with_tools(wiring.tools)
+            .with_skills(wiring.skills)
+            .with_own_tools(wiring.own)
+            .with_hooks(wiring.hooks)
+            .with_memory_if(wiring.memory)
+            .with_project_folders(wiring.project_folders)
+            .with_homes(wiring.homes.clone());
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
                 person: harness.settings().person,
                 harness,
-                worker: wiring.workers.map(|on| (on.project, on.environment)),
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
@@ -459,42 +436,11 @@ where
         &self.inner.projects
     }
 
-    /// Releases the worker of every thread held idle that works on one (call after
-    /// [`Server::shutdown`], when no turn runs): what each left behind, or why it could not be
-    /// released.
-    pub async fn release_workers(&self) -> Vec<(ThreadId, Result<ReleasedWorker, HarnessError>)> {
-        let idle: Vec<(ThreadId, Box<glave_harness::Thread>, jiff::Timestamp)> = {
-            let mut threads = self.lock();
-            let ids: Vec<ThreadId> = threads
-                .iter()
-                .filter(|(_, slot)| matches!(slot, Slot::Idle { .. }))
-                .map(|(id, _)| *id)
-                .collect();
-            ids.into_iter()
-                .filter_map(|id| match threads.remove(&id) {
-                    Some(Slot::Idle { thread, since }) => Some((id, thread, since)),
-                    _ => None,
-                })
-                .collect()
-        };
-        let mut released = Vec::new();
-        for (id, mut thread, since) in idle {
-            match self.inner.harness.release_worker(&mut thread).await {
-                Ok(Some(left)) => released.push((id, Ok(left))),
-                Ok(None) => {}
-                Err(error) => released.push((id, Err(error))),
-            }
-            self.lock().insert(id, Slot::Idle { thread, since });
-        }
-        released
-    }
-
     /// Starts a thread for `caller` in `project`. In a project with a folder, the thread works
     /// in a worktree of it where `worktree` says (the server's choice when it does not), else
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
-    /// the folder. In the project whose settings chose workers, every thread works on a worker
-    /// instead, which clones that project's repository. With no folder (a person's Chats, or a
-    /// project without one), the thread gets a scratch folder of its own. With a model or a
+    /// the folder. With no folder (a person's Chats, or a project without one), the thread gets
+    /// a scratch folder of its own. With a model or a
     /// mode in `choice`, its turns go to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
@@ -547,25 +493,21 @@ where
         worktree: Option<bool>,
         background: bool,
     ) -> Result<Place, ApiError> {
-        let project = scope.project();
         let found = self.folder_to_start_in(scope.located()).await?;
         let copies = self.copies_by_default(caller, found.as_ref()).await;
         let folder = found.map(|(folder, _)| folder);
-        Ok(match (folder, worktree, &self.inner.worker) {
-            (None, Some(true), _) => {
+        Ok(match (folder, worktree) {
+            (None, Some(true)) => {
                 return Err(ApiError::new(
                     code::WORKSPACE,
                     Sentence::NoFolderForWorktree,
                 ));
             }
-            (None, _, _) => Place::Scratch,
-            (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
-            (Some(folder), Some(true), _) => Place::Worktree(folder),
-            (Some(_), None, Some((chosen, environment))) if *chosen == project => {
-                Place::Worker(environment.clone())
-            }
-            (Some(folder), None, _) if background || copies => Place::Worktree(folder),
-            (Some(folder), _, _) => Place::Folder(folder),
+            (None, _) => Place::Scratch,
+            (Some(_), Some(false)) if background => return Err(crate::tasks::in_place()),
+            (Some(folder), Some(true)) => Place::Worktree(folder),
+            (Some(folder), None) if background || copies => Place::Worktree(folder),
+            (Some(folder), _) => Place::Folder(folder),
         })
     }
 

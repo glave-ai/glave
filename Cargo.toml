@@ -90,7 +90,6 @@ glave-computer = { path = "crates/computer" }
 glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
-glave-gateway-service = { path = "crates/gateway-service" }
 glave-google = { path = "crates/google" }
 glave-harness = { path = "crates/harness" }
 glave-identity = { path = "crates/identity" }
@@ -171,7 +170,7 @@ proptest = "1"
 # The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint
 # and to check every part before it is packed. Already in the tree, under calamine.
 quick-xml = "0.42"
-# Self-signed certificates for workers, on aws-lc-rs, the crypto rustls already uses.
+# Self-signed certificates for computers served over TLS, on aws-lc-rs, the crypto rustls already uses.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = "1"
 rmcp = { version = "3.5.1", default-features = false }
@@ -252,6 +251,30 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Built for size: packages with much code of their own that run rarely, between waits on a network
+# or a person: signing to a bucket or a cluster, office files, sign-in, reading a shell command.
+# Never one that event append or replay, stream parsing, the gateway's requests or sealing runs on.
+[profile.release.package]
+aws-sigv4.opt-level = "z"
+calamine.opt-level = "z"
+html5ever.opt-level = "z"
+instant-acme.opt-level = "z"
+k8s-openapi.opt-level = "z"
+kube-client.opt-level = "z"
+lettre.opt-level = "z"
+lopdf.opt-level = "z"
+object_store.opt-level = "z"
+quick-xml.opt-level = "z"
+rcgen.opt-level = "z"
+rust_xlsxwriter.opt-level = "z"
+tree-sitter.opt-level = "z"
+tree-sitter-bash.opt-level = "z"
+webauthn-attestation-ca.opt-level = "z"
+webauthn-rs-core.opt-level = "z"
+x509-cert.opt-level = "z"
+x509-parser.opt-level = "z"
+zip.opt-level = "z"
 
 # Releases (dist-workspace.toml): dist builds with a profile of its own name, the release one.
 [profile.dist]

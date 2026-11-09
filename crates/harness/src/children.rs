@@ -214,7 +214,6 @@ fn inherit(child: &mut Thread, parent: &Thread) {
     // On the person's own computer, what its commands change there is read again as its turn
     // ends, as its parent's would be.
     child.home = parent.home.as_ref().map(crate::homes::AtHome::fresh);
-    child.note.clone_from(&parent.note);
     child.instructions.clone_from(&parent.instructions);
     child.project.clone_from(&parent.project);
     child.brought = std::sync::Arc::clone(&parent.brought);

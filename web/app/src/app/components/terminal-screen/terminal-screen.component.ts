@@ -99,9 +99,29 @@ function same(a: Size | null, b: Size): boolean {
 }
 
 /**
+ * What a key sends a shell, for the keys a line is typed with; `null` for any other, and for a
+ * shortcut, which stays the browser's.
+ */
+function sentBy(event: KeyboardEvent): string | null {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) {
+    return null;
+  }
+  if (event.key === 'Enter') {
+    return '\r';
+  }
+  if (event.key === 'Backspace') {
+    return '\x7f';
+  }
+  return event.key.length === 1 ? event.key : null;
+}
+
+/**
  * One terminal's screen, drawn by xterm.js: what its shell prints, from its start, and what is
- * typed into it, sent in order; it fills its box, and its shell is told each size it takes. Dark
- * in both themes, as terminals are, in the mono face. Its own styles reach what xterm draws.
+ * typed into it, sent in order; it fills its box, and its shell is told each size it takes. The
+ * emulator loads the first time one shows, so what is typed on its box meanwhile goes straight
+ * to the shell, which is open already, and the keyboard's place goes into the terminal as it
+ * draws. Dark in both themes, as terminals are, in the mono face. Its own styles reach what
+ * xterm draws.
  */
 @Component({
   selector: 'app-terminal-screen',
@@ -135,6 +155,15 @@ export class TerminalScreenComponent {
   /** Puts the keyboard's place in it. */
   focus(): void {
     this.drawn?.focus();
+  }
+
+  /** Sends a key pressed on its box before the terminal is drawn; once it is, xterm.js does. */
+  protected typedEarly(event: KeyboardEvent): void {
+    const sent = this.drawn === null ? sentBy(event) : null;
+    if (sent !== null) {
+      event.preventDefault();
+      this.service.type(this.terminal(), new TextEncoder().encode(sent));
+    }
   }
 
   /**
@@ -231,6 +260,10 @@ export class TerminalScreenComponent {
       }
     };
     fitted();
+    // A click on its box before it drew: the typing goes on in the terminal.
+    if (document.activeElement === element) {
+      drawn.focus();
+    }
     void this.service.follow(
       id,
       (bytes) => {

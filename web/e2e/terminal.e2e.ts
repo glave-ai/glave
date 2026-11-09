@@ -32,13 +32,26 @@ async function asked(method: string, params: object): Promise<Record<string, unk
 /**
  * A real glave, the person's own: a thread in a project's folder has a Terminal tab beside its
  * facts, which opens their own shell in that folder, under glave's Content Security Policy, and
- * runs what they type in it.
+ * runs what they type in it: from the moment it shows, before the emulator has loaded, as on a
+ * slow connection, and once it has drawn.
  */
 test('the Terminal tab opens the person’s own shell in the thread’s folder and runs what they type', async ({
   page,
 }) => {
   const problems = watchForProblems(page);
   const folder = mkdtempSync(join(tmpdir(), 'glave-e2e-terminal-'));
+  // The emulator's code waits until the keys below are typed.
+  let loadEmulator = (): void => undefined;
+  const typed = new Promise<void>((resolve) => {
+    loadEmulator = resolve;
+  });
+  await page.route('**/*.js', async (route) => {
+    const response = await route.fetch();
+    if ((await response.text()).includes('proposeDimensions')) {
+      await typed;
+    }
+    await route.fulfill({ response });
+  });
   try {
     const made = await asked('project/create', {
       name: 'terminal',
@@ -59,7 +72,12 @@ test('the Terminal tab opens the person’s own shell in the thread’s folder a
     await screen.click();
     await page.keyboard.type('echo hi-$((40+2))');
     await page.keyboard.press('Enter');
+    loadEmulator();
     await expect(screen).toContainText('hi-42');
+    // Drawn, the keyboard's place is in the terminal.
+    await page.keyboard.type('echo bye-$((40+3))');
+    await page.keyboard.press('Enter');
+    await expect(screen).toContainText('bye-43');
     for (const colorScheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme });
       await expectAccessible(page);

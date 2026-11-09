@@ -371,49 +371,22 @@ fn push_is_off_only_where_a_policy_turns_it_off() {
 }
 
 #[test]
-fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
-    let rules = Constraints::of(&[
-        policy_at(ORG, "version = 1\n[budget]\nperson_per_day_usd = 20\n"),
-        policy_at(
-            PROJECT_POLICY,
-            "version = 1\n[budget]\nperson_per_day_usd = 5.5\n",
-        ),
-    ]);
-    assert_eq!(
-        rules.person_per_day_usd().unwrap().from,
-        Path::new(PROJECT_POLICY)
-    );
-    let refused = effective::settle(no_choices(), &rules)
-        .unwrap_err()
-        .to_string();
-    assert!(refused.contains("not enforced yet"), "{refused}");
-    assert!(refused.contains("person_per_day_usd = 5.5"), "{refused}");
-    assert_eq!(
-        rules.person_per_day().map(|usd| usd.nanos.get()),
-        Some(5_500_000_000)
-    );
-    assert!(
-        rules.not_enforced_by_the_gateway().is_empty(),
-        "a gateway serving many keeps daily budgets"
-    );
-}
-
-#[test]
-fn budgets_are_the_dollars_written() {
-    let budget = |amount: &str| {
-        files::policy(
-            &format!("version = 1\n[budget]\nperson_per_day_usd = {amount}\n"),
-            Path::new(ORG),
+fn limits_are_the_dollars_written() {
+    let limit = |amount: &str| {
+        files::config(
+            &format!("[credits]\nmonthly_limit_usd = {amount}\n"),
+            Path::new("/home/ada/.glave/config.toml"),
         )
-        .map(|file| file.budget.person_per_day_usd.map(|usd| usd.nanos.get()))
+        .map(|file| file.credits.and_then(|credits| credits.monthly_limit_usd))
+        .map(|usd| usd.map(|usd| usd.nanos.get()))
     };
     // As floats, 4.1 and 0.29 fall a hair short of their billionths.
-    assert_eq!(budget("4.1").unwrap(), Some(4_100_000_000));
-    assert_eq!(budget("0.29").unwrap(), Some(290_000_000));
-    assert_eq!(budget("20").unwrap(), Some(20_000_000_000));
+    assert_eq!(limit("4.1").unwrap(), Some(4_100_000_000));
+    assert_eq!(limit("0.29").unwrap(), Some(290_000_000));
+    assert_eq!(limit("20").unwrap(), Some(20_000_000_000));
     for bad in ["-1", "-0.5", "nan", "inf", "1e300", "\"5\""] {
-        let refused = format!("{:#}", budget(bad).unwrap_err());
-        assert!(refused.contains("person_per_day_usd"), "{bad}: {refused}");
+        let refused = format!("{:#}", limit(bad).unwrap_err());
+        assert!(refused.contains("monthly_limit_usd"), "{bad}: {refused}");
     }
 }
 
@@ -437,97 +410,38 @@ fn catalogs_are_enforced_and_narrow_one_another() {
 }
 
 #[test]
-fn worker_limits_narrow_and_an_allow_list_refuses_to_run() {
+fn worker_limits_narrow() {
     let rules = Constraints::of(&[
-        policy_at(
-            ORG,
-            "version = 1\n[workers]\ncpu = 4\nmemory_gb = 8\nper_person = 3\n",
-        ),
+        policy_at(ORG, "version = 1\n[workers]\ncpu = 4\nmemory_gb = 8\n"),
         policy_at(
             PROJECT_POLICY,
-            "version = 1\n[workers]\ncpu = 2\nmax_minutes = 90\nnetwork = \"off\"\n",
+            "version = 1\n[workers]\ncpu = 2\nnetwork = \"off\"\n",
         ),
     ]);
     let limits = rules.worker_limits();
-    assert_eq!(
-        (
-            limits.cpus,
-            limits.memory_gb,
-            limits.max_minutes,
-            limits.per_person
-        ),
-        (Some(2), Some(8), Some(90), Some(3))
-    );
+    assert_eq!((limits.cpus, limits.memory_gb), (Some(2), Some(8)));
     assert_eq!(limits.network, Some(glave_ports::computer::Network::Off));
     assert!(effective::settle(no_choices(), &rules).is_ok());
-    let allowlist = constraints("version = 1\n[workers]\nnetwork = \"allowlist\"\n");
-    let refused = effective::settle(no_choices(), &allowlist)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        refused.contains("[workers] network = \"allowlist\""),
-        "{refused}"
-    );
-    assert!(refused.contains("not enforced yet"), "{refused}");
-    let typo = files::policy("version = 1\n[workers]\ncpus = 2\n", Path::new(ORG));
-    assert!(typo.unwrap_err().to_string().contains("cpus"));
+    for unknown in ["cpus = 2", "max_minutes = 90", "network = \"allowlist\""] {
+        let refused = files::policy(
+            &format!("version = 1\n[workers]\n{unknown}\n"),
+            Path::new(ORG),
+        );
+        assert!(refused.is_err(), "{unknown}");
+    }
 }
 
 #[test]
-fn where_threads_work_is_a_choice_and_the_backend_comes_from_config() {
+fn the_cluster_comes_from_config() {
     let chosen = layers(
-        ConfigFile {
-            on: Some(On::Cloud),
-            ..ConfigFile::default()
-        },
         ConfigFile::default(),
-        vec![file(
-            PERSON,
-            "on = \"here\"\n[workers]\nbackend = \"docker\"\nglave = \"/opt/glave-linux\"\n",
-        )],
+        ConfigFile::default(),
+        vec![file(PERSON, "[workers]\nglave = \"/opt/glave-linux\"\n")],
     );
     let choices = choices::resolve(&chosen);
-    assert_eq!(choices.on.value, On::Cloud);
-    assert_eq!(choices.on.from, Source::Flag("--on"));
     let workers = choices.workers.unwrap();
     assert_eq!(workers.value.glave, Path::new("/opt/glave-linux"));
-    assert_eq!(no_choices().on.value, On::Here, "here by default");
-}
-
-#[test]
-fn placement_rules_narrow_where_threads_work() {
-    let only_here = [policy_at(
-        ORG,
-        "version = 1\n[placement]\nallowed = [\"here\", \"laptop\"]\n",
-    )];
-    let cloud = [file(PERSON, "on = \"cloud\"\n")];
-    let refused = settle(&cloud, &only_here).unwrap_err().to_string();
-    assert_eq!(
-        refused,
-        format!(
-            "threads working worker (on = cloud, from {PERSON}) are not allowed: [placement] \
-             allowed = [\"here\", \"laptop\"] in {ORG}"
-        )
-    );
-    assert_eq!(settle(&[], &only_here).unwrap().on.value, On::Here);
-    let only_workers = [policy_at(
-        ORG,
-        "version = 1\n[placement]\nallowed = [\"worker\"]\n",
-    )];
-    let settled = settle(&[], &only_workers).unwrap();
-    assert_eq!(settled.on.value, On::Cloud, "the default gives way");
-    assert_eq!(settled.on.from, Source::Narrowed(PathBuf::from(ORG)));
-    let here = [file(PERSON, "on = \"here\"\n")];
-    assert!(settle(&here, &only_workers).is_err(), "a choice never does");
-    let rules = constraints("version = 1\n[placement]\nallowed = [\"here\"]\n");
-    assert!(rules.allows_placement(Placement::Here));
-    assert!(!rules.allows_placement(Placement::Worker));
-    assert!(constraints("version = 1\n").allows_placement(Placement::Laptop));
-    let unknown = files::policy(
-        "version = 1\n[placement]\nallowed = [\"moon\"]\n",
-        Path::new(ORG),
-    );
-    assert!(unknown.is_err());
+    assert!(no_choices().workers.is_none(), "none by default");
 }
 
 fn no_choices() -> Choices {

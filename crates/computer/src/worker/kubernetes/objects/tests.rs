@@ -5,7 +5,6 @@ use std::time::SystemTime;
 use glave_ports::{Clock as _, SystemClock};
 
 use super::*;
-use crate::tls::Identity;
 use crate::token::Token;
 
 fn spec(network: bool) -> Spec {
@@ -16,7 +15,6 @@ fn spec(network: bool) -> Spec {
         cpu_millis: Some(2_000),
         memory_mib: Some(4_096),
         network,
-        identity: Identity::mint().unwrap(),
         token: Token::mint(
             SystemTime::from(SystemClock.now()),
             std::time::Duration::from_secs(60),

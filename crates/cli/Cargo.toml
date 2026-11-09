@@ -52,7 +52,6 @@ glave-computer = { workspace = true, features = ["kubernetes"] }
 glave-config.workspace = true
 glave-event.workspace = true
 glave-gateway.workspace = true
-glave-gateway-service.workspace = true
 glave-harness.workspace = true
 # Blobs' bytes in glave's folder.
 glave-bucket.workspace = true
@@ -99,8 +98,6 @@ uuid.workspace = true
 mimalloc.workspace = true
 
 [dev-dependencies]
-# The session API's fake identity provider signs the gateway's callers in.
-aws-lc-rs.workspace = true
 # A passkey authenticator in software, signing in to glave as the installer set it up.
 glave-identity = { workspace = true, features = ["fake-authenticator"] }
 glave-ports = { workspace = true, features = ["conformance"] }

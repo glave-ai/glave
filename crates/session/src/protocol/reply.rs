@@ -5,7 +5,6 @@ use glave_event::{
     Accent, At, EventId, Filters, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret,
     Seq, Sha256, ThreadId, TokenCounts, TurnResult, WorkspaceBound,
 };
-use glave_harness::RunningCommand;
 use glave_ports::computer::{DiskUse, Screenful, TerminalInfo};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
@@ -19,6 +18,10 @@ use super::{
     SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
     ThreadSteps, Told, TrustAsk, WatchEnd,
 };
+
+mod listening;
+
+pub use listening::{ListedCommand, Port};
 
 /// What the server is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -84,8 +87,6 @@ pub struct ServerInfo {
 pub struct Exists {
     /// An organization of people, who sign in through its identity provider (OIDC).
     pub organization: bool,
-    /// Workers: a fresh machine for each thread of the project whose settings chose them.
-    pub workers: bool,
     /// Credits: each organization pays ahead for what it uses, and its model calls are
     /// charged to them (`credits/get`). Absent where they are not, so what a server that
     /// keeps none says is as it was.
@@ -300,8 +301,7 @@ pub enum Reply {
         folder: Option<ProjectFolder>,
         /// Whether a new chat in it may work on a separate copy of its folder, and whether it
         /// does unless told: said by `project/get` alone, and only where it may (its folder in a
-        /// git repository with a commit, on this server's computer, its threads working here
-        /// rather than on workers).
+        /// git repository with a commit, on this server's computer).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         copies: Option<Copies>,
     },
@@ -378,8 +378,14 @@ pub enum Reply {
     /// Where the person signs in to a remote server.
     #[schemars(title = "SignIn")]
     SignIn { sign_in: SignInLink },
+    /// The thread's commands running in the background, each with where it listens.
     #[schemars(title = "Commands")]
-    Commands { commands: Vec<RunningCommand> },
+    Commands {
+        commands: Vec<ListedCommand>,
+        /// Whether what they serve is previewed for the caller here (each port's `url`): where
+        /// it isn't, a client need not look for previews again.
+        previewed: bool,
+    },
     #[schemars(title = "Terminal")]
     Terminal { terminal: TerminalInfo },
     #[schemars(title = "Terminals")]

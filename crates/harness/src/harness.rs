@@ -38,7 +38,6 @@ use crate::room::LearnedWindows;
 use crate::skills::Skills;
 use crate::tools::workspace::Workspace;
 use crate::waits::Opened;
-use crate::worker::Workers;
 
 pub use error::{HarnessError, Invalid};
 pub use settings::Settings;
@@ -99,8 +98,6 @@ pub struct Harness<P, L, B, A> {
     pub(crate) actors: Actors,
     /// Each model's real context window, once a refusal has stated it.
     pub(crate) learned_windows: LearnedWindows,
-    /// Where threads placed on a worker get one; none by default.
-    pub(crate) workers: Option<Workers>,
     /// Each person's own computer, where their threads work; none by default, so every thread
     /// works on the harness's computer.
     pub(crate) homes: Option<Arc<dyn Homes>>,
@@ -146,9 +143,6 @@ pub struct Thread {
     /// Events glave recorded for itself that call ids do not count (`bind::own_records`).
     /// Each takes a `seq` before any later call, so ids stay unique.
     pub(crate) unnumbered: u64,
-    /// What the model is told about where it works when that is not the folder itself: a
-    /// worker's sources, and how work leaves it. Sent with the opening instructions.
-    pub(crate) note: Option<String>,
     /// Whether the thread is shown, archived or deleted.
     pub(crate) standing: Standing,
     /// A cleanup removed the thread's worktree while it was held: it is opened again before
@@ -256,15 +250,10 @@ impl Thread {
         self.next_seq
     }
 
-    /// What opens the conversation: the thread's instructions, and where it works when that
-    /// is a worker, if there is either.
+    /// What opens the conversation: the thread's instructions, if it has any.
     pub(crate) fn opening_parts(&self) -> Option<Vec<Part>> {
-        let parts: Vec<Part> = [self.instructions.as_ref(), self.note.as_ref()]
-            .into_iter()
-            .flatten()
-            .map(|text| Part::Text { text: text.clone() })
-            .collect();
-        (!parts.is_empty()).then_some(parts)
+        let text = self.instructions.as_ref()?;
+        Some(vec![Part::Text { text: text.clone() }])
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -329,7 +318,6 @@ where
             fitting: tokio::sync::Semaphore::new(crate::files::FITTING_AT_ONCE),
             settings,
             learned_windows: LearnedWindows::default(),
-            workers: None,
             homes: None,
             memory: None,
             project_folders: None,
@@ -373,13 +361,6 @@ where
     /// The memory threads use, if any.
     pub fn memory(&self) -> Option<&Arc<dyn Memory>> {
         self.memory.as_ref()
-    }
-
-    /// Places threads asked to work on a worker ([`crate::Place::Worker`]) with `workers`.
-    #[must_use]
-    pub fn with_workers(mut self, workers: Workers) -> Self {
-        self.workers = Some(workers);
-        self
     }
 
     /// Works each person's threads on their own computer from `homes`, when there is one.
@@ -600,7 +581,6 @@ where
             turns: 0,
             above: parent.iter().map(|call| call.thread).collect(),
             plan: Planning::default(),
-            note: bound.as_ref().and_then(crate::worker::note),
             workspace,
             unnumbered: u64::from(bound.is_some()),
             standing: Standing::Active,

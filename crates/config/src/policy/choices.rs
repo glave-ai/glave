@@ -15,7 +15,7 @@ use crate::policy::files::{
 use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
-use crate::policy::workers::{ComputersFile, On, WorkersFile};
+use crate::policy::workers::{ComputersFile, WorkersFile};
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,14 +69,10 @@ pub struct Choices {
     /// Whether a model titles each thread after its first exchange: on by default; off, a
     /// thread's title is the first line of its first message.
     pub titles: Chosen<bool>,
-    /// Where new threads work: here by default.
-    pub on: Chosen<On>,
-    /// The backend workers run on, if one is set up.
+    /// The Kubernetes cluster people's computers run on, if one is set up.
     pub workers: Option<Chosen<WorkersFile>>,
     /// Each person's own computer, if people have one; none, threads work on the server's.
     pub computers: Option<Chosen<ComputersFile>>,
-    /// The gateway elsewhere model calls go to, if any: its URL.
-    pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
     /// This project's memory setting: shared by default.
@@ -141,7 +137,6 @@ impl Layer {
                 "permissions" => "--permissions",
                 "network" => "--network or --no-network",
                 "worktree" => "--worktree",
-                "on" => "--on",
                 _ => "a flag",
             }),
             Level::Env => Source::Env(match key {
@@ -174,7 +169,6 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         models: nearest(layers, "models", |file| file.models.clone()),
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         titles: defaulted(nearest(layers, "titles", |file| file.titles), true),
-        on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
         computers: nearest(layers, "computers", |file| file.computers.clone()),
         server: nearest(layers, "server", |file| {
@@ -203,11 +197,6 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
             file.telemetry
                 .as_ref()
                 .map(|telemetry| telemetry.otlp.trim().to_owned())
-        }),
-        gateway: nearest(layers, "gateway", |file| {
-            file.gateway
-                .as_ref()
-                .map(|gateway| gateway.url.trim().to_owned())
         }),
         web: defaulted(
             nearest(layers, "web", |file| file.web.clone()),

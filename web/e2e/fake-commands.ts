@@ -1,4 +1,4 @@
-import type { RunningCommand } from '@glave/client';
+import type { ListedCommand } from '@glave/client';
 
 import { Refusal, bound, call, done, event } from './fake-records';
 
@@ -50,7 +50,7 @@ export interface Commands {
 }
 
 /** The docs site, as `command/list` lists it. */
-const DOCS: RunningCommand = {
+const DOCS: ListedCommand = {
   id: DOCS_COMMAND,
   command: DOCS_SERVER,
   started_at: DOCS_STARTED,
@@ -69,7 +69,7 @@ export function background(
   const running = params['thread'] === SERVING && commands?.running === true ? commands : null;
   switch (method) {
     case 'command/list':
-      return { commands: running === null ? [] : [DOCS] };
+      return { commands: running === null ? [] : [DOCS], previewed: false };
     case 'command/stop':
       if (running === null || params['command'] !== DOCS_COMMAND) {
         return new Refusal(-32027, 'that command is not running in this thread');

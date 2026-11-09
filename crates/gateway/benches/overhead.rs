@@ -112,7 +112,7 @@ impl ModelProvider for Fake {
     }
 }
 
-/// Main with a fallback target and a judge route of its own; in process, no budget counts.
+/// Main with a fallback target and a judge route of its own; no credits are charged.
 /// Main's catalog names its reasoning levels and default, as most of OpenRouter's do, so a call
 /// that asks for none is sent the default.
 fn gateway(fake: &Arc<Fake>) -> Result<Gateway> {

@@ -21,7 +21,7 @@ use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
 use super::sizing::{Size, Sizing};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
-use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, saying};
+use crate::worker::backend::{Backend, Listed, Spec, Started, Stream, saying};
 
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
@@ -148,7 +148,7 @@ impl PersonComputer {
 
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
     /// removed (its glave takes a token no longer held), and a new one started on the disk.
-    async fn wake(&self, spec: &Spec) -> Result<Link, ComputerError> {
+    async fn wake(&self, spec: &Spec) -> Result<(), ComputerError> {
         let size = self.sizing.waking();
         let spec = &Spec {
             cpu_millis: Some(size.cpu_millis),
@@ -173,7 +173,7 @@ impl PersonComputer {
             glave: &digest,
         };
         match self.cluster.start_on(&name, spec, &glave, Some(home)).await {
-            Ok(link) => Ok(link),
+            Ok(()) => Ok(()),
             Err(error) => {
                 let said = self.cluster.logs(&name).await;
                 let _ = self.sleep().await;
@@ -305,11 +305,8 @@ impl Backend for PersonComputer {
 
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
         Box::pin(async move {
-            let link = self.wake(spec).await?;
-            Ok(Started {
-                name: self.name(),
-                link,
-            })
+            self.wake(spec).await?;
+            Ok(Started { name: self.name() })
         })
     }
 

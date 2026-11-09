@@ -24,11 +24,10 @@ use kube::api::ListParams;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
-use super::super::backend::{Backend, Link, Spec};
+use super::super::backend::{Backend, Spec};
 use super::{Kubernetes, KubernetesSettings};
-use crate::tls::Identity;
 use crate::token::Token;
-use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
+use crate::{CancelSwitch, WorkerComputers};
 
 /// alpine 3.21, by the digest of its multi-platform index.
 const IMAGE: &str =
@@ -80,7 +79,6 @@ fn spec(network: bool) -> Spec {
         cpu_millis: Some(1_000),
         memory_mib: Some(1_024),
         network,
-        identity: Identity::mint().unwrap(),
         token: Token::mint(
             SystemTime::from(SystemClock.now()),
             Duration::from_secs(600),
@@ -187,15 +185,12 @@ fn the_kubernetes_backend_starts_limits_reaches_and_removes_workers() {
 async fn limited(cluster: &Kubernetes) {
     let name = name();
     let wanted = spec(true);
-    let link = cluster.start_with(&name, &wanted, STUB).await;
+    let started = cluster.start_with(&name, &wanted, STUB).await;
     let pod: Value = object::<Pod>(&cluster.pods(), &name).await;
     let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
     let said = printed(cluster, &name, 2).await;
     cluster.remove(&name).await.unwrap();
-    assert!(
-        matches!(link, Ok(Link::Bridged)),
-        "a worker is reached through bridges: {link:?}"
-    );
+    started.unwrap();
     let container = &pod["spec"]["containers"][0];
     let amounts = json!({"cpu": "1", "memory": "1Gi"});
     assert_eq!(container["resources"]["limits"], amounts);
@@ -248,8 +243,7 @@ async fn through(cluster: &Kubernetes, name: &str) -> Vec<String> {
 
 async fn bridged(cluster: &Kubernetes) {
     let name = name();
-    let link = cluster.start_with(&name, &spec(false), STUB).await.unwrap();
-    assert!(matches!(link, Link::Bridged), "{link:?}");
+    cluster.start_with(&name, &spec(false), STUB).await.unwrap();
     let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
     // Each connection is a bridge of its own, the worker going on between them.
     let first = through(cluster, &name).await;
@@ -321,7 +315,7 @@ async fn real(cluster: &Kubernetes, image: &str, network: Network) {
         isolation: cluster.isolation(),
         ..Limits::default()
     };
-    let workers = WorkerComputers::kubernetes(cluster.clone(), limits, WorkerCredentials::None);
+    let workers = WorkerComputers::kubernetes(cluster.clone(), limits);
     let environment = Environment {
         image: Image::Oci(image.to_owned()),
         network: Some(network),
@@ -398,8 +392,8 @@ fn a_real_worker_runs_a_command_through_a_bridge_with_a_network_or_without() {
     });
 }
 
-/// Starts a worker of `starter`, the stub waiting in it, and lets go of the link to it, as a
-/// glave killed outright does. It asks for no CPU or memory: four at once asking for a CPU each
+/// Starts a worker of `starter`, the stub waiting in it, and lets go of it, as a glave killed
+/// outright does. It asks for no CPU or memory: four at once asking for a CPU each
 /// would not fit on the one node of CI's cluster beside the other tests' workers.
 async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) -> String {
     let name = name();
@@ -409,7 +403,7 @@ async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) ->
         memory_mib: None,
         ..spec(true)
     };
-    drop(cluster.start_with(&name, &spec, STUB).await.unwrap());
+    cluster.start_with(&name, &spec, STUB).await.unwrap();
     name
 }
 
@@ -428,11 +422,7 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
             left_by(&cluster, Some(this)).await,
             left_by(&cluster, None).await,
         ];
-        let workers = WorkerComputers::kubernetes(
-            cluster.clone(),
-            Limits::default(),
-            WorkerCredentials::None,
-        );
+        let workers = WorkerComputers::kubernetes(cluster.clone(), Limits::default());
         let reaped = workers.reap().await;
         let listed = cluster.list().await.unwrap();
         for name in &kept {

@@ -34,6 +34,11 @@ const ROWS = [
   ]),
   ['--glz-surface-selected'],
 ];
+/** The side panes, each by the token its layout draws it with, and a row under the pointer. */
+const SIDE_PANES = ['--glz-sidenav-surface', '--glz-panel-surface'].flatMap((pane) => [
+  [pane],
+  [pane, '--glz-surface-hover'],
+]);
 /** Where status shows: the page, the side nav, a card, a turn's receipt. */
 const STATUS_ON = [
   '--glz-surface-page',
@@ -118,7 +123,7 @@ const PAIRS: readonly Pair[] = [
   })),
   {
     color: '--glz-selected-marker',
-    on: [...CONTROLS_ON, ['--glz-surface-selected']],
+    on: [...EVERY_SURFACE, ...ROWS, ...SIDE_PANES],
     least: NOT_TEXT,
     what: 'the marker beside what is chosen',
   },

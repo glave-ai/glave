@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{Copies, ProjectFolder};
 use crate::server::Server;
@@ -38,25 +38,19 @@ where
         }
     }
 
-    /// What `project/get` tells `caller` of a new chat's copies in `scope`, whose `folder` it
-    /// read: one may be offered where that folder is on this server's computer, in a git
-    /// repository with a commit to start one from, and its threads work here rather than on
-    /// workers; and whether it works on one unless told, read afresh as a new thread reads it.
+    /// What `project/get` tells `caller` of a new chat's copies, whose `folder` it read: one may
+    /// be offered where that folder is on this server's computer, in a git repository with a
+    /// commit to start one from; and whether it works on one unless told, read afresh as a new
+    /// thread reads it.
     /// None for a folder on the person's own computer, which this never wakes, nor for one
     /// that isn't there anymore.
     pub(crate) async fn copies(
         &self,
         caller: &Caller,
-        scope: Scope,
         folder: Option<&ProjectFolder>,
     ) -> Option<Copies> {
-        let on_workers = self
-            .inner
-            .worker
-            .as_ref()
-            .is_some_and(|(chosen, _)| *chosen == scope.project());
         let checkout = &folder?.checkout;
-        if on_workers || checkout.computer != self.computer() {
+        if checkout.computer != self.computer() {
             return None;
         }
         let workspace = self.inner.harness.workspace();

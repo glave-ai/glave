@@ -269,8 +269,7 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<bool>,
         /// For a thread that runs as a task: in a project with a folder it works on a copy
-        /// of its own, a worktree (or a worker, where every thread works on one), never in
-        /// the folder itself, so `worktree: false` is refused.
+        /// of its own, a worktree, never in the folder itself, so `worktree: false` is refused.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
         /// A running computer to work on, such as the person's own laptop dialled in to this

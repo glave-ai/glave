@@ -67,7 +67,6 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::TaskEnded(_)
         | Body::ScheduleCreated(_)
         | Body::ScheduleDeleted(_)
-        | Body::GatewayToolCalled(_)
         | Body::MemorySaved(_)
         | Body::MemoryEdited(_)
         | Body::MemoryForgotten(_)

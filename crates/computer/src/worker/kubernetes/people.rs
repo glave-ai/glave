@@ -25,7 +25,7 @@ use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use super::sizing::{CEILING, Size};
 use crate::worker::limits::pinned;
-use crate::{Grow, Lost, Peek, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
+use crate::{Grow, Lost, Peek, Short, Wake, Waking, WorkerComputers};
 
 mod lease;
 
@@ -125,8 +125,7 @@ impl std::fmt::Debug for People {
 impl People {
     /// People's computers on `cluster`, each running `image` (pinned by digest) with the
     /// network on, within `limits`, with a disk of `disk_gb`, each driven by this server only
-    /// while it holds the computer's lease (`leasing`). A computer is one person's for as long as
-    /// they use it, so a worker's time limit and count do not apply to it.
+    /// while it holds the computer's lease (`leasing`).
     pub fn new(
         cluster: Kubernetes,
         image: &str,
@@ -167,11 +166,7 @@ impl People {
             cluster,
             environment,
             ceiling,
-            limits: Limits {
-                max_minutes: None,
-                per_person: None,
-                ..limits.clone()
-            },
+            limits: limits.clone(),
             disk_gb,
             idle_minutes: IDLE_MINUTES,
             leasing,
@@ -209,11 +204,7 @@ impl People {
         let id = person;
         let computer = PersonComputer::new(self.cluster.clone(), key, self.disk_gb)?
             .idle_after(self.idle_minutes);
-        let computers = WorkerComputers::on(
-            Box::new(computer.clone()),
-            self.limits.clone(),
-            WorkerCredentials::None,
-        );
+        let computers = WorkerComputers::on(Box::new(computer.clone()), self.limits.clone());
         let home = planned_home(key)?;
         let ceiling = self.ceiling;
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
