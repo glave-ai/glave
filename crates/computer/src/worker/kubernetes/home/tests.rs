@@ -231,7 +231,8 @@ fn renewed_and_kept(read: &Woke) {
 }
 
 /// The computers suite, on a person's computer reached through bridges into its Pod as the
-/// server reaches it, under gVisor, where glave's sandbox, which the suite runs, starts.
+/// server reaches it, under gVisor, where glave's sandbox, which the suite runs, starts: all
+/// of it but what needs a git host on the runner, which a Pod never reaches.
 #[test]
 fn a_persons_computer_passes_the_computers_suite() {
     let (Ok(_), Ok(image), Ok(class)) = (
@@ -275,7 +276,9 @@ fn a_persons_computer_passes_the_computers_suite() {
         .await;
         let scratch = format!("{}/suite", super::super::objects::PERSON_HOME);
         let verdict = match last(&made) {
-            Ok(_) => glave_ports::conformance::computers(&computers, &environment, &scratch).await,
+            Ok(_) => {
+                glave_ports::conformance::computers_apart(&computers, &environment, &scratch).await
+            }
             Err(why) => Err(why),
         };
         // The suite ends by putting it to sleep; one that failed before may have left it awake.

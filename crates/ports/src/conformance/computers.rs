@@ -27,13 +27,42 @@ use crate::computer::{
 };
 
 /// Runs the suite on a computer made from `environment`: the host for this machine's
-/// computers, an image for workers. `scratch` is an empty folder on the computer, as it names
-/// it; the suite works only inside it, inside the workspaces it opens, and in the places the
-/// computer keeps worktrees and new projects' folders.
+/// computers, an image for a person's computer in the cloud. `scratch` is an empty folder on
+/// the computer, as it names it; the suite works only inside it, inside the workspaces it
+/// opens, and in the places the computer keeps worktrees and new projects' folders.
 pub async fn computers<C: Computers>(
     computers: &C,
     environment: &Environment,
     scratch: &str,
+) -> Verdict {
+    suite(computers, environment, scratch, Reaches::ThisMachine).await
+}
+
+/// The suite, as [`computers`], on a computer that reaches nothing on this machine, as a
+/// person's computer in a cluster doesn't (its loopback is its own, and its network policy
+/// refuses private addresses): all of it but the credentials part, whose git host serves on
+/// this machine's loopback. A credential crosses the wire to it as to any computer across
+/// one, which the whole suite proves over a pipe.
+pub async fn computers_apart<C: Computers>(
+    computers: &C,
+    environment: &Environment,
+    scratch: &str,
+) -> Verdict {
+    suite(computers, environment, scratch, Reaches::Apart).await
+}
+
+/// Whether a computer reaches what the suite serves on this machine's loopback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reaches {
+    ThisMachine,
+    Apart,
+}
+
+async fn suite<C: Computers>(
+    computers: &C,
+    environment: &Environment,
+    scratch: &str,
+    reaches: Reaches,
 ) -> Verdict {
     let made = computers
         .create(environment)
@@ -63,7 +92,9 @@ pub async fn computers<C: Computers>(
     commands(computers, here.id, &here.root).await?;
     background::background(computers, made.id, here.id, scratch).await?;
     listening::listening(computers, here.id).await?;
-    credentials::credentials(computers, here.id).await?;
+    if reaches == Reaches::ThisMachine {
+        credentials::credentials(computers, here.id).await?;
+    }
     finding::sandboxed(computers, here.id).await?;
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
