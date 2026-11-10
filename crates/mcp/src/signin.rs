@@ -197,9 +197,10 @@ async fn manager(url: &str, reachable: Reachable) -> Result<AuthorizationManager
 }
 
 /// rmcp's sign-in for the MCP server at `url`, whatever its address, going out through glave's
-/// client under `reachable`.
+/// client under what `reachable` lets a sign-in to it reach ([`Reachable::signing_in_to`]).
 async fn guarded(url: &str, reachable: Reachable) -> Result<AuthorizationManager, SignInError> {
-    let client = http::Guarded::new(reachable).map_err(|error| SignInError::Unreachable {
+    let reach = reachable.signing_in_to(url);
+    let client = http::Guarded::new(reach).map_err(|error| SignInError::Unreachable {
         url: url.to_owned(),
         message: format!("could not make its client: {error}"),
     })?;
@@ -356,51 +357,4 @@ pub fn address(url: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use glave_ports::testing::FakeHttp;
-
-    use super::*;
-
-    #[test]
-    fn its_requests_go_out_under_the_rule() {
-        let here = FakeHttp::always(404, "{}").unwrap();
-        let port = here.host.rsplit_once(':').unwrap().1;
-        let url = format!("http://localhost:{port}/mcp");
-        glave_ports::block_on!(async {
-            let manager = guarded(&url, Reachable::OnlyPublic).await.unwrap();
-            let failed = manager.resolve_metadata().await.unwrap_err();
-            let said = SignInError::from_auth(&url, &failed).to_string();
-            assert!(
-                said.contains("where people sign in from elsewhere"),
-                "{said}"
-            );
-        });
-        assert!(here.received().is_empty(), "nothing reached it");
-    }
-
-    #[test]
-    fn an_address_is_an_origin_then_its_path() {
-        assert_eq!(
-            address(" HTTPS://MCP.Example.com/Mcp/ ").as_deref(),
-            Some("https://mcp.example.com/Mcp")
-        );
-        assert_eq!(
-            address("http://127.0.0.1:8080/mcp?team=a").as_deref(),
-            Some("http://127.0.0.1:8080/mcp?team=a")
-        );
-        assert_eq!(
-            address("https://mcp.example.com").as_deref(),
-            Some("https://mcp.example.com")
-        );
-        for refused in [
-            "http://mcp.example.com/mcp",
-            "https://me@mcp.example.com/mcp",
-            "mcp.example.com/mcp",
-            "https://mcp.example.com/mcp#part",
-            "https://mcp example.com",
-            "ftp://mcp.example.com",
-        ] {
-            assert_eq!(address(refused), None, "{refused}");
-        }
-    }
-}
+mod tests;
