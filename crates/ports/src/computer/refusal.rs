@@ -38,10 +38,6 @@ worded! {
             "{ $path } was written by a newer version of glave (record version { $version }); update glave to use it",
         TooManyRepositories { most } = "computer-too-many-repositories"
             "worktrees are being made in { $most } repositories at once on this computer; try again when some are done",
-        RepositoryNotValid { value } = "computer-repository-not-valid"
-            "the repository { $value } is not valid",
-        RevisionNotValid { value } = "computer-revision-not-valid"
-            "the revision { $value } is not valid",
         BranchNotValid { value } = "computer-branch-not-valid" "the branch { $value } is not valid",
         NoCommitMessage = "computer-no-commit-message" "the commit message is empty",
         NotARepository = "computer-not-a-repository"
@@ -69,23 +65,21 @@ worded! {
         NoLoginShell = "computer-no-login-shell"
             "this account's login shell opens no shell, so no terminal opens for it",
 
-        // Workers.
+        // People's computers in the cloud.
         NeedsIsolation = "computer-needs-isolation"
-            "policy requires workers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this backend has none: run workers on Kubernetes with [workers] runtime_class set (gVisor or Kata)",
-        NoNetworkToClone = "computer-no-network-to-clone"
-            "this worker has no network, so it cannot clone a repository; give it the network, or open a folder on it",
+            "policy requires people's computers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this cluster gives them none: set [workers] runtime_class (gVisor or Kata)",
         HostNotImage = "computer-host-not-image"
-            "a worker runs an image, and this environment names the host",
+            "a person's computer in the cloud runs an image, and this environment names the host",
         NotPinned { image } = "computer-not-pinned"
-            "workers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not { $image }",
+            "people's computers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not { $image }",
         TooManyCpus { asked, most } = "computer-too-many-cpus"
             "the environment asks for { $asked } CPUs, and policy allows at most { $most } ([workers] cpu)",
         TooMuchMemory { asked, most } = "computer-too-much-memory"
             "the environment asks for { $asked } GB of memory, and policy allows at most { $most } ([workers] memory_gb)",
         NoNetworkAllowed = "computer-no-network-allowed"
-            "the environment asks for the network, and policy allows workers none ([workers] network = \"off\", or [sandbox] network = false)",
+            "the environment asks for the network, and policy allows people's computers none ([workers] network = \"off\", or [sandbox] network = false)",
         SecretNamed { name } = "computer-secret-named"
-            "{ $name } is named like a secret; a worker's variables are never secrets",
+            "{ $name } is named like a secret; a computer's variables are never secrets",
     }
 }
 
@@ -207,8 +201,6 @@ mod tests {
             "<path> already exists and is not this repository's worktree on <branch>; move it away, or remove it with `glave worktrees prune`",
             "<path> was written by a newer version of glave (record version <version>); update glave to use it",
             "worktrees are being made in <most> repositories at once on this computer; try again when some are done",
-            "the repository <value> is not valid",
-            "the revision <value> is not valid",
             "the branch <value> is not valid",
             "the commit message is empty",
             "this folder is not a git repository; glave saves work only in repositories",
@@ -222,14 +214,13 @@ mod tests {
             "<most> terminals are already open on this computer; close one first",
             "<most> terminals are already open in this thread; close one first",
             "this account's login shell opens no shell, so no terminal opens for it",
-            "policy requires workers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this backend has none: run workers on Kubernetes with [workers] runtime_class set (gVisor or Kata)",
-            "this worker has no network, so it cannot clone a repository; give it the network, or open a folder on it",
-            "a worker runs an image, and this environment names the host",
-            "workers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not <image>",
+            "policy requires people's computers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this cluster gives them none: set [workers] runtime_class (gVisor or Kata)",
+            "a person's computer in the cloud runs an image, and this environment names the host",
+            "people's computers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not <image>",
             "the environment asks for <asked> CPUs, and policy allows at most <most> ([workers] cpu)",
             "the environment asks for <asked> GB of memory, and policy allows at most <most> ([workers] memory_gb)",
-            "the environment asks for the network, and policy allows workers none ([workers] network = \"off\", or [sandbox] network = false)",
-            "<name> is named like a secret; a worker's variables are never secrets",
+            "the environment asks for the network, and policy allows people's computers none ([workers] network = \"off\", or [sandbox] network = false)",
+            "<name> is named like a secret; a computer's variables are never secrets",
         ];
         let every = Refusal::every();
         assert_eq!(every.len(), before.len());

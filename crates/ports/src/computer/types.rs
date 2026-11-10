@@ -203,9 +203,6 @@ pub enum Freed {
 pub enum Sources {
     /// A folder already on the computer, worked on in place: the project the person is in.
     Folder { path: String },
-    /// A repository cloned into a new copy, at a branch, tag or commit (its default branch
-    /// when `None`).
-    Git { url: String, at: Option<String> },
     /// A git worktree of the repository holding the folder at `path`, checked out on its own
     /// `branch` in a folder the computer chooses outside the repository. The branch is made
     /// from the folder's current commit when it does not exist yet. Opening the same branch
@@ -510,14 +507,15 @@ mod tests {
             r#"{"kind":"refused","message":"../x is outside the workspace"}"#
         );
         assert_eq!(serde_json::from_str::<ComputerError>(&json).unwrap(), error);
-        let sources = Sources::Git {
-            url: "https://example.com/r.git".into(),
-            at: Some("main".into()),
+        let sources = Sources::Worktree {
+            path: "/p".into(),
+            branch: "glave/t".into(),
+            owner: None,
         };
         let json = serde_json::to_string(&sources).unwrap();
         assert_eq!(
             json,
-            r#"{"kind":"git","url":"https://example.com/r.git","at":"main"}"#
+            r#"{"kind":"worktree","path":"/p","branch":"glave/t"}"#
         );
         let ending = Ending::Exited { code: 3 };
         assert_eq!(

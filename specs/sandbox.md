@@ -7,7 +7,6 @@ A wall around the commands the model runs, enforced by the operating system, and
 Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). It is glave's default: Auto's `project` level, with the network, wherever it can run; where it cannot, commands ask first (below).
 
 - glave's own git doesn't run what a repository nested in the project names (#1193).
-- A worker's `save` hands its credential to nothing its commands planted (#1198; `computers.md`, "Workers").
 - git's settings and glave's folder stay read-only however the project is set up (#1201).
 - Untrusted content takes the network from the rest of its thread (#1156). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
 - Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*), and only they open a terminal there (#355).

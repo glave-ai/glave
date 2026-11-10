@@ -101,25 +101,7 @@ pub trait Computers: Send + Sync {
         self.open(computer, sources)
     }
 
-    /// Opens `sources` as [`Computers::open`] does, fetching (and later saving) them with
-    /// `credential` (`workspace/open` with a `credential`). The computer keeps it in memory for
-    /// the workspace's life and hands it to git through a credential helper for each use; it
-    /// is never written to a disk, the repository's config, or the commands' environment. A
-    /// computer that cannot keep a credential that way refuses it.
-    fn open_with_credential<'a>(
-        &'a self,
-        computer: ComputerId,
-        sources: &'a Sources,
-        credential: &'a GitCredential,
-    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        let _ = (computer, sources, credential);
-        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
-            "this computer cannot keep a credential for its sources".into(),
-        ))))
-    }
-
-    /// Removes a workspace (`workspace/close`): a copy is deleted, a folder worked on in place
-    /// is only forgotten.
+    /// Lets go of a workspace (`workspace/close`): its folder is kept, only forgotten.
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>>;
 
     /// Runs one command at the workspace root (`command/run`), streaming its output to
@@ -393,9 +375,8 @@ pub trait Computers: Send + Sync {
         ))))
     }
 
-    /// Commits the workspace's changes to a branch and pushes it to where the sources came
-    /// from (`workspace/save`): the only way work leaves a computer. A folder that is not a
-    /// repository is refused.
+    /// Commits the workspace's changes to a branch and pushes it to the repository's `origin`
+    /// (`workspace/save`), when it has one. A folder that is not a repository is refused.
     fn save<'a>(
         &'a self,
         workspace: WorkspaceId,

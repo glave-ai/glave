@@ -39,7 +39,6 @@ async fn removed(log: &SqliteLog, thread: ThreadId, root: &Path) {
         branch: None,
         reason: RemovedReason::Pruned,
         trash: None,
-        lost: None,
     };
     record_removed(log, &scope(), thread, at(1), [1; 10], &removed)
         .await

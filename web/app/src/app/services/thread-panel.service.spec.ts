@@ -13,7 +13,7 @@ import { PlanService } from './plan.service';
 import { ThreadPanelService } from './thread-panel.service';
 import { ThreadService } from './thread.service';
 
-function workspace(opened: Opened, kind: 'local' | 'worker' = 'worker'): WorkspaceBound {
+function workspace(opened: Opened, kind: 'local' | 'person' = 'person'): WorkspaceBound {
   return { workspace: 'w1', computer: { id: 'c1', kind }, opened, root: '/w' };
 }
 

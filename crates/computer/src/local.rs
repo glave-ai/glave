@@ -33,10 +33,10 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
-    Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials,
-    Glob, Globbed, KeptWorktree, Listed, Listening, Listing, Output, Printed, Refusal, Save, Saved,
-    Screenful, Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo,
-    TerminalSize, WorkspaceId, WorkspaceInfo,
+    Computers, DiskSpace, Environment, FileWrite, Finished, Freed, GitCredentials, Glob, Globbed,
+    KeptWorktree, Listed, Listening, Listing, Output, Printed, Refusal, Save, Saved, Screenful,
+    Search, Searched, Size, Sources, Stat, State, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -45,7 +45,7 @@ use glave_process::{Owner, Processes};
 use background::Backgrounds;
 use command::Keep;
 pub(crate) use registry::new_id;
-use registry::{Opened, Pushes, Registry};
+use registry::{Opened, Registry};
 
 use crate::disk::Largest;
 pub use git::ask_repository;
@@ -182,7 +182,7 @@ impl LocalComputers {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
         let workspace = computers
-            .open_now(computer, &sources, None, Opening::Unasked)
+            .open_now(computer, &sources, Opening::Unasked)
             .await?;
         Ok((computers, workspace))
     }
@@ -224,20 +224,14 @@ impl LocalComputers {
         &self,
         computer: ComputerId,
         sources: &Sources,
-        credential: Option<&GitCredential>,
         opening: Opening,
     ) -> Result<WorkspaceInfo, ComputerError> {
-        if let Some(credential) = credential {
-            credential.check()?;
-        }
         let environment = self
             .registry
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(new_id()?);
-        let (root, copy, git_common) = self
-            .made(computer, id, &environment, sources, credential)
-            .await?;
+        let (root, git_common) = self.made(&environment, sources).await?;
         let environment = self.command_environment(&environment);
         let variable = |name: &str| {
             environment
@@ -257,12 +251,10 @@ impl LocalComputers {
         let opened = Opened {
             computer,
             root,
-            copy,
             git_common,
             environment,
             hidden: Arc::clone(&self.hidden),
             glave_on_path: self.glave_on_path.clone(),
-            pushes: Pushes::of(sources, credential),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };
@@ -273,33 +265,19 @@ impl LocalComputers {
             },
             ..info
         };
-        if let Err(error) = self.registry.add_workspace(id, opened) {
-            if copy {
-                let _ = tokio::fs::remove_dir_all(&info.root).await;
-            }
-            return Err(error);
-        }
+        self.registry.add_workspace(id, opened)?;
         Ok(info)
     }
 
-    /// Where `sources` open as the workspace `id` on `computer`: its root, whether it is a
-    /// copy glave removes on close, and a worktree's shared git folder.
+    /// Where `sources` open as a workspace in `environment`: its root, and a worktree's shared
+    /// git folder.
     async fn made(
         &self,
-        computer: ComputerId,
-        id: WorkspaceId,
         environment: &Environment,
         sources: &Sources,
-        credential: Option<&GitCredential>,
-    ) -> Result<(PathBuf, bool, Option<PathBuf>), ComputerError> {
+    ) -> Result<(PathBuf, Option<PathBuf>), ComputerError> {
         Ok(match sources {
-            Sources::Folder { path } => (paths::folder(path).await?, false, None),
-            Sources::Git { url, at } => {
-                let dest = self.base.join(computer.to_string()).join(id.to_string());
-                let env = self.command_environment(environment);
-                git::clone(&self.processes, &env, url, at.as_deref(), &dest, credential).await?;
-                (paths::folder(&dest.to_string_lossy()).await?, true, None)
-            }
+            Sources::Folder { path } => (paths::folder(path).await?, None),
             Sources::Worktree {
                 path,
                 branch,
@@ -314,7 +292,7 @@ impl LocalComputers {
                 let locks = &self.worktree_locks;
                 let git = (&self.processes, env.as_slice());
                 let made = worktree::open(git, locks, base, path, branch, owner.as_deref()).await?;
-                (made.root, false, Some(made.common))
+                (made.root, Some(made.common))
             }
             Sources::Scratch { name, owner } => {
                 let base = self.scratch.as_ref().ok_or_else(|| {
@@ -322,11 +300,7 @@ impl LocalComputers {
                         "this computer makes no scratch folders; work in a project folder".into(),
                     )
                 })?;
-                (
-                    scratch::open(base, name, owner.as_deref()).await?,
-                    false,
-                    None,
-                )
+                (scratch::open(base, name, owner.as_deref()).await?, None)
             }
             Sources::Project { name } => {
                 let base = self.projects.as_ref().ok_or_else(|| {
@@ -336,7 +310,7 @@ impl LocalComputers {
                             .into(),
                     )
                 })?;
-                (project::make(base, name).await?, false, None)
+                (project::make(base, name).await?, None)
             }
         })
     }
@@ -570,7 +544,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None, Opening::Placed))
+        Box::pin(self.open_now(computer, sources, Opening::Placed))
     }
 
     fn reopen<'a>(
@@ -578,32 +552,13 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, None, Opening::Unasked))
-    }
-
-    fn open_with_credential<'a>(
-        &'a self,
-        computer: ComputerId,
-        sources: &'a Sources,
-        credential: &'a GitCredential,
-    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources, Some(credential), Opening::Placed))
+        Box::pin(self.open_now(computer, sources, Opening::Unasked))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
-            let opened = self.registry.remove_workspace(workspace)?;
+            self.registry.remove_workspace(workspace)?;
             self.background.stop_all(|_, at| at == workspace).await;
-            if opened.copy {
-                tokio::fs::remove_dir_all(&opened.root)
-                    .await
-                    .map_err(|error| {
-                        ComputerError::Failed(format!(
-                            "could not remove {}: {error}",
-                            opened.root.display()
-                        ))
-                    })?;
-            }
             Ok(())
         })
     }

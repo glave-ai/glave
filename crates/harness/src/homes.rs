@@ -121,7 +121,6 @@ where
                 home.worktree(repository, branch, Some(&owner)).await?
             }
             Opened::Scratch { .. } => home.scratch(&thread.id.to_string(), Some(&owner)).await?,
-            Opened::Clone { .. } => return Ok(()),
         };
         let events = self.load(&thread.scope, thread.id).await?;
         let computer = workspace.info().computer;
@@ -150,7 +149,6 @@ where
                 self.last_read(scope, home.root()).await?.files
             }
             Opened::Worktree { .. } => self.read_at_home(scope, person, bound).await.ok()?.0.files,
-            Opened::Clone { .. } => return None,
         };
         crate::instructions::compose(root, &files)
     }
@@ -188,9 +186,6 @@ where
         let bound = home.bound.clone();
         // It has just been used, so asking it wakes nothing.
         self.free_room_at_home(thread).await;
-        if matches!(bound.opened, Opened::Clone { .. }) {
-            return;
-        }
         let Ok((read, kept)) = self.read_at_home(thread.scope, thread.for_, &bound).await else {
             return;
         };
@@ -229,9 +224,7 @@ where
         Ok(match bound.opened {
             Opened::Scratch { .. } => (read_there(&home, home.root(), None).await?, true),
             Opened::Folder { .. } => (read_there(&home, root, Some(root)).await?, true),
-            Opened::Worktree { .. } | Opened::Clone { .. } => {
-                (read_there(&home, root, Some(root)).await?, false)
-            }
+            Opened::Worktree { .. } => (read_there(&home, root, Some(root)).await?, false),
         })
     }
 
@@ -260,7 +253,6 @@ where
                 },
             ) => self.last_read(scope, Path::new(path)).await,
             (None, Opened::Scratch { .. }) => self.last_read(scope, home.root()).await,
-            (None, Opened::Clone { .. }) => None,
         };
         let (config, found) = read.map_or_else(Default::default, |read| (read.config, read.skills));
         // A worktree goes by its repository's folder, which its project's yes is kept for.

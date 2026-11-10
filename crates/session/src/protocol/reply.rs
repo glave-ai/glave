@@ -182,8 +182,8 @@ pub struct ThreadSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk: Option<Box<DiskShort>>,
     /// Whether its person may open terminals of their own in its folder: their shell, on their
-    /// own computer, so never on a worker, nor on the server's for anyone but the person it
-    /// works for; never once it is put away (`specs/session.md`, "Terminals").
+    /// own computer, so never on the server's for anyone but the person it works for; never
+    /// once it is put away (`specs/session.md`, "Terminals").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub terminals: bool,
 }

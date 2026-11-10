@@ -225,7 +225,6 @@ where
             branch: candidate.kept.branch.clone(),
             reason: candidate.reason,
             trash: None,
-            lost: None,
         };
         let recorded = match self.entropy.bytes() {
             Ok(random) => {

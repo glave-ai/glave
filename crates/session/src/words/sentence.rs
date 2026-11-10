@@ -191,8 +191,6 @@ sentences! {
     NoTerminal = "no-terminal" "that terminal is not open in this thread",
     TerminalNotTheirs = "terminal-not-theirs"
         "A terminal opens only on your own computer, and this thread doesn't work on yours.",
-    TerminalOnWorker = "terminal-on-worker"
-        "A terminal opens only on your own computer, not on one started for a single task.",
     TerminalNoFolder = "terminal-no-folder"
         "This thread has no folder to open a terminal in.",
     TerminalNoHome = "terminal-no-home"

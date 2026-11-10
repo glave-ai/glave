@@ -8,7 +8,7 @@ import {
   type GlzIconData,
   GlzPlanCardComponent,
 } from '@glave/glaze';
-import { Folder, GitBranch, GitCommitHorizontal, Laptop } from 'lucide';
+import { Folder, GitBranch, Laptop } from 'lucide';
 
 import { lineCounts, lineMarks, totalLines } from '../../lib/files';
 import { plural } from '../../lib/plural';
@@ -130,12 +130,6 @@ export class ThreadOverviewComponent {
         $localize`:@@threadOverview.branch:Branch`,
         opened.kind === 'worktree' ? opened.branch : null,
         $localize`:@@threadOverview.separateCopy:a separate copy`,
-      ),
-      ...line(
-        'at',
-        GitCommitHorizontal,
-        $localize`:@@threadOverview.at:Checked out at`,
-        opened.kind === 'clone' ? (opened.at ?? null) : null,
       ),
     ];
   });

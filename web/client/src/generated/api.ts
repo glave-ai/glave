@@ -133,7 +133,7 @@ export type CommandId = string;
 export type ComputerId = string;
 
 /** What kind of computer it is. */
-export type ComputerKind = "local" | "worker" | "person";
+export type ComputerKind = "local" | "person";
 
 /** The computer a workspace is on. */
 export type ComputerRef = {
@@ -745,10 +745,6 @@ export type Opened = {
   readonly branch: string;
   readonly kind: "worktree";
   readonly repository: string;
-} | {
-  readonly at?: string | null;
-  readonly kind: "clone";
-  readonly url: string;
 } | {
   readonly kind: "scratch";
   readonly path: string;
@@ -1403,8 +1399,8 @@ export type ThreadSummary = {
   readonly status: Status;
   /**
    * Whether its person may open terminals of their own in its folder: their shell, on their
-   * own computer, so never on a worker, nor on the server's for anyone but the person it
-   * works for; never once it is put away (`specs/session.md`, "Terminals").
+   * own computer, so never on the server's for anyone but the person it works for; never
+   * once it is put away (`specs/session.md`, "Terminals").
    */
   readonly terminals?: boolean;
   /** The title the person gave it, else the first line of their first message. */

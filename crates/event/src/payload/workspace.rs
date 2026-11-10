@@ -43,8 +43,6 @@ pub struct ComputerRef {
 pub enum ComputerKind {
     /// The machine glave runs on.
     Local,
-    /// A computer glave made elsewhere, such as a cloud worker.
-    Worker,
     /// The person's own computer in the cloud, which glave wakes and puts to sleep, keeping
     /// its disk.
     Person,
@@ -58,13 +56,6 @@ pub enum Opened {
     Folder { path: String },
     /// A git worktree of the repository at `repository`, on its own `branch`.
     Worktree { repository: String, branch: String },
-    /// A repository cloned into a new copy, at a branch, tag or commit (its default branch
-    /// when absent).
-    Clone {
-        url: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        at: Option<String>,
-    },
     /// A folder of the thread's own, for a thread with no project.
     Scratch { path: String },
 }
@@ -82,10 +73,6 @@ pub struct WorkspaceRemoved {
     /// Where it went when it was moved to the Trash rather than removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trash: Option<String>,
-    /// For a released worker whose work could not be checked or saved before it was
-    /// destroyed: why. Anything it had not pushed is gone.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lost: Option<String>,
 }
 
 /// Why a worktree was removed.
@@ -100,9 +87,6 @@ pub enum RemovedReason {
     RepositoryGone,
     /// The person pruned it.
     Pruned,
-    /// Its worker was released when its session ended: unsaved work was pushed to `branch`
-    /// first, and the worker destroyed.
-    Released,
 }
 
 impl Payload for WorkspaceBound {
@@ -112,7 +96,6 @@ impl Payload for WorkspaceBound {
 
 impl Payload for WorkspaceRemoved {
     const TYPE: &'static str = REMOVED;
-    /// 2 added `lost`.
     const VERSION: u32 = 1;
 }
 

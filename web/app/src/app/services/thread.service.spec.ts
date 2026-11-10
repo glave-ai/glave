@@ -461,7 +461,7 @@ describe('ThreadService', () => {
   it('says where the thread runs as its summary says, never from its events', async () => {
     const workspace = {
       workspace: 'workspace-1',
-      computer: { id: 'computer-1', kind: 'worker' },
+      computer: { id: 'computer-1', kind: 'person' },
       opened: { kind: 'scratch', path: '/w' },
       root: '/w',
     } as const;
@@ -477,7 +477,7 @@ describe('ThreadService', () => {
     expect(service.place()).toBeNull();
     fake.answer('thread/get', { thread: thread('thread-1', 'Plan', { workspace }) });
     await service.open('thread-1');
-    expect(service.place()).toBe('Another computer');
+    expect(service.place()).toBe('Your cloud computer');
   });
 
   it('follows the thread live once read: a turn another tab started, its progress and its approval', async () => {

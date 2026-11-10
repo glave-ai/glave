@@ -19,10 +19,10 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
-    Computers, Environment, FileWrite, Finished, Freed, GitCredential, GitCredentials, Glob,
-    Globbed, Home, KeptWorktree, Listed, Listening, Listing, Output, Printed, Save, Saved,
-    Screenful, Search, Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize,
-    WorkspaceId, WorkspaceInfo,
+    Computers, Environment, FileWrite, Finished, Freed, GitCredentials, Glob, Globbed, Home,
+    KeptWorktree, Listed, Listening, Listing, Output, Printed, Save, Saved, Screenful, Search,
+    Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId,
+    WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use planned::{Planned, Real};
@@ -385,25 +385,6 @@ impl Computers for Waking {
             }
             let home = self.real(self.home.id).await?;
             let opened = home.computers.open(home.computer, sources).await?;
-            self.opened_now(computer, home, opened)
-        })
-    }
-
-    fn open_with_credential<'a>(
-        &'a self,
-        computer: ComputerId,
-        sources: &'a Sources,
-        credential: &'a GitCredential,
-    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(async move {
-            if computer != self.home.computer {
-                return Err(ComputerError::NotFound(format!("no computer {computer}")));
-            }
-            let home = self.real(self.home.id).await?;
-            let opened = home
-                .computers
-                .open_with_credential(home.computer, sources, credential)
-                .await?;
             self.opened_now(computer, home, opened)
         })
     }

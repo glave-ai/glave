@@ -26,7 +26,7 @@ const WORKED = [
 
 const WORKTREE: WorkspaceBound = {
   workspace: 'w1',
-  computer: { id: 'c1', kind: 'worker' },
+  computer: { id: 'c1', kind: 'person' },
   opened: { kind: 'worktree', repository: '/work/glave', branch: 'glave/0123456789ab' },
   root: '/worktrees/glave-0123',
 };
@@ -121,7 +121,7 @@ describe('ThreadOverviewComponent', () => {
   it('shows where the thread works and each section that has something, a level down', async () => {
     const { root } = await render(worked(), WORKED);
     expect(texts(root, 'panel-where-part')).toEqual([
-      'Another computer',
+      'Your cloud computer',
       'glave · /work/glave',
       'glave/0123456789ab · a separate copy',
     ]);
@@ -176,7 +176,7 @@ describe('ThreadOverviewComponent', () => {
     const facts = root.querySelector('[data-testid="panel-facts"]');
     expect(facts?.classList.contains('reading')).toBe(false);
     expect(texts(root, 'panel-where-part')).toEqual([
-      'Another computer',
+      'Your cloud computer',
       'glave/0123456789ab · a separate copy',
     ]);
   });
@@ -242,32 +242,13 @@ describe('ThreadOverviewComponent', () => {
     expect(visibilityOf(root, 'panel-running')).toBe('visible');
   });
 
-  it('names the point a clone is at, and a folder worked in place as no branch', async () => {
-    const clone = await render(
-      worked({
-        workspace: {
-          ...WORKTREE,
-          opened: { kind: 'clone', url: 'https://github.com/acme/app.git', at: 'v1.2.0' },
-        },
-      }),
-      WORKED,
-    );
-    expect(texts(clone.root, 'panel-where-part')).toEqual([
-      'Another computer',
-      'glave · /worktrees/glave-0123',
-      'v1.2.0',
-    ]);
-    const marks = clone.root.querySelectorAll('[data-testid="panel-where-part"] glz-icon');
-    expect(Array.from(marks).map((icon) => icon.getAttribute('aria-label'))).toContain(
-      'Checked out at',
-    );
-    TestBed.resetTestingModule();
+  it('names a folder worked in place as no branch', async () => {
     const folder = await render(
       worked({ workspace: { ...WORKTREE, opened: { kind: 'folder', path: '/work/glave' } } }),
       WORKED,
     );
     expect(texts(folder.root, 'panel-where-part')).toEqual([
-      'Another computer',
+      'Your cloud computer',
       'glave · /worktrees/glave-0123',
     ]);
   });
@@ -334,7 +315,7 @@ describe('ThreadOverviewComponent', () => {
     });
     const { root } = await render(fake, []);
     expect(texts(root, 'panel-where-part')).toEqual([
-      'Another computer',
+      'Your cloud computer',
       'glave · /worktrees/glave-0123',
     ]);
     for (const section of [

@@ -25,7 +25,7 @@ const WORKED = [
 
 const FOLDER: WorkspaceBound = {
   workspace: 'w1',
-  computer: { id: 'c1', kind: 'worker' },
+  computer: { id: 'c1', kind: 'person' },
   opened: { kind: 'folder', path: '/work/glave' },
   root: '/work/glave',
 };

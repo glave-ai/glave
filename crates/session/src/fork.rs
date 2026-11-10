@@ -34,7 +34,7 @@ where
             Some(Body::WorkspaceBound(bound)) => match bound.opened {
                 Opened::Folder { .. } => Some(false),
                 Opened::Worktree { .. } => Some(true),
-                Opened::Clone { .. } | Opened::Scratch { .. } => None,
+                Opened::Scratch { .. } => None,
             },
             _ => None,
         };

@@ -93,10 +93,6 @@ pub(crate) fn bound(workspace: &Workspace, kind: ComputerKind) -> WorkspaceBound
             repository: path.clone(),
             branch: branch.clone(),
         },
-        Sources::Git { url, at } => Opened::Clone {
-            url: url.clone(),
-            at: at.clone(),
-        },
         Sources::Scratch { .. } => Opened::Scratch {
             path: info.root.clone(),
         },
@@ -182,14 +178,6 @@ where
             Body::WorkspaceBound(bound) => Some(bound),
             _ => None,
         });
-        if latest.is_some_and(|bound| bound.computer.kind == ComputerKind::Worker) {
-            return Err(ComputerError::Unsupported(
-                "this thread worked on a cloud worker, which was released when its session \
-                 ended; its work is on the branches it pushed. Start a new thread to go on"
-                    .into(),
-            )
-            .into());
-        }
         // On the person's own computer, opened at its next turn ([`Harness::come_home`]), so
         // reading a thread never waits for a computer to wake.
         if latest.is_some_and(|bound| bound.computer.kind == ComputerKind::Person) {
@@ -243,7 +231,7 @@ where
                 };
                 Some(home.again(&sources).await?)
             }
-            Some(Opened::Clone { .. }) | None => None,
+            None => None,
         };
         Ok((workspace.map(Arc::new), latest.cloned(), false))
     }
@@ -273,7 +261,6 @@ where
             Opened::Folder { path } => Some(Path::new(path)),
             Opened::Worktree { repository, .. } => Some(Path::new(repository)),
             Opened::Scratch { .. } => None,
-            Opened::Clone { .. } => return self.settings.instructions.clone(),
         };
         let trusting = self.trusting(person);
         reader.for_folder(workspace.root(), project, trusting).await
