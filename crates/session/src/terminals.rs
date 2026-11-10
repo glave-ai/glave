@@ -54,16 +54,14 @@ where
 {
     /// Whether a terminal opens in a thread for its person, `whose`, where it works as `bound`
     /// records: shown, in a folder on its person's own computer, this server's for the person
-    /// it works for, or theirs where people have computers of their own; never on a worker.
+    /// it works for, or theirs where people have computers of their own.
     pub(crate) fn opens_terminals(
         &self,
         standing: Standing,
         bound: Option<&WorkspaceBound>,
         whose: Option<PrincipalId>,
     ) -> bool {
-        standing == Standing::Active
-            && bound.is_some_and(|bound| bound.computer.kind != ComputerKind::Worker)
-            && self.computer_is_theirs(whose)
+        standing == Standing::Active && bound.is_some() && self.computer_is_theirs(whose)
     }
 
     /// Answers `terminal/open`: refused in a thread put away, and closed again when it was put
@@ -303,12 +301,6 @@ where
                     home.info().computer,
                     Some(person),
                 )
-            }
-            ComputerKind::Worker => {
-                return Err(ApiError::new(
-                    code::NOT_AVAILABLE,
-                    Sentence::TerminalOnWorker,
-                ));
             }
         };
         if computer.as_uuid() != bound.computer.id {

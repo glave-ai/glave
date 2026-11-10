@@ -257,7 +257,8 @@ const SEED: &str = "git init -q --bare --initial-branch=main origin.git && \
     git -c user.name=seed -c user.email=seed@example.com commit -q --allow-empty -m seed && \
     git push -q ../origin.git main";
 
-/// One workspace saves to a branch; a workspace opened from that branch sees the work.
+/// A clone saves its work to a branch of where it came from; another clone, of that branch,
+/// sees the work.
 async fn moves_through_git<C: Computers>(
     computers: &C,
     computer: ComputerId,
@@ -265,22 +266,20 @@ async fn moves_through_git<C: Computers>(
     root: &str,
 ) -> Verdict {
     run_quietly(computers, here, SEED).await?;
-    let url = format!("{root}/origin.git");
+    run_quietly(computers, here, "git clone -q origin.git moved/first").await?;
     let first = computers
         .open(
             computer,
-            &Sources::Git {
-                url: url.clone(),
-                at: Some("main".into()),
+            &Sources::Folder {
+                path: format!("{root}/moved/first"),
             },
         )
         .await
-        .map_err(failed("open a repository"))?;
-    ensure(first.root != root, "a repository opens as a new copy")?;
+        .map_err(failed("open a clone"))?;
     computers
         .write(first.id, &files(&[("work.txt", b"moved")]))
         .await
-        .map_err(failed("write in a copy"))?;
+        .map_err(failed("write in a clone"))?;
     let saved = computers
         .save(
             first.id,
@@ -290,10 +289,10 @@ async fn moves_through_git<C: Computers>(
             },
         )
         .await
-        .map_err(failed("save a copy"))?;
+        .map_err(failed("save a clone"))?;
     ensure(
         saved.pushed && saved.commit.len() == 40,
-        "saving a copy pushes a commit to where it came from",
+        "saving a clone pushes a commit to its origin",
     )?;
     let bad = Save {
         branch: "bad..name".into(),
@@ -306,12 +305,17 @@ async fn moves_through_git<C: Computers>(
         ),
         "an invalid branch name must be refused",
     )?;
+    run_quietly(
+        computers,
+        here,
+        "git clone -q --branch glave/conformance origin.git moved/second",
+    )
+    .await?;
     let second = computers
         .open(
             computer,
-            &Sources::Git {
-                url,
-                at: Some("glave/conformance".into()),
+            &Sources::Folder {
+                path: format!("{root}/moved/second"),
             },
         )
         .await
@@ -322,13 +326,13 @@ async fn moves_through_git<C: Computers>(
         .map_err(failed("read the moved work"))?;
     ensure(
         moved.as_slice() == b"moved",
-        "saved work must reach another copy",
+        "saved work must reach another clone",
     )?;
-    for copy in [first.id, second.id] {
+    for clone in [first.id, second.id] {
         computers
-            .close(copy)
+            .close(clone)
             .await
-            .map_err(failed("close a copy"))?;
+            .map_err(failed("close a clone"))?;
     }
     ensure(
         matches!(

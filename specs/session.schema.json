@@ -341,11 +341,6 @@
           "type": "string"
         },
         {
-          "const": "worker",
-          "description": "A computer glave made elsewhere, such as a cloud worker.",
-          "type": "string"
-        },
-        {
           "const": "person",
           "description": "The person's own computer in the cloud, which glave wakes and puts to sleep, keeping\nits disk.",
           "type": "string"
@@ -2107,30 +2102,6 @@
             "kind",
             "repository",
             "branch"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "A repository cloned into a new copy, at a branch, tag or commit (its default branch\nwhen absent).",
-          "properties": {
-            "at": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "kind": {
-              "const": "clone",
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "url"
           ],
           "type": "object"
         },
@@ -3917,7 +3888,7 @@
           "$ref": "#/$defs/Status"
         },
         "terminals": {
-          "description": "Whether its person may open terminals of their own in its folder: their shell, on their\nown computer, so never on a worker, nor on the server's for anyone but the person it\nworks for; never once it is put away (`specs/session.md`, \"Terminals\").",
+          "description": "Whether its person may open terminals of their own in its folder: their shell, on their\nown computer, so never on the server's for anyone but the person it works for; never\nonce it is put away (`specs/session.md`, \"Terminals\").",
           "type": "boolean"
         },
         "title": {

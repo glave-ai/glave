@@ -35,7 +35,6 @@ fn named(reason: RemovedReason) -> &'static str {
         RemovedReason::Idle => "idle",
         RemovedReason::RepositoryGone => "repository_gone",
         RemovedReason::Pruned => "pruned",
-        RemovedReason::Released => "released",
     }
 }
 
@@ -102,7 +101,6 @@ impl<L: EventLog> Cleanup<'_, L> {
             branch: kept.branch.clone(),
             reason,
             trash: trash.map(|path| path.to_string_lossy().into_owned()),
-            lost: None,
         };
         let random = match self.entropy.bytes() {
             Ok(random) => random,

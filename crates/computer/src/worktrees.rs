@@ -281,7 +281,6 @@ pub async fn remove(
         environment,
         at: &kept.repository,
         options: vec![git_dir],
-        credential: None,
         network: false,
     };
     let path = kept.path.to_string_lossy();

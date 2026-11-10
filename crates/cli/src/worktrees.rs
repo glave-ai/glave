@@ -300,7 +300,7 @@ pub(crate) async fn note(server: Session<'_>, thread: ThreadId) -> Option<String
                     Some(format!("working in {} on {branch}", bound.root))
                 }
                 Opened::Scratch { path } => Some(format!("working in a scratch folder, {path}")),
-                Opened::Folder { .. } | Opened::Clone { .. } => None,
+                Opened::Folder { .. } => None,
             },
             _ => None,
         })

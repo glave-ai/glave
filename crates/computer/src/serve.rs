@@ -331,18 +331,7 @@ impl<C: Computers + 'static> Connection<C> {
                 reply(computers.free_worktree(computer, &path).await)
             }
             Request::Destroy { computer } => reply(computers.destroy(computer).await),
-            Request::Open {
-                computer,
-                sources,
-                credential,
-            } => reply(match &credential {
-                Some(credential) => {
-                    computers
-                        .open_with_credential(computer, &sources, credential)
-                        .await
-                }
-                None => computers.open(computer, &sources).await,
-            }),
+            Request::Open { computer, sources } => reply(computers.open(computer, &sources).await),
             Request::Close { workspace } => reply(computers.close(workspace).await),
             Request::Run {
                 workspace,

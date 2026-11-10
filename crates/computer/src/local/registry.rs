@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use glave_ports::computer::{
-    ComputerError, ComputerId, Environment, GitCredential, Refusal, Sandbox, Sources, WorkspaceId,
+    ComputerError, ComputerId, Environment, Refusal, Sandbox, WorkspaceId,
 };
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::{Builder, Uuid};
@@ -19,38 +19,12 @@ const MAX_COMPUTERS: usize = 64;
 /// The most workspaces open at once, across its computers.
 const MAX_WORKSPACES: usize = 1024;
 
-/// A clone opened with a credential: the credential, kept in memory only, and where it came from,
-/// as it was asked for rather than as its config says now, which is its commands' to change on a
-/// worker. Only there does the credential go.
-#[derive(Debug)]
-pub(crate) struct Pushes {
-    pub(crate) url: String,
-    pub(crate) credential: GitCredential,
-}
-
-impl Pushes {
-    /// What saving `sources`, opened with `credential`, pushes with: only a clone has a place the
-    /// credential was given for.
-    pub(crate) fn of(sources: &Sources, credential: Option<&GitCredential>) -> Option<Self> {
-        match (sources, credential) {
-            (Sources::Git { url, .. }, Some(credential)) => Some(Self {
-                url: url.clone(),
-                credential: credential.clone(),
-            }),
-            _ => None,
-        }
-    }
-}
-
 /// An open workspace: where it is, and what its commands run with.
 #[derive(Debug)]
 pub(crate) struct Opened {
     pub(crate) computer: ComputerId,
     /// Canonical, so every path check compares like with like.
     pub(crate) root: PathBuf,
-    /// A copy made for this workspace, removed when it closes; otherwise a folder worked on
-    /// in place, which is kept.
-    pub(crate) copy: bool,
     /// For a worktree, the repository's shared git folder, which its commands may also write
     /// in a sandbox, so that `git commit` works there.
     pub(crate) git_common: Option<PathBuf>,
@@ -59,8 +33,6 @@ pub(crate) struct Opened {
     pub(crate) hidden: Arc<[PathBuf]>,
     /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
     pub(crate) glave_on_path: Option<PathBuf>,
-    /// Where its saves go with a credential, when it was opened with one.
-    pub(crate) pushes: Option<Pushes>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one.
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,

@@ -9,9 +9,9 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
     Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished, Freed,
-    GitCredential, GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed,
-    Save, Saved, Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalInfo,
-    TerminalSize, WorkspaceId, WorkspaceInfo,
+    GitCredentials, Glob, Globbed, KeptWorktree, Listed, Listing, Output, Printed, Save, Saved,
+    Screenful, Search, Searched, Sources, Stat, TerminalId, TerminalInfo, TerminalSize,
+    WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
@@ -445,21 +445,6 @@ impl Computers for RemoteComputers {
         let request = Request::Open {
             computer,
             sources: sources.clone(),
-            credential: None,
-        };
-        Box::pin(async move { self.typed(&request).await })
-    }
-
-    fn open_with_credential<'a>(
-        &'a self,
-        computer: ComputerId,
-        sources: &'a Sources,
-        credential: &'a GitCredential,
-    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        let request = Request::Open {
-            computer,
-            sources: sources.clone(),
-            credential: Some(credential.clone()),
         };
         Box::pin(async move { self.typed(&request).await })
     }

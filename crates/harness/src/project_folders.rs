@@ -200,11 +200,11 @@ where
 }
 
 /// The folder of the project a thread works in, from where it was bound: the folder it works
-/// in place, or the one its worktree was made from. None for a scratch folder or a worker.
+/// in place, or the one its worktree was made from. None for a scratch folder.
 pub(crate) fn project_of(opened: &glave_event::Opened) -> Option<PathBuf> {
     match opened {
         glave_event::Opened::Folder { path } => Some(PathBuf::from(path)),
         glave_event::Opened::Worktree { repository, .. } => Some(PathBuf::from(repository)),
-        glave_event::Opened::Scratch { .. } | glave_event::Opened::Clone { .. } => None,
+        glave_event::Opened::Scratch { .. } => None,
     }
 }

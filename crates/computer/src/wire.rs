@@ -35,8 +35,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `at`, that point as a workspace opens, on what `workspace/open` answers.
 /// `2026-11-08` added a person's terminals: `terminal/open`, `terminal/list`, `terminal/write`,
 /// `terminal/read`, `terminal/resize` and `terminal/close`, each naming the terminal's owner,
-/// which the computer checks.
-pub(crate) const PROTOCOL: &str = "2026-11-08";
+/// which the computer checks. `2026-11-09` took out the `git` sources of `workspace/open` and
+/// the `credential` it took with them: nothing opened a clone.
+pub(crate) const PROTOCOL: &str = "2026-11-09";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -64,13 +65,10 @@ pub(crate) enum Request {
     Worktrees { computer: ComputerId },
     #[serde(rename = "computer/free_worktree")]
     FreeWorktree { computer: ComputerId, path: String },
-    /// `credential`, when given, is kept in memory by the computer for fetching and saving.
     #[serde(rename = "workspace/open")]
     Open {
         computer: ComputerId,
         sources: Sources,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        credential: Option<GitCredential>,
     },
     #[serde(rename = "workspace/close")]
     Close { workspace: WorkspaceId },
