@@ -1,0 +1,55 @@
+# glave built as the release builds it for one Linux target (dist-workspace.toml), for what the
+# release itself does not build: the binary budgets.yml measures, and the one server-image.yml
+# tests the server image with on a pull request. The glave package alone (`precise-builds`),
+# with the web app inside (its `web` feature, crates/cli/Cargo.toml, [package.metadata.dist]),
+# in the dist profile, static with musl, with the flags dist sets for a musl target (today's
+# defaults, which dist keeps in case they change). Run on ubuntu-22.04, the runner the release
+# builds x86-64 Linux on (dist's plan), so with its C compiler and musl.
+name: glave as the release builds it
+description: glave for a Linux target, static with musl and with the web app inside, as dist builds it.
+inputs:
+  target:
+    description: The target, such as x86_64-unknown-linux-musl.
+    required: true
+outputs:
+  binary:
+    description: The glave it built.
+    value: target/${{ inputs.target }}/dist/glave
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        rustup toolchain install
+        rustup target add "$TARGET"
+    # The C in glave's dependencies is compiled for musl with musl's own compiler wrapper, as
+    # the release build installs it.
+    - name: Install musl-gcc
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q musl-tools
+    # Saved from main only, as in ci.yml: per-PR copies would fill the repository's cache. One
+    # key for every job that builds glave this way, apart from other builds of the target.
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: dist-${{ inputs.target }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+    - name: Build the web app, which the binary carries
+      shell: bash
+      working-directory: web
+      run: npm ci && npm run build
+    - name: Build glave as the release does
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
+      run: cargo build --profile dist --target "$TARGET" -p glave --features web

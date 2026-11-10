@@ -1,0 +1,3 @@
+# The glave the image is built with, put here by the build (Dockerfile); never committed.
+*
+!.gitignore
