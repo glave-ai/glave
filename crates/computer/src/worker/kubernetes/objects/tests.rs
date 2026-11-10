@@ -1,4 +1,4 @@
-//! The objects a worker or a person's computer is made of, as the API server is sent them.
+//! The objects a person's computer is made of, as the API server is sent them.
 
 use std::time::SystemTime;
 
@@ -20,39 +20,23 @@ fn spec(network: bool) -> Spec {
             std::time::Duration::from_secs(60),
         )
         .unwrap(),
-        starter: glave_process::Glave::this(),
     }
 }
 
-/// A person's computer, `k1`, from `spec`.
-fn person<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a> {
-    Shape {
-        name: "glave-computer-k1",
-        home: Some(Home {
-            key: "k1",
-            claim: "glave-home-k1",
-            idle_minutes: IDLE_MINUTES,
-            glave: "the-sha-256-of-the-glave-chosen",
-        }),
-        owner: None,
-        ..shape(spec, labels)
-    }
-}
-
-/// The Pod of a worker from `spec`.
-fn shape_of(spec: &Spec, labels: &BTreeMap<String, String>) -> Value {
-    shape(spec, labels).pod()
-}
-
+/// A person's computer, `k1`, from `spec`, under gVisor on arm64.
 fn shape<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a> {
     Shape {
-        name: "glave-worker-1",
+        name: "glave-computer-k1",
         spec,
         runtime_class: Some("gvisor"),
         arch: Some("arm64"),
         labels,
-        owner: None,
-        home: None,
+        home: Home {
+            key: "k1",
+            claim: "glave-home-k1",
+            idle_minutes: IDLE_MINUTES,
+            glave: "the-sha-256-of-the-glave-chosen",
+        },
     }
 }
 
@@ -62,7 +46,7 @@ fn a_pod_is_limited_hardened_and_isolated() {
     let spec = spec(true);
     let pod = shape(&spec, &labels).pod();
     let container = &pod["spec"]["containers"][0];
-    let amounts = json!({"cpu": "2", "memory": "4Gi"});
+    let amounts = json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"});
     assert_eq!(container["resources"]["limits"], amounts);
     assert_eq!(container["resources"]["requests"], amounts);
     assert_eq!(pod["spec"]["runtimeClassName"], json!("gvisor"));
@@ -72,27 +56,26 @@ fn a_pod_is_limited_hardened_and_isolated() {
     assert_eq!(security["allowPrivilegeEscalation"], json!(false));
     assert_eq!(security["capabilities"]["drop"], json!(["ALL"]));
     assert_eq!(
-        pod["metadata"]["labels"],
-        json!({"glave.test": "run", "glave.worker": "glave-worker-1"})
-    );
-    let starter = serde_json::to_string(&spec.starter).unwrap();
-    assert_eq!(
-        pod["metadata"]["annotations"],
-        json!({"glave.started-by": starter})
+        pod["metadata"],
+        json!({
+            "name": "glave-computer-k1",
+            "labels": {"glave.test": "run", "glave.computer": "k1"}
+        }),
+        "owned by no Pod: a person's computer outlives any one glave"
     );
     let command = container["command"].to_string();
     assert!(
         command.contains(
             "\"/opt/glave/glave\",\"computer\",\"serve\",\"--socket\",\
-             \"/opt/glave/glave.sock\",\"/opt/glave/secret\"]"
+             \"/opt/glave/glave.sock\",\"/opt/glave/secret\""
         ),
         "{command}"
     );
     assert_eq!(
-        container["env"],
-        json!([{"name": "GREETING", "value": "hi"}])
+        pod["spec"]["volumes"][3],
+        json!({"name": "secret", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}}),
+        "the token lives in memory"
     );
-    assert_eq!(pod["spec"]["volumes"][1]["emptyDir"]["medium"], "Memory");
     assert!(
         !pod.to_string().contains(spec.token.secret()),
         "the token is never in the Pod"
@@ -103,51 +86,13 @@ fn a_pod_is_limited_hardened_and_isolated() {
 }
 
 #[test]
-fn a_worker_is_owned_by_the_pod_glave_runs_in_when_there_is_one() {
-    let labels = BTreeMap::new();
-    let spec = spec(true);
-    let alone = shape(&spec, &labels);
-    assert_eq!(alone.pod()["metadata"]["ownerReferences"], json!([]));
-    let owner = Owner {
-        name: "glave-0".into(),
-        uid: "8d1c2a52-0000-4000-8000-000000000001".into(),
-    };
-    let with_owner = Shape {
-        owner: Some(&owner),
-        ..alone
-    };
-    let reference = json!([{
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "name": "glave-0",
-        "uid": "8d1c2a52-0000-4000-8000-000000000001"
-    }]);
-    assert_eq!(with_owner.pod()["metadata"]["ownerReferences"], reference);
-    assert_eq!(
-        with_owner.network_policy()["metadata"]["ownerReferences"],
-        reference
-    );
-    let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(with_owner.pod()).unwrap();
-    assert_eq!(
-        parsed.metadata.owner_references.map(|owners| owners.len()),
-        Some(1)
-    );
-}
-
-#[test]
-fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
+fn a_persons_computer_mounts_its_disk_as_home() {
     let labels = BTreeMap::from([("glave.test".to_owned(), "run".to_owned())]);
     let mut spec = spec(true);
-    spec.starter = None;
     spec.env.insert("HOME".into(), "/root".into());
-    let computer = person(&spec, &labels);
+    let computer = shape(&spec, &labels);
     let pod = computer.pod();
     let container = &pod["spec"]["containers"][0];
-    assert_eq!(
-        pod["metadata"]["labels"],
-        json!({"glave.test": "run", "glave.computer": "k1"})
-    );
-    assert_eq!(pod["metadata"]["ownerReferences"], json!([]));
     assert_eq!(
         pod["spec"]["volumes"][1],
         json!({"name": "home", "persistentVolumeClaim": {"claimName": "glave-home-k1"}})
@@ -163,14 +108,6 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
             {"name": "HOME", "value": "/home/glave"}
         ])
     );
-    assert_eq!(
-        container["resources"]["limits"],
-        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"})
-    );
-    assert_eq!(
-        container["resources"]["requests"],
-        json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"})
-    );
     let command = container["command"].as_array().unwrap();
     assert_eq!(
         command.get(command.len() - 3..).unwrap(),
@@ -182,6 +119,7 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
         policy["spec"]["podSelector"]["matchLabels"],
         json!({"glave.computer": "k1"})
     );
+    assert_eq!(policy["metadata"], pod["metadata"]);
 
     let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(pod).unwrap();
     assert!(parsed.spec.is_some());
@@ -191,7 +129,7 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
 fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
     let labels = BTreeMap::new();
     let spec = spec(true);
-    let computer = person(&spec, &labels);
+    let computer = shape(&spec, &labels);
     let pod = computer.pod();
     let container = &pod["spec"]["containers"][0];
     assert_eq!(
@@ -237,20 +175,15 @@ fn without_the_network_glave_still_serves_on_its_socket_and_nothing_goes_in_or_o
     let off = spec(false);
     let shape = shape(&off, &labels);
     let pod = shape.pod();
-    let container = &pod["spec"]["containers"][0];
+    let on = spec(true);
     assert_eq!(
-        container["command"],
-        shape_of(&spec(true), &labels)["spec"]["containers"][0]["command"],
+        pod["spec"]["containers"][0]["command"],
+        Shape { spec: &on, ..shape }.pod()["spec"]["containers"][0]["command"],
         "the same with the network or without"
     );
     let policy = shape.network_policy();
     assert_eq!(policy["spec"]["egress"], json!([]));
     assert_eq!(policy["spec"]["ingress"], json!([]));
-    assert_eq!(
-        policy["spec"]["podSelector"]["matchLabels"]["glave.worker"],
-        "glave-worker-1"
-    );
-    let on = spec(true);
     let open = Shape { spec: &on, ..shape }.network_policy();
     assert_eq!(open["spec"]["ingress"], json!([]));
     let parsed: k8s_openapi::api::networking::v1::NetworkPolicy =
@@ -259,7 +192,7 @@ fn without_the_network_glave_still_serves_on_its_socket_and_nothing_goes_in_or_o
 }
 
 #[test]
-fn a_worker_with_the_network_reaches_the_internet_and_nothing_inside() {
+fn a_persons_computer_with_the_network_reaches_the_internet_and_nothing_inside() {
     let labels = BTreeMap::new();
     let on = spec(true);
     let open = shape(&on, &labels).network_policy();
@@ -298,9 +231,9 @@ fn a_worker_with_the_network_reaches_the_internet_and_nothing_inside() {
         ])
     );
     assert_eq!(
-        open["spec"]["egress"],
-        person(&on, &labels).network_policy()["spec"]["egress"],
-        "a worker reaches what a person's computer does"
+        open["spec"]["egress"][1],
+        json!({"ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}),
+        "DNS on port 53 is still let out"
     );
 }
 
@@ -323,8 +256,8 @@ fn the_token_goes_in_and_ready_comes_last() {
 fn a_persons_computer_serves_its_images_glave_only_when_it_is_the_one_chosen() {
     let spec = spec(true);
     let labels = BTreeMap::new();
-    let shape = person(&spec, &labels);
-    let home = shape.home.unwrap();
+    let shape = shape(&spec, &labels);
+    let home = shape.home;
     let [shell, flag, script, chosen] = home.image_glave();
     assert_eq!((shell, flag, chosen), ("/bin/sh", "-c", home.glave));
     // The token goes in first; the image's glave is named the computer's, and the Pod told

@@ -24,8 +24,9 @@ use super::Kubernetes;
 use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use super::sizing::{CEILING, Size};
+use crate::worker::WorkerComputers;
 use crate::worker::limits::pinned;
-use crate::{Grow, Lost, Peek, Short, Wake, Waking, WorkerComputers};
+use crate::{Grow, Lost, Peek, Short, Wake, Waking};
 
 mod lease;
 
@@ -204,7 +205,7 @@ impl People {
         let id = person;
         let computer = PersonComputer::new(self.cluster.clone(), key, self.disk_gb)?
             .idle_after(self.idle_minutes);
-        let computers = WorkerComputers::on(Box::new(computer.clone()), self.limits.clone());
+        let computers = WorkerComputers::new(computer.clone(), self.limits.clone());
         let home = planned_home(key)?;
         let ceiling = self.ceiling;
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {

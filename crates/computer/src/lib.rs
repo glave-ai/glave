@@ -33,7 +33,5 @@ pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{Token, Tokens};
 pub use waking::{Grow, Lost, Peek, Short, Wake, Waking};
 #[cfg(feature = "kubernetes")]
-pub use worker::{
-    Holding, Kubernetes, KubernetesSettings, Leasing, People, WorkerComputers, person_sandbox,
-};
+pub use worker::{Holding, Kubernetes, KubernetesSettings, Leasing, People, person_sandbox};
 pub use worktrees::{Condition, Kept, Released, Trash};

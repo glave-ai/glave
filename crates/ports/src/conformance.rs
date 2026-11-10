@@ -21,8 +21,8 @@ mod threads;
 pub use at_rest::{AtRest, KeptBlob, KeptPayload, at_rest};
 pub use blobs::blob_store;
 pub use computers::{
-    Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
-    confinement_untouched, terminals,
+    Confinement, computers, computers_apart, confinement_case, confinement_escapes,
+    confinement_fixture, confinement_untouched, terminals,
 };
 pub use directory::directory;
 pub use leases::leases;

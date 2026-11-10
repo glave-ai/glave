@@ -1,8 +1,8 @@
-//! A worker's connection, opened again when it dies: through a new bridge into it, with a fresh
-//! token the backend gives the worker (the first one only opens connections for its first ten
-//! minutes), tried again at each call, since a bridge costs one exec and the worker goes on
+//! A computer's connection, opened again when it dies: through a new bridge into it, with a
+//! fresh token given to the computer (the first one only opens connections for its first ten
+//! minutes), tried again at each call, since a bridge costs one exec and the computer goes on
 //! without one. The call that saw it die is never sent again; the next call goes over the new
-//! connection, so releasing a worker still reaches it to save its work.
+//! connection.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -12,7 +12,7 @@ use glave_ports::{Clock as _, SystemClock};
 use tokio::time::Instant;
 
 use super::TOKEN_LIFETIME;
-use super::backend::Backend;
+use super::kubernetes::PersonComputer;
 use crate::remote::RemoteComputers;
 use crate::token::Token;
 
@@ -22,20 +22,19 @@ const BRIDGE_AGAIN: Duration = Duration::from_mins(1);
 /// How often it is tried in that time.
 const BRIDGE_RETRY: Duration = Duration::from_secs(1);
 
-/// One worker's connection.
+/// One computer's connection.
 pub(crate) struct Connection {
     remote: Mutex<Arc<RemoteComputers>>,
     /// Held while the connection is opened again, so one call opens it and the others use it.
     reopening: tokio::sync::Mutex<()>,
 }
 
-/// Connects to glave in the worker `name` through a new bridge into it, signed in with `token`.
+/// Connects to glave in `computer` through a new bridge into it, signed in with `token`.
 pub(crate) async fn bridged(
-    backend: &dyn Backend,
-    name: &str,
+    computer: &PersonComputer,
     token: &str,
 ) -> Result<RemoteComputers, ComputerError> {
-    let (read, write) = backend.bridge(name).await?;
+    let (read, write) = computer.bridge().await?;
     let remote = RemoteComputers::connect(read, write);
     remote.authenticate(token).await?;
     remote.check_protocol().await?;
@@ -54,15 +53,14 @@ impl Connection {
         self.remote
             .lock()
             .map(|remote| Arc::clone(&remote))
-            .map_err(|_| ComputerError::Failed("the worker's connection lock is poisoned".into()))
+            .map_err(|_| ComputerError::Failed("the computer's connection lock is poisoned".into()))
     }
 
-    /// The connection to use for the next call on the worker `name`: the open one, or, when
-    /// it has died, a new one.
+    /// The connection to use for the next call on `computer`: the open one, or, when it has
+    /// died, a new one.
     pub(crate) async fn get(
         &self,
-        name: &str,
-        backend: &dyn Backend,
+        computer: &PersonComputer,
     ) -> Result<Arc<RemoteComputers>, ComputerError> {
         let remote = self.now()?;
         if remote.closed().is_none() {
@@ -74,7 +72,7 @@ impl Connection {
         let Some(died) = remote.closed() else {
             return Ok(remote);
         };
-        match bridged_again(name, backend).await {
+        match bridged_again(computer).await {
             Ok(fresh) => {
                 let fresh = Arc::new(fresh);
                 if let Ok(mut remote) = self.remote.lock() {
@@ -94,16 +92,13 @@ impl Connection {
     }
 }
 
-/// A new bridge into the worker `name` with a fresh token, tried again for up to a minute while
-/// the API server does not answer; a worker that is not there, or not running, fails at once.
-async fn bridged_again(
-    name: &str,
-    backend: &dyn Backend,
-) -> Result<RemoteComputers, ComputerError> {
+/// A new bridge into `computer` with a fresh token, tried again for up to a minute while the
+/// API server does not answer; a computer that is not there, or not running, fails at once.
+async fn bridged_again(computer: &PersonComputer) -> Result<RemoteComputers, ComputerError> {
     let until = Instant::now() + BRIDGE_AGAIN;
     loop {
-        let tried = match renewed(name, backend).await {
-            Ok(token) => bridged(backend, name, token.secret()).await,
+        let tried = match renewed(computer).await {
+            Ok(token) => bridged(computer, token.secret()).await,
             Err(error) => Err(error),
         };
         match tried {
@@ -115,9 +110,9 @@ async fn bridged_again(
     }
 }
 
-/// A fresh token, given to the worker `name`.
-async fn renewed(name: &str, backend: &dyn Backend) -> Result<Token, ComputerError> {
+/// A fresh token, given to `computer`.
+async fn renewed(computer: &PersonComputer) -> Result<Token, ComputerError> {
     let token = Token::mint(SystemTime::from(SystemClock.now()), TOKEN_LIFETIME)?;
-    backend.renew(name, &token).await?;
+    computer.renew(&token).await?;
     Ok(token)
 }

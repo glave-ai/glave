@@ -14,7 +14,7 @@ use kube::Api;
 use kube::api::{AttachParams, AttachedProcess};
 use tokio::io::{AsyncRead, ReadBuf};
 
-use super::super::backend::Stream;
+use super::Stream;
 use super::exec_failed;
 use super::objects::{CONTAINER, GLAVE, SOCKET};
 

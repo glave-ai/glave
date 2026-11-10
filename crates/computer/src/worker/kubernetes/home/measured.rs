@@ -14,8 +14,7 @@ use super::super::sizing::Size;
 use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
 use super::tests::ran;
-use crate::WorkerComputers;
-use crate::worker::backend::Backend as _;
+use crate::worker::WorkerComputers;
 
 /// Whether bubblewrap starts as glave's sandbox starts it for a command without the network
 /// (`local/sandbox/linux/bubblewrap.rs`'s probe), and what it says when it does not.
@@ -68,7 +67,7 @@ pub(super) fn two_cpus(
         memory_gb: Some(2),
         ..Limits::default()
     };
-    let computers = WorkerComputers::on(Box::new(person), limits);
+    let computers = WorkerComputers::new(person, limits);
     let environment = Environment {
         image: Image::Oci(image),
         network: Some(Network::On),
