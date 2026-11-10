@@ -1,6 +1,7 @@
 //! Which addresses a remote server may be at: a person on their own computer keeps loopback,
 //! where people sign in from elsewhere only public addresses are reached, by name or as written,
-//! in sign-in's discovery too, and cloud metadata never is. A server's redirect goes nowhere.
+//! in sign-in's discovery too, and cloud metadata never is. A server on this computer signs in
+//! on it. A server's redirect goes nowhere.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -141,15 +142,16 @@ fn sign_in_goes_nowhere_a_server_s_metadata_names_that_may_not_be_reached() {
     assert!(!here.received().is_empty(), "the server was asked");
 }
 
-/// A server on this computer that is its own authorization server, whose metadata names
-/// `register` as where glave registers.
-fn naming_registration(register: &'static str) -> FakeHttp {
+/// A server on this computer that is its own authorization server at `127.0.0.1`, whose own
+/// address names it as `host`, and whose metadata names `register` as where glave registers.
+fn naming_registration(host: &'static str, register: &'static str) -> FakeHttp {
     let address = Arc::new(OnceLock::new());
     let its: Arc<OnceLock<String>> = Arc::clone(&address);
     let here = FakeHttp::answering(move |_, path| {
         let here = its.get().cloned().unwrap_or_default();
         let answer = if path.contains("oauth-protected-resource") {
-            json!({"resource": format!("{here}/mcp"), "authorization_servers": [here]})
+            let resource = format!("{}/mcp", as_host(&here, host));
+            json!({"resource": resource, "authorization_servers": [here]})
         } else if path.contains("oauth-authorization-server") {
             json!({
                 "issuer": here,
@@ -178,7 +180,7 @@ fn sign_in_registers_nowhere_an_authorization_server_names_that_may_not_be_reach
             "http://[::ffff:169.254.169.254]/register",
             "http://[fd00:ec2::254]/register",
         ] {
-            let here = naming_registration(register);
+            let here = naming_registration("127.0.0.1", register);
             let url = format!("{}/mcp", here.url);
             let started = SignIn::start(&url, "docs", REDIRECT, &[], Reachable::AlsoPrivate).await;
             let Err(SignInError::Refused { message, .. }) = started else {
@@ -188,4 +190,22 @@ fn sign_in_registers_nowhere_an_authorization_server_names_that_may_not_be_reach
             assert!(!here.received().is_empty(), "the server was asked");
         }
     });
+}
+
+#[test]
+fn a_server_on_this_computer_signs_in_on_it_under_another_name() {
+    // Its own address is `localhost`, its authorization server's `127.0.0.1`: both this
+    // computer, which a server on the internet's sign-in never reaches.
+    let here = naming_registration("localhost", "http://127.0.0.1:9/register");
+    let url = format!("{}/mcp", as_host(&here.url, "localhost"));
+    block_on!(async {
+        assert_eq!(offers_sign_in(&url, Reachable::AlsoPrivate).await, Ok(true));
+    });
+    let asked: Vec<String> = here.received().into_iter().map(|got| got.path).collect();
+    assert!(
+        asked
+            .iter()
+            .any(|path| path.contains("oauth-authorization-server")),
+        "its authorization server was asked: {asked:?}"
+    );
 }

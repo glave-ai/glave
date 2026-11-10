@@ -1,7 +1,7 @@
 //! What sign-in's discovery, registration and tokens go out through: rmcp's OAuth client with
-//! glave's rule on what it reaches ([`Reachable`]), at every request, since a server's metadata
-//! names the next address. A redirect it follows stays on the same origin, as rmcp's own
-//! discovery does.
+//! glave's rule on what it reaches for the server signed in to ([`Reach`]), at every request,
+//! since a server's metadata names the next address. A redirect it follows stays on the same
+//! origin, as rmcp's own discovery does.
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use rmcp::transport::auth::{
     OAuthHttpRequest,
 };
 
-use crate::reachable::Reachable;
+use crate::reachable::Reach;
 
 /// How long one request may take: rmcp's own limit.
 const WITHIN: Duration = Duration::from_secs(30);
@@ -21,9 +21,9 @@ const REDIRECTS: usize = 10;
 /// The most of an answer that is read: rmcp's own limit.
 const MOST_BYTES: usize = 1024 * 1024;
 
-/// rmcp's OAuth client, under `reachable`.
+/// rmcp's OAuth client, under `reach`.
 pub(super) struct Guarded {
-    reachable: Reachable,
+    reach: Reach,
     /// For what follows redirects on its own origin: registering, as rmcp asks.
     follows: reqwest::Client,
     /// For the rest.
@@ -31,14 +31,8 @@ pub(super) struct Guarded {
 }
 
 impl Guarded {
-    pub(super) fn new(reachable: Reachable) -> Result<Self, reqwest::Error> {
-        let client = |redirect: Policy| {
-            reachable
-                .client()
-                .timeout(WITHIN)
-                .redirect(redirect)
-                .build()
-        };
+    pub(super) fn new(reach: Reach) -> Result<Self, reqwest::Error> {
+        let client = |redirect: Policy| reach.client().timeout(WITHIN).redirect(redirect).build();
         let follow = Policy::custom(|attempt| {
             let from = attempt.previous().last().map(reqwest::Url::origin);
             let stays = from.is_some_and(|from| from == attempt.url().origin());
@@ -49,9 +43,9 @@ impl Guarded {
             }
         });
         Ok(Self {
-            reachable,
             follows: client(follow)?,
             stops: client(Policy::none())?,
+            reach,
         })
     }
 
@@ -62,7 +56,7 @@ impl Guarded {
         follow: bool,
     ) -> Result<Response<Vec<u8>>, OAuthHttpClientError> {
         let request = reqwest::Request::try_from(request)?;
-        if let Some(refused) = self.reachable.refuses(request.url().as_str()) {
+        if let Some(refused) = self.reach.refuses(request.url().as_str()) {
             return Err(Box::new(refused));
         }
         let client = if follow { &self.follows } else { &self.stops };
@@ -98,7 +92,7 @@ mod tests {
     use glave_ports::testing::FakeHttp;
 
     use super::*;
-    use crate::reachable::Refused;
+    use crate::reachable::{Reachable, Refused};
 
     fn get(url: &str) -> Request<Vec<u8>> {
         Request::get(url).body(Vec::new()).unwrap()
@@ -110,11 +104,17 @@ mod tests {
             .any(|error| error.downcast_ref::<Refused>().is_some())
     }
 
+    /// What signing in to a server on the internet reaches, on the person's own computer.
+    fn on_the_internet() -> Reach {
+        Reachable::AlsoPrivate.signing_in_to("https://mcp.example.com/mcp")
+    }
+
     #[test]
     fn a_metadata_address_is_refused_before_anything_is_sent() {
         glave_ports::block_on!(async {
-            for reachable in [Reachable::AlsoPrivate, Reachable::OnlyPublic] {
-                let guarded = Guarded::new(reachable).unwrap();
+            let here = Reach::from(Reachable::AlsoPrivate);
+            for reach in [here, Reachable::OnlyPublic.into(), on_the_internet()] {
+                let guarded = Guarded::new(reach).unwrap();
                 for url in [
                     "http://169.254.169.254/",
                     "http://[::ffff:169.254.169.254]/",
@@ -137,7 +137,7 @@ mod tests {
         })
         .unwrap();
         glave_ports::block_on!(async {
-            let guarded = Guarded::new(Reachable::AlsoPrivate).unwrap();
+            let guarded = Guarded::new(Reachable::AlsoPrivate.into()).unwrap();
             let same = format!("{}/same", here.url);
             let stopped = guarded.send(get(&same), false).await.unwrap();
             assert_eq!(stopped.status(), 307, "as it came");
@@ -156,10 +156,35 @@ mod tests {
         let port = here.host.rsplit_once(':').unwrap().1;
         let url = format!("http://localhost:{port}/");
         glave_ports::block_on!(async {
-            let guarded = Guarded::new(Reachable::OnlyPublic).unwrap();
-            assert!(guarded.follows.get(&url).send().await.is_err());
-            assert!(guarded.stops.get(&url).send().await.is_err());
+            for reach in [Reachable::OnlyPublic.into(), on_the_internet()] {
+                let guarded = Guarded::new(reach).unwrap();
+                assert!(guarded.follows.get(&url).send().await.is_err());
+                assert!(guarded.stops.get(&url).send().await.is_err());
+            }
         });
         assert!(here.received().is_empty(), "nothing reached it");
+    }
+
+    #[test]
+    fn signing_in_to_a_server_on_the_internet_sends_nothing_to_this_computer() {
+        let here = FakeHttp::always(200, "here").unwrap();
+        let port = here.host.rsplit_once(':').unwrap().1.to_owned();
+        glave_ports::block_on!(async {
+            let guarded = Guarded::new(on_the_internet()).unwrap();
+            for host in ["127.0.0.1", "localhost", "[::ffff:127.0.0.1]"] {
+                let url = format!("http://{host}:{port}/register");
+                for follow in [true, false] {
+                    let error = guarded.send(get(&url), follow).await.err().unwrap();
+                    assert!(refused(&error), "{url}: {error}");
+                }
+            }
+            // A server on this computer still signs in on it, under another name.
+            let mine = format!("http://localhost:{port}/mcp");
+            let guarded = Guarded::new(Reachable::AlsoPrivate.signing_in_to(&mine)).unwrap();
+            let url = format!("http://127.0.0.1:{port}/register");
+            let answer = guarded.send(get(&url), false).await.unwrap();
+            assert_eq!(answer.status(), 200);
+        });
+        assert_eq!(here.received().len(), 1, "reached for that server alone");
     }
 }
