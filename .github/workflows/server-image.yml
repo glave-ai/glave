@@ -1,0 +1,128 @@
+name: server image
+
+# glave's server image (images/server): glave as a server, for x86-64 and arm64, published at
+# ghcr.io/glave-ai/glave. A pull request that changes it builds glave as the release builds it
+# (x86-64, .github/actions/release-build), builds the image with it, tests it
+# (images/server/test.sh) and publishes nothing, with a token that can write nothing. After a
+# release, and when run by hand, the image is built with the release's own glave, checked
+# against its provenance (.github/released-glave.sh), tested the same way, then pushed under
+# the release's version (`0.1.0`) and attested in the registry with GitHub's build provenance.
+# A deployment names it by the digest the run's summary prints. Not weekly, as the computer
+# image is: between releases nothing in it changes but its base, which moves by hand.
+on:
+  pull_request:
+    paths:
+      - images/server/**
+      - .github/actions/release-build/**
+      - .github/workflows/server-image.yml
+  # After a release: a run that published one is followed by its image; a dry run, which
+  # published none, by nothing.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # glave of the change rather than a release: a pull request may change both, and until the
+  # first release there is none. The cache key's environment as budgets.yml's, whose build of
+  # glave on main this one starts from.
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-build
+        id: glave
+        with:
+          target: x86_64-unknown-linux-musl
+      - name: The image, built with it and tested
+        env:
+          GLAVE: ${{ steps.glave.outputs.binary }}
+        run: |
+          install -D -m 0755 "$GLAVE" images/server/glave/amd64/glave
+          images/server/test.sh
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # With computer-image.yml's, the only jobs in the repository that write packages: the image,
+    # and its attestation. Nothing here builds code.
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/glave-ai/glave
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Before the first release there is nothing to publish, and the run ends here.
+      - name: glave of the latest release
+        id: glave
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/released-glave.sh images/server/glave
+      # Both processors from one BuildKit release, pinned by digest, as the computer image's is.
+      # The image only copies files in, so arm64's is built with no emulation.
+      - name: A builder for both processors
+        if: steps.glave.outputs.version != ''
+        run: docker buildx create --use --driver docker-container --driver-opt image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: The image for x86-64, tested before anything is pushed
+        if: steps.glave.outputs.version != ''
+        run: images/server/test.sh
+      - name: Sign in to GitHub's container registry
+        if: steps.glave.outputs.version != ''
+        env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # GitHub's attestation below is the image's provenance, so BuildKit adds none of its own.
+      - name: Build and push
+        id: push
+        if: steps.glave.outputs.version != ''
+        env:
+          VERSION: ${{ steps.glave.outputs.version }}
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+            --tag "$IMAGE:$VERSION" --metadata-file "$RUNNER_TEMP/image.json" --push images/server
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
+          case "$digest" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "no digest for the pushed image: $digest" >&2; exit 1 ;;
+          esac
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "glave's server image, \`$IMAGE:$VERSION\`: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest@v4
+        if: steps.glave.outputs.version != ''
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      # A package's first push is private, and only its settings page makes it public, once.
+      - name: Anyone can pull it
+        if: steps.glave.outputs.version != ''
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          docker logout ghcr.io
+          if ! docker buildx imagetools inspect "$IMAGE@$DIGEST" >/dev/null; then
+            echo "::error::$IMAGE is not public: an organization owner makes it public once, in the package's settings"
+            exit 1
+          fi
