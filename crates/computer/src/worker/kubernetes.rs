@@ -1,13 +1,11 @@
-//! Workers on Kubernetes: a Pod per worker in one namespace, from the environment's pinned
-//! image, with CPU and memory requested and limited, a runtime class (gVisor or Kata) when one
-//! is set, no service account token, no privilege, and a NetworkPolicy of its own. glave and
-//! the worker's token are copied in through the API server once the Pod runs (an exec of
-//! `tar`), so the token is never stored there; a person's computer whose image carries the
-//! very glave chosen takes only the token. The Pod waits for them, then becomes glave,
-//! serving on a Unix socket. The harness reaches it through the API server too, each
-//! connection an exec of a bridge to that socket (`link`). When glave runs in a Pod beside its
-//! workers, each worker names that Pod as its owner, so the cluster removes them when it is
-//! deleted.
+//! People's computers on Kubernetes: while awake, a Pod per person in one namespace, from the
+//! pinned image, with CPU and memory requested and limited, a runtime class (gVisor or Kata)
+//! when one is set, no service account token, no privilege, and a NetworkPolicy of its own.
+//! The computer's token, and glave unless its image carries the very glave chosen, are copied
+//! in through the API server once the Pod runs (an exec of `tar`), so the token is never
+//! stored there. The Pod waits for them, then becomes glave, serving on a Unix socket. The
+//! harness reaches it through the API server too, each connection an exec of a bridge to that
+//! socket (`link`).
 
 mod home;
 mod link;
@@ -20,26 +18,26 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Status;
-use kube::api::{
-    AttachParams, DeleteParams, ListParams, LogParams, Patch, PatchParams, PostParams,
-};
+use kube::api::{AttachParams, LogParams, Patch, PatchParams, PostParams};
 use kube::client::UpgradeConnectionError;
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Api, Client, Config};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Listed, STARTED_BY, Spec, Started, Stream, saying};
 use crate::token::Token;
-use objects::{Home, Owner, Progress, Resized, Shape};
+pub(crate) use home::PersonComputer;
+use objects::{Home, Progress, Resized, Shape};
 pub use people::{Holding, Leasing, People, person_sandbox};
 use sizing::Size;
 
+/// How long copying glave into a started computer may take: seconds through a cluster's API
+/// server, a minute or two over a slow link to one.
+const COPIED_WITHIN: Duration = Duration::from_mins(5);
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);
 /// How often a starting Pod is looked at.
@@ -54,22 +52,45 @@ const RESIZED_WITHIN: Duration = Duration::from_mins(1);
 /// on standard error.
 type Fed = (Option<Status>, String);
 
-/// Which cluster workers run on, and the glave that goes into them.
+/// A stream to glave in a computer: what it reads, and what it writes.
+pub(crate) type Stream = (
+    Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+    Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
+);
+
+/// What one computer's Pod is started with: everything already checked against policy.
+#[derive(Debug, Clone)]
+pub(crate) struct Spec {
+    /// An OCI image reference pinned by digest.
+    pub(crate) image: String,
+    /// Variables every command sees; never secrets.
+    pub(crate) env: BTreeMap<String, String>,
+    /// CPU, in thousandths of one.
+    pub(crate) cpu_millis: Option<u32>,
+    /// Memory, in MiB.
+    pub(crate) memory_mib: Option<u32>,
+    /// Whether commands may reach the network at all.
+    pub(crate) network: bool,
+    /// The short-lived token the harness presents first.
+    pub(crate) token: Token,
+}
+
+/// Which cluster people's computers run on, and the glave that goes into them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KubernetesSettings {
     /// A kubeconfig file; when `None`, `KUBECONFIG`, `~/.kube/config`, or the service account
     /// of the Pod glave itself runs in.
     pub kubeconfig: Option<PathBuf>,
-    /// The namespace workers run in; the kubeconfig's when `None`.
+    /// The namespace people's computers run in; the kubeconfig's when `None`.
     pub namespace: Option<String>,
-    /// The runtime class every worker runs under (gVisor's `runsc`, or Kata), for workers
+    /// The runtime class every computer runs under (gVisor's `runsc`, or Kata), for computers
     /// kept apart from the node by a kernel or a machine of their own.
     pub runtime_class: Option<String>,
     /// A Linux build of glave for the nodes' processor.
     pub glave: PathBuf,
 }
 
-/// A Kubernetes cluster as a place workers run.
+/// A Kubernetes cluster as a place people's computers run.
 #[derive(Clone)]
 pub struct Kubernetes {
     client: Client,
@@ -78,10 +99,7 @@ pub struct Kubernetes {
     glave: PathBuf,
     /// Labels put on every object besides its own, such as a test run's.
     labels: BTreeMap<String, String>,
-    /// The Pod glave runs in, when it runs in one in the workers' namespace: every worker names
-    /// it as its owner, so the cluster removes them when it is deleted, however glave ended.
-    owner: Option<Owner>,
-    /// The SHA-256 of the glave for workers, kept from the last time it was hashed with the
+    /// The SHA-256 of the glave for computers, kept from the last time it was hashed with the
     /// file as it was then, shared by every copy: hashed again only once the file changes.
     hashed: Arc<Mutex<Option<(Stamp, String)>>>,
 }
@@ -184,30 +202,30 @@ impl Kubernetes {
             .clone()
             .unwrap_or_else(|| config.default_namespace.clone());
         let client = Client::try_from(config).map_err(|error| failed("client", error))?;
-        let owner = this_pod(&Api::namespaced(client.clone(), &namespace), &namespace).await;
         Ok(Self {
             client,
             namespace,
             runtime_class: settings.runtime_class,
             glave: settings.glave,
             labels: BTreeMap::new(),
-            owner,
             hashed: Arc::default(),
         })
     }
 
-    /// Names `owner` as every worker's owner, for the test that deletes one.
-    #[cfg(test)]
-    pub(crate) fn owned_by(mut self, owner: Owner) -> Self {
-        self.owner = Some(owner);
-        self
-    }
-
-    /// Puts `labels` on every object a worker is made of too, such as a test run's.
+    /// Puts `labels` on every object a computer is made of too, such as a test run's.
     #[must_use]
     pub fn with_labels(mut self, labels: BTreeMap<String, String>) -> Self {
         self.labels = labels;
         self
+    }
+
+    /// How computers here are kept apart from the machine they run on.
+    pub(crate) fn isolation(&self) -> Isolation {
+        if self.runtime_class.is_some() {
+            Isolation::Vm
+        } else {
+            Isolation::Container
+        }
     }
 
     fn pods(&self) -> Api<Pod> {
@@ -222,7 +240,7 @@ impl Kubernetes {
         tokio::fs::read(&self.glave).await.map_err(|error| {
             ComputerError::Refused(
                 format!(
-                    "could not read the glave for workers at {}: {error}",
+                    "could not read the glave for people's computers at {}: {error}",
                     self.glave.display()
                 )
                 .into(),
@@ -230,8 +248,8 @@ impl Kubernetes {
         })
     }
 
-    /// The glave for workers and its SHA-256, which is hashed only the first time and when the
-    /// file has changed since: a release's glave is tens of MB.
+    /// The glave for computers and its SHA-256, which is hashed only the first time and when
+    /// the file has changed since: a release's glave is tens of MB.
     async fn glave_and_digest(&self) -> Result<(Vec<u8>, String), ComputerError> {
         let stamp = tokio::fs::metadata(&self.glave)
             .await
@@ -250,31 +268,22 @@ impl Kubernetes {
             (glave, digest)
         })
         .await
-        .map_err(|error| failed("could not hash the glave for workers", error))?;
+        .map_err(|error| failed("could not hash the glave for computers", error))?;
         if let (Some(stamp), Ok(mut hashed)) = (stamp, self.hashed.lock()) {
             *hashed = Some((stamp, digest.clone()));
         }
         Ok((glave, digest))
     }
 
-    /// Starts the worker `name` from `spec`, with `glave` as the program it serves with.
-    pub(crate) async fn start_with(
+    /// Starts the person's computer `name` on their disk (`home`) from `spec`, with `glave`
+    /// copied in unless its image carries that very glave. It is owned by no Pod, since a
+    /// person's computer outlives any one glave.
+    async fn start(
         &self,
         name: &str,
         spec: &Spec,
         glave: &[u8],
-    ) -> Result<(), ComputerError> {
-        self.start_on(name, spec, glave, None).await
-    }
-
-    /// Starts `name` from `spec` with `glave`: a worker, or with `home` a person's computer on
-    /// their disk, owned by no Pod, since a person's computer outlives any one glave.
-    async fn start_on(
-        &self,
-        name: &str,
-        spec: &Spec,
-        glave: &[u8],
-        home: Option<Home<'_>>,
+        home: Home<'_>,
     ) -> Result<(), ComputerError> {
         let arch = objects::arch(elf_machine(glave));
         let shape = Shape {
@@ -283,11 +292,6 @@ impl Kubernetes {
             runtime_class: self.runtime_class.as_deref(),
             arch,
             labels: &self.labels,
-            owner: if home.is_some() {
-                None
-            } else {
-                self.owner.as_ref()
-            },
             home,
         };
         // The policy first, so the Pod never runs without it.
@@ -296,16 +300,14 @@ impl Kubernetes {
         self.policies()
             .create(&PostParams::default(), &policy)
             .await
-            .map_err(|error| failed("refused the worker's network policy", error))?;
+            .map_err(|error| failed("refused the computer's network policy", error))?;
         let pod: Pod = serde_json::from_value(shape.pod()).map_err(|error| failed("pod", error))?;
         let pods = self.pods();
         pods.create(&PostParams::default(), &pod)
             .await
-            .map_err(|error| failed("refused the worker", error))?;
+            .map_err(|error| failed("refused the computer", error))?;
         self.running(name).await?;
-        if let Some(home) = home
-            && self.serves_its_image_glave(name, spec, &home).await?
-        {
+        if self.serves_its_image_glave(name, spec, &home).await? {
             return Ok(());
         }
         let files = objects::files(glave, spec).map_err(|long| {
@@ -314,7 +316,7 @@ impl Kubernetes {
         self.copy_in(name, &files, "glave").await
     }
 
-    /// Waits for the worker's container to run.
+    /// Waits for the computer's container to run.
     async fn running(&self, name: &str) -> Result<(), ComputerError> {
         let pods = self.pods();
         let mut waited = Duration::ZERO;
@@ -322,14 +324,14 @@ impl Kubernetes {
             let pod = pods
                 .get(name)
                 .await
-                .map_err(|error| failed("could not read the worker", error))?;
+                .map_err(|error| failed("could not read the computer", error))?;
             let pod = serde_json::to_value(&pod).unwrap_or(Value::Null);
             match objects::progress(&pod) {
                 Progress::Running => return Ok(()),
                 Progress::Failed(why) => return Err(ComputerError::Failed(why)),
                 Progress::Waiting(why) if waited >= START_WAIT => {
                     return Err(ComputerError::Failed(format!(
-                        "the worker did not start in {} minutes: {why}",
+                        "the computer did not start in {} minutes: {why}",
                         START_WAIT.as_secs() / 60
                     )));
                 }
@@ -357,26 +359,34 @@ impl Kubernetes {
         Ok(ended.is_some_and(|status| status.status.as_deref() == Some("Success")))
     }
 
-    /// Copies `files` (a tar archive of `what`) into the running worker through the API server.
+    /// Copies `files` (a tar archive of `what`) into the running computer through the API
+    /// server.
     async fn copy_in(&self, name: &str, files: &[u8], what: &str) -> Result<(), ComputerError> {
         let (ended, said) = self
             .fed(name, &["tar", "-x", "-f", "-", "-C", "/"], files, what)
             .await?;
         match ended {
             // A cluster too old to close standard input on its own says nothing; the wait in
-            // the worker then tells whether everything arrived.
+            // the computer then tells whether everything arrived.
             None => Ok(()),
             Some(status) if status.status.as_deref() == Some("Success") => Ok(()),
             Some(status) => Err(ComputerError::Failed(format!(
-                "copying {what} into the worker failed (the image needs tar): {} {}",
+                "copying {what} into the computer failed (the image needs tar): {} {}",
                 status.message.unwrap_or_default(),
                 said.trim()
             ))),
         }
     }
 
-    /// Runs `command` in the running worker `name` through the API server with `input`, which
-    /// is `what`, on its standard input, within [`COPIED_WITHIN`]: how it ended, when the
+    /// Gives the running computer `name` a fresh `token`, replacing the one it was started
+    /// with, so a connection that died can be opened again after the first token has expired.
+    async fn renew(&self, name: &str, token: &Token) -> Result<(), ComputerError> {
+        let file = super::tar::token_file(objects::TOKEN, token)?;
+        self.copy_in(name, &file, "the token").await
+    }
+
+    /// Runs `command` in the running computer `name` through the API server with `input`,
+    /// which is `what`, on its standard input, within [`COPIED_WITHIN`]: how it ended, when the
     /// cluster says, and what it printed on standard error.
     async fn fed(
         &self,
@@ -389,7 +399,7 @@ impl Kubernetes {
             .await
             .unwrap_or_else(|_| {
                 Err(ComputerError::Failed(format!(
-                    "copying {what} into the worker did not finish within {}",
+                    "copying {what} into the computer did not finish within {}",
                     glave_ports::spoken(COPIED_WITHIN)
                 )))
             })
@@ -402,7 +412,7 @@ impl Kubernetes {
         input: &[u8],
         what: &str,
     ) -> Result<Fed, ComputerError> {
-        let could_not = format!("could not copy {what} into the worker");
+        let could_not = format!("could not copy {what} into the computer");
         let params = AttachParams::default()
             .container(objects::CONTAINER)
             .stdin(true)
@@ -489,8 +499,14 @@ impl Kubernetes {
         }
     }
 
-    /// The last lines a worker printed, for saying why it did not start.
-    pub(crate) async fn logs(&self, name: &str) -> String {
+    /// A new bridge into the running computer `name`: a stream to glave there, a connection of
+    /// its own each time.
+    async fn bridge(&self, name: &str) -> Result<Stream, ComputerError> {
+        link::bridge(self.pods(), name).await
+    }
+
+    /// The last lines a computer printed, for saying why it did not start.
+    async fn logs(&self, name: &str) -> String {
         let params = LogParams {
             container: Some(objects::CONTAINER.into()),
             tail_lines: Some(20),
@@ -507,133 +523,6 @@ fn elf_machine(bytes: &[u8]) -> Option<u16> {
         return None;
     };
     Some(u16::from_le_bytes([low, high]))
-}
-
-/// The namespace of the service account a Pod runs as, in every container of one.
-const POD_NAMESPACE: &str = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
-
-/// The Pod this glave runs in, when it runs in one in `namespace`: by its name, which is its
-/// host's name, and its uid as the API server says. None anywhere else, or when it cannot be
-/// read: workers are then still removed by the next glave that starts in the same Pod.
-async fn this_pod(pods: &Api<Pod>, namespace: &str) -> Option<Owner> {
-    let own = tokio::fs::read_to_string(POD_NAMESPACE).await.ok()?;
-    if own.trim() != namespace {
-        return None;
-    }
-    let host = tokio::fs::read_to_string("/etc/hostname").await.ok()?;
-    let name = host.trim().to_owned();
-    let pod = pods.get_opt(&name).await.ok()??;
-    Some(Owner {
-        uid: pod.metadata.uid?,
-        name,
-    })
-}
-
-impl Backend for Kubernetes {
-    fn isolation(&self) -> Isolation {
-        if self.runtime_class.is_some() {
-            Isolation::Vm
-        } else {
-            Isolation::Container
-        }
-    }
-
-    fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
-        Box::pin(async move {
-            let name = format!("glave-worker-{}", crate::local::new_id()?.simple());
-            let started = match self.glave().await {
-                Ok(glave) => self.start_with(&name, spec, &glave).await,
-                Err(error) => Err(error),
-            };
-            match started {
-                Ok(()) => Ok(Started { name }),
-                Err(error) => {
-                    let said = self.logs(&name).await;
-                    let _ = self.remove(&name).await;
-                    Err(saying(error, &said))
-                }
-            }
-        })
-    }
-
-    fn renew<'a>(
-        &'a self,
-        name: &'a str,
-        token: &'a Token,
-    ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(async move {
-            let file = super::tar::token_file(objects::TOKEN, token)?;
-            self.copy_in(name, &file, "the token").await
-        })
-    }
-
-    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
-        Box::pin(link::bridge(self.pods(), name))
-    }
-
-    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
-        Box::pin(async move {
-            let selector: Vec<String> = std::iter::once(objects::LABEL.to_owned())
-                .chain(
-                    self.labels
-                        .iter()
-                        .map(|(key, value)| format!("{key}={value}")),
-                )
-                .collect();
-            let params = ListParams::default().labels(&selector.join(","));
-            let pods = self
-                .pods()
-                .list(&params)
-                .await
-                .map_err(|error| failed("could not list the workers", error))?;
-            let policies =
-                self.policies().list(&params).await.map_err(|error| {
-                    failed("could not list the workers' network policies", error)
-                })?;
-            // A policy without its Pod is what a glave that ended between the two left.
-            let mut listed = BTreeMap::new();
-            let metadata = pods
-                .items
-                .into_iter()
-                .map(|pod| pod.metadata)
-                .chain(policies.items.into_iter().map(|policy| policy.metadata));
-            for metadata in metadata {
-                let Some(name) = metadata.name else {
-                    continue;
-                };
-                let started_by = metadata
-                    .annotations
-                    .and_then(|mut annotations| annotations.remove(STARTED_BY));
-                listed.entry(name).or_insert(started_by);
-            }
-            Ok(listed
-                .into_iter()
-                .map(|(name, started_by)| Listed { name, started_by })
-                .collect())
-        })
-    }
-
-    fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(async move {
-            let now = DeleteParams {
-                grace_period_seconds: Some(0),
-                ..DeleteParams::default()
-            };
-            let pod = self.pods().delete(name, &now).await;
-            let policy = self.policies().delete(name, &now).await;
-            for (what, result) in [("worker", pod.err()), ("network policy", policy.err())] {
-                if let Some(error) = result
-                    && !not_found(&error)
-                {
-                    return Err(failed(
-                        &format!("could not remove the {what} {name}"),
-                        error,
-                    ));
-                }
-            }
-            Ok(())
-        })
-    }
 }
 
 #[cfg(test)]

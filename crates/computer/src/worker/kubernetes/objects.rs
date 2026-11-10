@@ -1,29 +1,29 @@
-//! The objects one worker is on Kubernetes, as the API server takes them: a Pod that waits for
-//! glave and then serves with it on a Unix socket, and a NetworkPolicy that keeps the worker's
-//! network as policy decided. And the files the harness copies in, or for a person's computer
-//! the glave its image carries, and how far a starting Pod has got.
+//! The objects a person's computer is on Kubernetes while awake, as the API server takes them:
+//! a Pod that waits for glave and then serves with it on a Unix socket, and a NetworkPolicy
+//! that keeps its network as policy decided. And the files the harness copies in, or the glave
+//! its image carries, and how far a starting Pod has got.
 
 use std::collections::BTreeMap;
 
 use glave_ports::host::{CLOUD_METADATA, INSIDE};
 use serde_json::{Value, json};
 
-use super::super::backend::{STARTED_BY, Spec};
 use super::super::tar::{Entry, TooLong, archive};
+use super::Spec;
 
 /// The container that runs the work.
 pub(crate) const CONTAINER: &str = "worker";
-/// Where glave goes in the worker: an empty folder the harness copies into.
+/// Where glave goes in the computer: an empty folder the harness copies into.
 const HOME: &str = "/opt/glave";
-/// glave in the worker.
+/// glave in the computer.
 pub(crate) const GLAVE: &str = "/opt/glave/glave";
-/// The socket glave serves on in the worker, which each bridge connects to.
+/// The socket glave serves on in the computer, which each bridge connects to.
 pub(crate) const SOCKET: &str = "/opt/glave/glave.sock";
-/// The folder of the worker's token, in memory.
+/// The folder of the computer's token, in memory.
 const SECRET: &str = "/opt/glave/secret";
-/// The worker's token, from `/`: renewed in place.
+/// The computer's token, from `/`: renewed in place.
 pub(crate) const TOKEN: &str = "opt/glave/secret/token";
-/// What the harness copies in last, so the worker knows everything else has arrived.
+/// What the harness copies in last, so the computer knows everything else has arrived.
 const READY: &str = "opt/glave/ready";
 /// Run by `/bin/sh -c` in a person's computer, with the SHA-256 of the glave the server chose as
 /// `$0` and the token, as a tar archive, on standard input: puts the token in, then, only when
@@ -33,10 +33,7 @@ const READY: &str = "opt/glave/ready";
 const FROM_IMAGE: &str = "tar -x -f - -C / && \
 [ \"$(cat /usr/libexec/glave/glave.sha256 2>/dev/null)\" = \"$0\" ] && \
 ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready";
-/// The label every worker object carries, so leftovers can be found.
-pub(crate) const LABEL: &str = "glave.worker";
-/// The label a person's computer's objects carry instead, its key as the value: never a
-/// worker's, so no glave reaps a person's computer as a worker it left.
+/// The label a person's computer's objects carry, its key as the value.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
 /// its disk (`specs/computers.md`, decision 12).
@@ -56,7 +53,7 @@ const OUTSIDE_THE_DISK: &str = "4Gi";
 /// Waits (up to ten minutes) for the harness to copy glave in, then becomes it. Run by
 /// `/bin/sh -c`, with glave's command line as its arguments.
 const WAIT: &str = "i=0; until [ -e /opt/glave/ready ]; do i=$((i+1)); \
-if [ \"$i\" -gt 3000 ]; then echo 'glave never arrived in the worker' >&2; exit 1; fi; \
+if [ \"$i\" -gt 3000 ]; then echo 'glave never arrived in the computer' >&2; exit 1; fi; \
 sleep 0.2; done; exec \"$@\"";
 
 /// Where waiting containers are stuck for good: an image that cannot be had, or a container
@@ -69,14 +66,6 @@ const STUCK: [&str; 6] = [
     "CreateContainerError",
     "RunContainerError",
 ];
-
-/// The Pod glave runs in, which its workers name as their owner: when it is deleted, the
-/// cluster removes them.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Owner {
-    pub(crate) name: String,
-    pub(crate) uid: String,
-}
 
 /// A person's computer: its key, the claim that is its disk, and the glave it serves with.
 #[derive(Debug, Clone, Copy)]
@@ -98,7 +87,7 @@ impl Home<'_> {
     }
 }
 
-/// What one worker's objects are made of.
+/// What one person's computer's objects are made of.
 pub(crate) struct Shape<'a> {
     pub(crate) name: &'a str,
     pub(crate) spec: &'a Spec,
@@ -107,93 +96,53 @@ pub(crate) struct Shape<'a> {
     pub(crate) arch: Option<&'a str>,
     /// Labels on every object besides its own, such as a test run's.
     pub(crate) labels: &'a BTreeMap<String, String>,
-    /// The Pod glave runs in, when it runs in one beside its workers.
-    pub(crate) owner: Option<&'a Owner>,
-    /// The person whose computer this is, when it is one: their disk is its home.
-    pub(crate) home: Option<Home<'a>>,
+    /// The person whose computer this is: their disk is its home.
+    pub(crate) home: Home<'a>,
 }
 
 impl Shape<'_> {
-    /// The worker's labels: the extra ones and its own name, or a person's computer's key.
+    /// The computer's labels: the extra ones and its key.
     pub(crate) fn labels(&self) -> BTreeMap<String, String> {
         let mut labels = self.labels.clone();
-        let (label, value) = self.own_label();
-        labels.insert(label.to_owned(), value.to_owned());
+        labels.insert(COMPUTER_LABEL.to_owned(), self.home.key.to_owned());
         labels
     }
 
-    /// The label that is this object's own, and its value.
-    fn own_label(&self) -> (&'static str, &str) {
-        match self.home {
-            Some(home) => (COMPUTER_LABEL, home.key),
-            None => (LABEL, self.name),
-        }
-    }
-
-    /// The worker's annotations: the glave that started it, when known ([`STARTED_BY`]),
-    /// which a label's value cannot hold.
-    fn annotations(&self) -> BTreeMap<String, String> {
-        self.spec
-            .starter
-            .as_ref()
-            .and_then(|starter| serde_json::to_string(starter).ok())
-            .map(|starter| BTreeMap::from([(STARTED_BY.to_owned(), starter)]))
-            .unwrap_or_default()
-    }
-
-    /// The metadata of each of the worker's objects.
+    /// The metadata of each of the computer's objects.
     fn metadata(&self) -> Value {
-        let owners: Vec<Value> = self
-            .owner
-            .iter()
-            .map(|owner| {
-                json!({"apiVersion": "v1", "kind": "Pod", "name": owner.name, "uid": owner.uid})
-            })
-            .collect();
-        json!({
-            "name": self.name,
-            "labels": self.labels(),
-            "annotations": self.annotations(),
-            "ownerReferences": owners,
-        })
+        json!({"name": self.name, "labels": self.labels()})
     }
 
-    /// The Pod: the environment's image running the wait, then glave serving on [`SOCKET`].
-    /// Limits as requests too, so the worker gets what it is allowed; no service account token;
-    /// no privilege; every capability dropped; the runtime's seccomp profile; and a runtime
-    /// class when one is set.
+    /// The Pod: the image running the wait, then glave serving on [`SOCKET`], the person's disk
+    /// as its home. Limits as requests too, so the computer gets what it is allowed; no
+    /// service account token; no privilege; every capability dropped; the runtime's seccomp
+    /// profile; never root; a read-only root filesystem; and a runtime class when one is set.
     pub(crate) fn pod(&self) -> Value {
-        let command = self.command();
         let mut env: Vec<Value> = self
             .spec
             .env
             .iter()
-            .filter(|(name, _)| self.home.is_none() || name.as_str() != "HOME")
+            .filter(|(name, _)| name.as_str() != "HOME")
             .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
-        let (mut amounts, mut limits) = self.amounts();
-        let mut mounts = vec![json!({"name": "glave", "mountPath": HOME})];
-        let mut volumes = vec![json!({"name": "glave", "emptyDir": {}})];
-        if let Some(home) = self.home {
-            env.push(json!({"name": "HOME", "value": PERSON_HOME}));
-            mounts.push(json!({"name": "home", "mountPath": PERSON_HOME}));
-            volumes.push(json!({
-                "name": "home",
-                "persistentVolumeClaim": {"claimName": home.claim}
-            }));
-            // The root filesystem is read-only; `/tmp` is the one place outside the home a
-            // command may write, within the computer's `ephemeral-storage`.
-            mounts.push(json!({"name": "tmp", "mountPath": "/tmp"}));
-            volumes.push(json!({"name": "tmp", "emptyDir": {}}));
-            limits.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
-            amounts.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
-        }
-        // The token lives in memory, never on the node's disk.
-        mounts.push(json!({"name": "secret", "mountPath": SECRET}));
-        volumes.push(json!({
-            "name": "secret",
-            "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}
-        }));
+        env.push(json!({"name": "HOME", "value": PERSON_HOME}));
+        let mut amounts = self.amounts();
+        amounts.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
+        // The root filesystem is read-only; `/tmp` is the one place outside the home a command
+        // may write, within the computer's `ephemeral-storage`. The token lives in memory,
+        // never on the node's disk.
+        let mounts = json!([
+            {"name": "glave", "mountPath": HOME},
+            {"name": "home", "mountPath": PERSON_HOME},
+            {"name": "tmp", "mountPath": "/tmp"},
+            {"name": "secret", "mountPath": SECRET},
+        ]);
+        let volumes = json!([
+            {"name": "glave", "emptyDir": {}},
+            {"name": "home", "persistentVolumeClaim": {"claimName": self.home.claim}},
+            {"name": "tmp", "emptyDir": {}},
+            {"name": "secret", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
+        ]);
         let mut nodes = serde_json::Map::new();
         nodes.insert("kubernetes.io/os".into(), json!("linux"));
         if let Some(arch) = self.arch {
@@ -202,11 +151,20 @@ impl Shape<'_> {
         let container = json!({
             "name": CONTAINER,
             "image": self.spec.image,
-            "command": command,
+            "command": self.command(),
             "env": env,
-            "resources": {"requests": amounts, "limits": limits},
+            "resources": {"requests": amounts, "limits": amounts},
             "volumeMounts": mounts,
-            "securityContext": self.container_security(),
+            "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "privileged": false,
+                "capabilities": {"drop": ["ALL"]},
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "runAsNonRoot": true,
+                "runAsUser": PERSON_USER,
+                "runAsGroup": PERSON_USER,
+                "readOnlyRootFilesystem": true
+            },
         });
         json!({
             "apiVersion": "v1",
@@ -223,75 +181,43 @@ impl Shape<'_> {
                 "terminationGracePeriodSeconds": 5,
                 "runtimeClassName": self.runtime_class,
                 "nodeSelector": nodes,
-                "securityContext": self.pod_security(),
+                // Its disk owned by its group, set only when it differs, so a large home is
+                // not walked at every wake.
+                "securityContext": {
+                    "fsGroup": PERSON_USER,
+                    "fsGroupChangePolicy": "OnRootMismatch"
+                },
             }
         })
     }
 
-    /// The container's security: no privilege, every capability dropped, the runtime's
-    /// seccomp profile; a person's computer also never root, its root filesystem read-only.
-    fn container_security(&self) -> Value {
-        match &self.home {
-            Some(_) => json!({
-                "allowPrivilegeEscalation": false,
-                "privileged": false,
-                "capabilities": {"drop": ["ALL"]},
-                "seccompProfile": {"type": "RuntimeDefault"},
-                "runAsNonRoot": true,
-                "runAsUser": PERSON_USER,
-                "runAsGroup": PERSON_USER,
-                "readOnlyRootFilesystem": true
-            }),
-            None => json!({
-                "allowPrivilegeEscalation": false,
-                "privileged": false,
-                "capabilities": {"drop": ["ALL"]},
-                "seccompProfile": {"type": "RuntimeDefault"}
-            }),
-        }
-    }
-
-    /// The Pod's security: for a person's computer, its disk owned by its group, set only when
-    /// it differs, so a large home is not walked at every wake; a worker runs as its image
-    /// says.
-    fn pod_security(&self) -> Value {
-        match &self.home {
-            Some(_) => json!({
-                "fsGroup": PERSON_USER,
-                "fsGroupChangePolicy": "OnRootMismatch"
-            }),
-            None => json!({}),
-        }
-    }
-
     /// The container's command: the wait, then glave serving on [`SOCKET`] to the bridges
-    /// that come in through the API server, each signed in with the token in [`SECRET`].
+    /// that come in through the API server, each signed in with the token in [`SECRET`],
+    /// sleeping on its own once idle, servers or not (#558), and keeping its disk from filling.
     fn command(&self) -> Vec<Value> {
-        let mut command: Vec<Value> = [
-            "/bin/sh", "-c", WAIT, "wait", GLAVE, "computer", "serve", "--socket", SOCKET, SECRET,
+        let idle = self.home.idle_minutes.to_string();
+        [
+            "/bin/sh",
+            "-c",
+            WAIT,
+            "wait",
+            GLAVE,
+            "computer",
+            "serve",
+            "--socket",
+            SOCKET,
+            SECRET,
+            "--idle",
+            &idle,
+            "--keep-disk",
         ]
         .into_iter()
         .map(Value::from)
-        .collect();
-        // A person's computer sleeps on its own once idle, servers or not (#558), and keeps
-        // its disk from filling.
-        if let Some(home) = &self.home {
-            command.extend([
-                json!("--idle"),
-                json!(home.idle_minutes.to_string()),
-                json!("--keep-disk"),
-            ]);
-        }
-        command
+        .collect()
     }
 
-    /// The CPU and memory the size asks for, as requests and as limits (the same).
-    fn amounts(
-        &self,
-    ) -> (
-        serde_json::Map<String, Value>,
-        serde_json::Map<String, Value>,
-    ) {
+    /// The CPU and memory the size asks for, requested and limited alike.
+    fn amounts(&self) -> serde_json::Map<String, Value> {
         let mut amounts = serde_json::Map::new();
         if let Some(millis) = self.spec.cpu_millis {
             amounts.insert("cpu".into(), json!(cpu(millis)));
@@ -299,15 +225,15 @@ impl Shape<'_> {
         if let Some(mib) = self.spec.memory_mib {
             amounts.insert("memory".into(), json!(memory(mib)));
         }
-        (amounts.clone(), amounts)
+        amounts
     }
 
-    /// The worker's NetworkPolicy: nothing comes in (the harness arrives through an exec
-    /// through the API server, which no policy sees), and nothing goes out unless
-    /// the worker has the network, which then reaches the internet alone: never where clouds
-    /// serve their machines' credentials ([`CLOUD_METADATA`]), nor anything that is not the
-    /// internet ([`INSIDE`]), so no other Pod, server or database in the cluster, for a worker
-    /// and a person's computer alike; DNS on port 53 is still allowed.
+    /// The computer's NetworkPolicy: nothing comes in (the harness arrives through an exec
+    /// through the API server, which no policy sees), and nothing goes out unless the computer
+    /// has the network, which then reaches the internet alone: never where clouds serve their
+    /// machines' credentials ([`CLOUD_METADATA`]), nor anything that is not the internet
+    /// ([`INSIDE`]), so no other Pod, server or database in the cluster; DNS on port 53 is
+    /// still allowed.
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
             let except = |v4: bool| -> Vec<String> {
@@ -328,13 +254,12 @@ impl Shape<'_> {
         } else {
             json!([])
         };
-        let (label, value) = self.own_label();
         json!({
             "apiVersion": "networking.k8s.io/v1",
             "kind": "NetworkPolicy",
             "metadata": self.metadata(),
             "spec": {
-                "podSelector": {"matchLabels": {label: value}},
+                "podSelector": {"matchLabels": {COMPUTER_LABEL: self.home.key}},
                 "policyTypes": ["Ingress", "Egress"],
                 "ingress": [],
                 "egress": egress,
@@ -362,7 +287,7 @@ pub(crate) fn memory(mib: u32) -> String {
     }
 }
 
-/// glave and the worker's token, as a tar archive extracted at `/`; `ready` last, so the wait
+/// glave and the computer's token, as a tar archive extracted at `/`; `ready` last, so the wait
 /// ends only once everything is in.
 pub(crate) fn files(glave: &[u8], spec: &Spec) -> Result<Vec<u8>, TooLong> {
     let token = spec.token.to_file();
@@ -453,7 +378,7 @@ pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
 /// How far a starting Pod has got.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Progress {
-    /// The worker container runs.
+    /// The computer's container runs.
     Running,
     /// It will never run, and why.
     Failed(String),
@@ -477,7 +402,7 @@ pub(crate) fn progress(pod: &Value) -> Progress {
     let state = worker.and_then(|status| status.get("state"));
     if let Some(ended) = state.and_then(|state| state.get("terminated")) {
         return Progress::Failed(format!(
-            "the worker stopped ({}, exit code {}) {}",
+            "the computer stopped ({}, exit code {}) {}",
             text(ended.get("reason")),
             ended.get("exitCode").and_then(Value::as_i64).unwrap_or(-1),
             text(ended.get("message"))
@@ -485,7 +410,7 @@ pub(crate) fn progress(pod: &Value) -> Progress {
     }
     if matches!(phase, "Failed" | "Succeeded") {
         return Progress::Failed(format!(
-            "the worker stopped ({phase}): {}",
+            "the computer stopped ({phase}): {}",
             text(pod.pointer("/status/message"))
         ));
     }
@@ -496,7 +421,7 @@ pub(crate) fn progress(pod: &Value) -> Progress {
         let reason = text(waiting.get("reason"));
         let why = format!("{reason}: {}", text(waiting.get("message")));
         return if STUCK.contains(&reason) {
-            Progress::Failed(format!("the worker cannot start ({why})"))
+            Progress::Failed(format!("the computer cannot start ({why})"))
         } else {
             Progress::Waiting(why)
         };

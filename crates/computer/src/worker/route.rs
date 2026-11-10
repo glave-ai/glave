@@ -1,11 +1,7 @@
-//! The calls a worker answers as it is: each goes to the worker holding the workspace. And
-//! the small pieces setup needs: an output that keeps the end of what a command printed, and
-//! a cancellation that never fires.
+//! The calls a person's computer answers as it is: each goes to the computer holding the
+//! workspace. And, for the tests, an output that keeps the end of what a command printed.
 
-use std::sync::Mutex;
-
-use glave_ports::BoxFuture;
-use glave_ports::computer::{ComputerId, ComputerInfo, Output, Size, State};
+use glave_ports::computer::{ComputerId, ComputerInfo, Size, State};
 
 /// What a computer this adapter does not hold is: gone.
 pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
@@ -21,10 +17,16 @@ pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
     }
 }
 
-/// Keeps what a command printed, for an error that says why it failed.
-#[derive(Default)]
-pub(crate) struct Tail(Mutex<String>);
+/// The most of what a command printed that a [`Tail`] keeps.
+#[cfg(test)]
+const KEPT: usize = 8_000;
 
+/// Keeps the end of what a command printed, for a test to read.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct Tail(std::sync::Mutex<String>);
+
+#[cfg(test)]
 impl Tail {
     /// The last `most` bytes, cut at a character boundary.
     pub(crate) fn text(&self, most: usize) -> String {
@@ -37,12 +39,13 @@ impl Tail {
     }
 }
 
-impl Output for Tail {
-    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+#[cfg(test)]
+impl glave_ports::computer::Output for Tail {
+    fn write<'a>(&'a self, text: &'a str) -> glave_ports::BoxFuture<'a, ()> {
         if let Ok(mut all) = self.0.lock() {
             all.push_str(text);
-            // Bounded: keep twice what is ever shown.
-            let excess = all.len().saturating_sub(2 * super::SETUP_TAIL);
+            // Bounded.
+            let excess = all.len().saturating_sub(KEPT);
             if excess > 0 {
                 let mut cut = excess;
                 while !all.is_char_boundary(cut) {
@@ -55,10 +58,8 @@ impl Output for Tail {
     }
 }
 
-/// The [`glave_ports::computer::Computers`] methods that go straight to the worker holding the
-/// workspace. Writing is new work, so it waits on the worker's run time; reading, finding,
-/// saving and reading or stopping a command in the background do not, so a worker out of time
-/// can still be saved.
+/// The [`glave_ports::computer::Computers`] methods that go straight to the computer holding
+/// the workspace.
 macro_rules! forward {
     () => {
         fn read<'a>(

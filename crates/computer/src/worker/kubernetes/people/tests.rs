@@ -18,7 +18,6 @@ use super::super::home::tests::ran;
 use super::super::tests::{cluster, left_behind};
 use super::{Leasing, People};
 use crate::CancelSwitch;
-use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
 
 #[test]

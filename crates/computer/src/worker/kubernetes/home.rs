@@ -2,15 +2,15 @@
 //! cloud"): a PersistentVolumeClaim that is their disk and, while awake, one Pod mounting it as
 //! their home, with a NetworkPolicy beside it. Sleeping removes the Pod and its policy and
 //! keeps the claim; waking makes them again on the same claim, with a fresh token copied in,
-//! and glave too unless its image carries the very glave the server chose. Nothing here is owned by the Pod glave runs in: a person's computer outlives any
-//! one glave, and is labelled `glave.computer`, never as a worker, so no glave reaps it.
+//! and glave too unless its image carries the very glave the server chose. Nothing here is
+//! owned by the Pod glave runs in: a person's computer outlives any one glave, and is labelled
+//! `glave.computer` with its key.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::Instant;
 
-use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::PersistentVolumeClaim;
 use kube::Api;
@@ -19,9 +19,8 @@ use serde_json::json;
 
 use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
 use super::sizing::{Size, Sizing};
-use super::{Kubernetes, POLL, failed, not_found};
+use super::{Kubernetes, POLL, Spec, Stream, failed, not_found};
 use crate::token::Token;
-use crate::worker::backend::{Backend, Listed, Spec, Started, Stream, saying};
 
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
@@ -146,9 +145,16 @@ impl PersonComputer {
         Ok(())
     }
 
+    /// How it is kept apart from the machine it runs on.
+    pub(crate) fn isolation(&self) -> Isolation {
+        self.cluster.isolation()
+    }
+
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
-    /// removed (its glave takes a token no longer held), and a new one started on the disk.
-    async fn wake(&self, spec: &Spec) -> Result<(), ComputerError> {
+    /// removed (its glave takes a token no longer held), and a new one started on the disk,
+    /// with glave serving in it. A computer that cannot wake is put to sleep again before this
+    /// returns, its disk kept.
+    pub(crate) async fn wake(&self, spec: &Spec) -> Result<(), ComputerError> {
         let size = self.sizing.waking();
         let spec = &Spec {
             cpu_millis: Some(size.cpu_millis),
@@ -172,7 +178,7 @@ impl PersonComputer {
             idle_minutes: self.idle_minutes,
             glave: &digest,
         };
-        match self.cluster.start_on(&name, spec, &glave, Some(home)).await {
+        match self.cluster.start(&name, spec, &glave, home).await {
             Ok(()) => Ok(()),
             Err(error) => {
                 let said = self.cluster.logs(&name).await;
@@ -182,9 +188,21 @@ impl PersonComputer {
         }
     }
 
+    /// Gives the computer awake a fresh `token`, replacing the one it woke with, so a connection
+    /// that died can be opened again after the first token has expired.
+    pub(crate) async fn renew(&self, token: &Token) -> Result<(), ComputerError> {
+        self.cluster.renew(&self.name(), token).await
+    }
+
+    /// A new bridge into the computer awake: a stream to glave there, a connection of its own
+    /// each time.
+    pub(crate) async fn bridge(&self) -> Result<Stream, ComputerError> {
+        self.cluster.bridge(&self.name()).await
+    }
+
     /// Puts the computer to sleep: its Pod and policy removed, and gone, so the disk is free to
     /// mount again; the disk kept. Asleep already is not an error.
-    async fn sleep(&self) -> Result<(), ComputerError> {
+    pub(crate) async fn sleep(&self) -> Result<(), ComputerError> {
         let name = self.name();
         // Within its grace period, not at once: the Pod's object goes only once its containers
         // have stopped and its volumes are let go of, so nothing still writes to the disk when
@@ -296,38 +314,12 @@ where
     }
 }
 
-/// A person's computer as a place a computer runs: starting it wakes it, removing it puts it
-/// to sleep, and it lists no workers, since it is none.
-impl Backend for PersonComputer {
-    fn isolation(&self) -> Isolation {
-        self.cluster.isolation()
-    }
-
-    fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
-        Box::pin(async move {
-            self.wake(spec).await?;
-            Ok(Started { name: self.name() })
-        })
-    }
-
-    fn renew<'a>(
-        &'a self,
-        name: &'a str,
-        token: &'a Token,
-    ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        self.cluster.renew(name, token)
-    }
-
-    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
-        self.cluster.bridge(name)
-    }
-
-    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
-        Box::pin(std::future::ready(Ok(Vec::new())))
-    }
-
-    fn remove<'a>(&'a self, _name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(self.sleep())
+/// `error`, with what a computer that did not start `said` last, when it said anything.
+fn saying(error: ComputerError, said: &str) -> ComputerError {
+    if said.trim().is_empty() {
+        error
+    } else {
+        ComputerError::Failed(format!("{}; it said: {}", error.message(), said.trim()))
     }
 }
 

@@ -1,20 +1,18 @@
-//! The Kubernetes backend against a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind`
-//! job sets it; elsewhere these tests say they skipped), on the kubeconfig's cluster and
-//! namespace. A small image pinned by digest runs a stub in glave's place, so the lifecycle is
-//! tested without a Linux build of glave: the Pod's limits and hardening, the network policy,
-//! the files copied in, the bridges into a worker (an exec each), the runtime class enforced,
-//! and removal. Everything made carries `glave.test=<run>`, and each test checks by that
-//! label that nothing is left behind, Secrets included (there are none to leave).
-//! `GLAVE_TEST_WORKER_GLAVE` (a Linux glave) and `GLAVE_TEST_WORKER_IMAGE` (an image with bash
-//! and git, pinned) add the whole path: real workers, with a network and without, reached
-//! through bridges to glave's socket, the one with a network reaching the internet but no
-//! other Pod.
+//! People's computers on a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind` job sets
+//! it; elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A
+//! stub in glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the
+//! Pod without a Linux build of glave: its limits and hardening as the API server keeps them,
+//! the network policy, the files copied in, the bridges into it (an exec each), and sleep. A
+//! runtime class the cluster lacks, or an isolation policy asks for that the cluster can't
+//! give, leaves nothing behind. Everything made carries `glave.test=<run>`, and each test
+//! checks by that label that nothing is left behind, Secrets included (there are none to
+//! leave). The whole path, with a real glave, is in `home/tests.rs` and `people/tests.rs`.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
-    Command, Computers, Ending, Environment, Image, Limits, Network, Sources,
+    ComputerError, Computers as _, Environment, Image, Isolation, Limits, Network,
 };
 use glave_ports::{Clock as _, SystemClock, block_on};
 use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret};
@@ -24,12 +22,12 @@ use kube::api::ListParams;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
-use super::super::backend::{Backend, Spec};
-use super::{Kubernetes, KubernetesSettings};
+use super::{Kubernetes, KubernetesSettings, PersonComputer, Spec};
 use crate::token::Token;
-use crate::{CancelSwitch, WorkerComputers};
+use crate::worker::WorkerComputers;
 
-/// alpine 3.21, by the digest of its multi-platform index.
+/// alpine 3.21, by the digest of its multi-platform index: never pulled, as the Pod naming it
+/// is refused or never made.
 const IMAGE: &str =
     "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
 
@@ -49,7 +47,8 @@ fn run_id() -> String {
 pub(super) async fn cluster(runtime_class: Option<&str>, case: &str) -> Option<Kubernetes> {
     if std::env::var("GLAVE_TEST_KUBE").as_deref() != Ok("1") {
         eprintln!(
-            "skipped: set GLAVE_TEST_KUBE=1 with a cluster in the kubeconfig to test the Kubernetes backend"
+            "skipped: set GLAVE_TEST_KUBE=1 with a cluster in the kubeconfig to test people's \
+             computers on Kubernetes"
         );
         return None;
     }
@@ -72,27 +71,39 @@ pub(super) async fn cluster(runtime_class: Option<&str>, case: &str) -> Option<K
     )
 }
 
-fn spec(network: bool) -> Spec {
+/// `cluster` with `glave` as the glave it puts in computers, written to `folder`.
+pub(super) fn with_glave(
+    cluster: &Kubernetes,
+    folder: &glave_ports::testing::TempDir,
+    glave: &[u8],
+) -> Kubernetes {
+    let path = folder.path().join("glave");
+    std::fs::write(&path, glave).unwrap();
+    Kubernetes {
+        glave: path,
+        ..cluster.clone()
+    }
+}
+
+/// A new key for a person's computer of the test `case`.
+pub(super) fn key(case: &str) -> String {
+    let id = crate::local::new_id().unwrap().simple().to_string();
+    format!("{case}-{}", id.get(id.len() - 12..).unwrap())
+}
+
+fn spec(image: &str) -> Spec {
     Spec {
-        image: IMAGE.into(),
+        image: image.into(),
         env: BTreeMap::from([("GREETING".to_owned(), "hi".to_owned())]),
-        cpu_millis: Some(1_000),
-        memory_mib: Some(1_024),
-        network,
+        cpu_millis: None,
+        memory_mib: None,
+        network: true,
         token: Token::mint(
             SystemTime::from(SystemClock.now()),
             Duration::from_secs(600),
         )
         .unwrap(),
-        starter: glave_process::Glave::this(),
     }
-}
-
-fn name() -> String {
-    format!(
-        "glave-worker-test-{}",
-        crate::local::new_id().unwrap().simple()
-    )
 }
 
 /// Everything this test made, by its labels.
@@ -150,14 +161,16 @@ pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
     left
 }
 
+/// The object `name` as the API server keeps it, or why it could not be read.
 async fn object<K: serde::Serialize + Clone + serde::de::DeserializeOwned + std::fmt::Debug>(
     api: &Api<K>,
     name: &str,
-) -> Value {
-    serde_json::to_value(api.get(name).await.unwrap()).unwrap()
+) -> Result<Value, String> {
+    let kept = api.get(name).await.map_err(|error| format!("{error}"))?;
+    serde_json::to_value(kept).map_err(|error| format!("{error}"))
 }
 
-/// What the worker printed, once it printed `lines` lines.
+/// What the computer printed, once it printed `lines` lines.
 async fn printed(cluster: &Kubernetes, name: &str, lines: usize) -> String {
     let mut said = String::new();
     for _ in 0..60 {
@@ -170,43 +183,110 @@ async fn printed(cluster: &Kubernetes, name: &str, lines: usize) -> String {
     said
 }
 
+/// What one bridge into `computer` answers to `hello`: the stub says how it was started, then
+/// echoes.
+async fn through(computer: &PersonComputer) -> Result<Vec<String>, String> {
+    let (read, mut write) = computer.bridge().await.map_err(|e| format!("{e:?}"))?;
+    let mut lines = BufReader::new(read).lines();
+    write
+        .write_all(b"hello\n")
+        .await
+        .map_err(|e| e.to_string())?;
+    write.flush().await.map_err(|e| e.to_string())?;
+    let mut said = Vec::new();
+    for _ in 0..2 {
+        let line = lines.next_line().await.map_err(|e| e.to_string())?;
+        said.push(line.unwrap_or_default());
+    }
+    Ok(said)
+}
+
+/// What a person's computer's Pod, its policy and the stub in it showed, while awake.
+struct Seen {
+    pod: Value,
+    policy: Value,
+    said: String,
+    bridges: (Vec<String>, Vec<String>),
+}
+
+/// Looks at the awake computer `name`, as `computer` reaches it.
+async fn seen(cluster: &Kubernetes, computer: &PersonComputer, name: &str) -> Result<Seen, String> {
+    let pod = object::<Pod>(&cluster.pods(), name).await?;
+    let policy = object::<NetworkPolicy>(&cluster.policies(), name).await?;
+    let said = printed(cluster, name, 2).await;
+    // Each connection is a bridge of its own, the computer going on between them.
+    let bridges = (through(computer).await?, through(computer).await?);
+    Ok(Seen {
+        pod,
+        policy,
+        said,
+        bridges,
+    })
+}
+
 #[test]
-fn the_kubernetes_backend_starts_limits_reaches_and_removes_workers() {
+fn a_persons_computer_is_limited_hardened_reached_and_put_to_sleep() {
+    let Ok(image) = std::env::var("GLAVE_TEST_COMPUTER_IMAGE") else {
+        eprintln!(
+            "skipped: set GLAVE_TEST_COMPUTER_IMAGE (glave's computer image, pinned by digest) \
+             to test a person's computer's Pod"
+        );
+        return;
+    };
     block_on!(async {
-        let Some(cluster) = cluster(None, "lifecycle").await else {
+        let class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+        let Some(cluster) = cluster(class.as_deref(), "lifecycle").await else {
             return;
         };
-        limited(&cluster).await;
-        bridged(&cluster).await;
-        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
+        let folder = glave_ports::testing::TempDir::new("stub").unwrap();
+        let stubbed = with_glave(&cluster, &folder, STUB);
+        let key = key("lifecycle");
+        let name = format!("glave-computer-{key}");
+        let computer = PersonComputer::new(stubbed, &key, 1).unwrap();
+        let wanted = spec(&image);
+        let woke = computer.wake(&wanted).await;
+        let seen = match &woke {
+            Ok(()) => seen(&cluster, &computer, &name).await,
+            Err(error) => Err(format!("wake: {error:?}")),
+        };
+        let slept = computer.sleep().await;
+        let after = cluster.pods().get_opt(&name).await.unwrap();
+        let destroyed = computer.destroy().await;
+        let left = left_behind(&cluster).await;
+        woke.unwrap();
+        let seen = seen.unwrap();
+        slept.unwrap();
+        assert!(after.is_none(), "asleep, its Pod is gone");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+        limited_and_hardened(&seen, &wanted, class.as_deref());
+        served_and_reached(&seen);
     });
 }
 
-async fn limited(cluster: &Kubernetes) {
-    let name = name();
-    let wanted = spec(true);
-    let started = cluster.start_with(&name, &wanted, STUB).await;
-    let pod: Value = object::<Pod>(&cluster.pods(), &name).await;
-    let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
-    let said = printed(cluster, &name, 2).await;
-    cluster.remove(&name).await.unwrap();
-    started.unwrap();
+/// `seen`'s Pod and policy, as the API server kept them for a computer woken from `wanted` under
+/// `class`: limited, hardened, the token nowhere in them, nothing let in.
+fn limited_and_hardened(seen: &Seen, wanted: &Spec, class: Option<&str>) {
+    let (pod, policy) = (&seen.pod, &seen.policy);
     let container = &pod["spec"]["containers"][0];
-    let amounts = json!({"cpu": "1", "memory": "1Gi"});
-    assert_eq!(container["resources"]["limits"], amounts);
+    let amounts = json!({"cpu": "250m", "memory": "512Mi", "ephemeral-storage": "4Gi"});
+    assert_eq!(
+        container["resources"]["limits"], amounts,
+        "it wakes smallest"
+    );
     assert_eq!(container["resources"]["requests"], amounts);
     assert_eq!(pod["spec"]["automountServiceAccountToken"], json!(false));
+    let security = &container["securityContext"];
+    assert_eq!(security["capabilities"]["drop"], json!(["ALL"]));
+    assert_eq!(security["allowPrivilegeEscalation"], json!(false));
+    assert_eq!(security["runAsUser"], json!(65532));
     assert_eq!(
-        container["securityContext"]["capabilities"]["drop"],
-        json!(["ALL"])
-    );
-    assert_eq!(
-        container["securityContext"]["allowPrivilegeEscalation"],
-        json!(false)
-    );
-    assert!(
-        pod["spec"].get("runtimeClassName").is_none(),
-        "none configured"
+        pod["spec"]
+            .get("runtimeClassName")
+            .cloned()
+            .unwrap_or(Value::Null),
+        json!(class),
+        "the runtime class set, if any"
     );
     assert!(
         !pod.to_string().contains(wanted.token.secret()),
@@ -216,269 +296,87 @@ async fn limited(cluster: &Kubernetes) {
     assert!(container["env"].to_string().contains("GREETING"));
     assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress", "Egress"]));
     assert!(policy["spec"]["egress"].to_string().contains("0.0.0.0/0"));
-    assert!(
-        said.contains("args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret"),
-        "{said}"
-    );
-    assert!(
-        said.contains("-rw-------"),
-        "the token is the worker's alone: {said}"
-    );
-    assert_eq!(left_behind(cluster).await, Vec::<String>::new());
-}
-
-/// What one bridge into the worker `name` answers to `hello`: the stub says how it was
-/// started, then echoes.
-async fn through(cluster: &Kubernetes, name: &str) -> Vec<String> {
-    let (read, mut write) = cluster.bridge(name).await.unwrap();
-    let mut lines = BufReader::new(read).lines();
-    write.write_all(b"hello\n").await.unwrap();
-    write.flush().await.unwrap();
-    let mut said = Vec::new();
-    for _ in 0..2 {
-        said.push(lines.next_line().await.unwrap().unwrap());
-    }
-    said
-}
-
-async fn bridged(cluster: &Kubernetes) {
-    let name = name();
-    cluster.start_with(&name, &spec(false), STUB).await.unwrap();
-    let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
-    // Each connection is a bridge of its own, the worker going on between them.
-    let first = through(cluster, &name).await;
-    let second = through(cluster, &name).await;
-    cluster.remove(&name).await.unwrap();
-    let echoed = vec![
-        "args: computer bridge /opt/glave/glave.sock".to_owned(),
-        "hello".to_owned(),
-    ];
-    assert_eq!((first, second), (echoed.clone(), echoed));
-    // Both directions are governed, and the API server drops empty rule lists: no rules.
-    assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress", "Egress"]));
     let none = |rules: &Value| rules.is_null() || *rules == json!([]);
-    assert!(
-        none(&policy["spec"]["egress"]),
-        "nothing goes out: {policy}"
-    );
     assert!(
         none(&policy["spec"]["ingress"]),
         "nothing comes in: {policy}"
     );
-    assert_eq!(left_behind(cluster).await, Vec::<String>::new());
+}
+
+/// What the stub in `seen`'s computer said: glave started serving as a person's computer
+/// serves, the token its own, and each bridge a connection of its own.
+fn served_and_reached(seen: &Seen) {
+    let said = &seen.said;
+    assert!(
+        said.contains(
+            "args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret --idle \
+             120 --keep-disk"
+        ),
+        "{said}"
+    );
+    assert!(
+        said.contains("-rw-------"),
+        "the token is the computer's alone: {said}"
+    );
+    let echoed = vec![
+        "args: computer bridge /opt/glave/glave.sock".to_owned(),
+        "hello".to_owned(),
+    ];
+    assert_eq!(seen.bridges, (echoed.clone(), echoed));
 }
 
 #[test]
-fn a_runtime_class_is_required_of_the_cluster_and_nothing_is_left_when_it_is_missing() {
+fn a_runtime_class_the_cluster_lacks_or_isolation_it_cannot_give_leaves_nothing_behind() {
     block_on!(async {
-        let Some(cluster) = cluster(Some("glave-test-missing"), "missing").await else {
+        let Some(missing) = cluster(Some("glave-test-missing"), "missing").await else {
             return;
         };
-        assert_eq!(cluster.isolation(), glave_ports::computer::Isolation::Vm);
-        let refused = cluster.start(&spec(true)).await;
+        let folder = glave_ports::testing::TempDir::new("stub").unwrap();
+        let key = key("missing");
+        let computer = PersonComputer::new(with_glave(&missing, &folder, STUB), &key, 1).unwrap();
+        assert_eq!(computer.isolation(), Isolation::Vm);
+        let refused = computer.wake(&spec(IMAGE)).await;
+        // Its disk is kept, as a person's is, until it is removed.
+        let destroyed = computer.destroy().await;
+
+        // A policy that asks for isolation the cluster can't give refuses the wake before
+        // anything is made.
+        let plain = cluster(None, "missing").await.unwrap();
+        let computer = PersonComputer::new(with_glave(&plain, &folder, STUB), &key, 1).unwrap();
+        let limits = Limits {
+            isolation: Isolation::Vm,
+            ..Limits::default()
+        };
+        let environment = Environment {
+            image: Image::Oci(IMAGE.into()),
+            network: Some(Network::On),
+            ..Environment::host()
+        };
+        let needs = WorkerComputers::new(computer, limits)
+            .create(&environment)
+            .await;
+        let left = left_behind(&missing).await;
+
         let message = refused.unwrap_err().message().to_owned();
         assert!(message.contains("glave-test-missing"), "{message}");
-        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
+        destroyed.unwrap();
+        assert!(
+            matches!(&needs, Err(ComputerError::Refused(m)) if m.contains("isolation = \"vm\"")),
+            "{needs:?}"
+        );
+        assert_eq!(left, Vec::<String>::new());
     });
 }
 
 /// The IP of a Pod that is not the test's and listens on TCP: a CoreDNS Pod, at its metrics
 /// port, which no policy of the cluster's keeps anything from.
-async fn another_pod(cluster: &Kubernetes) -> String {
+pub(super) async fn another_pod(cluster: &Kubernetes) -> Option<String> {
     let dns: Api<Pod> = Api::namespaced(cluster.client.clone(), "kube-system");
     let pods = dns
         .list(&ListParams::default().labels("k8s-app=kube-dns"))
         .await
-        .unwrap();
-    let ip = pods
-        .items
+        .ok()?;
+    pods.items
         .iter()
-        .find_map(|pod| pod.status.as_ref().and_then(|status| status.pod_ip.clone()));
-    format!("{}/9153", ip.unwrap())
-}
-
-/// What a worker with the network says of `pod` (another Pod's IP and port) and of the
-/// internet: each reached or not within 5 seconds, as a fact, so a failure shows which.
-fn reach(pod: &str) -> String {
-    format!(
-        "reach() {{ timeout 5 bash -c \"</dev/tcp/$1\" 2>/dev/null \
-         && echo reached || echo refused; }}; echo \"pod=$(reach {pod})\"; echo \"internet=$(reach 1.1.1.1/443)\""
-    )
-}
-
-/// A real worker, from `GLAVE_TEST_WORKER_GLAVE` and `GLAVE_TEST_WORKER_IMAGE`, with the
-/// network or without, running `uname -s` and answering; with the network, it reaches the
-/// internet but not another Pod in the cluster.
-async fn real(cluster: &Kubernetes, image: &str, network: Network) {
-    // With a runtime class, policy may require one, and the Pod runs under it.
-    let limits = Limits {
-        isolation: cluster.isolation(),
-        ..Limits::default()
-    };
-    let workers = WorkerComputers::kubernetes(cluster.clone(), limits);
-    let environment = Environment {
-        image: Image::Oci(image.to_owned()),
-        network: Some(network),
-        ..Environment::host()
-    };
-    let made = workers.create(&environment).await.unwrap();
-    let label = mine(cluster);
-    let pods = cluster.pods().list(&label).await.unwrap();
-    let classes: Vec<Option<String>> = pods
-        .items
-        .iter()
-        .map(|pod| {
-            pod.spec
-                .as_ref()
-                .and_then(|spec| spec.runtime_class_name.clone())
-        })
-        .collect();
-    assert_eq!(classes, vec![cluster.runtime_class.clone()]);
-    let sources = Sources::Folder {
-        path: "/tmp".into(),
-    };
-    let mut lines = vec!["uname -s".to_owned()];
-    if network == Network::On {
-        lines.push(reach(&another_pod(cluster).await));
-    }
-    let opened = workers.open(made.id, &sources).await;
-    let mut ran = Vec::new();
-    for line in &lines {
-        ran.push(match &opened {
-            Ok(opened) => {
-                let output = super::super::route::Tail::default();
-                workers
-                    .run(
-                        opened.id,
-                        &Command::new(line),
-                        &output,
-                        &CancelSwitch::default(),
-                    )
-                    .await
-                    .map(|finished| (finished.ending, output.text(100)))
-            }
-            Err(error) => Err(error.clone()),
-        });
-    }
-    workers.destroy(made.id).await.unwrap();
-    let exited = |said: &str| Ok((Ending::Exited { code: 0 }, said.to_owned()));
-    let mut wanted = vec![exited("Linux")];
-    if network == Network::On {
-        wanted.push(exited("pod=refused\ninternet=reached"));
-    }
-    assert_eq!(ran, wanted, "{network:?}");
-}
-
-#[test]
-fn a_real_worker_runs_a_command_through_a_bridge_with_a_network_or_without() {
-    let (Ok(_), Ok(image)) = (
-        std::env::var("GLAVE_TEST_WORKER_GLAVE"),
-        std::env::var("GLAVE_TEST_WORKER_IMAGE"),
-    ) else {
-        eprintln!(
-            "skipped: set GLAVE_TEST_WORKER_GLAVE (a Linux glave) and GLAVE_TEST_WORKER_IMAGE \
-             (an image with bash and git, pinned by digest) for the whole path"
-        );
-        return;
-    };
-    block_on!(async {
-        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
-        let Some(cluster) = cluster(runtime_class.as_deref(), "real").await else {
-            return;
-        };
-        real(&cluster, &image, Network::On).await;
-        real(&cluster, &image, Network::Off).await;
-        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
-    });
-}
-
-/// Starts a worker of `starter`, the stub waiting in it, and lets go of it, as a glave killed
-/// outright does. It asks for no CPU or memory: four at once asking for a CPU each
-/// would not fit on the one node of CI's cluster beside the other tests' workers.
-async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) -> String {
-    let name = name();
-    let spec = Spec {
-        starter,
-        cpu_millis: None,
-        memory_mib: None,
-        ..spec(true)
-    };
-    cluster.start_with(&name, &spec, STUB).await.unwrap();
-    name
-}
-
-#[test]
-fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
-    block_on!(async {
-        let Some(cluster) = cluster(None, "reaped").await else {
-            return;
-        };
-        let this = glave_process::Glave::this().unwrap();
-        let ended = super::super::tests::changed(&this, "start", "a glave that ended");
-        let elsewhere = super::super::tests::changed(&ended, "host", "another machine");
-        let gone = left_by(&cluster, Some(ended)).await;
-        let kept = [
-            left_by(&cluster, Some(elsewhere)).await,
-            left_by(&cluster, Some(this)).await,
-            left_by(&cluster, None).await,
-        ];
-        let workers = WorkerComputers::kubernetes(cluster.clone(), Limits::default());
-        let reaped = workers.reap().await;
-        let listed = cluster.list().await.unwrap();
-        for name in &kept {
-            cluster.remove(name).await.unwrap();
-        }
-        assert_eq!(reaped.unwrap(), 1);
-        let mut kept = kept.to_vec();
-        kept.sort();
-        let names: Vec<String> = listed.into_iter().map(|listed| listed.name).collect();
-        assert_eq!(
-            names, kept,
-            "only {gone}, the worker of the glave that ended, goes"
-        );
-        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
-    });
-}
-
-#[test]
-fn the_workers_of_a_pod_glave_ran_in_go_when_it_is_deleted() {
-    block_on!(async {
-        let Some(cluster) = cluster(None, "owned").await else {
-            return;
-        };
-        // A Pod for glave to run in, as on a cluster it does.
-        let home = name();
-        let pod: Pod = serde_json::from_value(json!({
-            "apiVersion": "v1",
-            "kind": "Pod",
-            "metadata": {"name": home, "labels": cluster.labels},
-            "spec": {
-                "containers": [{"name": "glave", "image": IMAGE, "command": ["sleep", "300"]}],
-                "terminationGracePeriodSeconds": 0,
-            }
-        }))
-        .unwrap();
-        let made = cluster
-            .pods()
-            .create(&kube::api::PostParams::default(), &pod)
-            .await
-            .unwrap();
-        let owner = super::objects::Owner {
-            name: home.clone(),
-            uid: made.metadata.uid.unwrap(),
-        };
-        let glave_in_a_pod = cluster.clone().owned_by(owner);
-        let worker = left_by(&glave_in_a_pod, None).await;
-        let now = kube::api::DeleteParams {
-            grace_period_seconds: Some(0),
-            ..kube::api::DeleteParams::default()
-        };
-        cluster.pods().delete(&home, &now).await.unwrap();
-        // The cluster removes the worker and its policy: nothing glave does.
-        let left = left_behind(&cluster).await;
-        if !left.is_empty() {
-            let _ = cluster.remove(&worker).await;
-        }
-        assert_eq!(left, Vec::<String>::new());
-    });
+        .find_map(|pod| pod.status.as_ref().and_then(|status| status.pod_ip.clone()))
 }

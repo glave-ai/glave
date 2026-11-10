@@ -424,7 +424,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/computer/src/worker/kubernetes.rs",
         "let _ = process.join().await;",
         1,
-        "the end of the copy into a worker, within COPIED_WITHIN",
+        "the end of the copy into a person's computer, within COPIED_WITHIN",
     ),
     (
         "crates/cli/src/mcp.rs",
@@ -446,17 +446,11 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     // The work it guards, which has limits of its own.
     (
-        "crates/computer/src/worker.rs",
-        "let mut done = worker.set_up.lock().await;",
-        1,
-        "held while the worker's setup runs, each command within SETUP_TIMEOUT_SECS",
-    ),
-    (
         "crates/computer/src/worker/reconnect.rs",
         "let _reopening = self.reopening.lock().await;",
         1,
-        "held while the connection to a worker is opened again, within BRIDGE_AGAIN and the \
-         remote computer's deadlines",
+        "held while the connection to a person's computer is opened again, within \
+         BRIDGE_AGAIN and the remote computer's deadlines",
     ),
     (
         "crates/cli/src/reread.rs",
