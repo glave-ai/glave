@@ -112,13 +112,46 @@ impl SandboxLevel {
     }
 }
 
+/// How much of the network sandboxed commands reach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxNetwork {
+    /// None of it.
+    Off,
+    /// All that this computer reaches, directly.
+    Direct,
+    /// Only what glave's outbound proxy lets through, which withholds private networks and
+    /// cloud metadata (`specs/sandbox.md`, "The outbound proxy"). A computer that cannot keep
+    /// its commands to the proxy refuses them as unsupported rather than letting them out
+    /// directly.
+    Proxied,
+}
+
+impl SandboxNetwork {
+    /// Direct when `on`, else off: the network as a person turns it on or off.
+    pub fn when(on: bool) -> Self {
+        if on { Self::Direct } else { Self::Off }
+    }
+
+    /// Whether commands reach any of the network.
+    pub fn is_on(self) -> bool {
+        self != Self::Off
+    }
+
+    /// Off when `taken`, else as it is: the network taken away keeps no way out.
+    #[must_use]
+    pub fn unless(self, taken: bool) -> Self {
+        if taken { Self::Off } else { self }
+    }
+}
+
 /// What the sandbox allows. A computer that cannot enforce it refuses the command rather
 /// than running it unconfined.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sandbox {
     pub level: SandboxLevel,
-    /// Whether commands may use the network.
-    pub network: bool,
+    /// How much of the network commands reach.
+    pub network: SandboxNetwork,
     /// The person's home folder, whose credential folders commands may not read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home: Option<PathBuf>,
@@ -160,7 +193,7 @@ mod tests {
         let guarded = FileWrite {
             protect: Some(Sandbox {
                 level: SandboxLevel::Project,
-                network: false,
+                network: SandboxNetwork::Off,
                 home: None,
                 glave_home: None,
             }),

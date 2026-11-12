@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::block_on;
 use glave_ports::computer::{
     Command, Computers, CredentialHost, Ending, Environment, Forge, GitCredential, Output, Sandbox,
-    SandboxLevel, Sources,
+    SandboxLevel, SandboxNetwork, Sources,
 };
 use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
@@ -237,7 +237,7 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
         ));
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: true,
+            network: SandboxNetwork::Direct,
             home: std::env::var_os("HOME").map(PathBuf::from),
             glave_home: None,
         });
@@ -294,7 +294,7 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
         );
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: false,
+            network: SandboxNetwork::Off,
             home: Some(dir.to_path_buf()),
             glave_home: Some(glave_home.clone()),
         });

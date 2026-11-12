@@ -10,7 +10,7 @@ use super::helpers::{failed, run, run_quietly};
 use super::{Verdict, ensure};
 use crate::computer::{
     Command, CommandId, ComputerError, ComputerId, Computers, Ending, KEPT_OUTPUT, MAX_BACKGROUND,
-    OnTimeout, Sandbox, SandboxLevel, Sources, WorkspaceId,
+    OnTimeout, Sandbox, SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
 };
 
 /// How long the suite gives a command in the background to do what it must do soon.
@@ -294,7 +294,7 @@ async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
     let mut command = Command::new("echo inside > background/sandboxed.txt");
     command.sandbox = Some(Sandbox {
         level: SandboxLevel::ReadOnly,
-        network: false,
+        network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
     });

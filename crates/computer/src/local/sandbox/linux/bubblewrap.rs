@@ -7,6 +7,7 @@ use std::time::Duration;
 use glave_process::Program;
 
 use super::mounts::{Layout, Mount};
+use crate::local::sandbox::FORWARD_HELPER_ARG;
 
 /// Runs bubblewrap with the seccomp filter on descriptor 3, read from standard input, and
 /// standard input then empty: `sh -c <this> <bwrap> <args>…`.
@@ -96,16 +97,26 @@ fn empty_sandbox(bwrap: &Path, network: &[&str]) -> Result<(), String> {
     Err(said.trim().chars().take(300).collect())
 }
 
-/// The arguments for `sh` that start one command in the sandbox, up to the command itself.
+/// How a command kept to the outbound proxy reaches it: glave's own program, forwarding from
+/// the loopback of the command's network namespace to the proxy's socket.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Forward<'a> {
+    pub(super) helper: &'a Path,
+    pub(super) socket: &'a Path,
+}
+
+/// The arguments for `sh` that start one command in the sandbox, up to the command itself,
+/// which `forward` starts when it is kept to the proxy.
 pub(super) fn args(
     bwrap: &Path,
     offline: Offline,
     layout: &Layout,
     mounts: &[Mount],
+    forward: Option<Forward<'_>>,
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["-c".into(), SHELL.into(), bwrap.into()];
     args.extend(ISOLATION.iter().map(OsString::from));
-    if !layout.network && offline == Offline::OwnNetwork {
+    if (!layout.network || forward.is_some()) && offline == Offline::OwnNetwork {
         args.push("--unshare-net".into());
     }
     // The whole machine read-only, with fresh devices and processes of its own: the host's
@@ -134,5 +145,13 @@ pub(super) fn args(
     }
     args.extend(["--chdir".into(), layout.root.clone().into_os_string()]);
     args.extend(["--seccomp", "3", "--"].map(OsString::from));
+    if let Some(forward) = forward {
+        args.extend([
+            forward.helper.into(),
+            FORWARD_HELPER_ARG.into(),
+            forward.socket.into(),
+            "--".into(),
+        ]);
+    }
     args
 }

@@ -10,8 +10,8 @@ use std::process::Command as Process;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources,
-    WorkspaceId,
+    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 
 use super::{CACHE_FOLDER, sandbox_available};
@@ -117,7 +117,7 @@ fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandb
         .with_worktrees(glave_home.join("worktrees"));
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: false,
+        network: SandboxNetwork::Off,
         home: Some(home),
         glave_home: Some(glave_home),
     };
@@ -218,7 +218,7 @@ fn the_running_glave_is_first_on_every_command_s_path() {
     fake_glave(&dir.join("old/glave"), "old-glave");
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: false,
+        network: SandboxNetwork::Off,
         home: Some(home.clone()),
         glave_home: Some(glave_home.clone()),
     };
@@ -537,7 +537,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
     let computers = LocalComputers::new(dir.join("copies"), environment);
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: false,
+        network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
     };
@@ -713,7 +713,7 @@ fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
     let computers = LocalComputers::new(dir.join("copies"), environment);
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: true,
+        network: SandboxNetwork::Direct,
         home: Some(home),
         glave_home: Some(dir.join("glave")),
     };

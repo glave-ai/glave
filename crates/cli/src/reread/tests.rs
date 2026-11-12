@@ -47,7 +47,7 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
     assert_eq!(before.defaults.highest, Permissions::FullAccess, "no cap");
     let sandbox = before.defaults.sandbox.unwrap();
     assert_eq!(
-        (sandbox.level, sandbox.network),
+        (sandbox.level, sandbox.network.is_on()),
         (SandboxLevel::Project, true),
         "there for the threads that choose it"
     );
@@ -70,7 +70,7 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
     );
     assert!(!after.defaults.ask_network, "no command may ask for it");
     assert!(
-        !after.defaults.sandbox.unwrap().network,
+        !after.defaults.sandbox.unwrap().network.is_on(),
         "without the network, whatever the file says"
     );
     let _ = std::fs::remove_dir_all(dir);

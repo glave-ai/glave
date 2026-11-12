@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::run_temp::RunTemp;
-use super::{Launch, Reached, Temps};
+use super::{Launch, Outbound, Reached, Temps};
 
 pub(super) type Held = ();
 
@@ -18,6 +18,10 @@ pub(super) fn helper(_args: &[OsString]) -> String {
     "the sandbox helper runs only on Linux".into()
 }
 
+pub(super) fn forward(_args: &[OsString]) -> Result<std::process::ExitCode, String> {
+    Err("the forwarder runs only on Linux".into())
+}
+
 #[derive(Debug)]
 pub(super) enum Enforcer {}
 
@@ -26,7 +30,7 @@ impl Enforcer {
         _sandbox: &Sandbox,
         _root: &Path,
         _git_common: Option<&Path>,
-        _helper: Option<&Path>,
+        (_helper, _outbound): (Option<&Path>, &Outbound),
         _reached: Reached<'_>,
         _hidden: &[PathBuf],
     ) -> std::future::Ready<Result<(Self, Temps), ComputerError>> {

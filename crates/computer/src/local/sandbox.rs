@@ -27,13 +27,40 @@ use unsupported as platform;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use glave_ports::computer::{ComputerError, Sandbox, git_settings};
 
 use run_temp::RunTemp;
 
+#[cfg(target_os = "linux")]
+pub(crate) use linux::Outbound;
+
+/// How a sandbox's outbound proxy is made, where commands are kept to one: on Linux only, for
+/// now (`specs/sandbox.md`, "The outbound proxy").
+#[cfg(not(target_os = "linux"))]
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Outbound {}
+
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
+
+/// Runs this process as the forwarder in a sandboxed command's network namespace of its own
+/// when `args` (the whole command line) are the forwarder's: `glave __glave-forward <socket>
+/// -- <command>…` carries the connections made to a port of the namespace's loopback to the
+/// outbound proxy's socket, and runs the command with the proxy in its variables. Returns
+/// `None` when they are not; otherwise the command's exit code once it has ended, or what went
+/// wrong before it could run. A program that passes its own path to
+/// [`crate::LocalComputers::with_helper`] calls this first thing in `main`.
+pub fn forward_helper(args: &[OsString]) -> Option<Result<ExitCode, String>> {
+    if args.get(1).is_none_or(|first| first != FORWARD_HELPER_ARG) {
+        return None;
+    }
+    Some(platform::forward(args.get(2..).unwrap_or_default()))
+}
+
+/// The first argument that makes glave the forwarder (see [`forward_helper`]).
+pub(crate) const FORWARD_HELPER_ARG: &str = "__glave-forward";
 
 /// Whether this machine can enforce every sandbox level: Seatbelt on macOS, bubblewrap on
 /// Linux. (Landlock, Linux's fallback, enforces only `read-only`, and only for a program that
@@ -91,6 +118,9 @@ struct Temps {
 pub(crate) struct Launch {
     pub(crate) program: PathBuf,
     pub(crate) args: Vec<OsString>,
+    /// Variables the wrapper is given besides the command's: on Linux, the proxy's secret for
+    /// the forwarder in the command's namespace.
+    pub(crate) env: Vec<(OsString, OsString)>,
     /// Bytes for the wrapper's standard input, which is then closed: Linux's seccomp filter.
     pub(crate) input: Option<Vec<u8>>,
     /// The wrapper starts a session of its own, so the command must not get a process group
@@ -105,7 +135,8 @@ pub(crate) struct Launch {
 impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
     /// its repository's shared git folder, writable too. `helper` is a program that runs
-    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start. `hidden` is what
+    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start, and forwards to
+    /// the outbound proxy `outbound` makes, for commands kept to it. `hidden` is what
     /// this computer hides beside the home folder's credential stores. `glave_on_path`, glave's
     /// own folder on commands' `PATH`, stays readable, never writable, though it sits in
     /// glave's folder.
@@ -113,7 +144,7 @@ impl Prepared {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        helper: Option<&Path>,
+        helpers: (Option<&Path>, &Outbound),
         hidden: &[PathBuf],
         glave_on_path: Option<&Path>,
     ) -> Result<Self, ComputerError> {
@@ -123,7 +154,8 @@ impl Prepared {
             glave_on_path,
         };
         let (enforcer, temps) =
-            platform::Enforcer::prepare(sandbox, root, git_common, helper, reached, hidden).await?;
+            platform::Enforcer::prepare(sandbox, root, git_common, helpers, reached, hidden)
+                .await?;
         // What a glave killed outright left: it could not remove its own.
         let (every, prefix) = (temps.every.clone(), temps.every_prefix);
         let _ = tokio::task::spawn_blocking(move || run_temp::remove_left(&every, prefix)).await;

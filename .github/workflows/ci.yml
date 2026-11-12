@@ -610,9 +610,11 @@ jobs:
       # The judge's tests and the modes' too: the judge decides only in Auto behind the
       # sandbox's wall, and Ask first is its read-only sandbox. And what an eval's attempt is kept
       # from reading.
+      # The built glave forwards in the network namespace of a command kept to the outbound proxy.
       - name: bubblewrap and seccomp
         env:
           GLAVE_REQUIRE_SANDBOX: "1"
+          GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
         run: cargo nextest run -p glave-computer -p glave-harness -p glave-memory -p glave -p glave-eval -E 'test(/sandbox|judge|modes::|hidden_from_an_attempt/)'
       - name: Disk space after the build
         if: always()

@@ -5,8 +5,8 @@ use super::helpers::{Collect, Trip, failed, files};
 use super::{Verdict, ensure};
 use crate::blob::digest;
 use crate::computer::{
-    Command, ComputerError, Computers, EntryKind, Glob, Listing, Sandbox, SandboxLevel, Search,
-    WorkspaceId,
+    Command, ComputerError, Computers, EntryKind, Glob, Listing, Sandbox, SandboxLevel,
+    SandboxNetwork, Search, WorkspaceId,
 };
 
 const LIB: &[u8] = b"fn alpha() {}\nfn beta() {}\n";
@@ -164,7 +164,7 @@ pub(super) async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) ->
     let mut command = Command::new("echo inside > sandboxed.txt");
     command.sandbox = Some(Sandbox {
         level: SandboxLevel::ReadOnly,
-        network: false,
+        network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
     });
