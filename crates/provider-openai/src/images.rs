@@ -97,11 +97,7 @@ impl OpenAiCompatible {
         let answer = self.whole(response, &url, MOST_ANSWER).await?;
         let answer: ImagesAnswer = serde_json::from_slice(&answer)
             .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))?;
-        if answer.data.is_empty() {
-            return Err(ProviderError::NoOutput(
-                "the answer held no image".to_owned(),
-            ));
-        }
+        // An answer with no image is still billed as it says: its files are none.
         let (usage, cost) = usage_and_cost(answer.usage.as_deref(), false, &self.provider)?;
         let files = answer
             .data
@@ -143,9 +139,13 @@ pub(crate) fn images_request<'a>(
         match part {
             Part::Text { text } => prompt.push_str(text),
             Part::File { .. } => {
-                if let Some(file) = request.inline(part) {
-                    input_references.push(reference(file));
-                }
+                let Some(file) = request.inline(part) else {
+                    return Err(ProviderError::Unserved {
+                        failure: Failure::Rejected,
+                        reason: "an image the call names was not sent with it".to_owned(),
+                    });
+                };
+                input_references.push(reference(file));
             }
             Part::Reasoning { .. } => {}
         }

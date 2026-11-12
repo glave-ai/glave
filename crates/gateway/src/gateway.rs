@@ -137,7 +137,7 @@ impl Gateway {
                 }
                 Err(error) => {
                     if let Some(paying) = paying {
-                        paying.broke().await;
+                        paying.broke(&error).await;
                     }
                     // A failure that may pass moves on to the next target; any other is final.
                     if !error.is_transient() {
@@ -270,8 +270,16 @@ impl ModelProvider for Gateway {
         self.serve(&targets, request, Call::Make(ask)).await
     }
 
+    /// Whether calls for `purpose` are served: a media tool's only by a route of its own, and,
+    /// where credits are kept, only when one of its targets is priced, as an unpriced one is
+    /// refused.
     fn serves(&self, purpose: Purpose) -> bool {
+        let priced = |target: &Target| {
+            (target.price.as_ref()).is_some_and(|price| price.currency == Currency::USD)
+        };
+        let route = self.routes.targets(purpose);
         self.routes.serves(purpose)
+            && (!purpose.is_media() || self.credits.is_none() || route.iter().any(priced))
     }
 }
 
