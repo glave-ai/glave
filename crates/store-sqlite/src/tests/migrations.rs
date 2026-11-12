@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::sync::Barrier;
 
+use glave_ports::conformance::{StoreSuite, store_suite};
 use glave_ports::migrations::{Change, Migration, Schema};
 use rusqlite::Connection;
 
@@ -37,31 +38,22 @@ fn file_at(version: u32, path: &Path) {
         .unwrap();
 }
 
-/// The suites a store brought forward passes, each on a file of its own.
-const SUITES: &[&str] = &["log", "search", "projects", "directory", "views", "leases"];
-
-async fn passes(suite: &str, store: &Store) -> Result<(), String> {
-    match suite {
-        "log" => conformance::event_log(&store.log()).await,
-        "search" => conformance::search(&store.log()).await,
-        "projects" => conformance::projects(&store.projects()).await,
-        "directory" => conformance::directory(&store.directory()).await,
-        "views" => conformance::thread_views(&store.log()).await,
-        _ => conformance::leases(&store.leases()).await,
-    }
-}
-
+/// Each earlier version, built from the recorded migrations, opens at the latest and passes
+/// every suite of a whole store, each on a file of its own.
 #[test]
 fn a_file_of_each_earlier_version_is_brought_up_to_date_keeping_what_it_held() {
     for version_then in SCHEMA.baseline..SCHEMA.latest() {
-        for suite in SUITES {
-            let (_dir, path) = temp_db(&format!("from-{version_then}-{suite}"));
+        for suite in StoreSuite::ALL {
+            let (_dir, path) = temp_db(&format!("from-{version_then}-{suite:?}"));
             file_at(version_then, &path);
             block_on!(async {
                 let store = Store::open(&path, file_keys(&path), objects())
                     .await
                     .unwrap();
-                assert_eq!(passes(suite, &store).await, Ok(()), "{suite}");
+                let (log, projects) = (store.log(), store.projects());
+                let (directory, leases) = (store.directory(), store.leases());
+                let verdict = store_suite(suite, &log, &projects, &directory, &leases).await;
+                assert_eq!(verdict, Ok(()), "{suite:?}");
             });
             assert_eq!(version(&path), SCHEMA.latest());
             let kept: String = Connection::open(&path)

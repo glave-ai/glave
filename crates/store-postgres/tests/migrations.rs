@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use glave_ports::conformance;
+use glave_ports::conformance::{StoreSuite, store_suite};
 use glave_ports::migrations::{Change, Migration, Schema};
 use glave_store_postgres::{SCHEMA, Store, StoreError, migrate};
 use tokio_postgres::NoTls;
@@ -47,32 +47,23 @@ async fn at(scratch: &Scratch, version: u32) {
     scratch.admin.execute(&sql, &[]).await.unwrap();
 }
 
-/// The suites a database brought forward passes, each on a schema of its own.
-const SUITES: &[&str] = &["log", "search", "projects", "directory", "views", "leases"];
-
-async fn passes(suite: &str, store: &Store) -> Result<(), String> {
-    match suite {
-        "log" => conformance::event_log(&store.log()).await,
-        "search" => conformance::search(&store.log()).await,
-        "projects" => conformance::projects(&store.projects()).await,
-        "directory" => conformance::directory(&store.directory()).await,
-        "views" => conformance::thread_views(&store.log()).await,
-        _ => conformance::leases(&store.leases()).await,
-    }
-}
-
+/// Each earlier version, built from the recorded migrations, opens at the latest and passes
+/// every suite of a whole store, each on a schema of its own.
 #[test]
 fn a_database_of_each_earlier_version_is_brought_up_to_date_keeping_what_it_held() {
     for version in SCHEMA.baseline..SCHEMA.latest() {
-        for suite in SUITES {
+        for suite in StoreSuite::ALL {
             block_on!(async {
-                let Some(scratch) = Scratch::new(&format!("from_{version}_{suite}")).await else {
+                let name = format!("from_{version}_{suite:?}").to_lowercase();
+                let Some(scratch) = Scratch::new(&name).await else {
                     return;
                 };
                 at(&scratch, version).await;
                 let store = scratch.store().await.unwrap();
-                let verdict = passes(suite, &store).await;
-                drop(store);
+                let (log, projects) = (store.log(), store.projects());
+                let (directory, leases) = (store.directory(), store.leases());
+                let verdict = store_suite(suite, &log, &projects, &directory, &leases).await;
+                drop((log, projects, directory, leases, store));
                 let versions = scratch.versions().await;
                 let sql = format!(
                     "SELECT value FROM {}.glave_settings WHERE key = 'kept'",
@@ -80,7 +71,7 @@ fn a_database_of_each_earlier_version_is_brought_up_to_date_keeping_what_it_held
                 );
                 let kept: String = scratch.admin.query_one(&sql, &[]).await.unwrap().get(0);
                 scratch.drop_schema().await;
-                assert_eq!(verdict, Ok(()), "from {version}: {suite}");
+                assert_eq!(verdict, Ok(()), "from {version}: {suite:?}");
                 assert_eq!(versions, every_version());
                 assert_eq!(
                     kept, "yes",
