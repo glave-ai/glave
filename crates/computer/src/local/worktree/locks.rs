@@ -55,6 +55,13 @@ impl Locks {
         })
     }
 
+    /// Waits until no one else in this process holds `key`, a folder this process alone opens
+    /// and frees (its scratch folders), and holds it until the answer is dropped. Unlike
+    /// [`Locks::lock`], it writes nothing in the folder.
+    pub(crate) async fn hold(&self, key: &Path) -> Result<OwnedMutexGuard<()>, ComputerError> {
+        Ok(self.of(key)?.lock_owned().await)
+    }
+
     /// The lock for `common`, made when no one holds or waits for one. Making one forgets
     /// every lock no one holds or waits for.
     fn of(&self, common: &Path) -> Result<Arc<tokio::sync::Mutex<()>>, ComputerError> {

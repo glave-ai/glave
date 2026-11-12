@@ -10,7 +10,9 @@ mod here;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glave_event::{Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, decode};
+use glave_event::{
+    Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, WorkspaceRemoved, decode,
+};
 use glave_harness::{Homes, Skill, SkillSource, Skills};
 use glave_ports::computer::{DiskUse, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::{Message, ProjectId};
@@ -464,16 +466,110 @@ async fn in_a_worktree(server: &Tested<Shared>, project: ProjectId) -> (ThreadId
     (thread.id, PathBuf::from(root))
 }
 
-/// What `thread` recorded of its worktree being removed, by why.
-async fn removed_because(server: &Tested<Shared>, thread: ThreadId) -> Vec<RemovedReason> {
+/// What `thread` recorded of its worktree or scratch folder being removed.
+async fn removals(server: &Tested<Shared>, thread: ThreadId) -> Vec<WorkspaceRemoved> {
     events(server, thread)
         .await
         .into_iter()
         .filter_map(|raw| match decode(raw).unwrap().body {
-            Body::WorkspaceRemoved(removed) => Some(removed.reason),
+            Body::WorkspaceRemoved(removed) => Some(removed),
             _ => None,
         })
         .collect()
+}
+
+/// What `thread` recorded of its worktree being removed, by why.
+async fn removed_because(server: &Tested<Shared>, thread: ThreadId) -> Vec<RemovedReason> {
+    let removals = removals(server, thread).await;
+    removals.into_iter().map(|removed| removed.reason).collect()
+}
+
+/// A chat of `server`'s person that wrote a file in its scratch folder: its id and its root.
+async fn a_chat_that_wrote(server: &Tested<Shared>) -> (ThreadId, PathBuf) {
+    let chat = started(server, None).await;
+    turn(server, chat.id, "write it down").await.unwrap();
+    let root = PathBuf::from(chat.workspace.unwrap().root);
+    assert!(root.join("n.txt").exists(), "{}", root.display());
+    (chat.id, root)
+}
+
+/// A full computer moves the scratch folders of archived chats to the Trash, where the computer
+/// empties them as it needs room, and never an active chat's, however long it has been idle or
+/// however lately brought back: what a scratch folder holds is nowhere else. A chat brought back
+/// after finds its files again.
+#[test]
+fn a_full_computer_moves_archived_chats_scratch_folders_to_the_trash() {
+    let dir = folder("session-homes-scratch");
+    block_on!(async {
+        let homes = Arc::new(Here::new(&dir.join("people")));
+        let wrote = ("write", json!({"path": "n.txt", "content": "x"}));
+        let mut answers = Vec::new();
+        for said in [
+            "Written.",
+            "Written too.",
+            "Written three.",
+            "Written four.",
+            "Again.",
+            "Still.",
+        ] {
+            answers.push(answer(None, Some(wrote.clone())));
+            answers.push(answer(Some(said), None));
+        }
+        let other = ("write", json!({"path": "m.txt", "content": "y"}));
+        answers.push(answer(None, Some(other)));
+        answers.push(answer(Some("Back."), None));
+        let mut setup = Setup::new(answers);
+        setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
+        let clock = setup.clock.clone();
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let (archived, archived_root) = a_chat_that_wrote(&server).await;
+        let (back, back_root) = a_chat_that_wrote(&server).await;
+        let (idle, idle_root) = a_chat_that_wrote(&server).await;
+        let (writing, _) = a_chat_that_wrote(&server).await;
+        for archive in [archived, back] {
+            let archive = Request::ThreadArchive { thread: archive };
+            server.request(archive).await.unwrap();
+        }
+        let unarchive = Request::ThreadUnarchive { thread: back };
+        server.request(unarchive).await.unwrap();
+        // Eight days on, the server holds none of them open.
+        clock.advance_seconds(8 * 24 * 60 * 60);
+        server.tick().await.unwrap();
+
+        // Full until the archived chat's folder goes: it goes whole, to the Trash.
+        *homes.full_while.lock().unwrap() = Some(archived_root.clone());
+        turn(&server, writing, "write it down").await.unwrap();
+        let removed = removals(&server, archived).await;
+        assert_eq!(removed.len(), 1, "{removed:?}");
+        assert_eq!(removed[0].reason, RemovedReason::Archived);
+        let trashed = PathBuf::from(removed[0].trash.as_deref().expect("in the Trash"));
+        assert_eq!(std::fs::read_to_string(trashed.join("n.txt")).unwrap(), "x");
+        assert!(!archived_root.exists());
+
+        // Full for good: an idle chat's folder stays, as does the one at work.
+        let marker = dir.join("full");
+        std::fs::write(&marker, "").unwrap();
+        *homes.full_while.lock().unwrap() = Some(marker);
+        turn(&server, writing, "and again").await.unwrap();
+        assert_eq!(removals(&server, idle).await, []);
+        assert!(idle_root.join("n.txt").exists());
+        assert_eq!(removals(&server, back).await, []);
+        assert!(
+            back_root.join("n.txt").exists(),
+            "brought back before it went"
+        );
+
+        // Brought back, the archived chat finds its files where it left them.
+        let unarchive = Request::ThreadUnarchive { thread: archived };
+        server.request(unarchive).await.unwrap();
+        turn(&server, archived, "write another").await.unwrap();
+        assert!(archived_root.join("m.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(archived_root.join("n.txt")).unwrap(),
+            "x"
+        );
+        assert!(!trashed.exists(), "out of the Trash");
+    });
 }
 
 #[test]

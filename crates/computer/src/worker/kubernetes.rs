@@ -11,6 +11,7 @@ mod home;
 mod link;
 mod objects;
 mod people;
+mod served;
 mod sizing;
 
 use std::collections::BTreeMap;
@@ -152,13 +153,20 @@ async fn exec_failed(
 /// Whether the Pod `name` runs, as the API server says: there, not being removed, its container
 /// running.
 async fn running(pods: &Api<Pod>, name: &str) -> Result<bool, ComputerError> {
+    running_as(pods, name).await.map(|uid| uid.is_some())
+}
+
+/// The uid of the Pod `name` while it runs, as [`running`] says it does: which Pod of that name
+/// it is, since a computer woken again is a new Pod under the same name.
+async fn running_as(pods: &Api<Pod>, name: &str) -> Result<Option<String>, ComputerError> {
     let pod = pods.get_opt(name).await.map_err(|error| {
         ComputerError::Unreachable(format!("Kubernetes could not read {name}: {error}"))
     })?;
-    Ok(pod.is_some_and(|pod| {
-        pod.metadata.deletion_timestamp.is_none()
+    Ok(pod.and_then(|pod| {
+        let runs = pod.metadata.deletion_timestamp.is_none()
             && objects::progress(&serde_json::to_value(&pod).unwrap_or_default())
-                == Progress::Running
+                == Progress::Running;
+        if runs { pod.metadata.uid } else { None }
     }))
 }
 
@@ -277,14 +285,14 @@ impl Kubernetes {
 
     /// Starts the person's computer `name` on their disk (`home`) from `spec`, with `glave`
     /// copied in unless its image carries that very glave. It is owned by no Pod, since a
-    /// person's computer outlives any one glave.
+    /// person's computer outlives any one glave. The uid of the Pod started.
     async fn start(
         &self,
         name: &str,
         spec: &Spec,
         glave: &[u8],
         home: Home<'_>,
-    ) -> Result<(), ComputerError> {
+    ) -> Result<String, ComputerError> {
         let arch = objects::arch(elf_machine(glave));
         let shape = Shape {
             name,
@@ -303,17 +311,22 @@ impl Kubernetes {
             .map_err(|error| failed("refused the computer's network policy", error))?;
         let pod: Pod = serde_json::from_value(shape.pod()).map_err(|error| failed("pod", error))?;
         let pods = self.pods();
-        pods.create(&PostParams::default(), &pod)
+        let made = pods
+            .create(&PostParams::default(), &pod)
             .await
             .map_err(|error| failed("refused the computer", error))?;
+        let uid = made.metadata.uid.ok_or_else(|| {
+            ComputerError::Failed(format!("the computer {name} was made with no uid"))
+        })?;
         self.running(name).await?;
         if self.serves_its_image_glave(name, spec, &home).await? {
-            return Ok(());
+            return Ok(uid);
         }
         let files = objects::files(glave, spec).map_err(|long| {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
-        self.copy_in(name, &files, "glave").await
+        self.copy_in(name, &files, "glave").await?;
+        Ok(uid)
     }
 
     /// Waits for the computer's container to run.

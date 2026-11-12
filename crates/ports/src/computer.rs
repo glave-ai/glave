@@ -292,7 +292,8 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Err(no_terminals())))
     }
 
-    /// The worktrees it keeps for threads (`computer/worktrees`); none where it keeps none.
+    /// The worktrees and scratch folders it keeps for threads (`computer/worktrees`); none where
+    /// it keeps none.
     fn worktrees(
         &self,
         computer: ComputerId,
@@ -303,7 +304,9 @@ pub trait Computers: Send + Sync {
 
     /// Frees the worktree at `path`, when what it holds can be rebuilt: nothing uncommitted,
     /// every commit on a remote, no file git ignores but build outputs, and no workspace open on
-    /// it, all looked at again now (`computer/free_worktree`). Its branch stays.
+    /// it, all looked at again now (`computer/free_worktree`). Its branch stays. A scratch folder
+    /// with no workspace open on it goes whatever it holds: removed when empty, else moved to the
+    /// Trash.
     fn free_worktree<'a>(
         &'a self,
         computer: ComputerId,
