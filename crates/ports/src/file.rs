@@ -26,6 +26,21 @@ pub fn replace(path: &Path, contents: &[u8]) -> io::Result<()> {
     write(path, contents, Place::Over, Step::Flushed)
 }
 
+/// Puts in place at `path` the file `fill` makes at the name it is given beside it, replacing
+/// any there, for a file another program writes (a copy of the store, `specs/storage.md`,
+/// "Migrations"): flushed, then moved into place in one step, so a reader sees the old file or
+/// the new one, whole. What `fill` left is removed when it fails.
+pub fn replace_with(path: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
+    let temporary = temporary_for(path)?;
+    let filled = fill(&temporary).and_then(|()| File::open(&temporary)?.sync_all());
+    let placed = filled.and_then(|()| std::fs::rename(&temporary, path));
+    if placed.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    placed?;
+    File::open(folder_of(path))?.sync_all()
+}
+
 /// Where a test stops [`create`], as a crash there would.
 #[cfg(any(test, feature = "conformance"))]
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +190,32 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(mode(&path), 0o600);
         assert_eq!(names(&dir), ["serve.token"], "no temporary file is left");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_another_writes_replaces_the_one_before_only_once_it_is_made() {
+        let dir = folder("replace-with");
+        let path = dir.join("glave.db.backup");
+        replace(&path, b"first").unwrap();
+        let failed = replace_with(&path, |temporary| {
+            std::fs::write(temporary, b"half")?;
+            Err(io::Error::other("the disk is full"))
+        });
+        assert_eq!(failed.unwrap_err().to_string(), "the disk is full");
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        assert_eq!(
+            names(&dir),
+            ["glave.db.backup"],
+            "nothing is left beside it"
+        );
+        replace_with(&path, |temporary| std::fs::write(temporary, b"second")).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        assert_eq!(
+            names(&dir),
+            ["glave.db.backup"],
+            "no temporary file is left"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

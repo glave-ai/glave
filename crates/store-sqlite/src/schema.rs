@@ -1,22 +1,29 @@
-//! The database schema: one, made whole in a new file. Until glave 0.1 ships it changes in
-//! place, with [`VERSION`] bumped, and a file of another version is refused (AGENTS.md,
-//! "Types"). The version is SQLite's `user_version`. The one exception is a change that only
-//! adds tables, or makes again one that holds nothing but what is derived from the events, made
-//! in a file of the version before as well ([`ADDED`]), so a person's file keeps opening.
+//! The database schema, carried forward (`specs/storage.md`, "Migrations"): a new file is made
+//! at the baseline and brought through every migration since, an older one through those it
+//! lacks, all in one transaction with the version it reaches, SQLite's `user_version`. A file a
+//! newer glave saved, or one from before the baseline, is refused and left as it was. Before a
+//! migration that reshapes what the file holds, a copy of the file is kept beside it.
 
-use rusqlite::Connection;
+use std::path::{Path, PathBuf};
+
+use glave_ports::migrations::{Change, Migration, Refused, Schema};
+use rusqlite::{Connection, TransactionBehavior};
 
 use crate::store::StoreError;
 
-/// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
-/// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 19;
+/// The schema this build makes and reads. A migration that has shipped is never edited: a
+/// change to the schema is a new one, appended.
+pub(crate) const SCHEMA: Schema<'static> = Schema {
+    baseline: 18,
+    made: BASELINE,
+    migrations: &[Migration {
+        change: Change::Adds,
+        sql: SEALED_INDEX,
+    }],
+};
 
-/// The version before [`VERSION`], whose files get [`ADDED`] and are this build's after.
-pub(crate) const BEFORE: u32 = 18;
-
-/// Every table, made in one transaction in a new file.
-pub(crate) const SCHEMA: &str = "
+/// Every table as of version 18, but its unsealed search index, which 19 makes again sealed.
+const BASELINE: &str = "
     -- The event log. `data` is the payload sealed under the data key `key_id` names.
     CREATE TABLE events (
         org      TEXT    NOT NULL,
@@ -160,13 +167,13 @@ pub(crate) const SCHEMA: &str = "
     ) STRICT;
 ";
 
-/// What version 19 changes: the search index sealed (`specs/storage.md`, "Search index"). Each
-/// searchable event's words, as keyed hashes under its project key (`Keys::seal_terms`), sealed
-/// under the data key `key_id` names, written in the same transaction as the event; `pos` is the
-/// write order, never reused (`AUTOINCREMENT`), so a search reads only the rows after the last it
-/// read. A file of the version before loses its unsealed index, so its chats from before are not
+/// 19: the search index sealed (`specs/storage.md`, "Search index"). Each searchable event's
+/// words, as keyed hashes under its project key (`Keys::seal_terms`), sealed under the data key
+/// `key_id` names, written in the same transaction as the event; `pos` is the write order, never
+/// reused (`AUTOINCREMENT`), so a search reads only the rows after the last it read. A file of
+/// 18 loses its unsealed index, derived from the events, so its chats from before are not
 /// searched.
-const ADDED: &str = "
+const SEALED_INDEX: &str = "
     DROP TABLE IF EXISTS event_search;
 
     CREATE TABLE event_search (
@@ -182,38 +189,93 @@ const ADDED: &str = "
     CREATE INDEX event_search_by_thread ON event_search (org, project, thread);
 ";
 
-/// Makes the schema in a new file, adds [`ADDED`] to a file of the version before, and checks
-/// an existing one is this build's. A file of any other version is refused with what to do
-/// about it, never changed.
-pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
-    let found: u32 = connection
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(|e| StoreError::schema(&e))?;
-    if found == VERSION {
+/// Brings the database up to [`SCHEMA`], making it the first time. `file` is where it is kept,
+/// none for a database in memory.
+pub(crate) fn prepare(connection: &mut Connection, file: Option<&Path>) -> Result<(), StoreError> {
+    migrate(connection, file, &SCHEMA)
+}
+
+/// Brings the database up to `schema`: every step it lacks, in one transaction with the version
+/// it reaches, so one that fails leaves it at the version it had. Before a step that reshapes
+/// what it holds, `file` is copied beside itself.
+pub(crate) fn migrate(
+    connection: &mut Connection,
+    file: Option<&Path>,
+    schema: &Schema<'_>,
+) -> Result<(), StoreError> {
+    let plan = schema.plan(version(connection)?).map_err(refused)?;
+    if plan.steps.is_empty() {
         return Ok(());
     }
-    if found != 0 && found != BEFORE {
-        return Err(StoreError::Schema(format!(
-            "glave's data was saved by another version of glave, which this one cannot read \
-             before glave 0.1 (schema {found}, not {VERSION}). Remove glave's data folder \
-             (~/.glave unless you moved it) and start glave again"
-        )));
+    if let (true, Some(file)) = (plan.reshapes, file) {
+        copy(connection, file)?;
     }
-    let made: &[&str] = if found == BEFORE {
-        &[ADDED]
-    } else {
-        &[SCHEMA, ADDED]
-    };
+    // The write lock first, then the version again: another process on the file may have
+    // brought it forward meanwhile, and no step runs twice.
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| StoreError::schema(&e))?;
-    for batch in made {
+    let plan = schema.plan(version(&transaction)?).map_err(refused)?;
+    for step in &plan.steps {
+        transaction.execute_batch(step.sql).map_err(|e| {
+            StoreError::Schema(format!(
+                "could not bring glave's data up to date (schema {}): {e}",
+                step.version
+            ))
+        })?;
+    }
+    if let Some(last) = plan.steps.last() {
         transaction
-            .execute_batch(batch)
+            .pragma_update(None, "user_version", last.version)
             .map_err(|e| StoreError::schema(&e))?;
     }
-    transaction
-        .pragma_update(None, "user_version", VERSION)
-        .map_err(|e| StoreError::schema(&e))?;
     transaction.commit().map_err(|e| StoreError::schema(&e))
+}
+
+/// The version the database is at, 0 for one with nothing in it yet.
+fn version(connection: &Connection) -> Result<u32, StoreError> {
+    connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|e| StoreError::schema(&e))
+}
+
+/// Why a database is not opened, with what to do about it.
+fn refused(refused: Refused) -> StoreError {
+    let what = match refused {
+        Refused::Newer { .. } => "Update glave and start it again",
+        Refused::Older { .. } => {
+            "Remove glave's data folder (~/.glave unless you moved it) and start glave again"
+        }
+    };
+    StoreError::Schema(format!("glave's data was {refused}. {what}"))
+}
+
+/// Where the copy of `file` taken before a migration that reshapes it is kept: beside it, one,
+/// each copy replacing the one before.
+pub(crate) fn copy_of(file: &Path) -> PathBuf {
+    let mut name = file.as_os_str().to_owned();
+    name.push(".backup");
+    PathBuf::from(name)
+}
+
+/// Keeps a copy of the database as it is at [`copy_of`] its `file`, written whole under another
+/// name and then put in place, so the copy kept is always a whole one.
+fn copy(connection: &Connection, file: &Path) -> Result<(), StoreError> {
+    glave_ports::file::replace_with(&copy_of(file), |temporary| {
+        let name = temporary.to_str().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{} is not UTF-8", temporary.display()),
+            )
+        })?;
+        connection
+            .execute("VACUUM INTO ?1", [name])
+            .map(drop)
+            .map_err(std::io::Error::other)
+    })
+    .map_err(|e| {
+        StoreError::Schema(format!(
+            "could not copy glave's data before bringing it up to date: {e}"
+        ))
+    })
 }

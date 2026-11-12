@@ -107,7 +107,7 @@ impl Store {
             .await
             .map_err(|e| StoreError::Connect(unavailable(&e)))?;
         schema::refuse_bypassing(&client).await?;
-        schema::prepare(&mut client).await?;
+        schema::migrate(&mut client, &schema::SCHEMA).await?;
         drop(client);
         let clock = Arc::clone(&keys.clock);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));

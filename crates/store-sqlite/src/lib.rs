@@ -3,7 +3,8 @@
 //! directory sign-in finds people in.
 //!
 //! Every call runs off the async runtime. Appends are transactions that enforce the log's
-//! gap-free numbering; a new file gets the one schema, and a file of another schema is refused.
+//! gap-free numbering; a new file is made at the schema's baseline and every file is brought
+//! forward through its migrations, and a file a newer glave saved is refused.
 //! Event payloads and blobs are sealed on write and opened on read (`specs/storage.md`).
 
 mod blobs;

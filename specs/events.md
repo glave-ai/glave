@@ -6,7 +6,7 @@ The reference implementation is the `glave-event` crate. Where this document and
 
 ## Status
 
-Envelope version 1, and every payload at version 1. Until glave 0.1 ships there is no compatibility (AGENTS.md, "Types"): a payload changes in place, still at version 1, and people remove their data. From 0.1 on, every published payload version is frozen, and "Versioning" below applies.
+Envelope version 1, and every payload at version 1. Stores now keep people's data across updates (`storage.md`, "Migrations"), so every event a store holds must stay readable: a change that an event already stored would not decode under (a member removed, renamed, retyped or made required, or a meaning changed) bumps the payload's `v`, with an upgrade on read ("Versioning" below). Until glave 0.1 ships, adding an optional member, which stored events decode under, still changes a payload in place at its version; from 0.1 on, every published payload version is frozen.
 
 ## The envelope
 

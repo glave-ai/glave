@@ -56,8 +56,8 @@ pub struct Store {
 }
 
 impl Store {
-    /// Opens the database at `path`, making it the first time; one another version of glave
-    /// wrote is refused.
+    /// Opens the database at `path`, making it the first time and bringing one an older glave
+    /// saved up to date; one a newer glave saved is refused.
     /// Content is sealed under keys that `keys.root` wraps; blobs' bytes are kept in `objects`.
     /// The threads view is filled from the log the first time, and again whenever this build
     /// folds threads differently from the one that filled it.
@@ -70,7 +70,7 @@ impl Store {
         let store = tokio::task::spawn_blocking(move || {
             let connection = Connection::open(&path)
                 .map_err(|e| StoreError::Open(format!("{}: {e}", path.display())))?;
-            Self::prepare(connection, keys, objects)
+            Self::prepare(connection, Some(&path), keys, objects)
         })
         .await
         .map_err(|e| StoreError::Open(e.to_string()))??;
@@ -83,11 +83,13 @@ impl Store {
         let connection =
             Connection::open_in_memory().map_err(|e| StoreError::Open(e.to_string()))?;
         let objects = InMemoryObjects::with_clock(Arc::clone(&keys.clock));
-        Self::prepare(connection, keys, Arc::new(objects))
+        Self::prepare(connection, None, keys, Arc::new(objects))
     }
 
+    /// Readies the database `connection` opened, kept at `file` unless it is in memory.
     fn prepare(
         mut connection: Connection,
+        file: Option<&Path>,
         keys: KeySettings,
         objects: Arc<dyn Objects>,
     ) -> Result<Self, StoreError> {
@@ -102,7 +104,7 @@ impl Store {
                  PRAGMA secure_delete = ON;",
             )
             .map_err(|e| StoreError::Open(e.to_string()))?;
-        schema::prepare(&mut connection)?;
+        schema::prepare(&mut connection, file)?;
         let connection = Arc::new(Mutex::new(connection));
         let clock = Arc::clone(&keys.clock);
         let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
