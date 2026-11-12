@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use glave_event::{Body, Event, PrincipalId, TurnResult};
 
 use crate::harness::Thread;
+use crate::inbox::Queued;
 
 /// Keys a thread keeps, most recent last: a key older than these is sent anew, as a server
 /// that remembers keys in memory forgets them.
@@ -95,6 +96,17 @@ impl Thread {
                 Some(ended) => SentBefore::Ended(ended.clone()),
                 None => SentBefore::Open,
             })
+    }
+}
+
+impl Thread {
+    /// Whether `queued` was sent with a key a message of the log already holds: a retry of a
+    /// message recorded before, on this server or another, which is never recorded again.
+    pub(crate) fn sent_already(&self, queued: &Queued) -> bool {
+        queued
+            .key
+            .as_deref()
+            .is_some_and(|key| self.sent_before(queued.caller.person, key).is_some())
     }
 }
 

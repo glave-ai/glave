@@ -139,6 +139,8 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
         let mut waiting = thread.inbox.take();
+        // A retry of a message the log already holds is not read again.
+        waiting.retain(|queued| !thread.sent_already(queued));
         if waiting.is_empty() {
             return Ok(());
         }
@@ -256,6 +258,10 @@ where
             let Some(next) = thread.inbox.next_or_end() else {
                 break;
             };
+            // A retry of a message the log already holds starts no turn of its own.
+            if thread.sent_already(&next) {
+                continue;
+            }
             let prompt = Prompt {
                 text: &next.text,
                 files: &next.files,
