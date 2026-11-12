@@ -64,6 +64,17 @@ impl ProviderError {
     pub fn is_transient(&self) -> bool {
         !matches!(self, Self::AfterOutput(_)) && self.failure().is_transient()
     }
+
+    /// Whether the request may have reached its provider and found no answer that could be
+    /// read: silence past the timeout, a broken connection, an answer not as it should be. Not
+    /// a refusal the provider answered with, nor one made before anything was sent. Such a
+    /// call's work may still have been done, and billed.
+    pub fn unanswered(&self) -> bool {
+        !matches!(
+            self,
+            Self::Http { .. } | Self::Credentials(_) | Self::Unserved { .. } | Self::Unpaid(_)
+        )
+    }
 }
 
 /// Phrases servers use when a request is longer than the model's window.

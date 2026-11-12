@@ -2,7 +2,11 @@
 //! then what it cost counted in the hold's place. A call cancelled once sent is counted at what
 //! it read and what came of its answer's text, at its price, as its provider charges for them;
 //! one that broke off after its answer began, the same; one that failed before any came, at
-//! nothing. What came of a call to a tool is not counted until the answer ends: a gap.
+//! nothing. What came of a call to a tool is not counted until the answer ends: a gap. A media
+//! call is billed whole whether or not its answer is read, so one dropped once sent, or ended
+//! with no answer (silence past the provider's timeout, a broken connection, an answer that
+//! can't be read), is counted at its hold; one its provider refused with an error, at nothing,
+//! as no failed generation is billed.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -25,6 +29,8 @@ pub(crate) struct Paying<'a> {
     price: &'a Price,
     /// The tokens the call reads, as estimated before it was sent.
     input: u64,
+    /// What was held: what a media call that ends unanswered is counted at.
+    worst: Nanos,
     /// What the call is, as its charge names it.
     kind: CostKind,
     /// Bytes of answer that came so far.
@@ -50,6 +56,7 @@ impl<'a> Paying<'a> {
             hold,
             price,
             input,
+            worst,
             kind,
             seen: AtomicU64::new(0),
             settled: false,
@@ -72,10 +79,17 @@ impl<'a> Paying<'a> {
         self.counted(cost).await;
     }
 
-    /// Counts what a call that ended without an answer cost so far, in the hold's place, and
-    /// writes it to the store: nothing when none of its answer came.
-    pub(crate) async fn broke(self) {
-        let cost = if self.seen.load(Ordering::Relaxed) == 0 {
+    /// Counts what a call that ended in `error` without an answer cost so far, in the hold's
+    /// place, and writes it to the store: nothing when none of its answer came; a media call,
+    /// its hold unless its provider answered with a refusal or it was never sent.
+    pub(crate) async fn broke(self, error: &ProviderError) {
+        let cost = if self.kind == CostKind::Media {
+            if error.unanswered() {
+                self.worst
+            } else {
+                Nanos::ZERO
+            }
+        } else if self.seen.load(Ordering::Relaxed) == 0 {
             Nanos::ZERO
         } else {
             self.so_far()
@@ -107,8 +121,13 @@ impl<'a> Paying<'a> {
 impl Drop for Paying<'_> {
     fn drop(&mut self) {
         if !self.settled {
-            let cost = (self.so_far(), self.kind.clone());
-            self.credits.settle(self.payer, self.hold, cost);
+            let cost = if self.kind == CostKind::Media {
+                self.worst
+            } else {
+                self.so_far()
+            };
+            self.credits
+                .settle(self.payer, self.hold, (cost, self.kind.clone()));
         }
     }
 }

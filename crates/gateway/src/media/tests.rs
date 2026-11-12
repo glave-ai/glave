@@ -54,8 +54,8 @@ fn a_call_goes_to_its_tier_and_to_another_only_for_what_its_tier_cannot_do() {
     let clear = chosen(&route(), Purpose::ImageGenerate, &asked(Quality::Low, true)).unwrap();
     assert_eq!(
         models(&clear),
-        ["flare", "sunburst"],
-        "the first that can, in order"
+        ["flare"],
+        "the first tier that can, and no further"
     );
     let none = vec![tiered("banana", Quality::Low, false)];
     let refused = chosen(&none, Purpose::ImageEdit, &asked(Quality::Low, true)).unwrap_err();
