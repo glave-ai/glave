@@ -181,15 +181,14 @@ impl Fetcher {
         let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
             return Err(FetchError::NotUrl(url.to_string()));
         };
+        // The host as the URL writes it, with a port when it names one.
+        let named = url
+            .port()
+            .map_or_else(|| host.to_owned(), |p| format!("{host}:{p}"));
         match self.policy.host(host, port) {
             HostRule::Allowed => {}
-            HostRule::Denied(rule) => {
-                return Err(FetchError::Denied {
-                    host: host.to_owned(),
-                    rule,
-                });
-            }
-            HostRule::NotAllowed => return Err(FetchError::NotAllowed(host.to_owned())),
+            HostRule::Denied(rule) => return Err(FetchError::Denied { host: named, rule }),
+            HostRule::NotAllowed => return Err(FetchError::NotAllowed(named)),
         }
         // The URL parser has already read decimal, octal and hex spellings of addresses.
         let address = match url.host() {

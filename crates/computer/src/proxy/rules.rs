@@ -73,14 +73,8 @@ impl Rules {
         match self.mode {
             NetworkMode::Offline => Step::Refuse(Refusal::Off),
             NetworkMode::Open => Step::Go,
-            NetworkMode::Guarded => {
-                let named = host.to_string();
-                if self.allowed.iter().any(|a| a.admits(&named, port)) {
-                    Step::Go
-                } else {
-                    Step::Ask
-                }
-            }
+            NetworkMode::Guarded if self.allowed.iter().any(|a| a.admits(host, port)) => Step::Go,
+            NetworkMode::Guarded => Step::Ask,
         }
     }
 }

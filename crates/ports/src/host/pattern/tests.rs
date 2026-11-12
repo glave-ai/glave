@@ -6,6 +6,16 @@ fn pattern(text: &str) -> HostPattern {
     HostPattern::parse(text).unwrap()
 }
 
+/// The host a URL names, as `[web]` reads it; a connection's, as the proxy reads it, is the
+/// same for every host either can name.
+fn host(text: &str) -> Host {
+    let read = Host::of_url(text);
+    if let Some(parsed) = Host::parse(text) {
+        assert_eq!(parsed, read, "{text}");
+    }
+    read
+}
+
 #[test]
 fn a_pattern_is_a_host_with_or_without_a_star_before_it_and_a_port_after_it() {
     for (text, written) in [
@@ -42,12 +52,16 @@ fn a_pattern_is_a_host_with_or_without_a_star_before_it_and_a_port_after_it() {
 #[test]
 fn addresses_are_named_exactly_however_written() {
     let local = pattern("127.0.0.1");
-    assert!(local.is_exact() && local.names("127.0.0.1"));
-    assert!(local.names("[::ffff:127.0.0.1]"));
-    assert!(!local.names("localhost") && !local.names("127.0.0.2"));
-    assert!(pattern("[::1]").names("[::1]") && pattern("::1").names("::1"));
+    assert!(local.is_exact() && local.names(&host("127.0.0.1")));
+    assert!(local.names(&host("[::ffff:127.0.0.1]")));
+    assert!(!local.names(&host("localhost")) && !local.names(&host("127.0.0.2")));
+    assert!(pattern("::1").names(&host("[::1]")) && pattern("[::1]").names(&host("::1")));
     assert!(!pattern("*.example.com").is_exact() && !pattern("*").is_exact());
-    assert!(pattern("*").names("[::1]") && pattern("*").names("anything.at.all"));
+    assert!(pattern("*").names(&host("[::1]")) && pattern("*").names(&host("a!b.example")));
+    assert!(
+        pattern("*.example").names(&host("a!b.example")),
+        "no name, still under"
+    );
 }
 
 fn label() -> impl Strategy<Value = String> {
@@ -62,20 +76,20 @@ proptest! {
     #[test]
     fn a_star_names_every_name_under_it_and_never_itself(base in name(), sub in label()) {
         let under = pattern(&format!("*.{base}"));
-        let (one, two) = (format!("{sub}.{base}"), format!("{sub}.{sub}.{base}"));
+        let (one, two) = (host(&format!("{sub}.{base}")), host(&format!("{sub}.{sub}.{base}")));
         // A name that only ends with the same letters is another host.
-        let alike = format!("{sub}{base}");
+        let alike = host(&format!("{sub}{base}"));
         prop_assert!(under.names(&one) && under.names(&two));
-        prop_assert!(!under.names(&base) && !under.names(&alike));
+        prop_assert!(!under.names(&host(&base)) && !under.names(&alike));
     }
 
     #[test]
     fn an_exact_name_names_itself_alone_in_any_case(base in name(), sub in label()) {
         let loud = base.to_ascii_uppercase();
         let exact = pattern(&loud);
-        let dotted = format!("{loud}.");
-        let (under, over) = (format!("{sub}.{base}"), format!("{base}.{sub}"));
-        prop_assert!(exact.names(&base) && exact.names(&dotted));
+        let dotted = host(&format!("{loud}."));
+        let (under, over) = (host(&format!("{sub}.{base}")), host(&format!("{base}.{sub}")));
+        prop_assert!(exact.names(&host(&base)) && exact.names(&dotted));
         prop_assert!(!exact.names(&under) && !exact.names(&over));
     }
 
@@ -85,11 +99,11 @@ proptest! {
         own in 1..=u16::MAX,
         other in 1..=u16::MAX,
     ) {
-        let any = pattern(&base);
-        let ported = pattern(&format!("{base}:{own}"));
-        prop_assert!(any.admits(&base, other) && ported.admits(&base, own));
-        prop_assert_eq!(ported.admits(&base, other), own == other);
-        prop_assert!(ported.names(&base));
+        let (any, ported) = (pattern(&base), pattern(&format!("{base}:{own}")));
+        let named = host(&base);
+        prop_assert!(any.admits(&named, other) && ported.admits(&named, own));
+        prop_assert_eq!(ported.admits(&named, other), own == other);
+        prop_assert!(ported.names(&named));
     }
 
     #[test]

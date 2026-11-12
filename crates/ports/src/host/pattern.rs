@@ -74,30 +74,25 @@ impl HostPattern {
         Ok(Self { hosts, port })
     }
 
-    /// Whether this pattern names `host` (as a URL or a connection names it: in any case, with
-    /// or without a final dot or an address's brackets) at `port`.
-    pub fn admits(&self, host: &str, port: u16) -> bool {
+    /// Whether this pattern names `host` at `port`.
+    pub fn admits(&self, host: &Host, port: u16) -> bool {
         self.port.is_none_or(|own| own == port) && self.names(host)
     }
 
     /// Whether this pattern names `host`, at whatever port.
-    pub fn names(&self, host: &str) -> bool {
-        let bare = host
-            .strip_prefix('[')
-            .and_then(|inside| inside.strip_suffix(']'))
-            .unwrap_or(host);
-        let name = || bare.trim_end_matches('.').to_ascii_lowercase();
-        match &self.hosts {
-            Hosts::Every => true,
+    pub fn names(&self, host: &Host) -> bool {
+        match (&self.hosts, host) {
+            (Hosts::Every, _) => true,
             // An IPv4 address written as IPv6 (`::ffff:a.b.c.d`) is that address.
-            Hosts::Exactly(Host::Address(address)) => bare
-                .parse::<IpAddr>()
-                .is_ok_and(|ip| ip.to_canonical() == address.to_canonical()),
-            Hosts::Exactly(Host::Name(own)) => name() == *own,
-            Hosts::Under(own) => name()
+            (Hosts::Exactly(Host::Address(own)), Host::Address(ip)) => {
+                own.to_canonical() == ip.to_canonical()
+            }
+            (Hosts::Exactly(Host::Name(own)), Host::Name(name)) => own == name,
+            (Hosts::Under(own), Host::Name(name)) => name
                 .strip_suffix(own.as_str())
                 .and_then(|before| before.strip_suffix('.'))
                 .is_some_and(|label| !label.is_empty()),
+            _ => false,
         }
     }
 

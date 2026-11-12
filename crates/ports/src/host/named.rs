@@ -38,6 +38,20 @@ impl Host {
             .all(|label| label.chars().all(|c| c.is_ascii_digit()));
         (labels_ok && !numeric && name.len() <= 253).then_some(Self::Name(name))
     }
+
+    /// The host a URL names, as a pattern compares it: an address, bracketed or not, or else
+    /// the name in lower case with no final dots, whatever else it holds, so a list that
+    /// refuses names it even where it is no name a resolver would take.
+    pub(crate) fn of_url(text: &str) -> Self {
+        let bare = text
+            .strip_prefix('[')
+            .and_then(|inside| inside.strip_suffix(']'))
+            .unwrap_or(text);
+        bare.parse().map_or_else(
+            |_| Self::Name(bare.trim_end_matches('.').to_ascii_lowercase()),
+            Self::Address,
+        )
+    }
 }
 
 impl fmt::Display for Host {

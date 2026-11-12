@@ -223,6 +223,32 @@ mod fetch {
     }
 
     #[test]
+    fn a_private_host_named_with_a_port_is_reached_at_that_port_alone() {
+        block_on!(async {
+            let pages = serve(&[("/", Reply::html("dev server"))]).await;
+            let port = pages.base().rsplit(':').next().unwrap().to_owned();
+            for named in ["localhost", "127.0.0.1"] {
+                let fetcher = fetcher(WebPolicy {
+                    allow: vec![
+                        HostPattern::parse("*").unwrap(),
+                        HostPattern::parse(&format!("{named}:{port}")).unwrap(),
+                    ],
+                    ..WebPolicy::default()
+                });
+                let page = fetcher.fetch(&format!("http://{named}:{port}/")).await;
+                assert!(page.is_ok_and(|page| page.text.contains("dev server")));
+                // Redis's port, say: `*` names it, but the host only may be private at its own.
+                let other = fetcher.fetch(&format!("http://{named}:6379/")).await;
+                assert!(
+                    matches!(&other, Err(FetchError::NotAllowed(host)) if host.ends_with(":6379")),
+                    "{named}: {other:?}"
+                );
+            }
+            assert_eq!(pages.hits(), 2, "nothing went elsewhere");
+        });
+    }
+
+    #[test]
     fn bodies_past_the_size_limit_are_cut_and_slow_servers_time_out() {
         block_on!(async {
             let big = "a".repeat(10_000);

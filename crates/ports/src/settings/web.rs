@@ -1,7 +1,7 @@
 //! What the web tools may reach: whether fetching is on, which hosts (allow and deny patterns,
 //! deny wins), and whether private addresses are reachable.
 
-use crate::host::HostPattern;
+use crate::host::{Host, HostPattern};
 
 /// What the web tools may reach.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,11 +10,13 @@ pub struct WebPolicy {
     pub fetch: bool,
     /// Hosts that may be fetched; every host when empty.
     pub allow: Vec<HostPattern>,
-    /// Hosts that may never be fetched. A deny wins over an allow.
+    /// Hosts that may never be fetched, each at its port or at every port. A deny wins over an
+    /// allow.
     pub deny: Vec<HostPattern>,
     /// Whether any host may lead to a private address (this computer, the local network),
     /// though never to cloud metadata. Off, only a host `allow` names exactly, with no `*`,
-    /// may.
+    /// may, and it is then fetched only at the ports those entries name: a lookup sees no
+    /// port, so `*` beside `localhost:3000` must not let `localhost` be reached at another.
     pub private_addresses: bool,
 }
 
@@ -41,25 +43,36 @@ pub enum HostRule {
 }
 
 impl WebPolicy {
-    /// Whether `host` may be fetched at `port`.
+    /// Whether `host`, as a URL names it, may be fetched at `port`.
     pub fn host(&self, host: &str, port: u16) -> HostRule {
-        if let Some(rule) = self.deny.iter().find(|deny| deny.admits(host, port)) {
+        let host = Host::of_url(host);
+        if let Some(rule) = self.deny.iter().find(|deny| deny.admits(&host, port)) {
             return HostRule::Denied(rule.to_string());
         }
-        if self.allow.is_empty() || self.allow.iter().any(|allow| allow.admits(host, port)) {
+        let mut exact = self.exactly(&host).peekable();
+        let allowed = if exact.peek().is_some() && !self.private_addresses {
+            exact.any(|allow| allow.admits(&host, port))
+        } else {
+            self.allow.is_empty() || self.allow.iter().any(|allow| allow.admits(&host, port))
+        };
+        if allowed {
             HostRule::Allowed
         } else {
             HostRule::NotAllowed
         }
     }
 
-    /// Whether `host` may lead to a private address.
+    /// Whether `host` may lead to a private address, at whatever port [`WebPolicy::host`]
+    /// allows it.
     pub fn private_ok(&self, host: &str) -> bool {
-        self.private_addresses
-            || self
-                .allow
-                .iter()
-                .any(|allow| allow.is_exact() && allow.names(host))
+        self.private_addresses || self.exactly(&Host::of_url(host)).next().is_some()
+    }
+
+    /// The `allow` entries that name `host` exactly.
+    fn exactly<'a>(&'a self, host: &'a Host) -> impl Iterator<Item = &'a HostPattern> {
+        self.allow
+            .iter()
+            .filter(move |allow| allow.is_exact() && allow.names(host))
     }
 }
 
@@ -112,5 +125,24 @@ mod tests {
             ..WebPolicy::default()
         };
         assert!(open.private_ok("localhost"));
+    }
+
+    #[test]
+    fn a_host_that_may_be_private_is_fetched_only_at_the_ports_named_for_it() {
+        for named in ["localhost", "127.0.0.1"] {
+            let policy = WebPolicy {
+                allow: patterns(&["*", &format!("{named}:3000")]),
+                ..WebPolicy::default()
+            };
+            assert!(policy.private_ok(named), "{named}");
+            assert_eq!(policy.host(named, 3000), HostRule::Allowed, "{named}");
+            assert_eq!(policy.host(named, 6379), HostRule::NotAllowed, "{named}");
+            // With private addresses on, an entry gives no host a reach it didn't have.
+            let open = WebPolicy {
+                private_addresses: true,
+                ..policy
+            };
+            assert_eq!(open.host(named, 6379), HostRule::Allowed, "{named}");
+        }
     }
 }

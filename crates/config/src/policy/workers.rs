@@ -78,7 +78,8 @@ pub struct WorkerRules {
     /// The most CPUs a computer may have.
     pub cpu: Option<u32>,
     pub memory_gb: Option<u32>,
-    /// The most network a computer may have.
+    /// The most network a computer may have: `open` or `offline`.
+    #[serde(default, deserialize_with = "held_to")]
     pub network: Option<NetworkMode>,
     /// How far apart from their host they must be.
     pub isolation: Option<IsolationRule>,
@@ -121,6 +122,18 @@ pub(super) fn limits<'a>(rules: impl IntoIterator<Item = &'a WorkerRules>) -> Li
     limits
 }
 
+/// A network people's computers can be held to, refused when read otherwise: no computer can
+/// be kept to the hosts allowed yet, and a rule every wake refused would leave people none.
+fn held_to<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Option<NetworkMode>, D::Error> {
+    match NetworkMode::deserialize(reader)? {
+        NetworkMode::Guarded => Err(serde::de::Error::custom(
+            "network = \"guarded\" is not enforced on people's computers yet: use \"open\" or \
+             \"offline\"",
+        )),
+        mode => Ok(Some(mode)),
+    }
+}
+
 /// The smaller of two limits, either of which may be unset.
 fn smallest<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
     match (a, b) {
@@ -160,5 +173,18 @@ mod tests {
             b.describe(),
             "[workers] cpu = 2, network = \"offline\", isolation = \"vm\""
         );
+    }
+
+    #[test]
+    fn the_least_network_is_the_smallest_mode_and_guarded_is_refused_when_read() {
+        use NetworkMode::{Guarded, Offline, Open};
+        assert!(Offline < Guarded && Guarded < Open);
+        assert_eq!(smallest(Some(Guarded), Some(Open)), Some(Guarded));
+        assert_eq!(smallest(None, Some(Open)), Some(Open));
+        let read = |text: &str| toml::from_str::<WorkerRules>(text);
+        assert_eq!(read("network = \"open\"").unwrap().network, Some(Open));
+        let refused = read("network = \"guarded\"").unwrap_err().to_string();
+        assert!(refused.contains("not enforced"), "{refused}");
+        assert!(read("network = \"on\"").is_err(), "the old words are gone");
     }
 }

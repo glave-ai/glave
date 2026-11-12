@@ -1,6 +1,5 @@
 //! What a worker may be: the limits an organization's policy sets, and the check of an
-//! environment against them before anything starts. What glave cannot enforce yet is refused
-//! by name rather than quietly ignored.
+//! environment against them before anything starts.
 
 use std::ffi::OsStr;
 
@@ -14,10 +13,6 @@ pub(crate) struct Decided {
     pub(crate) cpus: Option<u32>,
     pub(crate) memory_gb: Option<u32>,
     pub(crate) network: bool,
-}
-
-fn unsupported(message: &str) -> ComputerError {
-    ComputerError::Unsupported(message.to_owned())
 }
 
 /// Whether `reference` names its image by digest (`name@sha256:<64 hex digits>`), so the same
@@ -55,7 +50,9 @@ pub(crate) fn decide(environment: &Environment, limits: &Limits) -> Result<Decid
         environment.size.memory_gb,
         limits.memory_gb,
     )?;
-    let network = network(limits)?;
+    // The hosts allowed can't be held to on a worker yet, so `guarded`, which policy refuses
+    // when read, narrows to none rather than refusing the wake.
+    let network = limits.network.is_none_or(|most| most == NetworkMode::Open);
     if let Some(name) = environment
         .env
         .keys()
@@ -85,18 +82,6 @@ fn within(
         )),
         (Some(asked), _) => Ok(Some(asked)),
         (None, most) => Ok(most),
-    }
-}
-
-/// Whether the worker gets a network: all of it unless policy takes it.
-fn network(limits: &Limits) -> Result<bool, ComputerError> {
-    match limits.network {
-        Some(NetworkMode::Offline) => Ok(false),
-        Some(NetworkMode::Guarded) => Err(unsupported(
-            "people's computers can't be kept to the hosts allowed yet: set [workers] network \
-             to \"open\" or \"offline\"",
-        )),
-        Some(NetworkMode::Open) | None => Ok(true),
     }
 }
 
@@ -149,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn the_network_is_policy_s_and_guarded_is_refused_until_it_holds() {
+    fn the_network_is_policy_s_and_guarded_narrows_to_none_until_it_holds() {
         let network = |mode| Limits {
             network: Some(mode),
             ..Limits::default()
@@ -161,10 +146,8 @@ mod tests {
                 .unwrap()
                 .network
         );
-        assert!(matches!(
-            decide(&environment(), &network(NetworkMode::Guarded)),
-            Err(ComputerError::Unsupported(_))
-        ));
+        let guarded = decide(&environment(), &network(NetworkMode::Guarded));
+        assert!(!guarded.unwrap().network, "never a refused wake");
     }
 
     #[test]
