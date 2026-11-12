@@ -2,8 +2,8 @@
 //! real glave and glave's computer image): planned, and a chat's and a project's folder planned
 //! on it, nothing runs; the first commands that need it share one wake and one Pod, the next
 //! finds it awake, and nothing is left once it is gone; held by a turn it stays awake, unasked
-//! it sleeps on its own, and a turn's command wakes it again on the same disk; a second server
-//! on the same store is refused it while the first drives it, its Pod left as it is.
+//! it sleeps on its own, and a turn's command wakes it again on the same disk; a person works
+//! from either of two servers on one store in turn, on one Pod, never replaced while in use.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -457,7 +457,7 @@ fn alone() -> Leasing {
 }
 
 #[test]
-fn a_second_server_never_replaces_a_computer_the_first_drives() {
+fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replaced() {
     let Some(image) = computer_image() else {
         return;
     };
@@ -471,25 +471,53 @@ fn a_second_server_never_replaces_a_computer_the_first_drives() {
         let second = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
         let (org, person, key) = someone();
         let pod = format!("glave-computer-{key}");
+        let (one, two) = (
+            first.home(org, person).unwrap(),
+            second.home(org, person).unwrap(),
+        );
 
-        let home = first.home(org, person).unwrap();
-        let wrote = command(&home, home.home.id, "echo here > here.txt").await;
-        let before = uid(&cluster, &pod).await;
-        // Longer than a lease lasts unrenewed: the first's renewals keep it.
-        tokio::time::sleep(std::time::Duration::from_secs(45)).await;
-        // The second is refused in plain words, and the first's Pod stays as it was.
-        let other = second.home(org, person).unwrap();
-        let refused = command(&other, other.home.id, "true").await;
-        let after = uid(&cluster, &pod).await;
-        let read = command(&home, home.home.id, "cat here.txt").await;
-        drop(second);
-        let (destroyed, left) = gone(first, &cluster, &key).await;
+        // In turn: the first wakes it, the second reaches it as it is, the first goes on.
+        let wrote = command(&one, one.home.id, "echo here > here.txt").await;
+        let woke = uid(&cluster, &pod).await;
+        let added = command(&two, two.home.id, "cat here.txt; echo there >> here.txt").await;
+        let back = command(&one, one.home.id, "cat here.txt").await;
+        // And both at once.
+        let (both_one, both_two) = tokio::join!(
+            command(&one, one.home.id, "true"),
+            command(&two, two.home.id, "true")
+        );
+        // The first goes, and its lease lapses: the second works on, on the same Pod, and a
+        // server that comes after reaches it as it is, never replacing it.
+        drop(one);
+        drop(first);
+        tokio::time::sleep(std::time::Duration::from_secs(35)).await;
+        let on = command(&two, two.home.id, "cat here.txt").await;
+        let third = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
+        let three = third.home(org, person).unwrap();
+        let after = command(&three, three.home.id, "cat here.txt").await;
+        let still = uid(&cluster, &pod).await;
+        drop((two, three, second));
+        let (destroyed, left) = gone(third, &cluster, &key).await;
         wrote.unwrap();
-        let refused = refused.unwrap_err();
-        assert!(refused.contains("another of glave's servers"), "{refused}");
-        assert!(before.is_some());
-        assert_eq!(before, after, "the Pod the first drives is never replaced");
-        assert_eq!(read.unwrap().trim(), "here");
+        assert!(woke.is_some());
+        assert_eq!(
+            added.unwrap().trim(),
+            "here",
+            "the first's file, from the second"
+        );
+        assert_eq!(
+            back.unwrap().trim(),
+            "here\nthere",
+            "the second's line, from the first"
+        );
+        both_one.unwrap();
+        both_two.unwrap();
+        assert_eq!(on.unwrap().trim(), "here\nthere");
+        assert_eq!(after.unwrap().trim(), "here\nthere");
+        assert_eq!(
+            still, woke,
+            "one Pod throughout, never replaced while in use"
+        );
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });

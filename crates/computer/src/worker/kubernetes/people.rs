@@ -44,6 +44,9 @@ const MAX_PEOPLE: usize = 4_096;
 /// The most time between asks of a computer a turn or task holds, so it never counts as idle
 /// while one runs: a quarter of its idle limit, at most a minute.
 const HEARTBEAT: Duration = Duration::from_mins(1);
+/// How often a server waiting for another to wake a person's computer, or to let go of its
+/// lease, looks again.
+const LOOK_AGAIN: Duration = Duration::from_secs(2);
 
 /// Where one person's computer is.
 #[derive(Debug, Clone)]
@@ -109,7 +112,7 @@ pub struct People {
     /// The largest a computer grows: the organization's limits, else Glave Cloud's personal
     /// plan's.
     ceiling: Size,
-    /// Where each computer's lease is kept, so one server at a time drives it.
+    /// Where each computer's lease is kept, so one server at a time makes or removes its Pod.
     leasing: Leasing,
     held: Mutex<BTreeMap<String, Arc<Person>>>,
 }
@@ -125,8 +128,8 @@ impl std::fmt::Debug for People {
 
 impl People {
     /// People's computers on `cluster`, each running `image` (pinned by digest) within
-    /// `limits`, with the network unless they take it, with a disk of `disk_gb`, each driven by
-    /// this server only while it holds the computer's lease (`leasing`).
+    /// `limits`, with the network unless they take it, with a disk of `disk_gb`, each made,
+    /// grown or removed by this server only while it holds the computer's lease (`leasing`).
     pub fn new(
         cluster: Kubernetes,
         image: &str,
@@ -293,8 +296,8 @@ impl People {
     /// The computer of `person` in `org` and the workspace of their home on it, as planned: at
     /// once, asleep or awake. The first call on it that needs the computer wakes it, if it
     /// sleeps, and waits for that wake, which every other call asking meanwhile shares; one that
-    /// ended on its own (idle, or its node went) is woken again. Another server driving it, by
-    /// its lease, refuses the call in plain words.
+    /// ended on its own (idle, or its node went) is woken again. Awake through another server, it
+    /// is reached as it is, through a connection of this server's own.
     pub fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
         Ok(self.person(org, person)?.planned.clone())
     }
@@ -399,10 +402,21 @@ async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> Option<Strin
 /// Lets go of `person`'s computer, awake with `home` until it went away on its own: what is
 /// left of it removed, and counted asleep, so the next call wakes it again.
 async fn slept(person: &Person, home: &WorkspaceInfo) {
-    // Only under its lease: a Pod by its name may be another server's by now.
-    if holds(person) {
+    // Only under its lease: a Pod by its name may be another server's by now. Let go of once
+    // it is removed, so another server wakes it at once rather than once the lease lapses.
+    let held = *person.held.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(held) = held.filter(lease::Held::holds) {
         let _ = person.computers.destroy(home.computer).await;
+        *person.held.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        person.leasing.release(&held).await;
     }
+    let_go(person, home);
+}
+
+/// Counts `person`'s computer asleep here, if it was awake with `home`: the next call reaches
+/// it again, or wakes it.
+fn let_go(person: &Person, home: &WorkspaceInfo) {
+    person.computers.forget(home.computer);
     person.state.send_if_modified(|state| match state {
         State::Awake(awake) if awake.computer == home.computer => {
             *state = State::Asleep;
@@ -432,7 +446,7 @@ fn renew_while_awake(person: &Arc<Person>, held: lease::Held) {
 
 /// Renews `held` every [`lease::RENEW`] while `person`'s computer wakes or is awake, and once a
 /// minute looks that it still runs: what is left of one that slept on its own is removed under
-/// the lease. Once it sleeps, renewing stops and the lease lapses; once it is no longer surely
+/// the lease, and let go of. Once it sleeps, renewing stops; once it is no longer surely
 /// this server's, the wake stops and the computer is left to whoever holds it.
 async fn renewing(person: std::sync::Weak<Person>, leasing: Leasing, mut held: lease::Held) {
     let look = (HEARTBEAT.as_secs() / lease::RENEW.as_secs()).max(1);
@@ -462,7 +476,7 @@ async fn renewing(person: std::sync::Weak<Person>, leasing: Leasing, mut held: l
 }
 
 /// Leaves `person`'s computer to the server that holds its lease now: a wake running here
-/// stops, and it counts asleep here, its Pod touched no more.
+/// stops, and it counts asleep here, its Pod touched no more; the next call reaches it again.
 fn lost(person: &Person) {
     *person.held.lock().unwrap_or_else(PoisonError::into_inner) = None;
     if let Some(task) = person
@@ -473,7 +487,9 @@ fn lost(person: &Person) {
     {
         task.abort();
     }
-    person.state.send_replace(State::Asleep);
+    if let State::Awake(home) = person.state.send_replace(State::Asleep) {
+        person.computers.forget(home.computer);
+    }
 }
 
 /// Whether this server surely holds `person`'s computer's lease, so it may make, change or
@@ -504,9 +520,9 @@ fn start(person: &Arc<Person>, environment: &Environment) {
     }
 }
 
-/// `person`'s computer awake, woken from `environment` if it sleeps, and the workspace of
-/// their home on it: once awake, at once. One that ended on its own is let go of and woken
-/// again.
+/// `person`'s computer awake, reached or woken from `environment` ([`reached`]), and the
+/// workspace of their home on it: once awake, at once. One that ended on its own is let go of
+/// and woken again.
 async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, ComputerError> {
     let was = person.state.borrow().clone();
     if let State::Awake(home) = was
@@ -524,9 +540,6 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
             "your computer could not wake: {why}"
         )));
     }
-    // Only the server holding its lease wakes it, so none replaces a Pod another drives.
-    let held = person.leasing.take(person.org, person.id).await?;
-    renew_while_awake(person, held);
     start(person, environment);
     let mut state = person.state.subscribe();
     let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
@@ -579,12 +592,25 @@ async fn peeked(person: &Person) -> Result<Option<Home>, ComputerError> {
 /// Whether `person`'s computer, awake with `home`, has ended on its own; if so, what is left of
 /// it is removed and it counts asleep, so the next ask wakes it again. One that cannot be
 /// reached but whose Pod still runs, or whose Pod cannot be read (the API server restarting),
-/// is kept: waking would replace it, and its next call tries a new bridge.
+/// is kept: waking would replace it, and its next call tries a new bridge. One whose Pod
+/// another server woke again since is let go of here, the new Pod left as it is, and reached
+/// at the next ask.
 async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
-    match person.computers.status(home.computer).await {
-        Ok(info) if info.state == ComputerState::Running => false,
-        _ if !matches!(person.pod.running().await, Ok(false)) => false,
-        _ => {
+    if matches!(
+        person.computers.status(home.computer).await,
+        Ok(info) if info.state == ComputerState::Running
+    ) {
+        return false;
+    }
+    let reached_in = person.computers.pod_of(home.computer);
+    match person.pod.running_as().await {
+        Err(_) => false,
+        Ok(Some(pod)) if reached_in.as_ref().is_none_or(|reached| *reached == pod) => false,
+        Ok(Some(_)) => {
+            let_go(person, home);
+            true
+        }
+        Ok(None) => {
             // Killed whole for memory with no command running: its next wake is bigger.
             if person.pod.ran_out_of_memory().await
                 && let Some(bigger) = person.pod.sizing.now().grown(Short::Memory, person.ceiling)
@@ -616,21 +642,64 @@ impl Drop for People {
     }
 }
 
-/// Wakes `person`'s computer from `environment` and opens their home on it, then says how it
-/// went to whoever waits.
+/// Reaches `person`'s computer, waking it from `environment` if it sleeps, and opens their home
+/// on it, then says how it went to whoever waits.
 async fn woken(person: Arc<Person>, environment: Environment) {
-    let woke = async {
-        let computer = person.computers.create(&environment).await?;
-        let home = Sources::Folder {
-            path: PERSON_HOME.into(),
-        };
-        let opened = person.computers.open(computer.id, &home).await?;
-        Ok::<_, ComputerError>(State::Awake(opened))
+    let state = match reached(&person, &environment).await {
+        Ok(home) => State::Awake(home),
+        Err(error) => State::Failed(Instant::now(), error.message().to_owned()),
     };
-    let state = woke
-        .await
-        .unwrap_or_else(|error| State::Failed(Instant::now(), error.message().to_owned()));
     person.state.send_replace(state);
+}
+
+/// `person`'s computer reached and their home opened on it. One awake, whichever server woke
+/// it, is reached as it is through a connection of this server's own, its lease taken too when
+/// no server holds it; one that is not, or can't be reached as it is (an older glave in a
+/// rollout, one whose waking server went), is woken from `environment` under its lease, which
+/// replaces what is left of it. While another server holds the lease of one not awake (waking
+/// it, or not yet having found it slept), this waits up to [`lease::LEASE_WAIT`].
+async fn reached(
+    person: &Arc<Person>,
+    environment: &Environment,
+) -> Result<WorkspaceInfo, ComputerError> {
+    let until = Instant::now() + lease::LEASE_WAIT;
+    loop {
+        if matches!(person.pod.running().await, Ok(true)) {
+            match person.computers.attach(environment).await {
+                Ok(computer) => {
+                    if let Ok(Some(held)) = person.leasing.take(person.org, person.id).await {
+                        renew_while_awake(person, held);
+                    }
+                    return home_on(person, computer.id).await;
+                }
+                Err(error) => {
+                    tracing::info!(why = %error, "a person's computer awake was not reached as it is");
+                }
+            }
+        }
+        if let Some(held) = person.leasing.take(person.org, person.id).await? {
+            renew_while_awake(person, held);
+            let computer = person.computers.create(environment).await?;
+            return home_on(person, computer.id).await;
+        }
+        if Instant::now() >= until {
+            return Err(ComputerError::Failed(lease::ELSEWHERE.into()));
+        }
+        tokio::time::sleep(LOOK_AGAIN).await;
+    }
+}
+
+/// The person's home opened on `computer`, just reached; a computer whose home won't open is
+/// let go of here.
+async fn home_on(person: &Person, computer: ComputerId) -> Result<WorkspaceInfo, ComputerError> {
+    let home = Sources::Folder {
+        path: PERSON_HOME.into(),
+    };
+    let opened = person.computers.open(computer, &home).await;
+    if opened.is_err() {
+        person.computers.forget(computer);
+    }
+    opened
 }
 
 #[cfg(test)]

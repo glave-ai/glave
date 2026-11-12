@@ -1,5 +1,6 @@
-//! A person's computer lease on leases in memory: one server at a time, another refused in plain
-//! words; one that cannot renew in time, or finds another holds it, no longer counts it its own.
+//! A person's computer lease on leases in memory: one server at a time, none to another while it
+//! is held or until it is let go; one that cannot renew in time, or finds another holds it, no
+//! longer counts it its own.
 
 use std::sync::Mutex;
 
@@ -76,19 +77,21 @@ fn another_server_is_refused_while_one_holds_a_computer_and_takes_it_once_it_lap
     let clock = Arc::new(ManualClock::at_millis(1_791_000_000_000));
     let (_, first, second, org, person) = two_servers(&clock);
     glave_ports::block_on!(async {
-        let mut held = first.take(org, person).await.unwrap();
+        let mut held = first.take(org, person).await.unwrap().unwrap();
         assert!(first.renew(&mut held).await, "renewed by its holder");
-        let refused = second.take(org, person).await.unwrap_err();
-        assert_eq!(refused.message(), ELSEWHERE);
+        assert!(
+            second.take(org, person).await.unwrap().is_none(),
+            "held by the first"
+        );
         let someone_else = PrincipalId::new(clock.now(), [4; 10]).unwrap();
         assert!(
-            second.take(org, someone_else).await.is_ok(),
+            second.take(org, someone_else).await.unwrap().is_some(),
             "another person's is free"
         );
 
         clock.advance_seconds(31);
         assert!(
-            second.take(org, person).await.is_ok(),
+            second.take(org, person).await.unwrap().is_some(),
             "lapsed, another takes it"
         );
         assert!(
@@ -104,7 +107,7 @@ fn a_server_that_cannot_renew_in_time_stops_counting_the_lease_its_own() {
     let (flaky, first, second, org, person) = two_servers(&clock);
     glave_ports::block_on!(async {
         tokio::time::pause();
-        let mut held = first.take(org, person).await.unwrap();
+        let mut held = first.take(org, person).await.unwrap().unwrap();
         *flaky.down.lock().unwrap() = true;
         tokio::time::advance(RENEW).await;
         assert!(
@@ -122,6 +125,21 @@ fn a_server_that_cannot_renew_in_time_stops_counting_the_lease_its_own() {
         // The store back, and the lease lapsed there too: the second takes it.
         *flaky.down.lock().unwrap() = false;
         clock.advance_seconds(31);
-        assert!(second.take(org, person).await.is_ok());
+        assert!(second.take(org, person).await.unwrap().is_some());
+    });
+}
+
+#[test]
+fn a_lease_let_go_as_the_computer_sleeps_is_another_server_s_at_once() {
+    let clock = Arc::new(ManualClock::at_millis(1_791_000_000_000));
+    let (_, first, second, org, person) = two_servers(&clock);
+    glave_ports::block_on!(async {
+        let held = first.take(org, person).await.unwrap().unwrap();
+        assert!(second.take(org, person).await.unwrap().is_none());
+        first.release(&held).await;
+        assert!(
+            second.take(org, person).await.unwrap().is_some(),
+            "no wait for it to lapse"
+        );
     });
 }

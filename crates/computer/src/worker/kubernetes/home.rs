@@ -217,6 +217,12 @@ impl PersonComputer {
         super::running(&self.cluster.pods(), &self.name()).await
     }
 
+    /// Which Pod is the computer awake, by its uid, as the API server says; `None` while it is
+    /// not awake. One woken again is another Pod, though its name is the same.
+    pub(crate) async fn running_as(&self) -> Result<Option<String>, ComputerError> {
+        super::running_as(&self.cluster.pods(), &self.name()).await
+    }
+
     /// How its Pod's container ended, as the API server says, if it has.
     async fn ended_as(&self) -> Option<String> {
         let pod = self.cluster.pods().get_opt(&self.name()).await.ok()??;

@@ -1,11 +1,11 @@
 //! A person's computer lease (`specs/computers.md`, decision 2): where several servers share one
 //! store, the one that wakes a person's computer holds its lease in the store, renewed while the
-//! computer wakes or is awake, and only that server makes or removes its Pod. Another is refused
-//! in plain words until the lease lapses, 30 seconds after the computer sleeps or its holder
-//! stops, so it never replaces a Pod in use. A
-//! server counts the lease its own only until it lapses after its last renewal, by its own
-//! clock: one that cannot renew in time, or finds another holds it, stops at once and leaves the
-//! computer alone.
+//! computer wakes or is awake, and only that server makes, grows or removes its Pod. Any other
+//! server reaches the computer awake through a connection of its own, and waits for the lease to
+//! wake one that sleeps: until its holder lets go as the computer sleeps, or the lease lapses, 30
+//! seconds after its holder stops, so none replaces a Pod in use. A server counts the lease its
+//! own only until it lapses after its last renewal, by its own clock: one that cannot renew in
+//! time, or finds another holds it, stops at once and leaves the computer alone.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,9 +30,15 @@ const ANSWERS_WITHIN: Duration = Duration::from_secs(5);
 /// takes to come back and clocks that drift.
 const MARGIN: Duration = Duration::from_secs(5);
 
-/// What another server's call on a computer this one does not hold is told.
-pub(super) const ELSEWHERE: &str = "your computer is being used through another of glave's \
-     servers right now, so this one cannot reach it";
+/// What a call is told when another server held a sleeping computer's lease for as long as
+/// [`LEASE_WAIT`]: it neither woke it nor let go.
+pub(super) const ELSEWHERE: &str = "your computer is being woken through another of glave's \
+     servers, which hasn't finished; try again in a minute";
+
+/// How long a server waits for another to wake a person's computer, or to let go of it, before
+/// telling the call so: the holder finds a computer that slept on its own within a minute, and
+/// its lease lapses 30 seconds after it stops.
+pub(super) const LEASE_WAIT: Duration = Duration::from_mins(2);
 
 /// Where people's computer leases are kept, and who this server holds them as.
 #[derive(Clone)]
@@ -66,12 +72,12 @@ impl Held {
 
 impl Leasing {
     /// Takes the lease of the computer of `person` in `org`, or renews it when this server holds
-    /// it already: refused, with [`ELSEWHERE`], while another server holds it.
+    /// it already: none while another server holds it.
     pub(super) async fn take(
         &self,
         org: OrgId,
         person: PrincipalId,
-    ) -> Result<Held, ComputerError> {
+    ) -> Result<Option<Held>, ComputerError> {
         let asked = Instant::now();
         let on = Leased::Computer(person);
         let taken = tokio::time::timeout(
@@ -80,12 +86,17 @@ impl Leasing {
         )
         .await;
         match taken {
-            Ok(Ok(Some(lease))) => Ok(held(lease, asked)),
-            Ok(Ok(None)) => Err(ComputerError::Failed(ELSEWHERE.into())),
+            Ok(Ok(lease)) => Ok(lease.map(|lease| held(lease, asked))),
             Ok(Err(_)) | Err(_) => Err(ComputerError::Failed(
                 "glave could not reach its records to wake your computer; try again".into(),
             )),
         }
+    }
+
+    /// Lets go of `held` once the computer sleeps, so another server may wake it at once
+    /// rather than after the lease lapses; one the store does not let go of in time lapses.
+    pub(super) async fn release(&self, held: &Held) {
+        let _ = tokio::time::timeout(ANSWERS_WITHIN, self.leases.release(&held.lease)).await;
     }
 
     /// Renews `held`: `false` once it is no longer surely this server's, because another took
