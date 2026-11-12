@@ -133,12 +133,44 @@ impl Trash {
                     made => made.map_err(failed)?,
                 }
             }
-            tokio::fs::rename(path, &dest).await.map_err(failed)?;
+            if let Err(error) = tokio::fs::rename(path, &dest).await {
+                // A note on nothing would date what isn't there.
+                if let Some((info, _)) = &info {
+                    let _gone =
+                        tokio::fs::remove_file(info.join(format!("{free}.trashinfo"))).await;
+                }
+                return Err(failed(error));
+            }
             return Ok(dest);
         }
         Err(ComputerError::Failed(format!(
             "no free name in the Trash for {}",
             path.display()
         )))
+    }
+
+    /// Moves `trashed`, something [`Trash::put`] left directly in this Trash, back to `to`,
+    /// which must not exist, and drops its note: whether it came back. Nothing else in the
+    /// Trash, and nothing outside it, is ever moved.
+    pub(crate) async fn take_back(&self, trashed: &Path, to: &Path) -> bool {
+        let (files, info) = match self {
+            Self::Folder(folder) => (folder.clone(), None),
+            Self::Freedesktop { root, .. } => (root.join("files"), Some(root.join("info"))),
+        };
+        let Some(name) = trashed.file_name() else {
+            return false;
+        };
+        if trashed.parent() != Some(files.as_path())
+            || tokio::fs::symlink_metadata(to).await.is_ok()
+            || tokio::fs::rename(trashed, to).await.is_err()
+        {
+            return false;
+        }
+        if let Some(info) = info {
+            let mut note = name.to_os_string();
+            note.push(".trashinfo");
+            let _gone = tokio::fs::remove_file(info.join(note)).await;
+        }
+        true
     }
 }

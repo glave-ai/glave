@@ -582,5 +582,96 @@ fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
         assert_eq!(computers.worktrees(made.id).await.unwrap(), []);
         let freed = free(&full.root).await;
         assert!(matches!(freed, Freed::Kept { .. }), "gone: {freed:?}");
+
+        // Its thread back, its files come back from the Trash with it, and leave no note.
+        let again = computers.open(made.id, &scratch("full")).await.unwrap();
+        assert_eq!(again.root, full.root);
+        let back = Path::new(&again.root).join("notes.md");
+        assert_eq!(std::fs::read(back).unwrap(), b"keep me");
+        assert!(!to.exists(), "out of the Trash");
+        let trash = Trash::for_home(&home, None, "").unwrap();
+        assert_eq!(trash.held(10).await, [], "nothing left in the Trash");
     });
+}
+
+/// Freeing a scratch folder at the moment its thread opens it never loses what it holds: the
+/// open finds it whole, kept or brought back from the Trash.
+#[test]
+fn a_scratch_folder_freed_as_its_thread_opens_it_is_found_whole() {
+    let base = glave_ports::testing::TempDir::new("scratch-race").unwrap();
+    let home = base.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let environment = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), home.clone().into_os_string())]);
+    let computers =
+        LocalComputers::new(base.join("copies"), environment).with_scratch(base.join("scratch"));
+    let sources = Sources::Scratch {
+        name: "chat".to_owned(),
+        owner: Some("org/project/chat".to_owned()),
+    };
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        for _ in 0..20 {
+            let opened = computers.open(made.id, &sources).await.unwrap();
+            computers
+                .write(opened.id, &[file("notes.md", b"keep me")])
+                .await
+                .unwrap();
+            computers.close(opened.id).await.unwrap();
+            let (freed, again) = tokio::join!(
+                computers.free_worktree(made.id, &opened.root),
+                computers.open(made.id, &sources)
+            );
+            let again = again.unwrap();
+            let held = std::fs::read(Path::new(&again.root).join("notes.md"));
+            assert_eq!(held.unwrap(), b"keep me", "after {freed:?}");
+            computers.close(again.id).await.unwrap();
+        }
+    });
+}
+
+/// A scratch folder judged empty that gained a file before it went is moved to the Trash, never
+/// removed with the file.
+#[test]
+fn a_scratch_folder_no_longer_empty_goes_to_the_trash() {
+    let base = glave_ports::testing::TempDir::new("scratch-filled").unwrap();
+    let computers =
+        LocalComputers::new(base.join("copies"), environment()).with_scratch(base.join("scratch"));
+    let sources = Sources::Scratch {
+        name: "chat".to_owned(),
+        owner: None,
+    };
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let opened = computers.open(made.id, &sources).await.unwrap();
+        computers.close(opened.id).await.unwrap();
+        let kept = list_scratch(&base.join("scratch")).await.unwrap();
+        assert_eq!(kept[0].condition, Condition::Scratch { empty: true });
+        std::fs::write(Path::new(&opened.root).join("late.txt"), "mine").unwrap();
+        let trash = Trash::Folder(base.join("Trash"));
+        let (env, processes) = (environment(), Processes::unrecorded());
+        let released = release(&kept[0], &env, &processes, "room", Some(&trash));
+        let Released::Trashed(moved) = released.await.unwrap() else {
+            panic!("trashed")
+        };
+        assert_eq!(
+            std::fs::read_to_string(moved.join("late.txt")).unwrap(),
+            "mine"
+        );
+    });
+}
+
+/// A move into the Trash that fails leaves no note behind it.
+#[test]
+fn a_failed_move_to_the_trash_leaves_no_note() {
+    let base = glave_ports::testing::TempDir::new("trash-note").unwrap();
+    let trash = Trash::Freedesktop {
+        root: base.join("Trash"),
+        deleted_at: "2026-11-11T00:00:00".to_owned(),
+    };
+    let refused = block_on!(trash.put(&base.join("nowhere")));
+    assert!(refused.is_err(), "{refused:?}");
+    let notes = std::fs::read_dir(base.join("Trash/info")).unwrap().count();
+    assert_eq!(notes, 0);
 }

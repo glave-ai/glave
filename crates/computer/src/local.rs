@@ -232,6 +232,11 @@ impl LocalComputers {
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(new_id()?);
+        // A scratch folder is never freed between being made and its workspace registered.
+        let _scratch = match (sources, &self.scratch) {
+            (Sources::Scratch { .. }, Some(base)) => Some(self.worktree_locks.hold(base).await?),
+            _ => None,
+        };
         let (root, git_common) = self.made(&environment, sources).await?;
         let environment = self.command_environment(&environment);
         let variable = |name: &str| {
@@ -301,7 +306,13 @@ impl LocalComputers {
                         "this computer makes no scratch folders; work in a project folder".into(),
                     )
                 })?;
-                (scratch::open(base, name, owner.as_deref()).await?, None)
+                // Where freeing room put what it held, as `freeing` names it.
+                let trash = crate::worktrees::Trash::for_environment(&self.environment, "");
+                let owner = owner.as_deref();
+                (
+                    scratch::open(base, name, owner, trash.as_ref()).await?,
+                    None,
+                )
             }
             Sources::Project { name } => {
                 let base = self.projects.as_ref().ok_or_else(|| {

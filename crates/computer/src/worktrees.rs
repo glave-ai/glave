@@ -172,11 +172,16 @@ pub async fn release(
     trash: Option<&Trash>,
 ) -> Result<Released, ComputerError> {
     match kept.condition {
-        Condition::Safe | Condition::Scratch { empty: true } => {
+        Condition::Safe => {
             remove(kept, environment, processes).await?;
             Ok(Released::Removed)
         }
-        Condition::RepositoryGone | Condition::Scratch { empty: false } => match trash {
+        // Only if it is still empty: a file written since goes to the Trash with it.
+        Condition::Scratch { empty: true } if tokio::fs::remove_dir(&kept.path).await.is_ok() => {
+            let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
+            Ok(Released::Removed)
+        }
+        Condition::RepositoryGone | Condition::Scratch { .. } => match trash {
             Some(trash) => {
                 let moved = trash.put(&kept.path).await?;
                 let _ = tokio::fs::remove_file(record_path(&kept.path)).await;

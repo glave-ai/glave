@@ -1,7 +1,7 @@
 //! What this machine keeps for threads that a server may free for room (`specs/computers.md`,
 //! decision 7): worktrees, removed only when what they hold can be rebuilt, and scratch folders,
 //! removed when empty and otherwise moved to the Trash, so nothing is lost until the Trash is
-//! emptied. Each is looked at again just before it goes, and none goes with a workspace open on
+//! emptied, and brought back from it when the thread opens its folder again first. Each is looked at again just before it goes, and none goes with a workspace open on
 //! it.
 
 use std::path::Path;
@@ -10,6 +10,7 @@ use glave_ports::computer::{ComputerError, ComputerId, Freed, KeptWorktree};
 use glave_ports::{Clock as _, SystemClock};
 
 use super::LocalComputers;
+use super::worktree::{Record, write_record};
 use crate::worktrees::{self, Trash};
 
 /// Why something stays, for the record.
@@ -55,10 +56,12 @@ impl LocalComputers {
         path: &str,
     ) -> Result<Freed, ComputerError> {
         self.registry.environment(computer)?;
-        if let Some(base) = &self.scratch
-            && let Some(kept) = worktrees::scratch_at(base, Path::new(path)).await?
-        {
-            return self.free_scratch(&kept).await;
+        if let Some(base) = &self.scratch {
+            // No scratch folder is made or opened meanwhile: what is looked at is what goes.
+            let _opening = self.worktree_locks.hold(base).await?;
+            if let Some(kept) = worktrees::scratch_at(base, Path::new(path)).await? {
+                return self.free_scratch(&kept).await;
+            }
         }
         let Some(base) = &self.worktrees else {
             return Ok(kept_because("this computer keeps no worktrees"));
@@ -85,7 +88,9 @@ impl LocalComputers {
     }
 
     /// Frees a scratch folder no workspace has open: removed when empty, else moved to the
-    /// person's Trash, which keeps it until room is needed. With no Trash, it stays.
+    /// person's Trash, which keeps it until room is needed, and brought back from there if its
+    /// thread opens it again first. With no Trash, it stays. Called holding the scratch folders'
+    /// lock.
     async fn free_scratch(&self, kept: &worktrees::Kept) -> Result<Freed, ComputerError> {
         if self.registry.open_on(&kept.path)? {
             return Ok(kept_because("a thread has it open"));
@@ -101,9 +106,17 @@ impl LocalComputers {
         );
         Ok(match released.await? {
             worktrees::Released::Removed => Freed::Removed,
-            worktrees::Released::Trashed(to) => Freed::Trashed {
-                to: to.to_string_lossy().into_owned(),
-            },
+            worktrees::Released::Trashed(to) => {
+                let record = Record {
+                    owner: kept.owner.clone(),
+                    trashed: Some(to.clone()),
+                    ..Record::default()
+                };
+                write_record(&kept.path, &record).await?;
+                Freed::Trashed {
+                    to: to.to_string_lossy().into_owned(),
+                }
+            }
             worktrees::Released::NoTrash => {
                 kept_because("it holds files, and there is no Trash to move them to")
             }

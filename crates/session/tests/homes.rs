@@ -494,8 +494,9 @@ async fn a_chat_that_wrote(server: &Tested<Shared>) -> (ThreadId, PathBuf) {
 }
 
 /// A full computer moves the scratch folders of archived chats to the Trash, where the computer
-/// empties them as it needs room, and never an active chat's, however long it has been idle: what
-/// a scratch folder holds is nowhere else.
+/// empties them as it needs room, and never an active chat's, however long it has been idle or
+/// however lately brought back: what a scratch folder holds is nowhere else. A chat brought back
+/// after finds its files again.
 #[test]
 fn a_full_computer_moves_archived_chats_scratch_folders_to_the_trash() {
     let dir = folder("session-homes-scratch");
@@ -507,23 +508,30 @@ fn a_full_computer_moves_archived_chats_scratch_folders_to_the_trash() {
             "Written.",
             "Written too.",
             "Written three.",
+            "Written four.",
             "Again.",
             "Still.",
         ] {
             answers.push(answer(None, Some(wrote.clone())));
             answers.push(answer(Some(said), None));
         }
+        let other = ("write", json!({"path": "m.txt", "content": "y"}));
+        answers.push(answer(None, Some(other)));
+        answers.push(answer(Some("Back."), None));
         let mut setup = Setup::new(answers);
         setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
         let clock = setup.clock.clone();
         let (server, _) = setup.build_on(&dir, Shared::default()).await;
         let (archived, archived_root) = a_chat_that_wrote(&server).await;
+        let (back, back_root) = a_chat_that_wrote(&server).await;
         let (idle, idle_root) = a_chat_that_wrote(&server).await;
         let (writing, _) = a_chat_that_wrote(&server).await;
-        server
-            .request(Request::ThreadArchive { thread: archived })
-            .await
-            .unwrap();
+        for archive in [archived, back] {
+            let archive = Request::ThreadArchive { thread: archive };
+            server.request(archive).await.unwrap();
+        }
+        let unarchive = Request::ThreadUnarchive { thread: back };
+        server.request(unarchive).await.unwrap();
         // Eight days on, the server holds none of them open.
         clock.advance_seconds(8 * 24 * 60 * 60);
         server.tick().await.unwrap();
@@ -545,6 +553,22 @@ fn a_full_computer_moves_archived_chats_scratch_folders_to_the_trash() {
         turn(&server, writing, "and again").await.unwrap();
         assert_eq!(removals(&server, idle).await, []);
         assert!(idle_root.join("n.txt").exists());
+        assert_eq!(removals(&server, back).await, []);
+        assert!(
+            back_root.join("n.txt").exists(),
+            "brought back before it went"
+        );
+
+        // Brought back, the archived chat finds its files where it left them.
+        let unarchive = Request::ThreadUnarchive { thread: archived };
+        server.request(unarchive).await.unwrap();
+        turn(&server, archived, "write another").await.unwrap();
+        assert!(archived_root.join("m.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(archived_root.join("n.txt")).unwrap(),
+            "x"
+        );
+        assert!(!trashed.exists(), "out of the Trash");
     });
 }
 

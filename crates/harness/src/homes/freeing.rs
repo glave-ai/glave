@@ -80,6 +80,11 @@ where
         let kept = computers.worktrees(computer).await?;
         let mut freed = false;
         for candidate in self.candidates(thread, kept).await {
+            // Each free can take a while: a thread brought back or at work since the list was
+            // made keeps what it has.
+            if !self.still_goes(&candidate).await {
+                continue;
+            }
             let path = candidate.kept.path.clone();
             // One that can't be freed now is no reason to leave the rest.
             match computers.free_worktree(computer, &path).await {
@@ -223,6 +228,27 @@ where
         }
         candidates.sort_by_key(|candidate| (candidate.not_archived, candidate.active));
         candidates
+    }
+
+    /// Whether `candidate`'s thread, read again now, still lets it go: no turn open, and still
+    /// archived or still idle, as it was chosen.
+    async fn still_goes(&self, candidate: &Candidate) -> bool {
+        let Ok(Some(view)) = self
+            .log
+            .thread_view(&candidate.scope, candidate.thread)
+            .await
+        else {
+            return false;
+        };
+        if view.turn.is_some() {
+            return false;
+        }
+        if candidate.reason == RemovedReason::Archived {
+            view.standing == Standing::Archived
+        } else {
+            let active = view.updated_at.timestamp();
+            self.clock.now().duration_since(active) >= IDLE
+        }
     }
 
     /// Records on its thread that `candidate` was freed, so it opens it again when it comes back.
