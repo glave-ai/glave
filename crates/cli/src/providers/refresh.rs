@@ -193,20 +193,13 @@ async fn listed(
             let said = format!("{service} could not list its image models and their prices: {why}");
             provider_failed(Failure::Unavailable, said)
         };
-        // Its image models are kept as they were when they can't be read: the listing is due
-        // again, and its chat models stand meanwhile.
-        match images::read(model, before).await {
-            Ok((images, whole)) => {
-                if !whole {
-                    late.get_or_insert(unread("some were not read in time".to_owned()));
-                }
-                images
-            }
-            Err(why) => {
-                late.get_or_insert(unread(why));
-                before.to_vec()
-            }
+        // Those its image tiers name, within two minutes of their own; any not read keeps
+        // what it had, and the listing is due again an hour later, its chat models standing.
+        let (images, whole) = images::read(model, &super::media::models(), before).await;
+        if !whole {
+            late.get_or_insert(unread("some were not read".to_owned()));
         }
+        images
     } else {
         Vec::new()
     };

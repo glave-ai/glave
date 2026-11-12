@@ -57,6 +57,7 @@ pub(super) async fn read(
         known = Some(providers);
         let parse = move |id: &str, listed: &Value| endpoints(id, listed, &named, &zdr);
         let path = |id: &str| format!("models/{id}/endpoints");
+        // A model not found keeps what it had: chat models come and go between the two reads.
         each(&model, &ids, (path, Arc::new(parse)), &mut read).await;
         Ok::<_, String>(())
     };
@@ -91,15 +92,18 @@ pub(super) fn kept(before: &[CatalogModel], id: &str) -> Vec<CatalogEndpoint> {
 pub(super) type Listing<F> = (fn(&str) -> String, Arc<F>);
 
 /// Reads each of `ids`' endpoints into `read`, as each comes, [`AT_ONCE`] at a time: asked at
-/// the path `listing` gives, read by its parser; one that cannot be read is left out.
+/// the path `listing` gives, read by its parser; one that cannot be read is left out. Whether
+/// every one was read.
 pub(super) async fn each<F>(
     model: &Arc<Model>,
     ids: &[String],
     (path, parse): Listing<F>,
     read: &mut BTreeMap<String, Vec<CatalogEndpoint>>,
-) where
+) -> bool
+where
     F: Fn(&str, &Value) -> Vec<CatalogEndpoint> + Send + Sync + 'static,
 {
+    let mut missed = false;
     let mut asked = JoinSet::new();
     let mut waiting = ids.iter();
     loop {
@@ -113,10 +117,13 @@ pub(super) async fn each<F>(
             });
         }
         let Some(done) = asked.join_next().await else {
-            return;
+            return !missed;
         };
-        if let Ok(Some((id, endpoints))) = done {
-            read.insert(id, endpoints);
+        match done {
+            Ok(Some((id, endpoints))) => {
+                read.insert(id, endpoints);
+            }
+            Ok(None) | Err(_) => missed = true,
         }
     }
 }

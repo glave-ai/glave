@@ -78,40 +78,24 @@ fn models() -> Vec<(&'static str, &'static str, u64, Vec<Serving>)> {
 /// cost, in dollars.
 type Painting = (&'static str, f64, f64);
 
-/// The sample image models, as glave's image tiers name them: id, name, and who serves each.
-const IMAGES: [(&str, &str, &[Painting]); 3] = [
+/// The sample image models, as glave's image tiers name them, and who serves each.
+const IMAGES: [(&str, &[Painting]); 3] = [
     (
         "google/gemini-nano-banana-2.1",
-        "Google: Nano Banana 2.1",
         &[("kestrel", 1.5, 30.0), ("harbor", 1.2, 28.0)],
     ),
-    (
-        "openai/gpt-image-2.6-flare",
-        "OpenAI: GPT Image 2.6 Flare",
-        &[("mesa", 8.0, 30.0)],
-    ),
-    (
-        "openai/gpt-image-2.6-sunburst",
-        "OpenAI: GPT Image 2.6 Sunburst",
-        &[("mesa", 8.0, 30.0)],
-    ),
+    ("openai/gpt-image-2.6-flare", &[("mesa", 8.0, 30.0)]),
+    ("openai/gpt-image-2.6-sunburst", &[("mesa", 8.0, 30.0)]),
 ];
 
-/// OpenRouter's image models (`images/models`) or one's endpoints, as its image API lists
-/// them: each provider billing by the token for what goes in and comes out.
+/// An image model's endpoints (`images/models/{id}/endpoints`), as OpenRouter's image API
+/// lists them: each provider billing by the token for what goes in and comes out.
 fn images(path: &str) -> Option<Value> {
-    if path.ends_with("/images/models") {
-        let models = IMAGES.iter().map(|(id, name, _)| {
-            json!({"id": id, "name": name, "created": 1,
-                "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["image"]}})
-        });
-        return Some(json!({"data": models.collect::<Vec<_>>()}));
-    }
     let id = path
         .split_once("/images/models/")?
         .1
         .strip_suffix("/endpoints")?;
-    let (_, _, servings) = IMAGES.iter().find(|(known, ..)| *known == id)?;
+    let (_, servings) = IMAGES.iter().find(|(known, _)| *known == id)?;
     let endpoints = servings.iter().map(|(slug, input, output)| {
         json!({"provider_slug": slug, "pricing": [
             {"billable": "input_text", "unit": "token", "cost_usd": input / 1_000_000.0},
@@ -134,7 +118,7 @@ fn tag(serving: &Serving) -> String {
 
 /// The answer to a request for `path` under OpenRouter's API, as OpenRouter's would be:
 /// the key's account (any key works), its models, providers, endpoints that keep nothing, one
-/// model's endpoints, or its image models and theirs.
+/// model's endpoints, or an image model's.
 pub(super) fn answer(path: &str) -> Option<Value> {
     let path = path.split('?').next().unwrap_or(path);
     if path.contains("/images/") {
@@ -237,8 +221,6 @@ mod tests {
                 .any(|kept| kept["tag"] == "kestrel/fp4")
         );
         assert!(answer("/api/v1/key").is_some(), "any key works");
-        let images = answer("/api/v1/images/models").unwrap();
-        assert_eq!(images["data"].as_array().unwrap().len(), 3);
         let flare = answer("/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints").unwrap();
         assert_eq!(flare["endpoints"][0]["provider_slug"], "mesa");
         assert_eq!(

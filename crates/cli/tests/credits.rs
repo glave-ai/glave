@@ -97,8 +97,6 @@ fn own_openrouter() -> FakeHttp {
     let endpoints = json!({"data": {"id": OWN_MODEL, "endpoints": [
         endpoint("Stateside", "stateside/fp8"), endpoint("Overseas", "overseas/fp8"),
     ]}});
-    let images = json!({"data": [{"id": "openai/gpt-image-2.6-flare", "name": "GPT Image",
-        "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["image"]}}]});
     let image_endpoints = json!({"endpoints": [{"provider_slug": "stateside", "pricing": [
         {"billable": "input_text", "unit": "token", "cost_usd": 5e-06},
         {"billable": "output_image", "unit": "token", "cost_usd": 3e-05},
@@ -118,8 +116,7 @@ fn own_openrouter() -> FakeHttp {
             ("GET", "/api/v1/models/vendor/other/endpoints") => {
                 (200, json!({"data": {"endpoints": []}}).to_string())
             }
-            ("GET", "/api/v1/images/models") => (200, images.to_string()),
-            ("GET", "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints") => {
+            ("GET", path) if path.starts_with("/api/v1/images/models/") => {
                 (200, image_endpoints.to_string())
             }
             ("GET", _) => (404, "{}".to_owned()),

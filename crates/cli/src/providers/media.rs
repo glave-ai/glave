@@ -24,14 +24,19 @@ struct Default {
 }
 
 /// The image tiers, as the owner's design of 2026-11-12 maps them: Google's for trying ideas,
-/// OpenAI's for the rest.
+/// OpenAI's for the rest. Their most output tokens, what a call's hold counts, from the
+/// providers' own pages (2026-11-12): Nano Banana 2.1 makes a 1K image in 1,120 tokens and bills
+/// its thinking too, at a quarter of the image rate, so 4,096 at the image rate leaves room for
+/// about 11,900 of thinking; GPT Image at quality high makes its largest standard size,
+/// 1536x1024, in 6,240 tokens; at max, nothing is documented, and its largest image, 8,294,400
+/// pixels, is 32,906 tokens at high's rate, so twice that.
 const IMAGES: [Default; 3] = [
     Default {
         quality: Quality::Low,
         model: "google/gemini-nano-banana-2.1",
         setting: ("resolution", "1K"),
         transparent: false,
-        output_tokens: 1_700,
+        output_tokens: 4_096,
         edit_aspect_ratio: None,
     },
     Default {
@@ -47,10 +52,15 @@ const IMAGES: [Default; 3] = [
         model: "openai/gpt-image-2.6-sunburst",
         setting: ("quality", "max"),
         transparent: true,
-        output_tokens: 32_768,
+        output_tokens: 65_536,
         edit_aspect_ratio: Some("auto"),
     },
 ];
+
+/// The image models the tiers name, which a router's catalog reads with their prices.
+pub(super) fn models() -> [&'static str; 3] {
+    IMAGES.map(|tier| tier.model)
+}
 
 /// The media tools' routes through the OpenRouter account reached by `handle`: each image
 /// tool's the three tiers, as its `catalog`'s image models describe them where it lists them

@@ -94,6 +94,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (browser::USED, 1),
     (browser::SIGNED_OUT, 1),
     (catalog::REFRESHED, 1),
+    (catalog::REFRESHED, 2),
     (certificate::REGISTERED, 1),
     (certificate::ISSUED, 1),
     (passkey::ADDED, 1),

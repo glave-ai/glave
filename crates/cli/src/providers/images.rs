@@ -1,12 +1,12 @@
-//! A router's image models (`specs/gateway.md`, "Catalogs" and "Media tools"): OpenRouter's
-//! image API lists them apart from its chat models (`images/models`), and each one's providers
-//! with what they bill (`images/models/{id}/endpoints`: a line for each thing billed, text and
-//! images in and images out, by the token or by the image, some by a variant such as a larger
-//! size). When an OpenRouter catalog is listed, glave reads them, a few at a time within one
-//! limit, so a server that keeps credits holds an image call at its price and filters by
-//! country choose among its providers. A provider is priced by the token, at the dearest of
-//! its lines for each; one that bills anything otherwise (by the image or the megapixel) has no
-//! price, and a model has one only when every provider of it does, at the dearest of theirs.
+//! A router's image models (`specs/gateway.md`, "Catalogs" and "Media tools"): the ones glave's
+//! image tiers name, each with its providers and what they bill, from OpenRouter's image API
+//! (`images/models/{id}/endpoints`: a line for each thing billed, text and images in and images
+//! out, by the token or by the image, some by a variant such as a larger size). When an
+//! OpenRouter catalog is listed, glave reads them within one limit, so a server that keeps
+//! credits holds an image call at its price and filters by country choose among its providers.
+//! A provider is priced by the token, at the dearest of its lines for each part; one that bills
+//! anything otherwise (by the image or the megapixel), or can't be read, leaves its model with
+//! no price, and a model has one only when every provider of it does, at the dearest of theirs.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -17,91 +17,57 @@ use serde_json::Value;
 use super::endpoints::{MOST, READING, each, kept, plain};
 use crate::model::Model;
 
-/// The longest model id kept, in bytes, as the harness allows.
-const LONGEST_ID: usize = 255;
-
-/// The longest model name kept, in bytes.
-const LONGEST_NAME: usize = 200;
-
-/// Reads OpenRouter's image models and each one's providers through `model`, within
-/// [`READING`]: the models, and whether every one's providers were read in time. A model whose
-/// providers are not read keeps those `before` held. Refused, saying what, when the models
-/// themselves cannot be listed.
+/// Reads the image models `ids` and each one's providers through `model`, within [`READING`]
+/// of its own: the models, and whether every one was read. A model not read keeps what
+/// `before` held of it, until the listing that is due again an hour later reads it.
 pub(super) async fn read(
     model: Model,
+    ids: &[&str],
     before: &[CatalogModel],
-) -> Result<(Vec<CatalogModel>, bool), String> {
+) -> (Vec<CatalogModel>, bool) {
     let model = Arc::new(model);
-    let mut listed = None;
+    let ids: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
     let mut read = BTreeMap::new();
-    let lists = async {
-        let models = model.get("images/models").await;
-        let models = cards(&models.map_err(|error| format!("its image models: {error}"))?);
-        let ids: Vec<String> = models.iter().map(|card| card.id.clone()).collect();
-        listed = Some(models);
-        let path = |id: &str| format!("images/models/{id}/endpoints");
-        each(&model, &ids, (path, Arc::new(endpoints)), &mut read).await;
-        Ok::<_, String>(())
-    };
-    let whole = if let Ok(read) = tokio::time::timeout(READING, lists).await {
-        read.map(|()| true)?
-    } else {
+    let path = |id: &str| format!("images/models/{id}/endpoints");
+    let reading = each(&model, &ids, (path, Arc::new(endpoints)), &mut read);
+    let in_time = tokio::time::timeout(READING, reading).await.ok();
+    if in_time.is_none() {
         let waited = glave_ports::spoken(READING);
         tracing::warn!("reading OpenRouter's image models took over {waited}: some wait");
-        false
-    };
-    let mut models = listed.ok_or_else(|| {
-        let waited = glave_ports::spoken(READING);
-        format!("its image models were not listed within {waited}")
-    })?;
-    for card in &mut models {
-        card.endpoints = read
-            .remove(&card.id)
-            .unwrap_or_else(|| kept(before, &card.id));
-        card.price = dearest(&card.endpoints);
     }
-    Ok((models, whole))
+    let whole = in_time.unwrap_or(false);
+    let models = ids
+        .iter()
+        .map(|id| match read.remove(id) {
+            Some(endpoints) => {
+                let mut card = CatalogModel::new(id.clone());
+                card.price = dearest(&endpoints);
+                card.endpoints = endpoints;
+                card
+            }
+            None => before
+                .iter()
+                .find(|card| card.id == *id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let mut card = CatalogModel::new(id.clone());
+                    card.endpoints = kept(before, id);
+                    card
+                }),
+        })
+        .collect();
+    (models, whole)
 }
 
-/// The image models of `listed`, an `images/models` answer, in its order: each by its id and
-/// name, and whether it takes images in.
-fn cards(listed: &Value) -> Vec<CatalogModel> {
-    let entries = listed.get("data").and_then(Value::as_array);
-    let mut cards: Vec<CatalogModel> = Vec::new();
-    for entry in entries.into_iter().flatten() {
-        let Some(id) = entry.get("id").and_then(Value::as_str).map(str::trim) else {
-            continue;
-        };
-        let usable = !id.is_empty()
-            && id.len() <= LONGEST_ID
-            && !id.chars().any(|c| c.is_control() || c.is_whitespace());
-        if !usable || cards.len() >= MOST || cards.iter().any(|card| card.id == id) {
-            continue;
-        }
-        let mut card = CatalogModel::new(id);
-        card.name = entry
-            .get("name")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|name| !name.is_empty() && name.len() <= LONGEST_NAME)
-            .map(str::to_owned);
-        let inputs = entry.pointer("/architecture/input_modalities");
-        card.images = inputs
-            .and_then(Value::as_array)
-            .map(|inputs| inputs.iter().any(|input| input == "image"));
-        cards.push(card);
-    }
-    cards
-}
-
-/// The providers of an image model's endpoint list `listed`, each by its slug, with its price.
+/// The providers of an image model's endpoint list `listed`, each by its slug, with its price;
+/// none when any entry can't be read, so a model none of whose providers is known has no price.
 fn endpoints(_: &str, listed: &Value) -> Vec<CatalogEndpoint> {
     let entries = listed.get("endpoints").and_then(Value::as_array);
     let mut endpoints = Vec::new();
     for entry in entries.into_iter().flatten().take(MOST) {
         let slug = entry.get("provider_slug").and_then(Value::as_str);
         let Some(provider) = slug.and_then(plain) else {
-            continue;
+            return Vec::new();
         };
         endpoints.push(CatalogEndpoint {
             provider,
@@ -143,7 +109,7 @@ fn by_the_token(lines: &Value) -> Option<TokenPrice> {
 }
 
 /// The dearest of `endpoints`' prices, each part on its own, as a call's worst case holds it;
-/// none unless every one has a price.
+/// none unless there is one and every one has a price.
 fn dearest(endpoints: &[CatalogEndpoint]) -> Option<TokenPrice> {
     let mut prices = endpoints.iter().map(|endpoint| endpoint.price);
     let first = prices.next()??;
