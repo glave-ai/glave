@@ -38,6 +38,7 @@ Each piece built has one line, which the pull requests that change it edit.
 - **One entry per model** (#289): accounts' models matched across services, tried in route order, described in `model/list` from the catalogs ("One entry per model", below).
 - **Credits** (#1054): each organization's balance and monthly limit, in its credits ledger, where the server's own `[credits]` turns them on; every call that says whose work it is held and charged against them, refused with a sentence when they can't pay; adding credits and seeing them, through the session API (`session.md`, "Credits") and `glave credits`; and `cargo xtask try-org --credits` to try them by hand ("Credits", below). Not yet: payments and the billing service; charges other than model calls; a checkpoint so a long ledger is not read from its start; any screen for them.
 - **Holds in the store** (#1343): a call's hold is an event in the credits ledger, so every server on one store counts it, and of servers racing for the last of a balance one holds it. The ledger now takes two events per call, a hold and a charge, so reading it from its start takes twice as long until a checkpoint comes.
+- **Media tools** (#1260): their names, arguments and results, the quality tiers, the providers behind them, long jobs and how they are paid, decided ("Media tools", below); none built. The image tools are in review: media calls through the gateway (#1382), the tools (#1383), images drawn in the web app (#1380); jobs (`media_job`) come later.
 - **Cloud contracts:** built for Azure OpenAI, Amazon Bedrock and Google Vertex AI, through their OpenAI-compatible APIs and, for Claude on Bedrock and Vertex, Anthropic's Messages API, keyless on Kubernetes ("Cloud contracts", below): `[provider]` in `config.toml`.
 - **Not yet:** credential sources besides the environment and workload identity (the OS keychain, a KMS, a secrets manager), more than one provider at once, typed TOML configuration of routes (the policy's `[models]` allow-list is kept by the CLI when it builds the targets, `policy.md`), space-level budgets, images, and instruction-count gates for the overhead benchmark (`cargo xtask bench --bench overhead` measures wall-clock time today).
 
@@ -121,7 +122,7 @@ Decided by the owner, 2026-10-24 (#703): when a model's default level is known, 
 Decided by the owner, 2026-10-29: on Glave Cloud people use Glave Cloud's own models and key, and pay for what they use. No subscription and no base fee: an organization pays ahead for credits in US dollars, bought by card. Model calls are charged at cost, the provider's own reported cost (OpenRouter's `usage.cost`), with no markup. Each organization has a monthly spending limit, about $10 unless its Owner raises it. Compute, disk and other infrastructure are charged later, at a markup. Card payments and topping up on their own come later, through Polar, from a billing service of their own that calls glave's admin API. Built by #1054:
 
 - **Only where the server's own configuration says so** (`[credits]` in its `config.toml`, never a project's): `monthly_limit_usd`, the limit each organization starts with, is the server's own number, as no price or limit is written into glave. Without the table nothing changes: no balance, no refusal, nothing new to see or click (principle 4).
-- **The credits ledger** is one stream of the organization's own, beside its people ledger (`events.md`): money added, the limit its Owner set, and each charge with its kind of cost (`model` today, so compute and disk join the same balance later) and whose work it was. The balance is everything added less everything charged; the month's spending, everything charged since the month began in UTC. Amounts are exact, in nanos, billionths of a dollar (`events.md`, "Money"); cents are only for showing them.
+- **The credits ledger** is one stream of the organization's own, beside its people ledger (`events.md`): money added, the limit its Owner set, and each charge with its kind of cost (`model` today, `media` for the media tools once built, so compute and disk join the same balance later) and whose work it was. The balance is everything added less everything charged; the month's spending, everything charged since the month began in UTC. Amounts are exact, in nanos, billionths of a dollar (`events.md`, "Money"); cents are only for showing them.
 - **Reserve, then settle, against both.** Before a call is sent, its worst case at its target's price is held against what calls running leave free of the balance and of the month's limit, on every server on the store: the hold is a `credits.held` in the ledger, appended only once everything before it was read, so of servers racing for the last of a balance one holds it and the others read its hold before they hold. It is refused before it is sent, with a sentence a person acts on (`-32020`, `failure: over_budget`): when nothing is left of the balance ("you're out of credits"), even for a call priced at nothing; when the month's limit is spent ("this month's spending limit of $10.00 is reached"); or when its worst case is more than what is free now, saying both, what it needs rounded up to the cent and what is free rounded down. A model whose price no catalog says is refused too, since no one can say what its call could cost, and the next target that has a price serves it instead: on a server that keeps credits, its models are those of its own OpenRouter and of model accounts, whose catalogs price them. `model/list` still offers one with no price: a gap.
 - **What a call costs** is its provider's reported cost in dollars, else its usage at its price, counted in this server's book at once in its hold's place, and written to the store after, its `credits.charged` naming the hold it lets go of for every server, each charge with the id it was first written with, so one whose append landed unseen is read back in its count's place, never written twice; one the store does not take stays counted and is written with the next. A call cancelled once sent is charged what it read and what came of its answer's text, at its price, as its provider charges for them; one that broke off after its answer began, the same; one that failed before any came, nothing. What came of a call to a tool is not counted until the answer ends: a gap. A reported cost above the hold takes the balance below nothing, by that much.
 - **Who pays:** every call a thread makes, its judge, title and compaction summaries included, is charged to the thread's organization for the person it works for; memory's tidy-up for the person whose memory it tidies. A call no organization asked for is charged to no one.
@@ -180,6 +181,66 @@ Decided by the owner, 2026-10-31: a person on Glave Cloud uses the Cloud's own O
 ## Remote tools
 
 - A person's remote tools are their own MCP servers (`mcp.json`) and the connectors they connect (`session.md`, "Connectors"); an organization's are the servers of `mcp.json` its policy's `[mcp] catalog` names (`policy.md`).
+
+## Media tools
+
+Decided by the owner, 2026-11-12 (#1260), from an independent design that read every provider's capabilities first: the agent makes images, speech, sound, music and 3D models through tools of glave's own, the same on every deployment. A tool names what it does, never who does it, so the provider behind it can change without a thread or a model noticing. Threads keep calls by name and glave's own model is trained on them, so once a tool ships its name stays and its shape only grows: an argument added later is optional, and a result gains fields, never loses or renames one.
+
+**Shared rules.**
+
+- **A file argument** is a saved file the thread holds, `blob:<sha256>` (one it made, one the person added, one the gate kept), or a file on the thread's computer by its path, as `read` takes it; a Library asset's id later.
+- **`quality`** is one enum on every tool that has it: `low` (seconds and cents, for trying ideas), `medium` (the default), `high` (slowest and dearest, for finals). The server's settings map each tier to a model and its settings; the interface never names a provider. An argument the tier's model can't honour moves the call to a model that can; when none can, the call is refused in one sentence.
+- **A result is the files made**, each a saved file and its media type, as the model reads it: `{"files": [{"file": "blob:<sha256>", "media_type": "image/png"}]}`, each kept whole as the provider made it, sealed in the thread's blobs; audio entries add `duration_secs`. An image is also a `file` part after it, so a model that reads images sees what it made (the copy made fit to send, `session.md`, "Attachments") and a client draws it. When the Library lands, each entry gains `asset`, the Library item's id, beside `file`; nothing else changes. A failure is an error result in a sentence the model can act on.
+- **Long jobs, later.** Until `media_job` is built, a media call ends with its provider's answer or its timeout (5 minutes of silence), never a limit of glave's own, since the provider bills it either way; one that ends unanswered, or is stopped once sent, is settled at its hold, and the model is told it may still be made and billed and not to make it again unless the person asks. Then: every media call waits up to 4 minutes, then answers `{"job": <n>, "status": "running"}`, numbered per thread as commands in the background are. `media_job` (`job`, `wait_secs` default 240 and at most 600, `cancel`) waits again or cancels one, and with no `job` lists the thread's. Jobs outlive turns, at most 8 run at once in a thread, and none is retried, since each submission is billed; a job's hold lasts until it ends.
+
+**Built now.**
+
+| Tool | Makes | Arguments |
+| --- | --- | --- |
+| `image_generate` | An image from a description, one a call | `prompt` (at most 8,000 characters); optional `aspect_ratio` (`1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9` or `21:9`, default `1:1`: every default model makes these, and another model makes the nearest), `quality`, `references` (files, at most 8, cited in the prompt by their order), `transparent` (default false) |
+| `image_edit` | A changed copy of an image, changed as described | `image` (a file), `prompt`; optional `aspect_ratio` (default the image's own), `quality`, `references` (at most 8), `transparent` |
+
+**Reserved,** their arguments fixed here, not built:
+
+| Tool | Makes | Arguments |
+| --- | --- | --- |
+| `image_upscale` | A larger copy of an image | `image` |
+| `image_remove_background` | A copy of an image with its background transparent | `image` |
+| `speech` | Text read aloud | `text` (at most 5,000 characters, with cues in brackets), `voice` (an opaque id: a built-in voice's name or a Library asset of the person's, never a provider's id), optional `style` (at most 500 characters) |
+| `sound_effect` | A sound from a description | `prompt`, optional `duration_secs` (0.5 to 30), `loop` |
+| `music` | A piece of music | `prompt`, optional `duration_secs` (10 to 300, default 30: a request, the result's `duration_secs` saying what was made), `instrumental`, `lyrics` (with section markers such as `[Verse]`) |
+| `voice_design` | Three previews of a new voice | `name`, `description` (20 to 1,000 characters), optional `sample_text` (100 to 1,000 characters); answers `{"voices": [{"id", "name", "file", "media_type"}]}` |
+| `voices` | No file: the voices `speech` can use | optional `search`, `mine`, `limit` (at most 50); answers `{"voices": [{"id", "name", "description", "languages"}]}` |
+| `mesh_generate` | A 3D model and a preview image | exactly one of `prompt` (at most 800 characters) or `image`; optional `back`, `left`, `right` (images of those sides), `quality`, `texture` (default true), `pbr` (default true), `faces`, `quads` (default false); a GLB, or an FBX with quads, and a PNG preview |
+| `mesh_texture` | A 3D model painted | `mesh`, one of `prompt` or `image`; optional `quality`, `pbr` |
+| `mesh_retopology` | A 3D model's surface rebuilt clean and lighter | `mesh`; optional `faces`, `quads` |
+| `mesh_uv` | A 3D model unwrapped for painting, and its UV layout as a PNG | `mesh` |
+| `mesh_rig` | A 3D model rigged | arguments decided when it is built |
+
+Also reserved: `count` (1 to 4), `resolution` (`1k`, `2k` or `4k`) and `mask` as optional image arguments, and `voice_clone`, deferred until its consent rules are written. Voices are glave Library assets.
+
+**Providers** are the server's choice, per tier, each reached through its own API, as no standard covers media: OpenRouter for images (its image API) and for speech (ElevenLabs v4 Turbo through it), ElevenLabs directly for sound effects and music, Tripo v3 directly for 3D. A tool is offered only where its service can be reached: on a laptop or a person's own server, through the person's own account there (their OpenRouter, a model account, `session.md`); on Glave Cloud, through the server's own. On a server that keeps credits it is offered only where one of its models is priced, since an unpriced one would refuse every call and stay in the thread's tools all the same. A thread's first call lists what is offered then; one offered later waits for a compaction or a new thread (`invariants.md`, 27).
+
+**The image tiers by default** (the server's settings may map them otherwise), all through OpenRouter's image API (`POST /api/v1/images`, `n: 1`, the cost from its `usage.cost`):
+
+| Tier | Model and settings | Holds, at today's prices |
+| --- | --- | --- |
+| `low` | `google/gemini-nano-banana-2.1` at `resolution: "1K"`; at most 14 images in, no transparency, so a transparent call goes to the next tier | about $0.06 |
+| `medium` | `openai/gpt-image-2.6-flare` at `quality: "high"` | about $0.27 |
+| `high` | `openai/gpt-image-2.6-sunburst` at `quality: "max"` | about $1.00 |
+
+On GPT Image, `aspect_ratio` passes through (`auto` for an edit that asks none), `image` then `references` go as `input_references` (at most 16), and `transparent` asks `background: "transparent"` and a PNG. Each image a call sends in adds about 2 cents to its hold, GPT Image billing input images at $8 per million tokens.
+
+**Paid as a model call is** ("Credits"): on a server that keeps credits, held before it is sent and charged after, to the thread's organization for the person whose work it is, each charge's kind `media`. The hold is the worst case of the model that serves it at its listed price: a tier's most output tokens (1,700 for `low`, 8,192 for `medium`, 32,768 for `high` by default) at its price for images out, its prompt, and about 2,000 tokens for each image sent in, at its price for input. It settles at the cost the provider reports, else at that price, and a cost above the hold goes below nothing by that much, as a model call's does. A media call is billed whether or not its answer is read: one dropped once sent, or ended with no answer that can be read, settles at its hold; one its provider refused with an error, at nothing, as no failed generation is billed; an answer with no image, at the cost it reports. A tool whose model no catalog prices is refused before it is sent. Where no credits are kept, the person's own account pays, and nothing is held.
+
+- **Filters and the floor hold** as for a model call ("A person's filters", "A server's floor"): a call through a router keeps to them, its providers read from the router's catalog; one that can't be kept to them is refused, never sent past them.
+- **They ask where `web_fetch` asks,** since they send words and images beyond the computer and spend money.
+- **The five deployments** (`deployments.md`):
+  1. *Laptop:* through the person's own account, when they have connected one that serves a tool; otherwise not offered.
+  2. *Own server:* the same.
+  3. *Glave Cloud, personal:* through the server's own accounts, paid from the person's credits.
+  4. *Glave Cloud, enterprise:* the same, from the organization's credits.
+  5. *Enterprise, self-hosted:* through their own accounts in the server's settings; credits only where their operator turns them on.
 
 ## Targets
 
