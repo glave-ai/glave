@@ -476,24 +476,31 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
             second.home(org, person).unwrap(),
         );
 
-        // The first calls of both at once, on a computer asleep: one wakes it, the other waits
-        // for that wake and reaches it.
+        // The first calls of both at once, on a computer asleep: one wakes it under its lease,
+        // the other waits for that wake and reaches it. Either may be the one: whichever reads
+        // the Pod first.
         let (woke_one, woke_two) = tokio::join!(
             command(&one, one.home.id, "echo here > here.txt"),
             command(&two, two.home.id, "true")
         );
         let woke = uid(&cluster, &pod).await;
+        let woken_by = holders(&[&first, &second], org, person);
         // In turn: each reads what the other wrote.
         let added = command(&two, two.home.id, "cat here.txt; echo there >> here.txt").await;
         let back = command(&one, one.home.id, "cat here.txt").await;
 
-        // The first goes, and its lease lapses: no server holds it, as after a rollout.
-        drop(one);
-        drop(first);
+        // The one that woke it goes, and its lease lapses: no server holds it, as after a
+        // rollout.
+        let ((waker, waker_home), (other, other_home)) = if woken_by == [false, true] {
+            ((second, two), (first, one))
+        } else {
+            ((first, one), (second, two))
+        };
+        drop((waker_home, waker));
         let lapsed = free_within(&leases, org, person, std::time::Duration::from_mins(1)).await;
-        // The second works on; two servers that come after reach it at once, neither replacing
+        // The other works on; two servers that come after reach it at once, neither replacing
         // it, and one of them takes the free lease.
-        let on = command(&two, two.home.id, "cat here.txt").await;
+        let on = command(&other_home, other_home.home.id, "cat here.txt").await;
         let (third, fourth) = (server(), server());
         let (three, four) = (
             third.home(org, person).unwrap(),
@@ -503,13 +510,18 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
             command(&three, three.home.id, "cat here.txt"),
             command(&four, four.home.id, "cat here.txt")
         );
-        let held = !free_within(&leases, org, person, std::time::Duration::ZERO).await;
+        let taken_by = holders(&[&other, &third, &fourth], org, person);
         let still = uid(&cluster, &pod).await;
-        drop((two, three, four, second, fourth));
+        drop((other_home, three, four, other, fourth));
         let (destroyed, left) = gone(third, &cluster, &key).await;
         woke_one.unwrap();
         woke_two.unwrap();
         assert!(woke.is_some());
+        assert_eq!(
+            woken_by.iter().filter(|holds| **holds).count(),
+            1,
+            "one of the two woke it, under its lease: {woken_by:?}"
+        );
         assert_eq!(
             added.unwrap().trim(),
             "here",
@@ -520,11 +532,15 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
             "here\nthere",
             "the second's line, from the first"
         );
-        assert!(lapsed, "the first's lease lapsed");
+        assert!(lapsed, "the lease of the one that woke it lapsed");
         assert_eq!(on.unwrap().trim(), "here\nthere");
         assert_eq!(after_three.unwrap().trim(), "here\nthere");
         assert_eq!(after_four.unwrap().trim(), "here\nthere");
-        assert!(held, "a server using it took the free lease");
+        assert_eq!(
+            taken_by.iter().filter(|holds| **holds).count(),
+            1,
+            "a server using it took the free lease, one alone: {taken_by:?}"
+        );
         assert_eq!(
             still, woke,
             "one Pod throughout, never replaced while in use"
@@ -532,6 +548,16 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
+}
+
+/// Which of `servers` count the lease of `person`'s computer in `org` surely their own now.
+fn holders(servers: &[&People], org: OrgId, person: PrincipalId) -> Vec<bool> {
+    let holds = |server: &&People| {
+        server
+            .person(org, person)
+            .is_ok_and(|person| super::holds(&person))
+    };
+    servers.iter().map(holds).collect()
 }
 
 /// Whether the lease of `person`'s computer is free within `within`, looked at each second: taken
