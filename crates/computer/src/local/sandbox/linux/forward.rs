@@ -1,32 +1,25 @@
-//! glave as the forwarder in a sandboxed command's network namespace of its own: started as
-//! `glave __glave-forward <socket> -- <command>…` inside bubblewrap, it listens on a port of
-//! the namespace's loopback, carries each connection made there to the outbound proxy's Unix
-//! socket outside, and runs the command with the proxy's URL in its variables, ending when it
-//! ends, with its code. The namespace has no other way out, so a program that ignores the
-//! variables finds no network at all.
+//! glave as the forwarder that holds a thread's network namespace (`namespace.rs`): started as
+//! `glave __glave-forward <socket>` inside bubblewrap, in a user and network namespace of its
+//! own, it listens on a port of the namespace's loopback, says its process's number and that
+//! port on a line of its standard output, and carries each connection made there to the
+//! outbound proxy's Unix socket outside, until glave stops it. The thread's commands join the
+//! namespace (`enter.rs`), so the proxy is their one way out, and a program that ignores the
+//! proxy's variables finds no network at all.
 
 use std::ffi::OsString;
-use std::io;
+use std::io::{self, Write as _};
 use std::net::Ipv4Addr;
-use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_process::Program;
 use tokio::net::{TcpListener, UnixStream};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-use crate::local::sandbox::outbound::{NO_PROXY, PROXY, variables};
 use crate::proxy::Limits;
 use crate::proxy::pump::pump;
-
-/// The variable glave hands the proxy's secret to the forwarder in. The command gets it in the
-/// proxy's URL instead.
-pub(crate) const SECRET: &str = "GLAVE_PROXY_SECRET";
 
 /// Connections carried at once; the rest are closed as they come.
 const MOST: usize = 256;
@@ -34,68 +27,49 @@ const MOST: usize = 256;
 /// How long the proxy's socket has to take a connection: it is on this computer.
 const CONNECTS_WITHIN: Duration = Duration::from_secs(10);
 
-/// How long the forwarder waits for its last connections once the command has ended.
-const ENDS_WITHIN: Duration = Duration::from_secs(1);
+const USAGE: &str = "usage: glave __glave-forward <socket>";
 
-const USAGE: &str = "usage: glave __glave-forward <socket> -- <command>…";
-
-/// Runs the forwarder on its arguments (after `__glave-forward`): the command's exit code once
-/// it has ended, a signal that ended it as a shell says it (128 and its number), or what went
-/// wrong before it could run.
-pub(in crate::local::sandbox) fn forward(args: &[OsString]) -> Result<ExitCode, String> {
-    let [socket, separator, program, rest @ ..] = args else {
-        return Err(USAGE.into());
+/// Runs the forwarder on its arguments (after `__glave-forward`) until it is stopped. Returns
+/// only when it could not start, saying why.
+pub(in crate::local::sandbox) fn forward(args: &[OsString]) -> String {
+    let [socket] = args else {
+        return USAGE.into();
     };
-    if separator != "--" {
-        return Err(USAGE.into());
-    }
-    let secret = std::env::var(SECRET).map_err(|_| format!("{SECRET} is not set"))?;
-    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+    let listener = match std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .and_then(|listener| listener.set_nonblocking(true).map(|()| listener))
-        .map_err(|error| format!("could not listen on the namespace's loopback: {error}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|error| error.to_string())?
-        .port();
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    {
+        Ok(listener) => listener,
+        Err(error) => return format!("could not listen on the namespace's loopback: {error}"),
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| format!("could not start: {error}"))?;
-    let inherited: Vec<(OsString, OsString)> = std::env::vars_os()
-        .filter(|(name, _)| {
-            name != SECRET && !PROXY.iter().chain(&NO_PROXY).any(|own| name == *own)
-        })
-        .collect();
-    let mut command = Program::new(program);
-    command
-        .args(rest)
-        .env_clear()
-        .envs(inherited)
-        .envs(variables(&secret, port));
-    let ran = runtime.block_on(async move {
-        let carrying = tokio::spawn(carry(listener, PathBuf::from(socket)));
-        let ran = tokio::task::spawn_blocking(move || command.status_blocking()).await;
-        carrying.abort();
-        ran
-    });
-    // The command has ended; its connections end with it.
-    runtime.shutdown_timeout(ENDS_WITHIN);
-    let status = ran
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())?;
-    let code = status
-        .code()
-        .or_else(|| status.signal().map(|signal| 128 + signal))
-        .and_then(|code| u8::try_from(code).ok())
-        .unwrap_or(u8::MAX);
-    Ok(ExitCode::from(code))
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("could not start: {error}"),
+    };
+    if let Err(error) = say_ready(&listener) {
+        return format!("could not say where it listens: {error}");
+    }
+    runtime.block_on(carry(listener, PathBuf::from(socket)));
+    "could not carry connections from the namespace's loopback".into()
+}
+
+/// Says this process's number and the port `listener` has, as `<pid> <port>` on a line of
+/// standard output: glave joins the namespace through the one, and its commands reach the
+/// proxy at the other.
+fn say_ready(listener: &std::net::TcpListener) -> io::Result<()> {
+    let port = listener.local_addr()?.port();
+    let mut said = io::stdout();
+    writeln!(said, "{} {port}", std::process::id())?;
+    said.flush()
 }
 
 /// Carries each connection `listener` takes to the proxy's `socket`, as a task it owns, until
-/// the forwarder ends.
+/// the forwarder is stopped.
 #[expect(
     clippy::infinite_loop,
-    reason = "the forwarder carries connections until its command ends, which aborts this"
+    reason = "the forwarder carries connections until glave stops it"
 )]
 async fn carry(listener: std::net::TcpListener, socket: PathBuf) {
     let Ok(listener) = TcpListener::from_std(listener) else {

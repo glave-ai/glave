@@ -89,7 +89,8 @@ pub struct LocalComputers {
     /// time when none.
     host: Option<ComputerId>,
     /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback),
-    /// [`crate::forward_helper`] (a sandboxed command's way to the outbound proxy) and
+    /// [`crate::forward_helper`] (a thread's network on Linux, whose one way out is the outbound
+    /// proxy) and
     /// [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
     helper: Option<PathBuf>,
     /// How the outbound proxy sandboxed commands may be kept to is made.

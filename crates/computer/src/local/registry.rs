@@ -55,7 +55,7 @@ impl Opened {
             .lock()
             .ok()
             .and_then(|kept| kept.clone())
-            .filter(|kept| kept.sandbox == *sandbox);
+            .filter(|kept| kept.sandbox == *sandbox && kept.lasts());
         if let Some(kept) = kept {
             return Ok(kept);
         }
@@ -65,7 +65,7 @@ impl Opened {
             sandbox,
             &self.root,
             git_common,
-            (helper, &self.outbound),
+            (helper, &self.outbound, &self.processes),
             &self.hidden,
             glave_on_path,
         );

@@ -82,7 +82,22 @@ pub(super) fn starts(bwrap: &Path) -> Result<Offline, String> {
 
 /// Runs an empty sandbox with `network`'s arguments, and says why it did not run.
 fn empty_sandbox(bwrap: &Path, network: &[&str]) -> Result<(), String> {
-    let output = Program::new(bwrap)
+    empty_sandbox_by(Program::new(bwrap), network)
+}
+
+/// Whether `bwrap` can start a command in a thread's network namespace, which `helper`, glave's
+/// own program, joins with `entering` first (`namespace.rs`): it cannot where a user namespace
+/// made inside another may not make its own. Blocking; says why not.
+pub(super) fn starts_in(bwrap: &Path, helper: &Path, entering: &[OsString]) -> Result<(), String> {
+    let mut program = Program::new(helper);
+    program.args(entering).arg(bwrap);
+    empty_sandbox_by(program, &[])
+}
+
+/// Runs an empty sandbox by `program`, bubblewrap or what becomes it, with `network`'s
+/// arguments, and says why it did not run.
+fn empty_sandbox_by(mut program: Program, network: &[&str]) -> Result<(), String> {
+    let output = program
         .args(ISOLATION)
         .args(network)
         .args(["--ro-bind", "/", "/", "--dev", "/dev"])
@@ -97,26 +112,19 @@ fn empty_sandbox(bwrap: &Path, network: &[&str]) -> Result<(), String> {
     Err(said.trim().chars().take(300).collect())
 }
 
-/// How a command kept to the outbound proxy reaches it: glave's own program, forwarding from
-/// the loopback of the command's network namespace to the proxy's socket.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct Forward<'a> {
-    pub(super) helper: &'a Path,
-    pub(super) socket: &'a Path,
-}
-
-/// The arguments for `sh` that start one command in the sandbox, up to the command itself,
-/// which `forward` starts when it is kept to the proxy.
+/// The arguments for `sh` that start one command in the sandbox, up to the command itself. A
+/// command without the network gets a network namespace of its own with nothing in it; one
+/// with it, the network bubblewrap starts in: this computer's, or for one kept to the outbound
+/// proxy, its thread's, which glave's own program joined first (`namespace.rs`).
 pub(super) fn args(
     bwrap: &Path,
     offline: Offline,
     layout: &Layout,
     mounts: &[Mount],
-    forward: Option<Forward<'_>>,
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["-c".into(), SHELL.into(), bwrap.into()];
     args.extend(ISOLATION.iter().map(OsString::from));
-    if (!layout.network || forward.is_some()) && offline == Offline::OwnNetwork {
+    if !layout.network && offline == Offline::OwnNetwork {
         args.push("--unshare-net".into());
     }
     // The whole machine read-only, with fresh devices and processes of its own: the host's
@@ -145,13 +153,28 @@ pub(super) fn args(
     }
     args.extend(["--chdir".into(), layout.root.clone().into_os_string()]);
     args.extend(["--seccomp", "3", "--"].map(OsString::from));
-    if let Some(forward) = forward {
-        args.extend([
-            forward.helper.into(),
-            FORWARD_HELPER_ARG.into(),
-            forward.socket.into(),
-            "--".into(),
-        ]);
-    }
+    args
+}
+
+/// The arguments for bubblewrap that make a thread's network namespace and hold it with
+/// `helper`, glave's own program, as the forwarder to the outbound proxy's `socket`
+/// (`namespace.rs`): user and network namespaces of its own, its loopback up, killed with its
+/// parent, with no capabilities, and the whole machine read-only. It stays in the process group
+/// glave gave bubblewrap, so stopping the group stops it.
+pub(super) fn holding(helper: &Path, socket: &Path) -> Vec<OsString> {
+    let mut args: Vec<OsString> = [
+        "--unshare-user",
+        "--unshare-net",
+        "--die-with-parent",
+        "--cap-drop",
+        "ALL",
+        "--ro-bind",
+        "/",
+        "/",
+        "--",
+    ]
+    .map(OsString::from)
+    .into();
+    args.extend([helper.into(), FORWARD_HELPER_ARG.into(), socket.into()]);
     args
 }

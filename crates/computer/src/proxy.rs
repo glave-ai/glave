@@ -111,7 +111,7 @@ impl<N: Network> Proxy<N> {
     }
 
     /// Serves the connections a Unix socket's `listener` takes, as [`Proxy::serve`] does: the
-    /// one way out of a Linux sandbox's network namespace of its own.
+    /// one way out of a thread's network namespace in the Linux sandbox.
     #[cfg(target_os = "linux")]
     pub(crate) async fn serve_unix(self, listener: tokio::net::UnixListener) {
         self.serve_on(listener).await;

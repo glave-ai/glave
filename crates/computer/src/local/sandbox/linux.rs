@@ -1,16 +1,18 @@
 //! The sandbox on Linux. bubblewrap first: a mount namespace whose root is read-only, with the
 //! workspace writable but its protected paths laid over read-only, secret locations hidden,
-//! the network namespace unshared when the network is off, or when it goes only through the
-//! outbound proxy, and a seccomp filter. Where bubblewrap cannot start, Landlock and the same
-//! filter, at the `read-only` level only. Neither: a sandboxed command is refused, saying what
-//! to install.
+//! a network namespace of the command's own when the network is off, its thread's when it
+//! goes only through the outbound proxy, and a seccomp filter. Where bubblewrap cannot start,
+//! Landlock and the same filter, at the `read-only` level only. Neither: a sandboxed command
+//! is refused, saying what to install.
 
 mod bubblewrap;
+mod enter;
 mod forward;
 mod helper;
 mod landlocked;
 mod mounts;
 mod names;
+mod namespace;
 mod seccomp;
 mod temp;
 #[cfg(test)]
@@ -23,15 +25,18 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::MAX_SOCKET_PATH;
 use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
+use glave_process::Processes;
 use tokio::net::UnixListener;
 
-use super::outbound::{Outbound, Serving};
+use super::outbound::{Outbound, Serving, variables};
 use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
+use namespace::Namespace;
 use temp::RunFolder;
 
+pub(super) use enter::enter;
 pub(super) use forward::forward;
 pub(super) use helper::helper;
 
@@ -59,13 +64,12 @@ enum How {
     Landlock { helper: PathBuf },
 }
 
-/// Commands kept to the outbound proxy: glave's own program, which forwards in each command's
-/// namespace, and the proxy it reaches.
+/// Commands kept to the outbound proxy: the thread's network namespace, which glave's own
+/// program joins for each command, and the proxy its forwarder reaches.
 #[derive(Debug)]
 struct Proxied {
     helper: PathBuf,
-    /// The proxy's socket, which the forwarder reaches.
-    socket: PathBuf,
+    namespace: Namespace,
     serving: Serving,
 }
 
@@ -84,18 +88,19 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        (helper, outbound): (Option<&Path>, &Outbound),
+        helpers: (Option<&Path>, &Outbound, &Processes),
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         let git_common = resolved(git_common).await;
+        let (helper, ..) = helpers;
         let how = choose(sandbox, root, git_common.as_deref(), helper).await?;
         let folder = tokio::task::spawn_blocking(RunFolder::new)
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
         let proxied = if sandbox.network == SandboxNetwork::Proxied {
-            Some(proxied(&how, helper, outbound, folder.run())?)
+            Some(proxied(&how, helpers, folder.run()).await?)
         } else {
             None
         };
@@ -138,6 +143,14 @@ impl Enforcer {
         Ok((enforcer, temps))
     }
 
+    /// Whether a command can still start in it: the network of a thread whose commands are kept
+    /// to the proxy ends if its forwarder is stopped from outside glave.
+    pub(super) fn lasts(&self) -> bool {
+        self.proxied
+            .as_ref()
+            .is_none_or(|proxied| proxied.namespace.lasts())
+    }
+
     pub(super) async fn launch(&self, temp: RunTemp) -> Result<Launch, ComputerError> {
         let layout = Arc::clone(&self.layout);
         let path = temp.path().to_owned();
@@ -153,21 +166,25 @@ impl Enforcer {
                         .await
                         .map_err(|error| ComputerError::Failed(error.to_string()))?
                         .map_err(|refused| ComputerError::Refused(refused.into()))?;
-                let forward = self.proxied.as_ref().map(|proxied| bubblewrap::Forward {
-                    helper: &proxied.helper,
-                    socket: &proxied.socket,
-                });
-                let args = bubblewrap::args(bwrap, *offline, &self.layout, &mounts, forward);
-                let env = self.proxied.iter().map(|proxied| {
-                    (
-                        OsString::from(forward::SECRET),
-                        proxied.serving.secret().into(),
-                    )
-                });
+                let args = bubblewrap::args(bwrap, *offline, &self.layout, &mounts);
+                let (program, args, env) = match &self.proxied {
+                    // Joined first, so bubblewrap starts the command in the thread's network.
+                    Some(proxied) => {
+                        let mut entering = proxied.namespace.entering();
+                        entering.push(bubblewrap::SH.into());
+                        entering.extend(args);
+                        let env = variables(proxied.serving.secret(), proxied.namespace.port());
+                        let env = env
+                            .into_iter()
+                            .map(|(name, value)| (name.into(), value.into()));
+                        (proxied.helper.clone(), entering, env.collect())
+                    }
+                    None => (PathBuf::from(bubblewrap::SH), args, Vec::new()),
+                };
                 Ok(Launch {
-                    program: PathBuf::from(bubblewrap::SH),
+                    program,
                     args,
-                    env: env.collect(),
+                    env,
                     input: Some(filter.clone()),
                     own_session: false,
                     temp,
@@ -276,36 +293,38 @@ async fn choose(
     )))
 }
 
-/// The proxy for commands kept to it, started in `folder`, where `how` gives each command a
-/// network namespace of its own and glave's own program, `helper`, can forward in it. Anywhere
-/// else they are refused rather than let out directly: Landlock has no namespace, and under
-/// gVisor bubblewrap cannot make one.
-fn proxied(
+/// The proxy for commands kept to it, started in `folder`, and their thread's network
+/// namespace, held through `processes`, where `how` can make one and glave's own program,
+/// `helper`, can forward in it and join it. Anywhere else they are refused rather than let out
+/// directly: Landlock has no namespace, and under gVisor bubblewrap cannot make one.
+async fn proxied(
     how: &How,
-    helper: Option<&Path>,
-    outbound: &Outbound,
+    (helper, outbound, processes): (Option<&Path>, &Outbound, &Processes),
     folder: &Path,
 ) -> Result<Proxied, ComputerError> {
     let why = match (how, helper) {
         (
             How::Bubblewrap {
+                bwrap,
                 offline: bubblewrap::Offline::OwnNetwork,
                 ..
             },
             Some(helper),
         ) => {
             let (listener, socket) = proxy_socket(folder)?;
+            let serving = Serving::start(outbound, listener)?;
+            let namespace = Namespace::start(processes, bwrap, helper, &socket).await?;
             return Ok(Proxied {
                 helper: helper.to_owned(),
-                socket,
-                serving: Serving::start(outbound, listener)?,
+                namespace,
+                serving,
             });
         }
         (How::Bubblewrap { .. }, Some(_)) => {
-            "bubblewrap cannot give a command a network namespace of its own here"
+            "bubblewrap cannot give commands a network namespace of their own here"
         }
         (How::Landlock { .. }, _) => "Landlock cannot give a command a network of its own",
-        (_, None) => "glave's own program is not known, to forward in the command's network",
+        (_, None) => "glave's own program is not known, to forward in the thread's network",
     };
     Err(ComputerError::Unsupported(format!(
         "commands cannot be kept to glave's outbound proxy on this computer: {why}"

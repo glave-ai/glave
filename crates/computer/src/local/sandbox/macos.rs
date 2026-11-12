@@ -7,6 +7,7 @@ use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox, SandboxNetwork};
+use glave_process::Processes;
 
 use super::outbound::{Serving, variables};
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
@@ -21,14 +22,6 @@ pub(super) type Held = ();
 
 pub(super) fn available() -> bool {
     Path::new(SANDBOX_EXEC).is_file()
-}
-
-pub(super) fn helper(_args: &[OsString]) -> String {
-    "the sandbox helper runs only on Linux".into()
-}
-
-pub(super) fn forward(_args: &[OsString]) -> Result<std::process::ExitCode, String> {
-    Err("the forwarder runs only on Linux".into())
 }
 
 /// The profile's arguments, but for each command's own temp folder; and for commands kept to
@@ -55,7 +48,7 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        (_helper, outbound): (Option<&Path>, &Outbound),
+        (_helper, outbound, _processes): (Option<&Path>, &Outbound, &Processes),
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
@@ -117,6 +110,16 @@ impl Enforcer {
             prefix: "glave-sandbox-",
         };
         Ok((Self { args, proxied }, temps))
+    }
+
+    /// Whether a command can still start in it, as on Linux: always, since nothing it holds
+    /// ends before it does.
+    #[expect(
+        clippy::unused_self,
+        reason = "Linux's sandbox holds a thread's network, which can end; macOS's nothing"
+    )]
+    pub(super) fn lasts(&self) -> bool {
+        true
     }
 
     /// A future, as on Linux, which surveys the workspace before each command.
