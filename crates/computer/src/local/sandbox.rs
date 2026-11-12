@@ -8,6 +8,8 @@
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod outbound;
 #[cfg(any(target_os = "macos", test))]
 mod profile;
 mod run_temp;
@@ -33,12 +35,12 @@ use glave_ports::computer::{ComputerError, Sandbox, git_settings};
 
 use run_temp::RunTemp;
 
-#[cfg(target_os = "linux")]
-pub(crate) use linux::Outbound;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) use outbound::Outbound;
 
-/// How a sandbox's outbound proxy is made, where commands are kept to one: on Linux only, for
-/// now (`specs/sandbox.md`, "The outbound proxy").
-#[cfg(not(target_os = "linux"))]
+/// How a sandbox's outbound proxy is made: nothing, where there is no sandbox to keep commands
+/// to one (`specs/sandbox.md`, "The outbound proxy").
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Outbound {}
 
@@ -118,8 +120,9 @@ struct Temps {
 pub(crate) struct Launch {
     pub(crate) program: PathBuf,
     pub(crate) args: Vec<OsString>,
-    /// Variables the wrapper is given besides the command's: on Linux, the proxy's secret for
-    /// the forwarder in the command's namespace.
+    /// Variables the wrapper is given besides the command's, and which win over them: on Linux,
+    /// the proxy's secret for the forwarder in the command's namespace; on macOS, the proxy's
+    /// URL for the command itself.
     pub(crate) env: Vec<(OsString, OsString)>,
     /// Bytes for the wrapper's standard input, which is then closed: Linux's seccomp filter.
     pub(crate) input: Option<Vec<u8>>,
@@ -136,7 +139,8 @@ impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
     /// its repository's shared git folder, writable too. `helper` is a program that runs
     /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start, and forwards to
-    /// the outbound proxy `outbound` makes, for commands kept to it. `hidden` is what
+    /// the outbound proxy `outbound` makes, for commands kept to it (on macOS they reach it
+    /// directly). `hidden` is what
     /// this computer hides beside the home folder's credential stores. `glave_on_path`, glave's
     /// own folder on commands' `PATH`, stays readable, never writable, though it sits in
     /// glave's folder.

@@ -23,6 +23,9 @@ mod nested_repository;
 
 mod own_settings;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod proxied;
+
 pub(super) mod terminals;
 
 fn enforced() -> bool {

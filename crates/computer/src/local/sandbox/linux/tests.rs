@@ -4,8 +4,6 @@
 //! where `GLAVE_REQUIRE_LANDLOCK` is set. ext4 tells cases apart, so only the exact spellings
 //! of protected names are protected, and those are what these check.
 
-mod proxied;
-
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
@@ -554,4 +552,24 @@ fn landlock_refuses_the_project_level_and_says_what_to_install() {
         matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("install bubblewrap")),
         "{refused:?}"
     );
+}
+
+/// Without glave's own program to forward in its namespace, a command kept to the proxy is
+/// refused rather than let out directly.
+#[test]
+fn sandbox_refuses_a_command_kept_to_the_proxy_without_a_forwarder() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("unforwarded");
+    let kept = (SandboxLevel::Project, SandboxNetwork::Proxied);
+    let refused = run_with(&dir, Some(kept), None, "echo out");
+    assert!(
+        matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("glave's own program")),
+        "{refused:?}"
+    );
+    // Control: the network direct runs without it.
+    let direct = (SandboxLevel::Project, SandboxNetwork::Direct);
+    let (_, said) = run_with(&dir, Some(direct), None, "echo out").unwrap();
+    assert!(said.contains("out"), "{said}");
 }

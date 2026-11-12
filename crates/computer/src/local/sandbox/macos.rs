@@ -1,11 +1,14 @@
 //! The sandbox on macOS: `sandbox-exec` with a Seatbelt profile written once per workspace,
-//! and each command's own temp folder given with it.
+//! and each command's own temp folder given with it. Commands kept to the outbound proxy reach
+//! only this computer's loopback, where their sandbox's proxy listens.
 
 use std::ffi::OsString;
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox, SandboxNetwork};
 
+use super::outbound::{Serving, variables};
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
 use super::run_temp::RunTemp;
 use super::{Launch, Outbound, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
@@ -28,10 +31,19 @@ pub(super) fn forward(_args: &[OsString]) -> Result<std::process::ExitCode, Stri
     Err("the forwarder runs only on Linux".into())
 }
 
-/// The profile's arguments, but for each command's own temp folder.
+/// The profile's arguments, but for each command's own temp folder; and for commands kept to
+/// the outbound proxy, the proxy, which stops when this is dropped.
 #[derive(Debug)]
 pub(super) struct Enforcer {
     args: Vec<OsString>,
+    proxied: Option<Proxied>,
+}
+
+/// The proxy commands are kept to, and the port of loopback it listens on.
+#[derive(Debug)]
+struct Proxied {
+    serving: Serving,
+    port: u16,
 }
 
 impl Enforcer {
@@ -43,15 +55,10 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        (_helper, _outbound): (Option<&Path>, &Outbound),
+        (_helper, outbound): (Option<&Path>, &Outbound),
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
-        if sandbox.network == SandboxNetwork::Proxied {
-            return Err(ComputerError::Unsupported(
-                "commands cannot be kept to glave's outbound proxy on macOS yet".into(),
-            ));
-        }
         if !available() {
             return Err(ComputerError::Unsupported(format!(
                 "the sandbox is not available on this computer: {SANDBOX_EXEC} is missing"
@@ -96,7 +103,11 @@ impl Enforcer {
             git_common,
             git_own,
         };
-        let profile = profile(&places, sandbox.level, sandbox.network.is_on());
+        let proxied = match sandbox.network {
+            SandboxNetwork::Proxied => Some(proxied(outbound)?),
+            SandboxNetwork::Off | SandboxNetwork::Direct => None,
+        };
+        let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];
         args.extend(profile.params.iter().map(|(name, path)| param(name, path)));
         let temps = Temps {
@@ -105,7 +116,7 @@ impl Enforcer {
             parent: system_temp,
             prefix: "glave-sandbox-",
         };
-        Ok((Self { args }, temps))
+        Ok((Self { args, proxied }, temps))
     }
 
     /// A future, as on Linux, which surveys the workspace before each command.
@@ -119,13 +130,36 @@ impl Enforcer {
         std::future::ready(Ok(Launch {
             program: PathBuf::from(SANDBOX_EXEC),
             args,
-            env: Vec::new(),
+            env: self
+                .proxied
+                .iter()
+                .flat_map(|proxied| variables(proxied.serving.secret(), proxied.port))
+                .map(|(name, value)| (name.into(), value.into()))
+                .collect(),
             input: None,
             own_session: false,
             temp,
             _held: (),
         }))
     }
+}
+
+/// `outbound`'s proxy, started on a port of this computer's loopback: every sandboxed command
+/// reaches every port there, so only its secret keeps another thread's commands out.
+fn proxied(outbound: &Outbound) -> Result<Proxied, ComputerError> {
+    let failed = |error: std::io::Error| {
+        ComputerError::Failed(format!(
+            "could not start the outbound proxy on this computer's loopback: {error}"
+        ))
+    };
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(failed)?;
+    let port = listener.local_addr().map_err(failed)?.port();
+    listener.set_nonblocking(true).map_err(failed)?;
+    let listener = tokio::net::TcpListener::from_std(listener).map_err(failed)?;
+    Ok(Proxied {
+        serving: Serving::start(outbound, listener)?,
+        port,
+    })
 }
 
 /// `-D<name>=<path>`: one of a profile's parameters.
