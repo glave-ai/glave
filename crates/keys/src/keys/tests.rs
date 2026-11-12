@@ -75,10 +75,6 @@ fn search_terms_are_keyed_per_project_and_stable() {
         .unwrap()
         .unwrap();
     assert_eq!(here.len(), 2);
-    assert!(
-        here.iter()
-            .all(|term| term.len() == 32 && !term.contains("deploy"))
-    );
     assert_ne!(here.first(), here.get(1));
     assert_eq!(
         block_on!(keys.search_terms(&scope(2), &words))
@@ -90,4 +86,58 @@ fn search_terms_are_keyed_per_project_and_stable() {
         .unwrap()
         .unwrap();
     assert_ne!(there, here, "another project's words never match");
+}
+
+#[test]
+fn sealed_terms_open_only_in_their_own_row() {
+    let keys = keys(16);
+    let scope = Scope::glaves_own(
+        glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
+    );
+    let event = conformance::event(1, 1, "2026-10").unwrap();
+    let words = vec!["deploy".to_owned(), "render".to_owned()];
+    assert_eq!(
+        block_on!(keys.seal_terms(&scope, &event, &words)).unwrap(),
+        None,
+        "a project with no key indexes nothing"
+    );
+    block_on!(keys.seal_event(&scope, &event)).unwrap();
+    let sealed = block_on!(keys.seal_terms(&scope, &event, &words))
+        .unwrap()
+        .unwrap();
+    let hashed = block_on!(keys.search_terms(&scope, &words))
+        .unwrap()
+        .unwrap();
+    let found = |seq| glave_ports::search::Found {
+        thread: event.thread,
+        seq: Seq::new(seq).unwrap(),
+    };
+    let open =
+        |seq| block_on!(keys.open_row(&scope, (7, found(seq)), &sealed.key_id, &sealed.bytes));
+    let opened = open(1).unwrap();
+    assert_eq!(
+        (opened.pos, opened.found, &opened.terms),
+        (7, found(1), &hashed)
+    );
+    assert_eq!(opened.sealed, sealed.bytes.len() as u64);
+    let moved = open(2);
+    assert!(
+        moved.is_err(),
+        "a row moved to another event does not open: {moved:?}"
+    );
+    assert!(
+        !sealed
+            .bytes
+            .windows(8)
+            .any(|w| hashed.iter().any(|t| w == t.to_be_bytes())),
+        "no hashed word shows in the sealed row"
+    );
+    let id: KeyId = sealed.key_id.parse().unwrap();
+    block_on!(keys.destroy_data_key(&scope, id)).unwrap();
+    assert_eq!(
+        open(1).unwrap().terms,
+        [0u64; 0],
+        "an erased month's words are gone"
+    );
 }

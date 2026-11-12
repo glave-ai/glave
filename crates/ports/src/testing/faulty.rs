@@ -203,9 +203,10 @@ impl EventLog for FaultyLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
-        self.log.search(scope, query, limit)
+        self.log.search(scope, query, except, limit)
     }
 
     fn locate(

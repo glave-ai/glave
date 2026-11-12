@@ -13,6 +13,7 @@ mod leases;
 mod log;
 mod projects;
 mod schema;
+mod search;
 mod store;
 mod views;
 

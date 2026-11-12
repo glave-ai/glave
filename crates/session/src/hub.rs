@@ -326,9 +326,10 @@ impl<L: EventLog> EventLog for Observed<L> {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<glave_ports::search::Found>, LogError>> + Send {
-        self.inner.search(scope, query, limit)
+        self.inner.search(scope, query, except, limit)
     }
 
     fn latest_of(

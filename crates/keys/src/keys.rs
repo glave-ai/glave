@@ -5,6 +5,7 @@ mod blob;
 mod cache;
 mod erase;
 mod hierarchy;
+mod terms;
 
 use std::fmt;
 use std::sync::Arc;
@@ -147,28 +148,6 @@ impl<S: KeyStorage> Keys<S> {
             return Ok(None);
         };
         Ok(Some(project.name_blob(sha256)?))
-    }
-
-    /// The words `terms` as `scope`'s full-text index holds them (`glave_ports::search`):
-    /// each a keyed hash under the project key's naming half, so the index reveals no word, the
-    /// same query finds the same words until the project is erased, and no other project's words
-    /// match. `None` when the project has no key yet (or it was erased): nothing can be found.
-    pub async fn search_terms(
-        &self,
-        scope: &Scope,
-        terms: &[String],
-    ) -> Result<Option<Vec<String>>, KeyError> {
-        if terms.is_empty() {
-            return Ok(Some(Vec::new()));
-        }
-        let Some(project) = self.live_project_key(scope).await? else {
-            return Ok(None);
-        };
-        terms
-            .iter()
-            .map(|term| project.name_term(term))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Some)
     }
 }
 

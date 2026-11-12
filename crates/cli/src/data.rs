@@ -250,11 +250,12 @@ impl EventLog for DataLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> Result<Vec<Found>, LogError> {
         match self {
-            Self::Sqlite(log) => log.search(scope, query, limit).await,
-            Self::Postgres(log) => log.search(scope, query, limit).await,
+            Self::Sqlite(log) => log.search(scope, query, except, limit).await,
+            Self::Postgres(log) => log.search(scope, query, except, limit).await,
         }
     }
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, Sealed, erased_payload};
-use glave_ports::search::{Found, deletes_thread, indexed, query_terms};
+use glave_ports::search::{Found, SearchCache, deletes_thread, indexed};
 use glave_ports::{
     EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
@@ -19,13 +19,22 @@ use crate::store::{Shared, SqliteKeyring, StoreError, run};
 /// The event log in the local database.
 #[derive(Clone)]
 pub struct SqliteLog {
-    connection: Shared,
-    keys: Arc<SqliteKeyring>,
+    pub(crate) connection: Shared,
+    pub(crate) keys: Arc<SqliteKeyring>,
+    index: Arc<SearchCache>,
 }
 
 impl SqliteLog {
-    pub(crate) fn new(connection: Shared, keys: Arc<SqliteKeyring>) -> Self {
-        Self { connection, keys }
+    pub(crate) fn new(
+        connection: Shared,
+        keys: Arc<SqliteKeyring>,
+        index: Arc<SearchCache>,
+    ) -> Self {
+        Self {
+            connection,
+            keys,
+            index,
+        }
     }
 
     /// The events `query` finds in `scope`, given its organization and project as the
@@ -78,7 +87,7 @@ impl EventLog for SqliteLog {
                     return Ok(());
                 }
                 // Sealing may read keys from the database, so it happens before the transaction,
-                // and so does hashing the words the search index keeps.
+                // and so does sealing the words the search index keeps.
                 let mut sealed = Vec::with_capacity(events.len());
                 let mut words = Vec::with_capacity(events.len());
                 for event in &events {
@@ -88,7 +97,12 @@ impl EventLog for SqliteLog {
                             .await
                             .map_err(LogError::sealing)?,
                     );
-                    words.push(index_words(&this.keys, &scope, event).await?);
+                    words.push(
+                        this.keys
+                            .seal_terms(&scope, event, &indexed(event))
+                            .await
+                            .map_err(LogError::sealing)?,
+                    );
                 }
                 let outcome = run(&this.connection, move |connection| {
                     Ok(append_now(connection, &scope, &events, &sealed, &words))
@@ -160,59 +174,14 @@ impl EventLog for SqliteLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
-        let scope = *scope;
-        let words = query_terms(query);
-        let this = self.clone();
+        let (scope, query, log) = (*scope, query.to_owned(), self.clone());
         async move {
-            if words.is_empty() || limit == 0 {
-                return Ok(Vec::new());
-            }
-            let Some(hashed) = this
-                .keys
-                .search_terms(&scope, &words)
-                .await
-                .map_err(LogError::sealing)?
-            else {
-                return Ok(Vec::new());
-            };
-            // Hashes are hex, so quoting them is all FTS5's query syntax needs.
-            let expression = hashed
-                .iter()
-                .map(|word| format!("\"{word}\""))
-                .collect::<Vec<_>>()
-                .join(" OR ");
-            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let rows = run(&this.connection, move |connection| {
-                let mut statement = connection.prepare_cached(
-                    "SELECT thread, seq FROM event_search
-                     WHERE event_search MATCH ?1 AND org = ?2 AND project = ?3
-                     ORDER BY bm25(event_search), rowid DESC LIMIT ?4",
-                )?;
-                let rows = statement.query_map(
-                    params![
-                        expression,
-                        scope.org().to_string(),
-                        scope.project().to_string(),
-                        limit
-                    ],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
-                )?;
-                rows.collect::<rusqlite::Result<Vec<(String, i64)>>>()
-            })
-            .await
-            .map_err(|e| LogError::Storage(e.to_string()))?;
-            rows.into_iter()
-                .map(|(thread, seq)| {
-                    Ok(Found {
-                        thread: ThreadId::try_from(parse_uuid(&thread)?)
-                            .map_err(LogError::corrupt)?,
-                        seq: Seq::new(u64::try_from(seq).map_err(LogError::corrupt)?)
-                            .map_err(LogError::corrupt)?,
-                    })
-                })
-                .collect()
+            let cache = Arc::clone(&log.index);
+            let asked = (&scope, query.as_str(), except);
+            log.keys.search(&cache, &log, asked, limit).await
         }
     }
 
@@ -275,29 +244,12 @@ impl EventLog for SqliteLog {
     }
 }
 
-/// The words `event` is found by, hashed for `scope`'s index; `None` when it is not searched.
-async fn index_words(
-    keys: &SqliteKeyring,
-    scope: &Scope,
-    event: &RawEvent,
-) -> Result<Option<String>, LogError> {
-    let words = indexed(event);
-    if words.is_empty() {
-        return Ok(None);
-    }
-    let hashed = keys
-        .search_terms(scope, &words)
-        .await
-        .map_err(LogError::sealing)?;
-    Ok(hashed.map(|hashed| hashed.join(" ")))
-}
-
 fn append_now(
     connection: &mut Connection,
     scope: &Scope,
     events: &[RawEvent],
     sealed: &[Sealed],
-    words: &[Option<String>],
+    words: &[Option<Sealed>],
 ) -> Result<(), AppendFailure> {
     let Some(first) = events.first() else {
         return Ok(());
@@ -347,12 +299,21 @@ fn append_now(
             ])?;
         }
         let mut index = transaction.prepare_cached(
-            "INSERT INTO event_search (terms, org, project, thread, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO event_search (org, project, thread, seq, key_id, terms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )?;
         for (event, words) in events.iter().zip(words) {
             if let Some(words) = words {
                 let seq = i64::try_from(event.seq.get()).unwrap_or(i64::MAX);
-                index.execute(params![words, org, project, event.thread.to_string(), seq])?;
+                let thread = event.thread.to_string();
+                index.execute(params![
+                    org,
+                    project,
+                    thread,
+                    seq,
+                    words.key_id,
+                    words.bytes
+                ])?;
             }
         }
         if deletes_thread(events) {
@@ -434,7 +395,7 @@ impl Row {
     }
 }
 
-fn parse_uuid(text: &str) -> Result<Uuid, LogError> {
+pub(crate) fn parse_uuid(text: &str) -> Result<Uuid, LogError> {
     Uuid::parse_str(text).map_err(LogError::corrupt)
 }
 
