@@ -12,6 +12,20 @@ use crate::payload::principal::Principal;
 pub(crate) const REQUESTED: &str = "approval.requested";
 pub(crate) const DECIDED: &str = "approval.decided";
 
+crate::worded! {
+    /// What an approval asks the person, by what would run: a command, an edit, a write, a
+    /// read, a page, a service's tool by what it does and the service, or any other tool.
+    Ask {
+        Command = "ask-command" "Run this command?",
+        Edit = "ask-edit" "Edit this file?",
+        Write = "ask-write" "Write this file?",
+        Read = "ask-read" "Read this file?",
+        Page = "ask-page" "Open this page?",
+        With { act, service } = "ask-with" "{ $act } with { $service }?",
+        Allow = "ask-allow" "Allow this?",
+    }
+}
+
 /// A tool call waits for the person to allow it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,6 +38,10 @@ pub struct ApprovalRequested {
     /// command?". Empty in requests recorded before it was.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub ask: String,
+    /// What `ask` was written from, typed, so the session writes it again in the reader's
+    /// language. Absent in requests recorded before it was, whose `ask` is sent as recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asking: Option<Ask>,
     /// What would run, as the object of `ask`: the summary without the tool's name it starts
     /// with, such as the command `rm -rf ~/notes`. Empty in requests recorded before it was.
     #[serde(default, skip_serializing_if = "String::is_empty")]

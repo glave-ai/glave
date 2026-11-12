@@ -36,6 +36,8 @@ pub(crate) struct Wanted {
     signed_in: bool,
     /// For a connector's account the person named, its name: it signs in as that account.
     account: Option<String>,
+    /// For a connector, its vendor's name for it, which approvals name the service by.
+    known_as: Option<String>,
     from: From,
 }
 
@@ -124,17 +126,19 @@ pub(crate) async fn wanted(
             .with_context(|| format!("in {}", path.display()))?
     };
     let chose = |id: &str| chosen.is_none_or(|chosen| chosen.value.iter().any(|it| it == id));
-    let connectors = connectors.into_iter().filter(|(_, kept)| chose(&kept.id));
+    let connectors = connectors
+        .into_iter()
+        .filter(|(_, kept, _)| chose(&kept.id));
     let configs = configs
         .into_iter()
-        .map(|(name, config)| (name, config, None, From::Settings));
-    let connectors = connectors.map(|(config, kept)| {
+        .map(|(name, config)| (name, config, None, None, From::Settings));
+    let connectors = connectors.map(|(config, kept, known_as)| {
         let from = From::Connector { only: kept.only };
-        (kept.id, config, kept.account, from)
+        (kept.id, config, kept.account, Some(known_as), from)
     });
     Ok(configs
         .chain(connectors)
-        .map(|(name, config, account, from)| {
+        .map(|(name, config, account, known_as, from)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
             let signed_in = match &config {
                 ServerConfig::Http { url, .. } => glave_mcp::address(url)
@@ -147,6 +151,7 @@ pub(crate) async fn wanted(
                 untrusted,
                 signed_in,
                 account,
+                known_as,
                 from,
             }
         })
@@ -154,13 +159,14 @@ pub(crate) async fn wanted(
 }
 
 /// The accounts of the connectors of glave's catalog `signed` holds that `constraints` offer,
-/// each as a remote server, with where it is used, in the order of their ids, then the order
-/// connected: none the person's `own` servers already name, or are at the address of.
+/// each as a remote server, with where it is used and its vendor's name for it, in the order of
+/// their ids, then the order connected: none the person's `own` servers already name, or are
+/// at the address of.
 fn connectors(
     own: &BTreeMap<String, ServerConfig>,
     signed: &Signed,
     constraints: &Constraints,
-) -> Vec<(ServerConfig, KeptConnector)> {
+) -> Vec<(ServerConfig, KeptConnector, String)> {
     let Ok(catalog) = glave_session::Catalog::built_in() else {
         return Vec::new();
     };
@@ -172,7 +178,7 @@ fn connectors(
             ServerConfig::Stdio { .. } => None,
         })
         .collect();
-    let mut connectors: Vec<(ServerConfig, KeptConnector)> = catalog
+    let mut connectors: Vec<(ServerConfig, KeptConnector, String)> = catalog
         .connectors
         .into_iter()
         .filter(|it| offered.allows(&it.id) && !own.contains_key(&it.id))
@@ -184,7 +190,7 @@ fn connectors(
             };
             (signed.connectors.iter())
                 .filter(move |kept| kept.id == it.id)
-                .map(move |kept| (config.clone(), kept.clone()))
+                .map(move |kept| (config.clone(), kept.clone(), it.name.clone()))
         })
         .collect();
     connectors.sort_by(|one, other| one.1.id.cmp(&other.1.id));
@@ -257,7 +263,8 @@ impl Servers {
             (ServerConfig::Http { url, headers }, Some(connected)) => {
                 let signer = connected.signer(url, wanted.account.as_deref());
                 let server = McpServer::remote(name, url, headers, signer, limits)
-                    .account(wanted.account.clone());
+                    .account(wanted.account.clone())
+                    .known_as(wanted.known_as.clone());
                 match connected.search_at(url) {
                     Some(search) => server.searching_with(search.tool),
                     None => server,
@@ -572,6 +579,7 @@ mod tests {
             untrusted: false,
             signed_in: false,
             account: None,
+            known_as: None,
             from: From::Settings,
         }
     }

@@ -2,6 +2,10 @@
 //! source, each MCP server another. Every call still goes through the harness, which asks the
 //! person and records it; a source only says what its tools do and runs them.
 
+mod described;
+
+pub use self::described::{describe_call, describe_call_in_full};
+
 use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
@@ -151,6 +155,16 @@ pub enum Assessment {
     },
 }
 
+/// How a service names one of its tools for the person, as far as it says.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Naming {
+    /// The tool's title, in its maker's words for people (MCP's `title`): `Send email`.
+    pub title: Option<String>,
+    /// The service, by the name the person knows it by where that is not the name its tools
+    /// carry: a catalog connector's vendor's, `Gmail`.
+    pub service: Option<String>,
+}
+
 /// What a call that may ask the person came to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Called {
@@ -214,6 +228,20 @@ pub trait ToolSource: Send + Sync {
         describe_call(name, arguments)
     }
 
+    /// The call whole, as an approval of it shows it to the person and to the judge: every key
+    /// of its arguments, a long value shortened in the middle ([`describe_call_in_full`]). A
+    /// source whose line already holds the whole call gives its line.
+    fn describe_in_full(&self, name: &str, arguments: &Arguments) -> String {
+        describe_call_in_full(name, arguments)
+    }
+
+    /// How the tool `name` is named to the person when a call of it asks, as far as the source
+    /// says: by default, nothing beyond its name.
+    fn naming(&self, name: &str) -> Naming {
+        let _ = name;
+        Naming::default()
+    }
+
     /// What kind of work a call of `name` does, as far as the source can tell: `other` unless
     /// it says.
     fn kind(&self, name: &str) -> ToolKind {
@@ -256,24 +284,6 @@ pub trait ToolSource: Send + Sync {
         let _ = given;
         Box::pin(async move { Called::Done(self.call(name, arguments, cancel).await) })
     }
-}
-
-/// How much of a call's arguments its description shows.
-const DESCRIBED: usize = 120;
-
-/// A call in a few words: the tool's name, then its arguments cut short.
-pub fn describe_call(name: &str, arguments: &Arguments) -> String {
-    let text = match arguments {
-        Arguments::Json(map) => serde_json::to_string(map).unwrap_or_default(),
-        Arguments::Malformed(raw) => raw.clone(),
-    };
-    let short: String = text.chars().take(DESCRIBED).collect();
-    let more = if text.chars().count() > DESCRIBED {
-        "…"
-    } else {
-        ""
-    };
-    format!("{name} {short}{more}")
 }
 
 #[cfg(test)]

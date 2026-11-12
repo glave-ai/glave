@@ -137,6 +137,11 @@ impl ToolSource for Web {
         }
     }
 
+    /// A fetch's line, which holds its whole address.
+    fn describe_in_full(&self, name: &str, arguments: &Arguments) -> String {
+        self.describe(name, arguments)
+    }
+
     fn kind(&self, name: &str) -> ToolKind {
         if name == WEB_FETCH {
             ToolKind::Web

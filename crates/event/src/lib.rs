@@ -37,8 +37,8 @@ pub use payload::{
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
 pub use payload::{
-    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkFiles,
-    ForkPoint, HookPoint, HookRan, HookResult, Lifted, MemoryEdited, MemoryForgotten,
+    ApprovalDecided, ApprovalRequested, Arguments, Ask, Auth, AuthMethod, Cost, EffortChosen,
+    ForkFiles, ForkPoint, HookPoint, HookRan, HookResult, Lifted, MemoryEdited, MemoryForgotten,
     MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied, MessageAdded,
     ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, OutsideSandbox,
     ParentCall, Part, Permissions, PermissionsChosen, Principal, PrincipalKind, Producer, Role,

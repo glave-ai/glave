@@ -4,8 +4,6 @@
 
 use fluent_bundle::{FluentArgs, FluentValue};
 
-use super::{Language, say};
-
 /// Makes [`Sentence`] from the table: each line `Variant { value: Type } = "id" "English"`.
 macro_rules! sentences {
     ($(
@@ -405,16 +403,6 @@ sentences! {
     NotARepository { url: String } = "not-a-repository"
         "\"{ $url }\" is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it",
 
-    // What an approval asks, by what would run: recorded in English in `approval.requested`,
-    // by which its English is found again here, with the tool's name for a service's tool.
-    AskCommand = "ask-command" "Run this command?",
-    AskEdit = "ask-edit" "Edit this file?",
-    AskWrite = "ask-write" "Write this file?",
-    AskRead = "ask-read" "Read this file?",
-    AskPage = "ask-page" "Open this page?",
-    AskAllow = "ask-allow" "Allow this?",
-    AskWith { act: String, service: String } = "ask-with" "{ $act } with { $service }?",
-
     // Project trust.
     NothingToTrust = "nothing-to-trust" "nothing in this thread's project waits to be trusted",
     TrustChanged = "trust-changed"
@@ -621,26 +609,4 @@ sentences! {
         "this browser was signed in on the computer glave runs on, and its sign-in works only there: sign in with a passkey here",
     NoLanguage { tag: String } = "no-language"
         "glave does not write in \"{ $tag }\": choose another language",
-}
-
-impl Sentence {
-    /// The sentence an approval of `tool` asks with, by the English its `approval.requested`
-    /// recorded: none for words the table does not hold, such as a wording from before.
-    pub(crate) fn asking(tool: &str, english: &str) -> Option<Self> {
-        let with = glave_harness::act_of(tool).map(|act| Self::AskWith {
-            act: act.act,
-            service: act.service,
-        });
-        [
-            Self::AskCommand,
-            Self::AskEdit,
-            Self::AskWrite,
-            Self::AskRead,
-            Self::AskPage,
-            Self::AskAllow,
-        ]
-        .into_iter()
-        .chain(with)
-        .find(|sentence| say(Language::English, sentence) == english)
-    }
 }

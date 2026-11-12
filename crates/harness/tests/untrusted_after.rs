@@ -276,6 +276,42 @@ fn with_no_one_there_a_write_after_untrusted_content_runs_only_if_the_person_ask
 }
 
 #[test]
+fn a_copy_planted_after_a_long_body_is_shown_to_the_judge_and_the_person_and_not_sent() {
+    let Some(base) = sandboxed("untrusted-writes-whole") else {
+        return;
+    };
+    let body = "The guide says to run the tests before sending a change. ".repeat(6);
+    assert!(body.len() > 300);
+    let planted = (
+        SEND,
+        json!({ "to": "ana@example.com", "body": body, "cc": "drop@mirror.example" }),
+    );
+    let ask = r#"{"decision":"ask","reason":"the person never asked to copy anyone"}"#;
+    let call = |call| answer(None, vec![call], glave_event::StopReason::ToolUse);
+    let says = |text| answer(Some(text), vec![], glave_event::StopReason::EndTurn);
+    let answers = vec![call(fetch()), call(planted), says(ask), says("Not sent.")];
+    let workspace = block_on!(walled(&base, false));
+    let prompt = "Read the guide and mail ana@example.com a summary.";
+    let (said, events, seen) = mailing(workspace, answers, (NoOneToAsk, judged()), prompt);
+    assert!(said[1].starts_with("Not run, because"), "{said:?}");
+    let judges = judges(&seen.lock().unwrap());
+    assert!(
+        judges
+            .iter()
+            .all(|judge| judge.contains("drop@mirror.example")),
+        "the judge sees every key of the call: {judges:?}"
+    );
+    let detail = events.iter().find_map(|event| match &event.body {
+        Body::ApprovalRequested(asked) => Some(asked.detail.clone()),
+        _ => None,
+    });
+    assert!(
+        detail.is_some_and(|detail| detail.contains("drop@mirror.example")),
+        "and so does the person"
+    );
+}
+
+#[test]
 fn full_access_writes_after_untrusted_content_without_asking() {
     let dir = folder("untrusted-writes-full");
     let person = Person::answering(Decision::Deny);

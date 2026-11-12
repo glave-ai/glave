@@ -124,6 +124,9 @@ pub struct McpServer {
     /// The person's name for the account of the service it is signed in to, when they named
     /// one: each call, and an approval of it, names it.
     account: Option<String>,
+    /// The service's own name, by which the person knows it, where that is not its name here:
+    /// a catalog connector's vendor's. An approval of a call names the service by it.
+    known_as: Option<String>,
 }
 
 impl McpServer {
@@ -343,6 +346,7 @@ impl McpServer {
             untrusted: false,
             search: None,
             account: None,
+            known_as: None,
         }
     }
 
@@ -381,6 +385,14 @@ impl McpServer {
         self
     }
 
+    /// Names the service `known_as`, the name the person knows it by, where that is not the
+    /// server's name: an approval of a call of it asks "Send email with Gmail?".
+    #[must_use]
+    pub fn known_as(mut self, known_as: Option<String>) -> Self {
+        self.known_as = known_as;
+        self
+    }
+
     /// Whether the server is marked untrusted.
     pub fn is_untrusted(&self) -> bool {
         self.untrusted
@@ -398,6 +410,7 @@ impl McpServer {
             untrusted: false,
             search: None,
             account: None,
+            known_as: None,
         }
     }
 

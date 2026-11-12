@@ -5,17 +5,16 @@
 
 mod act;
 
-pub(crate) use self::act::acts_after_untrusted;
-pub use self::act::{Act, act_of};
+pub use self::act::acts_after_untrusted;
 
 use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalRequested, Arguments, CallId, Caution, Lifted, OutsideSandbox, PrincipalId, Settled,
-    ThreadId, WebPage,
+    ApprovalRequested, Arguments, Ask, CallId, Caution, Lifted, OutsideSandbox, PrincipalId, Risk,
+    Settled, ThreadId, WebPage, Worded as _,
 };
-use glave_ports::Effect;
+use glave_ports::{Assessment, Effect, ToolSource};
 
 use crate::question::QuestionRequest;
 use crate::tools::Tool;
@@ -33,8 +32,11 @@ pub struct ApprovalRequest {
     pub tool: String,
     /// What the tool does.
     pub effect: Effect,
-    /// What would run: `bash: cargo test`. Never why it asks.
+    /// What would run, whole, as the person and the judge see it: `bash: cargo test`, or a
+    /// service's tool with every key of its arguments. Never why it asks.
     pub summary: String,
+    /// What it asks the person, by what would run: "Run this command?".
+    pub ask: Ask,
     /// The model would see a secret: a file that usually holds one, such as `.env`, or what a
     /// command prints. With no one to ask, and in Full access, which asks no one, these requests
     /// are declined.
@@ -56,7 +58,8 @@ impl ApprovalRequest {
             call_id: self.call_id.clone(),
             tool: self.tool.clone(),
             summary: self.summary.clone(),
-            ask: ask_of(&self.tool),
+            ask: self.ask.english(),
+            asking: Some(self.ask.clone()),
             detail: detail_of(&self.tool, &self.summary).to_owned(),
             secret: self.secret,
             caution: self.caution.as_ref().and_then(Caution::sentences),
@@ -80,32 +83,54 @@ impl ApprovalRequest {
     }
 }
 
-/// Every sentence an approval asks with, in English, as `approval.requested` records it: for a
-/// command, an edit, a write, a read, a page, and any other tool. A transport writes each again
-/// in the caller's language, finding it in the session's table by these words.
-pub const ASKS: [&str; 6] = [
-    "Run this command?",
-    "Edit this file?",
-    "Write this file?",
-    "Read this file?",
-    "Open this page?",
-    "Allow this?",
-];
-
-/// What an approval for `tool` asks the person, in a sentence: by what the tool does, for the
-/// harness's own tools and `web_fetch`; what it does and with which service, for a service's
-/// tool ([`Act`]); else a sentence for any tool.
-fn ask_of(tool: &str) -> String {
-    let [command, edit, write, read, page, any] = ASKS;
-    match Tool::named(tool) {
-        Some(Tool::Bash) => command,
-        Some(Tool::Edit) => edit,
-        Some(Tool::Write) => write,
-        Some(Tool::Read) => read,
-        _ if tool == WebPage::TOOL => page,
-        _ => return act_of(tool).map_or_else(|| any.to_owned(), |act| act.asked()),
+/// What `source` says of a call of `tool` with `arguments`, whose tool declares `declared`: its
+/// effect, the caution it needs the person for, whether it would show the model a secret, and
+/// whether no judge may clear it.
+pub(crate) async fn assessed(
+    source: &dyn ToolSource,
+    tool: &str,
+    arguments: &Arguments,
+    declared: Effect,
+) -> (Effect, Option<Risk>, bool, bool) {
+    match source.assess(tool, arguments).await {
+        Assessment::AsDeclared => (declared, None, false, false),
+        Assessment::Reads => (Effect::Reads, None, false, false),
+        Assessment::Caution {
+            reason,
+            secret,
+            firm,
+        } => (declared, Some(reason), secret, firm),
     }
-    .to_owned()
+}
+
+/// What an approval of a call of `tool` from `source` asks the person, and, for a connected
+/// service's tool that does not say it only reads (`effect`), why it needs them once the thread
+/// has read untrusted content (`specs/approvals.md`, "Untrusted content").
+pub(crate) fn asking(
+    source: &dyn ToolSource,
+    tool: &str,
+    effect: Effect,
+    untrusted: bool,
+) -> (Ask, Option<Risk>) {
+    if !source.connected() {
+        return (ask_of(tool), None);
+    }
+    let naming = source.naming(tool);
+    let acts = (untrusted && effect != Effect::Reads).then(|| acts_after_untrusted(tool, &naming));
+    (act::ask_with(tool, &naming), acts)
+}
+
+/// What an approval of `tool`, which is no connected service's, asks: by what the tool does,
+/// for the harness's own tools and `web_fetch`, else as any tool.
+pub(crate) fn ask_of(tool: &str) -> Ask {
+    match Tool::named(tool) {
+        Some(Tool::Bash) => Ask::Command,
+        Some(Tool::Edit) => Ask::Edit,
+        Some(Tool::Write) => Ask::Write,
+        Some(Tool::Read) => Ask::Read,
+        _ if tool == WebPage::TOOL => Ask::Page,
+        _ => Ask::Allow,
+    }
 }
 
 /// What would run, apart from the sentence that says what it is: `summary`, which every tool
@@ -374,7 +399,7 @@ mod tests {
     #[test]
     fn an_approval_asks_by_what_would_run_with_what_would_run_apart() {
         fn asked(tool: &str, summary: &str) -> String {
-            format!("{} | {}", ask_of(tool), detail_of(tool, summary))
+            format!("{} | {}", ask_of(tool).english(), detail_of(tool, summary))
         }
         assert_eq!(
             asked("bash", "bash: git push -u origin fix/x"),
@@ -398,20 +423,38 @@ mod tests {
             r#"Allow this? | {"text":"x"}"#
         );
         assert_eq!(
-            asked(
-                "mcp__gmail__send_message",
-                r#"mcp__gmail__send_message {"to":"x"}"#
-            ),
-            r#"Send message with gmail? | {"to":"x"}"#,
-            "a service's tool, by what it does and the service"
-        );
-        assert_eq!(
             asked("search", "Searched the web: tokio"),
             "Allow this? | Searched the web: tokio",
             "a summary that does not start with its tool's name is all detail"
         );
         assert_eq!(detail_of("bashful", "bash: ls"), "bash: ls");
         assert_eq!(detail_of("", "x"), "x");
+    }
+
+    #[test]
+    fn only_a_connected_service_s_write_after_untrusted_content_is_a_caution() {
+        let tool = "mcp__gmail__send_message";
+        let connected = glave_ports::InMemoryTools::new(Vec::new()).as_connected();
+        let own = glave_ports::InMemoryTools::new(Vec::new());
+        let gmail = Risk::ActsAfterUntrusted {
+            service: "gmail".into(),
+        };
+        let send = Ask::With {
+            act: "Send message".into(),
+            service: "gmail".into(),
+        };
+        let after = asking(&connected, tool, Effect::Runs, true);
+        assert_eq!(after, (send.clone(), Some(gmail)));
+        let read = asking(&connected, tool, Effect::Reads, true);
+        assert_eq!(read, (send.clone(), None), "a read");
+        let before = asking(&connected, tool, Effect::Runs, false);
+        assert_eq!(before, (send, None), "before untrusted content");
+        let unconnected = asking(&own, tool, Effect::Runs, true);
+        assert_eq!(
+            unconnected,
+            (Ask::Allow, None),
+            "glave's own, or the web search"
+        );
     }
 
     #[test]
@@ -422,6 +465,7 @@ mod tests {
             tool: "read".into(),
             effect: Effect::Reads,
             summary: "read .env".into(),
+            ask: Ask::Read,
             secret,
             caution: None,
             outside_sandbox: None,

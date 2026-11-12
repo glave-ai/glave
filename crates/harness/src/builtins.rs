@@ -113,6 +113,11 @@ impl ToolSource for Builtins {
         )
     }
 
+    /// The line, which holds the whole call: a command whole, a file's path.
+    fn describe_in_full(&self, name: &str, arguments: &Arguments) -> String {
+        self.describe(name, arguments)
+    }
+
     fn kind(&self, name: &str) -> ToolKind {
         Tool::named(name).map_or(ToolKind::Other, Tool::kind)
     }

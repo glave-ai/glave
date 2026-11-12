@@ -3,7 +3,8 @@
 
 use glave_event::{Arguments, ToolKind};
 use glave_ports::{
-    BoxFuture, Called, Cancellation, ServiceGiven, ToolError, ToolInfo, ToolOutput, ToolSource,
+    BoxFuture, Called, Cancellation, Naming, ServiceGiven, ToolError, ToolInfo, ToolOutput,
+    ToolSource,
 };
 
 use super::{McpServer, State};
@@ -53,6 +54,26 @@ impl ToolSource for McpServer {
                 glave_ports::describe_call(&format!("{name} ({account})"), arguments)
             }
             (_, None) => glave_ports::describe_call(name, arguments),
+        }
+    }
+
+    /// Every key of the call's arguments, its account named as in its line.
+    fn describe_in_full(&self, name: &str, arguments: &Arguments) -> String {
+        match &self.account {
+            Some(account) => {
+                glave_ports::describe_call_in_full(&format!("{name} ({account})"), arguments)
+            }
+            None => glave_ports::describe_call_in_full(name, arguments),
+        }
+    }
+
+    fn naming(&self, name: &str) -> Naming {
+        let State::Ready(connection) = &*self.state.borrow() else {
+            return Naming::default();
+        };
+        Naming {
+            title: connection.title_of(name),
+            service: self.known_as.clone(),
         }
     }
 

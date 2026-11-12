@@ -11,12 +11,11 @@ use glave_event::{
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
-    Assessment, BlobStore, Called, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
-    ToolSource,
+    BlobStore, Called, EventLog, Message, ModelProvider, ToolCall, ToolOutput, ToolSource,
 };
 
 use crate::approval::{
-    ApprovalMode, ApprovalRequest, Approver, acts_after_untrusted, asks_for, no_one_there,
+    ApprovalMode, ApprovalRequest, Approver, asking, asks_for, assessed, no_one_there,
 };
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
@@ -255,16 +254,9 @@ where
         if let Some(stopped) = hook.await? {
             return Ok(stopped);
         }
-        let (effect, caution, secret, firm) = match source.assess(name, &call.arguments).await {
-            Assessment::AsDeclared => (info.effect, None, false, false),
-            Assessment::Reads => (Effect::Reads, None, false, false),
-            Assessment::Caution {
-                reason,
-                secret,
-                firm,
-            } => (info.effect, Some(reason), secret, firm),
-        };
-        let acts = acts_after_untrusted(thread.untrusted, source.connected(), effect, name);
+        let assessed = assessed(&*source, name, &call.arguments, info.effect).await;
+        let (effect, caution, secret, firm) = assessed;
+        let (ask, acts) = asking(&*source, name, effect, thread.untrusted);
         if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
         {
             return Ok(refused);
@@ -274,7 +266,8 @@ where
             call_id: call.call_id.clone(),
             tool: name.to_owned(),
             effect,
-            summary: summary.clone(),
+            summary: source.describe_in_full(name, &call.arguments),
+            ask,
             secret,
             caution: Caution::of(caution.or(acts), lifted),
             outside_sandbox: outside,

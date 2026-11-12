@@ -5,7 +5,7 @@
 //! one there nothing is saved; Full access asks no one and saves. Memory never changes an
 //! approval or what the judge sees.
 
-use glave_event::{Arguments, Caution, Risk};
+use glave_event::{Arguments, Ask, Caution, Risk};
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
@@ -75,7 +75,8 @@ where
                 call_id: call.call_id.clone(),
                 tool: name.to_owned(),
                 effect: Effect::Changes,
-                summary: summary.clone(),
+                summary: glave_ports::describe_call_in_full(name, &call.arguments),
+                ask: Ask::Allow,
                 secret: false,
                 caution: Caution::of(Some(Risk::RemembersAfterUntrusted), None),
                 outside_sandbox: None,
