@@ -256,7 +256,7 @@ fn a_thread_on_a_copy_of_a_project_that_moved_says_to_start_a_new_one() {
         let refused = turn(&server, thread, "go").await.unwrap_err();
         assert_eq!(refused.code, code::WORKSPACE);
         assert!(
-            refused.message.contains("Start a new thread to go on"),
+            refused.message.contains("Start a new chat to go on"),
             "{refused}"
         );
         assert!(!refused.message.contains('/'), "no path: {refused}");
