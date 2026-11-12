@@ -91,24 +91,23 @@ fn searched(name: &str) -> (TempDir, rusqlite::Connection) {
 }
 
 #[test]
-fn the_search_index_holds_no_word_in_the_clear() {
+fn the_search_index_holds_its_words_sealed() {
     let (_dir, raw) = searched("search");
-    let terms: Vec<String> = raw
+    let rows: Vec<Vec<u8>> = raw
         .prepare("SELECT terms FROM event_search")
         .unwrap()
         .query_map([], |row| row.get(0))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert!(!terms.is_empty(), "messages and outputs are indexed");
-    for words in &terms {
-        assert!(
-            words
-                .split(' ')
-                .all(|word| word.len() == 32 && word.bytes().all(|b| b.is_ascii_hexdigit())),
-            "{words}"
+    assert!(!rows.is_empty(), "messages and outputs are indexed");
+    for sealed in &rows {
+        assert_eq!(
+            (sealed.len() - 40) % 8,
+            0,
+            "a nonce, a tag and 8 bytes a word"
         );
-        assert!(!words.contains("deploy") && !words.contains("postgres"));
+        assert!(!sealed.windows(6).any(|w| w == b"deploy"));
     }
 }
 
@@ -256,18 +255,20 @@ fn the_directory_passes_the_directory_conformance_suite() {
     );
 }
 
-/// A file of the schema before, which a person's glave wrote, opens: it gains the directory's
-/// tables and keeps what it held.
+/// A file of the schema before, which a person's glave wrote, opens: its unsealed index is made
+/// again sealed, and it keeps what it held.
 #[test]
-fn a_file_of_the_schema_before_gains_the_directory_and_keeps_its_data() {
+fn a_file_of_the_schema_before_gets_the_sealed_index_and_keeps_its_data() {
     let (_dir, path) = temp_db("schema-before");
     {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.execute_batch(schema::SCHEMA).unwrap();
         connection
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ('kept', 'yes')",
-                [],
+            .execute_batch(
+                "CREATE VIRTUAL TABLE event_search USING fts5(terms, org UNINDEXED,
+                     project UNINDEXED, thread UNINDEXED, seq UNINDEXED, tokenize = 'ascii');
+                 INSERT INTO event_search VALUES ('0123abcd', 'o', 'p', 't', 1);
+                 INSERT INTO settings (key, value) VALUES ('kept', 'yes');",
             )
             .unwrap();
         connection
@@ -278,6 +279,7 @@ fn a_file_of_the_schema_before_gains_the_directory_and_keeps_its_data() {
         let store = Store::open(&path, file_keys(&path), objects())
             .await
             .unwrap();
+        assert_eq!(conformance::search(&store.log()).await, Ok(()));
         assert_eq!(conformance::directory(&store.directory()).await, Ok(()));
     });
     let raw = rusqlite::Connection::open(&path).unwrap();
@@ -291,6 +293,14 @@ fn a_file_of_the_schema_before_gains_the_directory_and_keeps_its_data() {
         })
         .unwrap();
     assert_eq!(kept, "yes", "what the file held is kept");
+    let unsealed: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE sql LIKE '%fts5%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(unsealed, 0, "the unsealed index is gone");
 }
 
 /// A deleted chat leaves no row in the search index, so even its words' hashes go, and every

@@ -46,10 +46,10 @@ pub trait EventLog: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send;
 
-    /// Searches `scope`'s conversations by keyword, with the store's own full-text index: the
-    /// events whose words (`search::indexed`, maintained as events are appended) match any of
-    /// `query`'s (`search::query_terms`), best match first, then newest first, at most `limit`.
-    /// Never another scope's.
+    /// Searches `scope`'s conversations by keyword, with the store's search index: the events
+    /// whose words (`search::indexed`, kept as events are appended) match any of `query`'s
+    /// (`search::query_terms`), those sharing the most first, then newest first, at most
+    /// `limit`. Never another scope's.
     fn search(
         &self,
         scope: &Scope,

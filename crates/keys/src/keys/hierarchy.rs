@@ -49,17 +49,17 @@ impl ProjectKey {
     }
 
     /// One word of a full-text index: HMAC-SHA-256 of the word under the naming half, kept
-    /// apart from blob names by its own label, its first 16 bytes in lowercase hex. The index
-    /// holds no word in the clear, and loses every word when the project is erased.
-    pub(super) fn name_term(&self, term: &str) -> Result<String, KeyError> {
+    /// apart from blob names by its own label, its first 8 bytes as a number. The index keeps
+    /// these only sealed, so they are what a word is matched by in memory, never the word itself.
+    pub(super) fn name_term(&self, term: &str) -> Result<u64, KeyError> {
         let mut mac = self.name.mac()?;
         mac.update(b"glave/search/v1\0");
         mac.update(term.as_bytes());
-        let mut hex = String::with_capacity(32);
-        for byte in mac.finalize().into_bytes().iter().take(16) {
-            let _ = write!(hex, "{byte:02x}");
+        let mut first = [0u8; 8];
+        for (to, from) in first.iter_mut().zip(mac.finalize().into_bytes()) {
+            *to = from;
         }
-        Ok(hex)
+        Ok(u64::from_be_bytes(first))
     }
 
     fn to_bytes(&self) -> Zeroizing<Vec<u8>> {

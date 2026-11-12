@@ -1,6 +1,6 @@
 //! `recall` (`specs/memory.md`, "Recall"): memories and past conversations found by keyword.
 //! Memories are matched here, from the view the ledger already gives; conversations through the
-//! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
+//! store's sealed search index (`EventLog::search`). Both are scoped exactly as memory is: the
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
 //! when memory is off, never another organization's, and never a deleted chat. Hits are ranked
 //! together by how many of the query's words they share. A hit from untrusted tool output says

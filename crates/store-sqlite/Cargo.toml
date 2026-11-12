@@ -26,5 +26,10 @@ uuid.workspace = true
 glave-keys = { workspace = true, features = ["conformance"] }
 glave-ports = { workspace = true, features = ["conformance"] }
 
+# The sealed search index's cold load and warm search, against its cap.
+[[bench]]
+name = "recall"
+harness = false
+
 [lints]
 workspace = true

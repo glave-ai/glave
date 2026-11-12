@@ -1,8 +1,10 @@
 //! Keyword search over conversations (`specs/memory.md`, "Recall"): the words an event is
-//! found by, and what a search finds. Each store keeps a full-text index of these words in its
-//! own engine (SQLite FTS5, Postgres full-text search), written in the same transaction as the
-//! events, and every adapter normalises words the same way, here. A thread's words leave the
-//! index in the transaction that deletes it ([`deletes_thread`]).
+//! found by, and what a search finds. Each store keeps every searchable event's words sealed, in
+//! a row written in the same transaction as the event, and searches them in memory
+//! ([`SearchCache`]); every adapter normalises words the same way, here. A thread's rows leave
+//! the index in the transaction that deletes it ([`deletes_thread`]).
+
+mod cache;
 
 use std::collections::BTreeSet;
 
@@ -11,6 +13,8 @@ use glave_event::{
 };
 
 use crate::memories::FROM_MEMORY;
+
+pub use self::cache::{Fingerprint, IndexRow, IndexRows, MOST_CACHED, MOST_LOADED, SearchCache};
 
 /// Distinct words one event is indexed under, at most: a long output is found by its first.
 const MOST_TERMS: usize = 2_048;

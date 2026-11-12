@@ -1,8 +1,8 @@
 //! The database schema: one, made whole in a new file. Until glave 0.1 ships it changes in
 //! place, with [`VERSION`] bumped, and a file of another version is refused (AGENTS.md,
 //! "Types"). The version is SQLite's `user_version`. The one exception is a change that only
-//! adds tables, made in a file of the version before as well ([`ADDED`]), so a person's file
-//! keeps opening.
+//! adds tables, or makes again one that holds nothing but what is derived from the events, made
+//! in a file of the version before as well ([`ADDED`]), so a person's file keeps opening.
 
 use rusqlite::Connection;
 
@@ -10,10 +10,10 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 18;
+pub(crate) const VERSION: u32 = 19;
 
 /// The version before [`VERSION`], whose files get [`ADDED`] and are this build's after.
-pub(crate) const BEFORE: u32 = 17;
+pub(crate) const BEFORE: u32 = 18;
 
 /// Every table, made in one transaction in a new file.
 pub(crate) const SCHEMA: &str = "
@@ -144,23 +144,9 @@ pub(crate) const SCHEMA: &str = "
         PRIMARY KEY (org, key)
     ) STRICT;
 
-    -- Keyword search over conversations (`specs/memory.md`, \"Recall\"): the words of each
-    -- message and tool output, as keyed hashes under its project key (`Keys::search_terms`),
-    -- so the index holds no word in the clear. Written in the same transaction as the events.
-    CREATE VIRTUAL TABLE event_search USING fts5(
-        terms,
-        org UNINDEXED,
-        project UNINDEXED,
-        thread UNINDEXED,
-        seq UNINDEXED,
-        tokenize = 'ascii'
-    );
-";
-
-/// The tables version 18 adds: the directory sign-in finds people in (`specs/storage.md`,
-/// "Sign-in is the one lookup before an organization is known"), ids and hashes only. A
-/// person's organizations come in the order of their rows, the first joined first.
-const ADDED: &str = "
+    -- The directory sign-in finds people in (`specs/storage.md`, \"Sign-in is the one lookup
+    -- before an organization is known\"), ids and hashes only. A person's organizations come in
+    -- the order of their rows, the first joined first.
     CREATE TABLE identities (
         identity TEXT NOT NULL PRIMARY KEY,
         person   TEXT NOT NULL
@@ -172,6 +158,28 @@ const ADDED: &str = "
         org    TEXT NOT NULL,
         UNIQUE (person, org)
     ) STRICT;
+";
+
+/// What version 19 changes: the search index sealed (`specs/storage.md`, "Search index"). Each
+/// searchable event's words, as keyed hashes under its project key (`Keys::seal_terms`), sealed
+/// under the data key `key_id` names, written in the same transaction as the event; `pos` is the
+/// write order, never reused (`AUTOINCREMENT`), so a search reads only the rows after the last it
+/// read. A file of the version before loses its unsealed index, so its chats from before are not
+/// searched.
+const ADDED: &str = "
+    DROP TABLE IF EXISTS event_search;
+
+    CREATE TABLE event_search (
+        pos      INTEGER PRIMARY KEY AUTOINCREMENT,
+        org      TEXT    NOT NULL,
+        project  TEXT    NOT NULL,
+        thread   TEXT    NOT NULL,
+        seq      INTEGER NOT NULL,
+        key_id   TEXT    NOT NULL,
+        terms    BLOB    NOT NULL
+    ) STRICT;
+    CREATE INDEX event_search_by_pos ON event_search (org, project, pos);
+    CREATE INDEX event_search_by_thread ON event_search (org, project, thread);
 ";
 
 /// Makes the schema in a new file, adds [`ADDED`] to a file of the version before, and checks

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use deadpool_postgres::{Pool, Transaction};
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, erased_payload};
-use glave_ports::search::{Found, deletes_thread, indexed, query_terms};
+use glave_ports::search::{Found, SearchCache, deletes_thread, indexed};
 use glave_ports::{
     EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
@@ -23,13 +23,14 @@ use crate::store::{PostgresKeyring, connection, describe};
 /// The event log in the database.
 #[derive(Clone)]
 pub struct PostgresLog {
-    pool: Pool,
-    keys: Arc<PostgresKeyring>,
+    pub(crate) pool: Pool,
+    pub(crate) keys: Arc<PostgresKeyring>,
+    index: Arc<SearchCache>,
 }
 
 impl PostgresLog {
-    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>) -> Self {
-        Self { pool, keys }
+    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>, index: Arc<SearchCache>) -> Self {
+        Self { pool, keys, index }
     }
 
     /// The events `sql` selects in `scope`, its organization and project the first two
@@ -62,19 +63,12 @@ const INSERT: &str = "
                 $9::bigint[], $10::bytea[], $11::text[])
         AS batch (seq, id, at, type, v, glave, data, key_id)";
 
-/// The batch's searchable events into the index, each word exactly as hashed.
+/// The batch's searchable events into the index, each row's words sealed.
 const INDEX: &str = "
-    INSERT INTO event_search (org, project, thread, seq, terms)
-    SELECT $1, $2, $3, seq, array_to_tsvector(string_to_array(words, ' '))
-    FROM UNNEST($4::bigint[], $5::text[]) AS batch (seq, words)
-    WHERE words IS NOT NULL";
-
-/// The events matching any hashed word, best match first, then newest first.
-const SEARCH: &str = "
-    SELECT thread, seq FROM event_search
-    WHERE org = $1 AND project = $2 AND terms @@ $3::text::tsquery
-    ORDER BY ts_rank(terms, $3::text::tsquery) DESC, pos DESC
-    LIMIT $4";
+    INSERT INTO event_search (org, project, thread, seq, key_id, terms)
+    SELECT $1, $2, $3, seq, key_id, terms
+    FROM UNNEST($4::bigint[], $5::text[], $6::bytea[]) AS batch (seq, key_id, terms)
+    WHERE terms IS NOT NULL";
 
 /// The thread's latest event of any of the types: one index lookup per type, from the newest
 /// (`events_by_type`), then the newest of those, so no other event is read or opened.
@@ -165,52 +159,12 @@ impl EventLog for PostgresLog {
         query: &str,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
-        let scope = *scope;
-        let words = query_terms(query);
-        let pool = self.pool.clone();
-        let keys = Arc::clone(&self.keys);
+        let (scope, query) = (*scope, query.to_owned());
+        let this = self.clone();
         async move {
-            if words.is_empty() || limit == 0 {
-                return Ok(Vec::new());
-            }
-            let Some(hashed) = keys
-                .search_terms(&scope, &words)
+            (this.keys)
+                .search(&this.index, &this, (&scope, &query), limit)
                 .await
-                .map_err(LogError::sealing)?
-            else {
-                return Ok(Vec::new());
-            };
-            // Hashes are hex, so quoting each is all the query syntax needs.
-            let query = hashed
-                .iter()
-                .map(|word| format!("'{word}'"))
-                .collect::<Vec<_>>()
-                .join(" | ");
-            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let client = connection(&pool, scope.org()).await.map_err(storage)?;
-            let statement = client.prepare_cached(SEARCH).await.map_err(database)?;
-            let rows = client
-                .query(
-                    &statement,
-                    &[
-                        &scope.org().as_uuid(),
-                        &scope.project().as_uuid(),
-                        &query,
-                        &limit,
-                    ],
-                )
-                .await
-                .map_err(database)?;
-            rows.iter()
-                .map(|row| {
-                    let thread: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
-                    let seq: i64 = row.try_get(1).map_err(LogError::corrupt)?;
-                    Ok(Found {
-                        thread: ThreadId::try_from(thread).map_err(LogError::corrupt)?,
-                        seq: stored_seq(u64::try_from(seq).map_err(LogError::corrupt)?)?,
-                    })
-                })
-                .collect()
         }
     }
 
@@ -356,12 +310,19 @@ async fn index(
     columns: &Columns,
     events: &[RawEvent],
 ) -> Result<(), LogError> {
-    if columns.words.iter().any(Option::is_some) {
+    if columns.terms.iter().any(Option::is_some) {
         let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
         transaction
             .execute(
                 &index,
-                &[&org, &project, &thread, &columns.seq, &columns.words],
+                &[
+                    &org,
+                    &project,
+                    &thread,
+                    &columns.seq,
+                    &columns.terms_key,
+                    &columns.terms,
+                ],
             )
             .await
             .map_err(database)?;
@@ -388,8 +349,10 @@ struct Columns {
     glave: Vec<i64>,
     data: Vec<Vec<u8>>,
     key_id: Vec<String>,
-    /// Each event's hashed words, for the search index; `None` for one never searched.
-    words: Vec<Option<String>>,
+    /// Each event's sealed words for the search index, and the key that sealed them; `None`
+    /// for one never searched.
+    terms: Vec<Option<Vec<u8>>>,
+    terms_key: Vec<Option<String>>,
 }
 
 impl Columns {
@@ -408,7 +371,8 @@ impl Columns {
             glave: Vec::with_capacity(events.len()),
             data: Vec::with_capacity(events.len()),
             key_id: Vec::with_capacity(events.len()),
-            words: Vec::with_capacity(events.len()),
+            terms: Vec::with_capacity(events.len()),
+            terms_key: Vec::with_capacity(events.len()),
         };
         for event in events {
             let seq = i64::try_from(event.seq.get())
@@ -425,15 +389,13 @@ impl Columns {
                 .map_err(LogError::sealing)?;
             columns.data.push(sealed.bytes);
             columns.key_id.push(sealed.key_id);
-            let words = indexed(event);
-            let hashed = if words.is_empty() {
-                None
-            } else {
-                keys.search_terms(scope, &words)
-                    .await
-                    .map_err(LogError::sealing)?
-            };
-            columns.words.push(hashed.map(|hashed| hashed.join(" ")));
+            let sealed = keys
+                .seal_terms(scope, event, &indexed(event))
+                .await
+                .map_err(LogError::sealing)?;
+            let (key_id, terms) = sealed.map(|sealed| (sealed.key_id, sealed.bytes)).unzip();
+            columns.terms_key.push(key_id);
+            columns.terms.push(terms);
         }
         Ok(columns)
     }
@@ -482,11 +444,11 @@ async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEv
     })
 }
 
-fn stored_seq(seq: u64) -> Result<Seq, LogError> {
+pub(crate) fn stored_seq(seq: u64) -> Result<Seq, LogError> {
     Seq::new(seq).map_err(LogError::corrupt)
 }
 
-fn storage(error: impl std::fmt::Display) -> LogError {
+pub(crate) fn storage(error: impl std::fmt::Display) -> LogError {
     LogError::Storage(error.to_string())
 }
 
@@ -521,7 +483,7 @@ async fn taken(
     clippy::needless_pass_by_value,
     reason = "taken by value to pass straight to map_err"
 )]
-fn database(error: tokio_postgres::Error) -> LogError {
+pub(crate) fn database(error: tokio_postgres::Error) -> LogError {
     if error.code() == Some(&SqlState::UNIQUE_VIOLATION) {
         LogError::Storage(format!(
             "another writer appended first: {}",

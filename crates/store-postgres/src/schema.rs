@@ -1,7 +1,8 @@
 //! The database schema: one, made whole in a new database. Until glave 0.1 ships it changes in
 //! place, with [`VERSION`] bumped, and a database of another version is refused (AGENTS.md,
 //! "Types"). `glave_migrations` records the version. The one exception is a change that only
-//! adds tables, made in a database of the version before as well ([`ADDED`]).
+//! adds tables, or makes again one that holds nothing but what is derived from the events, made
+//! in a database of the version before as well ([`ADDED`]).
 
 use tokio_postgres::Client;
 
@@ -9,10 +10,10 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 20;
+pub(crate) const VERSION: i32 = 21;
 
 /// The version before [`VERSION`], whose databases get [`ADDED`] and are this build's after.
-const BEFORE: i32 = 19;
+const BEFORE: i32 = 20;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -155,20 +156,6 @@ const SCHEMA: &str = "
         PRIMARY KEY (org, key)
     );
 
-    -- Keyword search over conversations (`specs/memory.md`, \"Recall\"): the words of each
-    -- message and tool output, as keyed hashes under its project key (`Keys::search_terms`),
-    -- so the index holds no word in the clear. Written in the same transaction as the events.
-    CREATE TABLE event_search (
-        pos      bigint   GENERATED ALWAYS AS IDENTITY,
-        org      uuid     NOT NULL,
-        project  uuid     NOT NULL,
-        thread   uuid     NOT NULL,
-        seq      bigint   NOT NULL,
-        terms    tsvector NOT NULL,
-        PRIMARY KEY (org, project, thread, seq)
-    );
-    CREATE INDEX event_search_terms ON event_search USING gin (terms);
-
     -- Row-level security (`specs/storage.md`): every table of organizations' rows shows and
     -- takes only the rows of the organization the connection is set to (`glave.org`), and
     -- none while it is set to none. `FORCE`, since glave owns the tables it reads.
@@ -178,8 +165,7 @@ const SCHEMA: &str = "
     DECLARE kept text;
     BEGIN
         FOREACH kept IN ARRAY ARRAY['events', 'blobs', 'blob_threads', 'org_keys',
-            'project_keys', 'project_records', 'project_folders', 'threads', 'leases',
-            'event_search']
+            'project_keys', 'project_records', 'project_folders', 'threads', 'leases']
         LOOP
             EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', kept);
             EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', kept);
@@ -187,13 +173,11 @@ const SCHEMA: &str = "
                 WITH CHECK (org = glave_org())', kept);
         END LOOP;
     END $$;
-";
 
-/// The tables version 20 adds: the directory sign-in finds people in (`specs/storage.md`,
-/// "Sign-in is the one lookup before an organization is known"), ids and hashes only, read
-/// before anyone's organization is known, so no policy, as `glave_orgs` has none. A person's
-/// organizations come in the order they joined.
-const ADDED: &str = "
+    -- The directory sign-in finds people in (`specs/storage.md`, \"Sign-in is the one lookup
+    -- before an organization is known\"), ids and hashes only, read before anyone's
+    -- organization is known, so no policy, as `glave_orgs` has none. A person's organizations
+    -- come in the order they joined.
     CREATE TABLE identities (
         identity  text PRIMARY KEY,
         person    uuid NOT NULL
@@ -205,6 +189,31 @@ const ADDED: &str = "
         org     uuid   NOT NULL,
         UNIQUE (person, org)
     );
+";
+
+/// What version 21 changes: the search index sealed (`specs/storage.md`, "Search index"). Each
+/// searchable event's words, as keyed hashes under its project key (`Keys::seal_terms`), sealed
+/// under the data key `key_id` names, written in the same transaction as the event; `pos` is the
+/// write order, so a search reads only the rows after the last it read. A database of the
+/// version before loses its unsealed index, so its chats from before are not searched.
+const ADDED: &str = "
+    DROP TABLE IF EXISTS event_search;
+
+    CREATE TABLE event_search (
+        pos      bigint GENERATED ALWAYS AS IDENTITY,
+        org      uuid   NOT NULL,
+        project  uuid   NOT NULL,
+        thread   uuid   NOT NULL,
+        seq      bigint NOT NULL,
+        key_id   text   NOT NULL,
+        terms    bytea  NOT NULL,
+        PRIMARY KEY (org, project, thread, seq)
+    );
+    CREATE INDEX event_search_by_pos ON event_search (org, project, pos);
+    ALTER TABLE event_search ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE event_search FORCE ROW LEVEL SECURITY;
+    CREATE POLICY glave_org ON event_search USING (org = glave_org())
+        WITH CHECK (org = glave_org());
 ";
 
 /// Refuses a connection whose role row-level security does not bind: a superuser, or a role
@@ -265,7 +274,7 @@ pub(crate) async fn prepare(client: &mut Client) -> Result<(), StoreError> {
              the schema they are in) and start glave again"
         )));
     }
-    // A database of the version before only gains the tables added since.
+    // A database of the version before only gains the tables changed since.
     if found == 0 {
         transaction.batch_execute(SCHEMA).await.map_err(schema)?;
     }
