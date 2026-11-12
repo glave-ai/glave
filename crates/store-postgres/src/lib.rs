@@ -3,8 +3,9 @@
 //! file.
 //!
 //! Every call borrows a connection from a bounded pool and never blocks the async runtime.
-//! Appends are transactions that enforce the log's gap-free numbering; a new database gets the
-//! one schema, and a database of another schema is refused. Every query is bound to a scope.
+//! Appends are transactions that enforce the log's gap-free numbering; a new database is made at
+//! the schema's baseline and every database is brought forward through its migrations, and a
+//! database a newer glave set up is refused. Every query is bound to a scope.
 //! Event payloads and blobs are sealed on write and opened on read (`specs/storage.md`).
 
 mod blobs;
@@ -25,5 +26,8 @@ pub use keys::PostgresKeys;
 pub use leases::PostgresLeases;
 pub use log::PostgresLog;
 pub use projects::PostgresProjects;
+// For this crate's tests, which make a database at each earlier version.
+#[doc(hidden)]
+pub use schema::{SCHEMA, migrate};
 pub use store::{PostgresKeyring, Store, StoreError};
 pub use tokio_postgres::Config;
