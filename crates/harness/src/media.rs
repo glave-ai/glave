@@ -1,13 +1,14 @@
 //! glave's media tools in the harness (`specs/gateway.md`, "Media tools"): `image_generate`
 //! and `image_edit`, offered where the model provider serves them and run by the harness itself,
-//! as a call of the provider's ([`ModelProvider::make`]): held and charged as the thread's work,
+//! as a call of the provider's ([`ModelProvider::make`]): its arguments and the images it sends
+//! read and checked before anyone is asked, then held and charged as the thread's work,
 //! recorded as a model call is, and each image made kept whole as a sealed blob of the thread's
-//! with a copy fit to send, so the model sees what it made and a client draws it.
+//! with a copy fit to send, so the model sees what it made and a client draws it. A call ends
+//! with its provider's answer or its timeout; one that ends unanswered, or is stopped once sent,
+//! may still be made and billed, and the model is told not to make it again unasked.
 
 mod arguments;
 mod inputs;
-
-use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -19,7 +20,7 @@ use glave_ports::{
 use serde_json::json;
 
 use crate::approval::{ApprovalRequest, Approver};
-use crate::calls::{NOT_RUN, Needs};
+use crate::calls::Needs;
 use crate::cancel::Cancel;
 use crate::files::kind_of;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -28,13 +29,17 @@ use crate::turn::{Live, Step};
 
 use arguments::{Asked, asked, purpose};
 pub(crate) use arguments::{IMAGE_EDIT, IMAGE_GENERATE, describe, spec};
-
-/// How long a media call waits for what it makes (`specs/gateway.md`, "Media tools", long
-/// jobs): until jobs are kept, a call past it is stopped and the model told so.
-const WAITS: Duration = Duration::from_mins(4);
+use inputs::Inputs;
 
 /// The largest image kept, in bytes.
 const MOST_MADE: u64 = 64 * 1024 * 1024;
+
+/// The longest stem of an image's name, in characters.
+const LONGEST_STEM: usize = 40;
+
+/// What the model is told of a call that may still be made and billed.
+const MAY_BE_BILLED: &str = "It may still be made and billed: don't make it again unless the \
+     person asks.";
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where
@@ -43,8 +48,9 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs a call of a media tool: asked about as `web_fetch` is, since it sends words and
-    /// images beyond the computer and spends money, then made through the provider.
+    /// Runs a call of a media tool: its arguments and the images it sends checked first, then
+    /// asked about as `web_fetch` is, since it sends words and images beyond the computer and
+    /// spends money, its line naming each file it sends, then made through the provider.
     pub(crate) async fn call_media(
         &self,
         thread: &mut Thread,
@@ -55,6 +61,17 @@ where
     ) -> Result<ToolOutput, HarnessError> {
         let Some(purpose) = purpose(&call.tool) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
+        };
+        let checked = match asked(purpose, &call.arguments) {
+            Ok(asked) => self
+                .inputs(thread, asked.images.iter())
+                .await
+                .map(|inputs| (asked, inputs)),
+            Err(wrong) => Err(wrong),
+        };
+        let (asked, inputs) = match checked {
+            Ok(checked) => checked,
+            Err(wrong) => return Ok(ToolOutput::text(true, wrong)),
         };
         let name = purpose.id();
         let summary = describe(name, &call.arguments);
@@ -91,10 +108,8 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
-        let output = match asked(purpose, &call.arguments) {
-            Ok(asked) => self.made(thread, purpose, asked, step, cancel).await?,
-            Err(wrong) => ToolOutput::text(true, wrong),
-        };
+        let made = (purpose, asked, inputs);
+        let output = self.made(thread, made, step, cancel).await?;
         live(Live::ToolFinished {
             summary,
             is_error: output.is_error,
@@ -102,20 +117,16 @@ where
         self.after_tool(thread, &hooked, output, cancel).await
     }
 
-    /// What the provider made for `asked`, kept for `thread`, as the model reads it, the call
-    /// recorded as a model call of the turn's.
+    /// What the provider made for `asked`, with `inputs`, kept for `thread`, as the model reads
+    /// it, the call recorded as a model call of the turn's.
     async fn made(
         &self,
         thread: &mut Thread,
-        purpose: Purpose,
-        asked: Asked,
+        (purpose, asked, inputs): (Purpose, Asked, Inputs),
         step: &mut Step,
         cancel: &Cancel,
     ) -> Result<ToolOutput, HarnessError> {
-        let inputs = match self.inputs(thread, asked.images.iter()).await {
-            Ok(inputs) => inputs,
-            Err(wrong) => return Ok(ToolOutput::text(true, wrong)),
-        };
+        let named = stem(&asked.prompt);
         let mut parts = vec![Part::Text { text: asked.prompt }];
         parts.extend(inputs.parts);
         let request = ModelRequest {
@@ -131,20 +142,18 @@ where
             payer: Some(thread.payer()),
             route: None,
         };
-        let ask = asked.ask;
-        let making = tokio::time::timeout(WAITS, self.provider.make(&request, &ask));
-        let Some(made) = cancel.run(making).await else {
-            return Ok(ToolOutput::text(true, NOT_RUN));
+        let Some(made) = cancel.run(self.provider.make(&request, &asked.ask)).await else {
+            let said = format!("Stopped once it may have been sent. {MAY_BE_BILLED}");
+            return Ok(ToolOutput::text(true, said));
         };
         let made = match made {
-            Ok(Ok(made)) => made,
-            Ok(Err(error)) => {
-                let said = format!("No image was made: {error}");
+            Ok(made) => made,
+            Err(error) if error.unanswered() => {
+                let said = format!("No image came back: {error}. {MAY_BE_BILLED}");
                 return Ok(ToolOutput::text(true, said));
             }
-            Err(_) => {
-                let waited = glave_ports::spoken(WAITS);
-                let said = format!("No image was made: it took over {waited}, and was stopped.");
+            Err(error) => {
+                let said = format!("No image was made: {error}");
                 return Ok(ToolOutput::text(true, said));
             }
         };
@@ -155,10 +164,8 @@ where
         let mut files = Vec::new();
         let mut shown = Vec::new();
         for file in made.files {
-            match self
-                .keep_made(thread, file.media_type.as_deref(), &file.data)
-                .await
-            {
+            let said = file.media_type.as_deref();
+            match self.keep_made(thread, said, &file.data, &named).await {
                 Ok(part) => {
                     if let Part::File { blob, .. } = &part {
                         files.push(json!({
@@ -174,7 +181,7 @@ where
         if files.is_empty() {
             return Ok(ToolOutput {
                 parts: shown,
-                ..ToolOutput::text(true, "No image was kept.")
+                ..ToolOutput::text(true, "No image came back, and the call was billed as made.")
             });
         }
         let mut output = ToolOutput::text(false, json!({ "files": files }).to_string());
@@ -183,12 +190,14 @@ where
     }
 
     /// The image the provider made, `data` in base64 of what it said is `said`, kept whole for
-    /// `thread` with a copy fit to send beside it: its `file` part, or why it was not kept.
+    /// `thread` as `stem` with a copy fit to send beside it: its `file` part, or why it was not
+    /// kept.
     async fn keep_made(
         &self,
         thread: &Thread,
         said: Option<&str>,
         data: &str,
+        stem: &str,
     ) -> Result<Part, String> {
         let bytes = STANDARD
             .decode(data.trim())
@@ -196,34 +205,71 @@ where
         let media_type = kind_of(said.unwrap_or_default(), &bytes)
             .filter(|kind| glave_ports::is_image(kind))
             .ok_or_else(|| "(what came back was not an image glave reads)".to_owned())?;
-        let kept = self.blobs.put(
-            &thread.scope,
-            Some(thread.id),
-            &media_type,
-            MOST_MADE,
-            Box::new(Pieces::from(bytes)),
-        );
-        let blob = kept
+        // The copy the model sees, made from what is here, however large the image.
+        let (bytes, copy) = self.fit(bytes).await;
+        let blob = self
+            .keep_image(thread, &media_type, bytes)
             .await
             .map_err(|error| format!("(the image could not be kept: {error})"))?;
-        let resized = self.fit_copy(thread, &blob).await;
+        let resized = match copy {
+            Ok(Some(copy)) => self.keep_image(thread, "image/jpeg", copy).await.ok(),
+            Ok(None) | Err(_) => None,
+        };
         Ok(Part::File {
-            name: Some(format!("image.{}", extension(&media_type))),
+            name: Some(format!("{stem}.{}", extension(&media_type))),
             blob,
             resized,
         })
     }
 
-    /// The copy of the image `blob` the model is sent, kept for `thread`: none when it is sent
-    /// as it is, or when no copy could be made, and then the image is sent by its name alone.
-    async fn fit_copy(&self, thread: &Thread, blob: &BlobRef) -> Option<BlobRef> {
-        let copy = self.resized(&thread.scope, blob).await.ok()??;
-        let referred = self.blobs.refer(&thread.scope, &copy.sha256, thread.id);
-        referred.await.ok()?.then_some(copy)
+    /// `bytes` of `media_type`, kept for `thread`.
+    async fn keep_image(
+        &self,
+        thread: &Thread,
+        media_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<BlobRef, glave_ports::BlobError> {
+        let pieces = Box::new(Pieces::from(bytes));
+        let put = self.blobs.put(
+            &thread.scope,
+            Some(thread.id),
+            media_type,
+            MOST_MADE,
+            pieces,
+        );
+        put.await
     }
 }
 
 /// The file extension for an image of `media_type`: `png` for `image/png`.
 fn extension(media_type: &str) -> &str {
     media_type.rsplit('/').next().unwrap_or("png")
+}
+
+/// The stem an image made for `prompt` is saved as: its first words, in plain letters and
+/// digits joined by hyphens, `image` when it has none.
+fn stem(prompt: &str) -> String {
+    let mut stem = String::new();
+    for word in prompt.split_whitespace() {
+        let word: String = word
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        if word.is_empty() {
+            continue;
+        }
+        if stem.len() + word.len() + 1 > LONGEST_STEM {
+            break;
+        }
+        if !stem.is_empty() {
+            stem.push('-');
+        }
+        stem.push_str(&word);
+    }
+    if stem.is_empty() {
+        "image".to_owned()
+    } else {
+        stem
+    }
 }

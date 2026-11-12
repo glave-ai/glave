@@ -26,6 +26,9 @@ const LONGEST_PROMPT: usize = 8_000;
 /// The longest a call's prompt shows in its line, in characters.
 const SHOWN_CHARS: usize = 80;
 
+/// How much of a saved file's hash its line shows.
+const BLOB_SHOWN: usize = 8;
+
 /// The quality tiers, by name, as every media tool takes them.
 const QUALITIES: [(&str, Quality); 3] = [
     ("low", Quality::Low),
@@ -87,13 +90,13 @@ pub(crate) fn spec(purpose: Purpose) -> ToolSpec {
     }
 }
 
-/// A call of a media tool in a line: `image_generate: a red fox at dawn`.
+/// A call of a media tool in a line, naming each file it sends, as `web_fetch`'s names its
+/// address: `image_edit: make it night (art/hero.png, blob:9f86d081…)`.
 pub(crate) fn describe(name: &str, arguments: &Arguments) -> String {
-    let prompt = match arguments {
-        Arguments::Json(map) => map.get("prompt").and_then(|prompt| prompt.as_str()),
-        Arguments::Malformed(_) => None,
+    let Arguments::Json(map) = arguments else {
+        return glave_ports::describe_call(name, arguments);
     };
-    let Some(prompt) = prompt else {
+    let Some(prompt) = map.get("prompt").and_then(Value::as_str) else {
         return glave_ports::describe_call(name, arguments);
     };
     let line: String = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -101,7 +104,31 @@ pub(crate) fn describe(name: &str, arguments: &Arguments) -> String {
     if line.chars().count() > SHOWN_CHARS {
         shown.push('…');
     }
-    format!("{}: {shown}", name.trim().to_ascii_lowercase())
+    let named = map.get("image").into_iter().chain(
+        map.get("references")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten(),
+    );
+    let files: Vec<String> = named.filter_map(Value::as_str).map(file_shown).collect();
+    let name = name.trim().to_ascii_lowercase();
+    if files.is_empty() {
+        format!("{name}: {shown}")
+    } else {
+        format!("{name}: {shown} ({})", files.join(", "))
+    }
+}
+
+/// A file a call names, as its line shows it: a saved one by the start of its hash.
+fn file_shown(named: &str) -> String {
+    let named = named.trim();
+    match named.strip_prefix("blob:") {
+        Some(hex) if hex.len() > BLOB_SHOWN => {
+            let start: String = hex.chars().take(BLOB_SHOWN).collect();
+            format!("blob:{start}…")
+        }
+        _ => named.to_owned(),
+    }
 }
 
 /// A media call's arguments, as the model gave them.

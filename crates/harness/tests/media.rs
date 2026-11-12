@@ -246,3 +246,115 @@ fn a_provider_that_makes_nothing_offers_no_media_tool() {
         );
     });
 }
+
+#[test]
+fn a_call_is_checked_before_anyone_is_asked_and_its_line_names_each_file_it_sends() {
+    let dir = folder("media-asked");
+    block_on!(async {
+        std::fs::write(dir.path().join("style.png"), png(16, 16)).unwrap();
+        std::fs::write(dir.path().join(".env"), "KEY=value").unwrap();
+        let secret = json!({"prompt": "a fox", "references": [".env"]});
+        let styled = json!({"prompt": "a fox", "references": ["style.png"]});
+        let answers = vec![
+            answer(None, vec![("image_generate", secret)], StopReason::ToolUse),
+            answer(None, vec![("image_generate", styled)], StopReason::ToolUse),
+            answer(Some("Done."), Vec::new(), StopReason::EndTurn),
+        ];
+        let script = ScriptedModel::new(answers).making(Ok(made(&png(8, 8))));
+        let asked = script.seen_made();
+        let approver = glave_harness::Decision::AllowOnce;
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            Answers::new(&[approver]),
+            InMemoryLog::new(),
+            1,
+            asking(),
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "draw a fox").await;
+
+        let told = results(&seen.lock().unwrap()[1].messages);
+        assert!(told[0].contains("usually holds secrets"), "{told:?}");
+        let log = events(harness.log(), thread.id).await;
+        let lines: Vec<String> = log
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ApprovalRequested(requested) => Some(requested.summary.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            ["image_generate: a fox (style.png)"],
+            "asked once, files named"
+        );
+        assert_eq!(
+            asked.lock().unwrap().len(),
+            1,
+            "the secret one never went out"
+        );
+    });
+}
+
+#[test]
+fn a_call_left_unanswered_is_told_it_may_still_be_billed() {
+    let dir = folder("media-unanswered");
+    block_on!(async {
+        let silent = glave_ports::ProviderError::Timeout { seconds: 300 };
+        let script = ScriptedModel::new(calls("image_generate", json!({"prompt": "a fox"})))
+            .making(Err(silent));
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "draw a fox").await;
+        let told = results(&seen.lock().unwrap()[1].messages);
+        assert!(
+            told[0].contains("may still be made and billed")
+                && told[0].contains("unless the person asks"),
+            "{told:?}"
+        );
+    });
+}
+
+#[test]
+fn an_image_is_named_by_its_prompt_and_kept_whole_however_large() {
+    let dir = folder("media-named");
+    block_on!(async {
+        let image = png(3_000, 2_000);
+        let arguments = json!({"prompt": "A red fox, at dawn!"});
+        let script =
+            ScriptedModel::new(calls("image_generate", arguments)).making(Ok(made(&image)));
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "draw a fox").await;
+        let requests = seen.lock().unwrap().clone();
+        let Some(Message::Tool { output, .. }) = requests[1].messages.last() else {
+            panic!("the result is sent back");
+        };
+        let Part::File {
+            name,
+            blob,
+            resized,
+        } = &output[1]
+        else {
+            panic!("{output:?}");
+        };
+        assert_eq!(name.as_deref(), Some("a-red-fox-at-dawn.png"));
+        assert_eq!(blob.bytes, image.len() as u64);
+        assert!(resized.is_some(), "the model's own copy, made smaller");
+    });
+}
