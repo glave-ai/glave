@@ -15,7 +15,7 @@ use glave_ports::ProjectId;
 use glave_session::protocol::{NewFolder, Reply, Request, ThreadSummary, TrustAsk, TrustChoice};
 
 use crate::args::Args;
-use crate::client::{Client, Session};
+use crate::client::{Client, LEFT, Session};
 use crate::input::Input;
 use crate::socket::Connection;
 use crate::terminal::Printer;
@@ -59,8 +59,12 @@ pub(crate) async fn run(
         }
     };
     let summary = thread(session, project, args).await?;
-    if terminal && let Some(ask) = &summary.trust {
-        trust(session, summary.id, ask, &input).await?;
+    if terminal
+        && let Some(ask) = &summary.trust
+        && !trust(session, summary.id, ask, &input).await?
+    {
+        eprintln!("{LEFT}");
+        return Ok(ExitCode::FAILURE);
     }
     let thread = summary.id;
     if let Some(working) = crate::worktrees::note(session, thread).await {
@@ -136,7 +140,8 @@ pub(crate) async fn here(
     let root = root(folder)?;
     eprint!("Make {} a glave project? [y/N] ", shown(&root));
     crate::terminal::flush();
-    if !yes(input.line().await) {
+    // The end of input says no: nothing is made, so nothing is answered for the person.
+    if !input.line().await.is_some_and(|line| yes(&line)) {
         return Ok(Here::NoProject);
     }
     made(session, &root).await.map(Here::Project)
@@ -174,9 +179,9 @@ fn shown(folder: &Path) -> String {
         )
 }
 
-/// Whether a typed line says yes: `y` or `yes`; anything else, the end of input too, is no.
-fn yes(line: Option<String>) -> bool {
-    line.is_some_and(|line| matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+/// Whether a typed line says yes: `y` or `yes`; anything else is no.
+fn yes(line: &str) -> bool {
+    matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 /// The thread to use in `project` (Chats when none): the newest one there with `--continue`,
@@ -222,13 +227,14 @@ fn summary(reply: Reply) -> anyhow::Result<ThreadSummary> {
     }
 }
 
-/// Puts what the thread's project asks to be trusted to the person, and sends their answer.
+/// Puts what the thread's project asks to be trusted to the person, and sends their answer;
+/// false when their input ended first, which answers nothing, so the ask is put again next time.
 async fn trust(
     session: Session<'_>,
     thread: glave_event::ThreadId,
     ask: &TrustAsk,
     input: &Input,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     eprintln!("\nThis project can run commands on your computer:");
     for item in &ask.items {
         match &item.detail {
@@ -238,7 +244,10 @@ async fn trust(
     }
     eprint!("Trust them? glave asks once, and remembers the answer. [y/N] ");
     crate::terminal::flush();
-    let answer = if yes(input.line().await) {
+    let Some(line) = input.line().await else {
+        return Ok(false);
+    };
+    let answer = if yes(&line) {
         TrustChoice::Trust
     } else {
         TrustChoice::NotNow
@@ -249,7 +258,7 @@ async fn trust(
         answer,
     };
     session.request(answered).await?;
-    Ok(())
+    Ok(true)
 }
 
 /// The name of the model threads that choose none go to, for the answers' label.
@@ -269,7 +278,7 @@ mod tests {
 
     #[test]
     fn only_a_clear_yes_says_yes() {
-        assert!(yes(Some("y".into())) && yes(Some(" Yes ".into())));
-        assert!(!yes(Some(String::new())) && !yes(Some("no".into())) && !yes(None));
+        assert!(yes("y") && yes(" Yes "));
+        assert!(!yes("") && !yes("no") && !yes("yep"));
     }
 }
