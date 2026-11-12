@@ -81,7 +81,7 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
     let dir = folder("media-made");
     block_on!(async {
         let image = png(2_000, 1_000);
-        let arguments = json!({"prompt": "a fox at dawn", "aspect_ratio": "3:2"});
+        let arguments = json!({"prompt": "a fox at dawn", "aspect_ratio": "3:2", "quality": "low"});
         let script =
             ScriptedModel::new(calls("image_generate", arguments)).making(Ok(made(&image)));
         let asked = script.seen_made();
@@ -101,7 +101,11 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
         assert_eq!(ask.aspect_ratio.as_deref(), Some("3:2"));
         assert_eq!(texts(&request.messages[0]), ["a fox at dawn"]);
         assert!(request.payer.is_some(), "the thread's work, charged as it");
-        assert_eq!(request.max_output_tokens, Some(16_384));
+        assert_eq!(
+            ask.quality,
+            glave_ports::Quality::Low,
+            "the tier, which the server maps"
+        );
 
         let requests = seen.lock().unwrap().clone();
         let offered: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();

@@ -7,6 +7,8 @@
 mod arguments;
 mod inputs;
 
+use std::time::Duration;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{BlobRef, Part};
@@ -27,9 +29,9 @@ use crate::turn::{Live, Step};
 use arguments::{Asked, asked, purpose};
 pub(crate) use arguments::{IMAGE_EDIT, IMAGE_GENERATE, describe, spec};
 
-/// The tokens one image is held at where its price is per token: a four-megapixel image's, one
-/// per 16×16 pixels.
-const TOKENS_PER_IMAGE: u32 = 16_384;
+/// How long a media call waits for what it makes (`specs/gateway.md`, "Media tools", long
+/// jobs): until jobs are kept, a call past it is stopped and the model told so.
+const WAITS: Duration = Duration::from_mins(4);
 
 /// The largest image kept, in bytes.
 const MOST_MADE: u64 = 64 * 1024 * 1024;
@@ -122,7 +124,7 @@ where
             messages: vec![Message::User { parts }],
             tools: Vec::new(),
             tool_choice: ToolChoice::None,
-            max_output_tokens: Some(TOKENS_PER_IMAGE),
+            max_output_tokens: None,
             purpose,
             effort: None,
             files: inputs.files,
@@ -130,13 +132,19 @@ where
             route: None,
         };
         let ask = asked.ask;
-        let Some(made) = cancel.run(self.provider.make(&request, &ask)).await else {
+        let making = tokio::time::timeout(WAITS, self.provider.make(&request, &ask));
+        let Some(made) = cancel.run(making).await else {
             return Ok(ToolOutput::text(true, NOT_RUN));
         };
         let made = match made {
-            Ok(made) => made,
-            Err(error) => {
+            Ok(Ok(made)) => made,
+            Ok(Err(error)) => {
                 let said = format!("No image was made: {error}");
+                return Ok(ToolOutput::text(true, said));
+            }
+            Err(_) => {
+                let waited = glave_ports::spoken(WAITS);
+                let said = format!("No image was made: it took over {waited}, and was stopped.");
                 return Ok(ToolOutput::text(true, said));
             }
         };
