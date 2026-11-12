@@ -1,8 +1,8 @@
 //! A media tool's targets (`specs/gateway.md`, "Media tools"): each serves one quality tier,
 //! with the settings the server gives its model there, and says what it can't do. A call goes
 //! to its own tier's targets; when none of them can honour it (a transparent image from a model
-//! that makes none), to the first of the others that can; when none can, it is refused in one
-//! sentence.
+//! that makes none), to those of the first other tier that can, never further; when none can,
+//! it is refused in one sentence.
 
 use glave_ports::{Failure, MediaAsk, ProviderError, Purpose, Quality};
 use serde_json::{Map, Value};
@@ -48,7 +48,18 @@ pub(crate) fn chosen(
     if !mine.is_empty() {
         return Ok(mine);
     }
-    let others: Vec<Target> = route.iter().filter(able).cloned().collect();
+    // One tier on at most, so a failure that may pass never climbs to a dearer one still.
+    let next = route
+        .iter()
+        .find(able)
+        .and_then(|target| target.tier.as_ref());
+    let next = next.map(|tier| tier.quality);
+    let others: Vec<Target> = route
+        .iter()
+        .filter(able)
+        .filter(|target| target.tier.as_ref().map(|tier| tier.quality) == next)
+        .cloned()
+        .collect();
     if !others.is_empty() {
         return Ok(others);
     }

@@ -67,6 +67,10 @@ mod over_http {
                 502,
                 json!({"error": {"message": "Generation failed"}}).to_string(),
             ),
+            Reply::Status(
+                200,
+                json!({"data": [], "usage": {"cost": 0.04}}).to_string(),
+            ),
         ])
         .unwrap();
         let provider = provider(server.url(), Some(&fake_secret("sk-or-")));
@@ -92,6 +96,10 @@ mod over_http {
             failed.is_transient(),
             "a failed generation may pass: {failed:?}"
         );
+        let empty = block_on!(provider.make(&asked, &ask)).unwrap();
+        assert!(empty.files.is_empty(), "no image, and billed as it says");
+        let billed = empty.completion.cost.unwrap().amount.nanos;
+        assert_eq!(billed, glave_event::Nanos::new(40_000_000));
     }
 
     #[test]
