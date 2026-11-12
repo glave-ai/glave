@@ -10,7 +10,7 @@ use base64::engine::general_purpose::STANDARD;
 use glave_event::{
     Body, Cost, Currency, ModelRef, Money, Nanos, Part, StopReason, TokenCounts, Usage,
 };
-use glave_harness::AllowAll;
+use glave_harness::{AllowAll, Cancel};
 use glave_ports::{
     BlobStore as _, Completion, InMemoryLog, Made, MadeFile, Message, Pieces, Purpose, digest,
 };
@@ -192,16 +192,29 @@ fn an_edit_sends_its_image_first_and_what_goes_wrong_is_told_to_the_model() {
             settings(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
+        // The person sends the image with their message, so the thread holds it.
         let here = scope();
         let put = harness.blobs().put(
             &here,
-            Some(thread.id),
+            None,
             "image/png",
             1 << 20,
             Box::new(Pieces::from(original.clone())),
         );
-        put.await.unwrap();
-        turn(&harness, &mut thread, "edit it").await;
+        let sent = [Part::File {
+            blob: put.await.unwrap(),
+            name: Some("hero.png".into()),
+            resized: None,
+        }];
+        let said = glave_harness::Said {
+            text: "edit it",
+            files: &sent,
+            key: None,
+        };
+        let (caller, cancel) = (glave_ports::Caller::default(), Cancel::new());
+        let mut heard = |_| {};
+        let turned = harness.run_turn_with_files(&mut thread, said, &caller, &cancel, &mut heard);
+        turned.await.unwrap();
 
         let made = asked.lock().unwrap().clone();
         assert_eq!(
@@ -352,5 +365,78 @@ fn an_image_is_named_by_its_prompt_and_kept_whole_however_large() {
         assert_eq!(name.as_deref(), Some("a-red-fox-at-dawn.png"));
         assert_eq!(blob.bytes, image.len() as u64);
         assert!(resized.is_some(), "the model's own copy, made smaller");
+    });
+}
+
+#[test]
+fn a_file_of_another_thread_is_not_one_this_thread_holds() {
+    let dir = folder("media-not-held");
+    block_on!(async {
+        let elsewhere = png(32, 32);
+        let held = format!("blob:{}", digest(&elsewhere).as_str());
+        let edit = json!({"image": held, "prompt": "make it night"});
+        let script = ScriptedModel::new(calls("image_edit", edit)).making(Ok(made(&png(8, 8))));
+        let asked = script.seen_made();
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let other = harness.start_thread(scope()).await.unwrap();
+        let here = scope();
+        let put = harness.blobs().put(
+            &here,
+            Some(other.id),
+            "image/png",
+            1 << 20,
+            Box::new(Pieces::from(elsewhere)),
+        );
+        put.await.unwrap();
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "edit it").await;
+        let told = results(&seen.lock().unwrap()[1].messages);
+        assert!(told[0].contains("not a file this thread holds"), "{told:?}");
+        assert!(asked.lock().unwrap().is_empty(), "nothing was sent");
+    });
+}
+
+#[test]
+fn a_subagent_is_never_offered_the_media_tools() {
+    let dir = folder("media-subagent");
+    block_on!(async {
+        let answers = vec![
+            answer(
+                None,
+                vec![("agent", json!({"description": "x", "prompt": "Do x."}))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Did x."), Vec::new(), StopReason::EndTurn),
+            answer(Some("Done."), Vec::new(), StopReason::EndTurn),
+        ];
+        let script = ScriptedModel::new(answers).making(Ok(made(&png(8, 8))));
+        let mut with_agents = settings();
+        with_agents.subagents = true;
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            with_agents,
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "do x").await;
+        let requests = seen.lock().unwrap().clone();
+        let offered = |request: &glave_ports::ModelRequest| {
+            request
+                .tools
+                .iter()
+                .any(|tool| tool.name.starts_with("image_"))
+        };
+        assert!(offered(&requests[0]), "the parent has them");
+        assert!(!offered(&requests[1]), "its subagent never");
     });
 }
