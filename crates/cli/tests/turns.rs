@@ -10,7 +10,7 @@
 
 use std::time::Instant;
 
-use glave_event::{Body, decode};
+use glave_event::{Body, RawEvent, ThreadId, decode};
 use glave_ports::testing::HUNG;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_session::client::Remote;
@@ -55,7 +55,7 @@ pub(crate) fn api(place: &Place) -> Remote {
 }
 
 /// The newest thread of the project `place`'s folder leads to.
-async fn newest_thread(remote: &Remote, place: &Place) -> glave_event::ThreadId {
+async fn newest_thread(remote: &Remote, place: &Place) -> ThreadId {
     let path = std::fs::canonicalize(&place.project).unwrap();
     let found = Request::ProjectFind {
         path: path.to_string_lossy().into_owned(),
@@ -75,22 +75,81 @@ async fn newest_thread(remote: &Remote, place: &Place) -> glave_event::ThreadId 
     threads[0].id
 }
 
-/// `thread`'s status, once it is `wanted`; read again until it is, or until it is hung.
-async fn once(remote: &Remote, thread: glave_event::ThreadId, wanted: Status) {
+/// `thread`'s status now.
+async fn status(remote: &Remote, thread: ThreadId) -> Status {
+    let Answered::Thread { thread: summary } = remote
+        .request(&Request::ThreadGet { thread })
+        .await
+        .unwrap()
+    else {
+        panic!("a thread")
+    };
+    summary.status
+}
+
+/// What `thread` recorded, in order.
+async fn events(remote: &Remote, thread: ThreadId) -> Vec<RawEvent> {
+    let page = Request::ThreadEvents {
+        thread,
+        after: None,
+        limit: None,
+    };
+    let answered = remote.request(&page).await.unwrap();
+    let Answered::Events { events, .. } = answered else {
+        panic!("events, not {answered:?}")
+    };
+    events
+}
+
+/// The kinds of what `thread` recorded, in order.
+async fn recorded(remote: &Remote, thread: ThreadId) -> Vec<String> {
+    let events = events(remote, thread).await;
+    events
+        .iter()
+        .map(|raw| raw.kind.as_str().to_owned())
+        .collect()
+}
+
+/// Returns once `thread` is `wanted`, read again until it is; if it is hung first, fails with
+/// what it was last, what it recorded, and the server's log.
+async fn once(place: &Place, remote: &Remote, thread: ThreadId, wanted: Status) {
     let deadline = Instant::now() + HUNG;
+    let mut last = None;
     while Instant::now() < deadline {
-        let Answered::Thread { thread: summary } = remote
-            .request(&Request::ThreadGet { thread })
-            .await
-            .unwrap()
-        else {
-            panic!("a thread")
-        };
-        if summary.status == wanted {
+        let now = status(remote, thread).await;
+        if now == wanted {
             return;
         }
+        last = Some(now);
     }
-    panic!("{thread} never became {wanted:?}");
+    let kinds = recorded(remote, thread).await;
+    let never = format!(
+        "{thread} never became {wanted:?} in {HUNG:?}: it was {last:?} last, having recorded \
+         {kinds:?}"
+    );
+    panic!("{}", with_log(place, &never));
+}
+
+/// Allows the change `thread`'s turn waits at, as another client would, and sees the turn
+/// finish and the change made.
+async fn allowed_elsewhere(place: &Place, model: &FakeServer, remote: &Remote, thread: ThreadId) {
+    let approval = events(remote, thread)
+        .await
+        .into_iter()
+        .find_map(|raw| match decode(raw).unwrap().body {
+            Body::ApprovalRequested(asked) => Some(asked.call_id),
+            _ => None,
+        })
+        .unwrap();
+    let decide = Request::ApprovalDecide {
+        thread,
+        approval,
+        decision: Answer::AllowOnce,
+    };
+    remote.request(&decide).await.unwrap();
+    assert!(model.wait_for_requests(2, HUNG), "the turn went on");
+    once(place, remote, thread, Status::Idle).await;
+    assert!(place.project.join("ran.txt").exists());
 }
 
 #[test]
@@ -160,7 +219,7 @@ fn ctrl_c_stops_the_turn_and_the_server_goes_on() {
     glave_ports::block_on!(async {
         let remote = api(&place);
         let thread = newest_thread(&remote, &place).await;
-        once(&remote, thread, Status::Idle).await;
+        once(&place, &remote, thread, Status::Idle).await;
     });
 }
 
@@ -177,33 +236,46 @@ fn a_client_killed_mid_turn_leaves_the_turn_to_finish_answered_by_any_client() {
     glave_ports::block_on!(async {
         let remote = api(&place);
         let thread = newest_thread(&remote, &place).await;
-        once(&remote, thread, Status::Waiting).await;
-        let page = Request::ThreadEvents {
-            thread,
-            after: None,
-            limit: None,
-        };
-        let answered = remote.request(&page).await.unwrap();
-        let Answered::Events { events, .. } = answered else {
-            panic!("events, not {answered:?}")
-        };
-        let approval = events
-            .into_iter()
-            .find_map(|raw| match decode(raw).unwrap().body {
-                Body::ApprovalRequested(asked) => Some(asked.call_id),
-                _ => None,
-            })
-            .unwrap();
-        let decide = Request::ApprovalDecide {
-            thread,
-            approval,
-            decision: Answer::AllowOnce,
-        };
-        remote.request(&decide).await.unwrap();
-        assert!(model.wait_for_requests(2, HUNG), "the turn went on");
-        once(&remote, thread, Status::Idle).await;
+        once(&place, &remote, thread, Status::Waiting).await;
+        allowed_elsewhere(&place, &model, &remote, thread).await;
     });
-    assert!(place.project.join("ran.txt").exists());
+}
+
+/// The end of the terminal's input is no answer, whether the person types Ctrl-D or the
+/// terminal closes as its client is killed (which on Linux the client can read before the
+/// hangup ends it): the client stops, and the approval waits for any client.
+#[test]
+fn the_end_of_the_terminal_s_input_answers_no_approval() {
+    let place = asking("te");
+    let _stopped = Stopped(&place);
+    let model = touching("Finished.", &[]);
+    let mut turn = terminal(&place, &model, &["touch it"]);
+    typed(&mut turn, "y\n");
+    glave_ports::block_on!(async {
+        assert!(model.wait_for_requests(1, HUNG), "the model was asked");
+        let remote = api(&place);
+        let thread = newest_thread(&remote, &place).await;
+        once(&place, &remote, thread, Status::Waiting).await;
+        // Ctrl-D at the start of a line: the end of input.
+        typed(&mut turn, "\x04");
+        let said = turn.wait_with_output().unwrap();
+        let shown = with_log(&place, &text(&said));
+        assert_eq!(said.status.code(), Some(1), "{shown}");
+        assert!(shown.contains("allow? [y] once"), "asked: {shown}");
+        assert!(shown.contains("nothing was answered"), "{shown}");
+        let kinds = recorded(&remote, thread).await;
+        assert!(
+            !kinds.iter().any(|kind| kind == "approval.decided"),
+            "{kinds:?}"
+        );
+        assert_eq!(status(&remote, thread).await, Status::Waiting, "{shown}");
+        assert_eq!(
+            model.received().len(),
+            1,
+            "the turn went no further: {shown}"
+        );
+        allowed_elsewhere(&place, &model, &remote, thread).await;
+    });
 }
 
 #[test]
