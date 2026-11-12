@@ -297,6 +297,21 @@ fn a_call_is_checked_before_anyone_is_asked_and_its_line_names_each_file_it_send
     });
 }
 
+/// What the model was sent in a turn asked to draw a fox, answered by `script`, in `dir`.
+async fn drawing(dir: &std::path::Path, script: ScriptedModel) -> Vec<glave_ports::ModelRequest> {
+    let (harness, seen) = scripted(
+        workspace(dir).await,
+        script,
+        AllowAll,
+        InMemoryLog::new(),
+        1,
+        settings(),
+    );
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    turn(&harness, &mut thread, "draw a fox").await;
+    seen.lock().unwrap().clone()
+}
+
 #[test]
 fn a_call_left_unanswered_is_told_it_may_still_be_billed() {
     let dir = folder("media-unanswered");
@@ -304,17 +319,8 @@ fn a_call_left_unanswered_is_told_it_may_still_be_billed() {
         let silent = glave_ports::ProviderError::Timeout { seconds: 300 };
         let script = ScriptedModel::new(calls("image_generate", json!({"prompt": "a fox"})))
             .making(Err(silent));
-        let (harness, seen) = scripted(
-            workspace(&dir).await,
-            script,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        turn(&harness, &mut thread, "draw a fox").await;
-        let told = results(&seen.lock().unwrap()[1].messages);
+        let requests = drawing(&dir, script).await;
+        let told = results(&requests[1].messages);
         assert!(
             told[0].contains("may still be made and billed")
                 && told[0].contains("unless the person asks"),
@@ -331,17 +337,7 @@ fn an_image_is_named_by_its_prompt_and_kept_whole_however_large() {
         let arguments = json!({"prompt": "A red fox, at dawn!"});
         let script =
             ScriptedModel::new(calls("image_generate", arguments)).making(Ok(made(&image)));
-        let (harness, seen) = scripted(
-            workspace(&dir).await,
-            script,
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        turn(&harness, &mut thread, "draw a fox").await;
-        let requests = seen.lock().unwrap().clone();
+        let requests = drawing(&dir, script).await;
         let Some(Message::Tool { output, .. }) = requests[1].messages.last() else {
             panic!("the result is sent back");
         };
