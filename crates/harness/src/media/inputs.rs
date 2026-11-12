@@ -1,6 +1,7 @@
 //! The images a media call draws on, as the model named them: a file the thread holds
-//! (`blob:<sha256>`) or a file on its computer by its path, each read, made fit to send and
-//! handed to the provider inline, in order.
+//! (`blob:<sha256>`) or a file on its computer by its path, each read and checked before anyone
+//! is asked, and handed to the provider whole, as it is, in order: only the model's own copy of
+//! an image is made smaller.
 
 use std::path::Path;
 
@@ -9,11 +10,16 @@ use base64::engine::general_purpose::STANDARD;
 use glave_event::{BlobRef, Part, Sha256};
 use glave_ports::computer::EntryKind;
 use glave_ports::secrets::is_secret_file;
-use glave_ports::{BlobStore, EventLog, InlineFile, ModelProvider, digest, is_image, read_all};
+use glave_ports::{
+    BlobError, BlobStore, EventLog, InlineFile, ModelProvider, digest, is_image, read_all,
+};
 
 use crate::approval::Approver;
-use crate::files::{MAX_FILE, sniffed};
+use crate::files::sniffed;
 use crate::harness::{Harness, Thread};
+
+/// The largest image sent to an image model, in bytes: what they take in.
+const MOST_SENT: u64 = 20 * 1024 * 1024;
 
 /// The images a call draws on: a `file` part for each, in order, and its content inline.
 pub(super) struct Inputs {
@@ -50,12 +56,6 @@ where
                 .ok_or_else(|| {
                     format!("{name} is not an image glave reads: a PNG, JPEG, GIF or WebP.")
                 })?;
-            let (bytes, copy) = self.fit(bytes).await;
-            let (media_type, bytes) = match copy {
-                Ok(Some(copy)) => ("image/jpeg", copy),
-                Ok(None) => (media_type, bytes),
-                Err(error) => return Err(format!("{name} can't be sent: {error}.")),
-            };
             let sha256 = digest(&bytes);
             inputs.parts.push(Part::File {
                 blob: BlobRef {
@@ -83,13 +83,16 @@ where
         let found = self.blobs.get(&thread.scope, &sha256).await;
         let mut found = found.map_err(|error| format!("{name} can't be read: {error}."))?;
         let found = found.as_mut().ok_or_else(gone)?;
-        read_all(found.bytes.as_mut(), MAX_FILE)
+        read_all(found.bytes.as_mut(), MOST_SENT)
             .await
-            .map_err(|error| format!("{name} can't be read: {error}."))
+            .map_err(|error| match error {
+                BlobError::TooLarge(_) => too_large(name),
+                BlobError::Storage(_) => format!("{name} can't be read: {error}."),
+            })
     }
 
-    /// The bytes of the file at `path` on `thread`'s computer, never one that usually holds
-    /// secrets.
+    /// The bytes of the file at `path` on `thread`'s computer, confined to its workspace, never
+    /// one that usually holds secrets.
     async fn on_computer(&self, thread: &Thread, path: &str) -> Result<Vec<u8>, String> {
         let workspace = self.workspace_for(thread);
         let stat = workspace.stat(path).await?;
@@ -102,11 +105,17 @@ where
             Some(EntryKind::Folder) => return Err(format!("{shown} is a folder.")),
             None => return Err(format!("File not found: {shown}")),
         }
-        if stat.size > MAX_FILE {
-            return Err(format!("{shown} is too large: at most {MAX_FILE} bytes."));
+        if stat.size > MOST_SENT {
+            return Err(too_large(&shown));
         }
         let read = workspace.read(&shown).await;
         read.map(glave_ports::computer::Bytes::into_vec)
             .map_err(|error| format!("Could not read {shown}: {}", error.message()))
     }
+}
+
+/// What the model is told of an image too large to send, `name` as it named it.
+fn too_large(name: &str) -> String {
+    let most = MOST_SENT / (1024 * 1024);
+    format!("{name} is larger than the {most} MB an image model takes: send a smaller copy.")
 }

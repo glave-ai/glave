@@ -103,4 +103,11 @@ fn each_tool_is_named_for_its_purpose_and_a_call_reads_as_its_prompt() {
         "{line}"
     );
     assert!(line.ends_with('…') && !line.contains('\n'), "{line}");
+    let sent = json!({"prompt": "make it night", "image": format!("blob:{}", "a".repeat(64)),
+        "references": ["art/style.png"]});
+    assert_eq!(
+        describe(IMAGE_EDIT, &arguments(sent)),
+        "image_edit: make it night (blob:aaaaaaaa…, art/style.png)",
+        "each file it sends named"
+    );
 }
