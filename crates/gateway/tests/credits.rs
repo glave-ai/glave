@@ -3,7 +3,7 @@
 //! overdraw the balance or pass the month's limit is refused before it is sent, saying which;
 //! a model with no price is refused, and passed over for the next target that has one; a call
 //! that breaks off after its answer began, or is cancelled, is charged for what it read and
-//! what came; a charge the store refuses is still counted and written with the next; calls side by side never overdraw; another server on the
+//! what came; a charge the store refuses is still counted and written with the next; calls side by side never overdraw, on one server or several on one store, and a hold whose server stopped lapses; another server on the
 //! store, or this one after a restart, reads the same balance; and a call no organization
 //! asked for is charged to no one.
 
@@ -343,4 +343,93 @@ fn another_server_on_the_store_reads_the_same_credits_and_holds_after_its_charge
         "the charge there is read here before it holds"
     );
     assert_eq!(balance(&here, org(2)), 0, "each organization has its own");
+}
+
+#[test]
+fn servers_side_by_side_on_one_store_never_spend_the_last_of_a_balance_twice() {
+    let log = FaultyLog::default();
+    let (here, there) = (credits(&log, None), credits_on(&log));
+    let gate = Arc::new(Semaphore::new(0));
+    let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
+    let gateways = [
+        Arc::new(gateway(&fake, &here)),
+        Arc::new(gateway(&fake, &there)),
+    ];
+    let (acme, ada) = (org(1), person(1));
+    add(&here, acme, 3 * WORST + WORST / 2, "order-1");
+    block_on!(async {
+        let mut calls = JoinSet::new();
+        for gateway in gateways.iter().cycle().take(8) {
+            let gateway = Arc::clone(gateway);
+            calls.spawn(async move { gateway.complete(&paid(acme, ada), &mut |_| {}).await });
+        }
+        for _ in 0..5 {
+            let done = calls.join_next().await.unwrap().unwrap();
+            assert_eq!(done.unwrap_err().failure(), Failure::OverBudget);
+        }
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            3,
+            "only three could be held, on both servers together"
+        );
+        gate.add_permits(3);
+        while let Some(done) = calls.join_next().await {
+            assert!(done.unwrap().is_ok());
+        }
+    });
+    let left = 3 * WORST + WORST / 2 - 3 * 55;
+    assert_eq!(balance(&credits_on(&log), acme), left);
+    let after = ask(&gateway(&Fake::new("p"), &there), &paid(acme, ada));
+    assert!(
+        after.is_ok(),
+        "every hold was let go of as its call was charged"
+    );
+}
+
+#[test]
+fn a_hold_whose_server_stopped_mid_call_counts_everywhere_until_it_lapses() {
+    let log = FaultyLog::default();
+    let clock = ManualClock::ticking(NOW);
+    let there = Arc::new(Credits::new(
+        log.clone(),
+        Box::new(clock.clone()),
+        Box::new(CountingEntropy::starting_at(1_000)),
+        None,
+    ));
+    let (acme, ada) = (org(1), person(1));
+    add(&there, acme, WORST, "order-1");
+    let stopped = credits_on(&log);
+    let mut held = Fake::gated("p", Arc::new(Semaphore::new(0)));
+    saying(&mut held);
+    let stopping = Arc::new(gateway(&held, &stopped));
+    block_on!(async {
+        let (began, beginning) = oneshot::channel();
+        let gateway = Arc::clone(&stopping);
+        // It holds all of it, says its words, then waits at its gate, where its server stops.
+        let call = tokio::spawn(async move {
+            let mut began = Some(began);
+            let mut heard = |_| {
+                if let Some(began) = began.take() {
+                    let _ = began.send(());
+                }
+            };
+            gateway.complete(&paid(acme, ada), &mut heard).await
+        });
+        beginning.await.unwrap();
+        call.abort();
+        assert!(call.await.unwrap_err().is_cancelled());
+    });
+    drop((stopping, stopped));
+    let fake = Fake::new("p");
+    let refused = ask(&gateway(&fake, &there), &paid(acme, ada)).unwrap_err();
+    assert_eq!(
+        refused.failure(),
+        Failure::OverBudget,
+        "its hold counts here"
+    );
+    clock.advance_seconds(3_600);
+    assert!(
+        ask(&gateway(&fake, &there), &paid(acme, ada)).is_ok(),
+        "until it lapses"
+    );
 }

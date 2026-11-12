@@ -1,6 +1,6 @@
 use glave_event::{
-    CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet, EventId, Header, Nanos, Payload,
-    Principal, Seq, ThreadId, encode,
+    CostKind, CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet, EventId, Header, Nanos,
+    Payload, Principal, Seq, ThreadId, encode,
 };
 
 use super::*;
@@ -17,15 +17,38 @@ fn person(n: u8) -> PrincipalId {
     PrincipalId::new(at(i64::from(n)), [n; 10]).unwrap()
 }
 
-/// `book` with `payload` taken in as its next event, written at `second`.
-fn take<T: Payload>(book: &mut Book, second: i64, payload: &T) {
+/// `book` with `payload` taken in as its next event, written at `second`: the event's id.
+fn take<T: Payload>(book: &mut Book, second: i64, payload: &T) -> EventId {
+    let [low, high, ..] = book.next_seq().to_le_bytes();
+    let id = EventId::new(at(second), [7, 7, 7, 7, 7, 7, 7, 7, high, low]).unwrap();
     let header = Header {
-        id: EventId::new(at(second), [7; 10]).unwrap(),
+        id,
         thread: ThreadId::reserved(12),
         seq: Seq::new(book.next_seq()).unwrap(),
         at: At::from(at(second)),
     };
     book.apply(encode(header, payload).unwrap());
+    id
+}
+
+/// Holds `worst` in `book` at `second` as this server does: checked, then written, the call
+/// running here.
+fn hold(book: &mut Book, worst: i64, second: i64, limit: Option<Money>) -> Result<EventId, Unpaid> {
+    book.may_hold(Nanos::new(worst), at(second), limit)?;
+    let amount = dollars(Nanos::new(worst));
+    let id = take(book, second, &CreditsHeld { amount });
+    book.running.insert(id);
+    Ok(id)
+}
+
+/// `hold`'s call ended costing `cost`, its charge written.
+fn release(book: &mut Book, hold: EventId, cost: i64) {
+    book.settle(Some(hold), None);
+    let charged = CreditsCharged {
+        hold: Some(hold),
+        ..charged(cost, None)
+    };
+    take(book, OCTOBER, &charged);
 }
 
 fn added(nanos: i64, reference: &str) -> CreditsAdded {
@@ -41,6 +64,7 @@ fn charged(nanos: i64, who: Option<PrincipalId>) -> CreditsCharged {
         kind: CostKind::Model,
         amount: dollars(Nanos::new(nanos)),
         person: who,
+        hold: None,
     }
 }
 
@@ -89,27 +113,26 @@ fn the_balance_is_what_was_added_less_what_was_charged_and_each_month_counts_its
 
 #[test]
 fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
-    let month = month_of(at(OCTOBER));
     let mut book = Book::default();
     assert_eq!(
-        book.hold(Nanos::new(0), month, None),
+        hold(&mut book, 0, OCTOBER, None),
         Err(Unpaid::Spent),
         "nothing added"
     );
     take(&mut book, OCTOBER, &added(1_000, "order-1"));
-    assert_eq!(book.hold(Nanos::new(600), month, None), Ok(()));
+    let held = hold(&mut book, 600, OCTOBER, None).unwrap();
     assert_eq!(
-        book.hold(Nanos::new(600), month, None),
+        hold(&mut book, 600, OCTOBER, None),
         Err(Unpaid::Short {
             free: dollars(Nanos::new(400)),
             needs: dollars(Nanos::new(600))
         }),
         "what is held counts"
     );
-    book.settle(Nanos::new(600), None);
+    release(&mut book, held, 0);
     let limit = Some(dollars(Nanos::new(500)));
     assert_eq!(
-        book.hold(Nanos::new(600), month, limit),
+        hold(&mut book, 600, OCTOBER, limit),
         Err(Unpaid::MonthShort {
             limit: dollars(Nanos::new(500)),
             free: dollars(Nanos::new(500)),
@@ -118,18 +141,13 @@ fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
     );
     take(&mut book, OCTOBER, &charged(500, None));
     assert_eq!(
-        book.hold(Nanos::new(0), month, limit),
+        hold(&mut book, 0, OCTOBER, limit),
         Err(Unpaid::MonthLimit {
             limit: dollars(Nanos::new(500))
         }),
         "this month's limit is reached"
     );
-    let november = month_of(at(NOVEMBER));
-    assert_eq!(
-        book.hold(Nanos::new(400), november, limit),
-        Ok(()),
-        "a new month"
-    );
+    assert!(hold(&mut book, 400, NOVEMBER, limit).is_ok(), "a new month");
     take(
         &mut book,
         OCTOBER,
@@ -147,13 +165,12 @@ fn a_hold_needs_something_left_of_the_balance_and_of_the_month_s_limit() {
 
 #[test]
 fn a_charge_counts_at_once_and_its_event_read_back_takes_its_place() {
-    let month = month_of(at(OCTOBER));
     let ada = person(1);
     let mut book = Book::default();
     take(&mut book, OCTOBER, &added(1_000, "order-1"));
-    assert_eq!(book.hold(Nanos::new(700), month, None), Ok(()));
+    let held = hold(&mut book, 700, OCTOBER, None).unwrap();
     assert_eq!(
-        book.hold(Nanos::new(400), month, None),
+        hold(&mut book, 400, OCTOBER, None),
         Err(Unpaid::Short {
             free: dollars(Nanos::new(300)),
             needs: dollars(Nanos::new(400))
@@ -162,11 +179,14 @@ fn a_charge_counts_at_once_and_its_event_read_back_takes_its_place() {
     );
     let id = EventId::new(at(OCTOBER), [8; 10]).unwrap();
     let unwritten = Unwritten {
-        charged: charged(300, Some(ada)),
+        charged: CreditsCharged {
+            hold: Some(held),
+            ..charged(300, Some(ada))
+        },
         at: At::from(at(OCTOBER)),
         id: Some(id),
     };
-    book.settle(Nanos::new(700), Some(unwritten.clone()));
+    book.settle(Some(held), Some(unwritten.clone()));
     assert!(!book.idle(), "it has a charge to write");
     let counted = book.account(at(OCTOBER), None);
     assert_eq!(
@@ -175,6 +195,10 @@ fn a_charge_counts_at_once_and_its_event_read_back_takes_its_place() {
         "counted before it is written"
     );
     assert_eq!(counted.people.get(&ada), Some(&dollars(Nanos::new(300))));
+    assert!(
+        hold(&mut book, 700, OCTOBER, None).is_ok(),
+        "the charge not yet written lets go of the hold here"
+    );
     // Its append landed, whoever saw it: read back, it counts once.
     let header = Header {
         id,
@@ -183,7 +207,7 @@ fn a_charge_counts_at_once_and_its_event_read_back_takes_its_place() {
         at: unwritten.at,
     };
     book.apply(encode(header, &unwritten.charged).unwrap());
-    assert!(book.idle());
+    assert_eq!(book.unwritten.len(), 0);
     assert_eq!(book.account(at(OCTOBER), None), counted);
 }
 
@@ -212,18 +236,12 @@ fn money_in_another_currency_is_no_part_of_it() {
 fn a_hold_is_the_most_a_call_could_cost_and_settling_leaves_exactly_what_it_did() {
     let mut book = Book::default();
     take(&mut book, OCTOBER, &added(1_000_000_000, "order-1"));
-    let month = month_of(at(OCTOBER));
-    book.hold(Nanos::new(1_000_000_000), month, None).unwrap();
+    let held = hold(&mut book, 1_000_000_000, OCTOBER, None).unwrap();
     assert!(
-        book.hold(Nanos::new(1), month, None).is_err(),
+        hold(&mut book, 1, OCTOBER, None).is_err(),
         "all of it is held"
     );
-    let cheap = Unwritten {
-        charged: charged(1, None),
-        at: At::from(at(OCTOBER)),
-        id: None,
-    };
-    book.settle(Nanos::new(1_000_000_000), Some(cheap));
+    release(&mut book, held, 1);
     let account = book.account(at(OCTOBER), None);
     assert_eq!(
         account.balance,
@@ -231,27 +249,26 @@ fn a_hold_is_the_most_a_call_could_cost_and_settling_leaves_exactly_what_it_did(
         "no cent in it"
     );
     assert_eq!(account.spent, dollars(Nanos::new(1)));
-    assert_eq!(book.held, Nanos::ZERO);
+    assert!(book.idle());
 }
 
 #[test]
 fn at_the_limit_of_what_can_be_counted_a_book_stops_there_and_refuses() {
     let mut book = Book::default();
-    let month = month_of(at(OCTOBER));
     take(&mut book, OCTOBER, &added(i64::MAX, "order-1"));
     take(&mut book, OCTOBER, &added(i64::MAX, "order-2"));
     assert_eq!(book.account(at(OCTOBER), None).balance, dollars(Nanos::MAX));
-    book.hold(Nanos::MAX, month, None).unwrap();
+    let held = hold(&mut book, i64::MAX, OCTOBER, None).unwrap();
     assert_eq!(
-        book.hold(Nanos::new(1), month, None),
+        hold(&mut book, 1, OCTOBER, None),
         Err(Unpaid::Short {
             free: dollars(Nanos::ZERO),
             needs: dollars(Nanos::new(1))
         }),
         "nothing wraps round to look free"
     );
-    book.settle(Nanos::MAX, None);
-    assert_eq!(book.held, Nanos::ZERO);
+    release(&mut book, held, 0);
+    assert!(book.idle());
     take(&mut book, OCTOBER, &charged(i64::MAX, Some(person(1))));
     take(&mut book, OCTOBER, &charged(i64::MAX, Some(person(1))));
     let account = book.account(at(OCTOBER), None);
@@ -266,5 +283,25 @@ fn at_the_limit_of_what_can_be_counted_a_book_stops_there_and_refuses() {
         dollars(Nanos::new(-i64::MAX)),
         "and what is left, far below nothing, is refused"
     );
-    assert_eq!(book.hold(Nanos::new(1), month, None), Err(Unpaid::Spent));
+    assert_eq!(hold(&mut book, 1, OCTOBER, None), Err(Unpaid::Spent));
+}
+
+#[test]
+fn another_server_s_hold_counts_until_it_lapses_and_this_server_s_own_until_its_call_ends() {
+    let mut book = Book::default();
+    take(&mut book, OCTOBER, &added(1_000, "order-1"));
+    let amount = dollars(Nanos::new(600));
+    take(&mut book, OCTOBER, &CreditsHeld { amount });
+    assert!(
+        hold(&mut book, 600, OCTOBER, None).is_err(),
+        "another server's hold counts here"
+    );
+    let lapsed = OCTOBER + LAPSE.as_secs();
+    let mine = hold(&mut book, 600, lapsed, None).unwrap();
+    assert!(
+        hold(&mut book, 600, lapsed + LAPSE.as_secs(), None).is_err(),
+        "a call of this server's own holds while it runs, however long"
+    );
+    release(&mut book, mine, 0);
+    assert!(hold(&mut book, 600, lapsed, None).is_ok());
 }

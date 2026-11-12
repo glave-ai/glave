@@ -3,11 +3,12 @@
 //! organization's own in the store: money added (`credits.added`, once per payment), the
 //! month's limit its Owner set (`credits.limit.set`), and each charge (`credits.charged`).
 //! Before a call is sent its worst case is held against what is left of the balance and of the
-//! month's limit; when it ends, what it cost is counted in this server's book at once, in the
-//! hold's place, and written to the store after, so a charge whose writing fails or is
-//! cancelled is still counted, and written with the next. Any number of servers may share one
-//! store: each reads what the others charged before it holds, and appends after anything they
-//! wrote meanwhile.
+//! month's limit, in the ledger (`credits.held`), so every server on the store counts it; when
+//! it ends, what it cost is counted in this server's book at once, in the hold's place, and
+//! written to the store after, its charge letting go of the hold, so a charge whose writing
+//! fails or is cancelled is still counted, and written with the next. Any number of servers
+//! may share one store: a hold is appended only after everything before it was read, so of
+//! servers racing for the last of a balance one holds it and the others read its hold first.
 
 mod book;
 mod paying;
@@ -17,8 +18,8 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet, Currency, EventId, Header, Money,
-    Nanos, Payload, Principal, RawEvent, Seq, encode,
+    At, CostKind, CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet, Currency, EventId,
+    Header, Money, Nanos, Payload, Principal, RawEvent, Seq, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{
@@ -27,7 +28,7 @@ use glave_ports::{
 use thiserror::Error;
 
 pub use book::Account;
-use book::{Book, Unwritten, dollars, month_of};
+use book::{Book, Unwritten, dollars};
 pub(crate) use paying::Paying;
 
 /// Charges a server keeps counted for one organization while the store does not take them.
@@ -242,47 +243,57 @@ impl<L: EventLog> Credits<L> {
     }
 
     /// Writes the charges this server counted for `org` that the store does not have yet, in
-    /// one append, after anything others wrote meanwhile. Each charge keeps the id it is first
-    /// written with, so one whose append landed unseen, its writer cancelled or told it failed,
-    /// is read back in its count's place rather than written twice. One that fails stays
-    /// counted, for the next.
+    /// one append, after anything others wrote meanwhile. One that fails stays counted, for the
+    /// next.
     async fn write(&self, org: OrgId) {
-        let scope = scope(org);
-        let ledger = Reserved::Credits.id();
+        let (scope, ledger) = (scope(org), Reserved::Credits.id());
         let appended = append_retrying(&self.log, &scope, ledger, || async move {
             self.catch_up(org).await?;
-            let (next, pending) = self.with_book(org, |book| {
-                for unwritten in &mut book.unwritten {
-                    if unwritten.id.is_none() {
-                        unwritten.id = self.fresh_id(unwritten.at).ok();
-                    }
-                }
-                (book.next_seq(), book.unwritten.clone())
-            });
-            if pending.is_empty() {
-                return Ok(None);
-            }
-            let events = (next..)
-                .zip(&pending)
-                .map(|(seq, unwritten)| {
-                    let id = unwritten
-                        .id
-                        .map_or_else(|| self.fresh_id(unwritten.at), Ok)?;
-                    event(seq, id, unwritten.at, &unwritten.charged)
-                })
-                .collect::<Result<Vec<RawEvent>, CreditsError>>()?;
-            Ok::<_, CreditsError>(Some((events, ())))
+            let (_, pending) = self.pending(org)?;
+            Ok::<_, CreditsError>((!pending.is_empty()).then_some((pending, ())))
         });
         match appended.await {
-            Ok(appended) => self.with_book(org, |book| {
-                for raw in appended.into_iter().flat_map(|(events, ())| events) {
-                    book.apply(raw);
-                }
-            }),
+            Ok(appended) => self.took(org, appended.map(|(events, ())| events)),
             Err(error) => {
                 tracing::warn!(%org, "could not write the organization's charges yet: {error}");
             }
         }
+    }
+
+    /// The events of the charges this server counted for `org` that the store does not have
+    /// yet, numbered from its next `seq`, and the `seq` after them. Each charge keeps the id it
+    /// is first written with, so one whose append landed unseen, its writer cancelled or told
+    /// it failed, is read back in its count's place rather than written twice.
+    fn pending(&self, org: OrgId) -> Result<(u64, Vec<RawEvent>), CreditsError> {
+        let (next, pending) = self.with_book(org, |book| {
+            for unwritten in &mut book.unwritten {
+                if unwritten.id.is_none() {
+                    unwritten.id = self.fresh_id(unwritten.at).ok();
+                }
+            }
+            (book.next_seq(), book.unwritten.clone())
+        });
+        let events = (next..)
+            .zip(&pending)
+            .map(|(seq, unwritten)| {
+                let id = unwritten
+                    .id
+                    .map_or_else(|| self.fresh_id(unwritten.at), Ok)?;
+                event(seq, id, unwritten.at, &unwritten.charged)
+            })
+            .collect::<Result<Vec<RawEvent>, CreditsError>>()?;
+        let after = next.saturating_add(u64::try_from(events.len()).unwrap_or(u64::MAX));
+        Ok((after, events))
+    }
+
+    /// Takes into `org`'s book the events this server `appended`.
+    fn took(&self, org: OrgId, appended: Option<Vec<RawEvent>>) {
+        self.with_book(org, |book| {
+            appended
+                .into_iter()
+                .flatten()
+                .for_each(|raw| book.apply(raw));
+        });
     }
 
     /// A new event's id, written `at`.
@@ -292,62 +303,114 @@ impl<L: EventLog> Credits<L> {
         EventId::new(at.timestamp(), random).map_err(|e| failed(&e))
     }
 
-    /// Holds `worst` of `org`'s credits once what this server owes the store is written and
-    /// the others' charges are read, or refuses it.
-    async fn hold(&self, org: OrgId, worst: Nanos) -> Result<(), ProviderError> {
-        self.write(org).await;
+    /// Holds `worst` of `org`'s credits in its ledger, or refuses it: in one append, after
+    /// everything others wrote was read, with what this server owes the store before it, so a
+    /// hold costs one read of what is new and one small write. The hold's id, when anything
+    /// was held.
+    async fn hold(&self, org: OrgId, worst: Nanos) -> Result<Option<EventId>, ProviderError> {
         let unsaved = self.with_book(org, |book| book.unwritten.len());
-        let read = if unsaved >= MOST_UNWRITTEN {
-            Err("its charges could not be saved yet".to_owned())
+        let now = self.clock.now();
+        let ledger = Reserved::Credits.id();
+        let appended = if unsaved >= MOST_UNWRITTEN {
+            Err(CreditsError::Event(
+                "its charges could not be saved yet".to_owned(),
+            ))
         } else {
-            self.catch_up(org).await.map_err(|error| error.to_string())
+            append_retrying(&self.log, &scope(org), ledger, || async move {
+                self.catch_up(org).await?;
+                let (next, mut events) = self.pending(org)?;
+                let may = self.with_book(org, |book| book.may_hold(worst, now, self.limit));
+                let hold = match may {
+                    Ok(()) if worst > Nanos::ZERO => {
+                        let at = At::from(now);
+                        let id = self.fresh_id(at)?;
+                        let held = CreditsHeld {
+                            amount: dollars(worst),
+                        };
+                        events.push(event(next, id, at, &held)?);
+                        Some(id)
+                    }
+                    _ => None,
+                };
+                Ok::<_, CreditsError>((!events.is_empty()).then_some((events, (may, hold))))
+            })
+            .await
         };
-        if let Err(error) = read {
-            // Credits that cannot be read or saved pay for nothing; the store may answer later.
-            tracing::warn!(%org, "the organization's credits are out of reach: {error}");
-            return Err(ProviderError::Unserved {
-                failure: Failure::Rejected,
-                reason: "glave could not reach your credits just now: try again".to_owned(),
-            });
+        let made = match appended {
+            Ok(Some((events, made))) => {
+                self.took(org, Some(events));
+                made
+            }
+            // Nothing to write: nothing owed, and nothing to hold or the call refused.
+            Ok(None) => (
+                self.with_book(org, |book| book.may_hold(worst, now, self.limit)),
+                None,
+            ),
+            Err(error) => {
+                // Credits that cannot be read or saved pay for nothing; the store may answer
+                // later.
+                tracing::warn!(%org, "the organization's credits are out of reach: {error}");
+                return Err(ProviderError::Unserved {
+                    failure: Failure::Rejected,
+                    reason: "glave could not reach your credits just now: try again".to_owned(),
+                });
+            }
+        };
+        match made {
+            (Ok(()), hold) => {
+                if let Some(hold) = hold {
+                    self.with_book(org, |book| book.running.insert(hold));
+                }
+                Ok(hold)
+            }
+            (Err(unpaid), _) => Err(ProviderError::Unpaid(unpaid)),
         }
-        let month = month_of(self.clock.now());
-        self.with_book(org, |book| book.hold(worst, month, self.limit))
-            .map_err(ProviderError::Unpaid)
     }
 
-    /// Lets go of `held` of `payer`'s organization's credits and counts `cost` in its place.
-    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos) {
-        let charged = (cost > Nanos::ZERO).then(|| Unwritten {
+    /// Lets go of `payer`'s organization's credits held by `hold`, and counts `cost` in its
+    /// place, at once; written, the charge lets go of the hold for every server.
+    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos) {
+        let charged = (cost > Nanos::ZERO || hold.is_some()).then(|| Unwritten {
             charged: CreditsCharged {
                 kind: CostKind::Model,
                 amount: dollars(cost),
                 person: payer.person,
+                hold,
             },
             at: At::from(self.clock.now()),
             id: None,
         });
-        self.with_book(payer.org, |book| book.settle(held, charged));
+        self.with_book(payer.org, |book| book.settle(hold, charged));
     }
 }
 
 /// What the gateway asks of the credits, whatever log keeps them: a trait only so that the
 /// gateway, which keeps no log, need not name the log's type.
 pub(crate) trait Charging: Send + Sync + fmt::Debug {
-    /// Holds `worst`, in dollars, of `org`'s credits for a call, or refuses it.
-    fn hold(&self, org: OrgId, worst: Nanos) -> BoxFuture<'_, Result<(), ProviderError>>;
-    /// Lets go of `held` and counts `cost`, in dollars, in its place, at once.
-    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos);
+    /// Holds `worst`, in dollars, of `org`'s credits for a call, or refuses it: the hold's
+    /// id, when anything was held.
+    fn hold(
+        &self,
+        org: OrgId,
+        worst: Nanos,
+    ) -> BoxFuture<'_, Result<Option<EventId>, ProviderError>>;
+    /// Lets go of `hold` and counts `cost`, in dollars, in its place, at once.
+    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos);
     /// Writes what was counted for `org` and the store does not have yet.
     fn write(&self, org: OrgId) -> BoxFuture<'_, ()>;
 }
 
 impl<L: EventLog> Charging for Credits<L> {
-    fn hold(&self, org: OrgId, worst: Nanos) -> BoxFuture<'_, Result<(), ProviderError>> {
+    fn hold(
+        &self,
+        org: OrgId,
+        worst: Nanos,
+    ) -> BoxFuture<'_, Result<Option<EventId>, ProviderError>> {
         Box::pin(Self::hold(self, org, worst))
     }
 
-    fn settle(&self, payer: Payer, held: Nanos, cost: Nanos) {
-        Self::settle(self, payer, held, cost);
+    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos) {
+        Self::settle(self, payer, hold, cost);
     }
 
     fn write(&self, org: OrgId) -> BoxFuture<'_, ()> {
@@ -369,6 +432,10 @@ mod tests {
         OrgId::from_uuid(PrincipalId::new(at, [1; 10]).unwrap().as_uuid())
     }
 
+    fn event_id(n: i64) -> EventId {
+        EventId::new(jiff::Timestamp::from_second(n).unwrap(), [2; 10]).unwrap()
+    }
+
     #[test]
     fn past_its_cap_the_least_recently_used_idle_book_is_forgotten_never_one_in_use() {
         let credits = Credits::new(
@@ -377,7 +444,7 @@ mod tests {
             Box::new(CountingEntropy::starting_at(1)),
             None,
         );
-        credits.with_book(org(0), |book| book.held = Nanos::new(5));
+        credits.with_book(org(0), |book| book.running.insert(event_id(0)));
         for n in 1..BOOKS {
             credits.with_book(org(n), |_| ());
         }

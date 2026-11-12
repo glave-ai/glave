@@ -437,6 +437,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::CreditsAdded(_) => "credits.added",
             Body::CreditsLimitSet(_) => "credits.limit.set",
             Body::CreditsCharged(_) => "credits.charged",
+            Body::CreditsHeld(_) => "credits.held",
             Body::Unknown(_) => "unknown",
         })
         .collect()

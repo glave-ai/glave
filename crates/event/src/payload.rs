@@ -58,7 +58,7 @@ pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use connection::{ConnectionConnected, ConnectionRemoved, SignInClient};
 pub use connector::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
-pub use credits::{CostKind, CreditsAdded, CreditsCharged, CreditsLimitSet};
+pub use credits::{CostKind, CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet};
 pub use filters::{Filters, FiltersSet, Hides, MaxPrice, Serve, Sort};
 pub use fork::{ForkFiles, ForkPoint, ThreadForked};
 pub use grouping::{Grouping, GroupingSet};

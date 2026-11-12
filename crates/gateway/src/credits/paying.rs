@@ -6,7 +6,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use glave_event::{Money, Nanos, TokenCounts};
+use glave_event::{EventId, Money, Nanos, TokenCounts};
 use glave_ports::{Delta, Payer, ProviderError};
 
 use super::Charging;
@@ -20,7 +20,8 @@ use crate::price::Price;
 pub(crate) struct Paying<'a> {
     credits: &'a dyn Charging,
     payer: Payer,
-    held: Nanos,
+    /// The hold in the ledger, when anything was held.
+    hold: Option<EventId>,
     price: &'a Price,
     /// The tokens the call reads, as estimated before it was sent.
     input: u64,
@@ -39,12 +40,12 @@ impl<'a> Paying<'a> {
         price: &'a Price,
         input: u64,
     ) -> Result<Self, ProviderError> {
-        let held = in_dollars(worst).unwrap_or(Nanos::ZERO).max(Nanos::ZERO);
-        credits.hold(payer.org, held).await?;
+        let worst = in_dollars(worst).unwrap_or(Nanos::ZERO).max(Nanos::ZERO);
+        let hold = credits.hold(payer.org, worst).await?;
         Ok(Self {
             credits,
             payer,
-            held,
+            hold,
             price,
             input,
             seen: AtomicU64::new(0),
@@ -81,7 +82,7 @@ impl<'a> Paying<'a> {
 
     async fn counted(mut self, cost: Nanos) {
         self.settled = true;
-        self.credits.settle(self.payer, self.held, cost);
+        self.credits.settle(self.payer, self.hold, cost);
         self.credits.write(self.payer.org).await;
     }
 
@@ -102,7 +103,7 @@ impl<'a> Paying<'a> {
 impl Drop for Paying<'_> {
     fn drop(&mut self) {
         if !self.settled {
-            self.credits.settle(self.payer, self.held, self.so_far());
+            self.credits.settle(self.payer, self.hold, self.so_far());
         }
     }
 }

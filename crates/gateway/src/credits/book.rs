@@ -1,15 +1,16 @@
-//! What one organization's credits ledger says, as far as it was read; the charges this server
-//! made that the store does not have yet, counted already; and what calls running hold against
-//! it now. Amounts are billionths of a US dollar, kept exact: rounding to cents is for showing
+//! What one organization's credits ledger says, as far as it was read: its holds among it, each
+//! call's worst case, whichever server holds it; the charges this server made that the store
+//! does not have yet, counted already; and which holds are this server's calls still running. Amounts are billionths of a US dollar, kept exact: rounding to cents is for showing
 //! them, never here. Anything in another currency is no part of it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{
     At, Body, CreditsCharged, Currency, EventId, Money, Nanos, PrincipalId, RawEvent,
 };
 use glave_ports::Unpaid;
 use glave_ports::stream::in_order;
+use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
@@ -31,10 +32,10 @@ pub struct Account {
 }
 
 /// A calendar month in UTC, counted from the year 0.
-pub(super) type Month = i32;
+type Month = i32;
 
 /// The month `at` falls in.
-pub(super) fn month_of(at: Timestamp) -> Month {
+fn month_of(at: Timestamp) -> Month {
     let date = at.to_zoned(TimeZone::UTC).date();
     i32::from(date.year()) * 12 + i32::from(date.month()) - 1
 }
@@ -89,6 +90,18 @@ impl Spending {
     }
 }
 
+/// How long a hold counts for every server but the one whose call it is: past this, a hold
+/// whose charge never came (its server stopped mid-call) lets go of what it held. The server
+/// whose call it is counts it until the call ends, however long that is.
+pub(super) const LAPSE: SignedDuration = SignedDuration::from_hours(1);
+
+/// A call's worst case held in the ledger, and when.
+#[derive(Debug, Clone, Copy)]
+struct Held {
+    amount: Nanos,
+    at: Timestamp,
+}
+
 /// A charge this server made, counted, and not yet in the store: its event's id once a write
 /// was first tried, so the event read back takes its place, however that write ended.
 #[derive(Debug, Clone)]
@@ -111,10 +124,12 @@ pub(super) struct Book {
     references: BTreeMap<String, Money>,
     /// What the ledger says was spent in its latest month.
     spending: Spending,
+    /// The holds the ledger says no charge let go of yet, by their events' ids.
+    holds: BTreeMap<EventId, Held>,
     /// This server's charges the store does not have yet, oldest first.
     pub(super) unwritten: Vec<Unwritten>,
-    /// Held for calls running.
-    pub(super) held: Nanos,
+    /// The holds of this server's calls still running, which never lapse here.
+    pub(super) running: BTreeSet<EventId>,
     /// When it was last used, by the books' own count: the least recent goes first.
     pub(super) used: u64,
 }
@@ -140,7 +155,16 @@ impl Book {
                 self.references.insert(added.reference, added.amount);
             }
             Body::CreditsLimitSet(set) => self.limit = Some(set.limit),
+            Body::CreditsHeld(held) => {
+                if let Some(amount) = in_dollars(held.amount) {
+                    let at = at.timestamp();
+                    self.holds.insert(id, Held { amount, at });
+                }
+            }
             Body::CreditsCharged(charged) => {
+                if let Some(hold) = charged.hold {
+                    self.holds.remove(&hold);
+                }
                 if let Some(amount) = in_dollars(charged.amount) {
                     self.balance = self.balance.saturating_sub(amount);
                     self.spending.add(at, amount, charged.person);
@@ -173,26 +197,44 @@ impl Book {
         (balance, spending)
     }
 
-    /// Holds `worst` for a call in `month`, or refuses it: when nothing is left of the balance
-    /// or of the month's limit, or when `worst` is more than what calls running leave free of
+    /// What holds count at `now`: those of this server's calls running, and the others' not
+    /// yet lapsed, less those a charge here not yet written lets go of.
+    fn held(&self, now: Timestamp) -> Nanos {
+        let released: BTreeSet<EventId> = self
+            .unwritten
+            .iter()
+            .filter_map(|unwritten| unwritten.charged.hold)
+            .collect();
+        self.holds
+            .iter()
+            .filter(|(id, _)| !released.contains(id))
+            .filter(|(id, held)| self.running.contains(id) || now.duration_since(held.at) < LAPSE)
+            .fold(Nanos::ZERO, |sum, (_, held)| {
+                sum.saturating_add(held.amount)
+            })
+    }
+
+    /// Whether `worst` may be held for a call at `now`, or why not: nothing is left of the
+    /// balance or of the month's limit, or `worst` is more than what holds leave free of
     /// either.
-    pub(super) fn hold(
-        &mut self,
+    pub(super) fn may_hold(
+        &self,
         worst: Nanos,
-        month: Month,
+        now: Timestamp,
         default: Option<Money>,
     ) -> Result<(), Unpaid> {
         let (balance, spending) = self.counted();
         if balance <= Nanos::ZERO {
             return Err(Unpaid::Spent);
         }
-        let free = balance.saturating_sub(self.held);
+        let held = self.held(now);
+        let free = balance.saturating_sub(held);
         if worst > free {
             let (free, needs) = (dollars(free.max(Nanos::ZERO)), dollars(worst));
             return Err(Unpaid::Short { free, needs });
         }
         if let Some(limit) = self.limit(default) {
-            let spent = if spending.month == month {
+            let spent = if spending.month == month_of(now) {
                 spending.all
             } else {
                 Nanos::ZERO
@@ -203,19 +245,21 @@ impl Book {
             if room <= Nanos::ZERO {
                 return Err(Unpaid::MonthLimit { limit });
             }
-            let free = room.saturating_sub(self.held);
+            let free = room.saturating_sub(held);
             if worst > free {
                 let (free, needs) = (dollars(free.max(Nanos::ZERO)), dollars(worst));
                 return Err(Unpaid::MonthShort { limit, free, needs });
             }
         }
-        self.held = self.held.saturating_add(worst);
         Ok(())
     }
 
-    /// Lets go of `held`, and counts `charged` in its place, at once, to be written after.
-    pub(super) fn settle(&mut self, held: Nanos, charged: Option<Unwritten>) {
-        self.held = self.held.saturating_sub(held);
+    /// Lets go of the call's `hold` here, and counts `charged` in its place, at once, to be
+    /// written after; written, it lets go of the hold for every server.
+    pub(super) fn settle(&mut self, hold: Option<EventId>, charged: Option<Unwritten>) {
+        if let Some(hold) = hold {
+            self.running.remove(&hold);
+        }
         self.unwritten.extend(charged);
     }
 
@@ -242,9 +286,10 @@ impl Book {
         }
     }
 
-    /// Whether it may be forgotten: no call holds anything of it, and it has nothing to write.
+    /// Whether it may be forgotten: no call of this server's holds anything of it, and it has
+    /// nothing to write.
     pub(super) fn idle(&self) -> bool {
-        self.held == Nanos::ZERO && self.unwritten.is_empty()
+        self.running.is_empty() && self.unwritten.is_empty()
     }
 }
 

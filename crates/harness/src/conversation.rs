@@ -118,6 +118,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::CreditsAdded(_)
         | Body::CreditsLimitSet(_)
         | Body::CreditsCharged(_)
+        | Body::CreditsHeld(_)
         | Body::Unknown(_) => {}
     }
 }

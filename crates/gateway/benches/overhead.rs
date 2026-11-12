@@ -1,8 +1,11 @@
 //! The gateway's overhead per request, in-process (budget: under 1 ms at p99): the same
 //! request sent straight to a fake provider and through the gateway, with two routes,
 //! fallback targets and a default reasoning level to send, timed call by call. Fails when the gateway adds 1 ms or
-//! more at p99. Run it through `cargo xtask bench`, alone on an idle machine, since these are
-//! wall-clock numbers.
+//! more at p99. Then the same through a gateway that charges an organization's credits, on the
+//! in-memory log: what holding and charging cost a call beyond the gateway's own work (a read
+//! of what is new and one small append before the call, one append after), with no store's
+//! round trips in it. Run it through `cargo xtask bench`, alone on an idle machine, since these
+//! are wall-clock numbers.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
@@ -11,11 +14,14 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use glave_event::{Arguments, CallId, ModelRef, Part, Reasoning, StopReason, TokenCounts, Usage};
-use glave_gateway::{Gateway, Model, Routes, Target};
+use glave_event::{
+    Arguments, CallId, Currency, ModelRef, Money, Nanos, Part, Principal, PrincipalId, Reasoning,
+    StopReason, TokenCounts, Usage,
+};
+use glave_gateway::{Credits, Gateway, Model, Price, Routes, Target};
 use glave_ports::{
-    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, ToolCall,
-    ToolChoice, ToolSpec,
+    Completion, Delta, InMemoryLog, Message, ModelProvider, ModelRequest, OrgId, OsEntropy, Payer,
+    ProviderError, Purpose, SystemClock, ToolCall, ToolChoice, ToolSpec,
 };
 
 /// Calls timed each way.
@@ -29,15 +35,18 @@ fn main() -> Result<()> {
     let gateway = gateway(&fake)?;
     let request = request()?;
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let (direct, routed) = runtime.block_on(async {
-        // Warm both paths first.
+    let (paying, paid) = paying(&fake, &request, &runtime)?;
+    let (direct, routed, charged) = runtime.block_on(async {
+        // Warm every path first.
         for _ in 0..1_000 {
             fake.complete(&request, &mut |_| {}).await?;
             gateway.complete(&request, &mut |_| {}).await?;
+            paying.complete(&paid, &mut |_| {}).await?;
         }
         let direct = time(&*fake, &request).await?;
         let routed = time(&gateway, &request).await?;
-        Ok::<_, ProviderError>((direct, routed))
+        let charged = time(&paying, &paid).await?;
+        Ok::<_, ProviderError>((direct, routed, charged))
     })?;
     let overhead_p50 = percentile(&routed, 50).saturating_sub(percentile(&direct, 50));
     let overhead_p99 = percentile(&routed, 99).saturating_sub(percentile(&direct, 99));
@@ -49,6 +58,7 @@ fn main() -> Result<()> {
     for (name, times) in [
         ("direct to the provider", &direct),
         ("through the gateway", &routed),
+        ("paying credits", &charged),
     ] {
         println!(
             "{name:<22} {:>10} {:>10}",
@@ -61,6 +71,12 @@ fn main() -> Result<()> {
         "overhead",
         show(overhead_p50),
         show(overhead_p99)
+    );
+    println!(
+        "{:<22} {:>10} {:>10}  (a hold and a charge, in memory)",
+        "credits",
+        show(percentile(&charged, 50).saturating_sub(percentile(&routed, 50))),
+        show(percentile(&charged, 99).saturating_sub(percentile(&routed, 99)))
     );
     if overhead_p99 >= Duration::from_millis(1) {
         return Err("the gateway's overhead is over its budget".into());
@@ -129,6 +145,47 @@ fn gateway(fake: &Arc<Fake>) -> Result<Gateway> {
     let routes = Routes::new(vec![main, target("fallback")])?
         .with_route(Purpose::Judge, vec![target("judge")])?;
     Ok(Gateway::new(routes))
+}
+
+/// A gateway like [`gateway`]'s whose main target has a price, charging an organization's
+/// credits on the in-memory log, with plenty added; and the request, as that organization's.
+fn paying(
+    fake: &Arc<Fake>,
+    request: &ModelRequest,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<(Gateway, ModelRequest)> {
+    let handle: Arc<dyn Model> = Arc::clone(fake) as Arc<dyn Model>;
+    let price = Price {
+        list: "bench".into(),
+        currency: Currency::USD,
+        input_per_mtok: Nanos::new(1_000),
+        cache_read_per_mtok: Nanos::new(100),
+        output_per_mtok: Nanos::new(1_000),
+    };
+    let target = Target::new(handle, "bench", "bench-model").with_price(price);
+    let credits = Arc::new(Credits::new(
+        InMemoryLog::new(),
+        Box::new(SystemClock),
+        Box::new(OsEntropy),
+        None,
+    ));
+    let person = PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [1; 10])?;
+    let org = OrgId::from_uuid(PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [2; 10])?.as_uuid());
+    let plenty = Money {
+        nanos: Nanos::new(i64::MAX / 2),
+        currency: Currency::USD,
+    };
+    let by = Principal::person(person);
+    runtime.block_on(credits.add(org, plenty, "bench", by))?;
+    let gateway = Gateway::new(Routes::new(vec![target])?).with_credits(credits);
+    let paid = ModelRequest {
+        payer: Some(Payer {
+            org,
+            person: Some(person),
+        }),
+        ..request.clone()
+    };
+    Ok((gateway, paid))
 }
 
 /// A mid-sized coding turn: a long system prompt, ten tools and sixty messages.

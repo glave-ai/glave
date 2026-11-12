@@ -66,7 +66,7 @@ pub enum Reserved {
     /// (`instructions.read`), which a thread there opens with without reaching that computer.
     Instructions,
     /// `…000c`: the organization's credits (`credits.added`, `credits.limit.set`,
-    /// `credits.charged`), in its own scope ([`Scope::of_organization`]), on a server that
+    /// `credits.held`, `credits.charged`), in its own scope ([`Scope::of_organization`]), on a server that
     /// keeps them.
     Credits,
     /// `…000d`: the organization's name, logo and accent (`brand.set`), in its own scope

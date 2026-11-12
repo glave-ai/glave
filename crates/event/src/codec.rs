@@ -12,7 +12,7 @@ use crate::payload::{
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
     CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
     ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
-    CreditsLimitSet, EffortChosen, FiltersSet, GroupingSet, HookRan, InstructionsRead,
+    CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet, GroupingSet, HookRan, InstructionsRead,
     InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MailAsked, MemoryEdited,
     MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
     ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
@@ -118,6 +118,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credits::ADDED, 1),
     (credits::LIMIT_SET, 1),
     (credits::CHARGED, 1),
+    (credits::HELD, 1),
     (push::KEY_MADE, 1),
     (push::SUBSCRIBED, 1),
     (push::UNSUBSCRIBED, 1),
@@ -217,6 +218,7 @@ pub enum Body {
     CreditsAdded(CreditsAdded),
     CreditsLimitSet(CreditsLimitSet),
     CreditsCharged(CreditsCharged),
+    CreditsHeld(CreditsHeld),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -431,6 +433,7 @@ impl Event {
             Body::CreditsAdded(payload) => encode(header, payload),
             Body::CreditsLimitSet(payload) => encode(header, payload),
             Body::CreditsCharged(payload) => encode(header, payload),
+            Body::CreditsHeld(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(unknown.raw(header)),
         }
     }
