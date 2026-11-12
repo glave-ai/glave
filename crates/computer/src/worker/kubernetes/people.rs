@@ -13,8 +13,8 @@ use std::time::Duration;
 use glave_event::PrincipalId;
 use glave_ports::OrgId;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Sandbox,
-    SandboxLevel, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Sandbox, SandboxLevel,
+    Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -124,9 +124,9 @@ impl std::fmt::Debug for People {
 }
 
 impl People {
-    /// People's computers on `cluster`, each running `image` (pinned by digest) with the
-    /// network on, within `limits`, with a disk of `disk_gb`, each driven by this server only
-    /// while it holds the computer's lease (`leasing`).
+    /// People's computers on `cluster`, each running `image` (pinned by digest) within
+    /// `limits`, with the network unless they take it, with a disk of `disk_gb`, each driven by
+    /// this server only while it holds the computer's lease (`leasing`).
     pub fn new(
         cluster: Kubernetes,
         image: &str,
@@ -150,11 +150,7 @@ impl People {
                     .into(),
             ));
         }
-        let environment = Environment {
-            image: Image::Oci(image.to_owned()),
-            network: Some(Network::On),
-            ..Environment::host()
-        };
+        let environment = environment(image);
         let ceiling = Size {
             cpu_millis: limits
                 .cpus
@@ -301,6 +297,15 @@ impl People {
     /// its lease, refuses the call in plain words.
     pub fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
         Ok(self.person(org, person)?.planned.clone())
+    }
+}
+
+/// What every person's computer is woken from: `image`, asking nothing of the network, so it
+/// has the network unless policy takes it, and then wakes without it rather than refused.
+fn environment(image: &str) -> Environment {
+    Environment {
+        image: Image::Oci(image.to_owned()),
+        ..Environment::host()
     }
 }
 
