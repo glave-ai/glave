@@ -41,6 +41,31 @@ pub fn replace_with(path: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> 
     File::open(folder_of(path))?.sync_all()
 }
 
+/// Removes the temporary files that writes of `path` stopped partway left beside it (a crash
+/// while the store was copied), never `path` itself; for a writer that knows nothing else
+/// writes `path` meanwhile.
+pub fn remove_unfinished(path: &Path) -> io::Result<()> {
+    let prefix = format!(".{}.", name_of(path)?.to_string_lossy());
+    let suffix = format!(".{WRITING}");
+    for entry in std::fs::read_dir(folder_of(path))? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let random = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|rest| rest.strip_suffix(&suffix));
+        if random.is_some_and(|random| {
+            !random.is_empty() && random.chars().all(|c| c.is_ascii_hexdigit())
+        }) {
+            match std::fs::remove_file(entry.path()) {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Where a test stops [`create`], as a crash there would.
 #[cfg(any(test, feature = "conformance"))]
 #[derive(Debug, Clone, Copy)]
@@ -101,12 +126,7 @@ fn write(path: &Path, contents: &[u8], place: Place, until: Step) -> io::Result<
 
 /// A new name beside `path` for writing it: hidden, random, and ending in [`WRITING`].
 fn temporary_for(path: &Path) -> io::Result<PathBuf> {
-    let name = path.file_name().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{} names no file", path.display()),
-        )
-    })?;
+    let name = name_of(path)?;
     let random = OsEntropy.bytes().map_err(io::Error::other)?;
     let suffix = random.iter().fold(String::new(), |mut suffix, byte| {
         use std::fmt::Write as _;
@@ -117,6 +137,16 @@ fn temporary_for(path: &Path) -> io::Result<PathBuf> {
     temporary.push(name);
     temporary.push(format!(".{suffix}.{WRITING}"));
     Ok(path.with_file_name(temporary))
+}
+
+/// The name of the file `path` names.
+fn name_of(path: &Path) -> io::Result<&std::ffi::OsStr> {
+    path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} names no file", path.display()),
+        )
+    })
 }
 
 /// Writes `contents` to a new file at `path`, private to the person, and flushes it to disk.
@@ -216,6 +246,23 @@ mod tests {
             ["glave.db.backup"],
             "no temporary file is left"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_a_write_stopped_partway_left_is_removed_and_nothing_else() {
+        let dir = folder("unfinished");
+        let path = dir.join("glave.db.backup");
+        replace(&path, b"whole").unwrap();
+        create_until(&path, b"half", Stop::Written).unwrap();
+        create_until(&dir.join("glave.db"), b"other", Stop::Written).unwrap();
+        std::fs::write(dir.join(".glave.db.backup.notes.writing"), b"").unwrap();
+        assert_eq!(names(&dir).len(), 4);
+        remove_unfinished(&path).unwrap();
+        let left = names(&dir);
+        assert_eq!(left.len(), 3, "{left:?}");
+        assert!(left.contains(&"glave.db.backup".to_owned()));
+        assert!(left.contains(&".glave.db.backup.notes.writing".to_owned()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

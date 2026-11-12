@@ -23,9 +23,14 @@ pub const SCHEMA: Schema<'static> = Schema {
     }],
 };
 
-/// How long a server waits for another to finish bringing the database up to date, and for the
-/// tables a migration changes: minutes, since a migration is real work.
+/// How long a server waits for another to finish bringing the database up to date: minutes,
+/// since a migration is real work.
 const MIGRATED_WITHIN: Duration = Duration::from_mins(5);
+
+/// How long a migration waits for a table it changes that servers of the release before are
+/// using: moments, since every lock they take is held for one statement or transaction, and a
+/// migration waiting for one holds up every query of that table behind it.
+const TABLES_WITHIN: Duration = Duration::from_secs(5);
 
 /// Every table as of version 20, but its unsealed search index, which 21 makes again sealed.
 const BASELINE: &str = "
@@ -262,11 +267,13 @@ pub async fn migrate(client: &mut Client, schema: &Schema<'_>) -> Result<(), Sto
         .batch_execute(&format!(
             "SET LOCAL lock_timeout = {};
              SELECT pg_advisory_xact_lock(hashtext('glave_migrations:' || current_schema()));
+             SET LOCAL lock_timeout = {};
              CREATE TABLE IF NOT EXISTS glave_migrations (
                  version  integer     PRIMARY KEY,
                  applied  timestamptz NOT NULL DEFAULT now()
              );",
-            MIGRATED_WITHIN.as_millis()
+            MIGRATED_WITHIN.as_millis(),
+            TABLES_WITHIN.as_millis()
         ))
         .await
         .map_err(|e| match e.code() {
@@ -293,9 +300,15 @@ pub async fn migrate(client: &mut Client, schema: &Schema<'_>) -> Result<(), Sto
         let version = i32::try_from(step.version)
             .map_err(|_| StoreError::Schema(format!("schema {} is too large", step.version)))?;
         transaction.batch_execute(step.sql).await.map_err(|e| {
+            let why = match e.code() {
+                Some(&SqlState::LOCK_NOT_AVAILABLE) => format!(
+                    "a table it changes stayed in use for {}; starting again tries again",
+                    glave_ports::spoken(TABLES_WITHIN)
+                ),
+                _ => describe(&e),
+            };
             StoreError::Schema(format!(
-                "could not bring the database up to date (schema {version}): {}",
-                describe(&e)
+                "could not bring the database up to date (schema {version}): {why}"
             ))
         })?;
         transaction
@@ -318,4 +331,14 @@ fn refused(refused: Refused) -> StoreError {
         }
     };
     StoreError::Schema(format!("this database was {refused}. {what}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_migration_keeps_the_rules_of_a_migration() {
+        assert_eq!(SCHEMA.broken_rule(), None);
+    }
 }

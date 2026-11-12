@@ -11,6 +11,7 @@ use glave_ports::migrations::{Change, Migration, Schema};
 use rusqlite::Connection;
 
 use super::*;
+use crate::copy::copy_of;
 use crate::schema::{self, SCHEMA};
 
 /// The version the file at `path` is at.
@@ -115,10 +116,7 @@ fn a_new_file_is_made_at_the_latest_version_and_opens_again() {
         assert_eq!(conformance::search(&again.log()).await, Ok(()));
     });
     assert_eq!(version(&path), SCHEMA.latest());
-    assert!(
-        !schema::copy_of(&path).exists(),
-        "a new file is never copied"
-    );
+    assert!(!copy_of(&path).exists(), "a new file is never copied");
 }
 
 /// A file a newer glave saved is never downgraded, and one from before the baseline is never
@@ -142,7 +140,7 @@ fn a_file_a_newer_glave_saved_or_from_before_the_baseline_is_refused_and_left_as
             result.err()
         );
         assert_eq!(version(&path), found, "the file is not changed");
-        assert!(!schema::copy_of(&path).exists());
+        assert!(!copy_of(&path).exists());
     }
 }
 
@@ -230,7 +228,7 @@ fn a_failed_migration_leaves_the_file_at_its_version_with_none_of_its_steps() {
 fn a_migration_that_reshapes_keeps_one_copy_of_the_file_from_before_it() {
     let (_dir, path) = temp_db("copied");
     let mut connection = notes_file(&path);
-    let copy = schema::copy_of(&path);
+    let copy = copy_of(&path);
     schema::migrate(&mut connection, Some(&path), &notes(&[RENAMED])).unwrap();
     assert_eq!(version(&copy), 1, "copied before it was reshaped");
     let text: String = Connection::open(&copy)
@@ -242,6 +240,8 @@ fn a_migration_that_reshapes_keeps_one_copy_of_the_file_from_before_it() {
     schema::migrate(&mut connection, Some(&path), &notes(&[RENAMED, INDEXED])).unwrap();
     assert_eq!(version(&copy), 1, "one that only adds takes no copy");
 
+    // As a copy that stopped partway, when glave was killed taking it, leaves.
+    glave_ports::file::create_until(&copy, b"half", glave_ports::file::Stop::Written).unwrap();
     let all = [RENAMED, INDEXED, DATED];
     schema::migrate(&mut connection, Some(&path), &notes(&all)).unwrap();
     assert_eq!(version(&path), 4);
@@ -253,24 +253,91 @@ fn a_migration_that_reshapes_keeps_one_copy_of_the_file_from_before_it() {
     );
 }
 
+/// A store on a fresh file at `path`, on `clock`, with a copy beside it from before a migration.
+fn copied(path: &Path, clock: &glave_ports::testing::ManualClock) -> Store {
+    let mut settings = file_keys(path);
+    settings.clock = Arc::new(clock.clone());
+    let store = block_on!(Store::open(path, settings, objects())).unwrap();
+    std::fs::write(copy_of(path), b"what the file held before").unwrap();
+    store
+}
+
+/// The copy still holds every key the file held, so what is erased after it was taken would
+/// open from it again: destroying a key, or rotating a project key, lets it go, and making one
+/// does not (`invariants.md`, 19).
+#[test]
+fn destroying_a_key_lets_go_of_the_copy_and_making_one_does_not() {
+    use glave_ports::{Erasable, Eraser as _};
+    let (_dir, path) = temp_db("erased");
+    let store = copied(&path, &glave_ports::testing::ManualClock::at_millis(0));
+    let scope = Scope::glaves_own(
+        OrgId::from_uuid(Uuid::from_u128(1)),
+        ProjectId::from_uuid(Uuid::from_u128(2)),
+    );
+    let bytes = Box::new(Pieces::from(b"a logo".to_vec()));
+    block_on!(store.blobs().put(&scope, None, "image/png", 1024, bytes)).unwrap();
+    assert!(copy_of(&path).exists(), "a key made keeps the copy");
+    block_on!(store.keys().erase_project(&scope)).unwrap();
+    assert!(!copy_of(&path).exists(), "a project erased lets it go");
+
+    std::fs::write(copy_of(&path), b"a copy taken again").unwrap();
+    let account = Erasable::Account(Uuid::from_u128(5));
+    block_on!(store.keyring().destroy(scope, account)).unwrap();
+    assert!(!copy_of(&path).exists(), "an account removed lets it go");
+}
+
+#[test]
+fn a_copy_a_week_old_is_let_go_of() {
+    let (_dir, path) = temp_db("aged");
+    let clock = glave_ports::testing::ManualClock::at_millis(0);
+    let store = copied(&path, &clock);
+    let taken = std::fs::metadata(copy_of(&path))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let taken = jiff::Timestamp::try_from(taken).unwrap().as_millisecond();
+    let day = 24 * 3_600 * 1_000;
+    clock.set_millis(taken + 7 * day - 1);
+    assert!(!block_on!(store.forget_old_copy()).unwrap());
+    assert!(copy_of(&path).exists(), "kept for a week");
+    // A millisecond past, as the file's time is finer than the clock's.
+    clock.set_millis(taken + 7 * day + 1);
+    assert!(block_on!(store.forget_old_copy()).unwrap());
+    assert!(!copy_of(&path).exists(), "let go of after it");
+}
+
+#[test]
+fn every_migration_keeps_the_rules_of_a_migration() {
+    assert_eq!(SCHEMA.broken_rule(), None);
+}
+
 /// Processes opening one older file at once, as a person's server and a glave run beside it
 /// after an update: one migrates it, and the others find it brought forward.
 #[test]
 fn processes_opening_one_older_file_at_once_migrate_it_once() {
     let (_dir, path) = temp_db("racing");
-    drop(notes_file(&path));
+    notes_file(&path)
+        .pragma_update(None, "journal_mode", "WAL")
+        .unwrap();
     let schema = notes(&[DATED]);
-    let starting = Barrier::new(4);
+    // Every connection opened first, as the store opens its own before it migrates, so nothing
+    // a thread does before the barrier can fail and leave the others waiting at it.
+    let connections: Vec<Connection> = (0..4)
+        .map(|_| {
+            let connection = Connection::open(&path).unwrap();
+            connection.busy_timeout(store::BUSY).unwrap();
+            connection
+        })
+        .collect();
+    let starting = Barrier::new(connections.len());
     let results: Vec<Result<(), StoreError>> = std::thread::scope(|threads| {
-        let opening: Vec<_> = (0..4)
-            .map(|_| {
-                threads.spawn(|| {
-                    let mut connection = Connection::open(&path).unwrap();
-                    connection
-                        .execute_batch("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
-                        .unwrap();
+        let opening: Vec<_> = connections
+            .into_iter()
+            .map(|mut connection| {
+                let (path, schema, starting) = (&path, &schema, &starting);
+                threads.spawn(move || {
                     starting.wait();
-                    schema::migrate(&mut connection, Some(&path), &schema)
+                    schema::migrate(&mut connection, Some(path), schema)
                 })
             })
             .collect();

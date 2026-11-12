@@ -26,6 +26,8 @@ pub use keys::PostgresKeys;
 pub use leases::PostgresLeases;
 pub use log::PostgresLog;
 pub use projects::PostgresProjects;
+// For this crate's tests, which make a database at each earlier version.
+#[doc(hidden)]
 pub use schema::{SCHEMA, migrate};
 pub use store::{PostgresKeyring, Store, StoreError};
 pub use tokio_postgres::Config;

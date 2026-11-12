@@ -4,12 +4,18 @@
 //! newer glave saved, or one from before the baseline, is refused and left as it was. Before a
 //! migration that reshapes what the file holds, a copy of the file is kept beside it.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::time::Duration;
 
 use glave_ports::migrations::{Change, Migration, Refused, Schema};
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, ErrorCode, TransactionBehavior};
 
-use crate::store::StoreError;
+use crate::copy;
+use crate::store::{BUSY, StoreError};
+
+/// How long a process opening the file waits for another that is bringing it up to date: minutes,
+/// since a migration is real work.
+const MIGRATED_WITHIN: Duration = Duration::from_mins(5);
 
 /// The schema this build makes and reads. A migration that has shipped is never edited: a
 /// change to the schema is a new one, appended.
@@ -203,19 +209,36 @@ pub(crate) fn migrate(
     file: Option<&Path>,
     schema: &Schema<'_>,
 ) -> Result<(), StoreError> {
-    let plan = schema.plan(version(connection)?).map_err(refused)?;
-    if plan.steps.is_empty() {
+    // Most opens find the file up to date and take no lock.
+    if schema
+        .plan(version(connection)?)
+        .map_err(refused)?
+        .steps
+        .is_empty()
+    {
         return Ok(());
     }
-    if let (true, Some(file)) = (plan.reshapes, file) {
-        copy(connection, file)?;
-    }
-    // The write lock first, then the version again: another process on the file may have
-    // brought it forward meanwhile, and no step runs twice.
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|e| StoreError::schema(&e))?;
+    // The write lock first, waiting for another process that is migrating the file, then the
+    // version again: that process may have brought it forward meanwhile, and no step runs twice.
+    let set = |connection: &Connection, wait| {
+        connection
+            .busy_timeout(wait)
+            .map_err(|e| StoreError::schema(&e))
+    };
+    set(connection, MIGRATED_WITHIN)?;
+    let began = connection.transaction_with_behavior(TransactionBehavior::Immediate);
+    let transaction = began.map_err(|e| match e.sqlite_error_code() {
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => StoreError::Schema(format!(
+            "another glave was bringing glave's data up to date and had not finished within {}",
+            glave_ports::spoken(MIGRATED_WITHIN)
+        )),
+        _ => StoreError::schema(&e),
+    })?;
+    set(&transaction, BUSY)?;
     let plan = schema.plan(version(&transaction)?).map_err(refused)?;
+    if let (true, Some(file)) = (plan.reshapes, file) {
+        copy::take(file)?;
+    }
     for step in &plan.steps {
         transaction.execute_batch(step.sql).map_err(|e| {
             StoreError::Schema(format!(
@@ -248,34 +271,4 @@ fn refused(refused: Refused) -> StoreError {
         }
     };
     StoreError::Schema(format!("glave's data was {refused}. {what}"))
-}
-
-/// Where the copy of `file` taken before a migration that reshapes it is kept: beside it, one,
-/// each copy replacing the one before.
-pub(crate) fn copy_of(file: &Path) -> PathBuf {
-    let mut name = file.as_os_str().to_owned();
-    name.push(".backup");
-    PathBuf::from(name)
-}
-
-/// Keeps a copy of the database as it is at [`copy_of`] its `file`, written whole under another
-/// name and then put in place, so the copy kept is always a whole one.
-fn copy(connection: &Connection, file: &Path) -> Result<(), StoreError> {
-    glave_ports::file::replace_with(&copy_of(file), |temporary| {
-        let name = temporary.to_str().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("{} is not UTF-8", temporary.display()),
-            )
-        })?;
-        connection
-            .execute("VACUUM INTO ?1", [name])
-            .map(drop)
-            .map_err(std::io::Error::other)
-    })
-    .map_err(|e| {
-        StoreError::Schema(format!(
-            "could not copy glave's data before bringing it up to date: {e}"
-        ))
-    })
 }

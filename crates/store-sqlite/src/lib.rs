@@ -8,6 +8,7 @@
 //! Event payloads and blobs are sealed on write and opened on read (`specs/storage.md`).
 
 mod blobs;
+mod copy;
 mod directory;
 mod keys;
 mod leases;

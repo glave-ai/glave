@@ -176,7 +176,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Make illegal states unrepresentable: newtypes for IDs (`ProjectId`, `EventId`), enums over flags, validated constructors.
 - IDs are UUID v7 (time-ordered).
 - Everything persisted or sent over the wire carries a schema version. Migrations can be replayed.
-- An update never empties a store. A store's schema changes only by a new numbered migration, appended to its list, never by editing one that shipped (`specs/storage.md`, "Migrations"); what a store holds stays readable (an event a store holds is upgraded as it is read, `specs/events.md`, "Status"). Other formats (the session and computer protocols, glave's files on a computer) change in place until glave 0.1 ships; from 0.1 on, versions and upgrade-on-read apply to them too.
+- An update never empties a store. A store's schema changes only by a new numbered migration, appended to its list, never by editing one that shipped (`specs/storage.md`, "Migrations"), and every change to an event payload's shape or meaning bumps its `v`, the older version upgraded as it is read (`specs/events.md`, "Versioning"). Other formats (the session and computer protocols, glave's files on a computer) change in place until glave 0.1 ships; from 0.1 on, versions and upgrade-on-read apply to them too.
 
 **Async and concurrency**
 - tokio. Never block inside async code; use `spawn_blocking` for blocking work.

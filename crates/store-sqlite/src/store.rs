@@ -1,8 +1,9 @@
 //! The database file: opening or making it, the local organization, and running work off
 //! the async runtime.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
@@ -13,6 +14,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::blobs::SqliteBlobs;
+use crate::copy;
 use crate::directory::SqliteDirectory;
 use crate::keys::SqliteKeys;
 use crate::leases::SqliteLeases;
@@ -39,6 +41,9 @@ impl StoreError {
 
 pub(crate) type Shared = Arc<Mutex<Connection>>;
 
+/// How long a call waits for another process's write to the file: moments, as each is.
+pub(crate) const BUSY: Duration = Duration::from_secs(5);
+
 /// The keys of the local database.
 pub type SqliteKeyring = Keys<SqliteKeys>;
 
@@ -53,6 +58,8 @@ pub struct Store {
     clock: Arc<dyn Clock>,
     /// The search index's rows, opened, for every log of this store.
     index: Arc<SearchCache>,
+    /// Where the copy of the file from before a migration is kept, unless it is in memory.
+    copy: Option<PathBuf>,
 }
 
 impl Store {
@@ -93,28 +100,47 @@ impl Store {
         keys: KeySettings,
         objects: Arc<dyn Objects>,
     ) -> Result<Self, StoreError> {
+        // The wait first, since a new file's turn to WAL waits for another process opening it.
         // `secure_delete` overwrites deleted and replaced content, so a destroyed key does not
         // linger in the file's free pages.
         connection
-            .execute_batch(
-                "PRAGMA journal_mode = WAL;
-                 PRAGMA synchronous = NORMAL;
-                 PRAGMA foreign_keys = ON;
-                 PRAGMA busy_timeout = 5000;
-                 PRAGMA secure_delete = ON;",
-            )
+            .busy_timeout(BUSY)
+            .and_then(|()| {
+                connection.execute_batch(
+                    "PRAGMA journal_mode = WAL;
+                     PRAGMA synchronous = NORMAL;
+                     PRAGMA foreign_keys = ON;
+                     PRAGMA secure_delete = ON;",
+                )
+            })
             .map_err(|e| StoreError::Open(e.to_string()))?;
         schema::prepare(&mut connection, file)?;
         let connection = Arc::new(Mutex::new(connection));
         let clock = Arc::clone(&keys.clock);
-        let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
+        let copy = file.map(copy::copy_of);
+        let storage = SqliteKeys::new(Arc::clone(&connection), copy.clone());
+        let keys = Arc::new(Keys::new(keys, storage));
         Ok(Self {
             connection,
             keys,
             objects,
             clock,
             index: Arc::new(SearchCache::new(MOST_CACHED)),
+            copy,
         })
+    }
+
+    /// Lets go of the copy of the file from before a migration once it is a week old
+    /// (`specs/storage.md`, "Migrations"), saying whether it did; the daily work asks.
+    pub async fn forget_old_copy(&self) -> Result<bool, StoreError> {
+        let Some(kept) = self.copy.clone() else {
+            return Ok(false);
+        };
+        let clock = Arc::clone(&self.clock);
+        tokio::task::spawn_blocking(move || copy::forget_if_old(&kept, clock.as_ref()))
+            .await
+            .map_err(|e| StoreError::Storage(e.to_string()))?
+            .map_err(|e| StoreError::Storage(format!("the copy of glave's data: {e}")))
     }
 
     pub fn log(&self) -> SqliteLog {

@@ -109,6 +109,33 @@ impl Schema<'_> {
                     .any(|(migration, _)| migration.change == Change::Reshapes),
         })
     }
+
+    /// The first rule a migration breaks, saying which and why, if one does: none builds an
+    /// index `CONCURRENTLY`, which cannot run in the transaction every migration runs in, and
+    /// one that makes the threads view's table again (`threads`, or a new name for it) clears
+    /// the setting that says which fold filled it (`threads_view`), so the store fills the new
+    /// one from the log as it opens.
+    pub fn broken_rule(&self) -> Option<String> {
+        let mut numbered = self
+            .migrations
+            .iter()
+            .zip(self.baseline.saturating_add(1)..);
+        numbered.find_map(|(migration, version)| {
+            let words = migration.sql.to_lowercase();
+            let sql = words.split_whitespace().collect::<Vec<_>>().join(" ");
+            if sql.contains("concurrently") {
+                return Some(format!(
+                    "{version} builds an index concurrently, which no transaction can"
+                ));
+            }
+            let makes_threads = ["create table threads", "create table if not exists threads"]
+                .iter()
+                .any(|made| sql.contains(made));
+            (makes_threads && !sql.contains("threads_view")).then(|| {
+                format!("{version} makes the threads view's table and leaves `threads_view` set")
+            })
+        })
+    }
 }
 
 #[cfg(test)]
@@ -180,6 +207,34 @@ mod tests {
             })
         );
         assert_eq!(SCHEMA.plan(4), Err(Refused::Older { found: 4 }));
+    }
+
+    #[test]
+    fn a_migration_that_builds_concurrently_or_remakes_the_threads_view_unfilled_breaks_a_rule() {
+        let with = |sql: &'static str| {
+            let one = [Migration {
+                change: Change::Adds,
+                sql,
+            }];
+            let schema = Schema {
+                migrations: &one,
+                ..SCHEMA
+            };
+            schema.broken_rule()
+        };
+        assert_eq!(SCHEMA.broken_rule(), None);
+        assert_eq!(
+            with("CREATE INDEX  CONCURRENTLY events_by_at ON events (at);"),
+            Some("6 builds an index concurrently, which no transaction can".into())
+        );
+        assert_eq!(
+            with("CREATE TABLE\n  threads_2 (thread text);"),
+            Some("6 makes the threads view's table and leaves `threads_view` set".into())
+        );
+        let refilled = "CREATE TABLE threads_2 (thread text);
+             DELETE FROM settings WHERE key = 'threads_view';";
+        assert_eq!(with(refilled), None);
+        assert_eq!(with("CREATE TABLE threadbare (x text);"), None);
     }
 
     #[test]

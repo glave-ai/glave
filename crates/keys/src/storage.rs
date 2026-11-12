@@ -48,6 +48,14 @@ pub trait KeyStorage: Send + Sync {
         expected: Option<u64>,
         record: Vec<u8>,
     ) -> impl Future<Output = Result<bool, KeyError>> + Send;
+
+    /// Lets go of what this store keeps beside itself that would still open what a destroyed
+    /// key sealed, once a key is destroyed or a project key rotated: SQLite's copy of its file
+    /// from before a migration (`specs/storage.md`, "Migrations"). A store that keeps nothing
+    /// beside itself has nothing to do.
+    fn destroyed(&self) -> impl Future<Output = Result<(), KeyError>> + Send {
+        ready(Ok(()))
+    }
 }
 
 /// Wrapped keys held in memory, for tests and in-memory stores.
