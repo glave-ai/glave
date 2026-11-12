@@ -18,7 +18,7 @@ pub(crate) fn test_server() -> PathBuf {
     path
 }
 
-fn settings(place: &Place, servers: &serde_json::Value) {
+pub(crate) fn settings(place: &Place, servers: &serde_json::Value) {
     std::fs::create_dir_all(&place.home).unwrap();
     let file = json!({ "mcpServers": servers });
     std::fs::write(place.home.join("mcp.json"), file.to_string()).unwrap();

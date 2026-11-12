@@ -31,7 +31,7 @@ pub(crate) fn asking(name: &str) -> Place {
 
 /// A model that writes `ran.txt` once, a change that asks in Ask first, then says `then`, then
 /// each of `after`.
-fn touching(then: &str, after: &[&str]) -> FakeServer {
+pub(crate) fn touching(then: &str, after: &[&str]) -> FakeServer {
     let touch = json!({"path": "ran.txt", "content": "ran\n"});
     let replies = [
         Reply::tool_call("call_1", "write", &touch),
@@ -42,7 +42,7 @@ fn touching(then: &str, after: &[&str]) -> FakeServer {
 }
 
 /// `shown`, with what the person's server in `place` wrote to its log, for a failure to say why.
-fn with_log(place: &Place, shown: &str) -> String {
+pub(crate) fn with_log(place: &Place, shown: &str) -> String {
     let log = std::fs::read_to_string(place.home.join("run/server.log")).unwrap_or_default();
     format!("{shown}\n--- the server's log ---\n{log}")
 }
@@ -55,7 +55,7 @@ pub(crate) fn api(place: &Place) -> Remote {
 }
 
 /// The newest thread of the project `place`'s folder leads to.
-async fn newest_thread(remote: &Remote, place: &Place) -> ThreadId {
+pub(crate) async fn newest_thread(remote: &Remote, place: &Place) -> ThreadId {
     let path = std::fs::canonicalize(&place.project).unwrap();
     let found = Request::ProjectFind {
         path: path.to_string_lossy().into_owned(),
@@ -76,7 +76,7 @@ async fn newest_thread(remote: &Remote, place: &Place) -> ThreadId {
 }
 
 /// `thread`'s status now.
-async fn status(remote: &Remote, thread: ThreadId) -> Status {
+pub(crate) async fn status(remote: &Remote, thread: ThreadId) -> Status {
     let Answered::Thread { thread: summary } = remote
         .request(&Request::ThreadGet { thread })
         .await
@@ -88,7 +88,7 @@ async fn status(remote: &Remote, thread: ThreadId) -> Status {
 }
 
 /// What `thread` recorded, in order.
-async fn events(remote: &Remote, thread: ThreadId) -> Vec<RawEvent> {
+pub(crate) async fn events(remote: &Remote, thread: ThreadId) -> Vec<RawEvent> {
     let page = Request::ThreadEvents {
         thread,
         after: None,
@@ -102,7 +102,7 @@ async fn events(remote: &Remote, thread: ThreadId) -> Vec<RawEvent> {
 }
 
 /// The kinds of what `thread` recorded, in order.
-async fn recorded(remote: &Remote, thread: ThreadId) -> Vec<String> {
+pub(crate) async fn recorded(remote: &Remote, thread: ThreadId) -> Vec<String> {
     let events = events(remote, thread).await;
     events
         .iter()
@@ -112,7 +112,7 @@ async fn recorded(remote: &Remote, thread: ThreadId) -> Vec<String> {
 
 /// Returns once `thread` is `wanted`, read again until it is; if it is hung first, fails with
 /// what it was last, what it recorded, and the server's log.
-async fn once(place: &Place, remote: &Remote, thread: ThreadId, wanted: Status) {
+pub(crate) async fn once(place: &Place, remote: &Remote, thread: ThreadId, wanted: Status) {
     let deadline = Instant::now() + HUNG;
     let mut last = None;
     while Instant::now() < deadline {
@@ -132,7 +132,12 @@ async fn once(place: &Place, remote: &Remote, thread: ThreadId, wanted: Status) 
 
 /// Allows the change `thread`'s turn waits at, as another client would, and sees the turn
 /// finish and the change made.
-async fn allowed_elsewhere(place: &Place, model: &FakeServer, remote: &Remote, thread: ThreadId) {
+pub(crate) async fn allowed_elsewhere(
+    place: &Place,
+    model: &FakeServer,
+    remote: &Remote,
+    thread: ThreadId,
+) {
     let approval = events(remote, thread)
         .await
         .into_iter()
@@ -237,43 +242,6 @@ fn a_client_killed_mid_turn_leaves_the_turn_to_finish_answered_by_any_client() {
         let remote = api(&place);
         let thread = newest_thread(&remote, &place).await;
         once(&place, &remote, thread, Status::Waiting).await;
-        allowed_elsewhere(&place, &model, &remote, thread).await;
-    });
-}
-
-/// The end of the terminal's input is no answer, whether the person types Ctrl-D or the
-/// terminal closes as its client is killed (which on Linux the client can read before the
-/// hangup ends it): the client stops, and the approval waits for any client.
-#[test]
-fn the_end_of_the_terminal_s_input_answers_no_approval() {
-    let place = asking("te");
-    let _stopped = Stopped(&place);
-    let model = touching("Finished.", &[]);
-    let mut turn = terminal(&place, &model, &["touch it"]);
-    typed(&mut turn, "y\n");
-    glave_ports::block_on!(async {
-        assert!(model.wait_for_requests(1, HUNG), "the model was asked");
-        let remote = api(&place);
-        let thread = newest_thread(&remote, &place).await;
-        once(&place, &remote, thread, Status::Waiting).await;
-        // Ctrl-D at the start of a line: the end of input.
-        typed(&mut turn, "\x04");
-        let said = turn.wait_with_output().unwrap();
-        let shown = with_log(&place, &text(&said));
-        assert_eq!(said.status.code(), Some(1), "{shown}");
-        assert!(shown.contains("allow? [y] once"), "asked: {shown}");
-        assert!(shown.contains("nothing was answered"), "{shown}");
-        let kinds = recorded(&remote, thread).await;
-        assert!(
-            !kinds.iter().any(|kind| kind == "approval.decided"),
-            "{kinds:?}"
-        );
-        assert_eq!(status(&remote, thread).await, Status::Waiting, "{shown}");
-        assert_eq!(
-            model.received().len(),
-            1,
-            "the turn went no further: {shown}"
-        );
         allowed_elsewhere(&place, &model, &remote, thread).await;
     });
 }
