@@ -293,20 +293,21 @@ fn credits_on(log: &FaultyLog) -> Arc<Credits<FaultyLog>> {
     credits(log, None)
 }
 
-#[test]
-fn calls_side_by_side_never_overdraw() {
-    let log = FaultyLog::default();
-    let credits = credits(&log, None);
-    let gate = Arc::new(Semaphore::new(0));
-    let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
-    let gateway = Arc::new(gateway(&fake, &credits));
-    let (acme, ada) = (org(1), person(1));
-    add(&credits, acme, 3 * WORST + WORST / 2, "order-1");
+/// Eight calls side by side, taking turns among `gateways`, for `org`, which has the worst
+/// case of three and a half: `fake`, waiting at `gate`, is sent only three, and the other five
+/// are refused before they are sent; then the three go on and end.
+fn eight_calls_of_which_three_are_held(
+    gateways: &[Arc<Gateway>],
+    fake: &Fake,
+    gate: &Semaphore,
+    org: OrgId,
+) {
+    let ada = person(1);
     block_on!(async {
         let mut calls = JoinSet::new();
-        for _ in 0..8 {
-            let gateway = Arc::clone(&gateway);
-            calls.spawn(async move { gateway.complete(&paid(acme, ada), &mut |_| {}).await });
+        for gateway in gateways.iter().cycle().take(8) {
+            let gateway = Arc::clone(gateway);
+            calls.spawn(async move { gateway.complete(&paid(org, ada), &mut |_| {}).await });
         }
         for _ in 0..5 {
             let done = calls.join_next().await.unwrap().unwrap();
@@ -315,13 +316,25 @@ fn calls_side_by_side_never_overdraw() {
         assert_eq!(
             fake.calls.load(Ordering::SeqCst),
             3,
-            "only three could be held"
+            "only three could be held, however many servers"
         );
         gate.add_permits(3);
         while let Some(done) = calls.join_next().await {
             assert!(done.unwrap().is_ok());
         }
     });
+}
+
+#[test]
+fn calls_side_by_side_never_overdraw() {
+    let log = FaultyLog::default();
+    let credits = credits(&log, None);
+    let gate = Arc::new(Semaphore::new(0));
+    let fake = Fake::gated_answering("p", Arc::clone(&gate), 3);
+    let gateway = Arc::new(gateway(&fake, &credits));
+    let acme = org(1);
+    add(&credits, acme, 3 * WORST + WORST / 2, "order-1");
+    eight_calls_of_which_three_are_held(&[gateway], &fake, &gate, acme);
     assert_eq!(balance(&credits, acme), 3 * WORST + WORST / 2 - 3 * 55);
 }
 
@@ -357,26 +370,7 @@ fn servers_side_by_side_on_one_store_never_spend_the_last_of_a_balance_twice() {
     ];
     let (acme, ada) = (org(1), person(1));
     add(&here, acme, 3 * WORST + WORST / 2, "order-1");
-    block_on!(async {
-        let mut calls = JoinSet::new();
-        for gateway in gateways.iter().cycle().take(8) {
-            let gateway = Arc::clone(gateway);
-            calls.spawn(async move { gateway.complete(&paid(acme, ada), &mut |_| {}).await });
-        }
-        for _ in 0..5 {
-            let done = calls.join_next().await.unwrap().unwrap();
-            assert_eq!(done.unwrap_err().failure(), Failure::OverBudget);
-        }
-        assert_eq!(
-            fake.calls.load(Ordering::SeqCst),
-            3,
-            "only three could be held, on both servers together"
-        );
-        gate.add_permits(3);
-        while let Some(done) = calls.join_next().await {
-            assert!(done.unwrap().is_ok());
-        }
-    });
+    eight_calls_of_which_three_are_held(&gateways, &fake, &gate, acme);
     let left = 3 * WORST + WORST / 2 - 3 * 55;
     assert_eq!(balance(&credits_on(&log), acme), left);
     let after = ask(&gateway(&Fake::new("p"), &there), &paid(acme, ada));
