@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
 use glave_event::{
-    Catalog, CatalogProvider, Principal, ProviderConnected, ProviderId, ProviderKind,
+    Catalog, CatalogModel, CatalogProvider, Principal, ProviderConnected, ProviderId, ProviderKind,
 };
 use glave_gateway::{Gateway, Router, Target};
 use glave_ports::settings::Judge;
@@ -236,10 +236,10 @@ impl Lineup {
     }
 }
 
-/// `model` at `provider` through `handle`, as its `catalog`'s card describes it, and a router
-/// that keeps to people's filters where `provider` is OpenRouter, with who the catalog says
-/// serves the model (`providers` shared by its models).
-pub(super) fn target_at(
+/// `model` at `provider` through `handle`, as its `catalog`'s card among its chat models
+/// describes it, and a router that keeps to people's filters where `provider` is OpenRouter,
+/// with who the catalog says serves the model (`providers` shared by its models).
+fn target_at(
     handle: &Arc<dyn glave_gateway::Model>,
     provider: &str,
     model: &str,
@@ -250,6 +250,18 @@ pub(super) fn target_at(
         let card = catalog.models.iter().find(|card| card.id == model)?;
         Some((card, catalog))
     });
+    described_at(handle, (provider, model), card, providers)
+}
+
+/// `model` at `provider` through `handle`, as `card` describes it, and a router that keeps to
+/// people's filters where `provider` is OpenRouter, with who `card` says serves the model
+/// (`providers` shared by its catalog's models).
+pub(super) fn described_at(
+    handle: &Arc<dyn glave_gateway::Model>,
+    (provider, model): (&str, &str),
+    card: Option<(&CatalogModel, &Catalog)>,
+    providers: &Arc<[CatalogProvider]>,
+) -> Target {
     let router = Router {
         providers: Arc::clone(providers),
         endpoints: card

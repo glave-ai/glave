@@ -19,7 +19,7 @@ use super::card::{number, price};
 use crate::model::Model;
 
 /// How long reading OpenRouter's lists may take, all of them together.
-const READING: Duration = Duration::from_mins(2);
+pub(super) const READING: Duration = Duration::from_mins(2);
 
 /// Models whose endpoints are read at once.
 const AT_ONCE: usize = 8;
@@ -28,7 +28,7 @@ const AT_ONCE: usize = 8;
 const LONGEST: usize = 100;
 
 /// The most providers kept, endpoints kept of one model, and datacenters of one provider.
-const MOST: usize = 500;
+pub(super) const MOST: usize = 500;
 
 /// Reads `model`'s router's providers and each of `models`' endpoints into them, within
 /// [`READING`] in all: the providers, and whether every model's endpoints were read in time. A
@@ -55,7 +55,9 @@ pub(super) async fn read(
             .map(|p| (p.name.clone(), p.slug.clone()))
             .collect();
         known = Some(providers);
-        each(&model, &ids, Arc::new((named, zdr)), &mut read).await;
+        let parse = move |id: &str, listed: &Value| endpoints(id, listed, &named, &zdr);
+        let path = |id: &str| format!("models/{id}/endpoints");
+        each(&model, &ids, (path, Arc::new(parse)), &mut read).await;
         Ok::<_, String>(())
     };
     let whole = if let Ok(read) = tokio::time::timeout(READING, lists).await {
@@ -80,33 +82,33 @@ pub(super) async fn read(
 }
 
 /// The endpoints `before` held for the model `id`.
-fn kept(before: &[CatalogModel], id: &str) -> Vec<CatalogEndpoint> {
+pub(super) fn kept(before: &[CatalogModel], id: &str) -> Vec<CatalogEndpoint> {
     let card = before.iter().find(|card| card.id == id);
     card.map(|card| card.endpoints.clone()).unwrap_or_default()
 }
 
-/// What reading a model's endpoints needs to know first: the providers' slugs by name, and the
-/// endpoints that keep nothing, by model and tag.
-type Known = (BTreeMap<String, String>, BTreeSet<(String, String)>);
+/// Where a model's endpoints are listed, by its id, and how its list is read.
+pub(super) type Listing<F> = (fn(&str) -> String, Arc<F>);
 
-/// Reads each of `ids`' endpoints into `read`, as each comes, [`AT_ONCE`] at a time, with
-/// what is `known`; one that cannot be read is left out.
-async fn each(
+/// Reads each of `ids`' endpoints into `read`, as each comes, [`AT_ONCE`] at a time: asked at
+/// the path `listing` gives, read by its parser; one that cannot be read is left out.
+pub(super) async fn each<F>(
     model: &Arc<Model>,
     ids: &[String],
-    known: Arc<Known>,
+    (path, parse): Listing<F>,
     read: &mut BTreeMap<String, Vec<CatalogEndpoint>>,
-) {
+) where
+    F: Fn(&str, &Value) -> Vec<CatalogEndpoint> + Send + Sync + 'static,
+{
     let mut asked = JoinSet::new();
     let mut waiting = ids.iter();
     loop {
         while asked.len() < AT_ONCE {
             let Some(id) = waiting.next() else { break };
-            let (model, id, known) = (Arc::clone(model), id.clone(), Arc::clone(&known));
+            let (model, id, parse) = (Arc::clone(model), id.clone(), Arc::clone(&parse));
             asked.spawn(async move {
-                let listed = model.get(&format!("models/{id}/endpoints")).await.ok()?;
-                let (named, zdr) = &*known;
-                let endpoints = endpoints(&id, &listed, named, zdr);
+                let listed = model.get(&path(&id)).await.ok()?;
+                let endpoints = parse(&id, &listed);
                 Some((id, endpoints))
             });
         }
@@ -120,7 +122,7 @@ async fn each(
 }
 
 /// `text` when it is a short, plain word or name.
-fn plain(text: &str) -> Option<String> {
+pub(super) fn plain(text: &str) -> Option<String> {
     let text = text.trim();
     let fits = !text.is_empty() && text.len() <= LONGEST;
     (fits && !text.chars().any(char::is_control)).then(|| text.to_owned())
