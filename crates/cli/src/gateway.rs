@@ -13,7 +13,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use glave_event::{Currency, Filters, Nanos};
 use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
 use glave_ports::{
-    Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
+    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, Purpose,
 };
 
 use crate::config::Endpoint;
@@ -234,6 +234,7 @@ fn models(gateway: &Gateway) -> impl Iterator<Item = Vec<&Target>> {
     main.into_iter().chain(grouped)
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl ModelProvider for GatewaySwitch {
     async fn complete(
         &self,
@@ -242,11 +243,28 @@ impl ModelProvider for GatewaySwitch {
     ) -> Result<Completion, ProviderError> {
         match self.current() {
             Some(gateway) => gateway.complete(request, on_delta).await,
-            None => Err(ProviderError::Unserved {
-                failure: Failure::UnknownModel,
-                reason: "no model is set up yet: connect a model account first".to_owned(),
-            }),
+            None => Err(no_model()),
         }
+    }
+
+    async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
+        match self.current() {
+            Some(gateway) => gateway.make(request, ask).await,
+            None => Err(no_model()),
+        }
+    }
+
+    fn serves(&self, purpose: Purpose) -> bool {
+        self.current()
+            .is_some_and(|gateway| gateway.serves(purpose))
+    }
+}
+
+/// Why a call went nowhere while no model is set up.
+fn no_model() -> ProviderError {
+    ProviderError::Unserved {
+        failure: Failure::UnknownModel,
+        reason: "no model is set up yet: connect a model account first".to_owned(),
     }
 }
 

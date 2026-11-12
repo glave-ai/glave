@@ -23,7 +23,7 @@ pub(crate) fn model_ended(
     span: &Span,
     route: &str,
     target: &str,
-    sent: &Result<Completion, ProviderError>,
+    sent: Result<&Completion, &ProviderError>,
 ) {
     match sent {
         Ok(completion) => {

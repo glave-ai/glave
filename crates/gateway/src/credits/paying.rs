@@ -2,11 +2,15 @@
 //! then what it cost counted in the hold's place. A call cancelled once sent is counted at what
 //! it read and what came of its answer's text, at its price, as its provider charges for them;
 //! one that broke off after its answer began, the same; one that failed before any came, at
-//! nothing. What came of a call to a tool is not counted until the answer ends: a gap.
+//! nothing. What came of a call to a tool is not counted until the answer ends: a gap. A media
+//! call is billed whole whether or not its answer is read, so one dropped once sent, or ended
+//! with no answer (silence past the provider's timeout, a broken connection, an answer that
+//! can't be read), is counted at its hold; one its provider refused with an error, at nothing,
+//! as no failed generation is billed.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use glave_event::{EventId, Money, Nanos, TokenCounts};
+use glave_event::{CostKind, EventId, Money, Nanos, TokenCounts};
 use glave_ports::{Delta, Payer, ProviderError};
 
 use super::Charging;
@@ -25,20 +29,24 @@ pub(crate) struct Paying<'a> {
     price: &'a Price,
     /// The tokens the call reads, as estimated before it was sent.
     input: u64,
+    /// What was held: what a media call that ends unanswered is counted at.
+    worst: Nanos,
+    /// What the call is, as its charge names it.
+    kind: CostKind,
     /// Bytes of answer that came so far.
     seen: AtomicU64,
     settled: bool,
 }
 
 impl<'a> Paying<'a> {
-    /// Holds `worst` of `payer`'s organization's credits for a call at `price` that reads
-    /// `input` tokens, or refuses it.
+    /// Holds `worst` of `payer`'s organization's credits for a call of `kind` at `price` that
+    /// reads `input` tokens, or refuses it.
     pub(crate) async fn hold(
         credits: &'a dyn Charging,
         payer: Payer,
         worst: Money,
-        price: &'a Price,
-        input: u64,
+        (price, input): (&'a Price, u64),
+        kind: CostKind,
     ) -> Result<Self, ProviderError> {
         let worst = in_dollars(worst).unwrap_or(Nanos::ZERO).max(Nanos::ZERO);
         let hold = credits.hold(payer.org, worst).await?;
@@ -48,6 +56,8 @@ impl<'a> Paying<'a> {
             hold,
             price,
             input,
+            worst,
+            kind,
             seen: AtomicU64::new(0),
             settled: false,
         })
@@ -69,10 +79,17 @@ impl<'a> Paying<'a> {
         self.counted(cost).await;
     }
 
-    /// Counts what a call that ended without an answer cost so far, in the hold's place, and
-    /// writes it to the store: nothing when none of its answer came.
-    pub(crate) async fn broke(self) {
-        let cost = if self.seen.load(Ordering::Relaxed) == 0 {
+    /// Counts what a call that ended in `error` without an answer cost so far, in the hold's
+    /// place, and writes it to the store: nothing when none of its answer came; a media call,
+    /// its hold unless its provider answered with a refusal or it was never sent.
+    pub(crate) async fn broke(self, error: &ProviderError) {
+        let cost = if self.kind == CostKind::Media {
+            if error.unanswered() {
+                self.worst
+            } else {
+                Nanos::ZERO
+            }
+        } else if self.seen.load(Ordering::Relaxed) == 0 {
             Nanos::ZERO
         } else {
             self.so_far()
@@ -82,7 +99,8 @@ impl<'a> Paying<'a> {
 
     async fn counted(mut self, cost: Nanos) {
         self.settled = true;
-        self.credits.settle(self.payer, self.hold, cost);
+        self.credits
+            .settle(self.payer, self.hold, (cost, self.kind.clone()));
         self.credits.write(self.payer.org).await;
     }
 
@@ -103,7 +121,13 @@ impl<'a> Paying<'a> {
 impl Drop for Paying<'_> {
     fn drop(&mut self) {
         if !self.settled {
-            self.credits.settle(self.payer, self.hold, self.so_far());
+            let cost = if self.kind == CostKind::Media {
+                self.worst
+            } else {
+                self.so_far()
+            };
+            self.credits
+                .settle(self.payer, self.hold, (cost, self.kind.clone()));
         }
     }
 }

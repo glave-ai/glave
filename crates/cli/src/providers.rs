@@ -11,6 +11,7 @@ mod check;
 mod describe;
 mod endpoints;
 mod lineup;
+mod media;
 mod refresh;
 
 use std::sync::{Mutex, PoisonError};

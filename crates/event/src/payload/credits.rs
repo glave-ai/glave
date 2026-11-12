@@ -25,6 +25,8 @@ open_kind! {
     pub enum CostKind {
         /// A model call, at the provider's reported cost.
         Model => "model",
+        /// A media tool's call, such as an image made, at the provider's reported cost.
+        Media => "media",
     }
 }
 

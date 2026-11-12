@@ -110,6 +110,7 @@ impl Lineup {
         catalogs: &[Catalog],
     ) -> anyhow::Result<Built> {
         let mut targets: Vec<(u8, Target)> = Vec::new();
+        let mut media = Vec::new();
         let mut about = HashMap::new();
         let mut first = None;
         let own = self.own_account();
@@ -151,6 +152,9 @@ impl Lineup {
                 about.insert(target.name.clone(), (catalog, service_name(provider)));
                 targets.push((rank(account.kind), free_if_here(target, &endpoint)));
             }
+            if media.is_empty() && account.kind == ProviderKind::Openrouter {
+                media = super::media::routes(&handle, catalog, &providers, &self.constraints);
+            }
             first.get_or_insert(endpoint);
         }
         // Stable: each service's models keep their order.
@@ -165,7 +169,7 @@ impl Lineup {
             models: &self.entries_from,
         };
         let judge = self.judge.model(&endpoint.model);
-        let gateway = gateway(
+        let mut gateway = gateway(
             Model::for_endpoint(&endpoint)?,
             &endpoint,
             judge.as_deref(),
@@ -173,6 +177,9 @@ impl Lineup {
             targets.into_iter().map(|(_, target)| target).collect(),
             &allowed,
         )?;
+        for (purpose, targets) in media {
+            gateway = gateway.with_route(purpose, targets)?;
+        }
         let describe = |group: &[&Target]| self.described(group, &about, catalogs);
         let models = Models {
             default: Some((endpoint.model.clone(), endpoint.provider.provider.clone())),
@@ -232,7 +239,7 @@ impl Lineup {
 /// `model` at `provider` through `handle`, as its `catalog`'s card describes it, and a router
 /// that keeps to people's filters where `provider` is OpenRouter, with who the catalog says
 /// serves the model (`providers` shared by its models).
-fn target_at(
+pub(super) fn target_at(
     handle: &Arc<dyn glave_gateway::Model>,
     provider: &str,
     model: &str,

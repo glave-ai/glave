@@ -3,25 +3,33 @@
 
 use std::sync::Arc;
 
-use glave_event::{Currency, Money};
+use glave_event::{CostKind, Currency, Money};
 use glave_ports::{
-    Completion, Delta, EventLog, Failure, ModelProvider, ModelRequest, ProviderError, Route,
-    Served, Unpaid,
+    Completion, Delta, EventLog, Failure, Made, MediaAsk, ModelProvider, ModelRequest,
+    ProviderError, Purpose, Route, Served, Unpaid,
 };
 use tracing::Instrument as _;
 
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
 use crate::filtering::{Filtering, Keeping};
+use crate::media::{self, IMAGE_IN_TOKENS};
 use crate::plan::{candidates, prepare};
 use crate::price::Price;
-use crate::routes::Routes;
+use crate::routes::{RouteError, Routes};
 use crate::target::Target;
 use crate::telemetry;
 use glave_event::Filters;
 
 /// The output a call's worst case counts when neither the request nor the target sets a limit.
 const DEFAULT_OUTPUT_TOKENS: u32 = 32_768;
+
+/// What a call asks of the target that serves it: an answer streamed as it comes, or what a
+/// media tool's call makes.
+enum Call<'a> {
+    Answer(&'a mut (dyn FnMut(Delta) + Send)),
+    Make(&'a MediaAsk),
+}
 
 /// Model calls routed by purpose, with fallback, credits and metering.
 #[derive(Debug)]
@@ -74,13 +82,24 @@ impl Gateway {
         &self.routes
     }
 
-    /// Serves `request` on `targets`, tried in order.
+    /// Gives `purpose` its own targets, as [`Routes::with_route`] does: a media tool's, which
+    /// `main`'s never serve.
+    pub fn with_route(
+        mut self,
+        purpose: Purpose,
+        targets: Vec<Target>,
+    ) -> Result<Self, RouteError> {
+        self.routes = self.routes.with_route(purpose, targets)?;
+        Ok(self)
+    }
+
+    /// Serves `request` on `targets`, tried in order, as `call` asks.
     async fn serve(
         &self,
         targets: &[Target],
         request: &ModelRequest,
-        on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> Result<Completion, ProviderError> {
+        mut call: Call<'_>,
+    ) -> Result<Made, ProviderError> {
         let needs = Needs::of(request);
         // Filters choose among a router's providers: where none is among the targets, they
         // change nothing, and are not read.
@@ -106,18 +125,19 @@ impl Gateway {
                 }
             };
             let sent = (request, route.as_ref());
-            let sent = Self::send_to(target, sent, &needs, paying.as_ref(), on_delta).await;
+            let sent = Self::send_to(target, sent, &needs, paying.as_ref(), &mut call).await;
             match sent {
-                Ok(completion) => {
+                Ok(made) => {
                     if let Some(paying) = paying {
+                        let completion = &made.completion;
                         let cost = completion.cost.as_ref().map(|cost| cost.amount);
                         paying.settle(cost, &completion.usage.counts()).await;
                     }
-                    return Ok(completion);
+                    return Ok(made);
                 }
                 Err(error) => {
                     if let Some(paying) = paying {
-                        paying.broke().await;
+                        paying.broke(&error).await;
                     }
                     // A failure that may pass moves on to the next target; any other is final.
                     if !error.is_transient() {
@@ -146,38 +166,55 @@ impl Gateway {
         (request, route): (&ModelRequest, Option<&Route>),
         needs: &Needs<'_>,
         paying: Option<&Paying<'_>>,
-        on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> Result<Completion, ProviderError> {
+        call: &mut Call<'_>,
+    ) -> Result<Made, ProviderError> {
         let (sent, stripped) = prepare(request, route, target, needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
-        let mut counted = |delta: Delta| {
-            if let Some(paying) = paying {
-                paying.saw(&delta);
+        let sent = match call {
+            Call::Answer(on_delta) => {
+                let mut counted = |delta: Delta| {
+                    if let Some(paying) = paying {
+                        paying.saw(&delta);
+                    }
+                    on_delta(delta);
+                };
+                let answered = target.handle.send(&sent, &mut counted);
+                let answered = answered.instrument(span.clone()).await;
+                answered.map(|completion| Made {
+                    files: Vec::new(),
+                    completion,
+                })
             }
-            on_delta(delta);
+            Call::Make(ask) => {
+                let ask = media::sent_to(ask, target, request.purpose);
+                let made = target.handle.make(&sent, &ask);
+                made.instrument(span.clone()).await
+            }
         };
-        let sent = target
-            .handle
-            .send(&sent, &mut counted)
-            .instrument(span.clone());
-        let sent = sent.await.map(|mut completion| {
-            if completion.cost.is_none() {
-                completion.cost = target
-                    .price
-                    .as_ref()
-                    .map(|price| price.cost(&completion.usage.counts()));
-            }
-            completion.served = Some(Served {
-                route: request.purpose.id().to_owned(),
-                target: target.name.clone(),
-                service: target.service.clone(),
-                effort,
-                reasoning_stripped: stripped,
-            });
-            completion
-        });
-        telemetry::model_ended(&span, request.purpose.id(), &target.name, &sent);
+        let sent = sent.map(
+            |Made {
+                 files,
+                 mut completion,
+             }| {
+                if completion.cost.is_none() {
+                    completion.cost = target
+                        .price
+                        .as_ref()
+                        .map(|price| price.cost(&completion.usage.counts()));
+                }
+                completion.served = Some(Served {
+                    route: request.purpose.id().to_owned(),
+                    target: target.name.clone(),
+                    service: target.service.clone(),
+                    effort,
+                    reasoning_stripped: stripped,
+                });
+                Made { files, completion }
+            },
+        );
+        let ended = sent.as_ref().map(|made| &made.completion);
+        telemetry::model_ended(&span, request.purpose.id(), &target.name, ended);
         sent
     }
 
@@ -203,7 +240,12 @@ impl Gateway {
         };
         let worst = worst(target, request, needs, price);
         let input = needs.fit_tokens();
-        Paying::hold(credits, payer, worst, price, input)
+        let kind = if request.purpose.is_media() {
+            CostKind::Media
+        } else {
+            CostKind::Model
+        };
+        Paying::hold(credits, payer, worst, (price, input), kind)
             .await
             .map(Some)
     }
@@ -216,19 +258,46 @@ impl ModelProvider for Gateway {
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
         let targets = self.routes.for_model(request.purpose, &request.model);
-        self.serve(&targets, request, on_delta).await
+        let made = self.serve(&targets, request, Call::Answer(on_delta)).await;
+        made.map(|made| made.completion)
+    }
+
+    /// A media tool's call, by its purpose's own route, to its tier's targets or the first
+    /// that can honour it, held and charged as `media`.
+    async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
+        let route = self.routes.targets(request.purpose);
+        let targets = media::chosen(route, request.purpose, ask)?;
+        self.serve(&targets, request, Call::Make(ask)).await
+    }
+
+    /// Whether calls for `purpose` are served: a media tool's only by a route of its own, and,
+    /// where credits are kept, only when one of its targets is priced, as an unpriced one is
+    /// refused.
+    fn serves(&self, purpose: Purpose) -> bool {
+        let priced = |target: &Target| {
+            (target.price.as_ref()).is_some_and(|price| price.currency == Currency::USD)
+        };
+        let route = self.routes.targets(purpose);
+        self.routes.serves(purpose)
+            && (!purpose.is_media() || self.credits.is_none() || route.iter().any(priced))
     }
 }
 
 /// The most a call to `target` could cost at its `price`, in dollars: the input, estimated
-/// cautiously, and the longest answer allowed.
+/// cautiously, each image a media call sends in among it, and the longest answer allowed, a
+/// media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
-    let output = request
-        .max_output_tokens
+    let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
+        .or(request.max_output_tokens)
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
+    let images = if request.purpose.is_media() {
+        u64::try_from(request.files.len()).map_or(u64::MAX, |n| n.saturating_mul(IMAGE_IN_TOKENS))
+    } else {
+        0
+    };
     let counts = glave_event::TokenCounts {
-        input: needs.reserve_tokens(),
+        input: needs.reserve_tokens().saturating_add(images),
         output: u64::from(output),
         ..glave_event::TokenCounts::default()
     };

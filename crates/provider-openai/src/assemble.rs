@@ -250,7 +250,7 @@ fn stop_reason(finish: Option<&str>, has_tool_calls: bool) -> StopReason {
 /// Normalizes chat-completions usage to inclusive totals: `prompt_tokens` already includes
 /// cached tokens, and reasoning is part of completion tokens. Inconsistent numbers from a
 /// provider are clamped and the usage marked estimated rather than rejected.
-fn usage_and_cost(
+pub(crate) fn usage_and_cost(
     raw: Option<&RawValue>,
     interrupted: bool,
     provider: &str,

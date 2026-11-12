@@ -4,7 +4,9 @@
 
 use glave_event::Reasoning;
 use glave_ports::auth::KeyHeader;
-use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
+use glave_ports::{
+    Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, Purpose,
+};
 use glave_provider_anthropic::{Anthropic, EFFORTS};
 use glave_provider_openai::{Config, OpenAiCompatible};
 
@@ -125,6 +127,7 @@ pub(crate) fn documented_reasoning(endpoint: &Endpoint, model: &str) -> Option<R
     })
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl ModelProvider for Model {
     async fn complete(
         &self,
@@ -146,6 +149,19 @@ impl ModelProvider for Model {
                 }
             }
         }
+    }
+
+    /// Only an OpenAI-compatible endpoint makes media (OpenRouter's image API).
+    async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
+        match self {
+            Self::OpenAi(openai) | Self::Both { openai, .. } => openai.make(request, ask).await,
+            Self::Anthropic(claude) => claude.make(request, ask).await,
+        }
+    }
+
+    /// What its gateway routes say, never the endpoint: none serves a media tool alone.
+    fn serves(&self, purpose: Purpose) -> bool {
+        !purpose.is_media()
     }
 }
 
@@ -284,7 +300,7 @@ mod tests {
                 tools: Vec::new(),
                 tool_choice: ToolChoice::Auto,
                 max_output_tokens: None,
-                purpose: glave_ports::Purpose::Main,
+                purpose: Purpose::Main,
                 files: Vec::new(),
                 effort: None,
                 payer: None,

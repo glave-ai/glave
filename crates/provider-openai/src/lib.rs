@@ -9,6 +9,7 @@ mod assemble;
 mod client;
 #[cfg(feature = "fake-server")]
 pub mod fake;
+mod images;
 mod reasoning;
 mod wire;
 

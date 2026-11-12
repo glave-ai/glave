@@ -24,13 +24,13 @@ c275920e4b385cbe 14 crates/provider-openai/src/wire/tests.rs crates/provider-ope
 3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
 3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+e7f25c7ea4766c24 40 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+7062455eba449e77 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
 55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 560cf54430deb382 6 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/passkeys/passkeys.component.spec.ts
 5730335cee541409 6 crates/session/src/held.rs crates/session/src/held.rs
-79eda4f947903b15 11 crates/aws/tests/anthropic.rs crates/cli/src/model.rs crates/google/src/adc/tests/gemini.rs
 6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
 6e88cd02a8308b96 10 crates/computer/src/worktrees/tests.rs crates/computer/src/worktrees/tests.rs
 7542976e8395bedc 9 crates/session/tests/turn_streams.rs crates/session/tests/watching.rs
@@ -38,7 +38,7 @@ c275920e4b385cbe 14 crates/provider-openai/src/wire/tests.rs crates/provider-ope
 7fac9e009813a8c7 10 crates/cli/src/computer.rs crates/cli/src/threads.rs
 81e2ed3cd1c45cf4 8 crates/harness/tests/project_folders.rs crates/session/tests/trust.rs
 83355f733bf6c3cb 6 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
-86efb1e494bcfecd 15 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+aab82f086101a3df 6 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 9555910be626e4a7 8 crates/store-postgres/src/leases.rs crates/store-sqlite/src/leases.rs
 960f7c5d68b6557d 7 crates/aws/src/sigv4.rs crates/google/src/adc.rs
 9686706281056062 6 crates/cli/tests/computer.rs crates/computer/src/local/background/tests.rs

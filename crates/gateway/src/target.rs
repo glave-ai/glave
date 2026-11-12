@@ -5,9 +5,12 @@ use std::fmt;
 use std::sync::Arc;
 
 use glave_event::Reasoning;
-use glave_ports::{BoxFuture, Completion, Delta, ModelProvider, ModelRequest, ProviderError};
+use glave_ports::{
+    BoxFuture, Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
+};
 
 use crate::filtering::Router;
+use crate::media::Tier;
 use crate::price::Price;
 
 /// A model provider behind a target. Every [`ModelProvider`] is one; this form can be shared
@@ -18,6 +21,13 @@ pub trait Model: Send + Sync {
         request: &'a ModelRequest,
         on_delta: &'a mut (dyn FnMut(Delta) + Send),
     ) -> BoxFuture<'a, Result<Completion, ProviderError>>;
+
+    /// Makes what a media tool's call asks ([`ModelProvider::make`]).
+    fn make<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a MediaAsk,
+    ) -> BoxFuture<'a, Result<Made, ProviderError>>;
 }
 
 #[deny(clippy::missing_trait_methods)]
@@ -28,6 +38,14 @@ impl<P: ModelProvider> Model for P {
         on_delta: &'a mut (dyn FnMut(Delta) + Send),
     ) -> BoxFuture<'a, Result<Completion, ProviderError>> {
         Box::pin(self.complete(request, on_delta))
+    }
+
+    fn make<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a MediaAsk,
+    ) -> BoxFuture<'a, Result<Made, ProviderError>> {
+        Box::pin(ModelProvider::make(self, request, ask))
     }
 }
 
@@ -85,6 +103,8 @@ pub struct Target {
     /// person's filters among the providers it passes calls on to (OpenRouter): the only kind
     /// a call its filters narrow may go to where one serves it.
     pub(crate) router: Option<Arc<Router>>,
+    /// The quality tier it serves a media tool in, and how (`media.rs`).
+    pub(crate) tier: Option<Arc<Tier>>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -107,6 +127,7 @@ impl Target {
             same_model: None,
             reasoning: None,
             router: None,
+            tier: None,
             handle,
         }
     }
@@ -181,6 +202,13 @@ impl Target {
     #[must_use]
     pub fn routing(mut self, router: Router) -> Self {
         self.router = Some(Arc::new(router));
+        self
+    }
+
+    /// The target serving a media tool in `tier`.
+    #[must_use]
+    pub fn in_tier(mut self, tier: Tier) -> Self {
+        self.tier = Some(Arc::new(tier));
         self
     }
 
