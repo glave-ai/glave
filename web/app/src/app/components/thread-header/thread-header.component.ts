@@ -40,8 +40,8 @@ export class ThreadHeaderComponent {
 
   protected readonly copy = {
     menu: $localize`:@@threadHeader.menu:Show or hide the side bar`,
-    rename: $localize`:@@threadHeader.rename:Rename the thread`,
-    panel: $localize`:@@threadHeader.panel:Show or hide the thread panel`,
+    rename: $localize`:@@threadHeader.rename:Rename the chat`,
+    panel: $localize`:@@threadHeader.panel:Show or hide the chat's panel`,
   } as const;
   protected readonly icons = { menu: Menu, folder: Folder, panel: PanelRight };
   private readonly nav = inject(NavService);

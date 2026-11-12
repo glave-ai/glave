@@ -9,7 +9,7 @@ import { GlzEmptyStateComponent } from './empty-state.component';
   imports: [GlzEmptyStateComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-empty-state heading="No threads yet" [icon]="icon">
+    <glz-empty-state heading="No chats yet" [icon]="icon">
       Start one and it shows up here.
       <button glzEmptyStateAction type="button">New chat</button>
     </glz-empty-state>
@@ -24,7 +24,7 @@ describe('GlzEmptyStateComponent', () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('.heading')?.textContent).toBe('No threads yet');
+    expect(root.querySelector('.heading')?.textContent).toBe('No chats yet');
     expect(root.querySelector('.text')?.textContent).toContain('Start one');
     expect(root.querySelector('.actions button')?.textContent).toBe('New chat');
     expect(root.querySelector('glz-icon svg')).not.toBeNull();

@@ -112,7 +112,7 @@ describe('PlanService', () => {
       { thread: 'thread-1', steps: ['Add --verbose and -v'] },
     ]);
     expect(plans.plan()).toEqual(edited);
-    const refused = 'thread 1 has no plan waiting for approval: plan mode proposes one';
+    const refused = 'chat 1 has no plan waiting for approval: plan mode proposes one';
     fake.answer('plan/edit', new ApiError({ code: ErrorCode.NO_PLAN, message: refused }));
     await plans.edit(['x']);
     expect(plans.error()).toBe(refused);

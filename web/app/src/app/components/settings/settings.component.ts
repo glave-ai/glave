@@ -70,7 +70,7 @@ export class SettingsComponent {
     connectionsText: $localize`:@@settings.connectionsText:Services glave can use for you, each signed in to as you.`,
     connectionsOpen: $localize`:@@settings.connectionsOpen:Open connections`,
     memory: $localize`:@@settings.memory:Memory`,
-    memoryText: $localize`:@@settings.memoryText:What glave keeps between threads, about you and about each project.`,
+    memoryText: $localize`:@@settings.memoryText:What glave keeps between chats, about you and about each project.`,
     memoryOpen: $localize`:@@settings.memoryOpen:Open memory`,
     server: $localize`:@@settings.server:This server`,
     serverUnknown: $localize`:@@settings.serverUnknown:Reading…`,

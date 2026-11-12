@@ -135,7 +135,7 @@ describe('TerminalsService', () => {
   it('lists the terminals again after one is refused, and counts one gone as closed', async () => {
     const refused = new ApiError({
       code: ErrorCode.LIMIT,
-      message: '4 terminals are already open in this thread; close one first',
+      message: '4 terminals are already open in this chat; close one first',
     });
     const gone = new ApiError({ code: ErrorCode.NO_TERMINAL, message: 'no terminal' });
     let lists = 0;
@@ -150,10 +150,10 @@ describe('TerminalsService', () => {
     await service.start(SIZE);
     expect(lists).toBe(2);
     expect(service.shown()).toEqual(GLAVE);
-    expect(service.problem()).toBe('4 terminals are already open in this thread; close one first.');
+    expect(service.problem()).toBe('4 terminals are already open in this chat; close one first.');
     await service.close('t1');
     expect(service.terminals()).toEqual([]);
-    expect(service.problem()).toBe('4 terminals are already open in this thread; close one first.');
+    expect(service.problem()).toBe('4 terminals are already open in this chat; close one first.');
   });
 
   it('lists the terminals again every so often while it is watched, and not once stopped', async () => {

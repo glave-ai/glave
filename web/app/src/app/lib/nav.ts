@@ -32,8 +32,8 @@ export function needsYou(): { readonly icon: GlzIconData; readonly label: string
  */
 export function threadsWords(): { readonly threads: string; readonly noMatch: string } {
   return {
-    threads: $localize`:@@nav.threads:Threads`,
-    noMatch: $localize`:@@nav.noMatch:No threads match`,
+    threads: $localize`:@@nav.threads:Chats`,
+    noMatch: $localize`:@@nav.noMatch:No chats match`,
   };
 }
 

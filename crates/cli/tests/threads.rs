@@ -52,7 +52,7 @@ fn a_thread_is_forked_in_the_person_s_server_saying_its_files_are_not_rewound() 
         assert_ne!(lines[0], id);
         assert_eq!(
             lines[1],
-            "Forked here from an earlier thread. Files aren't rewound: this thread works in the \
+            "Forked here from an earlier chat. Files aren't rewound: this chat works in the \
              same folder, with them as they are now."
         );
     }

@@ -95,7 +95,7 @@ export const ABOUT_FORMATTED: Answers<ThreadSummary> = {
           changes: {
             files: FILES,
             turns: [],
-            note: "The thread's files are glave's own edits and all else that differs from the version it started from, whatever changed it; a turn's are only glave's own edits.",
+            note: "The chat's files are glave's own edits and all else that differs from the version it started from, whatever changed it; a turn's are only glave's own edits.",
           },
         }
       : undefined,

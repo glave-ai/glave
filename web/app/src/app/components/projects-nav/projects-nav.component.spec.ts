@@ -136,9 +136,9 @@ describe('ProjectsNavComponent', () => {
     expect(threads[2]?.querySelector('[data-testid="nav-thread-since"]')).not.toBeNull();
     // No folder beside a project's name, and an empty project shows no filler.
     expect(find(root, 'nav-project-toggle').querySelectorAll('glz-icon')).toHaveLength(1);
-    expect(root.textContent).not.toContain('No threads');
+    expect(root.textContent).not.toContain('No chats');
     const add = root.querySelectorAll<HTMLAnchorElement>('[data-testid="nav-project-new"]');
-    expect(add[0]?.getAttribute('aria-label')).toBe('New thread in glave');
+    expect(add[0]?.getAttribute('aria-label')).toBe('New chat in glave');
     expect(add[0]?.getAttribute('href')).toBe('/?project=p1');
     expect(add[1]?.getAttribute('href')).toBe('/?project=p2');
     expect(find(root, 'nav-chats-new').getAttribute('href')).toBe('/');
@@ -243,9 +243,7 @@ describe('ProjectsNavComponent', () => {
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
     expect(texts(root, 'nav-thread-title')).toEqual([]);
-    expect(root.querySelector('[data-testid="nav-no-match"]')?.textContent).toBe(
-      'No threads match',
-    );
+    expect(root.querySelector('[data-testid="nav-no-match"]')?.textContent).toBe('No chats match');
     await expectAccessible(root);
   });
 
