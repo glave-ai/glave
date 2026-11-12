@@ -74,9 +74,12 @@ fn models() -> Vec<(&'static str, &'static str, u64, Vec<Serving>)> {
     ]
 }
 
-/// The sample image models, as glave's image tiers name them: id, name, and who serves each,
-/// at what a million tokens in and out cost, in dollars.
-const IMAGES: [(&str, &str, &[(&str, f64, f64)]); 3] = [
+/// One provider's endpoint of an image model: its slug, and what a million tokens in and out
+/// cost, in dollars.
+type Painting = (&'static str, f64, f64);
+
+/// The sample image models, as glave's image tiers name them: id, name, and who serves each.
+const IMAGES: [(&str, &str, &[Painting]); 3] = [
     (
         "google/gemini-nano-banana-2.1",
         "Google: Nano Banana 2.1",

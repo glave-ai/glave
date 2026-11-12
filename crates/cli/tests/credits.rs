@@ -162,9 +162,6 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     // and their prices too.
     let refreshed = api.call("provider/refresh", json!({}));
     assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
-    let asked: Vec<String> = router.received().into_iter().map(|r| r.path).collect();
-    let priced = "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints";
-    assert!(asked.iter().any(|path| path == priced), "{asked:?}");
     let listed = api.call("model/list", json!({}));
     let ids: Vec<&str> = listed["result"]["models"]
         .as_array()
@@ -208,9 +205,12 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     let (_, said) = run(&["credits"]);
     assert!(said.contains("Left: $0.75"), "{said}");
 
-    // The call kept to the filters, by what the catalog says of who serves the model.
-    let chats: Vec<_> = router
-        .received()
+    // The call kept to the filters, by what the catalog says of who serves the model; and the
+    // image models were read with their prices.
+    let received = router.received();
+    let priced = "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints";
+    assert!(received.iter().any(|request| request.path == priced));
+    let chats: Vec<_> = received
         .into_iter()
         .filter(|request| request.body.contains(OWN_MODEL))
         .collect();
