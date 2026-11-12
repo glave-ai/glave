@@ -1,4 +1,4 @@
-import type { RawEvent, ThreadSummary } from '@glave/client';
+import type { RawEvent } from '@glave/client';
 
 import { type Answers, Refusal, bound, call, event } from './fake-records';
 
@@ -60,9 +60,11 @@ export const PHOTOS_HISTORY = [
   event(10, 'turn.ended', { outcome: 'completed' }, PHOTOS, '2026-10-11T10:00:05.000Z'),
 ];
 
-/** Calls about the chat with photos, whose summary the fake keeps; no list holds it. */
-export const ABOUT_PHOTOS: Answers<ThreadSummary> = {
-  'thread/get': (params, summary) => (params.thread === PHOTOS ? { thread: summary } : undefined),
+/**
+ * Its photos, as `file/read` gives them back. No list holds the chat, and `thread/get` tells it
+ * as any thread the fake does not name.
+ */
+export const ABOUT_PHOTOS: Answers<null> = {
   'file/read': (params) => {
     if (params.thread !== PHOTOS) {
       return undefined;

@@ -156,9 +156,6 @@ const VERBOSE_THREAD = thread(VERBOSE, 'Add a --verbose flag to the CLI', 'idle'
 /** The thread that changed files only by a command, as `thread/get` shows it. */
 const FORMATTED_THREAD = thread(FORMATTED, 'Format the code', 'idle', PROJECT, FORMATTED_SUMMARY);
 
-/** The chat whose agent read two photos, as `thread/get` shows it. */
-const PHOTOS_THREAD = thread(PHOTOS, 'What is in these photos?', 'idle', PERSONAL);
-
 export const HISTORY = [
   event(1, 'thread.started', {}),
   bound(2),
@@ -696,7 +693,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
   return (
     (known.panel ? answerFrom(ABOUT_VERBOSE, method, params, null) : undefined) ??
     answerFrom(ABOUT_FORMATTED, method, params, FORMATTED_THREAD) ??
-    answerFrom(ABOUT_PHOTOS, method, params, PHOTOS_THREAD) ??
+    answerFrom(ABOUT_PHOTOS, method, params, null) ??
     background(method, params, commands) ??
     (gone === null ? undefined : answerFrom(ABOUT_GONE, method, params, gone)) ??
     (known.plan === null ? undefined : answerFrom(PLANNED, method, params, known.plan)) ??
