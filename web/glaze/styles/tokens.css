@@ -253,6 +253,7 @@
   --glz-tabs-inset-inline: 0; /* the tab list's and panel's sides: a pane's inset in a pane */
   --glz-content-width: 47.5rem;
   --glz-composer-lg-width: 45rem;
+  --glz-figure-size: 24rem; /* an image in a conversation: a square frame it fits in */
 
   /* The room before the person's message bubbles, and their surface. */
   --glz-message-gap: 20%;

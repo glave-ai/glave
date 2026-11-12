@@ -36,6 +36,7 @@ export interface GlzText {
     readonly failedLabel: string;
   };
   readonly dialog: { readonly closeLabel: string };
+  readonly figure: { readonly downloadLabel: string };
   readonly markdown: GlzMarkdownLabels;
   readonly menuSelect: { readonly placeholder: string };
   readonly panelLayout: { readonly label: string; readonly resizeLabel: string };

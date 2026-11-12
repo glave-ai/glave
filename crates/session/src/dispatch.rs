@@ -428,6 +428,11 @@ where
                 media_type,
                 data,
             } => boxed(|| self.upload(caller, project, &name, &media_type, &data)).await,
+            Request::FileRead {
+                thread,
+                sha256,
+                offset,
+            } => boxed(|| self.read_file(thread, &sha256, offset.unwrap_or(0))).await,
             Request::ApprovalDecide {
                 thread,
                 approval,

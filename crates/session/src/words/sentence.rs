@@ -347,6 +347,7 @@ sentences! {
         "this model can't read images or PDFs: choose one that can, or remove the file",
     FileGone { name: String } = "file-gone"
         "\"{ $name }\" is no longer here: add it to the message again",
+    FileNotHere = "file-not-here" "this file is no longer here",
     FileKind = "file-kind"
         "glave can't read this kind of file yet: add an image (PNG, JPEG, GIF or WebP), a PDF or a text file",
     ImageUnreadable { name: String } = "image-unreadable"

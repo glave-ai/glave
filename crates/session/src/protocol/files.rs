@@ -18,6 +18,23 @@ pub struct FileInfo {
     pub bytes: u64,
 }
 
+/// A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
+/// file of any size comes within the 16 MiB a message may be on every transport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FilePiece {
+    /// Its media type, such as `image/png`, as what it holds says.
+    pub media_type: String,
+    /// The whole file's size.
+    pub bytes: u64,
+    /// Where in the file this piece starts.
+    pub offset: u64,
+    /// This piece, in base64.
+    pub data: String,
+    /// Where the next piece starts; absent at the file's end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<u64>,
+}
+
 /// A file `turn/start` adds to its message: one `file/upload` kept in the thread's project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AttachedFile {

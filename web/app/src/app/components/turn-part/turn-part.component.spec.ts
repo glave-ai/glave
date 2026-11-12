@@ -17,6 +17,7 @@ const CALL: CallItem = {
   summary: 'bash: exit 3',
   status: 'failed',
   output: 'exit 3',
+  images: [],
 };
 
 const SAID: MessageItem = {
@@ -91,5 +92,26 @@ describe('TurnPartComponent', () => {
     expect(message?.getAttribute('aria-label')).toBe('Update');
     expect(root.querySelector('[data-testid="reply-sources"]')).not.toBeNull();
     await expectAccessible(root);
+  });
+
+  it('shows the images a run’s calls made under it, in view while it is closed', async () => {
+    const made: CallItem = {
+      ...CALL,
+      tool: 'image_generate',
+      summary: 'image_generate: a red fox at dawn',
+      status: 'done',
+      images: [{ sha256: 'f'.repeat(64), mediaType: 'image/png', name: 'image.png' }],
+    };
+    const root = await render({
+      kind: 'run',
+      key: 'run-2',
+      sentence: 'Made 1 image',
+      items: [made],
+    });
+    const figure = root.querySelector('[data-testid="thread-image"]');
+    expect(figure?.closest('details')).toBeNull();
+    expect(figure?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(
+      'image_generate: a red fox at dawn',
+    );
   });
 });

@@ -56,7 +56,20 @@ export interface CallItem extends Placed {
   readonly summary: string;
   readonly status: GlzReceiptStatus;
   readonly output: string;
+  /** The images its result holds, such as one the agent made, in order. */
+  readonly images: readonly HeldImage[];
 }
+
+/** An image a thread holds, as a tool's result names it: read back by its content's hash. */
+export interface HeldImage {
+  readonly sha256: string;
+  readonly mediaType: string;
+  /** The name it is saved as. */
+  readonly name: string;
+}
+
+/** The images a browser draws, by media type. */
+const DRAWN: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
 /** An action waiting for, or answered by, the person. */
 export interface ApprovalItem extends Placed {
@@ -180,6 +193,23 @@ export function filesOf(parts: unknown): readonly SentFile[] {
       const bytes = typeof blob['bytes'] === 'number' ? blob['bytes'] : 0;
       return { name: text(part['name']) || $localize`:@@conversation.file:file`, bytes };
     });
+}
+
+/** The images among a tool result's `parts`, each whole as it was kept, in order. */
+export function imagesOf(parts: unknown): readonly HeldImage[] {
+  const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
+  return list
+    .filter(isRecord)
+    .filter((part) => part['type'] === 'file' && isRecord(part['blob']))
+    .map((part) => {
+      const blob = isRecord(part['blob']) ? part['blob'] : {};
+      return {
+        sha256: text(blob['sha256']),
+        mediaType: text(blob['media_type']),
+        name: text(part['name']) || $localize`:@@conversation.image:image`,
+      };
+    })
+    .filter((image) => image.sha256 !== '' && DRAWN.includes(image.mediaType));
 }
 
 /**
@@ -385,6 +415,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
             summary: text(data['summary']) || tool,
             status: 'running',
             output: '',
+            images: [],
           });
         }
         break;
@@ -392,9 +423,11 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
       case 'tool.call.completed': {
         const call = text(data['call_id']);
         const output = partsText(data['output']).text;
+        const images = imagesOf(data['output']);
         update(`call-${call}`, (item) => {
           if (item.kind === 'call') {
-            return { ...item, status: data['is_error'] === true ? 'failed' : 'done', output };
+            const status = data['is_error'] === true ? 'failed' : 'done';
+            return { ...item, status, output, images };
           }
           if (item.kind === 'question') {
             return { ...item, answers: answersOf(data['structured']) };

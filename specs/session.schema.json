@@ -1442,6 +1442,47 @@
       ],
       "type": "object"
     },
+    "FilePiece": {
+      "description": "A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a\nfile of any size comes within the 16 MiB a message may be on every transport.",
+      "properties": {
+        "bytes": {
+          "description": "The whole file's size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "description": "This piece, in base64.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Its media type, such as `image/png`, as what it holds says.",
+          "type": "string"
+        },
+        "next": {
+          "description": "Where the next piece starts; absent at the file's end.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "description": "Where in the file this piece starts.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "media_type",
+        "bytes",
+        "offset",
+        "data"
+      ],
+      "type": "object"
+    },
     "Filters": {
       "additionalProperties": false,
       "description": "A person's filters among the providers a router passes their calls on to. What is not\nchosen does not filter.",
@@ -5783,6 +5824,44 @@
         },
         "required": [
           "credits"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "file/read": {
+      "params": {
+        "properties": {
+          "offset": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A piece of a file a thread holds.",
+        "properties": {
+          "piece": {
+            "$ref": "#/$defs/FilePiece"
+          }
+        },
+        "required": [
+          "piece"
         ],
         "type": "object"
       },

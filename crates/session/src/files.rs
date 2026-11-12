@@ -4,6 +4,8 @@
 //! PDFs are sent to the model inline, so a message with one is refused, plainly and before
 //! anything is sent, when the thread's model does not read them.
 
+mod read;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{Part, ThreadId};

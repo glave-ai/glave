@@ -10,7 +10,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{Body, Part, ThreadId, decode};
 use glave_session::protocol::{
-    ApiError, AttachedFile, FileInfo, Meta, ModelInfo, Reply, Request, code,
+    ApiError, AttachedFile, FileInfo, FilePiece, Meta, ModelInfo, Reply, Request, code,
 };
 
 use crate::support::*;
@@ -302,5 +302,64 @@ fn messages_with_files_that_cannot_be_sent_are_refused_before_anything_is() {
             .await;
         assert!(matches!(&task, Err(error) if error.code == code::INVALID_PARAMS));
         assert!(seen.lock().unwrap().is_empty(), "nothing reached the model");
+    });
+}
+
+/// The piece of the file `sha256` in `thread` from `offset`, as `file/read` answers it.
+async fn read<L: glave_ports::EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+    sha256: &glave_event::Sha256,
+    offset: Option<u64>,
+) -> Result<FilePiece, ApiError> {
+    let read = server
+        .request(Request::FileRead {
+            thread,
+            sha256: sha256.clone(),
+            offset,
+        })
+        .await?;
+    match read {
+        Reply::FilePiece { piece } => Ok(piece),
+        other => panic!("a piece, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_a_thread_holds_is_read_back_a_piece_at_a_time() {
+    let dir = folder("files-read");
+    block_on!(async {
+        let (server, _) = setup().build(&dir).await;
+        let thread = start(&server, false).await;
+        let photo = photo();
+        let kept = upload(&server, "IMG_0002.jpg", "image/jpeg", &photo)
+            .await
+            .unwrap();
+        send(&server, thread, vec![attached(&kept)], None)
+            .await
+            .unwrap();
+        let whole = read(&server, thread, &kept.sha256, None).await.unwrap();
+        assert_eq!(whole.media_type, "image/jpeg");
+        assert_eq!(
+            (whole.bytes, whole.offset, whole.next),
+            (kept.bytes, 0, None)
+        );
+        assert_eq!(STANDARD.decode(&whole.data).unwrap(), photo);
+        let from = kept.bytes - 10;
+        let tail = read(&server, thread, &kept.sha256, Some(from))
+            .await
+            .unwrap();
+        let tail = STANDARD.decode(&tail.data).unwrap();
+        assert_eq!(tail, photo.get(photo.len() - 10..).unwrap());
+        let past = read(&server, thread, &kept.sha256, Some(kept.bytes + 1))
+            .await
+            .unwrap();
+        assert!(past.data.is_empty() && past.next.is_none());
+        let never = glave_ports::digest(b"never kept");
+        let gone = read(&server, thread, &never, None).await;
+        assert!(
+            matches!(&gone, Err(error) if error.code == code::NO_FILE),
+            "{gone:?}"
+        );
     });
 }

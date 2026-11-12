@@ -27,6 +27,7 @@ export function glazeText(): GlzText {
       failedLabel: $localize`:@@glaze.copy.failed:Could not copy`,
     },
     dialog: { closeLabel: $localize`:@@glaze.dialog.close:Close` },
+    figure: { downloadLabel: $localize`:@@glaze.figure.download:Download` },
     markdown: {
       newTab: $localize`:@@glaze.markdown.newTab:(opens in a new tab)`,
       image: $localize`:@@glaze.markdown.image:Image`,

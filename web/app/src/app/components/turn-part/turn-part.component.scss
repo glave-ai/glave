@@ -2,3 +2,10 @@
 :host {
   display: contents;
 }
+
+// An image's frame while what draws it loads: the frame it is drawn in (`glz-figure`).
+.image-room {
+  display: block;
+  inline-size: min(100%, var(--glz-figure-size));
+  aspect-ratio: 1;
+}

@@ -1,0 +1,35 @@
+:host {
+  display: block;
+  max-inline-size: 100%;
+}
+
+.figure {
+  align-items: start;
+  margin: 0;
+}
+
+// One square frame, whether the image is coming, shown or missing, so nothing moves as it
+// arrives: the image fits inside it whole.
+.image,
+.pending,
+.failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: min(100%, var(--glz-figure-size));
+  aspect-ratio: 1;
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-sunken);
+}
+
+.image {
+  object-fit: contain;
+}
+
+.failed {
+  margin: 0;
+  padding: var(--glz-inset-card);
+  font-size: var(--glz-text-sm);
+  color: var(--glz-color-danger);
+  text-align: center;
+}

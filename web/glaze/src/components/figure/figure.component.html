@@ -1,0 +1,21 @@
+<figure class="figure glz-stack glz-gap-1">
+  @if (src(); as url) {
+    <img class="image" [attr.data-testid]="ids().image" [src]="url" [alt]="alt()" />
+    <figcaption>
+      <a
+        glzButton
+        size="sm"
+        variant="ghost"
+        [attr.data-testid]="ids().download"
+        [href]="url"
+        [attr.download]="name()"
+      >
+        {{ downloadLabel() }}
+      </a>
+    </figcaption>
+  } @else if (failed(); as why) {
+    <p class="failed" role="img" [attr.aria-label]="alt()">{{ why }}</p>
+  } @else {
+    <span class="pending" role="img" [attr.aria-label]="alt()"></span>
+  }
+</figure>

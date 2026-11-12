@@ -18,6 +18,7 @@ export * from './components/copy-button/copy-button.component';
 export * from './components/dialog/dialog.component';
 export * from './components/empty-state/empty-state.component';
 export * from './components/error/error.component';
+export * from './components/figure/figure.component';
 export * from './components/form-field/form-field.component';
 export * from './components/icon-button/icon-button.component';
 export * from './components/icon/icon.component';
