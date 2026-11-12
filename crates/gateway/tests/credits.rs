@@ -559,5 +559,9 @@ fn a_burst_of_calls_on_one_server_queues_for_the_ledger_and_every_one_is_held() 
         }
     });
     assert_eq!(fake.calls.load(Ordering::SeqCst), 50);
-    assert_eq!(balance(&credits_on(&log), acme), 0, "spent to the last nano");
+    assert_eq!(
+        balance(&credits_on(&log), acme),
+        0,
+        "spent to the last nano"
+    );
 }
