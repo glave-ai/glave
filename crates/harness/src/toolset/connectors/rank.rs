@@ -139,16 +139,22 @@ fn counted(text: &str) -> HashMap<String, u32> {
     counts
 }
 
-/// `text`'s words, lowercase and without a plural's `s`, parted where it is neither a letter
-/// nor a digit and inside a name in camelCase: `listOpenIssues` is `list`, `open`, `issue`.
+/// `text`'s words, lowercase and without a plural's `s`: `listOpenIssues` is `list`, `open`,
+/// `issue`.
 fn words(text: &str) -> Vec<String> {
+    words_of(text).into_iter().map(singular).collect()
+}
+
+/// `text`'s words, lowercase, parted where it is neither a letter nor a digit and inside a name
+/// in camelCase: `listOpenIssues` is `list`, `open`, `issues`.
+pub(crate) fn words_of(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut word = String::new();
     let mut lower_before = false;
     for c in text.chars() {
         let boundary = !c.is_alphanumeric() || (c.is_uppercase() && lower_before);
         if boundary && !word.is_empty() {
-            found.push(singular(std::mem::take(&mut word)));
+            found.push(std::mem::take(&mut word));
         }
         lower_before = c.is_lowercase();
         if c.is_alphanumeric() {
@@ -156,7 +162,7 @@ fn words(text: &str) -> Vec<String> {
         }
     }
     if !word.is_empty() {
-        found.push(singular(word));
+        found.push(word);
     }
     found
 }

@@ -127,14 +127,30 @@ fn what_replies_drew_on_is_written_again_in_their_sources() {
 #[test]
 fn every_sentence_an_approval_asks_with_is_found_in_the_table_by_its_english() {
     for english in glave_harness::ASKS {
-        let sentence = Sentence::asking(english);
+        let sentence = Sentence::asking("bash", english);
         let said = sentence.as_ref().map(|it| say(Language::English, it));
         assert_eq!(said.as_deref(), Some(english), "{english} has no entry");
     }
     assert_eq!(
-        Sentence::asking("Run this?"),
+        Sentence::asking("bash", "Run this?"),
         None,
         "words it does not hold"
+    );
+    let tool = "mcp__gmail__send_message";
+    let english = glave_harness::act_of(tool).unwrap().asked();
+    assert_eq!(english, "Send message with gmail?");
+    let sentence = Sentence::asking(tool, &english);
+    let said = sentence.as_ref().map(|it| say(Language::English, it));
+    assert_eq!(said, Some(english), "a service's tool, by what it does");
+    let accented = sentence.map(|it| say(Language::Accented, &it));
+    assert!(
+        accented.is_some_and(|it| it.starts_with("[Send message ŵîţĥ gmail?")),
+        "what it does and the service stay as they are"
+    );
+    assert_eq!(
+        Sentence::asking("mcp__slack__post_message", "Send message with gmail?"),
+        None,
+        "another tool's words"
     );
 }
 

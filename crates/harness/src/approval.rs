@@ -1,6 +1,12 @@
-//! Asking the person before acting: how much to ask (what a thread's mode comes to), and
-//! before the model sees a file that usually holds secrets, which Full access, never asking,
-//! declines instead. See `specs/approvals.md`.
+//! Asking the person before acting: how much to ask (what a thread's mode comes to), before
+//! the model sees a file that usually holds secrets, which Full access, never asking, declines
+//! instead, and before a connected service's write after untrusted content. See
+//! `specs/approvals.md`.
+
+mod act;
+
+pub(crate) use self::act::acts_after_untrusted;
+pub use self::act::{Act, act_of};
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -50,7 +56,7 @@ impl ApprovalRequest {
             call_id: self.call_id.clone(),
             tool: self.tool.clone(),
             summary: self.summary.clone(),
-            ask: ask_of(&self.tool).to_owned(),
+            ask: ask_of(&self.tool),
             detail: detail_of(&self.tool, &self.summary).to_owned(),
             secret: self.secret,
             caution: self.caution.as_ref().and_then(Caution::sentences),
@@ -87,8 +93,9 @@ pub const ASKS: [&str; 6] = [
 ];
 
 /// What an approval for `tool` asks the person, in a sentence: by what the tool does, for the
-/// harness's own tools and `web_fetch`, else a sentence for any tool.
-fn ask_of(tool: &str) -> &'static str {
+/// harness's own tools and `web_fetch`; what it does and with which service, for a service's
+/// tool ([`Act`]); else a sentence for any tool.
+fn ask_of(tool: &str) -> String {
     let [command, edit, write, read, page, any] = ASKS;
     match Tool::named(tool) {
         Some(Tool::Bash) => command,
@@ -96,8 +103,9 @@ fn ask_of(tool: &str) -> &'static str {
         Some(Tool::Write) => write,
         Some(Tool::Read) => read,
         _ if tool == WebPage::TOOL => page,
-        _ => any,
+        _ => return act_of(tool).map_or_else(|| any.to_owned(), |act| act.asked()),
     }
+    .to_owned()
 }
 
 /// What would run, apart from the sentence that says what it is: `summary`, which every tool
@@ -365,37 +373,45 @@ mod tests {
 
     #[test]
     fn an_approval_asks_by_what_would_run_with_what_would_run_apart() {
-        fn asked<'a>(tool: &str, summary: &'a str) -> (&'static str, &'a str) {
-            (ask_of(tool), detail_of(tool, summary))
+        fn asked(tool: &str, summary: &str) -> String {
+            format!("{} | {}", ask_of(tool), detail_of(tool, summary))
         }
         assert_eq!(
             asked("bash", "bash: git push -u origin fix/x"),
-            ("Run this command?", "git push -u origin fix/x")
+            "Run this command? | git push -u origin fix/x"
         );
         assert_eq!(
             asked("edit", "edit src/main.rs"),
-            ("Edit this file?", "src/main.rs")
+            "Edit this file? | src/main.rs"
         );
         assert_eq!(
             asked("write", "write notes.md (3 lines)"),
-            ("Write this file?", "notes.md (3 lines)")
+            "Write this file? | notes.md (3 lines)"
         );
-        assert_eq!(asked("read", "read .env"), ("Read this file?", ".env"));
+        assert_eq!(asked("read", "read .env"), "Read this file? | .env");
         assert_eq!(
             asked("web_fetch", "web_fetch https://tokio.rs"),
-            ("Open this page?", "https://tokio.rs")
+            "Open this page? | https://tokio.rs"
         );
         assert_eq!(
             asked("remember", r#"remember {"text":"x"}"#),
-            ("Allow this?", r#"{"text":"x"}"#)
+            r#"Allow this? | {"text":"x"}"#
+        );
+        assert_eq!(
+            asked(
+                "mcp__gmail__send_message",
+                r#"mcp__gmail__send_message {"to":"x"}"#
+            ),
+            r#"Send message with gmail? | {"to":"x"}"#,
+            "a service's tool, by what it does and the service"
         );
         assert_eq!(
             asked("search", "Searched the web: tokio"),
-            ("Allow this?", "Searched the web: tokio"),
+            "Allow this? | Searched the web: tokio",
             "a summary that does not start with its tool's name is all detail"
         );
-        assert_eq!(asked("bashful", "bash: ls").1, "bash: ls");
-        assert_eq!(asked("", "x").1, "x");
+        assert_eq!(detail_of("bashful", "bash: ls"), "bash: ls");
+        assert_eq!(detail_of("", "x"), "x");
     }
 
     #[test]

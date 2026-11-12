@@ -15,7 +15,9 @@ use glave_ports::{
     ToolSource,
 };
 
-use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there};
+use crate::approval::{
+    ApprovalMode, ApprovalRequest, Approver, acts_after_untrusted, asks_for, no_one_there,
+};
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::children::Ran;
@@ -194,7 +196,8 @@ where
     }
 
     /// Runs one call of a tool a source offers, asking the person first when its effect needs
-    /// them in this mode or when its source says it does, unless it goes on from an answer.
+    /// them in this mode, when its source says it does, or when it may write to a connected
+    /// service after the thread read untrusted content, unless it goes on from an answer.
     async fn call_offered(
         &self,
         thread: &mut Thread,
@@ -261,6 +264,7 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
+        let acts = acts_after_untrusted(thread.untrusted, source.connected(), effect, name);
         if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
         {
             return Ok(refused);
@@ -272,7 +276,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: Caution::of(caution, lifted),
+            caution: Caution::of(caution.or(acts), lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };

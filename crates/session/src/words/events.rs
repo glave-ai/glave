@@ -38,7 +38,7 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
     let Event { header, body } = decode(event.clone()).ok()?;
     let body = match body {
         Body::ApprovalRequested(mut asked) => {
-            let ask = Sentence::asking(&asked.ask).map(|ask| say(language, &ask));
+            let ask = Sentence::asking(&asked.tool, &asked.ask).map(|ask| say(language, &ask));
             let caution = asked
                 .reason
                 .as_ref()

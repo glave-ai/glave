@@ -55,7 +55,7 @@ mod turn;
 mod untrusted;
 mod waits;
 
-pub use approval::{ASKS, AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use approval::{ASKS, Act, AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk, act_of};
 pub use background::{Commands, RunningCommand};
 pub use bind::{Place, branch_for};
 pub use cancel::Cancel;
