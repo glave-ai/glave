@@ -166,7 +166,10 @@ where
 
     /// `bytes` back, and [`fit::fit`] of them: off the async threads, since decoding and
     /// scaling a photo takes a fifth of a second, and at most [`FITTING_AT_ONCE`] at a time.
-    async fn fit(&self, bytes: Vec<u8>) -> (Vec<u8>, Result<Option<Vec<u8>>, FileError>) {
+    pub(crate) async fn fit(
+        &self,
+        bytes: Vec<u8>,
+    ) -> (Vec<u8>, Result<Option<Vec<u8>>, FileError>) {
         let _permit = self.fitting.acquire().await;
         let fitting = tokio::task::spawn_blocking(move || {
             let copy = fit::fit(&bytes);

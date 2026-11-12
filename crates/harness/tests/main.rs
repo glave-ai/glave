@@ -26,6 +26,7 @@ mod install;
 mod instructions;
 mod judge;
 mod log_failures;
+mod media;
 mod modes;
 mod moved;
 mod network;
