@@ -36,6 +36,21 @@ type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;
 /// which it does not follow.
 const QUEUED: &str = "· queued to the turn running in this thread";
 
+/// What the terminal says when its input ends at an approval, which it leaves unanswered.
+const LEFT: &str = "· your input ended, so nothing was answered";
+
+/// What following a turn does after one of its notifications.
+enum Next {
+    /// Goes on following it.
+    Follow,
+    /// Cancels it: the person pressed Ctrl-C instead of answering.
+    Cancel,
+    /// Leaves it: the input ended before an answer, as when the terminal closes, so nothing
+    /// was answered and the turn waits for one from any client (`specs/session.md`,
+    /// "Approvals").
+    Leave,
+}
+
 /// The session API the terminal is a client of: the server in this process, or one elsewhere
 /// over HTTP. The terminal uses the same requests and follows turns the same way with either.
 #[derive(Clone, Copy)]
@@ -178,8 +193,13 @@ impl Client<'_> {
                 Some(TurnItem::Ended(ended)) => break Some(ended),
                 Some(TurnItem::Note(note)) => {
                     proposed |= proposes(self.thread, &note);
-                    if self.note(&note, &mut requested, printer, interrupt).await {
-                        cancelling = self.cancel().await;
+                    match self.note(&note, &mut requested, printer, interrupt).await {
+                        Next::Follow => {}
+                        Next::Cancel => cancelling = self.cancel().await,
+                        Next::Leave => {
+                            printer.status(LEFT);
+                            return (ExitCode::FAILURE, false);
+                        }
                     }
                 }
                 // One of them may have been the proposal.
@@ -207,29 +227,28 @@ impl Client<'_> {
     }
 
     /// Shows one notification of a turn; answers an approval once it is
-    /// pending, never one already decided, as one the judge let run. True when the person
-    /// pressed Ctrl-C instead of answering.
+    /// pending, never one already decided, as one the judge let run. Says what follows.
     async fn note(
         &self,
         note: &Notification,
         requested: &mut Requested,
         printer: &mut Printer,
         interrupt: &Cancel,
-    ) -> bool {
+    ) -> Next {
         match note {
             // A turn the terminal follows is not a task, nor a list.
             Notification::TaskFinished { .. }
             | Notification::Changed { .. }
-            | Notification::SettingsChanged { .. } => false,
+            | Notification::SettingsChanged { .. } => Next::Follow,
             Notification::Live {
                 thread,
                 update: Update::ApprovalPending { approval },
             } => match requested.remove(&(*thread, approval.clone())) {
                 Some(asked) => self.decide(*thread, &asked, printer, interrupt).await,
-                None => false,
+                None => Next::Follow,
             },
             // A subagent's steps are its own; its report reaches the model, not here.
-            Notification::Live { thread, .. } if *thread != self.thread => false,
+            Notification::Live { thread, .. } if *thread != self.thread => Next::Follow,
             Notification::Live {
                 update:
                     Update::Asked {
@@ -240,11 +259,11 @@ impl Client<'_> {
             } => self.answer(question, questions, printer, interrupt).await,
             Notification::Live { update, .. } => {
                 printer.update(update.clone());
-                false
+                Next::Follow
             }
             Notification::Event { thread, event } => {
                 let Ok(decoded) = decode(event.clone()) else {
-                    return false;
+                    return Next::Follow;
                 };
                 match decoded.body {
                     Body::TurnStarted(started) if *thread == self.thread => {
@@ -270,37 +289,37 @@ impl Client<'_> {
                     }
                     _ => {}
                 }
-                false
+                Next::Follow
             }
         }
     }
 
-    /// Answers `asked`, pending in `thread`, as the person says when this terminal asks. True when the person pressed Ctrl-C
-    /// instead of answering.
+    /// Answers `asked`, pending in `thread`, as the person says when this terminal asks: yes,
+    /// always in this thread, or anything else no. The end of input is no answer: the approval
+    /// is left pending, for any client to answer.
     async fn decide(
         &self,
         thread: ThreadId,
         asked: &ApprovalRequested,
         printer: &mut Printer,
         interrupt: &Cancel,
-    ) -> bool {
-        let decision = if self.asks {
-            let outside = asked.outside_sandbox.as_ref();
-            printer.approval(&asked.summary, asked.caution.as_deref(), outside);
-            let Some(line) = interrupt.run(self.input.line()).await else {
-                return true;
-            };
-            match line
-                .map(|answer| answer.trim().to_ascii_lowercase())
-                .as_deref()
-            {
-                Some("y" | "yes") => Answer::AllowOnce,
-                Some("a" | "always") => Answer::AllowForThread,
-                _ => Answer::Deny,
-            }
-        } else {
+    ) -> Next {
+        if !self.asks {
             // Started answered by no one, so never pending; nothing to answer.
-            return false;
+            return Next::Follow;
+        }
+        let outside = asked.outside_sandbox.as_ref();
+        printer.approval(&asked.summary, asked.caution.as_deref(), outside);
+        let Some(line) = interrupt.run(self.input.line()).await else {
+            return Next::Cancel;
+        };
+        let Some(line) = line else {
+            return Next::Leave;
+        };
+        let decision = match line.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" => Answer::AllowOnce,
+            "a" | "always" => Answer::AllowForThread,
+            _ => Answer::Deny,
         };
         let decide = Request::ApprovalDecide {
             thread,
@@ -310,23 +329,23 @@ impl Client<'_> {
         if let Err(error) = self.server.request(decide).await {
             printer.error(&error.to_string());
         }
-        false
+        Next::Follow
     }
 
-    /// Puts the model's questions to the person and sends the answers. True when the person
-    /// pressed Ctrl-C instead of answering.
+    /// Puts the model's questions to the person and sends the answers; cancels the turn when
+    /// the person pressed Ctrl-C instead of answering.
     async fn answer(
         &self,
         question: &CallId,
         questions: &[Question],
         printer: &mut Printer,
         interrupt: &Cancel,
-    ) -> bool {
+    ) -> Next {
         let mut answers = Vec::with_capacity(questions.len());
         for asked in questions {
             printer.ask_question(asked);
             let Some(line) = interrupt.run(self.input.line()).await else {
-                return true;
+                return Next::Cancel;
             };
             answers.push(asking::answer(asked, line.as_deref().unwrap_or_default()));
         }
@@ -338,18 +357,18 @@ impl Client<'_> {
         if let Err(error) = self.server.request(answer).await {
             printer.error(&error.to_string());
         }
-        false
+        Next::Follow
     }
 
     /// Puts what a service asks to the person, a field at a time, and sends what they answer, or
-    /// that they declined. True when the person pressed Ctrl-C instead of answering.
+    /// that they declined; cancels the turn when the person pressed Ctrl-C instead of answering.
     async fn answer_service(
         &self,
         at: Seq,
         asked: &ServiceAsked,
         printer: &mut Printer,
         interrupt: &Cancel,
-    ) -> bool {
+    ) -> Next {
         printer.service_asks(asked);
         let mut values = serde_json::Map::new();
         let mut declined = false;
@@ -357,7 +376,7 @@ impl Client<'_> {
             let answer = loop {
                 printer.service_field(field);
                 let Some(line) = interrupt.run(self.input.line()).await else {
-                    return true;
+                    return Next::Cancel;
                 };
                 match asking::field_answer(field, line.as_deref()) {
                     Ok(answer) => break answer,
@@ -379,7 +398,7 @@ impl Client<'_> {
         if !declined {
             printer.service_confirm(&asked.service);
             let Some(line) = interrupt.run(self.input.line()).await else {
-                return true;
+                return Next::Cancel;
             };
             declined = !asking::confirmed(line.as_deref());
         }
@@ -400,7 +419,7 @@ impl Client<'_> {
         for error in asking::sent(answer, send).await {
             printer.error(&error);
         }
-        false
+        Next::Follow
     }
 
     /// Asks the server to cancel the turn; true once asked, so it is asked only once.
