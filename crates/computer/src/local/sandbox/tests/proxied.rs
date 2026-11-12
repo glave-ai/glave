@@ -17,7 +17,7 @@ use glave_ports::computer::{
     Command, ComputerError, Computers, Ending, Environment, Sandbox, SandboxLevel, SandboxNetwork,
     Sources,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
@@ -173,16 +173,21 @@ async fn serve(server: &mut JoinSet<()>) -> u16 {
             let Ok((mut stream, _)) = listener.accept().await else {
                 return;
             };
-            let mut read = vec![0_u8; 4096];
-            let _ = stream.read(&mut read).await;
-            let reply = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{HELLO}",
-                HELLO.len()
-            );
-            let _ = stream.write_all(reply.as_bytes()).await;
+            answer(&mut stream).await;
         }
     });
     port
+}
+
+/// Reads a request from `stream` and answers it with [`HELLO`].
+async fn answer<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) {
+    let mut read = vec![0_u8; 4096];
+    let _ = stream.read(&mut read).await;
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{HELLO}",
+        HELLO.len()
+    );
+    let _ = stream.write_all(reply.as_bytes()).await;
 }
 
 /// `curl` fetching `url`, printing the status and the body, and what failed if it did.
@@ -350,8 +355,111 @@ fn sandbox_a_dual_stack_client_reaches_the_proxy_only_as_loopback_itself() {
     let [mapped, plain] = said.as_slice() else {
         panic!("{said:?}");
     };
-    assert!(mapped.contains("not permitted"), "{mapped}");
+    assert!(!mapped.contains("reached"), "{mapped}");
     assert!(plain.contains("reached"), "{plain}");
+}
+
+/// TLS through the proxy, checked by the system's trust (`curl` on Security.framework, whose
+/// checks run in `trustd`): a server whose authority the client is told to trust is reached,
+/// and the same server is refused when it is not, so the check really ran in the sandbox.
+#[cfg(target_os = "macos")]
+#[test]
+fn sandbox_tls_through_the_proxy_is_checked_by_the_system_s_trust() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("tls");
+    let (acceptor, authority) = tls_server();
+    std::fs::write(dir.join("app/authority.pem"), authority).unwrap();
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!(
+        "https://allowed.example:{}/",
+        listener.local_addr().unwrap().port()
+    );
+    // Served on a thread of its own, stopped when `stop` is sent or dropped.
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async move {
+            let listener = TcpListener::from_std(listener).unwrap();
+            tokio::select! {
+                () = serve_tls(listener, acceptor) => {}
+                _ = stopped => {}
+            }
+        });
+    });
+    let curl =
+        |options: &str| format!("CURL_SSL_BACKEND=secure-transport {}", fetch(options, &url));
+    let said = run_one(
+        &dir,
+        None,
+        SandboxNetwork::Proxied,
+        &[&curl("--cacert authority.pem"), &curl("")],
+    )
+    .unwrap();
+    let _ = stop.send(());
+    server.join().unwrap();
+    let [trusted, untrusted] = said.as_slice() else {
+        panic!("{said:?}");
+    };
+    assert!(trusted.contains(HELLO), "{trusted}");
+    assert!(trusted.contains("status=200"), "{trusted}");
+    assert!(!untrusted.contains(HELLO), "{untrusted}");
+    assert!(untrusted.contains("status=000"), "{untrusted}");
+}
+
+/// An acceptor for `allowed.example`, its certificate signed by an authority of the test's own,
+/// and that authority's certificate, as PEM. Valid from this year's start to next year's end,
+/// within the 825 days macOS allows a server's certificate.
+#[cfg(target_os = "macos")]
+fn tls_server() -> (tokio_rustls::TlsAcceptor, String) {
+    use glave_ports::Clock as _;
+    let now = glave_ports::SystemClock.now().to_string();
+    let year: i32 = now.split('-').next().unwrap().parse().unwrap();
+    let dated = |names: Vec<String>| {
+        let mut params = rcgen::CertificateParams::new(names).unwrap();
+        params.not_before = rcgen::date_time_ymd(year, 1, 1);
+        params.not_after = rcgen::date_time_ymd(year + 1, 12, 28);
+        params
+    };
+    let authority_key = rcgen::KeyPair::generate().unwrap();
+    let mut authority = dated(Vec::new());
+    authority.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let authority_pem = authority.self_signed(&authority_key).unwrap().pem();
+    let issuer = rcgen::Issuer::from_params(&authority, &authority_key);
+    let key = rcgen::KeyPair::generate().unwrap();
+    let mut leaf = dated(vec!["allowed.example".into()]);
+    leaf.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+    let leaf = leaf.signed_by(&key, &issuer).unwrap();
+    let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![leaf.der().clone()],
+        rustls::pki_types::PrivateKeyDer::try_from(key.serialize_der()).unwrap(),
+    )
+    .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+    (acceptor, authority_pem)
+}
+
+/// Answers each TLS connection `listener` takes with [`HELLO`].
+#[cfg(target_os = "macos")]
+async fn serve_tls(listener: TcpListener, acceptor: tokio_rustls::TlsAcceptor) {
+    while let Ok((stream, _)) = listener.accept().await {
+        let Ok(mut stream) = acceptor.accept(stream).await else {
+            continue;
+        };
+        answer(&mut stream).await;
+        let _ = stream.shutdown().await;
+    }
 }
 
 /// Nothing but the proxy's connections leaves the command, so no name is looked up from

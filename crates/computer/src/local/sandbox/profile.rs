@@ -59,15 +59,21 @@ const NETWORK_RULES: &str = r#"; network: allowed
 "#;
 
 /// When the network goes only through glave's outbound proxy: this computer's loopback, where
-/// the proxy listens, and nothing else, not even name lookups. All of loopback, not only the
-/// proxy's port, so a command still reaches the servers it starts, as it does in its own
-/// network namespace on Linux. Seatbelt's `localhost` is `127.0.0.1`, `::1` and `fe80::1%lo0`,
-/// never `::ffff:127.0.0.1`, which only `*` would cover.
+/// the proxy listens, and of the system's services only the two Security.framework's TLS needs
+/// (measured: without `SecurityServer` it cannot read a certificate, without `trustd` it cannot
+/// check one), never Codex's whole network set, whose `ocspd`, `networkd` and configuration
+/// services TLS through the proxy does without. No name lookups. `trustd` itself fetches what a
+/// certificate names (its issuer, OCSP) directly, not through the proxy: a named gap
+/// (`specs/sandbox.md`, "The outbound proxy", step 3). All of loopback, not only the proxy's
+/// port, so a command still reaches the servers it starts, as it does in its own network
+/// namespace on Linux. Seatbelt's `localhost` is `127.0.0.1`, `::1` and `fe80::1%lo0`, never
+/// `::ffff:127.0.0.1`, which only `*` would cover.
 const PROXIED_RULES: &str = r#"; network: only loopback, where glave's outbound proxy listens
 (allow network-outbound (remote ip "localhost:*"))
 (allow network-inbound (local ip "localhost:*"))
 (allow network-bind (local ip "localhost:*"))
-(allow mach-lookup (global-name "com.apple.TrustEvaluationAgent"))
+; TLS: reading certificates, and checking them
+(allow mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.trustd.agent"))
 "#;
 
 /// The real paths a profile refers to. macOS matches resolved paths, so these must be resolved.
@@ -107,13 +113,14 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetw
     };
     reads(&mut profile, places);
     writes(&mut profile, places, level);
-    let rules = match network {
-        SandboxNetwork::Off => return profile,
-        SandboxNetwork::Direct => NETWORK_RULES,
-        SandboxNetwork::Proxied => PROXIED_RULES,
-    };
-    profile.text.push_str(rules);
-    profile.text.push_str(NETWORK);
+    match network {
+        SandboxNetwork::Off => {}
+        SandboxNetwork::Direct => {
+            profile.text.push_str(NETWORK_RULES);
+            profile.text.push_str(NETWORK);
+        }
+        SandboxNetwork::Proxied => profile.text.push_str(PROXIED_RULES),
+    }
     profile
 }
 
@@ -551,6 +558,14 @@ mod tests {
             profile.text.contains("com.apple.trustd.agent"),
             "TLS through the proxy still checks certificates"
         );
+        for service in [
+            "com.apple.ocspd",
+            "com.apple.networkd",
+            "com.apple.SystemConfiguration",
+            "com.apple.TrustEvaluationAgent",
+        ] {
+            assert!(!profile.text.contains(service), "{service}");
+        }
     }
 
     #[test]

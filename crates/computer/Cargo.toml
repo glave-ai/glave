@@ -66,6 +66,9 @@ kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:glave-event"]
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
+# TLS 1.2 for a test server that `curl` on Apple's Secure Transport, which has no TLS 1.3,
+# reaches through the outbound proxy.
+rustls = { workspace = true, features = ["tls12"] }
 # A pseudo-terminal of the sandbox tests' own, standing in for another session's terminal.
 rustix = { workspace = true, features = ["pty"] }
 # Paused time, so fault tests stall and time out on a clock they move, never a real one.
