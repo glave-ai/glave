@@ -104,57 +104,47 @@ impl WorkerComputers {
             network: decided.network,
             token: token.clone(),
         };
-        self.computer.wake(&spec).await?;
-        // Another server reaching the computer as it woke may have given it a token of its own
-        // first: then this one is given a fresh one too.
-        let remote = match reconnect::bridged(&self.computer, token.secret()).await {
-            Err(ComputerError::Unreachable(_)) => reconnect::bridged_again(&self.computer).await,
-            bridged => bridged,
+        let pod = self.computer.wake(&spec).await?;
+        // Marked served only once this server reached it, so no other gives it a token of its
+        // own before then (decision 18).
+        let reached = async {
+            let remote = reconnect::bridged(&self.computer, token.secret()).await?;
+            let (connection, info) = made(remote, environment, pod.clone()).await?;
+            self.computer.served(&pod).await?;
+            self.held()?.computers.insert(info.id, Arc::new(connection));
+            Ok(info)
         };
-        let reached = match remote {
-            Ok(remote) => self.made(remote, environment).await,
-            Err(error) => Err(error),
-        };
+        let reached = reached.await;
         if reached.is_err() {
             let _ = self.computer.sleep().await;
         }
         reached
     }
 
-    /// Reaches the computer awake that another server, or this one before it restarted, woke:
-    /// a connection of its own, through a new bridge with a fresh token, tried once, so a
-    /// computer still waking is not given token after token. Whatever fails, nothing of the
-    /// computer is touched.
+    /// Reaches the computer the Pod `pod` is, awake and served, which another server, or this
+    /// one before it restarted, woke: a connection of its own, through a new bridge with a fresh
+    /// token, tried again for a minute (another server's fresh token may replace this one before
+    /// it is presented). Whatever fails, nothing of the computer is touched.
     pub(crate) async fn attach(
         &self,
         environment: &Environment,
+        pod: &str,
     ) -> Result<ComputerInfo, ComputerError> {
-        let remote = reconnect::fresh(&self.computer).await?;
-        self.made(remote, environment).await
-    }
-
-    /// Makes, over `remote`, a connection to the computer awake, its one computer: the
-    /// container itself, held from now on by the id glave there gave it.
-    async fn made(
-        &self,
-        remote: RemoteComputers,
-        environment: &Environment,
-    ) -> Result<ComputerInfo, ComputerError> {
-        let pod = self.computer.running_as().await.ok().flatten();
-        let inside = Environment {
-            env: environment.env.clone(),
-            ..Environment::host()
-        };
-        let mut info = remote.create(&inside).await?;
-        info.environment = Some(environment.clone());
-        let connection = Connection::new(remote, pod);
+        let remote = reconnect::bridged_again(&self.computer).await?;
+        // Reached through the Pod's name: the very Pod only if it is still the one served.
+        if self.computer.seen().await?.speaks_ours() != Some(pod) {
+            return Err(ComputerError::Unreachable(
+                "your computer started again as this server reached it".into(),
+            ));
+        }
+        let (connection, info) = made(remote, environment, pod.to_owned()).await?;
         self.held()?.computers.insert(info.id, Arc::new(connection));
         Ok(info)
     }
 
-    /// The uid of the Pod `computer` was reached in, when it was read.
+    /// The uid of the Pod `computer` was reached in.
     pub(crate) fn pod_of(&self, computer: ComputerId) -> Option<String> {
-        self.worker(computer).ok()?.pod.clone()
+        Some(self.worker(computer).ok()?.pod.clone())
     }
 
     /// Lets go of `computer` here, its Pod left as it is: for one that slept, or that another
@@ -211,6 +201,22 @@ impl WorkerComputers {
             None => remote.run(workspace, command, output, cancel).await,
         }
     }
+}
+
+/// Makes, over `remote`, a connection to the computer awake in the Pod `pod`, and its one
+/// computer there: the container itself.
+async fn made(
+    remote: RemoteComputers,
+    environment: &Environment,
+    pod: String,
+) -> Result<(Connection, ComputerInfo), ComputerError> {
+    let inside = Environment {
+        env: environment.env.clone(),
+        ..Environment::host()
+    };
+    let mut info = remote.create(&inside).await?;
+    info.environment = Some(environment.clone());
+    Ok((Connection::new(remote, pod), info))
 }
 
 impl Computers for WorkerComputers {

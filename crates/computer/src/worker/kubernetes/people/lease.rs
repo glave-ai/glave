@@ -30,14 +30,15 @@ const ANSWERS_WITHIN: Duration = Duration::from_secs(5);
 /// takes to come back and clocks that drift.
 const MARGIN: Duration = Duration::from_secs(5);
 
-/// What a call is told when another server held a sleeping computer's lease for as long as
-/// [`LEASE_WAIT`]: it neither woke it nor let go.
+/// What a call is told when another server held the lease of a computer not awake for
+/// [`LEASE_WAIT`] with no wake going on: it neither woke it nor let go.
 pub(super) const ELSEWHERE: &str = "your computer is being woken through another of glave's \
      servers, which hasn't finished; try again in a minute";
 
-/// How long a server waits for another to wake a person's computer, or to let go of it, before
-/// telling the call so: the holder finds a computer that slept on its own within a minute, and
-/// its lease lapses 30 seconds after it stops.
+/// How long a server waits on another that holds a person's computer's lease with no wake going
+/// on, before telling the call so: the holder finds a computer that slept on its own within a
+/// minute, and its lease lapses 30 seconds after it stops. A wake going on is waited for as long
+/// as a wake takes.
 pub(super) const LEASE_WAIT: Duration = Duration::from_mins(2);
 
 /// Where people's computer leases are kept, and who this server holds them as.

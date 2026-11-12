@@ -23,12 +23,14 @@ use tokio::time::Instant;
 use super::Kubernetes;
 use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
+use super::served::Seen;
 use super::sizing::{CEILING, Size};
 use crate::worker::WorkerComputers;
 use crate::worker::limits::pinned;
 use crate::{Grow, Lost, Peek, Short, Wake, Waking};
 
 mod lease;
+mod reach;
 
 pub use lease::Leasing;
 
@@ -44,9 +46,6 @@ const MAX_PEOPLE: usize = 4_096;
 /// The most time between asks of a computer a turn or task holds, so it never counts as idle
 /// while one runs: a quarter of its idle limit, at most a minute.
 const HEARTBEAT: Duration = Duration::from_mins(1);
-/// How often a server waiting for another to wake a person's computer, or to let go of its
-/// lease, looks again.
-const LOOK_AGAIN: Duration = Duration::from_secs(2);
 
 /// Where one person's computer is.
 #[derive(Debug, Clone)]
@@ -275,7 +274,7 @@ impl People {
 
     /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept: for
     /// a turn or a task. It does not wake it; while it is awake, it is asked how it is once a
-    /// minute.
+    /// minute, and its lease taken when no server holds it.
     pub fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Holding, ComputerError> {
         let person = self.person(org, person)?;
         let every = HEARTBEAT.min(Duration::from_mins(u64::from(self.idle_minutes)) / 4);
@@ -288,6 +287,13 @@ impl People {
                 };
                 if let Some(computer) = awake {
                     let _ = person.computers.status(computer).await;
+                    // Using it, so this server keeps its lease when no other does: a computer
+                    // in use always has a holder to look after it (decision 18).
+                    if !holds(&person)
+                        && let Ok(Some(held)) = person.leasing.take(person.org, person.id).await
+                    {
+                        renew_while_awake(&person, held);
+                    }
                 }
             }
         })))
@@ -408,7 +414,9 @@ async fn slept(person: &Person, home: &WorkspaceInfo) {
     if let Some(held) = held.filter(lease::Held::holds) {
         let _ = person.computers.destroy(home.computer).await;
         *person.held.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        let_go(person, home);
         person.leasing.release(&held).await;
+        return;
     }
     let_go(person, home);
 }
@@ -652,54 +660,80 @@ async fn woken(person: Arc<Person>, environment: Environment) {
     person.state.send_replace(state);
 }
 
-/// `person`'s computer reached and their home opened on it. One awake, whichever server woke
-/// it, is reached as it is through a connection of this server's own, its lease taken too when
-/// no server holds it; one that is not, or can't be reached as it is (an older glave in a
-/// rollout, one whose waking server went), is woken from `environment` under its lease, which
-/// replaces what is left of it. While another server holds the lease of one not awake (waking
-/// it, or not yet having found it slept), this waits up to [`lease::LEASE_WAIT`].
+/// `person`'s computer reached from `environment` ([`reach::reached`]), and their home opened on
+/// it.
 async fn reached(
     person: &Arc<Person>,
     environment: &Environment,
 ) -> Result<WorkspaceInfo, ComputerError> {
-    let until = Instant::now() + lease::LEASE_WAIT;
-    loop {
-        if matches!(person.pod.running().await, Ok(true)) {
-            match person.computers.attach(environment).await {
-                Ok(computer) => {
-                    if let Ok(Some(held)) = person.leasing.take(person.org, person.id).await {
-                        renew_while_awake(person, held);
-                    }
-                    return home_on(person, computer.id).await;
-                }
-                Err(error) => {
-                    tracing::info!(why = %error, "a person's computer awake was not reached as it is");
-                }
-            }
-        }
-        if let Some(held) = person.leasing.take(person.org, person.id).await? {
-            renew_while_awake(person, held);
-            let computer = person.computers.create(environment).await?;
-            return home_on(person, computer.id).await;
-        }
-        if Instant::now() >= until {
-            return Err(ComputerError::Failed(lease::ELSEWHERE.into()));
-        }
-        tokio::time::sleep(LOOK_AGAIN).await;
+    let machine = Reaching {
+        person,
+        environment,
+    };
+    reach::reached(
+        &machine,
+        &person.leasing,
+        (person.org, person.id),
+        WAKE_WAIT,
+    )
+    .await
+}
+
+/// A person's computer as this server reaches it, woken from `environment`.
+struct Reaching<'a> {
+    person: &'a Arc<Person>,
+    environment: &'a Environment,
+}
+
+impl reach::Machine for Reaching<'_> {
+    async fn seen(&self) -> Result<Seen, ComputerError> {
+        self.person.pod.seen().await
+    }
+
+    async fn attach(&self, pod: &str) -> Result<WorkspaceInfo, ComputerError> {
+        let computer = self.person.computers.attach(self.environment, pod).await?;
+        home_on(self.person, computer.id).await
+    }
+
+    async fn wake(&self) -> Result<WorkspaceInfo, ComputerError> {
+        let computer = self.person.computers.create(self.environment).await?;
+        home_on(self.person, computer.id).await
+    }
+
+    fn keep(&self, held: lease::Held) {
+        renew_while_awake(self.person, held);
     }
 }
 
-/// The person's home opened on `computer`, just reached; a computer whose home won't open is
-/// let go of here.
+/// The person's home opened on `computer`, just reached; a computer whose home won't open, or
+/// whose opening was stopped, is let go of here.
 async fn home_on(person: &Person, computer: ComputerId) -> Result<WorkspaceInfo, ComputerError> {
+    let mut unopened = Unopened {
+        computers: &person.computers,
+        computer,
+        opened: false,
+    };
     let home = Sources::Folder {
         path: PERSON_HOME.into(),
     };
-    let opened = person.computers.open(computer, &home).await;
-    if opened.is_err() {
-        person.computers.forget(computer);
+    let opened = person.computers.open(computer, &home).await?;
+    unopened.opened = true;
+    Ok(opened)
+}
+
+/// A computer reached whose home is not open yet: let go of if it never is.
+struct Unopened<'a> {
+    computers: &'a WorkerComputers,
+    computer: ComputerId,
+    opened: bool,
+}
+
+impl Drop for Unopened<'_> {
+    fn drop(&mut self) {
+        if !self.opened {
+            self.computers.forget(self.computer);
+        }
     }
-    opened
 }
 
 #[cfg(test)]

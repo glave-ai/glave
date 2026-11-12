@@ -246,7 +246,7 @@ fn a_persons_computer_is_limited_hardened_reached_and_put_to_sleep() {
         let wanted = spec(&image);
         let woke = computer.wake(&wanted).await;
         let seen = match &woke {
-            Ok(()) => seen(&cluster, &computer, &name).await,
+            Ok(_) => seen(&cluster, &computer, &name).await,
             Err(error) => Err(format!("wake: {error:?}")),
         };
         let slept = computer.sleep().await;

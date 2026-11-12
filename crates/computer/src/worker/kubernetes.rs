@@ -11,6 +11,7 @@ mod home;
 mod link;
 mod objects;
 mod people;
+mod served;
 mod sizing;
 
 use std::collections::BTreeMap;
@@ -284,14 +285,14 @@ impl Kubernetes {
 
     /// Starts the person's computer `name` on their disk (`home`) from `spec`, with `glave`
     /// copied in unless its image carries that very glave. It is owned by no Pod, since a
-    /// person's computer outlives any one glave.
+    /// person's computer outlives any one glave. The uid of the Pod started.
     async fn start(
         &self,
         name: &str,
         spec: &Spec,
         glave: &[u8],
         home: Home<'_>,
-    ) -> Result<(), ComputerError> {
+    ) -> Result<String, ComputerError> {
         let arch = objects::arch(elf_machine(glave));
         let shape = Shape {
             name,
@@ -310,17 +311,22 @@ impl Kubernetes {
             .map_err(|error| failed("refused the computer's network policy", error))?;
         let pod: Pod = serde_json::from_value(shape.pod()).map_err(|error| failed("pod", error))?;
         let pods = self.pods();
-        pods.create(&PostParams::default(), &pod)
+        let made = pods
+            .create(&PostParams::default(), &pod)
             .await
             .map_err(|error| failed("refused the computer", error))?;
+        let uid = made.metadata.uid.ok_or_else(|| {
+            ComputerError::Failed(format!("the computer {name} was made with no uid"))
+        })?;
         self.running(name).await?;
         if self.serves_its_image_glave(name, spec, &home).await? {
-            return Ok(());
+            return Ok(uid);
         }
         let files = objects::files(glave, spec).map_err(|long| {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
-        self.copy_in(name, &files, "glave").await
+        self.copy_in(name, &files, "glave").await?;
+        Ok(uid)
     }
 
     /// Waits for the computer's container to run.

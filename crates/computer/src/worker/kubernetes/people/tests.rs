@@ -467,8 +467,8 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
         };
         // Two servers on one store.
         let leases: Arc<dyn Leases> = Arc::new(InMemoryLeases::new(Arc::new(SystemClock)));
-        let first = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
-        let second = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
+        let server = || People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
+        let (first, second) = (server(), server());
         let (org, person, key) = someone();
         let pod = format!("glave-computer-{key}");
         let (one, two) = (
@@ -476,29 +476,39 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
             second.home(org, person).unwrap(),
         );
 
-        // In turn: the first wakes it, the second reaches it as it is, the first goes on.
-        let wrote = command(&one, one.home.id, "echo here > here.txt").await;
-        let woke = uid(&cluster, &pod).await;
-        let added = command(&two, two.home.id, "cat here.txt; echo there >> here.txt").await;
-        let back = command(&one, one.home.id, "cat here.txt").await;
-        // And both at once.
-        let (both_one, both_two) = tokio::join!(
-            command(&one, one.home.id, "true"),
+        // The first calls of both at once, on a computer asleep: one wakes it, the other waits
+        // for that wake and reaches it.
+        let (woke_one, woke_two) = tokio::join!(
+            command(&one, one.home.id, "echo here > here.txt"),
             command(&two, two.home.id, "true")
         );
-        // The first goes, and its lease lapses: the second works on, on the same Pod, and a
-        // server that comes after reaches it as it is, never replacing it.
+        let woke = uid(&cluster, &pod).await;
+        // In turn: each reads what the other wrote.
+        let added = command(&two, two.home.id, "cat here.txt; echo there >> here.txt").await;
+        let back = command(&one, one.home.id, "cat here.txt").await;
+
+        // The first goes, and its lease lapses: no server holds it, as after a rollout.
         drop(one);
         drop(first);
-        tokio::time::sleep(std::time::Duration::from_secs(35)).await;
+        let lapsed = free_within(&leases, org, person, std::time::Duration::from_mins(1)).await;
+        // The second works on; two servers that come after reach it at once, neither replacing
+        // it, and one of them takes the free lease.
         let on = command(&two, two.home.id, "cat here.txt").await;
-        let third = People::new(cluster.clone(), &image, &limits, 1, leasing(&leases)).unwrap();
-        let three = third.home(org, person).unwrap();
-        let after = command(&three, three.home.id, "cat here.txt").await;
+        let (third, fourth) = (server(), server());
+        let (three, four) = (
+            third.home(org, person).unwrap(),
+            fourth.home(org, person).unwrap(),
+        );
+        let (after_three, after_four) = tokio::join!(
+            command(&three, three.home.id, "cat here.txt"),
+            command(&four, four.home.id, "cat here.txt")
+        );
+        let held = !free_within(&leases, org, person, std::time::Duration::ZERO).await;
         let still = uid(&cluster, &pod).await;
-        drop((two, three, second));
+        drop((two, three, four, second, fourth));
         let (destroyed, left) = gone(third, &cluster, &key).await;
-        wrote.unwrap();
+        woke_one.unwrap();
+        woke_two.unwrap();
         assert!(woke.is_some());
         assert_eq!(
             added.unwrap().trim(),
@@ -510,10 +520,11 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
             "here\nthere",
             "the second's line, from the first"
         );
-        both_one.unwrap();
-        both_two.unwrap();
+        assert!(lapsed, "the first's lease lapsed");
         assert_eq!(on.unwrap().trim(), "here\nthere");
-        assert_eq!(after.unwrap().trim(), "here\nthere");
+        assert_eq!(after_three.unwrap().trim(), "here\nthere");
+        assert_eq!(after_four.unwrap().trim(), "here\nthere");
+        assert!(held, "a server using it took the free lease");
         assert_eq!(
             still, woke,
             "one Pod throughout, never replaced while in use"
@@ -521,6 +532,32 @@ fn a_person_works_from_either_of_two_servers_in_turn_and_the_pod_is_never_replac
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
+}
+
+/// Whether the lease of `person`'s computer is free within `within`, looked at each second: taken
+/// by a server of its own and let go of at once.
+async fn free_within(
+    leases: &Arc<dyn Leases>,
+    org: OrgId,
+    person: PrincipalId,
+    within: std::time::Duration,
+) -> bool {
+    let probe = Holder::new(&SystemClock, &OsEntropy).unwrap();
+    let until = Instant::now() + within;
+    loop {
+        let on = glave_ports::Leased::Computer(person);
+        let taken = leases
+            .acquire(org, on, probe, std::time::Duration::from_secs(1))
+            .await;
+        if let Ok(Some(lease)) = taken {
+            leases.release(&lease).await.unwrap();
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
 
 /// The cluster the test `name` runs on, and the limits a person's computer has there; `None`

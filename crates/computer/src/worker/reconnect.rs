@@ -26,8 +26,8 @@ const BRIDGE_RETRY: Duration = Duration::from_secs(1);
 /// One computer's connection, to the Pod it was opened to.
 pub(crate) struct Connection {
     remote: Mutex<Arc<RemoteComputers>>,
-    /// The uid of the Pod it was opened to, when it could be read.
-    pub(crate) pod: Option<String>,
+    /// The uid of the Pod it was opened to.
+    pub(crate) pod: String,
     /// Held while the connection is opened again, so one call opens it and the others use it.
     reopening: tokio::sync::Mutex<()>,
 }
@@ -45,7 +45,7 @@ pub(crate) async fn bridged(
 }
 
 impl Connection {
-    pub(crate) fn new(remote: RemoteComputers, pod: Option<String>) -> Self {
+    pub(crate) fn new(remote: RemoteComputers, pod: String) -> Self {
         Self {
             remote: Mutex::new(Arc::new(remote)),
             pod,
@@ -76,8 +76,8 @@ impl Connection {
         let Some(died) = remote.closed() else {
             return Ok(remote);
         };
-        if let (Ok(Some(now)), Some(was)) = (computer.running_as().await, &self.pod)
-            && now != *was
+        if let Ok(Some(now)) = computer.running_as().await
+            && now != self.pod
         {
             return Err(ComputerError::Unreachable(format!(
                 "the connection to the computer died ({died}) and it has started again since, \
@@ -122,7 +122,7 @@ pub(crate) async fn bridged_again(
 }
 
 /// A new bridge into `computer` with a fresh token, tried once.
-pub(crate) async fn fresh(computer: &PersonComputer) -> Result<RemoteComputers, ComputerError> {
+async fn fresh(computer: &PersonComputer) -> Result<RemoteComputers, ComputerError> {
     let token = renewed(computer).await?;
     bridged(computer, token.secret()).await
 }

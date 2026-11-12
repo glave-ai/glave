@@ -18,6 +18,7 @@ use kube::api::{DeleteParams, PostParams};
 use serde_json::json;
 
 use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
+use super::served::Seen;
 use super::sizing::{Size, Sizing};
 use super::{Kubernetes, POLL, Spec, Stream, failed, not_found};
 use crate::token::Token;
@@ -151,10 +152,10 @@ impl PersonComputer {
     }
 
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
-    /// removed (its glave takes a token no longer held), and a new one started on the disk,
-    /// with glave serving in it. A computer that cannot wake is put to sleep again before this
-    /// returns, its disk kept.
-    pub(crate) async fn wake(&self, spec: &Spec) -> Result<(), ComputerError> {
+    /// removed (one no server reaches, decision 18), and a new one started on the disk, with
+    /// glave serving in it: the new Pod's uid. A computer that cannot wake is put to sleep again
+    /// before this returns, its disk kept.
+    pub(crate) async fn wake(&self, spec: &Spec) -> Result<String, ComputerError> {
         let size = self.sizing.waking();
         let spec = &Spec {
             cpu_millis: Some(size.cpu_millis),
@@ -179,7 +180,7 @@ impl PersonComputer {
             glave: &digest,
         };
         match self.cluster.start(&name, spec, &glave, home).await {
-            Ok(()) => Ok(()),
+            Ok(uid) => Ok(uid),
             Err(error) => {
                 let said = self.cluster.logs(&name).await;
                 let _ = self.sleep().await;
@@ -221,6 +222,16 @@ impl PersonComputer {
     /// not awake. One woken again is another Pod, though its name is the same.
     pub(crate) async fn running_as(&self) -> Result<Option<String>, ComputerError> {
         super::running_as(&self.cluster.pods(), &self.name()).await
+    }
+
+    /// Its Pod as the API server shows it: gone, waking, or served.
+    pub(crate) async fn seen(&self) -> Result<Seen, ComputerError> {
+        super::served::seen(&self.cluster.pods(), &self.name()).await
+    }
+
+    /// Marks its Pod `uid`, just woken, as serving, so other servers reach it.
+    pub(crate) async fn served(&self, uid: &str) -> Result<(), ComputerError> {
+        super::served::mark(&self.cluster.pods(), &self.name(), uid).await
     }
 
     /// How its Pod's container ended, as the API server says, if it has.
