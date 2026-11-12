@@ -13,10 +13,10 @@ use super::LocalComputers;
 use crate::worktrees::{self, Trash};
 
 /// Why something stays, for the record.
-fn kept_because(why: &str) -> Result<Freed, ComputerError> {
-    Ok(Freed::Kept {
+fn kept_because(why: &str) -> Freed {
+    Freed::Kept {
         why: why.to_owned(),
-    })
+    }
 }
 
 impl LocalComputers {
@@ -61,24 +61,24 @@ impl LocalComputers {
             return self.free_scratch(&kept).await;
         }
         let Some(base) = &self.worktrees else {
-            return kept_because("this computer keeps no worktrees");
+            return Ok(kept_because("this computer keeps no worktrees"));
         };
         let (environment, processes) = (&self.environment, &self.processes);
         let found = worktrees::at(base, Path::new(path), environment, processes);
         let Some(kept) = found.await? else {
-            return kept_because("it is not here any more");
+            return Ok(kept_because("it is not here any more"));
         };
         // Nothing opens a worktree of this repository meanwhile, and a thread that had this
         // one open is seen last, with the removal to follow at once.
         let _turn = self.worktree_locks.lock(&kept.repository).await?;
         if let Some(risk) = kept.at_risk() {
-            return kept_because(&risk);
+            return Ok(kept_because(&risk));
         }
         if !worktrees::only_rebuildable(&kept, environment, processes).await? {
-            return kept_because("it holds more than a build would make again");
+            return Ok(kept_because("it holds more than a build would make again"));
         }
         if self.registry.open_on(&kept.path)? {
-            return kept_because("a thread has it open");
+            return Ok(kept_because("a thread has it open"));
         }
         worktrees::remove(&kept, environment, processes).await?;
         Ok(Freed::Removed)
@@ -88,7 +88,7 @@ impl LocalComputers {
     /// person's Trash, which keeps it until room is needed. With no Trash, it stays.
     async fn free_scratch(&self, kept: &worktrees::Kept) -> Result<Freed, ComputerError> {
         if self.registry.open_on(&kept.path)? {
-            return kept_because("a thread has it open");
+            return Ok(kept_because("a thread has it open"));
         }
         let deleted_at = SystemClock.now().strftime("%Y-%m-%dT%H:%M:%S").to_string();
         let trash = Trash::for_environment(&self.environment, &deleted_at);
@@ -104,9 +104,9 @@ impl LocalComputers {
             worktrees::Released::Trashed(to) => Freed::Trashed {
                 to: to.to_string_lossy().into_owned(),
             },
-            worktrees::Released::NoTrash => Freed::Kept {
-                why: "it holds files, and there is no Trash to move them to".to_owned(),
-            },
+            worktrees::Released::NoTrash => {
+                kept_because("it holds files, and there is no Trash to move them to")
+            }
             worktrees::Released::Held(why) => Freed::Kept { why },
         })
     }
