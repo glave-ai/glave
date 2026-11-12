@@ -131,14 +131,7 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
         find(here, "make db first postgres", 10).await? == [at(first, 1)?, at(second, 1)?],
         "the event matching more of the words must come first",
     )?;
-    let asking = log
-        .search(&here, "make db first postgres", Some(first), 10)
-        .await
-        .map_err(|e| format!("a search leaving out a thread failed: {e}"))?;
-    ensure(
-        asking == [at(second, 1)?],
-        "a search must leave out the thread asking",
-    )?;
+    leaving_out(log, here, first, second).await?;
     ensure(
         find(here, "deploy postgres", 1).await?.len() == 1,
         "a search must return at most `limit` events",
@@ -156,6 +149,23 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
         "a search must stay inside its scope",
     )?;
     deleting(log, (here, elsewhere), first, (second, third)).await
+}
+
+/// A search for words both `asking` and `other` hold, asked by `asking`, finds only `other`'s.
+async fn leaving_out<L: EventLog>(
+    log: &L,
+    here: Scope,
+    asking: ThreadId,
+    other: ThreadId,
+) -> Verdict {
+    let found = log
+        .search(&here, "make db first postgres", Some(asking), 10)
+        .await
+        .map_err(|e| format!("a search leaving out a thread failed: {e}"))?;
+    ensure(
+        found == [at(other, 1)?],
+        "a search must leave out the thread asking",
+    )
 }
 
 /// Deleting `gone` (`thread.deleted`) takes its words out of the index, and only its: `kept`
