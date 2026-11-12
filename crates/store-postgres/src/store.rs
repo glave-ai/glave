@@ -9,6 +9,7 @@ use deadpool_postgres::{
 };
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
+use glave_ports::search::{MOST_CACHED, SearchCache};
 use glave_ports::{Clock, Objects, OrgId};
 use thiserror::Error;
 use tokio_postgres::Config;
@@ -54,6 +55,8 @@ pub struct Store {
     objects: Arc<dyn Objects>,
     /// The keys' clock, which times uploads for the sweep too.
     clock: Arc<dyn Clock>,
+    /// The search index's rows, opened, for every log of this store.
+    index: Arc<SearchCache>,
 }
 
 impl Store {
@@ -113,13 +116,18 @@ impl Store {
             keys,
             objects,
             clock,
+            index: Arc::new(SearchCache::new(MOST_CACHED)),
         };
         crate::views::refresh(&store.log(), &store.pool).await?;
         Ok(store)
     }
 
     pub fn log(&self) -> PostgresLog {
-        PostgresLog::new(self.pool.clone(), Arc::clone(&self.keys))
+        PostgresLog::new(
+            self.pool.clone(),
+            Arc::clone(&self.keys),
+            Arc::clone(&self.index),
+        )
     }
 
     pub fn blobs(&self) -> PostgresBlobs {
