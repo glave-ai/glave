@@ -32,6 +32,10 @@ pub struct Catalog {
     pub listed: At,
     /// The models glave can talk with there, newest first.
     pub models: Vec<CatalogModel>,
+    /// A router's image models, which its image API serves (`gateway.md`, "Media tools"), each
+    /// with who serves it and at what price. Empty for any other service.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<CatalogModel>,
     /// The providers a router (OpenRouter) passes calls on to, as it lists them: where each is
     /// based. Empty for any other service.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

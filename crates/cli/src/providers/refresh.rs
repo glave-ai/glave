@@ -13,8 +13,8 @@ use glave_session::Refreshed;
 use glave_session::protocol::ApiError;
 
 use super::{
-    ModelAccounts, catalog_of, check, endpoint_of, endpoints, invalid, provider_failed, refused,
-    service,
+    ModelAccounts, catalog_of, check, endpoint_of, endpoints, images, invalid, provider_failed,
+    refused, service,
 };
 use crate::model::Model;
 
@@ -43,11 +43,12 @@ pub(super) fn with(mut catalogs: Vec<Catalog>, fresh: Catalog) -> Vec<Catalog> {
     catalogs
 }
 
-/// Whether `catalog` was listed under a day before `now`, a router's with its providers: one
-/// listed when its account was added, without them, is due at once.
+/// Whether `catalog` was listed under a day before `now`, a router's with its providers and its
+/// image models: one listed when its account was added, without them, is due at once.
 fn fresh(catalog: &Catalog, now: At) -> bool {
     let age = now.timestamp().duration_since(catalog.listed.timestamp());
-    let whole = catalog.kind != ProviderKind::Openrouter || !catalog.providers.is_empty();
+    let whole = catalog.kind != ProviderKind::Openrouter
+        || !(catalog.providers.is_empty() || catalog.images.is_empty());
     whole && age.is_positive() && age.unsigned_abs() < DAY
 }
 
@@ -61,6 +62,7 @@ fn same(before: &[Catalog], after: &[Catalog]) -> bool {
                 kept.kind == catalog.kind
                     && kept.url == catalog.url
                     && kept.providers == catalog.providers
+                    && kept.images == catalog.images
                     && unhurried(&kept.models) == unhurried(&catalog.models)
             })
         })
@@ -183,11 +185,37 @@ async fn listed(
     } else {
         Vec::new()
     };
+    let images = if account.kind == ProviderKind::Openrouter {
+        let model = Model::for_endpoint(&endpoint).map_err(|e| ApiError::internal(&e))?;
+        let before = old.map_or(&[][..], |old| old.images.as_slice());
+        let unread = |why: String| {
+            let service = service(account);
+            let said = format!("{service} could not list its image models and their prices: {why}");
+            provider_failed(Failure::Unavailable, said)
+        };
+        // Its image models are kept as they were when they can't be read: the listing is due
+        // again, and its chat models stand meanwhile.
+        match images::read(model, before).await {
+            Ok((images, whole)) => {
+                if !whole {
+                    late.get_or_insert(unread("some were not read in time".to_owned()));
+                }
+                images
+            }
+            Err(why) => {
+                late.get_or_insert(unread(why));
+                before.to_vec()
+            }
+        }
+    } else {
+        Vec::new()
+    };
     let catalog = Catalog {
         kind: account.kind,
         url: account.url.clone(),
         listed: now,
         models,
+        images,
         providers,
     };
     Ok((catalog, late))
@@ -203,6 +231,7 @@ mod tests {
             url: None,
             listed,
             models: models.iter().map(|id| CatalogModel::new(*id)).collect(),
+            images: Vec::new(),
             providers: Vec::new(),
         }
     }
@@ -224,6 +253,11 @@ mod tests {
             headquarters: None,
             datacenters: None,
         });
+        assert!(
+            !fresh(&listed, at(1_000_000 + 60)),
+            "its image models not read yet"
+        );
+        listed.images.push(CatalogModel::new("a/painter"));
         assert!(fresh(&listed, at(1_000_000 + 60)));
         assert!(!fresh(&listed, at(1_000_000 + 24 * 60 * 60)));
         assert!(!fresh(&listed, at(1_000_000 - 60)), "listed in the future");

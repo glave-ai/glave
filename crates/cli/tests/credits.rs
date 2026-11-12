@@ -97,6 +97,12 @@ fn own_openrouter() -> FakeHttp {
     let endpoints = json!({"data": {"id": OWN_MODEL, "endpoints": [
         endpoint("Stateside", "stateside/fp8"), endpoint("Overseas", "overseas/fp8"),
     ]}});
+    let images = json!({"data": [{"id": "openai/gpt-image-2.6-flare", "name": "GPT Image",
+        "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["image"]}}]});
+    let image_endpoints = json!({"endpoints": [{"provider_slug": "stateside", "pricing": [
+        {"billable": "input_text", "unit": "token", "cost_usd": 5e-06},
+        {"billable": "output_image", "unit": "token", "cost_usd": 3e-05},
+    ]}]});
     let said = json!({"id": "gen-1", "model": OWN_MODEL,
         "choices": [{"index": 0, "delta": {"content": "Hi."}}]});
     let ended = json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
@@ -111,6 +117,10 @@ fn own_openrouter() -> FakeHttp {
             ("GET", "/api/v1/models/vendor/own/endpoints") => (200, endpoints.to_string()),
             ("GET", "/api/v1/models/vendor/other/endpoints") => {
                 (200, json!({"data": {"endpoints": []}}).to_string())
+            }
+            ("GET", "/api/v1/images/models") => (200, images.to_string()),
+            ("GET", "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints") => {
+                (200, image_endpoints.to_string())
             }
             ("GET", _) => (404, "{}".to_owned()),
             _ => (200, chat.clone()),
@@ -148,9 +158,13 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     let router = own_openrouter();
     let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
 
-    // No one connected an account, and the server's own is read all the same.
+    // No one connected an account, and the server's own is read all the same, its image models
+    // and their prices too.
     let refreshed = api.call("provider/refresh", json!({}));
     assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
+    let asked: Vec<String> = router.received().into_iter().map(|r| r.path).collect();
+    let priced = "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints";
+    assert!(asked.iter().any(|path| path == priced), "{asked:?}");
     let listed = api.call("model/list", json!({}));
     let ids: Vec<&str> = listed["result"]["models"]
         .as_array()

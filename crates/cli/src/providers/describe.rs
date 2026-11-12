@@ -261,6 +261,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models: vec![routed],
+            images: Vec::new(),
             providers: vec![
                 provider("deepseek", "DeepSeek", "CN"),
                 provider("deepinfra", "DeepInfra", "US"),
@@ -304,6 +305,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models: Vec::new(),
+            images: Vec::new(),
             providers: Vec::new(),
         };
         let model = Arc::new(ScriptedModel::new(Vec::new()));
@@ -366,6 +368,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models: vec![own.clone()],
+            images: Vec::new(),
             providers: Vec::new(),
         };
         let model = Arc::new(ScriptedModel::new(Vec::new()));
@@ -426,6 +429,7 @@ mod tests {
             url: None,
             listed: At::from(jiff::Timestamp::UNIX_EPOCH),
             models,
+            images: Vec::new(),
             providers: Vec::new(),
         };
         let catalogs = [

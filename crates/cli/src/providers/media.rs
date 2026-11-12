@@ -53,8 +53,8 @@ const IMAGES: [Default; 3] = [
 ];
 
 /// The media tools' routes through the OpenRouter account reached by `handle`: each image
-/// tool's the three tiers, as its `catalog` describes their models where it lists them, those
-/// the policy allows.
+/// tool's the three tiers, as its `catalog`'s image models describe them where it lists them
+/// (their price, who serves them), those the policy allows.
 pub(super) fn routes(
     handle: &Arc<dyn glave_gateway::Model>,
     catalog: Option<&Catalog>,
@@ -64,8 +64,12 @@ pub(super) fn routes(
     let tiers: Vec<Target> = IMAGES
         .iter()
         .map(|tier| {
-            let target =
-                super::lineup::target_at(handle, "openrouter", tier.model, catalog, providers);
+            let card = catalog.and_then(|catalog| {
+                let card = catalog.images.iter().find(|card| card.id == tier.model)?;
+                Some((card, catalog))
+            });
+            let at = ("openrouter", tier.model);
+            let target = super::lineup::described_at(handle, at, card, providers);
             let (key, value) = tier.setting;
             let settings = Map::from_iter([(key.to_owned(), Value::from(value))]);
             target.in_tier(Tier {
@@ -85,4 +89,63 @@ pub(super) fn routes(
         .into_iter()
         .map(|purpose| (purpose, tiers.clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::{At, CatalogEndpoint, CatalogModel, Nanos, ProviderKind, TokenPrice};
+    use glave_ports::testing::ScriptedModel;
+
+    use super::*;
+
+    #[test]
+    fn each_image_tool_has_the_three_tiers_priced_from_the_catalog_s_image_models() {
+        let mut flare = CatalogModel::new("openai/gpt-image-2.6-flare");
+        flare.price = Some(TokenPrice {
+            input: Nanos::new(8_000_000_000),
+            output: Nanos::new(30_000_000_000),
+            cache_read: None,
+        });
+        flare.endpoints = vec![CatalogEndpoint {
+            provider: "openai".into(),
+            quantization: None,
+            context: None,
+            max_output: None,
+            price: flare.price,
+            zdr: false,
+            speed: None,
+        }];
+        let catalog = Catalog {
+            kind: ProviderKind::Openrouter,
+            url: None,
+            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
+            models: vec![CatalogModel::new("openai/gpt-image-2.6-flare")],
+            images: vec![flare],
+            providers: Vec::new(),
+        };
+        let handle: Arc<dyn glave_gateway::Model> = Arc::new(ScriptedModel::new(Vec::new()));
+        let none: Arc<[CatalogProvider]> = Arc::from([]);
+        let routes = routes(&handle, Some(&catalog), &none, &Constraints::default());
+        let purposes: Vec<Purpose> = routes.iter().map(|(purpose, _)| *purpose).collect();
+        assert_eq!(purposes, [Purpose::ImageGenerate, Purpose::ImageEdit]);
+        for (_, targets) in &routes {
+            let names: Vec<&str> = targets.iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(
+                names,
+                [
+                    "openrouter/google/gemini-nano-banana-2.1",
+                    "openrouter/openai/gpt-image-2.6-flare",
+                    "openrouter/openai/gpt-image-2.6-sunburst",
+                ]
+            );
+            let priced: Vec<bool> = targets.iter().map(|t| t.price.is_some()).collect();
+            assert_eq!(
+                priced,
+                [false, true, false],
+                "priced where the catalog's image models list it, never by its chat models"
+            );
+            let flare = targets.get(1).and_then(|t| t.price.as_ref()).unwrap();
+            assert_eq!(flare.output_per_mtok, Nanos::new(30_000_000_000));
+        }
+    }
 }
