@@ -12,6 +12,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*), and only they open a terminal there (#355).
 - On Linux, commands with the network make Unix sockets, the person's daemons' hidden (#1118, *Unix sockets on Linux*); on a computer that keeps Rust's homes in the sandbox cache, a tool `cargo install` adds there runs by its name.
 - A command opens no terminal's device but its own (#1289, *Other terminals*).
+- The outbound proxy, alone and not yet in commands' way: it decides each connection by its host's name, refuses private networks and cloud metadata, and holds for the person (#643, *The outbound proxy*).
 
 ## Why on by default
 
@@ -177,6 +178,29 @@ Codex allows every Unix socket with the network on (its filter refuses only `AF_
 - **What holds** is a network that goes only through glave: commands reach loopback and glave's outbound proxy (#643), which refuses the list; on macOS a profile allowing only `localhost`, on Linux a namespace of the command's own whose one way out is the proxy. Codex refuses private addresses this way, in its managed-network mode only. It costs every program that ignores `HTTPS_PROXY` (ssh, database clients, plain sockets), on macOS a dual-stack client reaching the proxy as `::ffff:127.0.0.1` (Java's by default), and on Linux the shared loopback, so it comes with the proxy, not before.
 
 Decided for when it does: only sandboxed commands lose the list. glave's own process, which is not sandboxed, keeps reaching it for its own credentials (EKS Pod Identity and ECS in `glave-aws`, the GKE metadata server in `glave-google`). A person who wants the agent to use the machine's own cloud identity lets one command out (*Letting one command out*) or uses Full access; neither is refused, by design, since the person chooses to hand the credentials over. The note on a refused connection says the address is withheld on purpose, so the model asks the person rather than looking for another way in. Until then, on a cloud machine whose role or service account matters: `network = false` for work that needs no network, or give the machine no role (`deployments.md`).
+
+### The outbound proxy
+
+Decided 2026-11-11 (#643, phase 1). Every connection a sandboxed command makes goes out only through glave, which allows it, refuses it, or holds it for the person, by the host's name, never decrypting. glave's own tools (`web_fetch`, remote MCP servers, models) run in the server's process and are guarded there already; the proxy is for commands alone.
+
+- **Where it runs:** in glave's computer process (`glave_computer::Proxy`), so a laptop, a person's own server and a cloud computer's container run the same proxy, its rules sent with the sandbox's settings. No system proxy setting, root, firewall rule or extra program.
+- **How a host is named:** by the request itself: a `CONNECT` target (HTTPS, and anything else tunnelled), or plain HTTP's absolute URL, or its `Host` header when the URL has none. The `Host` header sent on is rewritten to the name decided on, so plain HTTP cannot front for another host. TLS's server name is not read: every path to the proxy is an explicit one, so the `CONNECT` target is always there, and what TLS carries inside the tunnel (domain fronting through a CDN) is a gap no proxy that does not decrypt can close.
+- **The name first, then its addresses.** A name is decided before it is looked up, so a name not allowed is never resolved: commands have no resolver of their own (their network is the proxy), which closes DNS as a way out. An allowed name the proxy resolves itself; each address is checked against glave's one rule (`glave_ports::host::reachable`, so `CLOUD_METADATA`, `INSIDE`, link-local and loopback are refused, in whatever IPv6 form they come), only the addresses that pass are kept, a name left with none is refused, and the proxy connects to an address it kept, never looking the name up again (no DNS rebinding). An address written as the host is checked the same way. Loopback is refused through the proxy because commands reach it directly.
+- **Three modes:** `none` (nothing goes out), `limited` (the hosts allowed, exactly or as `*.example.com` for any name under it, never the name itself; any other is held for the person) and `full` (any public host; never private networks or cloud metadata, which no mode lifts). `limited` comes with the common package registries and git hosts allowed (npm, PyPI, crates.io, Go's proxy, RubyGems, Maven Central, GitHub, GitLab), so installs and clones need no ask. Glave Cloud's computers default to `limited`, a laptop and a person's own server to `full`.
+- **Holds:** a host `limited` does not allow waits, as the connection that asked, for the person's yes, up to a limit; with no one to ask, a no, or the limit passed, it is refused. A yes lets that one connection through; remembering it is the settings' job (below).
+- **A refusal says why** as the HTTP answer's body, one plain sentence for the model: the network is off, the host is not allowed, or the host is withheld on purpose (private network or cloud metadata), so the model asks the person rather than looking for another way in.
+- **Bounded:** a request's head is read up to 16 KiB within seconds, a lookup and each connection attempt have a limit of seconds, a tunnel closes after minutes with nothing sent either way, connections at once are capped (the rest are answered "busy"), and every connection is a task the proxy owns, ended with it.
+- **What fails closed:** commands are told the way out by `HTTPS_PROXY`, `HTTP_PROXY` and `ALL_PROXY` (and their lower-case forms). A program that ignores them (ssh, so git over ssh; database clients; plain sockets) finds no network at all, and the model is told why. SOCKS5 waits for a program that needs it.
+
+**The series:**
+
+1. The proxy itself, alone, and this section (built: `crates/computer/src/proxy`).
+2. Linux: commands in a network namespace of their own, always, whose one way out is a Unix socket to the proxy, bridged to a port on the namespace's loopback; the variables set. A thread's commands share one namespace, so a dev server one starts the next can reach.
+3. macOS: the profile's network allows only `localhost`, where the proxy listens; the variables set.
+4. Modes in settings (`[sandbox] network = "none" | "limited" | "full"`, an organization's allowed hosts narrowing a person's), holds asked as approvals (`approvals.md`), a yes remembered for the thread, and after untrusted content every host held (invariant 25).
+5. Escape tests on both platforms (metadata, a private address, a name resolving to one, DNS, a program ignoring the variables) and the `web-exfil` eval through the proxy, with installs, clones and builds at today's pass rates.
+
+Then phase 2: credentials added for allowed hosts, so the computer never holds a key (#1150).
 
 ## Enforcement
 
