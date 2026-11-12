@@ -238,7 +238,7 @@ Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-1
 
 - No secrets in clients, logs, responses or the repository. Dev secrets come from the environment and go only to server logs, behind a dev flag.
 - No prompt or message content in logs by default. Usage events are content-free.
-- Data at rest is encrypted: the whole local database (key in the OS keychain); per-space keys via a KMS plug for organizations. Deleting a project's key erases it.
+- Content at rest is sealed: messages, files, memories and secrets, under per-project keys whose root is in the OS keychain or a key file. Metadata (ids, kinds, times) is not yet: encrypting the whole local file, and KMS roots for organizations, are planned (`specs/storage.md`). Deleting a project's key erases it.
 - Scope is enforced by the data store on every query, never by the model.
 - Content from the web is labeled untrusted. Risky actions after reading it need approval in every mode that asks; Full access, which the person chose, asks nothing.
 
