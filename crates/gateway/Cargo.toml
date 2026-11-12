@@ -22,6 +22,9 @@ glave-ports.workspace = true
 jiff.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# Each organization's turn at its credits ledger, held across the read and the append, so a
+# server's calls queue instead of racing (already in the tree, under glave-ports).
+tokio = { workspace = true, features = ["sync"] }
 # A content-free span and metrics for each model call.
 tracing.workspace = true
 
