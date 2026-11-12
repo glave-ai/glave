@@ -24,6 +24,7 @@ mod in_memory;
 mod leases;
 mod log;
 mod mail;
+mod media;
 pub mod memories;
 mod model;
 mod objects;
@@ -57,6 +58,7 @@ pub use in_memory::{
 pub use leases::{Holder, Lease, LeaseError, Leased, Leases, ttl_millis};
 pub use log::{EventLog, LogError, check_append};
 pub use mail::{Mail, MailError, Mailer};
+pub use media::{Made, MadeFile, MediaAsk};
 pub use model::{
     Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, PDF, Payer, ProviderError,
     Purpose, RequestedCall, Route, Served, ToolCall, ToolChoice, ToolSpec, Unpaid, is_image,

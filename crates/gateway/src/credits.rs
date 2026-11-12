@@ -133,11 +133,11 @@ impl<L> Credits<L> {
     }
 
     /// Lets go of `payer`'s organization's credits held by `hold`, and counts `cost` in its
-    /// place, at once; written, the charge lets go of the hold for every server.
-    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos) {
+    /// place, at once, as `kind`; written, the charge lets go of the hold for every server.
+    fn settle(&self, payer: Payer, hold: Option<EventId>, (cost, kind): (Nanos, CostKind)) {
         let charged = (cost > Nanos::ZERO || hold.is_some()).then(|| Unwritten {
             charged: CreditsCharged {
-                kind: CostKind::Model,
+                kind,
                 amount: dollars(cost),
                 person: payer.person,
                 hold,
@@ -503,7 +503,9 @@ impl<L> Drop for Attempt<'_, L> {
                 org: self.org,
                 person: None,
             };
-            self.credits.settle(payer, Some(self.id), Nanos::ZERO);
+            // A charge of nothing, whatever the call was for.
+            self.credits
+                .settle(payer, Some(self.id), (Nanos::ZERO, CostKind::Model));
         } else {
             let id = self.id;
             self.credits
@@ -522,8 +524,8 @@ pub(crate) trait Charging: Send + Sync + fmt::Debug {
         org: OrgId,
         worst: Nanos,
     ) -> BoxFuture<'_, Result<Option<EventId>, ProviderError>>;
-    /// Lets go of `hold` and counts `cost`, in dollars, in its place, at once.
-    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos);
+    /// Lets go of `hold` and counts `cost`, in dollars, in its place, at once, as its kind.
+    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: (Nanos, CostKind));
     /// Writes what was counted for `org` and the store does not have yet.
     fn write(&self, org: OrgId) -> BoxFuture<'_, ()>;
 }
@@ -537,7 +539,7 @@ impl<L: EventLog> Charging for Credits<L> {
         Box::pin(Self::hold(self, org, worst))
     }
 
-    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: Nanos) {
+    fn settle(&self, payer: Payer, hold: Option<EventId>, cost: (Nanos, CostKind)) {
         Self::settle(self, payer, hold, cost);
     }
 

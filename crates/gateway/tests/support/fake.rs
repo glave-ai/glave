@@ -9,8 +9,8 @@ use glave_event::{Currency, ModelRef, Money, Nanos, Opaque, Part, StopReason, To
 use glave_gateway::{Model, Price, Target};
 pub(crate) use glave_ports::block_on;
 use glave_ports::{
-    BoxFuture, Completion, Delta, Message, ModelRequest, ProviderError, Purpose, ToolChoice,
-    ToolSpec,
+    BoxFuture, Completion, Delta, Made, MadeFile, MediaAsk, Message, ModelRequest, ProviderError,
+    Purpose, ToolChoice, ToolSpec,
 };
 use tokio::sync::Semaphore;
 
@@ -102,6 +102,25 @@ impl Model for Fake {
             }
             let next = self.script.lock().unwrap().pop_front();
             next.unwrap_or_else(|| Ok(answer(&self.provider, &request.model, 100, 10)))
+        })
+    }
+
+    /// One PNG, its answer's usage and cost the script's next, as a call's would be.
+    fn make<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _: &'a MediaAsk,
+    ) -> BoxFuture<'a, Result<Made, ProviderError>> {
+        Box::pin(async move {
+            let completion = self.send(request, &mut |_| {}).await?;
+            let png = MadeFile {
+                media_type: Some("image/png".into()),
+                data: "iVBORw0KGgo=".into(),
+            };
+            Ok(Made {
+                files: vec![png],
+                completion,
+            })
         })
     }
 }

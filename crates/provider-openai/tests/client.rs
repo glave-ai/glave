@@ -55,6 +55,45 @@ mod over_http {
     }
 
     #[test]
+    fn an_image_is_made_through_the_image_api_and_comes_back_with_its_cost() {
+        let answer = json!({
+            "created": 1_748_372_400,
+            "data": [{"b64_json": "iVBORw0KGgo=", "media_type": "image/png"}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 4175, "cost": 0.04},
+        });
+        let server = FakeServer::start(vec![
+            Reply::Status(200, answer.to_string()),
+            Reply::Status(
+                502,
+                json!({"error": {"message": "Generation failed"}}).to_string(),
+            ),
+        ])
+        .unwrap();
+        let provider = provider(server.url(), Some(&fake_secret("sk-or-")));
+        let mut asked = request();
+        asked.purpose = glave_ports::Purpose::ImageGenerate;
+        let ask = glave_ports::MediaAsk {
+            aspect_ratio: Some("3:2".into()),
+        };
+        let made = block_on!(provider.make(&asked, &ask)).unwrap();
+        assert_eq!(made.files.len(), 1);
+        assert_eq!(made.files[0].data, "iVBORw0KGgo=");
+        assert_eq!(made.files[0].media_type.as_deref(), Some("image/png"));
+        let cost = made.completion.cost.unwrap();
+        assert_eq!(cost.amount.nanos, glave_event::Nanos::new(40_000_000));
+        assert_eq!(made.completion.usage.counts().output, 4175);
+        let received = server.received();
+        assert_eq!(received[0].line, "POST /v1/images");
+        assert_eq!(received[0].body["prompt"], "hello");
+        assert_eq!(received[0].body["aspect_ratio"], "3:2");
+        let failed = block_on!(provider.make(&asked, &ask)).unwrap_err();
+        assert!(
+            failed.is_transient(),
+            "a failed generation may pass: {failed:?}"
+        );
+    }
+
+    #[test]
     fn a_streamed_answer_arrives_live_and_whole() {
         let server = FakeServer::start(vec![Reply::text("hi there")]).unwrap();
         let key = fake_secret("sk-");

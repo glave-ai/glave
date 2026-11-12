@@ -88,10 +88,7 @@ impl<'a> Preferences<'a> {
             only: route.and_then(|route| route.only.as_deref()),
             ignore: route.map_or(none, |route| &route.ignore),
             quantizations: route.map_or(none, |route| &route.quantizations),
-            sort: route.and_then(|route| route.sort).map(|sort| match sort {
-                Sort::Price => "price",
-                Sort::Speed => "throughput",
-            }),
+            sort: route.and_then(|route| route.sort).map(sort_name),
             zdr: route.is_some_and(|route| route.zdr),
             max_price: route
                 .and_then(|route| route.max_price)
@@ -100,6 +97,14 @@ impl<'a> Preferences<'a> {
                     completion: max.output.and_then(dollars),
                 }),
         }
+    }
+}
+
+/// OpenRouter's name for the order `sort` asks providers in.
+pub(crate) fn sort_name(sort: Sort) -> &'static str {
+    match sort {
+        Sort::Price => "price",
+        Sort::Speed => "throughput",
     }
 }
 

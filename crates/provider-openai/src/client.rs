@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use glave_ports::auth::{Auth, ERROR_BODY_BYTES, Outgoing};
 use glave_ports::host::is_this_computer;
-use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, spoken};
+use glave_ports::{
+    Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, spoken,
+};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::assemble::Assembler;
@@ -87,10 +89,10 @@ fn host_of(url: &str) -> Option<String> {
 pub struct OpenAiCompatible {
     http: reqwest::Client,
     /// The API base, without a trailing slash.
-    base: String,
+    pub(crate) base: String,
     endpoint: String,
     auth: Auth,
-    provider: String,
+    pub(crate) provider: String,
     idle_timeout: Duration,
 }
 
@@ -122,16 +124,38 @@ impl ModelProvider for OpenAiCompatible {
     ) -> Result<Completion, ProviderError> {
         let body = serde_json::to_vec(&chat_request(request, &self.provider))
             .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
+        let response = self.post(&self.endpoint, body).await?;
+        let mut assembler = Assembler::new(&self.provider, &request.model);
+        match self.stream(response, &mut assembler, on_delta).await {
+            Ok(()) => assembler.finish(),
+            Err(error) if assembler.has_output() => {
+                Err(ProviderError::AfterOutput(Box::new(error)))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// An image made or changed through the API's image endpoint (`images.rs`).
+    async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
+        self.images(request, ask).await
+    }
+}
+
+impl OpenAiCompatible {
+    /// A `POST` of the JSON `body` to `url`, asked with the endpoint's credentials: the answer,
+    /// once its status says it succeeded.
+    pub(crate) async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+    ) -> Result<reqwest::Response, ProviderError> {
         let outgoing = Outgoing {
             method: "POST",
-            url: &self.endpoint,
+            url,
             headers: &[("content-type", "application/json")],
             body: &body,
         };
-        let mut call = self
-            .http
-            .post(&self.endpoint)
-            .header(CONTENT_TYPE, "application/json");
+        let mut call = self.http.post(url).header(CONTENT_TYPE, "application/json");
         let sent = self.auth.headers(&outgoing).await?;
         for header in &sent {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
@@ -143,18 +167,29 @@ impl ModelProvider for OpenAiCompatible {
             let body = error_body(response).await;
             return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
         }
-        let mut assembler = Assembler::new(&self.provider, &request.model);
-        match self.stream(response, &mut assembler, on_delta).await {
-            Ok(()) => assembler.finish(),
-            Err(error) if assembler.has_output() => {
-                Err(ProviderError::AfterOutput(Box::new(error)))
-            }
-            Err(error) => Err(error),
-        }
+        Ok(response)
     }
-}
 
-impl OpenAiCompatible {
+    /// The whole of `response`'s body, refused past `most` bytes, `url` saying where it came
+    /// from.
+    pub(crate) async fn whole(
+        &self,
+        mut response: reqwest::Response,
+        url: &str,
+        most: usize,
+    ) -> Result<Vec<u8>, ProviderError> {
+        let mut body = Vec::new();
+        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
+            if body.len().saturating_add(bytes.len()) > most {
+                return Err(ProviderError::Protocol(format!(
+                    "{url} answered with more than {most} bytes"
+                )));
+            }
+            body.extend_from_slice(&bytes);
+        }
+        Ok(body)
+    }
+
     /// Reads the response's events into `assembler`, until `[DONE]` or the end of the body.
     async fn stream(
         &self,
@@ -194,21 +229,13 @@ impl OpenAiCompatible {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
             call = call.header(name, value);
         }
-        let mut response = call.send().await.map_err(|e| self.failed(e))?;
+        let response = call.send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
             let body = error_body(response).await;
             return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
         }
-        let mut body = Vec::new();
-        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
-            if body.len().saturating_add(bytes.len()) > MOST_LISTED {
-                return Err(ProviderError::Protocol(format!(
-                    "{url} answered with more than {MOST_LISTED} bytes"
-                )));
-            }
-            body.extend_from_slice(&bytes);
-        }
+        let body = self.whole(response, &url, MOST_LISTED).await?;
         serde_json::from_slice(&body)
             .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
     }

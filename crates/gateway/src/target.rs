@@ -5,7 +5,9 @@ use std::fmt;
 use std::sync::Arc;
 
 use glave_event::Reasoning;
-use glave_ports::{BoxFuture, Completion, Delta, ModelProvider, ModelRequest, ProviderError};
+use glave_ports::{
+    BoxFuture, Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
+};
 
 use crate::filtering::Router;
 use crate::price::Price;
@@ -18,6 +20,13 @@ pub trait Model: Send + Sync {
         request: &'a ModelRequest,
         on_delta: &'a mut (dyn FnMut(Delta) + Send),
     ) -> BoxFuture<'a, Result<Completion, ProviderError>>;
+
+    /// Makes what a media tool's call asks ([`ModelProvider::make`]).
+    fn make<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a MediaAsk,
+    ) -> BoxFuture<'a, Result<Made, ProviderError>>;
 }
 
 #[deny(clippy::missing_trait_methods)]
@@ -28,6 +37,14 @@ impl<P: ModelProvider> Model for P {
         on_delta: &'a mut (dyn FnMut(Delta) + Send),
     ) -> BoxFuture<'a, Result<Completion, ProviderError>> {
         Box::pin(self.complete(request, on_delta))
+    }
+
+    fn make<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a MediaAsk,
+    ) -> BoxFuture<'a, Result<Made, ProviderError>> {
+        Box::pin(ModelProvider::make(self, request, ask))
     }
 }
 

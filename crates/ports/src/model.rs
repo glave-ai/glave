@@ -12,6 +12,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::failure::Failure;
+use crate::media::{Made, MediaAsk};
 use crate::scope::OrgId;
 
 /// A model that can answer a conversation.
@@ -25,6 +26,27 @@ pub trait ModelProvider: Send + Sync {
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> impl Future<Output = Result<Completion, ProviderError>> + Send;
+
+    /// Makes what a media tool's call asks, `request`'s purpose being one
+    /// ([`Purpose::is_media`]): its prompt and images in its one message, `ask` beside them. A
+    /// provider that makes none refuses.
+    fn make(
+        &self,
+        request: &ModelRequest,
+        ask: &MediaAsk,
+    ) -> impl Future<Output = Result<Made, ProviderError>> + Send {
+        let _ = ask;
+        std::future::ready(Err(ProviderError::Unserved {
+            failure: Failure::Rejected,
+            reason: format!("nothing here serves {}", request.purpose.id()),
+        }))
+    }
+
+    /// Whether calls for `purpose` are served: every model call, and a media tool's only
+    /// where the provider says so.
+    fn serves(&self, purpose: Purpose) -> bool {
+        !purpose.is_media()
+    }
 }
 
 /// One request: the system prompt, the conversation so far, and the tools on offer.
@@ -149,10 +171,15 @@ pub enum Purpose {
     Subagent,
     /// A thread's short title, after its first exchange.
     Title,
+    /// `image_generate`: an image made from a description (`specs/gateway.md`, "Media tools").
+    ImageGenerate,
+    /// `image_edit`: a changed copy of an image.
+    ImageEdit,
 }
 
 impl Purpose {
-    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent` or `title`.
+    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent`, `title`, or a media
+    /// tool's name.
     pub fn id(self) -> &'static str {
         match self {
             Self::Main => "main",
@@ -160,7 +187,14 @@ impl Purpose {
             Self::Summary => "summary",
             Self::Subagent => "subagent",
             Self::Title => "title",
+            Self::ImageGenerate => "image_generate",
+            Self::ImageEdit => "image_edit",
         }
+    }
+
+    /// Whether it is a media tool's: served only by a route of its own, never `main`'s.
+    pub fn is_media(self) -> bool {
+        matches!(self, Self::ImageGenerate | Self::ImageEdit)
     }
 
     #[expect(

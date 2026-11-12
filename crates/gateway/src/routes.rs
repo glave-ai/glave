@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::target::Target;
 
 /// The targets for each purpose. `main` always has at least one; any other purpose without a
-/// route of its own uses `main`'s.
+/// route of its own uses `main`'s, but a media tool's, which has none then.
 #[derive(Debug, Clone)]
 pub struct Routes {
     main: Vec<Target>,
@@ -57,7 +57,17 @@ impl Routes {
 
     /// The targets that serve `purpose`, in the order they are tried.
     pub fn targets(&self, purpose: Purpose) -> &[Target] {
-        self.others.get(&purpose).unwrap_or(&self.main)
+        match self.others.get(&purpose) {
+            Some(targets) => targets,
+            None if purpose.is_media() => &[],
+            None => &self.main,
+        }
+    }
+
+    /// Whether any target serves `purpose`: every model call's does, a media tool's only with
+    /// a route of its own.
+    pub fn serves(&self, purpose: Purpose) -> bool {
+        !self.targets(purpose).is_empty()
     }
 
     /// Offers `targets` as models a thread may choose (`model/list` in the session API): a
