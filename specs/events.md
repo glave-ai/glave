@@ -6,7 +6,7 @@ The reference implementation is the `glave-event` crate. Where this document and
 
 ## Status
 
-Envelope version 1, and every payload at version 1. Stores keep people's data across updates (`storage.md`, "Migrations"), so every event a store holds stays readable, by later releases and by the one before (which keeps a version it does not know as it is, "Versioning" below): every change to a payload's shape or meaning bumps its `v`, adding an optional member included, since payloads refuse members they do not know, and the older version is upgraded as it is read. Every payload version a store may hold is frozen.
+Envelope version 1, and every payload at version 1 but `catalog.refreshed`, at 2. Stores keep people's data across updates (`storage.md`, "Migrations"), so every event a store holds stays readable, by later releases and by the one before (which keeps a version it does not know as it is, "Versioning" below): every change to a payload's shape or meaning bumps its `v`, adding an optional member included, since payloads refuse members they do not know, and the older version is upgraded as it is read. Every payload version a store may hold is frozen.
 
 ## The envelope
 
@@ -70,7 +70,7 @@ A reader keeps events it does not understand, whether an unknown type or a newer
 
 ## Event types
 
-Every type is at version 1.
+Every type is at version 1 but `catalog.refreshed`, at 2: a router's catalog holds its image models (`images`), version 1's read as holding none.
 
 | Type | Recorded when | `data` |
 | --- | --- | --- |
@@ -134,7 +134,7 @@ Every type is at version 1.
 | `browser.signed_out` | Browser sessions ended: one signed out, or every other one. In the browsers ledger | `sessions`, their ids |
 | `acme.registered` | glave registered an account with an ACME directory, to get its own certificate with (`one-server.md`, "HTTPS of its own"); the latest for a directory counts. In the certificates ledger | `directory`, its URL; `credentials`, the account's id and private key as the ACME client writes them, sealed with the rest |
 | `certificate.issued` | glave was issued a certificate for the name it serves HTTPS for; the latest for a name replaces the ones before it. In the certificates ledger | `name`; `chain`, the certificate and the chain to its authority as PEM; `key`, its private key as PEM; `not_before` and `not_after` |
-| `catalog.refreshed` | The catalogs of the services whose model accounts a person connected were listed again and changed (`gateway.md`, "Catalogs"); the latest replaces every one before it. In the catalog ledger | `catalogs`, one per service: `kind`, as `provider.connected`'s; optional `url`, for `compatible`; `listed`, when its list was read; `models`, each with its `id` and what the list says of it: optional `name`, `context` and `max_output` (tokens), `images`, `price` (`input`, `output`, optional `cache_read`: nanos per million tokens) and `reasoning` (`efforts`, the levels it offers in its service's own names; optional `default`; `mandatory`, absent is false); and for a router's (OpenRouter's) catalog, each model's `endpoints` (`provider`, a slug; optional `quantization`, `context`, `max_output`, `price`, `zdr`, `speed`) and the catalog's `providers` (`slug`, `name`, optional `headquarters` and `datacenters`, country codes, absent when the router does not say) |
+| `catalog.refreshed` | The catalogs of the services whose model accounts a person connected were listed again and changed (`gateway.md`, "Catalogs"); the latest replaces every one before it. In the catalog ledger | `catalogs`, one per service: `kind`, as `provider.connected`'s; optional `url`, for `compatible`; `listed`, when its list was read; `models`, each with its `id` and what the list says of it: optional `name`, `context` and `max_output` (tokens), `images`, `price` (`input`, `output`, optional `cache_read`: nanos per million tokens) and `reasoning` (`efforts`, the levels it offers in its service's own names; optional `default`; `mandatory`, absent is false); and for a router's (OpenRouter's) catalog, each model's `endpoints` (`provider`, a slug; optional `quantization`, `context`, `max_output`, `price`, `zdr`, `speed`) and the catalog's `providers` (`slug`, `name`, optional `headquarters` and `datacenters`, country codes, absent when the router does not say), and its `images`, its image models, described as `models` are, each endpoint with its price by the token |
 | `awake.set` | The person chose in Settings whether their own computer is kept awake while glave works on it (`one-server.md`, owner decision 10); the latest replaces every one before it, and with none it is. In the settings ledger | `on` |
 | `language.set` | The person chose the language glave's own sentences are written in for them (`session.md`, "Languages"); the latest replaces every one before it, and with none, or a `null` one, their client's counts. In the settings ledger | `language`, a BCP 47 tag or `null` |
 | `memory.set` | The person chose in Settings whether glave reads and writes memory in their threads (`memory.md`, "Defaults and policy"); the latest replaces every one before it, and with none it does. In the settings ledger | `on` |

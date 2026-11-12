@@ -97,6 +97,10 @@ fn own_openrouter() -> FakeHttp {
     let endpoints = json!({"data": {"id": OWN_MODEL, "endpoints": [
         endpoint("Stateside", "stateside/fp8"), endpoint("Overseas", "overseas/fp8"),
     ]}});
+    let image_endpoints = json!({"endpoints": [{"provider_slug": "stateside", "pricing": [
+        {"billable": "input_text", "unit": "token", "cost_usd": 5e-06},
+        {"billable": "output_image", "unit": "token", "cost_usd": 3e-05},
+    ]}]});
     let said = json!({"id": "gen-1", "model": OWN_MODEL,
         "choices": [{"index": 0, "delta": {"content": "Hi."}}]});
     let ended = json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
@@ -111,6 +115,9 @@ fn own_openrouter() -> FakeHttp {
             ("GET", "/api/v1/models/vendor/own/endpoints") => (200, endpoints.to_string()),
             ("GET", "/api/v1/models/vendor/other/endpoints") => {
                 (200, json!({"data": {"endpoints": []}}).to_string())
+            }
+            ("GET", path) if path.starts_with("/api/v1/images/models/") => {
+                (200, image_endpoints.to_string())
             }
             ("GET", _) => (404, "{}".to_owned()),
             _ => (200, chat.clone()),
@@ -148,7 +155,8 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     let router = own_openrouter();
     let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
 
-    // No one connected an account, and the server's own is read all the same.
+    // No one connected an account, and the server's own is read all the same, its image models
+    // and their prices too.
     let refreshed = api.call("provider/refresh", json!({}));
     assert_eq!(refreshed["result"]["providers"], json!([]), "{refreshed}");
     let listed = api.call("model/list", json!({}));
@@ -194,9 +202,12 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
     let (_, said) = run(&["credits"]);
     assert!(said.contains("Left: $0.75"), "{said}");
 
-    // The call kept to the filters, by what the catalog says of who serves the model.
-    let chats: Vec<_> = router
-        .received()
+    // The call kept to the filters, by what the catalog says of who serves the model; and the
+    // image models were read with their prices.
+    let received = router.received();
+    let priced = "/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints";
+    assert!(received.iter().any(|request| request.path == priced));
+    let chats: Vec<_> = received
         .into_iter()
         .filter(|request| request.body.contains(OWN_MODEL))
         .collect();

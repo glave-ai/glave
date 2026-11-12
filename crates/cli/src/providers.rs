@@ -10,6 +10,7 @@ mod card;
 mod check;
 mod describe;
 mod endpoints;
+mod images;
 mod lineup;
 mod media;
 mod refresh;
@@ -134,6 +135,7 @@ impl ModelAccounts {
             url: account.url.clone(),
             listed,
             models,
+            images: Vec::new(),
             providers: Vec::new(),
         };
         // Every account glave keeps must line up with the rest, so a start never fails on one.

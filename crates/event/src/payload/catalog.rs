@@ -32,10 +32,52 @@ pub struct Catalog {
     pub listed: At,
     /// The models glave can talk with there, newest first.
     pub models: Vec<CatalogModel>,
+    /// A router's image models, which its image API serves (`gateway.md`, "Media tools"), each
+    /// with who serves it and at what price. Empty for any other service.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<CatalogModel>,
     /// The providers a router (OpenRouter) passes calls on to, as it lists them: where each is
     /// based. Empty for any other service.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<CatalogProvider>,
+}
+
+/// `catalog.refreshed` as version 1 wrote it, before a router's catalog held its image models.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CatalogRefreshedV1 {
+    catalogs: Vec<CatalogV1>,
+}
+
+/// One service's catalog as version 1 wrote it: no image models.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CatalogV1 {
+    kind: ProviderKind,
+    #[serde(default)]
+    url: Option<String>,
+    listed: At,
+    models: Vec<CatalogModel>,
+    #[serde(default)]
+    providers: Vec<CatalogProvider>,
+}
+
+impl From<CatalogRefreshedV1> for CatalogRefreshed {
+    fn from(old: CatalogRefreshedV1) -> Self {
+        let catalogs = old
+            .catalogs
+            .into_iter()
+            .map(|old| Catalog {
+                kind: old.kind,
+                url: old.url,
+                listed: old.listed,
+                models: old.models,
+                images: Vec::new(),
+                providers: old.providers,
+            })
+            .collect();
+        Self { catalogs }
+    }
 }
 
 /// A provider a router passes calls on to, as the router lists it.
@@ -222,14 +264,19 @@ fn is_false(value: &bool) -> bool {
 
 impl Payload for CatalogRefreshed {
     const TYPE: &'static str = REFRESHED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
+/// `catalog.refreshed` at `version`: version 1, with no image models, upgraded as it is read.
 pub(crate) fn decode_refreshed(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<CatalogRefreshed>> {
-    (version == 1).then(|| parse(data))
+    match version {
+        1 => Some(parse::<CatalogRefreshedV1>(data).map(CatalogRefreshed::from)),
+        2 => Some(parse(data)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

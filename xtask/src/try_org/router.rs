@@ -74,6 +74,38 @@ fn models() -> Vec<(&'static str, &'static str, u64, Vec<Serving>)> {
     ]
 }
 
+/// One provider's endpoint of an image model: its slug, and what a million tokens in and out
+/// cost, in dollars.
+type Painting = (&'static str, f64, f64);
+
+/// The sample image models, as glave's image tiers name them, and who serves each.
+const IMAGES: [(&str, &[Painting]); 3] = [
+    (
+        "google/gemini-nano-banana-2.1",
+        &[("kestrel", 1.5, 30.0), ("harbor", 1.2, 28.0)],
+    ),
+    ("openai/gpt-image-2.6-flare", &[("mesa", 8.0, 30.0)]),
+    ("openai/gpt-image-2.6-sunburst", &[("mesa", 8.0, 30.0)]),
+];
+
+/// An image model's endpoints (`images/models/{id}/endpoints`), as OpenRouter's image API
+/// lists them: each provider billing by the token for what goes in and comes out.
+fn images(path: &str) -> Option<Value> {
+    let id = path
+        .split_once("/images/models/")?
+        .1
+        .strip_suffix("/endpoints")?;
+    let (_, servings) = IMAGES.iter().find(|(known, _)| *known == id)?;
+    let endpoints = servings.iter().map(|(slug, input, output)| {
+        json!({"provider_slug": slug, "pricing": [
+            {"billable": "input_text", "unit": "token", "cost_usd": input / 1_000_000.0},
+            {"billable": "input_image", "unit": "token", "cost_usd": input / 1_000_000.0},
+            {"billable": "output_image", "unit": "token", "cost_usd": output / 1_000_000.0},
+        ]})
+    });
+    Some(json!({"id": id, "endpoints": endpoints.collect::<Vec<_>>()}))
+}
+
 /// A price in dollars per million tokens as OpenRouter writes it: dollars a token.
 fn per_token(dollars_per_million: f64) -> String {
     format!("{:.10}", dollars_per_million / 1_000_000.0)
@@ -85,10 +117,13 @@ fn tag(serving: &Serving) -> String {
 }
 
 /// The answer to a request for `path` under OpenRouter's API, as OpenRouter's would be:
-/// the key's account (any key works), its models, providers, endpoints that keep nothing, or
-/// one model's endpoints.
+/// the key's account (any key works), its models, providers, endpoints that keep nothing, one
+/// model's endpoints, or an image model's.
 pub(super) fn answer(path: &str) -> Option<Value> {
     let path = path.split('?').next().unwrap_or(path);
+    if path.contains("/images/") {
+        return images(path);
+    }
     let listed = models();
     if path.ends_with("/key") {
         return Some(json!({"data": {"label": "try-org", "limit": null, "usage": 0}}));
@@ -186,6 +221,13 @@ mod tests {
                 .any(|kept| kept["tag"] == "kestrel/fp4")
         );
         assert!(answer("/api/v1/key").is_some(), "any key works");
+        let flare = answer("/api/v1/images/models/openai/gpt-image-2.6-flare/endpoints").unwrap();
+        assert_eq!(flare["endpoints"][0]["provider_slug"], "mesa");
+        assert_eq!(
+            flare["endpoints"][0]["pricing"][2]["billable"],
+            "output_image"
+        );
+        assert_eq!(answer("/api/v1/images/models/no/such/endpoints"), None);
         assert_eq!(answer("/api/v1/models/no/such/endpoints"), None);
         assert_eq!(answer("/v1/elsewhere"), None);
     }
