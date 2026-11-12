@@ -184,7 +184,7 @@ fn asked(events: &[Event]) -> Vec<(String, Option<String>)> {
 }
 
 /// Why a send to the mail service asks after untrusted content, as the person reads it.
-const ACTS: &str = "It can send or change something through mail, and this thread has read \
+const ACTS: &str = "It can send or change something through mail, and this chat has read \
      content from outside, such as a web page, that could have asked for it.";
 
 #[test]

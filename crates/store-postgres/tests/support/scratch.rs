@@ -84,6 +84,16 @@ impl Scratch {
         .await
     }
 
+    /// The versions the schema records as made, in order.
+    pub(crate) async fn versions(&self) -> Vec<i32> {
+        let sql = format!(
+            "SELECT version FROM {}.glave_migrations ORDER BY version",
+            self.schema
+        );
+        let rows = self.admin.query(&sql, &[]).await.unwrap();
+        rows.iter().map(|row| row.get(0)).collect()
+    }
+
     pub(crate) async fn drop_schema(self) {
         self.admin
             .batch_execute(&format!("DROP SCHEMA {} CASCADE", self.schema))

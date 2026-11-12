@@ -220,7 +220,7 @@ fn in_a_repository_a_thread_s_files_are_all_that_differ_from_where_it_started() 
         );
         assert_eq!(
             &*note,
-            "The thread's files are glave's own edits and all else that differs from the version \
+            "The chat's files are glave's own edits and all else that differs from the version \
              it started from, whatever changed it; a turn's are only glave's own edits."
         );
         let own: Vec<_> = turns

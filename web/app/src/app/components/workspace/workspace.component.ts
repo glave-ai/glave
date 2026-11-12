@@ -32,7 +32,7 @@ import { SideNavComponent } from '../side-nav/side-nav.component';
 })
 export class WorkspaceComponent {
   protected readonly copy = {
-    sideNav: $localize`:@@workspace.sideNav:Projects and threads`,
+    sideNav: $localize`:@@workspace.sideNav:Projects and chats`,
     skip: $localize`:@@workspace.skip:Skip to content`,
     resize: $localize`:@@workspace.resize:Resize the side bar`,
   } as const;

@@ -66,7 +66,7 @@ fn an_answer_is_written_again_only_where_it_holds_the_servers_own_words() {
     let message = refused.err().map(|error| error.message.to_string());
     assert_eq!(
         message.as_deref(),
-        Some("[ñö ţĥŕéåð t1 îñ ţĥîš þŕöĵéçţ one two]")
+        Some("[ñö çĥåţ t1 îñ ţĥîš þŕöĵéçţ one two]")
     );
     // Another's words stay as they are.
     let mut passed: Result<Reply, ApiError> =

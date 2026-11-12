@@ -29,7 +29,7 @@ fn missing() -> ThreadId {
 
 /// What the server says of [`missing`] in English.
 fn english() -> String {
-    format!("no thread {} in this project", missing())
+    format!("no chat {} in this project", missing())
 }
 
 /// The error message of a JSON-RPC answer.
@@ -52,7 +52,7 @@ async fn ask(
 /// Whether `message` is the server's sentence about [`missing`] in `en-XA`: accented, its
 /// values as they are, longer and bracketed.
 fn accented(message: &str) -> bool {
-    message.starts_with(&format!("[ñö ţĥŕéåð {} îñ ţĥîš þŕöĵéçţ one", missing()))
+    message.starts_with(&format!("[ñö çĥåţ {} îñ ţĥîš þŕöĵéçţ one", missing()))
         && message.ends_with(']')
 }
 
@@ -82,7 +82,7 @@ fn over_http_the_clients_language_counts_until_the_person_chooses_one() {
         assert_eq!(got["result"], json!({"language": "ar-XB"}));
         for web in [&mut plain, &mut reading] {
             let message = said(&web.call(&get).await);
-            assert!(message.contains("\u{202e}thread\u{202c}"), "{message}");
+            assert!(message.contains("\u{202e}chat\u{202c}"), "{message}");
         }
 
         // A language glave does not write in is refused, in the person's own.

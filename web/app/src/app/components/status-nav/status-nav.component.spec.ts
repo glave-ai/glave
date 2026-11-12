@@ -74,7 +74,7 @@ describe('StatusNavComponent', () => {
       'nav-working',
       'nav-idle',
     ]);
-    expect(root.querySelector('nav')?.getAttribute('aria-label')).toBe('Threads');
+    expect(root.querySelector('nav')?.getAttribute('aria-label')).toBe('Chats');
     const heading = (testId: string): string =>
       root.ownerDocument.getElementById(find(root, testId).getAttribute('aria-labelledby') ?? '')
         ?.textContent ?? '';
@@ -117,7 +117,7 @@ describe('StatusNavComponent', () => {
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
     expect(root.querySelectorAll('glz-nav-list')).toHaveLength(0);
-    expect(texts(root, 'nav-no-match')).toEqual(['No threads match']);
+    expect(texts(root, 'nav-no-match')).toEqual(['No chats match']);
     await expectAccessible(root);
   });
 });
