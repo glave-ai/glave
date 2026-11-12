@@ -1,11 +1,12 @@
 //! The macOS sandbox profile for one project: Codex's deny-everything base, then reads everywhere
 //! except secret locations and other terminals, writes to the project and temp folder except
-//! protected paths, and the network only when allowed.
+//! protected paths, and the network only when allowed: all of it, or only loopback, where glave's
+//! outbound proxy listens.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{PROTECTED, SandboxLevel};
+use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
 use super::secrets::{ENV_FILES, HOME_SECRETS, OTHER_SECRET_FILES, TEMPLATE_WORDS};
@@ -57,6 +58,18 @@ const NETWORK_RULES: &str = r#"; network: allowed
 (allow mach-lookup (global-name "com.apple.TrustEvaluationAgent"))
 "#;
 
+/// When the network goes only through glave's outbound proxy: this computer's loopback, where
+/// the proxy listens, and nothing else, not even name lookups. All of loopback, not only the
+/// proxy's port, so a command still reaches the servers it starts, as it does in its own
+/// network namespace on Linux. Seatbelt's `localhost` is `127.0.0.1`, `::1` and `fe80::1%lo0`,
+/// never `::ffff:127.0.0.1`, which only `*` would cover.
+const PROXIED_RULES: &str = r#"; network: only loopback, where glave's outbound proxy listens
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-inbound (local ip "localhost:*"))
+(allow network-bind (local ip "localhost:*"))
+(allow mach-lookup (global-name "com.apple.TrustEvaluationAgent"))
+"#;
+
 /// The real paths a profile refers to. macOS matches resolved paths, so these must be resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Places {
@@ -87,17 +100,20 @@ pub(crate) struct Profile {
     pub params: Vec<(String, PathBuf)>,
 }
 
-pub(crate) fn profile(places: &Places, level: SandboxLevel, network: bool) -> Profile {
+pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetwork) -> Profile {
     let mut profile = Profile {
         text: format!("{BASE}\n{PREFERENCES}\n"),
         params: Vec::new(),
     };
     reads(&mut profile, places);
     writes(&mut profile, places, level);
-    if network {
-        profile.text.push_str(NETWORK_RULES);
-        profile.text.push_str(NETWORK);
-    }
+    let rules = match network {
+        SandboxNetwork::Off => return profile,
+        SandboxNetwork::Direct => NETWORK_RULES,
+        SandboxNetwork::Proxied => PROXIED_RULES,
+    };
+    profile.text.push_str(rules);
+    profile.text.push_str(NETWORK);
     profile
 }
 
@@ -352,7 +368,7 @@ mod tests {
 
     #[test]
     fn the_project_level_writes_the_project_but_not_what_runs_code() {
-        let profile = profile(&places(), SandboxLevel::Project, false);
+        let profile = profile(&places(), SandboxLevel::Project, SandboxNetwork::Off);
         assert!(profile.text.starts_with("; From OpenAI Codex"));
         assert!(profile.text.contains("(deny default)"));
         assert_eq!(
@@ -377,7 +393,7 @@ mod tests {
 
     #[test]
     fn read_only_writes_only_the_temp_folder() {
-        let profile = profile(&places(), SandboxLevel::ReadOnly, false);
+        let profile = profile(&places(), SandboxLevel::ReadOnly, SandboxNetwork::Off);
         assert!(!profile.text.contains("; writes: the project"));
         assert!(
             profile
@@ -394,7 +410,7 @@ mod tests {
 
     #[test]
     fn secret_locations_are_unreadable() {
-        let profile = profile(&places(), SandboxLevel::Project, false);
+        let profile = profile(&places(), SandboxLevel::Project, SandboxNetwork::Off);
         let secrets: Vec<&Path> = profile
             .params
             .iter()
@@ -442,7 +458,7 @@ mod tests {
         let mut worktree = places();
         worktree.git_common = Some(PathBuf::from("/Users/me/code/app/.git"));
         worktree.git_own = Some(PathBuf::from("/Users/me/code/app/.git/worktrees/w"));
-        let profile = super::profile(&worktree, SandboxLevel::Project, false);
+        let profile = super::profile(&worktree, SandboxLevel::Project, SandboxNetwork::Off);
         assert_eq!(
             param(&profile, "COMMON_PROTECTED_0"),
             Some(Path::new("/Users/me/code/app/.git/hooks"))
@@ -467,7 +483,7 @@ mod tests {
     fn a_worktree_in_glave_s_folder_may_see_the_folders_above_it_but_not_into_them() {
         let mut worktree = places();
         worktree.root = PathBuf::from("/Users/me/.glave/worktrees/app-0a1b/glave-0123");
-        let profile = profile(&worktree, SandboxLevel::Project, false);
+        let profile = profile(&worktree, SandboxLevel::Project, SandboxNetwork::Off);
         assert_eq!(
             param(&profile, "ROOT_UP_0"),
             Some(Path::new("/Users/me/.glave/worktrees/app-0a1b"))
@@ -484,7 +500,7 @@ mod tests {
         assert!(profile.text.contains(
             r#"(allow file-read-metadata (literal (param "GLAVE_HOME")) (literal (param "ROOT_UP_0")) (literal (param "ROOT_UP_1")))"#
         ));
-        let elsewhere = super::profile(&places(), SandboxLevel::Project, false);
+        let elsewhere = super::profile(&places(), SandboxLevel::Project, SandboxNetwork::Off);
         assert_eq!(
             param(&elsewhere, "ROOT_UP_0"),
             None,
@@ -499,7 +515,7 @@ mod tests {
 
     #[test]
     fn the_network_is_added_only_when_allowed() {
-        let profile = profile(&places(), SandboxLevel::Project, true);
+        let profile = profile(&places(), SandboxLevel::Project, SandboxNetwork::Direct);
         assert!(
             profile
                 .text
@@ -510,14 +526,43 @@ mod tests {
                 .text
                 .contains("com.apple.SystemConfiguration.DNSConfiguration")
         );
+        assert!(
+            profile.text.contains("mDNSResponder"),
+            "names are looked up"
+        );
+    }
+
+    #[test]
+    fn the_proxied_network_is_loopback_alone_with_no_lookups() {
+        let profile = profile(&places(), SandboxLevel::Project, SandboxNetwork::Proxied);
+        assert!(
+            profile
+                .text
+                .contains(r#"(allow network-outbound (remote ip "localhost:*"))"#)
+        );
+        assert!(
+            !profile
+                .text
+                .contains("(allow network-outbound (remote ip))"),
+            "no host but loopback"
+        );
+        assert!(!profile.text.contains("mDNSResponder"), "no lookups");
+        assert!(
+            profile.text.contains("com.apple.trustd.agent"),
+            "TLS through the proxy still checks certificates"
+        );
     }
 
     #[test]
     fn no_profile_reaches_the_data_protection_keychain() {
         for level in [SandboxLevel::ReadOnly, SandboxLevel::Project] {
-            for network in [false, true] {
+            for network in [
+                SandboxNetwork::Off,
+                SandboxNetwork::Direct,
+                SandboxNetwork::Proxied,
+            ] {
                 let profile = profile(&places(), level, network);
-                assert!(!profile.text.contains("securityd"), "{level:?} {network}");
+                assert!(!profile.text.contains("securityd"), "{level:?} {network:?}");
             }
         }
     }

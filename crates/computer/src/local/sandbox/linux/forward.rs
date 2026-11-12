@@ -20,29 +20,13 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
+use crate::local::sandbox::outbound::{NO_PROXY, PROXY, variables};
 use crate::proxy::Limits;
 use crate::proxy::pump::pump;
 
 /// The variable glave hands the proxy's secret to the forwarder in. The command gets it in the
 /// proxy's URL instead.
 pub(crate) const SECRET: &str = "GLAVE_PROXY_SECRET";
-
-/// The variables that name the proxy, as programs read them.
-const PROXY: [&str; 6] = [
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "all_proxy",
-];
-
-/// The variables that name what is reached without the proxy: the namespace's own loopback,
-/// where only what the command starts listens, and which the proxy refuses.
-const NO_PROXY: [&str; 2] = ["NO_PROXY", "no_proxy"];
-
-/// The namespace's own loopback, by every name it goes by.
-const LOOPBACK: &str = "localhost,127.0.0.1,::1";
 
 /// Connections carried at once; the rest are closed as they come.
 const MOST: usize = 256;
@@ -77,7 +61,6 @@ pub(in crate::local::sandbox) fn forward(args: &[OsString]) -> Result<ExitCode, 
         .enable_all()
         .build()
         .map_err(|error| format!("could not start: {error}"))?;
-    let url = format!("http://t:{secret}@127.0.0.1:{port}");
     let inherited: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| {
             name != SECRET && !PROXY.iter().chain(&NO_PROXY).any(|own| name == *own)
@@ -88,8 +71,7 @@ pub(in crate::local::sandbox) fn forward(args: &[OsString]) -> Result<ExitCode, 
         .args(rest)
         .env_clear()
         .envs(inherited)
-        .envs(PROXY.map(|name| (name, url.as_str())))
-        .envs(NO_PROXY.map(|name| (name, LOOPBACK)));
+        .envs(variables(&secret, port));
     let ran = runtime.block_on(async move {
         let carrying = tokio::spawn(carry(listener, PathBuf::from(socket)));
         let ran = tokio::task::spawn_blocking(move || command.status_blocking()).await;

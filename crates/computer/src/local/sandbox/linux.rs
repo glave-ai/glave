@@ -11,7 +11,6 @@ mod helper;
 mod landlocked;
 mod mounts;
 mod names;
-mod outbound;
 mod seccomp;
 mod temp;
 #[cfg(test)]
@@ -22,18 +21,19 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use glave_ports::MAX_SOCKET_PATH;
 use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
+use tokio::net::UnixListener;
 
+use super::outbound::{Outbound, Serving};
 use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
-use outbound::Serving;
 use temp::RunFolder;
 
 pub(super) use forward::forward;
 pub(super) use helper::helper;
-pub(crate) use outbound::Outbound;
 
 /// The protected paths' stand-ins a command holds until it ends (bubblewrap only).
 pub(super) type Held = Option<mounts::Held>;
@@ -64,6 +64,8 @@ enum How {
 #[derive(Debug)]
 struct Proxied {
     helper: PathBuf,
+    /// The proxy's socket, which the forwarder reaches.
+    socket: PathBuf,
     serving: Serving,
 }
 
@@ -153,7 +155,7 @@ impl Enforcer {
                         .map_err(|refused| ComputerError::Refused(refused.into()))?;
                 let forward = self.proxied.as_ref().map(|proxied| bubblewrap::Forward {
                     helper: &proxied.helper,
-                    socket: proxied.serving.socket(),
+                    socket: &proxied.socket,
                 });
                 let args = bubblewrap::args(bwrap, *offline, &self.layout, &mounts, forward);
                 let env = self.proxied.iter().map(|proxied| {
@@ -292,9 +294,11 @@ fn proxied(
             },
             Some(helper),
         ) => {
+            let (listener, socket) = proxy_socket(folder)?;
             return Ok(Proxied {
                 helper: helper.to_owned(),
-                serving: Serving::start(outbound, folder)?,
+                socket,
+                serving: Serving::start(outbound, listener)?,
             });
         }
         (How::Bubblewrap { .. }, Some(_)) => {
@@ -306,6 +310,27 @@ fn proxied(
     Err(ComputerError::Unsupported(format!(
         "commands cannot be kept to glave's outbound proxy on this computer: {why}"
     )))
+}
+
+/// The socket's name in the sandbox's folder.
+const SOCKET: &str = "proxy.sock";
+
+/// A socket for the proxy in `folder`, private to this user, and its path.
+fn proxy_socket(folder: &Path) -> Result<(UnixListener, PathBuf), ComputerError> {
+    let socket = folder.join(SOCKET);
+    if socket.as_os_str().len() > MAX_SOCKET_PATH {
+        return Err(ComputerError::Failed(format!(
+            "the outbound proxy's socket would be too long a path: {}",
+            socket.display()
+        )));
+    }
+    let listener = UnixListener::bind(&socket).map_err(|error| {
+        ComputerError::Failed(format!(
+            "could not start the outbound proxy at {}: {error}",
+            socket.display()
+        ))
+    })?;
+    Ok((listener, socket))
 }
 
 /// Every terminal's device in `dev` but `tty`, the command's own controlling terminal: `pts`,

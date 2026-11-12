@@ -77,7 +77,7 @@ impl LocalComputers {
 
     /// Makes the outbound proxy that sandboxed commands may be kept to with `outbound`: a
     /// test's, reaching a stand-in for the internet.
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
     #[must_use]
     pub(crate) fn with_outbound(mut self, outbound: super::sandbox::Outbound) -> Self {
         self.outbound = outbound;
