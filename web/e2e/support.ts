@@ -146,6 +146,15 @@ function kept(variable: string): string {
 export const ADMIN_WORDS =
   /\b(?:polic(?:y|ies)|organi[sz]ations?|members?|groups?|admins?|administrators?|SSO)\b|config\.toml|GLAVE_/iu;
 
+/**
+ * Words of glave's code a person should never meet (AGENTS.md, "Plain words"), each a whole word
+ * in any case: a chat is a chat. Some stay out, since a person's journey needs them: the access
+ * token a git host gives, a repository on GitHub, the sandbox a command asks to run outside, and
+ * the API a model server speaks.
+ */
+export const DEVELOPER_WORDS =
+  /\b(?:threads?|repos?|worktrees?|CLI|config|JSON|MCP|endpoints?)\b/iu;
+
 /** The fragment of the link that signs the app in, with a code the fake API takes. */
 export const SIGNED_IN = '#code=e2e-code';
 

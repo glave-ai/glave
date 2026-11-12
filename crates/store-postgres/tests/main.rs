@@ -5,6 +5,7 @@
 #[path = "support/scratch.rs"]
 mod support;
 
+mod migrations;
 mod postgres;
 mod row_security;
 mod sealing;

@@ -72,11 +72,11 @@ export class GlzApprovalCardComponent {
     label: 'Needs you',
     reasonLabel: 'The model says',
     allowOnceLabel: 'Allow once',
-    allowForThreadLabel: 'Allow for this thread',
+    allowForThreadLabel: 'Allow for this chat',
     denyLabel: 'Deny',
     decidedLabels: {
       allow_once: 'Allowed once',
-      allow_for_thread: 'Allowed for this thread',
+      allow_for_thread: 'Allowed for this chat',
       deny: 'Denied',
     },
   });
@@ -91,7 +91,7 @@ export class GlzApprovalCardComponent {
   readonly reason = input('');
   /** Who the reason's words are, before the quote. */
   readonly reasonLabel = input(this.words.reasonLabel);
-  /** Whether it can only be allowed once: no "for this thread", since each one asks. */
+  /** Whether it can only be allowed once: no "for this chat", since each one asks. */
   readonly onlyOnce = input(false, { transform: booleanAttribute });
   /** The answer given, once there is one. */
   readonly decision = input<GlzDecision | null>(null);

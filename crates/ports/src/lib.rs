@@ -25,6 +25,7 @@ mod leases;
 mod log;
 mod mail;
 pub mod memories;
+pub mod migrations;
 mod model;
 mod objects;
 mod projects;

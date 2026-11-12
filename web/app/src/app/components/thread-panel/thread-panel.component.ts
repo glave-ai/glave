@@ -84,9 +84,9 @@ export class ThreadPanelComponent {
   readonly gone = output();
 
   protected readonly copy = {
-    heading: $localize`:@@threadPanel.heading:This thread`,
+    heading: $localize`:@@threadPanel.heading:This chat`,
     close: $localize`:@@threadPanel.close:Close the panel`,
-    tabs: $localize`:@@threadPanel.tabs:What this thread shows`,
+    tabs: $localize`:@@threadPanel.tabs:What this chat shows`,
     overview: $localize`:@@threadPanel.overview:Overview`,
     terminal: $localize`:@@threadPanel.terminal:Terminal`,
     changes: $localize`:@@threadPanel.changes:Changes`,

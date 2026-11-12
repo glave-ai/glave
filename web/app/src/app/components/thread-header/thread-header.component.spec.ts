@@ -61,7 +61,7 @@ describe('ThreadHeaderComponent', () => {
     const { root } = await render();
     const button = find(root, 'thread-panel');
     const panel = TestBed.inject(PanelService);
-    expect(button?.getAttribute('aria-label')).toBe('Show or hide the thread panel');
+    expect(button?.getAttribute('aria-label')).toBe("Show or hide the chat's panel");
     expect(button?.getAttribute('aria-pressed')).toBe('true');
     expect(button?.hasAttribute('aria-expanded')).toBe(false);
     expect(button?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);

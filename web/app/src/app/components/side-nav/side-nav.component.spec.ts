@@ -135,7 +135,7 @@ describe('SideNavComponent', () => {
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(search()?.getAttribute('aria-label')).toBe('Search threads');
+    expect(search()?.getAttribute('aria-label')).toBe('Search chats');
     expect(search()?.hasAttribute('inert')).toBe(false);
   });
 
@@ -153,7 +153,7 @@ describe('SideNavComponent', () => {
     await expectAccessible(root);
 
     const search = root.querySelector<HTMLInputElement>('[data-testid="nav-search"]');
-    expect(search?.getAttribute('aria-label')).toBe('Search threads');
+    expect(search?.getAttribute('aria-label')).toBe('Search chats');
     expect(search?.placeholder).toBe('Search');
     // Searched as typed: no autocorrect, capitals or spelling.
     expect(search?.getAttribute('autocorrect')).toBe('off');

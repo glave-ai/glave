@@ -2,6 +2,7 @@
 //! keys, replaced whole by compare-and-swap on its revision.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_keys::{KeyError, KeyStorage, StoredProject};
@@ -14,11 +15,13 @@ use crate::store::{Shared, run};
 #[derive(Clone)]
 pub struct SqliteKeys {
     connection: Shared,
+    /// Where the copy of the file from before a migration is kept, unless it is in memory.
+    copy: Option<PathBuf>,
 }
 
 impl SqliteKeys {
-    pub(crate) fn new(connection: Shared) -> Self {
-        Self { connection }
+    pub(crate) fn new(connection: Shared, copy: Option<PathBuf>) -> Self {
+        Self { connection, copy }
     }
 }
 
@@ -129,6 +132,20 @@ impl KeyStorage for SqliteKeys {
             .await
             .map_err(storage)?;
             Ok(changed == 1)
+        }
+    }
+
+    /// Removes the copy of the file from before a migration: it still holds what was destroyed.
+    fn destroyed(&self) -> impl Future<Output = Result<(), KeyError>> + Send {
+        let copy = self.copy.clone();
+        async move {
+            let Some(copy) = copy else {
+                return Ok(());
+            };
+            tokio::task::spawn_blocking(move || crate::copy::forget(&copy))
+                .await
+                .map_err(storage)?
+                .map_err(|e| storage(format!("the copy of glave's data was kept: {e}")))
         }
     }
 }

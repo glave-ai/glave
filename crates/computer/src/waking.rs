@@ -249,7 +249,7 @@ impl Waking {
         } else {
             return Err(ComputerError::Unsupported(
                 "this workspace was on your computer before it slept and cannot be made again \
-                 there. Start a new thread to go on"
+                 there. Start a new chat to go on"
                     .into(),
             ));
         };

@@ -15,6 +15,7 @@ mod organizations;
 mod projects;
 mod racing;
 mod search;
+mod stores;
 mod sweep;
 mod threads;
 
@@ -32,6 +33,7 @@ pub use objects::objects;
 pub use organizations::organizations;
 pub use projects::projects;
 pub use search::search;
+pub use stores::{StoreSuite, store_suite};
 pub use threads::thread_views;
 
 use glave_event::{

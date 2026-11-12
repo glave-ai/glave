@@ -7,6 +7,7 @@ import { COMMAND, RAN } from './fake-model';
 import {
   ADMIN_WORDS,
   CONSUMER,
+  DEVELOPER_WORDS,
   LIVE_MODEL_URL,
   byTestId,
   expect,
@@ -47,9 +48,11 @@ test.afterAll(async () => {
   await closed;
 });
 
-/** Fails if `page` shows an admin word, or fails axe, in light or in dark. */
+/** Fails if `page` shows an admin or a developer word, or fails axe, in light or in dark. */
 async function expectPlain(page: Page): Promise<void> {
-  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+  const shown = await page.locator('body').innerText();
+  expect(shown).not.toMatch(ADMIN_WORDS);
+  expect(shown).not.toMatch(DEVELOPER_WORDS);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
@@ -59,7 +62,7 @@ async function expectPlain(page: Page): Promise<void> {
 /**
  * A person's whole journey on their own computer, on a real glave with a fresh home: they add a
  * model, chat with it, approve a command it asks to run, and connect GitHub, and nowhere on the
- * way meet a word of an organization's (AGENTS.md, "Keeping principle 4").
+ * way meet a word of an organization's or of glave's code (AGENTS.md, "Keeping principle 4").
  */
 test('a person adds a model, chats, approves a command and connects GitHub, in plain words', async ({
   page,

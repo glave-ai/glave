@@ -119,6 +119,15 @@ impl Data {
         })
     }
 
+    /// Lets go of the local file's copy from before a migration once it is a week old
+    /// (`specs/storage.md`, "Migrations"); Postgres keeps none.
+    pub(crate) async fn forget_old_copy(&self) -> anyhow::Result<()> {
+        if let Self::Sqlite(store) = self {
+            store.forget_old_copy().await?;
+        }
+        Ok(())
+    }
+
     /// The leases work in flight runs under, on the store's own clock.
     pub(crate) fn leases(&self) -> Arc<dyn Leases> {
         match self {

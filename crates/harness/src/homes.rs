@@ -99,8 +99,8 @@ where
         };
         if self.homes.is_none() {
             return Err(ComputerError::Unsupported(
-                "this thread worked on a cloud computer this server does not reach. Start a new \
-                 thread to go on"
+                "this chat worked on a cloud computer this server does not reach. Start a new \
+                 chat to go on"
                     .into(),
             )
             .into());
