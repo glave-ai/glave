@@ -91,7 +91,7 @@ describe('ThreadPanelComponent', () => {
       ['Changes', 'false'],
     ]);
     expect(root.querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe(
-      'What this thread shows',
+      'What this chat shows',
     );
     expect(root.querySelector('app-thread-overview')).not.toBeNull();
     await expectAccessible(root);
@@ -147,7 +147,7 @@ describe('ThreadPanelComponent', () => {
   it('heads itself one level up from its sections, heard alone beside the page', async () => {
     const { root } = await render(worked(), WORKED);
     const heading = root.querySelector('h2');
-    expect(heading?.textContent.trim()).toBe('This thread');
+    expect(heading?.textContent.trim()).toBe('This chat');
     expect(heading?.classList).toContain('glz-visually-hidden');
     expect(root.querySelectorAll('h3').length).toBeGreaterThan(0);
     const close = root.querySelector<HTMLElement>('[data-testid="panel-close"]');

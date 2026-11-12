@@ -66,7 +66,7 @@ export class SideNavComponent {
   protected readonly copy = {
     name: 'glave',
     newChat: $localize`:@@sideNav.newChat:New chat`,
-    search: $localize`:@@sideNav.search:Search threads`,
+    search: $localize`:@@sideNav.search:Search chats`,
     searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
     tasks: $localize`:@@sideNav.tasks:Tasks`,
   } as const;

@@ -49,7 +49,7 @@ describe('GlzApprovalCardComponent', () => {
     const buttons = Array.from(root.querySelectorAll('.actions button'));
     expect(buttons.map((each) => each.textContent.trim())).toEqual([
       'Allow once',
-      'Allow for this thread',
+      'Allow for this chat',
       'Deny',
     ]);
     expect(buttons[0]?.classList).toContain('glz-button--primary');
@@ -111,7 +111,7 @@ describe('GlzApprovalCardComponent', () => {
     await fixture.whenStable();
     expect(button(root, 'approval-allow-once')).toBeNull();
     expect(root.querySelector('[data-testid="approval-decided"]')?.textContent).toBe(
-      'Allowed for this thread',
+      'Allowed for this chat',
     );
     // Answered, it no longer needs the person: no label, and it rests.
     const card = root.querySelector('glz-approval-card');

@@ -61,7 +61,7 @@ worded! {
         TooManyTerminals { most } = "computer-too-many-terminals"
             "{ $most } terminals are already open on this computer; close one first",
         TooManyOwnedTerminals { most } = "computer-too-many-owned-terminals"
-            "{ $most } terminals are already open in this thread; close one first",
+            "{ $most } terminals are already open in this chat; close one first",
         NoLoginShell = "computer-no-login-shell"
             "this account's login shell opens no shell, so no terminal opens for it",
 
@@ -210,7 +210,7 @@ mod tests {
             "a terminal is 1 to <most> columns and rows, not <cols> by <rows>",
             "a terminal takes at most <most> bytes at once",
             "<most> terminals are already open on this computer; close one first",
-            "<most> terminals are already open in this thread; close one first",
+            "<most> terminals are already open in this chat; close one first",
             "this account's login shell opens no shell, so no terminal opens for it",
             "policy requires people's computers isolated in a sandbox or virtual machine of their own ([workers] isolation = \"vm\"), and this cluster gives them none: set [workers] runtime_class (gVisor or Kata)",
             "a person's computer in the cloud runs an image, and this environment names the host",

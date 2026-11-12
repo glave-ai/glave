@@ -40,7 +40,7 @@ export class FolderGoneComponent {
     remove: $localize`:@@folderGone.remove:Remove the project`,
     findHeading: $localize`:@@folderGone.findHeading:Where is the project’s folder now?`,
     removeHeading: $localize`:@@folderGone.removeHeading:Remove the project?`,
-    removeMessage: $localize`:@@folderGone.removeMessage:Its threads go to the archive, with their history.`,
+    removeMessage: $localize`:@@folderGone.removeMessage:Its chats go to the archive, with their history.`,
     removeConfirm: $localize`:@@folderGone.removeConfirm:Remove`,
   } as const;
   private readonly projects = inject(ProjectsService);

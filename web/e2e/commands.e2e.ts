@@ -78,7 +78,7 @@ test('on a phone, a sheet left with nothing closes, and does not open again by i
   await expect(button).toHaveAttribute('aria-expanded', 'false');
   await button.click();
   await expect(panel).toHaveAttribute('aria-modal', 'true');
-  await expect(byTestId(page, 'panel-heading')).toHaveText('This thread');
+  await expect(byTestId(page, 'panel-heading')).toHaveText('This chat');
   await byTestId(page, 'command-stop').click();
   await expect(byTestId(page, 'command')).toHaveCount(0);
   await expect(panel).toBeHidden();

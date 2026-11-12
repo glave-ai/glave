@@ -116,7 +116,7 @@ export class ProjectsNavComponent {
   protected readonly projectList = computed(() =>
     this.projects().list.map((project) => ({
       ...project,
-      newLabel: $localize`:@@projectsNav.newIn:New thread in ${project.name}:PROJECT:`,
+      newLabel: $localize`:@@projectsNav.newIn:New chat in ${project.name}:PROJECT:`,
       newQuery: { project: project.id },
       optionsLabel: $localize`:@@projectsNav.optionsFor:Options for ${project.name}:PROJECT:`,
     })),

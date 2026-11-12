@@ -84,7 +84,7 @@ export class NewProjectComponent {
     privateNeeds: $localize`:@@newProject.privateNeeds:Private repositories need a connected git host:`,
     connect: $localize`:@@newProject.connect:connect one in Settings`,
     cloning: $localize`:@@newProject.cloning:Cloning the repository. A large one can take a few minutes.`,
-    noFolder: $localize`:@@newProject.noFolder:Its threads start in an empty folder for now; a computer for it comes later.`,
+    noFolder: $localize`:@@newProject.noFolder:Its chats start in an empty folder for now; a computer for it comes later.`,
     cancel: $localize`:@@newProject.cancel:Cancel`,
     create: $localize`:@@newProject.create:Create`,
     creating: $localize`:@@newProject.creating:Creating…`,

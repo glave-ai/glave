@@ -129,7 +129,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'thread-approval-caution')).toHaveText('It pushes to a remote.');
     await expect(card.getByRole('button')).toHaveText([
       'Allow once',
-      'Allow for this thread',
+      'Allow for this chat',
       'Deny',
     ]);
     await expect(byTestId(page, 'thread-steps-summary')).toContainText('waiting');
@@ -190,7 +190,7 @@ test.describe('on a touch screen', () => {
       expect([Math.round(box?.width ?? 0), Math.round(box?.height ?? 0)]).toEqual([44, 44]);
     }
     await expect(byTestId(page, 'thread-panel')).toHaveAccessibleName(
-      'Show or hide the thread panel',
+      "Show or hide the chat's panel",
     );
     // One row: options, the text and send, side by side.
     const [options, input, send] = await Promise.all(
