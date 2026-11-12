@@ -31,6 +31,8 @@ pub struct Queued {
     pub files: Vec<Part>,
     /// Who sent it: its `author` when that is not the person the thread is for.
     pub caller: Caller,
+    /// The idempotency key they sent it with, when they sent one: recorded with it.
+    pub key: Option<String>,
 }
 
 /// Why a message was not queued.
@@ -212,10 +214,18 @@ where
                 parts: said(text, &queued.files),
                 author: Self::other_than_for(thread, queued.caller.person),
                 thought: None,
+                key: queued.key.clone(),
             };
             self.stage_as(thread, &mut events, &message, queued.id)?;
         }
-        self.commit(thread, events).await
+        self.commit(thread, events).await?;
+        for (queued, _) in passed {
+            if let Some(key) = &queued.key {
+                let author = Self::other_than_for(thread, queued.caller.person);
+                thread.keys.sent(author.and_then(|author| author.id), key);
+            }
+        }
+        Ok(())
     }
 
     /// Runs what the person sent too late for the turn that just ended (`ran`): a turn for the
@@ -252,6 +262,7 @@ where
                 caller: &next.caller,
                 by_glave: false,
                 id: Some(next.id),
+                key: next.key.as_deref(),
             };
             let ran = self.run_prompt(thread, prompt, cancel, live).await;
             match ran {
@@ -311,6 +322,7 @@ mod tests {
             text: format!("message {n}"),
             files: Vec::new(),
             caller: Caller::default(),
+            key: None,
         }
     }
 

@@ -41,6 +41,7 @@ fn queued(n: u8, text: &str) -> Queued {
         text: text.into(),
         files: Vec::new(),
         caller: Caller::default(),
+        key: None,
     }
 }
 

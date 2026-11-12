@@ -1,14 +1,15 @@
 //! Servers on one store, under the threads' leases (`specs/invariants.md`, 3 and 5): a turn one
 //! server runs holds its thread there, another is refused it (`-32011`), and reading the thread
 //! anywhere records nothing; a turn a server left open is closed by the next work on its thread,
-//! or as the person's server starts, once no live server's lease holds it.
+//! or as the person's server starts, once no live server's lease holds it; and a retry with
+//! the key a turn was started with, reaching another server, starts no second turn.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, RawEvent, ThreadId, decode};
 use glave_ports::{EventLog as _, Holder, InMemoryLeases, Leased, Leases};
-use glave_session::protocol::{Notification, Reply, Request, code};
+use glave_session::protocol::{IdempotencyKey, Notification, Reply, Request, code};
 use glave_session::{Answering, Repaired, TurnItem, TurnStream};
 use tokio::sync::Notify;
 
@@ -117,14 +118,17 @@ fn a_second_server_reads_a_thread_another_runs_without_writing_and_is_refused_it
 
 /// A thread whose turn a server left open in the model call, as the store has it once that
 /// server is gone: copied into a log of its own, so nothing of the first server writes to it
-/// again. The first server's person and projects come with it.
-async fn left_open(dir: &std::path::Path) -> (Shared, Tested<Shared>, ThreadId) {
+/// again. The first server's person and projects come with it. Its turn was sent with `key`.
+async fn left_open(
+    dir: &std::path::Path,
+    key: Option<IdempotencyKey>,
+) -> (Shared, Tested<Shared>, ThreadId) {
     let (gone, (_, its_leases)) = (Shared::default(), shared_leases());
     let gate = Arc::new(Notify::new());
     let answers = vec![answer(Some("Slow."), None)];
     let first = on_store(dir, &gone, &its_leases, answers, None, Some(gate)).await;
     let thread = start(&first, false).await;
-    let mut running = stream_turn(&first, thread, "slow", None).await.unwrap();
+    let mut running = stream_turn(&first, thread, "slow", key).await.unwrap();
     until_started(&mut running).await;
     let log = Shared::default();
     log.append(&scope(), &stored(&gone, thread).await)
@@ -147,7 +151,7 @@ fn kinds_of(events: &[RawEvent]) -> Vec<&str> {
 fn a_turn_left_open_is_closed_as_the_server_starts_once_no_live_lease_holds_it() {
     let dir = folder("leases-left-open");
     block_on!(async {
-        let (log, first, thread) = left_open(&dir).await;
+        let (log, first, thread) = left_open(&dir, None).await;
         let (clock, leases) = shared_leases();
         // The server that left it stopped less than a lease ago.
         let gone = Holder::from_uuid(uuid::Uuid::from_u128(99));
@@ -194,7 +198,7 @@ fn a_turn_left_open_is_closed_as_the_server_starts_once_no_live_lease_holds_it()
 fn work_on_a_thread_left_open_closes_it_first() {
     let dir = folder("leases-work-closes");
     block_on!(async {
-        let (log, first, thread) = left_open(&dir).await;
+        let (log, first, thread) = left_open(&dir, None).await;
         let (_, leases) = shared_leases();
         let answers = vec![answer(Some("Again."), None)];
         let second = on_store(&dir, &log, &leases, answers, Some(&first), None).await;
@@ -207,5 +211,86 @@ fn work_on_a_thread_left_open_closes_it_first() {
         assert_eq!(after.get(1), Some(&"turn.started"), "{after:?}");
         let closed = decode(events[before.len()].clone()).unwrap().body;
         assert!(matches!(closed, Body::TurnEnded(ended) if ended.outcome == Outcome::Interrupted));
+    });
+}
+
+/// How many turns `events` start.
+fn turns_started(events: &[RawEvent]) -> usize {
+    kinds_of(events)
+        .into_iter()
+        .filter(|kind| *kind == "turn.started")
+        .count()
+}
+
+#[test]
+fn a_retry_reaching_another_server_is_answered_as_its_turn_ended_and_starts_none() {
+    let dir = folder("leases-retry-elsewhere");
+    block_on!(async {
+        let (log, (_, leases)) = (Shared::default(), shared_leases());
+        let first = on_store(
+            &dir,
+            &log,
+            &leases,
+            vec![answer(Some("Hi."), None)],
+            None,
+            None,
+        )
+        .await;
+        let answers = vec![answer(Some("Other."), None)];
+        let second = on_store(&dir, &log, &leases, answers, Some(&first), None).await;
+        let thread = start(&first, false).await;
+        let key = IdempotencyKey::new("attempt-1").unwrap();
+        let mut sent = stream_turn(&first, thread, "hi", Some(key.clone()))
+            .await
+            .unwrap();
+        let ended = sent.finish().await.unwrap();
+        assert_eq!(ended.outcome, Outcome::Completed);
+
+        let mut retried = stream_turn(&second, thread, "hi", Some(key)).await.unwrap();
+        assert_eq!(
+            retried.finish().await.unwrap(),
+            ended,
+            "answered as it ended"
+        );
+        assert_eq!(
+            turns_started(&stored(&log, thread).await),
+            1,
+            "no second turn"
+        );
+
+        let other = IdempotencyKey::new("attempt-2").unwrap();
+        let mut another = stream_turn(&second, thread, "more", Some(other))
+            .await
+            .unwrap();
+        assert_eq!(another.finish().await.unwrap().outcome, Outcome::Completed);
+        assert_eq!(
+            turns_started(&stored(&log, thread).await),
+            2,
+            "another key starts one"
+        );
+    });
+}
+
+#[test]
+fn a_retry_after_its_server_stopped_mid_turn_closes_that_turn_and_starts_none() {
+    let dir = folder("leases-retry-left-open");
+    block_on!(async {
+        let key = IdempotencyKey::new("attempt-1").unwrap();
+        let (log, first, thread) = left_open(&dir, Some(key.clone())).await;
+        let (_, leases) = shared_leases();
+        let answers = vec![answer(Some("Again."), None)];
+        let second = on_store(&dir, &log, &leases, answers, Some(&first), None).await;
+        let mut retried = stream_turn(&second, thread, "slow", Some(key))
+            .await
+            .unwrap();
+        let ended = retried.finish().await.unwrap();
+        assert_eq!(
+            ended.outcome,
+            Outcome::Interrupted,
+            "as its turn was closed"
+        );
+        let events = stored(&log, thread).await;
+        assert_eq!(turns_started(&events), 1, "no second turn");
+        assert_eq!(kinds_of(&events).last(), Some(&"turn.ended"));
     });
 }

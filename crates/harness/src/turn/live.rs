@@ -96,6 +96,9 @@ pub enum Live {
 pub struct Said<'a> {
     pub text: &'a str,
     pub files: &'a [Part],
+    /// The idempotency key the person sent it with, when they sent one: recorded with it, and
+    /// a message already recorded with it, on any server, starts no turn again.
+    pub key: Option<&'a str>,
 }
 
 /// What the person asked for, and who asked.
@@ -111,6 +114,8 @@ pub(crate) struct Prompt<'a> {
     /// The id its message is recorded with, when it was made already: a message sent while
     /// the turn before ran keeps the id it was queued with.
     pub(crate) id: Option<EventId>,
+    /// The idempotency key the person sent it with, when they sent one.
+    pub(crate) key: Option<&'a str>,
 }
 
 impl<'a> Prompt<'a> {
@@ -122,6 +127,7 @@ impl<'a> Prompt<'a> {
             caller,
             by_glave: false,
             id: None,
+            key: None,
         }
     }
 }

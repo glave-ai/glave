@@ -198,6 +198,9 @@ pub struct Thread {
     /// How large its next request was estimated, in tokens, when its last compaction failed:
     /// none is tried again until it grows a little (`compaction.rs`). None once one succeeds.
     pub(crate) summary_failed: Option<u64>,
+    /// The keys its messages were sent with, and how the turns that read them ended
+    /// (`keys.rs`).
+    pub(crate) keys: crate::keys::Keys,
 }
 
 impl Thread {
@@ -603,6 +606,7 @@ where
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
             summary_failed: None,
+            keys: crate::keys::Keys::default(),
         };
         let mut events = Vec::new();
         origin.by = Self::other_than_for(&thread, caller.person);
