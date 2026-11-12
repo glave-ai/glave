@@ -2,6 +2,7 @@
 //! deleted outright. macOS keeps `~/.Trash`; Linux desktops keep the freedesktop.org Trash
 //! (`files/` and an `info/<name>.trashinfo` saying where it came from).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::ComputerError;
@@ -37,6 +38,21 @@ impl Trash {
         } else {
             None
         }
+    }
+
+    /// The Trash of the person whose commands run with `environment`, as its `HOME` and
+    /// `XDG_DATA_HOME` say; `None` with no `HOME`. `deleted_at` is now.
+    pub(crate) fn for_environment(
+        environment: &[(OsString, OsString)],
+        deleted_at: &str,
+    ) -> Option<Self> {
+        let read = |name: &str| {
+            environment
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| PathBuf::from(value))
+        };
+        Self::for_home(&read("HOME")?, read("XDG_DATA_HOME").as_deref(), deleted_at)
     }
 
     /// What it holds, at most `most`, by name, each with its note where the Trash keeps one

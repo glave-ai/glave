@@ -1,8 +1,9 @@
 //! A person's computer in the cloud kept from filling, for what only the server can say
 //! (`specs/computers.md`, decision 7): as a turn that used the computer ends, with more than 80%
-//! of its disk used, the worktrees of archived threads, then of threads idle for 7 days, oldest
-//! first, are freed until it is below, each recorded on its thread so it opens its worktree
-//! again when it comes back. The computer looks again at each just before removing it, and keeps
+//! of its disk used, the worktrees and scratch folders of archived threads, then the worktrees of
+//! threads idle for 7 days, oldest first, are freed until it is below, each recorded on its thread
+//! so it opens its worktree again when it comes back. A scratch folder holding files goes to the
+//! Trash, which the computer empties as it needs room. The computer looks again at each just before removing it, and keeps
 //! what it can't rebuild. Build outputs, caches and the Trash it frees itself (`Keeper` in
 //! `glave-computer`). A look that freed nothing waits an hour for the next.
 
@@ -83,7 +84,12 @@ where
             // One that can't be freed now is no reason to leave the rest.
             match computers.free_worktree(computer, &path).await {
                 Ok(Freed::Removed) => {
-                    self.record_freed(&candidate).await;
+                    self.record_freed(&candidate, None).await;
+                    freed = true;
+                }
+                // Not room yet: the computer empties its Trash, oldest first, as it needs to.
+                Ok(Freed::Trashed { to }) => {
+                    self.record_freed(&candidate, Some(to)).await;
                     freed = true;
                 }
                 Ok(Freed::Kept { why }) => tracing::info!(%why, "a worktree stays, for now"),
@@ -198,7 +204,8 @@ where
             let active = view.updated_at.timestamp();
             let archived = view.standing == Standing::Archived;
             let idle = now.duration_since(active) >= IDLE;
-            if !archived && !idle {
+            // A scratch folder's files are only there: an idle chat's stay.
+            if !archived && (!idle || kept.scratch) {
                 continue;
             }
             candidates.push(Candidate {
@@ -219,12 +226,13 @@ where
     }
 
     /// Records on its thread that `candidate` was freed, so it opens it again when it comes back.
-    async fn record_freed(&self, candidate: &Candidate) {
+    /// `trash` is where it went, when it was moved to the Trash.
+    async fn record_freed(&self, candidate: &Candidate, trash: Option<String>) {
         let removed = WorkspaceRemoved {
             root: candidate.kept.path.clone(),
             branch: candidate.kept.branch.clone(),
             reason: candidate.reason,
-            trash: None,
+            trash,
         };
         let recorded = match self.entropy.bytes() {
             Ok(random) => {

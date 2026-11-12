@@ -484,7 +484,7 @@ fn a_worktree_is_freed_only_when_all_it_holds_can_be_rebuilt_and_nothing_has_it_
         let free = async |path: &str| computers.free_worktree(made.id, path).await.unwrap();
         let kept = |freed: Freed, says: &str| match freed {
             Freed::Kept { why } => assert!(why.contains(says), "{why}"),
-            Freed::Removed => panic!("kept, because {says}"),
+            freed => panic!("kept, because {says}, not {freed:?}"),
         };
         kept(free(&path).await, "open");
         computers.close(opened.id).await.unwrap();
@@ -524,5 +524,63 @@ fn a_worktree_is_freed_only_when_all_it_holds_can_be_rebuilt_and_nothing_has_it_
         assert!(!root.exists());
         assert!(branches(&repo).contains("glave/free"), "its branch stays");
         kept(free(&path).await, "not here");
+    });
+}
+
+/// A server frees an archived chat's scratch folder through the port as it frees a worktree:
+/// listed with the worktrees, kept while a thread has it open, removed when empty, and otherwise
+/// moved whole to the person's Trash, never deleted.
+#[test]
+fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
+    let base = glave_ports::testing::TempDir::new("scratch-free").unwrap();
+    let home = base.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let environment = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), home.clone().into_os_string())]);
+    let computers =
+        LocalComputers::new(base.join("copies"), environment).with_scratch(base.join("scratch"));
+    let scratch = |name: &str| Sources::Scratch {
+        name: name.to_owned(),
+        owner: Some(format!("org/project/{name}")),
+    };
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let full = computers.open(made.id, &scratch("full")).await.unwrap();
+        computers
+            .write(full.id, &[file("notes.md", b"keep me")])
+            .await
+            .unwrap();
+        let empty = computers.open(made.id, &scratch("empty")).await.unwrap();
+        computers.close(empty.id).await.unwrap();
+
+        let listed = computers.worktrees(made.id).await.unwrap();
+        let kinds: Vec<_> = listed
+            .iter()
+            .map(|kept| (kept.scratch, kept.branch.clone()))
+            .collect();
+        assert_eq!(kinds, [(true, None), (true, None)], "{listed:?}");
+        assert_eq!(listed[1].owner.as_deref(), Some("org/project/full"));
+
+        let free = async |path: &str| computers.free_worktree(made.id, path).await.unwrap();
+        let freed = free(&full.root).await;
+        assert!(
+            matches!(&freed, Freed::Kept { why } if why.contains("open")),
+            "never while a thread has it open: {freed:?}"
+        );
+        assert_eq!(free(&empty.root).await, Freed::Removed);
+        assert!(!Path::new(&empty.root).exists());
+
+        computers.close(full.id).await.unwrap();
+        let Freed::Trashed { to } = free(&full.root).await else {
+            panic!("moved to the Trash")
+        };
+        let to = PathBuf::from(to);
+        assert!(to.starts_with(home.canonicalize().unwrap()) || to.starts_with(&home));
+        assert_eq!(std::fs::read(to.join("notes.md")).unwrap(), b"keep me");
+        assert!(!Path::new(&full.root).exists());
+        assert_eq!(computers.worktrees(made.id).await.unwrap(), []);
+        let freed = free(&full.root).await;
+        assert!(matches!(freed, Freed::Kept { .. }), "gone: {freed:?}");
     });
 }

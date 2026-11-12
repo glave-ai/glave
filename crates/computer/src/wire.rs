@@ -36,8 +36,10 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `2026-11-08` added a person's terminals: `terminal/open`, `terminal/list`, `terminal/write`,
 /// `terminal/read`, `terminal/resize` and `terminal/close`, each naming the terminal's owner,
 /// which the computer checks. `2026-11-09` took out the `git` sources of `workspace/open` and
-/// the `credential` it took with them: nothing opened a clone.
-pub(crate) const PROTOCOL: &str = "2026-11-09";
+/// the `credential` it took with them: nothing opened a clone. `2026-11-11` added threads'
+/// scratch folders to `computer/worktrees` (`scratch`), and `trashed` to what
+/// `computer/free_worktree` answers, for one moved to the Trash.
+pub(crate) const PROTOCOL: &str = "2026-11-11";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
