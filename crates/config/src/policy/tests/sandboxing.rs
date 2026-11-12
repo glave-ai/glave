@@ -171,15 +171,15 @@ fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
 
 #[test]
 fn taking_the_network_from_commands_takes_it_from_workers_too() {
-    use glave_ports::computer::Network;
+    use glave_ports::computer::NetworkMode;
     let off = constraints("version = 1\n[sandbox]\nnetwork = false\n");
-    assert_eq!(off.worker_limits().network, Some(Network::Off));
+    assert_eq!(off.worker_limits().network, Some(NetworkMode::Offline));
     let workers_on =
-        constraints("version = 1\n[sandbox]\nnetwork = false\n[workers]\nnetwork = \"on\"\n");
+        constraints("version = 1\n[sandbox]\nnetwork = false\n[workers]\nnetwork = \"open\"\n");
     assert_eq!(
         workers_on.worker_limits().network,
-        Some(Network::Off),
-        "off wins"
+        Some(NetworkMode::Offline),
+        "offline wins"
     );
     assert_eq!(Constraints::default().worker_limits().network, None);
 }

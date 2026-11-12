@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerId, Computers, Ending, Environment, Image, Limits, Network, Sources,
+    Command, ComputerId, Computers, Ending, Environment, Image, Limits, Sources,
 };
 
 use super::super::Kubernetes;
@@ -155,7 +155,6 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         let computers = WorkerComputers::new(person, limits.clone());
         let environment = Environment {
             image: Image::Oci(image),
-            network: Some(Network::On),
             ..Environment::host()
         };
         let pod = another_pod(&cluster)
@@ -263,7 +262,6 @@ fn a_persons_computer_passes_the_computers_suite() {
         let computers = WorkerComputers::new(person, limits);
         let environment = Environment {
             image: Image::Oci(image),
-            network: Some(Network::On),
             ..Environment::host()
         };
         // The empty folder the suite works in, made on the disk before its own wake.

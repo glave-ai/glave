@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use glave_ports::computer::{Isolation, Limits, Network};
+use glave_ports::computer::{Isolation, Limits, NetworkMode};
 use serde::Deserialize;
 
 /// `[workers]` in `config.toml`: the Kubernetes cluster people's computers run on, and the
@@ -71,30 +71,6 @@ impl IsolationRule {
     }
 }
 
-/// The network a person's computer may have, as policy writes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum NetworkRule {
-    Off,
-    On,
-}
-
-impl NetworkRule {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::On => "on",
-        }
-    }
-
-    fn network(self) -> Network {
-        match self {
-            Self::Off => Network::Off,
-            Self::On => Network::On,
-        }
-    }
-}
-
 /// `[workers]` in `policy.toml`: what people's computers may be. Every key is optional.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,7 +78,9 @@ pub struct WorkerRules {
     /// The most CPUs a computer may have.
     pub cpu: Option<u32>,
     pub memory_gb: Option<u32>,
-    pub network: Option<NetworkRule>,
+    /// The most network a computer may have: `open` or `offline`.
+    #[serde(default, deserialize_with = "held_to")]
+    pub network: Option<NetworkMode>,
     /// How far apart from their host they must be.
     pub isolation: Option<IsolationRule>,
 }
@@ -132,26 +110,36 @@ impl WorkerRules {
 /// The limits of every `[workers]` rule at once: the smallest of each, the least network, and
 /// the most isolation.
 pub(super) fn limits<'a>(rules: impl IntoIterator<Item = &'a WorkerRules>) -> Limits {
-    let smallest = |a: Option<u32>, b: Option<u32>| match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (a, b) => a.or(b),
-    };
-    let least = |a: Option<NetworkRule>, b: Option<NetworkRule>| match (a, b) {
-        (Some(NetworkRule::Off), _) | (_, Some(NetworkRule::Off)) => Some(NetworkRule::Off),
-        (a, b) => a.or(b),
-    };
-    let mut network = None;
     let mut limits = Limits::default();
     for rule in rules {
         limits.cpus = smallest(limits.cpus, rule.cpu);
         limits.memory_gb = smallest(limits.memory_gb, rule.memory_gb);
-        network = least(network, rule.network);
+        limits.network = smallest(limits.network, rule.network);
         if let Some(isolation) = rule.isolation {
             limits.isolation = limits.isolation.max(isolation.isolation());
         }
     }
-    limits.network = network.map(NetworkRule::network);
     limits
+}
+
+/// A network people's computers can be held to, refused when read otherwise: no computer can
+/// be kept to the hosts allowed yet, and a rule every wake refused would leave people none.
+fn held_to<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Option<NetworkMode>, D::Error> {
+    match NetworkMode::deserialize(reader)? {
+        NetworkMode::Guarded => Err(serde::de::Error::custom(
+            "network = \"guarded\" is not enforced on people's computers yet: use \"open\" or \
+             \"offline\"",
+        )),
+        mode => Ok(Some(mode)),
+    }
+}
+
+/// The smaller of two limits, either of which may be unset.
+fn smallest<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 #[cfg(test)]
@@ -163,12 +151,12 @@ mod tests {
         let a = WorkerRules {
             cpu: Some(4),
             memory_gb: Some(8),
-            network: Some(NetworkRule::On),
+            network: Some(NetworkMode::Open),
             ..WorkerRules::default()
         };
         let b = WorkerRules {
             cpu: Some(2),
-            network: Some(NetworkRule::Off),
+            network: Some(NetworkMode::Offline),
             isolation: Some(IsolationRule::Vm),
             ..WorkerRules::default()
         };
@@ -180,10 +168,23 @@ mod tests {
         assert_eq!(limits.isolation, Isolation::Vm, "the most isolation wins");
         assert_eq!(limits.cpus, Some(2));
         assert_eq!(limits.memory_gb, Some(8));
-        assert_eq!(limits.network, Some(Network::Off));
+        assert_eq!(limits.network, Some(NetworkMode::Offline));
         assert_eq!(
             b.describe(),
-            "[workers] cpu = 2, network = \"off\", isolation = \"vm\""
+            "[workers] cpu = 2, network = \"offline\", isolation = \"vm\""
         );
+    }
+
+    #[test]
+    fn the_least_network_is_the_smallest_mode_and_guarded_is_refused_when_read() {
+        use NetworkMode::{Guarded, Offline, Open};
+        assert!(Offline < Guarded && Guarded < Open);
+        assert_eq!(smallest(Some(Guarded), Some(Open)), Some(Guarded));
+        assert_eq!(smallest(None, Some(Open)), Some(Open));
+        let read = |text: &str| toml::from_str::<WorkerRules>(text);
+        assert_eq!(read("network = \"open\"").unwrap().network, Some(Open));
+        let refused = read("network = \"guarded\"").unwrap_err().to_string();
+        assert!(refused.contains("not enforced"), "{refused}");
+        assert!(read("network = \"on\"").is_err(), "the old words are gone");
     }
 }

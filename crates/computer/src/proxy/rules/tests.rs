@@ -6,10 +6,10 @@ fn host(text: &str) -> Host {
     Host::parse(text).unwrap()
 }
 
-fn allowed(patterns: &[&str]) -> Rules {
+fn rules(mode: NetworkMode, patterns: &[&str]) -> Rules {
     Rules::new(
-        Mode::Guarded,
-        patterns.iter().map(|p| Allowed::parse(p).unwrap()),
+        mode,
+        patterns.iter().map(|p| HostPattern::parse(p).unwrap()),
     )
 }
 
@@ -18,85 +18,37 @@ fn ips(texts: &[&str]) -> Vec<IpAddr> {
 }
 
 #[test]
-fn hosts_are_names_or_addresses() {
-    assert_eq!(host("Example.COM."), Host::Name("example.com".into()));
-    assert_eq!(
-        host("93.184.216.34"),
-        Host::Address(ips(&["93.184.216.34"])[0])
-    );
-    assert_eq!(host("[::1]"), Host::Address(ips(&["::1"])[0]));
-    for bad in [
-        "",
-        ".",
-        "a..b",
-        "a b",
-        "::1",
-        "[nope]",
-        "127.1",
-        "2130706433",
-        "1.2.3.4.",
-    ] {
-        assert_eq!(Host::parse(bad), None, "{bad}");
-    }
-    assert_eq!(Host::parse(&"a".repeat(64)), None);
-    assert_eq!(host("[2606:4700::1111]").to_string(), "[2606:4700::1111]");
-}
-
-#[test]
-fn a_pattern_is_a_name_with_or_without_a_star_before_it() {
-    assert!(Allowed::parse("*.example.com").is_some());
-    assert!(Allowed::parse("example.com").is_some());
-    assert!(Allowed::parse("*.example.com:8443").is_some());
-    for bad in [
-        "*",
-        "*.",
-        "a.*.com",
-        "**.com",
-        "*example.com",
-        "1.2.3.4",
-        "example.com:0",
-        "example.com:x",
-        "example.com:",
-    ] {
-        assert_eq!(Allowed::parse(bad), None, "{bad}");
-    }
-}
-
-#[test]
 fn each_mode_decides_by_the_name_alone() {
-    let off = Rules::new(Mode::Offline, Allowed::parse("example.com"));
+    let off = rules(NetworkMode::Offline, &["example.com"]);
     assert_eq!(
         off.step(&host("example.com"), 443),
         Step::Refuse(Refusal::Off)
     );
-    let open = Rules::new(Mode::Open, None);
-    assert_eq!(open.step(&host("anything.example"), 443), Step::Go);
+    let open = rules(NetworkMode::Open, &[]);
+    assert_eq!(open.step(&host("anything.example"), 5432), Step::Go);
     assert_eq!(
         open.step(&host("169.254.169.254"), 443),
         Step::Go,
         "checked after"
     );
-    let guarded = allowed(&["registry.npmjs.org", "*.githubusercontent.com"]);
+    let guarded = rules(
+        NetworkMode::Guarded,
+        &[
+            "registry.npmjs.org",
+            "*.githubusercontent.com",
+            "*.example.org:8443",
+        ],
+    );
     assert_eq!(guarded.step(&host("registry.npmjs.org"), 443), Step::Go);
     assert_eq!(
-        guarded.step(&host("raw.githubusercontent.com"), 443),
+        guarded.step(&host("raw.githubusercontent.com"), 22),
         Step::Go
     );
     assert_eq!(guarded.step(&host("githubusercontent.com"), 443), Step::Ask);
-    assert_eq!(guarded.step(&host("evil.example"), 443), Step::Ask);
-    assert_eq!(guarded.step(&host("93.184.216.34"), 443), Step::Ask);
-}
-
-#[test]
-fn guarded_hosts_go_at_the_webs_ports_or_the_one_their_entry_names() {
-    let guarded = allowed(&["example.com", "*.example.org:8443"]);
-    assert_eq!(guarded.step(&host("example.com"), 80), Step::Go);
-    assert_eq!(guarded.step(&host("example.com"), 443), Step::Go);
-    assert_eq!(guarded.step(&host("example.com"), 22), Step::Ask);
     assert_eq!(guarded.step(&host("a.example.org"), 8443), Step::Go);
     assert_eq!(guarded.step(&host("a.example.org"), 443), Step::Ask);
-    let open = Rules::new(Mode::Open, None);
-    assert_eq!(open.step(&host("example.com"), 5432), Step::Go);
+    assert_eq!(guarded.step(&host("evil.example"), 443), Step::Ask);
+    assert_eq!(guarded.step(&host("93.184.216.34"), 443), Step::Ask);
 }
 
 #[test]
@@ -136,32 +88,7 @@ fn every_refusal_says_why_in_one_sentence() {
     }
 }
 
-fn label() -> impl Strategy<Value = String> {
-    "[a-z0-9][a-z0-9-]{0,10}"
-}
-
-fn name() -> impl Strategy<Value = String> {
-    prop::collection::vec(label(), 1..4).prop_map(|labels| format!("{}.test", labels.join(".")))
-}
-
 proptest! {
-    #[test]
-    fn a_star_admits_every_name_under_it_and_never_itself(base in name(), sub in label()) {
-        let rules = allowed(&[&format!("*.{base}")]);
-        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}")), 443), Step::Go);
-        prop_assert_eq!(rules.step(&host(&base), 443), Step::Ask);
-        // A name that only ends with the same letters is another host.
-        prop_assert_eq!(rules.step(&host(&format!("{sub}{base}")), 443), Step::Ask);
-    }
-
-    #[test]
-    fn an_exact_name_admits_itself_alone_in_any_case(base in name(), sub in label()) {
-        let rules = allowed(&[&base]);
-        prop_assert_eq!(rules.step(&host(&base.to_ascii_uppercase()), 443), Step::Go);
-        prop_assert_eq!(rules.step(&host(&format!("{base}.")), 443), Step::Go);
-        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}")), 443), Step::Ask);
-    }
-
     #[test]
     fn no_v4_address_in_any_form_is_kept_unless_public(a: u8, b: u8, c: u8, d: u8) {
         let v4 = std::net::Ipv4Addr::new(a, b, c, d);

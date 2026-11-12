@@ -23,14 +23,14 @@ pub use background::{Background, IDLE, KEPT_OUTPUT, Listening, MAX_BACKGROUND, M
 pub use bytes::Bytes;
 pub use changes::{ChangeKind, ChangedFile, Changes, DiffLine, FileChange, LineKind, Since};
 pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, GitCredentials};
-pub use environment::{Environment, Image, Network, Size, is_variable_name};
+pub use environment::{Environment, Image, Size, is_variable_name};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
 pub use glave_event::Forge;
 pub use limits::{Isolation, Limits};
 pub use refusal::{Reason, Refusal};
 pub use sandbox::{
-    PROTECTED, Sandbox, SandboxLevel, SandboxNetwork, git_settings, is_kept, is_protected,
-    is_protected_refusal, refuse_protected,
+    NetworkMode, PROTECTED, Sandbox, SandboxLevel, SandboxNetwork, git_settings, is_kept,
+    is_protected, is_protected_refusal, refuse_protected,
 };
 pub use terminal::{
     MAX_OWNED_TERMINALS, MAX_TERMINALS, Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalInfo,

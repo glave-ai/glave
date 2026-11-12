@@ -5,6 +5,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
+use glave_ports::host::Host;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 use tokio::time::timeout;
@@ -12,7 +13,7 @@ use tokio::time::timeout;
 use super::Shared;
 use super::connection::Answer;
 use super::head;
-use super::rules::{Host, Refusal};
+use super::rules::Refusal;
 
 /// A connection held for the person: the host and port it names, and the answer it waits for.
 #[derive(Debug)]

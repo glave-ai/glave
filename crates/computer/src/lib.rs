@@ -29,7 +29,7 @@ pub use local::{
     LocalComputers, ask_repository, forward_helper, glave_on_path, sandbox_available,
     sandbox_helper, terminal_helper,
 };
-pub use proxy::{Allowed, Held, Host, Internet, Limits, Mode, Network, Proxy, Rules};
+pub use proxy::{Held, Internet, Limits, Network, Proxy, Rules};
 pub use remote::RemoteComputers;
 pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};

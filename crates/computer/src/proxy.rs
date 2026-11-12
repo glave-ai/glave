@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 
 pub use hold::Held;
 pub use network::{Internet, Network};
-pub use rules::{Allowed, Host, Mode, Rules};
+pub use rules::Rules;
 
 /// How long the proxy waits for each thing it waits for.
 #[derive(Debug, Clone, Copy)]

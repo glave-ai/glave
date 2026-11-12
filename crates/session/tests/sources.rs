@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_event::{Body, Role, WebPage, decode};
-use glave_ports::settings::{Domain, WebPolicy};
+use glave_ports::host::HostPattern;
+use glave_ports::settings::WebPolicy;
 use glave_session::protocol::{Reply, Request};
 use glave_web::pages::{Pages, Reply as Served};
 use glave_web::{Web, WebSettings};
@@ -17,7 +18,7 @@ use crate::support::*;
 /// `web_fetch`, reaching only this computer's pages.
 fn web() -> Web {
     let policy = WebPolicy {
-        allow: vec![Domain::parse("127.0.0.1").unwrap()],
+        allow: vec![HostPattern::parse("127.0.0.1").unwrap()],
         ..WebPolicy::default()
     };
     Web::new(WebSettings {

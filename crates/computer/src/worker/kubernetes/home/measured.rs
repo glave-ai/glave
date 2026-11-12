@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
-use glave_ports::computer::{Computers as _, Environment, Image, Limits, Network};
+use glave_ports::computer::{Computers as _, Environment, Image, Limits};
 
 use super::super::Kubernetes;
 use super::super::sizing::Size;
@@ -70,7 +70,6 @@ pub(super) fn two_cpus(
     let computers = WorkerComputers::new(person, limits);
     let environment = Environment {
         image: Image::Oci(image),
-        network: Some(Network::On),
         ..Environment::host()
     };
     (computers, environment)

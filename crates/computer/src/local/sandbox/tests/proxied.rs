@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Sandbox, SandboxLevel, SandboxNetwork,
-    Sources, WorkspaceId,
+    Command, ComputerError, Computers, Ending, Environment, NetworkMode, Sandbox, SandboxLevel,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -23,7 +23,7 @@ use tokio::task::JoinSet;
 
 use super::{Collect, enforced, scratch};
 use crate::local::sandbox::Outbound;
-use crate::proxy::{Mode, Network, Rules};
+use crate::proxy::{Network, Rules};
 use crate::{CancelSwitch, LocalComputers};
 
 /// A public address, served by the test's own server on this computer.
@@ -97,8 +97,9 @@ fn computers(dir: &Path, helper: Option<&Path>) -> LocalComputers {
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), dir.as_os_str().to_owned())])
         .collect();
-    let computers = LocalComputers::new(dir.join("copies"), environment)
-        .with_outbound(Outbound::over(Rules::new(Mode::Open, []), StandIn::new()));
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_outbound(
+        Outbound::over(Rules::new(NetworkMode::Open, []), StandIn::new()),
+    );
     match helper {
         Some(helper) => computers.with_helper(helper),
         None => computers,

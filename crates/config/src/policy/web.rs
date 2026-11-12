@@ -1,7 +1,8 @@
 //! `[web]` in `config.toml`: whether `web_fetch` is on, which hosts it may reach, and whether
 //! it may reach private addresses. The table is one choice: the nearest file that has one wins.
 
-use glave_ports::settings::{Domain, WebPolicy};
+use glave_ports::host::HostPattern;
+use glave_ports::settings::WebPolicy;
 use serde::Deserialize;
 
 /// `[web]` as written. Every key is optional.
@@ -24,19 +25,19 @@ pub struct WebFile {
 impl WebFile {
     /// The policy `web_fetch` runs under; an error names a pattern that is not one.
     pub fn policy(&self) -> crate::Result<WebPolicy> {
-        let domains = |key: &str, patterns: &[String]| {
+        let hosts = |key: &str, patterns: &[String]| {
             patterns
                 .iter()
                 .map(|pattern| {
-                    Domain::parse(pattern)
+                    HostPattern::parse(pattern)
                         .map_err(|error| crate::Error::within(format!("[web] {key}"), error))
                 })
                 .collect::<crate::Result<Vec<_>>>()
         };
         Ok(WebPolicy {
             fetch: self.fetch.unwrap_or(true),
-            allow: domains("allow", &self.allow)?,
-            deny: domains("deny", &self.deny)?,
+            allow: hosts("allow", &self.allow)?,
+            deny: hosts("deny", &self.deny)?,
             private_addresses: self.private_addresses.unwrap_or(false),
         })
     }
