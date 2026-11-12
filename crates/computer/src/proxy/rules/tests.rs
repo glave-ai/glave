@@ -8,7 +8,7 @@ fn host(text: &str) -> Host {
 
 fn allowed(patterns: &[&str]) -> Rules {
     Rules::new(
-        Mode::Limited,
+        Mode::Guarded,
         patterns.iter().map(|p| Allowed::parse(p).unwrap()),
     )
 }
@@ -46,28 +46,57 @@ fn hosts_are_names_or_addresses() {
 fn a_pattern_is_a_name_with_or_without_a_star_before_it() {
     assert!(Allowed::parse("*.example.com").is_some());
     assert!(Allowed::parse("example.com").is_some());
-    for bad in ["*", "*.", "a.*.com", "**.com", "*example.com", "1.2.3.4"] {
+    assert!(Allowed::parse("*.example.com:8443").is_some());
+    for bad in [
+        "*",
+        "*.",
+        "a.*.com",
+        "**.com",
+        "*example.com",
+        "1.2.3.4",
+        "example.com:0",
+        "example.com:x",
+        "example.com:",
+    ] {
         assert_eq!(Allowed::parse(bad), None, "{bad}");
     }
 }
 
 #[test]
 fn each_mode_decides_by_the_name_alone() {
-    let off = Rules::new(Mode::None, Allowed::parse("example.com"));
-    assert_eq!(off.step(&host("example.com")), Step::Refuse(Refusal::Off));
-    let full = Rules::new(Mode::Full, None);
-    assert_eq!(full.step(&host("anything.example")), Step::Go);
+    let off = Rules::new(Mode::Offline, Allowed::parse("example.com"));
     assert_eq!(
-        full.step(&host("169.254.169.254")),
+        off.step(&host("example.com"), 443),
+        Step::Refuse(Refusal::Off)
+    );
+    let open = Rules::new(Mode::Open, None);
+    assert_eq!(open.step(&host("anything.example"), 443), Step::Go);
+    assert_eq!(
+        open.step(&host("169.254.169.254"), 443),
         Step::Go,
         "checked after"
     );
-    let limited = allowed(&["registry.npmjs.org", "*.githubusercontent.com"]);
-    assert_eq!(limited.step(&host("registry.npmjs.org")), Step::Go);
-    assert_eq!(limited.step(&host("raw.githubusercontent.com")), Step::Go);
-    assert_eq!(limited.step(&host("githubusercontent.com")), Step::Ask);
-    assert_eq!(limited.step(&host("evil.example")), Step::Ask);
-    assert_eq!(limited.step(&host("93.184.216.34")), Step::Ask);
+    let guarded = allowed(&["registry.npmjs.org", "*.githubusercontent.com"]);
+    assert_eq!(guarded.step(&host("registry.npmjs.org"), 443), Step::Go);
+    assert_eq!(
+        guarded.step(&host("raw.githubusercontent.com"), 443),
+        Step::Go
+    );
+    assert_eq!(guarded.step(&host("githubusercontent.com"), 443), Step::Ask);
+    assert_eq!(guarded.step(&host("evil.example"), 443), Step::Ask);
+    assert_eq!(guarded.step(&host("93.184.216.34"), 443), Step::Ask);
+}
+
+#[test]
+fn guarded_hosts_go_at_the_webs_ports_or_the_one_their_entry_names() {
+    let guarded = allowed(&["example.com", "*.example.org:8443"]);
+    assert_eq!(guarded.step(&host("example.com"), 80), Step::Go);
+    assert_eq!(guarded.step(&host("example.com"), 443), Step::Go);
+    assert_eq!(guarded.step(&host("example.com"), 22), Step::Ask);
+    assert_eq!(guarded.step(&host("a.example.org"), 8443), Step::Go);
+    assert_eq!(guarded.step(&host("a.example.org"), 443), Step::Ask);
+    let open = Rules::new(Mode::Open, None);
+    assert_eq!(open.step(&host("example.com"), 5432), Step::Go);
 }
 
 #[test]
@@ -119,18 +148,18 @@ proptest! {
     #[test]
     fn a_star_admits_every_name_under_it_and_never_itself(base in name(), sub in label()) {
         let rules = allowed(&[&format!("*.{base}")]);
-        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}"))), Step::Go);
-        prop_assert_eq!(rules.step(&host(&base)), Step::Ask);
+        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}")), 443), Step::Go);
+        prop_assert_eq!(rules.step(&host(&base), 443), Step::Ask);
         // A name that only ends with the same letters is another host.
-        prop_assert_eq!(rules.step(&host(&format!("{sub}{base}"))), Step::Ask);
+        prop_assert_eq!(rules.step(&host(&format!("{sub}{base}")), 443), Step::Ask);
     }
 
     #[test]
     fn an_exact_name_admits_itself_alone_in_any_case(base in name(), sub in label()) {
         let rules = allowed(&[&base]);
-        prop_assert_eq!(rules.step(&host(&base.to_ascii_uppercase())), Step::Go);
-        prop_assert_eq!(rules.step(&host(&format!("{base}."))), Step::Go);
-        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}"))), Step::Ask);
+        prop_assert_eq!(rules.step(&host(&base.to_ascii_uppercase()), 443), Step::Go);
+        prop_assert_eq!(rules.step(&host(&format!("{base}.")), 443), Step::Go);
+        prop_assert_eq!(rules.step(&host(&format!("{sub}.{base}")), 443), Step::Ask);
     }
 
     #[test]

@@ -12,35 +12,53 @@ use glave_ports::host::reachable;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// Nothing goes out.
-    None,
+    Offline,
     /// The hosts allowed go out; any other is held for the person.
-    Limited,
-    /// Any public host goes out.
-    Full,
+    Guarded,
+    /// Any public host goes out, at any port.
+    Open,
 }
 
-/// A host commands may reach in [`Mode::Limited`]: one name exactly (`example.com`), or any
-/// name under one (`*.example.com`, never `example.com` itself). Names are kept in lower case
-/// with no final dot.
+/// The ports an entry that names none allows: the web's.
+const WEB_PORTS: [u16; 2] = [80, 443];
+
+/// A host commands may reach in [`Mode::Guarded`]: one name exactly (`example.com`), or any
+/// name under one (`*.example.com`, never `example.com` itself), at the web's ports (80 and
+/// 443) or at the one port it names (`example.com:8443`). Names are kept in lower case with
+/// no final dot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Allowed {
     name: String,
     under: bool,
+    port: Option<u16>,
 }
 
 impl Allowed {
-    /// The host `text` names, or none when it is not a host name, with `*.` before it or not.
+    /// The host `text` names, with `*.` before it or not and a port after it or not, or none
+    /// when it is not a host name.
     pub fn parse(text: &str) -> Option<Self> {
-        let (under, rest) = match text.strip_prefix("*.") {
+        let (host, port) = match text.rsplit_once(':') {
+            Some((host, port)) => (host, Some(port.parse::<u16>().ok().filter(|p| *p != 0)?)),
+            None => (text, None),
+        };
+        let (under, rest) = match host.strip_prefix("*.") {
             Some(rest) => (true, rest),
-            None => (false, text),
+            None => (false, host),
         };
         let name = Host::name(rest)?;
-        Some(Self { name, under })
+        Some(Self { name, under, port })
     }
 
-    /// Whether `name`, in lower case with no final dot, is this host or one under it.
-    fn admits(&self, name: &str) -> bool {
+    /// Whether `name`, in lower case with no final dot, at `port`, is this host or one under
+    /// it, at a port it allows.
+    fn admits(&self, name: &str, port: u16) -> bool {
+        let at = self
+            .port
+            .map_or(WEB_PORTS.contains(&port), |own| own == port);
+        at && self.names(name)
+    }
+
+    fn names(&self, name: &str) -> bool {
         if self.under {
             name.strip_suffix(self.name.as_str())
                 .and_then(|before| before.strip_suffix('.'))
@@ -151,7 +169,7 @@ pub struct Rules {
 }
 
 impl Rules {
-    /// Rules of `mode`, allowing `allowed` in [`Mode::Limited`].
+    /// Rules of `mode`, allowing `allowed` in [`Mode::Guarded`].
     pub fn new(mode: Mode, allowed: impl IntoIterator<Item = Allowed>) -> Self {
         Self {
             mode,
@@ -159,17 +177,19 @@ impl Rules {
         }
     }
 
-    /// What to do with `host`, by its name alone: nothing is looked up before this says to go.
-    /// In [`Mode::Limited`] an address goes only where nothing is looked up for it either, so
-    /// it is held like any host not allowed.
-    pub(crate) fn step(&self, host: &Host) -> Step {
+    /// What to do with `host` at `port`, by its name alone: nothing is looked up before this
+    /// says to go. In [`Mode::Guarded`] an address, which no entry names, is held like any
+    /// host not allowed.
+    pub(crate) fn step(&self, host: &Host, port: u16) -> Step {
         match (self.mode, host) {
-            (Mode::None, _) => Step::Refuse(Refusal::Off),
-            (Mode::Full, _) => Step::Go,
-            (Mode::Limited, Host::Name(name)) if self.allowed.iter().any(|a| a.admits(name)) => {
+            (Mode::Offline, _) => Step::Refuse(Refusal::Off),
+            (Mode::Open, _) => Step::Go,
+            (Mode::Guarded, Host::Name(name))
+                if self.allowed.iter().any(|a| a.admits(name, port)) =>
+            {
                 Step::Go
             }
-            (Mode::Limited, _) => Step::Ask,
+            (Mode::Guarded, _) => Step::Ask,
         }
     }
 }

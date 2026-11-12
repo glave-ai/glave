@@ -7,7 +7,10 @@ use std::net::{IpAddr, SocketAddr};
 
 use tokio::net::TcpStream;
 
-/// How the proxy reaches hosts: what a name resolves to, and a connection to an address.
+/// How the proxy reaches hosts: what a name resolves to, and a connection to an address. A
+/// seam for tests, not a port: [`Internet`] is the one real way out, and the tests' stand-in
+/// proves the proxy looks up only names it allowed and connects only to an address it checked.
+/// It stays here, out of `glave-ports`, until a second real way out needs it.
 pub trait Network: Send + Sync + 'static {
     /// The addresses `name` resolves to.
     fn resolve(&self, name: &str) -> impl Future<Output = io::Result<Vec<IpAddr>>> + Send;

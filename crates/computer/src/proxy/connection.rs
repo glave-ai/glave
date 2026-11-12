@@ -6,42 +6,70 @@ use std::net::{IpAddr, SocketAddr};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::oneshot;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::time::timeout;
 
-use super::head::{self, Request, Unread};
+use super::head::{self, Credential, Request, Unread};
+use super::hold::hold;
 use super::network::Network;
 use super::pump::pump;
 use super::rules::{Host, Refusal, Step, kept};
-use super::{Held, Limits, Shared};
+use super::{Limits, Shared};
+use crate::token::same;
+
+/// A head read: the request and the credential it presents, or the answer it gets.
+type Read = Result<(Request, Option<Credential>), Answer>;
 
 /// How a connection ends short of its host, as its HTTP answer says.
 #[derive(Debug)]
-enum Answer {
+pub(crate) enum Answer {
+    /// Refused by the rules, saying why.
     Refused(Refusal),
+    /// Without the proxy's credential.
+    Unauthorized,
+    /// Not a request the proxy takes.
     BadRequest(&'static str),
+    /// Too many connections, or too many held.
+    Busy,
+    /// The host could not be reached.
     Unreachable(String),
+    /// The command went away while its connection was held: no one to answer.
+    Gone,
 }
 
-/// Serves one connection: reads its request, decides, and carries it, or answers why not.
-pub(crate) async fn serve<S, N>(mut client: S, shared: &Shared<N>) -> io::Result<()>
+/// Serves one connection, which holds `place` among the proxy's connections: reads its
+/// request, checks the proxy's credential, decides, and carries it, or answers why not.
+pub(crate) async fn serve<S, N>(
+    mut client: S,
+    shared: &Shared<N>,
+    place: OwnedSemaphorePermit,
+) -> io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
     N: Network,
 {
+    let mut place = Some(place);
     let limits = &shared.limits;
-    let (request, early) = match timeout(limits.head, read_head(&mut client)).await {
+    let (request, mut early) = match timeout(limits.head, read_head(&mut client)).await {
         Ok(read) => read?,
         Err(_) => return Ok(()),
     };
     let request = match request {
-        Ok(request) => request,
+        Ok((request, credential))
+            if credential
+                .as_ref()
+                .is_some_and(|c| same(c.presented(), &shared.secret)) =>
+        {
+            request
+        }
+        Ok(_) => return answer_with(&mut client, &Answer::Unauthorized, limits).await,
         Err(answer) => return answer_with(&mut client, &answer, limits).await,
     };
     let (host, port) = match &request {
         Request::Tunnel { host, port } | Request::Forward { host, port, .. } => (host, *port),
     };
-    let mut upstream = match reach(host, port, shared).await {
+    let reached = reach(host, port, shared, &mut client, &mut early, &mut place).await;
+    let mut upstream = match reached {
         Ok(upstream) => upstream,
         Err(answer) => {
             tracing::debug!(%host, port, ?answer, "a command's connection was refused");
@@ -61,9 +89,7 @@ where
 
 /// The request's head and whatever came after it, or the answer a head that is not a request
 /// gets.
-async fn read_head<S: AsyncRead + Unpin>(
-    client: &mut S,
-) -> io::Result<(Result<Request, Answer>, Vec<u8>)> {
+async fn read_head<S: AsyncRead + Unpin>(client: &mut S) -> io::Result<(Read, Vec<u8>)> {
     let mut read = Vec::with_capacity(1024);
     let mut chunk = [0_u8; 4096];
     loop {
@@ -93,15 +119,18 @@ async fn read_head<S: AsyncRead + Unpin>(
 
 /// A connection to `host`, if the rules let it through: decided by name, held for the person
 /// where they say to ask, looked up, checked, and connected to an address that passed.
-async fn reach<N: Network>(
+async fn reach<S: AsyncRead + Unpin, N: Network>(
     host: &Host,
     port: u16,
     shared: &Shared<N>,
+    client: &mut S,
+    early: &mut Vec<u8>,
+    place: &mut Option<OwnedSemaphorePermit>,
 ) -> Result<TcpStream, Answer> {
-    match shared.rules.step(host) {
+    match shared.rules.step(host, port) {
         Step::Go => {}
         Step::Refuse(refusal) => return Err(Answer::Refused(refusal)),
-        Step::Ask => hold(host, shared).await?,
+        Step::Ask => hold(host, port, shared, client, early, place).await?,
     }
     let limits = &shared.limits;
     let found = match host {
@@ -135,20 +164,6 @@ async fn reach<N: Network>(
     Err(Answer::Unreachable(last))
 }
 
-/// Holds the connection for a yes from whoever answers the proxy's holds, up to the limit: no
-/// one to ask, a no, an answer never given or the limit passed is a refusal.
-async fn hold<N>(host: &Host, shared: &Shared<N>) -> Result<(), Answer> {
-    let not_allowed = || Answer::Refused(Refusal::NotAllowed);
-    let holds = shared.holds.as_ref().ok_or_else(not_allowed)?;
-    let (answer, answered) = oneshot::channel();
-    let held = Held::new(host.clone(), answer);
-    holds.try_send(held).map_err(|_| not_allowed())?;
-    match timeout(shared.limits.hold, answered).await {
-        Ok(Ok(true)) => Ok(()),
-        Ok(Ok(false) | Err(_)) | Err(_) => Err(not_allowed()),
-    }
-}
-
 /// Writes `bytes` to `to`, which must take them within the limit on reading a head.
 async fn send<S: AsyncWrite + Unpin>(to: &mut S, bytes: &[u8], limits: &Limits) -> io::Result<()> {
     timeout(limits.head, to.write_all(bytes))
@@ -164,8 +179,17 @@ async fn answer_with<S: AsyncWrite + Unpin>(
 ) -> io::Result<()> {
     let (status, body) = match answer {
         Answer::Refused(refusal) => ("403 Forbidden", refusal.to_string()),
+        Answer::Unauthorized => (
+            "407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"glave\"",
+            "This proxy is for the commands glave runs, with the address it gave them.".to_owned(),
+        ),
         Answer::BadRequest(why) => ("400 Bad Request", (*why).to_owned()),
+        Answer::Busy => (
+            "503 Service Unavailable",
+            "Too many connections are open or waiting; try again shortly.".to_owned(),
+        ),
         Answer::Unreachable(why) => ("502 Bad Gateway", why.clone()),
+        Answer::Gone => return Ok(()),
     };
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\n\
