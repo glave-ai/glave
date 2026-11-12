@@ -84,10 +84,10 @@ impl<'a> Paying<'a> {
     /// its hold unless its provider answered with a refusal or it was never sent.
     pub(crate) async fn broke(self, error: &ProviderError) {
         let cost = if self.kind == CostKind::Media {
-            if unbilled(error) {
-                Nanos::ZERO
-            } else {
+            if error.unanswered() {
                 self.worst
+            } else {
+                Nanos::ZERO
             }
         } else if self.seen.load(Ordering::Relaxed) == 0 {
             Nanos::ZERO
@@ -130,16 +130,4 @@ impl Drop for Paying<'_> {
                 .settle(self.payer, self.hold, (cost, self.kind.clone()));
         }
     }
-}
-
-/// Whether a media call that ended in `error` was never billed: its provider answered with a
-/// refusal, which bills no failed generation, or it was never sent.
-fn unbilled(error: &ProviderError) -> bool {
-    matches!(
-        error,
-        ProviderError::Http { .. }
-            | ProviderError::Credentials(_)
-            | ProviderError::Unserved { .. }
-            | ProviderError::Unpaid(_)
-    )
 }
