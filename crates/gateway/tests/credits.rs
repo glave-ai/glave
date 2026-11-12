@@ -427,3 +427,137 @@ fn a_hold_whose_server_stopped_mid_call_counts_everywhere_until_it_lapses() {
         "until it lapses"
     );
 }
+
+/// The charges `org`'s ledger holds: each amount, and the hold it lets go of.
+fn charges(log: &FaultyLog, org: OrgId) -> Vec<(i64, Option<glave_event::EventId>)> {
+    use glave_ports::EventLog as _;
+    let scope = glave_ports::Scope::of_organization(org);
+    let ledger = glave_ports::stream::Reserved::Credits.id();
+    let events = block_on!(log.read(&scope, ledger, None, 1_000)).unwrap();
+    events
+        .into_iter()
+        .filter_map(|raw| match glave_event::decode(raw).unwrap().body {
+            glave_event::Body::CreditsCharged(charged) => {
+                Some((charged.amount.nanos.get(), charged.hold))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_hold_whose_store_lost_its_answer_is_let_go_of_at_once_for_every_server() {
+    let log = FaultyLog::default();
+    let (here, there) = (credits(&log, None), credits_on(&log));
+    let fake = Fake::new("p");
+    let (acme, ada) = (org(1), person(1));
+    add(&here, acme, WORST, "order-1");
+    // The hold lands, but the store's answer is lost: the call is refused, saying try again.
+    log.lose_answer("credits.held");
+    let refused = ask(&gateway(&fake, &here), &paid(acme, ada)).unwrap_err();
+    assert_eq!(refused.failure(), Failure::Rejected);
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "never sent");
+    assert!(
+        matches!(charges(&log, acme).as_slice(), [(0, Some(_))]),
+        "a charge of nothing lets go of it"
+    );
+    assert!(
+        ask(&gateway(&fake, &there), &paid(acme, ada)).is_ok(),
+        "so the whole balance is free on another server"
+    );
+}
+
+#[test]
+fn a_call_dropped_while_its_hold_is_written_lets_go_of_it_with_the_next() {
+    let log = FaultyLog::default();
+    let here = credits(&log, None);
+    let fake = Fake::new("p");
+    let gateway = Arc::new(gateway(&fake, &here));
+    let (acme, ada) = (org(1), person(1));
+    add(&here, acme, 2 * WORST, "order-1");
+    log.hold("credits.held");
+    block_on!(async {
+        let calling = Arc::clone(&gateway);
+        let call =
+            tokio::spawn(async move { calling.complete(&paid(acme, ada), &mut |_| {}).await });
+        log.held().await;
+        call.abort();
+        assert!(call.await.unwrap_err().is_cancelled());
+    });
+    assert!(ask(&gateway, &paid(acme, ada)).is_ok());
+    assert!(
+        charges(&log, acme)
+            .iter()
+            .any(|(amount, hold)| *amount == 0 && hold.is_some()),
+        "written with the next call, whether or not its hold landed"
+    );
+    assert_eq!(balance(&credits_on(&log), acme), 2 * WORST - COST);
+}
+
+#[test]
+fn a_server_racing_another_for_the_last_of_a_balance_reads_its_hold_and_refuses() {
+    let log = FaultyLog::default();
+    let (here, there) = (credits(&log, None), credits_on(&log));
+    let (fake, other) = (Fake::new("p"), Fake::new("p"));
+    let gateway_here = Arc::new(gateway(&fake, &here));
+    let (acme, ada) = (org(1), person(1));
+    add(&here, acme, WORST, "order-1");
+    // Here reads the ledger and is about to hold all of it when there does first.
+    log.hold("credits.held");
+    block_on!(async {
+        let calling = Arc::clone(&gateway_here);
+        let call =
+            tokio::spawn(async move { calling.complete(&paid(acme, ada), &mut |_| {}).await });
+        log.held().await;
+        let first = gateway(&other, &there)
+            .complete(&paid(acme, ada), &mut |_| {})
+            .await;
+        assert!(first.is_ok(), "there holds it and is charged");
+        log.release();
+        let refused = call.await.unwrap().unwrap_err();
+        assert_eq!(
+            refused.failure(),
+            Failure::OverBudget,
+            "read again, and refused"
+        );
+    });
+    assert_eq!(
+        fake.calls.load(Ordering::SeqCst),
+        0,
+        "here never sent its call"
+    );
+    assert_eq!(other.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_burst_of_calls_on_one_server_queues_for_the_ledger_and_every_one_is_held() {
+    let log = FaultyLog::default();
+    let here = credits(&log, None);
+    let fake = Fake::new("p");
+    let gateway = Arc::new(gateway(&fake, &here));
+    let (acme, ada) = (org(1), person(1));
+    add(&here, acme, 50 * COST, "order-1");
+    log.hold("credits.held");
+    block_on!(async {
+        let mut calls = JoinSet::new();
+        for _ in 0..50 {
+            let gateway = Arc::clone(&gateway);
+            calls.spawn(async move { gateway.complete(&paid(acme, ada), &mut |_| {}).await });
+        }
+        log.held().await;
+        for _ in 0..100 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            0,
+            "the rest wait their turn at the ledger rather than race the first"
+        );
+        log.release();
+        while let Some(done) = calls.join_next().await {
+            assert!(done.unwrap().is_ok(), "none told to try again");
+        }
+    });
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 50);
+    assert_eq!(balance(&credits_on(&log), acme), 0, "spent to the last nano");
+}

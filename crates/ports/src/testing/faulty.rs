@@ -1,6 +1,7 @@
 //! A log in memory that misbehaves when told, as a store does: one that blips fails the next
 //! write or read holding an event of a given kind, a slow one holds an append until the test
-//! lets it go, and one whose glave stopped lands nothing after a count of appends.
+//! lets it go, one loses its answer to an append that landed, and one whose glave stopped
+//! lands nothing after a count of appends.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -28,6 +29,8 @@ struct Faults {
     blip: Mutex<Option<&'static str>>,
     /// The kind of event whose next append is held, until one is.
     hold: Mutex<Option<&'static str>>,
+    /// The kind of event whose next append lands but is answered with a failure, until one is.
+    lost: Mutex<Option<&'static str>>,
     /// Told when an append is held.
     held: Notify,
     /// Lets the held append go.
@@ -68,6 +71,12 @@ impl FaultyLog {
     /// [`FaultyLog::release`]; [`FaultyLog::held`] says when one is.
     pub fn hold(&self, kind: &'static str) {
         *lock(&self.faults.hold) = Some(kind);
+    }
+
+    /// Lands the next append that holds an event of `kind`, then answers it with a failure,
+    /// as a store whose acknowledgement is lost does.
+    pub fn lose_answer(&self, kind: &'static str) {
+        *lock(&self.faults.lost) = Some(kind);
     }
 
     /// Waits until an append is held.
@@ -139,13 +148,15 @@ impl EventLog for FaultyLog {
         let refused =
             stops(&self.faults.stop).or_else(|| strikes(&self.faults.blip, events).then(blipped));
         let held = refused.is_none() && strikes(&self.faults.hold, events);
+        let lost = refused.is_none() && !held && strikes(&self.faults.lost, events);
         let now = (refused.is_none() && !held).then(|| self.log.append(scope, events));
         async move {
             if let Some(refused) = refused {
                 return Err(refused);
             }
             if let Some(appended) = now {
-                return appended.await;
+                appended.await?;
+                return if lost { Err(blipped()) } else { Ok(()) };
             }
             self.faults.held.notify_one();
             self.faults.released.notified().await;

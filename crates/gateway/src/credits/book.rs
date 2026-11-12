@@ -214,6 +214,14 @@ impl Book {
             })
     }
 
+    /// Forgets the holds that lapsed by `now` and are no call's of this server's: they count
+    /// for nothing, and a charge naming one later finds nothing to let go of.
+    pub(super) fn prune(&mut self, now: Timestamp) {
+        let running = &self.running;
+        self.holds
+            .retain(|id, held| running.contains(id) || now.duration_since(held.at) < LAPSE);
+    }
+
     /// Whether `worst` may be held for a call at `now`, or why not: nothing is left of the
     /// balance or of the month's limit, or `worst` is more than what holds leave free of
     /// either.
