@@ -1,6 +1,8 @@
 //! OpenRouter's image API, for glave's image tools (`specs/gateway.md`, "Media tools"): one
 //! request (`POST {base}/images`) with the prompt, the images the call names as references,
-//! the shape asked for and, at OpenRouter, the providers the person's filters leave; one JSON
+//! the shape asked for, a transparent background as a PNG when asked, what the server's
+//! settings add for the model (its `quality`, its `resolution`) and, at OpenRouter, the
+//! providers the person's filters leave; one JSON
 //! answer with each image in base64 and what it cost. No standard covers making images, and
 //! the image models glave defaults to are served by nothing else at OpenRouter.
 
@@ -11,6 +13,7 @@ use glave_ports::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use serde_json::{Map, Value};
 
 use crate::assemble::usage_and_cost;
 use crate::client::OpenAiCompatible;
@@ -30,7 +33,14 @@ pub(crate) struct ImagesRequest<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     input_references: Vec<Reference>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    background: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_format: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Providers<'a>>,
+    /// What the server's settings add for the model, as the API names it.
+    #[serde(flatten)]
+    settings: &'a Map<String, Value>,
 }
 
 /// An image the call draws on, as a `data:` URL.
@@ -146,7 +156,10 @@ pub(crate) fn images_request<'a>(
         n: 1,
         aspect_ratio: ask.aspect_ratio.as_deref(),
         input_references,
+        background: ask.transparent.then_some("transparent"),
+        output_format: ask.transparent.then_some("png"),
         provider: request.route.as_ref().map(providers).transpose()?,
+        settings: &ask.settings,
     })
 }
 

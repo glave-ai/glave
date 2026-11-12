@@ -55,6 +55,9 @@ fn editing(route: Option<Route>) -> ModelRequest {
 fn an_image_is_asked_for_with_its_prompt_shape_and_references_in_order() {
     let ask = MediaAsk {
         aspect_ratio: Some("16:9".into()),
+        transparent: true,
+        settings: json!({"quality": "high"}).as_object().cloned().unwrap(),
+        ..MediaAsk::default()
     };
     let route = Route {
         only: Some(vec!["google-vertex".into()]),
@@ -75,13 +78,17 @@ fn an_image_is_asked_for_with_its_prompt_shape_and_references_in_order() {
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}},
                 {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,anBn"}},
             ],
+            "background": "transparent",
+            "output_format": "png",
             "provider": {"only": ["google-vertex"], "ignore": ["somewhere"], "sort": "throughput"},
+            "quality": "high",
         })
     );
     let plain = editing(None);
     let sent = serde_json::to_value(images_request(&plain, &MediaAsk::default()).unwrap());
     let sent = sent.unwrap();
     assert!(sent.get("aspect_ratio").is_none() && sent.get("provider").is_none());
+    assert!(sent.get("background").is_none() && sent.get("output_format").is_none());
 }
 
 #[test]

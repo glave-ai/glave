@@ -153,7 +153,7 @@ impl Lineup {
                 targets.push((rank(account.kind), free_if_here(target, &endpoint)));
             }
             if media.is_empty() && account.kind == ProviderKind::Openrouter {
-                media = super::media::targets(&handle, catalog, &providers, &self.constraints);
+                media = super::media::routes(&handle, catalog, &providers, &self.constraints);
             }
             first.get_or_insert(endpoint);
         }
@@ -177,8 +177,8 @@ impl Lineup {
             targets.into_iter().map(|(_, target)| target).collect(),
             &allowed,
         )?;
-        for (purpose, target) in media {
-            gateway = gateway.with_route(purpose, vec![target])?;
+        for (purpose, targets) in media {
+            gateway = gateway.with_route(purpose, targets)?;
         }
         let describe = |group: &[&Target]| self.described(group, &about, catalogs);
         let models = Models {

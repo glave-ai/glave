@@ -74,6 +74,7 @@ mod over_http {
         asked.purpose = glave_ports::Purpose::ImageGenerate;
         let ask = glave_ports::MediaAsk {
             aspect_ratio: Some("3:2".into()),
+            ..glave_ports::MediaAsk::default()
         };
         let made = block_on!(provider.make(&asked, &ask)).unwrap();
         assert_eq!(made.files.len(), 1);

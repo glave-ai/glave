@@ -10,6 +10,7 @@ use glave_ports::{
 };
 
 use crate::filtering::Router;
+use crate::media::Tier;
 use crate::price::Price;
 
 /// A model provider behind a target. Every [`ModelProvider`] is one; this form can be shared
@@ -102,6 +103,8 @@ pub struct Target {
     /// person's filters among the providers it passes calls on to (OpenRouter): the only kind
     /// a call its filters narrow may go to where one serves it.
     pub(crate) router: Option<Arc<Router>>,
+    /// The quality tier it serves a media tool in, and how (`media.rs`).
+    pub(crate) tier: Option<Arc<Tier>>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -124,6 +127,7 @@ impl Target {
             same_model: None,
             reasoning: None,
             router: None,
+            tier: None,
             handle,
         }
     }
@@ -198,6 +202,13 @@ impl Target {
     #[must_use]
     pub fn routing(mut self, router: Router) -> Self {
         self.router = Some(Arc::new(router));
+        self
+    }
+
+    /// The target serving a media tool in `tier`.
+    #[must_use]
+    pub fn in_tier(mut self, tier: Tier) -> Self {
+        self.tier = Some(Arc::new(tier));
         self
     }
 
