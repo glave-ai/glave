@@ -27,6 +27,7 @@ mod install;
 mod instructions;
 mod join;
 mod judge;
+mod keys;
 mod memory;
 mod outside;
 mod own_tools;

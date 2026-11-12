@@ -4,7 +4,7 @@
 //! thread idle, so a message lands either in the running work or in a turn of its own after
 //! it, never in between.
 
-use glave_event::{EventId, Part, ThreadId};
+use glave_event::{EventId, ThreadId};
 use glave_harness::{Inbox, NotQueued, Queued, Said};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
@@ -63,7 +63,7 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Queues `caller`'s `prompt` to the work running in `thread`, when that work takes
+    /// Queues what `caller` `said` to the work running in `thread`, when that work takes
     /// messages. A message chooses no model or mode: those are for a turn to start
     /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
     /// takes none runs (`-32002`).
@@ -71,14 +71,9 @@ where
         &self,
         caller: &Caller,
         thread: ThreadId,
-        prompt: &str,
-        files: &[Part],
+        said: Said<'_>,
         choice: &Choice,
     ) -> Result<Queue, ApiError> {
-        let said = Said {
-            text: prompt,
-            files,
-        };
         let threads = self.lock();
         // A turn that waits for an answer takes messages too, for when it goes on: kept in
         // memory, as a running turn's are.
@@ -129,6 +124,7 @@ where
             text: said.text.to_owned(),
             files: said.files.to_vec(),
             caller: caller.clone(),
+            key: said.key.map(str::to_owned),
         };
         match (inbox.push(queued), finished) {
             (Ok(()), _) => Ok(Queue::Queued(QueuedMessage { id })),

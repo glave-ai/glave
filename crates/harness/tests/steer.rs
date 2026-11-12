@@ -41,6 +41,7 @@ fn queued(n: u8, text: &str) -> Queued {
         text: text.into(),
         files: Vec::new(),
         caller: Caller::default(),
+        key: None,
     }
 }
 
@@ -379,5 +380,56 @@ fn a_stop_while_the_hooks_run_records_none_and_gives_back_what_they_passed() {
             said(&events).iter().all(|(id, _)| *id != passed.id),
             "given back, so never recorded"
         );
+    });
+}
+
+#[test]
+fn a_retry_queued_after_its_message_was_recorded_is_not_recorded_again() {
+    let dir = folder("steer-retried");
+    block_on!(async {
+        let answers = vec![
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+            answer(
+                None,
+                vec![("bash", json!({"command": "echo one"}))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let said_with_key = glave_harness::Said {
+            text: "hello",
+            files: &[],
+            key: Some("attempt-1"),
+        };
+        let caller = Caller::default();
+        let first = harness
+            .run_turn_with_files(
+                &mut thread,
+                said_with_key,
+                &caller,
+                &Cancel::new(),
+                &mut |_| {},
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.outcome, Outcome::Completed);
+        // The same message sent again with its key, as a server that forgot it queues it, and
+        // a new one beside it.
+        let retried = Queued {
+            key: Some("attempt-1".into()),
+            ..queued(1, "hello")
+        };
+        let sent = vec![retried, queued(2, "and this")];
+        let mut live = send_after_tool(thread.inbox().clone(), sent);
+        harness
+            .run_turn(&mut thread, "go on", &Cancel::new(), &mut live)
+            .await
+            .unwrap();
+        let events = events(harness.log(), thread.id).await;
+        let texts: Vec<String> = said(&events).into_iter().map(|(_, text)| text).collect();
+        assert_eq!(texts, ["hello", "go on", "and this"], "recorded once");
     });
 }

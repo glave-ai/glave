@@ -35,6 +35,7 @@ proptest! {
             parts: vec![Part::Text { text }],
             author: None,
             thought: None,
+            key: None,
         };
         let json = encode(header(seq, millis), &message).unwrap().to_json().unwrap();
         let event = decode(RawEvent::from_json(&json).unwrap()).unwrap();

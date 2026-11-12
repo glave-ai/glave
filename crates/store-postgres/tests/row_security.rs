@@ -72,6 +72,7 @@ fn thread_of(org: u128) -> (ThreadId, Vec<RawEvent>) {
         }],
         author: None,
         thought: None,
+        key: None,
     };
     let events = vec![
         encode(header(1), &started).unwrap(),

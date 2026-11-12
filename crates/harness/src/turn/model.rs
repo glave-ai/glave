@@ -124,6 +124,7 @@ where
                 parts: completion.parts.clone(),
                 author: None,
                 thought: thinking.thought(&completion.parts),
+                key: None,
             };
             self.stage(thread, &mut events, &message)?;
         }

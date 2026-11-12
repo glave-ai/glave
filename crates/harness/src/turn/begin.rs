@@ -62,6 +62,7 @@ where
             caller,
             by_glave,
             id,
+            key,
         } = prompt;
         // Where it works now that its project's folder moved, before the turn that works there.
         if let Some(bound) = thread.rebound.take() {
@@ -114,12 +115,17 @@ where
                 Self::other_than_for(thread, caller.person)
             },
             thought: None,
+            key: key.map(str::to_owned),
         };
         match id {
             Some(id) => self.stage_as(thread, &mut events, &message, id)?,
             None => self.stage(thread, &mut events, &message)?,
         }
         self.commit(thread, events).await?;
+        if let Some(key) = key {
+            let author = message.author.as_ref().and_then(|author| author.id);
+            thread.keys.sent(author, key);
+        }
         crate::prefix::heard(thread, offer);
         thread.commands.told(&told);
         thread.turns = thread.turns.saturating_add(1);

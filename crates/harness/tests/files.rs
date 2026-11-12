@@ -75,6 +75,7 @@ fn an_image_and_a_pdf_go_inline_and_a_text_file_as_text() {
         let said = Said {
             text: "what is this?",
             files: &files,
+            key: None,
         };
         harness
             .run_turn_with_files(
@@ -131,6 +132,7 @@ async fn ask_about<P: glave_ports::ModelProvider>(
     let said = Said {
         text: "what is this?",
         files,
+        key: None,
     };
     harness
         .run_turn_with_files(
@@ -308,6 +310,7 @@ fn a_message_read_mid_turn_keeps_its_files() {
             text: "and this one".into(),
             files: vec![file(blob.clone(), "cat.png")],
             caller: Caller::default(),
+            key: None,
         };
         let inbox = thread.inbox().clone();
         let mut queue = Some(queued);

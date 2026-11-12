@@ -77,6 +77,7 @@ impl<'a> Steering<'a> {
             text: self.steer.message.clone(),
             files: Vec::new(),
             caller: Caller::default(),
+            key: None,
         };
         self.inbox.push(queued).ok()?;
         self.sent = true;
