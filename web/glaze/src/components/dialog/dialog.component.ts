@@ -30,7 +30,7 @@ const PARTS = { close: 'close', body: 'body' } as const;
  * show. `open` is bound two ways.
  *
  * ```html
- * <glz-dialog heading="Rename the thread" [(open)]="renaming">
+ * <glz-dialog heading="Rename the chat" [(open)]="renaming">
  *   <glz-form-field label="Title"><input glzInput [formControl]="title" /></glz-form-field>
  *   <div glzDialogActions>
  *     <button glzButton (click)="renaming.set(false)">Cancel</button>

@@ -134,6 +134,6 @@ worded! {
 
         // A save to memory.
         RemembersAfterUntrusted = "risk-remembers-after-untrusted"
-            "this thread has read untrusted content or a secrets file, so saving to memory now could carry a planted instruction into every later thread; it runs only if the person asked for this to be remembered",
+            "this chat has read untrusted content or a secrets file, so saving to memory now could carry a planted instruction into every later chat; it runs only if the person asked for this to be remembered",
     }
 }

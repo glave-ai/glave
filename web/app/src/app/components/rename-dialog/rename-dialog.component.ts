@@ -59,7 +59,7 @@ export class RenameDialogComponent {
     Record<Renamed, { readonly heading: string; readonly label: string; readonly limit: number }>
   > = {
     thread: {
-      heading: $localize`:@@renameDialog.threadHeading:Rename the thread`,
+      heading: $localize`:@@renameDialog.threadHeading:Rename the chat`,
       label: $localize`:@@renameDialog.threadLabel:Title`,
       limit: TITLE_LIMIT,
     },

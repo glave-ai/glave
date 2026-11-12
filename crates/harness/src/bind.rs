@@ -213,9 +213,9 @@ where
                 match home.again(&sources).await {
                     Err(ComputerError::NotFound(_)) if elsewhere(repository).is_some() => {
                         return Err(ComputerError::Unsupported(
-                            "this thread worked on a copy of its project made before the \
+                            "this chat worked on a copy of its project made before the \
                              project's folder moved, and glave can't move that copy yet. Start \
-                             a new thread to go on"
+                             a new chat to go on"
                                 .into(),
                         )
                         .into());

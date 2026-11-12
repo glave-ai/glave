@@ -226,7 +226,7 @@ fn a_task_never_works_in_a_folder_itself() {
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);
-        assert!(refused.message.contains("new thread"), "{refused}");
+        assert!(refused.message.contains("new chat"), "{refused}");
         assert_eq!(tasks(&server).await, Vec::new());
     });
 }

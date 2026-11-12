@@ -2,14 +2,13 @@
 //! names one (CI sets it) and are skipped otherwise. Each test works in a schema of its own
 //! and drops it at the end, so tests run in parallel and leave nothing behind.
 
-use std::sync::Arc;
-
 use glave_event::ThreadId;
 use glave_identity::signin::Browsers;
 use glave_ports::{BlobStore, OrgId, Pieces, ProjectId, Scope, conformance, digest, read_all};
-use glave_store_postgres::{Store, StoreError};
+use glave_store_postgres::Store;
 use uuid::{Builder, Uuid};
 
+use crate::migrations::every_version;
 use crate::support::{Scratch, block_on};
 
 fn scope() -> Scope {
@@ -275,45 +274,10 @@ fn data_survives_reconnecting_and_the_schema_is_recorded_once() {
             .unwrap();
         let kept = read_all(kept.bytes.as_mut(), 4).await;
         drop(again);
-        let versions = scratch
-            .admin
-            .query_one(
-                &format!("SELECT COUNT(*) FROM {}.glave_migrations", scratch.schema),
-                &[],
-            )
-            .await
-            .unwrap()
-            .get::<_, i64>(0);
+        let versions = scratch.versions().await;
         scratch.drop_schema().await;
         assert_eq!(kept, Ok(b"kept".to_vec()));
-        assert_eq!(versions, 1, "the schema is recorded once");
-    });
-}
-
-#[test]
-fn openers_racing_on_a_new_database_make_its_schema_once() {
-    block_on!(async {
-        let Some(scratch) = Scratch::new("race").await else {
-            return;
-        };
-        let openers: Vec<_> = (0..4)
-            .map(|_| {
-                let objects = Arc::new(scratch.objects.clone());
-                tokio::spawn(Store::connect_with(
-                    scratch.config.clone(),
-                    scratch.keys(),
-                    objects,
-                ))
-            })
-            .collect();
-        let mut results = Vec::new();
-        for opener in openers {
-            results.push(opener.await.unwrap().map(drop));
-        }
-        scratch.drop_schema().await;
-        for result in results {
-            assert!(result.is_ok(), "{result:?}");
-        }
+        assert_eq!(versions, every_version(), "each version is recorded once");
     });
 }
 
@@ -407,39 +371,5 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_database() {
         scratch.drop_schema().await;
         assert_eq!(verified.unwrap(), session.id);
         assert!(ended.is_err(), "signed out on the other server");
-    });
-}
-
-/// A database another version of glave set up, older or newer, is refused with what to
-/// do: until glave 0.1 there is one schema and no migration.
-#[test]
-fn a_database_of_another_schema_is_refused() {
-    block_on!(async {
-        let Some(scratch) = Scratch::new("other").await else {
-            return;
-        };
-        drop(scratch.store().await.unwrap());
-        let mut results = Vec::new();
-        for found in [6, 999] {
-            scratch
-                .admin
-                .execute(
-                    &format!(
-                        "UPDATE {}.glave_migrations SET version = $1",
-                        scratch.schema
-                    ),
-                    &[&found],
-                )
-                .await
-                .unwrap();
-            results.push(scratch.store().await.map(drop));
-        }
-        scratch.drop_schema().await;
-        for result in results {
-            assert!(
-                matches!(&result, Err(StoreError::Schema(message)) if message.contains("Empty it")),
-                "{result:?}"
-            );
-        }
     });
 }

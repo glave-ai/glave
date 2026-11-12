@@ -149,7 +149,7 @@ mod tests {
                 thread: "t1".into(),
             },
         );
-        assert_eq!(said, "no thread t1 in this project");
+        assert_eq!(said, "no chat t1 in this project");
     }
 
     #[test]
@@ -160,7 +160,7 @@ mod tests {
                 thread: "t1".into(),
             },
         );
-        assert_eq!(said, "[ñö ţĥŕéåð t1 îñ ţĥîš þŕöĵéçţ one two]");
+        assert_eq!(said, "[ñö çĥåţ t1 îñ ţĥîš þŕöĵéçţ one two]");
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod tests {
             format!(
                 "{} {} \u{2068}t1\u{2069} {} {} {}",
                 word("no"),
-                word("thread"),
+                word("chat"),
                 word("in"),
                 word("this"),
                 word("project")

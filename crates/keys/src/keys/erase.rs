@@ -58,7 +58,7 @@ impl<S: KeyStorage> Keys<S> {
                 .await?;
             self.cache.forget(*scope);
             if saved {
-                return Ok(());
+                return self.storage.destroyed().await;
             }
         }
         Err(KeyError::Contended(scope.to_string()))
@@ -92,7 +92,7 @@ impl<S: KeyStorage> Keys<S> {
                 .await?;
             self.cache.forget(*scope);
             if saved {
-                return Ok(());
+                return self.storage.destroyed().await;
             }
         }
         Err(KeyError::Contended(scope.to_string()))
@@ -112,7 +112,7 @@ impl<S: KeyStorage> Keys<S> {
             if !changed {
                 // Destroyed already, perhaps by another process: forget any copy held here.
                 self.cache.forget(*scope);
-                return Ok(());
+                return self.storage.destroyed().await;
             }
             let saved = self
                 .storage
@@ -120,7 +120,7 @@ impl<S: KeyStorage> Keys<S> {
                 .await?;
             self.cache.forget(*scope);
             if saved {
-                return Ok(());
+                return self.storage.destroyed().await;
             }
         }
         Err(KeyError::Contended(scope.to_string()))
@@ -149,6 +149,7 @@ impl<S: KeyStorage> Keys<S> {
                 .await?;
             self.cache.forget(*scope);
             if saved {
+                self.storage.destroyed().await?;
                 return Ok(true);
             }
         }

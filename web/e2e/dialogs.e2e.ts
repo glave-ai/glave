@@ -19,7 +19,7 @@ interface Dialog {
  */
 const DIALOGS: readonly Dialog[] = [
   {
-    name: 'Rename the thread',
+    name: 'Rename the chat',
     from: `/t/${THREAD}`,
     opener: 'thread-rename',
     dialog: 'rename',

@@ -53,7 +53,7 @@ export const routes: Routes = [
       },
       {
         path: THREAD,
-        title: () => $localize`:@@routes.thread:Thread · glave`,
+        title: () => $localize`:@@routes.thread:Chat · glave`,
         loadComponent: () =>
           import('./components/thread/thread.component').then((m) => m.ThreadComponent),
       },

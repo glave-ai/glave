@@ -127,7 +127,7 @@ export class ThreadComponent {
     attach: $localize`:@@thread.attach:Add files or photos`,
     placeholder: $localize`:@@thread.placeholder:Reply`,
     conversation: $localize`:@@thread.conversation:Conversation`,
-    panel: $localize`:@@thread.panel:This thread`,
+    panel: $localize`:@@thread.panel:This chat`,
     resize: $localize`:@@thread.resize:Resize the panel`,
     changes: $localize`:@@thread.changes:Changes`,
     trust: $localize`:@@thread.trust:This project brings its own tools and settings`,

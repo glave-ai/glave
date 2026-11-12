@@ -154,26 +154,26 @@ sentences! {
     TooManyInvites = "too-many-invites" "too many invites are waiting: revoke some first",
 
     // Threads and turns.
-    NoThread { thread: String } = "no-thread" "no thread { $thread } in this project",
+    NoThread { thread: String } = "no-thread" "no chat { $thread } in this project",
     TurnRunning { thread: String } = "turn-running"
-        "a turn is already running in thread { $thread }",
+        "a turn is already running in chat { $thread }",
     TurnWaits { thread: String } = "turn-waits"
-        "a turn in thread { $thread } waits for an answer: answer it, or stop the turn, first",
-    NoTurn { thread: String } = "no-turn" "no turn is running in thread { $thread }",
+        "a turn in chat { $thread } waits for an answer: answer it, or stop the turn, first",
+    NoTurn { thread: String } = "no-turn" "no turn is running in chat { $thread }",
     TurnEnded = "turn-ended" "the turn already ended",
     TurnStopped = "turn-stopped" "the turn stopped",
     TurnUnfollowed = "turn-unfollowed"
-        "the turn waits for an answer, and this server stopped following it: answer it, and follow the thread to see it go on",
+        "the turn waits for an answer, and this server stopped following it: answer it, and follow the chat to see it go on",
     RunningElsewhere { thread: String } = "running-elsewhere"
-        "thread { $thread } is working on another glave server right now: try again once it is done there",
+        "chat { $thread } is working on another glave server right now: try again once it is done there",
     QueuedElsewhere = "queued-elsewhere"
-        "a turn was already running in this thread: your message was queued to it, and the model reads it at its next step",
+        "a turn was already running in this chat: your message was queued to it, and the model reads it at its next step",
     NoChoiceWhileRunning = "no-choice-while-running"
         "a model, reasoning level or permissions are chosen for a turn to start with: while a turn runs, send the message without one, or choose once the turn has ended",
     NoComputerYet { computer: String } = "no-computer-yet"
-        "threads on a computer of your own (computer { $computer }) are not available yet: start the thread without `computer`",
+        "chats on a computer of your own (computer { $computer }) are not available yet: start the chat without `computer`",
     NoFolderForWorktree = "no-folder-for-worktree"
-        "there is no project folder here to make a worktree of: threads here work in a scratch folder of their own",
+        "there is no project folder here to make a worktree of: chats here work in a scratch folder of their own",
     BudgetOnlyInBackground = "budget-only-in-background"
         "turn/start takes a budget only with background: true",
     ChangeStopped = "change-stopped" "the change stopped",
@@ -181,24 +181,24 @@ sentences! {
     CompactionStopped = "compaction-stopped" "the compaction stopped",
     AnswerNotRecorded = "answer-not-recorded" "the answer was not recorded",
     PageGone = "page-gone"
-        "that page of threads can't be found anymore; ask for the first page again",
+        "that page of chats can't be found anymore; ask for the first page again",
     NoPlan { thread: String } = "no-plan"
-        "thread { $thread } has no plan waiting for approval: plan mode proposes one",
+        "chat { $thread } has no plan waiting for approval: plan mode proposes one",
     NothingBuilt = "nothing-built" "a plan can't be built here: only Plan is allowed",
     PlanStepsInvalid { most: u64, longest: u64 } = "plan-steps-invalid"
         "a plan has 1 to { $most } steps, each a line of at most { $longest } characters",
-    NoCommand = "no-command" "that command is not running in this thread",
-    NoTerminal = "no-terminal" "that terminal is not open in this thread",
+    NoCommand = "no-command" "that command is not running in this chat",
+    NoTerminal = "no-terminal" "that terminal is not open in this chat",
     TerminalNotTheirs = "terminal-not-theirs"
-        "A terminal opens only on your own computer, and this thread doesn't work on yours.",
+        "A terminal opens only on your own computer, and this chat doesn't work on yours.",
     TerminalNoFolder = "terminal-no-folder"
-        "This thread has no folder to open a terminal in.",
+        "This chat has no folder to open a terminal in.",
     TerminalNoHome = "terminal-no-home"
         "Your own computer can't be reached from this server right now, so no terminal opens on it.",
     TerminalMoved = "terminal-moved"
-        "This thread works on a computer this server doesn't reach, so no terminal opens for it.",
+        "This chat works on a computer this server doesn't reach, so no terminal opens for it.",
     TerminalUnsupported = "terminal-unsupported"
-        "Terminals don't open on the computer this thread works on.",
+        "Terminals don't open on the computer this chat works on.",
     TerminalUnreachable = "terminal-unreachable"
         "Your computer can't be reached from this server right now. Try again in a moment.",
     TerminalFailed = "terminal-failed" "The terminal could not be reached. Try again in a moment.",
@@ -211,8 +211,8 @@ sentences! {
         "{ $how ->\n    [only] Listening on { $port }.\n    [first] Listening on { $port }\n    [then] {\", \"}{ $port }\n   *[last] {\" \"}and { $port }.\n }",
     PreviewInNewTab = "preview-in-new-tab"
         "It answers only at ::1, which glave can't show inside its page: open it in a new tab.",
-    Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",
-    NoOpenTurn { thread: String } = "no-open-turn" "no turn is open in thread { $thread }",
+    Archived { thread: String } = "archived" "chat { $thread } is archived; unarchive it first",
+    NoOpenTurn { thread: String } = "no-open-turn" "no turn is open in chat { $thread }",
     NoApproval { approval: String } = "no-approval" "no approval { $approval } is pending",
     NoQuestion { question: String } = "no-question" "no question { $question } is waiting",
     NoServiceAsk { question: String } = "no-service-ask"
@@ -235,13 +235,13 @@ sentences! {
         "the command's text could not be had from its server: { $reason }",
     TitleLength { most: usize } = "title-length" "a title is 1 to { $most } characters, not only spaces",
     ForkedInPlace = "forked-in-place"
-        "Forked here from an earlier thread. Files aren't rewound: this thread works in the same folder, with them as they are now.",
+        "Forked here from an earlier chat. Files aren't rewound: this chat works in the same folder, with them as they are now.",
     ForkedElsewhere = "forked-elsewhere"
-        "Forked here from an earlier thread. Files aren't rewound: this thread works in another folder, without the earlier thread's changes.",
+        "Forked here from an earlier chat. Files aren't rewound: this chat works in another folder, without the earlier chat's changes.",
     ForkPoint = "fork-point"
-        "a thread is forked only between its turns, and that point is within one or past its end",
+        "a chat is forked only between its turns, and that point is within one or past its end",
     ForkSubagent = "fork-subagent"
-        "a subagent's thread is not forked on its own: fork the thread that started it",
+        "a subagent's chat is not forked on its own: fork the chat that started it",
     QueueFull { most: usize } = "queue-full"
         "{ $most } messages are already waiting for the model to read them: wait until it has, or stop it",
     RecordsBusy = "records-busy" "glave's records kept changing while it wrote to them; try again",
@@ -251,14 +251,14 @@ sentences! {
     WatchStopped = "watch-stopped" "the watch stopped",
     ConnectionClosed = "connection-closed" "the connection closed",
     FollowsTurn { thread: String } = "follows-turn"
-        "this connection follows a turn in thread { $thread }: watch it once the turn has answered, or from another connection",
+        "this connection follows a turn in chat { $thread }: watch it once the turn has answered, or from another connection",
     WatchesThread { thread: String } = "watches-thread"
-        "this connection watches thread { $thread } already",
+        "this connection watches chat { $thread } already",
     WatchesProject { project: String } = "watches-project"
-        "this connection watches the threads of project { $project } already",
-    WatchesYours = "watches-yours" "this connection watches your threads already",
+        "this connection watches the chats of project { $project } already",
+    WatchesYours = "watches-yours" "this connection watches your chats already",
     TooManyWatches { most: usize } = "too-many-watches"
-        "a connection watches at most { $most } threads and lists at once: unwatch one first",
+        "a connection watches at most { $most } chats and lists at once: unwatch one first",
 
     // A model provider's failures: glave's own words, with what the provider said as it said it.
     ProviderHttp { status: String, body: String } = "provider-http"
@@ -413,7 +413,7 @@ sentences! {
     AskAllow = "ask-allow" "Allow this?",
 
     // Project trust.
-    NothingToTrust = "nothing-to-trust" "nothing in this thread's project waits to be trusted",
+    NothingToTrust = "nothing-to-trust" "nothing in this chat's project waits to be trusted",
     TrustChanged = "trust-changed"
         "this project changed since you were asked: look again at what it brings now",
     TrustOnlyHere = "trust-only-here"
@@ -425,11 +425,11 @@ sentences! {
     TaskNoCopy = "task-no-copy"
         "a task works on a copy of its project's folder made with git, and this project's folder is not a git repository with a commit yet: make it one, with a first commit, to run tasks and schedules in it",
     TaskThreadInFolder = "task-thread-in-folder"
-        "this thread works in its project's folder itself, and a task always works on a copy: start the task in a new thread, which gets a copy of its own",
+        "this chat works in its project's folder itself, and a task always works on a copy: start the task in a new chat, which gets a copy of its own",
     TooManyTasks { running: usize, most: usize } = "too-many-tasks"
         "{ $running } tasks are running, the most policy allows ([tasks] max_running = { $most }); stop one first",
     TaskStopped = "task-stopped" "the task stopped",
-    NoTask { thread: String } = "no-task" "no task is running in thread { $thread } in this server",
+    NoTask { thread: String } = "no-task" "no task is running in chat { $thread } in this server",
     CronFields { text: String } = "cron-fields"
         "a cron expression has five fields (minute hour day month weekday), got \"{ $text }\"",
     CronField { field: String, text: String, low: u8, high: u8 } = "cron-field"
@@ -452,7 +452,7 @@ sentences! {
     // `since` is which point the folder's answer is read since (`asked`, `opened`, `now`), and
     // `shortened` whether some files are shown without their lines (`yes`, `no`).
     ChangesInFolder { since: String, shortened: String } = "changes-in-folder"
-        "The thread's files are glave's own edits and all else that differs from { $since ->\n    [asked] the version it started from\n    [opened] the version its folder was at when glave last opened it\n   *[now] its folder's latest version\n }, whatever changed it{ $shortened ->\n    [yes] {\", some shown without their lines\"}\n   *[no] {\"\"}\n }; a turn's are only glave's own edits.",
+        "The chat's files are glave's own edits and all else that differs from { $since ->\n    [asked] the version it started from\n    [opened] the version its folder was at when glave last opened it\n   *[now] its folder's latest version\n }, whatever changed it{ $shortened ->\n    [yes] {\", some shown without their lines\"}\n   *[no] {\"\"}\n }; a turn's are only glave's own edits.",
     ChangesUnread = "changes-unread"
         "What changed in this folder couldn't be read, so only glave's own edits are listed.",
     ChangesNoHistory = "changes-no-history"

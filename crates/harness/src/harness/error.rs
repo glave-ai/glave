@@ -21,7 +21,7 @@ pub enum HarnessError {
     #[error("thread {0} has no events in this project")]
     NotFound(ThreadId),
     /// The thread was archived, from outside this harness, while it held the thread.
-    #[error("thread {0} is archived; unarchive it first")]
+    #[error("chat {0} is archived; unarchive it first")]
     Archived(ThreadId),
     #[error("cancelled")]
     Cancelled,
@@ -46,7 +46,7 @@ pub enum HarnessError {
     #[error("thread {0} waits for an answer")]
     Waits(ThreadId),
     /// No turn is open in the thread to go on with.
-    #[error("no turn is open in thread {0}")]
+    #[error("no turn is open in chat {0}")]
     NoTurn(ThreadId),
     /// No turn in the thread waits for this approval.
     #[error("no approval {} is pending", .0.as_str())]
@@ -88,11 +88,11 @@ pub enum Invalid {
     Title(usize),
     /// A point to fork a thread at that is not between two of its turns, or not in it.
     #[error(
-        "a thread is forked only between its turns, and that point is within one or past its end"
+        "a chat is forked only between its turns, and that point is within one or past its end"
     )]
     ForkPoint,
     /// A subagent's thread to fork, which is the work of the thread that started it.
-    #[error("a subagent's thread is not forked on its own: fork the thread that started it")]
+    #[error("a subagent's chat is not forked on its own: fork the chat that started it")]
     ForkSubagent,
 }
 

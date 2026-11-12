@@ -8,7 +8,7 @@ import { GlzIconComponent } from '../icon/icon.component';
  * goes here, and the action that starts it.
  *
  * ```html
- * <glz-empty-state [icon]="messagesIcon" heading="No threads yet">
+ * <glz-empty-state [icon]="messagesIcon" heading="No chats yet">
  *   Start one and it shows up here.
  *   <button glzEmptyStateAction glzButton variant="primary">New chat</button>
  * </glz-empty-state>
