@@ -15,11 +15,6 @@
     }
   }
 }
-@for (shown of images(); track shown.image.sha256) {
-  <!-- Loaded apart from the app's first load, in a frame of its size meanwhile. -->
-  @defer (on immediate) {
-    <app-thread-image [image]="shown.image" [alt]="shown.alt" />
-  } @placeholder {
-    <span class="image-room"></span>
-  }
+@for (shown of images(); track shown.key) {
+  <app-thread-image [image]="shown.image" />
 }

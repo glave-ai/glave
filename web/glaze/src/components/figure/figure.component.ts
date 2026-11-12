@@ -5,14 +5,16 @@ import { testIds } from '../../lib/test-ids';
 import { GlzButtonComponent } from '../button/button.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { image: 'image', download: 'download' } as const;
+const PARTS = { image: 'image', failed: 'failed', download: 'download' } as const;
 
 /**
  * An image in a conversation, such as one the agent made: the image whole in a square frame
  * (`--glz-figure-size`, no wider than the column), and under it a link that saves it as
  * `name`. While it is still on its way (`src` is `null`) the frame holds its place and says so
- * to screen readers; when it can't be shown (`failed`), the reason stands in it. The frame is
- * the same in each, so nothing moves as the image arrives. `alt` says what it shows.
+ * to screen readers; when it can't be shown (`failed`), the reason stands in it, read as it is.
+ * The frame and the link's row are there in each, the link unseen until there is something to
+ * save, so the figure is as tall in every state and nothing moves as the image arrives. `alt`
+ * says what it shows.
  *
  * ```html
  * <glz-figure testId="thread-image" [src]="url" alt="A red fox at dawn" name="fox.png" />
@@ -46,6 +48,8 @@ export class GlzFigureComponent {
   /** Names the link that saves it. */
   readonly downloadLabel = input(this.words.downloadLabel);
 
+  /** Whether there is nothing to save yet, or ever: the link's row is kept, unseen. */
+  protected readonly unsaved = computed(() => this.src() === null);
   protected readonly busy = computed(() =>
     this.src() === null && this.failed() === null ? 'true' : null,
   );

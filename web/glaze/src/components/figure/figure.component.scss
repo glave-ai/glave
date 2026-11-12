@@ -10,9 +10,7 @@
 
 // One square frame, whether the image is coming, shown or missing, so nothing moves as it
 // arrives: the image fits inside it whole.
-.image,
-.pending,
-.failed {
+.frame {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -32,4 +30,9 @@
   font-size: var(--glz-text-sm);
   color: var(--glz-color-danger);
   text-align: center;
+}
+
+// The link keeps its room while there is nothing to save, unseen and out of reach.
+.unseen {
+  visibility: hidden;
 }

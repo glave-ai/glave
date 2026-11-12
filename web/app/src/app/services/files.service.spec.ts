@@ -29,34 +29,72 @@ function inPieces(bytes: string) {
   };
 }
 
+/** The `n`th of many files' hashes. */
+function nth(n: number): string {
+  return n.toString(16).padStart(64, '0');
+}
+
 describe('FilesService', () => {
   it('reads a file a piece at a time, once, and keeps it as an address the page made', async () => {
     const urls = objectUrls();
     const fake = new FakeSession().answer('file/read', inPieces('PNG!!'));
     const files = setUp(fake);
-    const url = await files.url('t1', SHA, 'image/png');
+    const url = await files.hold('t1', SHA, 'image/png').url;
     expect(url).toBe(urls.made[0]);
     expect(fake.paramsOf('file/read')).toEqual([
       { thread: 't1', sha256: SHA },
       { thread: 't1', sha256: SHA, offset: 2 },
       { thread: 't1', sha256: SHA, offset: 4 },
     ]);
-    expect(await files.url('t1', SHA, 'image/png')).toBe(url);
+    expect(await files.hold('t1', SHA, 'image/png').url).toBe(url);
     expect(fake.paramsOf('file/read')).toHaveLength(3);
   });
 
-  it('reads one that could not be read again, and lets go of the oldest past its room', async () => {
+  it('reads one that could not be read again when next asked for', async () => {
     const urls = objectUrls();
     const gone = new ApiError({ code: ErrorCode.NO_FILE, message: 'this file is no longer here' });
     const fake = new FakeSession().answer('file/read', () => gone);
     const files = setUp(fake);
-    await expect(files.url('t1', SHA, 'image/png')).rejects.toBe(gone);
+    const failed = files.hold('t1', SHA, 'image/png');
+    await expect(failed.url).rejects.toBe(gone);
+    failed.release();
     fake.answer('file/read', inPieces('ok'));
-    expect(await files.url('t1', SHA, 'image/png')).toBe(urls.made[0]);
-    for (let n = 0; n < 48; n += 1) {
-      await files.url('t1', n.toString(16).padStart(64, '0'), 'image/png');
+    expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
+  });
+
+  it('never lets go of an address something draws, and keeps a few nothing does', async () => {
+    const urls = objectUrls();
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const drawn = files.hold('t1', SHA, 'image/png');
+    // The same image drawn twice, then once: still held.
+    files.hold('t1', SHA, 'image/png').release();
+    const many = Array.from({ length: 60 }, (_, n) => files.hold('t1', nth(n), 'image/png'));
+    await Promise.all([drawn.url, ...many.map(({ url }) => url)]);
+    await Promise.resolve();
+    expect(urls.revoked).toEqual([]);
+    for (const each of many) {
+      each.release();
+      each.release();
     }
     await Promise.resolve();
-    expect(urls.revoked).toEqual([urls.made[0]]);
+    // Of the 60 nothing draws, the first 12 let go of go; the one drawn all along stays.
+    expect(urls.revoked).toEqual(urls.made.slice(1, 13));
+    expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
+  });
+
+  it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {
+    const urls = objectUrls();
+    const piece = { media_type: 'image/png', bytes: 4, offset: 0, data: 'b2s=' };
+    const fake = new FakeSession().answer('file/read', { piece: { ...piece, next: 0 } });
+    const files = setUp(fake);
+    const unreadable = 'This file could not be read';
+    await expect(files.hold('t1', nth(1), 'image/png').url).rejects.toThrow(unreadable);
+    fake.answer('file/read', { piece: { ...piece, next: 3 } });
+    await expect(files.hold('t1', nth(2), 'image/png').url).rejects.toThrow(unreadable);
+    fake.answer('file/read', { piece: { ...piece, bytes: 64 * 1024 * 1024, next: 2 } });
+    await expect(files.hold('t1', nth(3), 'image/png').url).rejects.toThrow(unreadable);
+    // Each was asked for once, and none was kept.
+    expect(fake.paramsOf('file/read')).toHaveLength(3);
+    expect(urls.made).toEqual([]);
   });
 });

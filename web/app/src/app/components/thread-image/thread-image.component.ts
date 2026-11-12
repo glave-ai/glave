@@ -15,8 +15,9 @@ import { ThreadService } from '../../services/thread.service';
 
 /**
  * An image the thread holds, such as one the agent made: read back through the server once,
- * drawn in its place in the conversation, and saved under its name from the link beneath it.
- * What it shows is `alt`, the server's line for the step that made it.
+ * drawn in its place in the conversation, and saved under its name from the link beneath it,
+ * which also names it for those who can't see it. Its address is held while it is drawn, and
+ * let go of when it no longer is.
  */
 @Component({
   selector: 'app-thread-image',
@@ -27,7 +28,6 @@ import { ThreadService } from '../../services/thread.service';
 })
 export class ThreadImageComponent {
   readonly image = input.required<HeldImage>();
-  readonly alt = input.required<string>();
 
   private readonly files = inject(FilesService);
   private readonly threads = inject(ThreadService);
@@ -40,10 +40,6 @@ export class ThreadImageComponent {
     effect((onCleanup) => {
       const thread = this.threads.thread();
       const image = this.image();
-      let live = true;
-      onCleanup(() => {
-        live = false;
-      });
       untracked(() => {
         this.url.set(null);
         this.failed.set(null);
@@ -51,7 +47,13 @@ export class ThreadImageComponent {
       if (thread === null) {
         return;
       }
-      this.files.url(thread, image.sha256, image.mediaType).then(
+      const held = this.files.hold(thread, image.sha256, image.mediaType);
+      let live = true;
+      onCleanup(() => {
+        live = false;
+        held.release();
+      });
+      held.url.then(
         (url) => {
           if (live) {
             this.url.set(url);

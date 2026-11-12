@@ -7,16 +7,18 @@ import { ReplySourcesComponent } from '../reply-sources/reply-sources.component'
 import { ThreadImageComponent } from '../thread-image/thread-image.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 
-/** An image a call's result holds, with what it shows: the server's line for the step. */
+/** An image a call's result holds, with a key of its own: one image may show twice. */
 interface ShownImage {
+  readonly key: string;
   readonly image: HeldImage;
-  readonly alt: string;
 }
 
 /** The images the calls among `items` hold, in order. */
 function imagesIn(items: readonly ThreadItem[]): readonly ShownImage[] {
   return items.flatMap((item) =>
-    item.kind === 'call' ? item.images.map((image) => ({ image, alt: item.summary })) : [],
+    item.kind === 'call'
+      ? item.images.map((image, at) => ({ key: `${item.key}/${String(at)}`, image }))
+      : [],
   );
 }
 

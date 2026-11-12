@@ -94,24 +94,29 @@ describe('TurnPartComponent', () => {
     await expectAccessible(root);
   });
 
-  it('shows the images a run’s calls made under it, in view while it is closed', async () => {
-    const made: CallItem = {
+  it('shows the images a run’s calls made under it, in view while it is closed, each once', async () => {
+    const fox = { sha256: 'f'.repeat(64), mediaType: 'image/png', name: 'fox.png' };
+    const read = (key: string): CallItem => ({
       ...CALL,
-      tool: 'image_generate',
-      summary: 'image_generate: a red fox at dawn',
+      key,
+      call: key,
+      tool: 'read',
+      summary: 'read fox.png',
       status: 'done',
-      images: [{ sha256: 'f'.repeat(64), mediaType: 'image/png', name: 'image.png' }],
-    };
+      images: [fox],
+    });
+    // The same image read twice: shown twice, each in a place of its own.
     const root = await render({
       kind: 'run',
       key: 'run-2',
-      sentence: 'Made 1 image',
-      items: [made],
+      sentence: 'Read 2 files',
+      items: [read('c2'), read('c3')],
     });
-    const figure = root.querySelector('[data-testid="thread-image"]');
-    expect(figure?.closest('details')).toBeNull();
-    expect(figure?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(
-      'image_generate: a red fox at dawn',
-    );
+    const figures = root.querySelectorAll('[data-testid="thread-image"]');
+    expect(figures).toHaveLength(2);
+    for (const figure of Array.from(figures)) {
+      expect(figure.closest('details')).toBeNull();
+      expect(figure.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('fox.png');
+    }
   });
 });
