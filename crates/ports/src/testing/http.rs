@@ -88,19 +88,7 @@ impl FakeHttp {
         let received = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let (log, stopping) = (Arc::clone(&received), Arc::clone(&stop));
-        let thread = std::thread::spawn(move || {
-            loop {
-                let answered = answer_with(&listener, &answer);
-                if stopping.load(Ordering::SeqCst) {
-                    return;
-                }
-                if let Ok(request) = answered {
-                    log.lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .push(request);
-                }
-            }
-        });
+        let thread = std::thread::spawn(move || serve(&listener, &answer, &log, &stopping));
         Ok(Self {
             url: format!("http://{host}"),
             host,
@@ -138,17 +126,39 @@ impl Drop for FakeHttp {
     }
 }
 
-/// Takes the next connection, reads its request and answers `status` with `body`.
-fn answer(listener: &TcpListener, status: u16, body: &str) -> io::Result<Received> {
-    answer_with(listener, &|_| (status, body.to_owned()))
-}
-
-/// Takes the next connection, reads its request and answers what `answer` gives for it.
-fn answer_with(
+/// Answers each connection `listener` takes with what `answer` gives, keeping its request in
+/// `log`, until `stop` is set. The stop is read as a connection is taken, not once it is
+/// answered: the connection taken after it is the one that wakes the thread, and a request taken
+/// before it, whose answer its client may already have, is kept however late it is answered.
+fn serve(
     listener: &TcpListener,
     answer: &dyn Fn(&Received) -> (u16, String),
+    log: &Mutex<Vec<Received>>,
+    stop: &AtomicBool,
+) {
+    for stream in listener.incoming() {
+        if stop.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Ok(request) = stream.and_then(|stream| answer_with(stream, answer)) {
+            log.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(request);
+        }
+    }
+}
+
+/// Takes the next connection, reads its request and answers `status` with `body`.
+fn answer(listener: &TcpListener, status: u16, body: &str) -> io::Result<Received> {
+    let (stream, _) = listener.accept()?;
+    answer_with(stream, &|_| (status, body.to_owned()))
+}
+
+/// Reads the request on `stream` and answers what `answer` gives for it.
+fn answer_with(
+    mut stream: TcpStream,
+    answer: &dyn Fn(&Received) -> (u16, String),
 ) -> io::Result<Received> {
-    let (mut stream, _) = listener.accept()?;
     let request = read(&stream)?;
     let (status, body) = answer(&request);
     let location = if (300..400).contains(&status) {
@@ -212,4 +222,30 @@ pub async fn sent_in_part(address: &str, head: &str, part: &[u8]) -> io::Result<
     let mut answer = Vec::new();
     stream.read_to_end(&mut answer).await?;
     Ok(String::from_utf8_lossy(&answer).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_taken_before_the_stop_is_kept_however_late_it_is_answered() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut client = TcpStream::connect(address).unwrap();
+        client.write_all(b"GET /late HTTP/1.1\r\n\r\n").unwrap();
+        // The connection that wakes it to stop, taken next.
+        let _wake = TcpStream::connect(address).unwrap();
+        let (log, stop) = (Mutex::new(Vec::new()), AtomicBool::new(false));
+        // Its requests are asked for while it answers, as a test asks once its client has the
+        // answer.
+        let answer = |_: &Received| {
+            stop.store(true, Ordering::SeqCst);
+            (200, "{}".to_owned())
+        };
+        serve(&listener, &answer, &log, &stop);
+        let kept = log.into_inner().unwrap();
+        let paths: Vec<&str> = kept.iter().map(|request| request.path.as_str()).collect();
+        assert_eq!(paths, ["/late"], "kept, though answered after the stop");
+    }
 }
