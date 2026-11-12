@@ -7,13 +7,20 @@ use std::sync::{Arc, Mutex, PoisonError};
 use glave_event::Part;
 use tokio::sync::Notify;
 
-use crate::model::{Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError};
+use crate::media::{Made, MediaAsk};
+use crate::model::{
+    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
+};
 
 /// Every request a scripted model received, in order.
 pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
 
-/// One scripted answer: a completion, or the error the provider gives.
-pub type Answer = Result<Completion, ProviderError>;
+/// Every media call a scripted model was asked to make, in order, with what it asked beside.
+pub type SeenMade = Arc<Mutex<Vec<(ModelRequest, MediaAsk)>>>;
+
+/// One scripted answer: a completion (or what a media call made), or the error the provider
+/// gives.
+pub type Answer<T = Completion> = Result<T, ProviderError>;
 
 /// A model answering with scripted completions (or errors) in turn, streaming each answer's
 /// text and reasoning as deltas first, and keeping every request it is sent. One that has run out
@@ -35,6 +42,9 @@ pub struct ScriptedModel {
     gate: Option<Arc<Notify>>,
     seen: Seen,
     recording: bool,
+    /// What it answers every media call with; none when it serves no media tool.
+    making: Option<Answer<Made>>,
+    seen_made: SeenMade,
 }
 
 impl ScriptedModel {
@@ -53,7 +63,23 @@ impl ScriptedModel {
             gate: None,
             seen: Seen::default(),
             recording: true,
+            making: None,
+            seen_made: SeenMade::default(),
         }
+    }
+
+    /// The same model, serving every media tool and answering each call with `made`.
+    #[must_use]
+    pub fn making(self, made: Answer<Made>) -> Self {
+        Self {
+            making: Some(made),
+            ..self
+        }
+    }
+
+    /// Every media call the model is asked to make, as it is asked.
+    pub fn seen_made(&self) -> SeenMade {
+        Arc::clone(&self.seen_made)
     }
 
     /// A model answering each conversation from its own script: the first of `scripts` whose
@@ -193,6 +219,28 @@ impl ModelProvider for ScriptedModel {
             }
             next.unwrap_or_else(|| Err(ProviderError::Protocol("script exhausted".into())))
         }
+    }
+
+    fn make(
+        &self,
+        request: &ModelRequest,
+        ask: &MediaAsk,
+    ) -> impl Future<Output = Result<Made, ProviderError>> + Send {
+        self.seen_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((request.clone(), ask.clone()));
+        let made = self.making.clone().unwrap_or_else(|| {
+            Err(ProviderError::Protocol(format!(
+                "no script makes {}",
+                request.purpose.id()
+            )))
+        });
+        std::future::ready(made)
+    }
+
+    fn serves(&self, purpose: Purpose) -> bool {
+        !purpose.is_media() || self.making.is_some()
     }
 }
 

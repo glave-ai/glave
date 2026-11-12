@@ -28,6 +28,7 @@ mod instructions;
 mod join;
 mod judge;
 mod keys;
+mod media;
 mod memory;
 mod outside;
 mod own_tools;

@@ -12,7 +12,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use glave_ports::memories::{EDIT_MEMORY, FORGET, RECALL, REMEMBER};
-use glave_ports::{Effect, ToolError, ToolInfo, ToolSource, ToolSpec};
+use glave_ports::{Effect, Purpose, ToolError, ToolInfo, ToolSource, ToolSpec};
 
 use crate::prefix::Told;
 use crate::subagent::SubagentType;
@@ -63,11 +63,22 @@ enum Own {
     Plan,
     /// `compact`: in every thread of the person's, for when they ask.
     Compact,
+    /// `image_generate`: where the provider makes images.
+    ImageGenerate,
+    /// `image_edit`: where the provider changes them.
+    ImageEdit,
 }
 
 impl Own {
     /// Every one of glave's own tools.
-    const ALL: [Self; 4] = [Self::Question, Self::Agent, Self::Plan, Self::Compact];
+    const ALL: [Self; 6] = [
+        Self::Question,
+        Self::Agent,
+        Self::Plan,
+        Self::Compact,
+        Self::ImageGenerate,
+        Self::ImageEdit,
+    ];
 
     /// The tool's name.
     fn name(self) -> &'static str {
@@ -76,6 +87,8 @@ impl Own {
             Self::Agent => crate::subagent::AGENT,
             Self::Plan => crate::plan::UPDATE_PLAN,
             Self::Compact => crate::compaction::COMPACT,
+            Self::ImageGenerate => crate::media::IMAGE_GENERATE,
+            Self::ImageEdit => crate::media::IMAGE_EDIT,
         }
     }
 }
@@ -261,6 +274,20 @@ impl ToolSet {
     /// Whether `name` is `compact`, while it is on offer.
     pub(crate) fn is_compact(&self, name: &str) -> bool {
         self.offers(Own::Compact, name)
+    }
+
+    /// Offers the media tool for `purpose` too (`media.rs`). A subagent never gets it.
+    pub(crate) fn offer_media(&mut self, purpose: Purpose) {
+        let own = match purpose {
+            Purpose::ImageEdit => Own::ImageEdit,
+            _ => Own::ImageGenerate,
+        };
+        self.offer(own, crate::media::spec(purpose));
+    }
+
+    /// Whether `name` is a media tool, while it is on offer.
+    pub(crate) fn is_media(&self, name: &str) -> bool {
+        self.offers(Own::ImageGenerate, name) || self.offers(Own::ImageEdit, name)
     }
 
     /// The tools a subagent has: these, less glave's own (`agent`, `question`,
