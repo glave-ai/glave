@@ -46,10 +46,13 @@ struct Service {
 
 impl ToolSource for Service {
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
-        let tools = self.connector.tools.iter().cloned().map(|spec| ToolInfo {
-            spec,
-            effect: Effect::Runs,
-            parallel: false,
+        let tools = self.connector.tools.iter().cloned().map(|spec| {
+            let reads = reads(&spec.name);
+            ToolInfo {
+                spec,
+                effect: if reads { Effect::Reads } else { Effect::Runs },
+                parallel: reads,
+            }
         });
         Box::pin(ready(Ok(tools.collect())))
     }
@@ -78,6 +81,75 @@ impl ToolSource for Service {
             .map_or(NOTHING, |answer| answer.text.as_str());
         Box::pin(ready(ToolOutput::text(false, answered)))
     }
+}
+
+/// Words a tool's name holds when it only reads, and words it holds when it may change
+/// something.
+const READS: [&str; 13] = [
+    "get", "list", "search", "read", "find", "query", "retrieve", "describe", "fetch", "lookup",
+    "view", "show", "count",
+];
+const CHANGES: [&str; 40] = [
+    "create",
+    "update",
+    "delete",
+    "add",
+    "edit",
+    "remove",
+    "set",
+    "send",
+    "post",
+    "upload",
+    "share",
+    "move",
+    "transition",
+    "merge",
+    "close",
+    "reopen",
+    "assign",
+    "mute",
+    "resolve",
+    "acknowledge",
+    "tag",
+    "log",
+    "deactivate",
+    "reply",
+    "write",
+    "run",
+    "cancel",
+    "publish",
+    "put",
+    "rename",
+    "lock",
+    "approve",
+    "dismiss",
+    "invite",
+    "transfer",
+    "rerun",
+    "trigger",
+    "dispatch",
+    "submit",
+    "refund",
+];
+
+/// Whether the tool `name` says it only reads (MCP's `readOnlyHint`), as a well-behaved
+/// server's read tools do: the stand-ins carry no hints of their own, so a name holding a word
+/// of [`READS`] and none of [`CHANGES`] says so (`list_channels`, `getJiraIssue`, `issue_read`).
+fn reads(name: &str) -> bool {
+    let short = name.rsplit("__").next().unwrap_or(name);
+    let mut words = vec![String::new()];
+    let mut lower = false;
+    for c in short.chars() {
+        if !c.is_alphanumeric() || (lower && c.is_uppercase()) {
+            words.push(String::new());
+        }
+        if let Some(word) = words.last_mut().filter(|_| c.is_alphanumeric()) {
+            word.extend(c.to_lowercase());
+        }
+        lower = c.is_lowercase();
+    }
+    let holds = |list: &[&str]| words.iter().any(|word| list.contains(&word.as_str()));
+    holds(&READS) && !holds(&CHANGES)
 }
 
 /// The connected services for `task`, one per connector; none when it has no
@@ -171,6 +243,29 @@ mod tests {
                 .await;
             assert_eq!(none, ToolOutput::text(false, NOTHING));
         });
+    }
+
+    #[test]
+    fn a_stand_in_s_reads_say_they_only_read_and_the_rest_may_write() {
+        for read in [
+            "mcp__slack__list_channels",
+            "mcp__gmail__search_messages",
+            "mcp__atlassian__getJiraIssue",
+            "mcp__github__issue_read",
+            "mcp__github_rest__repos_get_content",
+        ] {
+            assert!(reads(read), "{read}");
+        }
+        for write in [
+            "mcp__slack__post_message",
+            "mcp__gmail__send_message",
+            "mcp__atlassian__addOrEditJiraIssueComment",
+            "mcp__github__issue_write",
+            "mcp__snowflake__run_query",
+            "mcp__figma__export_image",
+        ] {
+            assert!(!reads(write), "{write}");
+        }
     }
 
     #[test]

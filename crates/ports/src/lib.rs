@@ -74,8 +74,9 @@ pub use socket::MAX_SOCKET_PATH;
 pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
-    Assessment, BoxFuture, Called, Cancellation, Effect, NeverCancelled, ServiceAsks, ServiceGiven,
-    ToolError, ToolFile, ToolInfo, ToolOutput, ToolSource, describe_call, unless_cancelled,
+    Assessment, BoxFuture, Called, Cancellation, Effect, Naming, NeverCancelled, ServiceAsks,
+    ServiceGiven, ToolError, ToolFile, ToolInfo, ToolOutput, ToolSource, describe_call,
+    describe_call_in_full, unless_cancelled,
 };
 pub use view::{
     AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Standing, THREAD_VIEW_VERSION, TITLE_CHARS,

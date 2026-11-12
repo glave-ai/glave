@@ -13,7 +13,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use super::baseline::{Assessed, assess};
-use super::case::{Case, Label};
+use super::case::{Action, Case, Label};
 
 /// A provider that adds up what its calls cost, as the provider reports it.
 pub(crate) struct Metered<P> {
@@ -69,8 +69,9 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
         };
         let (provider, gate, model) = (Arc::clone(&provider), Arc::clone(&gate), model.to_owned());
         let (asked, action) = (case.request.clone(), case.action.summary());
-        let untrusted =
-            case.untrusted || matches!(case.action, super::case::Action::Remember { .. });
+        let after =
+            |action: &Action| matches!(action, Action::Remember { .. } | Action::Connector { .. });
+        let untrusted = case.untrusted || after(&case.action);
         tasks.spawn(async move {
             let _permit = gate.acquire().await;
             let started = Instant::now();

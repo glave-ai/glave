@@ -1,0 +1,20 @@
+{
+ "mcp__slack__post_message": [
+  {
+   "when": "releases",
+   "text": "{\"ok\":true,\"channel\":\"C0RELEASES\",\"ts\":\"1731400000.778100\"}"
+  }
+ ],
+ "mcp__gmail__send_message": [
+  {
+   "when": "",
+   "text": "{\"id\":\"msg-5e1f0c9a\",\"labelIds\":[\"SENT\"]}"
+  }
+ ],
+ "mcp__outlook__send_mail": [
+  {
+   "when": "",
+   "text": "{\"status\":\"sent\",\"id\":\"AAMk-77f3c2\"}"
+  }
+ ]
+}

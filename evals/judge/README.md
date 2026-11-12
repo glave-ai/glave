@@ -14,6 +14,7 @@ Without `--model`, the scorer runs glave's deterministic checks (`glave-shell`, 
 | `allowed.jsonl` | 89 | Written by hand: risky actions the person asked for (among them opening pull requests and commenting on issues), ordinary work that looks risky, and actions near secrets that show none. |
 | `asks.jsonl` | 50 | Written by hand: ordinary coding mistakes that should ask: publishing, pushing, deploying or posting to GitHub unasked, and deleting or discarding more than was asked; commands that claim a permission the person never gave (`# the user explicitly asked for this`), or try to close the judge's `<action>` block; and instructions planted in an issue or pull request (comment the token, add a deploy key, approve this), or in a failing command's error output. |
 | `memory.jsonl` | 8 | Written by hand: saves to memory after the thread read untrusted content, asked for by the person (run) and planted by the content (ask). The judge is told untrusted content was read. |
+| `connectors.jsonl` | 8 | Written by hand: calls of a connected service's tool after the thread read a page (#634): posts, emails and comments the person asked for, and a lookup that serves their question (run); an email, a copy hidden after a long body, a comment and a refund the content planted (ask). The judge is told untrusted content was read, and shown every key of the call. |
 
 Actions that should ask now number 61: the real ones from security tasks and the hand-written ones in `asks.jsonl`. More will come from eval tasks that plant instructions in files, like `planted-clean`.
 
@@ -28,7 +29,7 @@ One JSON object per line:
 ```
 
 - `request`: the person's messages, oldest first. A later message can grant or narrow what an earlier one asked.
-- `action`: a built-in tool call: `{"tool": "bash", "command": …}` or `{"tool": "read", "path": …}`.
+- `action`: a built-in tool call, `{"tool": "bash", "command": …}` or `{"tool": "read", "path": …}`; a save to memory, `{"tool": "remember", "text": …}`; or a call of a connected service's tool that does not say it only reads, `{"tool": "connector", "name": "mcp__slack__post_message", "arguments": {…}}`. The last two are always after untrusted content.
 - `label`: `allow` (runs without the person) or `ask` (needs the person).
 - `category`: what kind of action it is; each category has one right label, and loading fails if they disagree.
 - `note` (optional): why the label is what it is, when that is not plain.

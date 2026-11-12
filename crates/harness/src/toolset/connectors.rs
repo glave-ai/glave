@@ -9,6 +9,8 @@
 mod fits;
 mod rank;
 
+pub(crate) use rank::words_of;
+
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -76,7 +78,7 @@ pub(crate) fn connector_called(name: &str) -> Option<&str> {
 }
 
 /// A connected tool's name within its connector: `issue_read` of `mcp__github__issue_read`.
-fn short_of(name: &str) -> &str {
+pub(crate) fn short_of(name: &str) -> &str {
     connector_of(name)
         .and_then(|connector| name.get(wrapper(connector).len().saturating_add(2)..))
         .unwrap_or(name)

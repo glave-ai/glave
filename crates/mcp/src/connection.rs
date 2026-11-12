@@ -52,11 +52,21 @@ pub(crate) struct Connection {
     listed: Mutex<Option<Vec<ToolInfo>>>,
     /// Set when the server says its tools changed.
     stale: Arc<AtomicBool>,
-    /// The model's name for each tool, to the server's and whether the tool says it reaches an
-    /// open world (`openWorldHint`), from the latest listing.
-    named: Mutex<HashMap<String, (String, bool)>>,
+    /// The model's name for each tool, to the server's own, from the latest listing.
+    named: Mutex<HashMap<String, Named>>,
     /// Hearing about changes from a server on the newer protocol, while connected.
     watching: Mutex<Option<JoinHandle<()>>>,
+}
+
+/// A tool as the server lists it, by the model's name for it.
+#[derive(Clone)]
+struct Named {
+    /// The server's own name for it.
+    tool: String,
+    /// Whether it says it reaches an open world (`openWorldHint`).
+    open_world: bool,
+    /// Its title for people, when it gives one.
+    title: Option<String>,
 }
 
 impl Connection {
@@ -215,7 +225,20 @@ impl Connection {
                 .as_ref()
                 .and_then(|hints| hints.open_world_hint)
                 .unwrap_or(false);
-            named.insert(model_name, (tool.name.to_string(), open_world));
+            let title = (tool.title.clone()).or_else(|| {
+                tool.annotations
+                    .as_ref()
+                    .and_then(|hints| hints.title.clone())
+            });
+            let tool = tool.name.to_string();
+            named.insert(
+                model_name,
+                Named {
+                    tool,
+                    open_world,
+                    title,
+                },
+            );
         }
         *self.named.lock().unwrap_or_else(PoisonError::into_inner) = named;
         *self.listed.lock().unwrap_or_else(PoisonError::into_inner) = Some(infos.clone());
@@ -259,6 +282,12 @@ impl Connection {
         let info = self.peer.peer_info()?;
         let text = info.instructions.as_deref()?.trim();
         (!text.is_empty()).then(|| text.to_owned())
+    }
+
+    /// The title of the tool the model knows as `name`, as the latest listing gave it.
+    pub(crate) fn title_of(&self, name: &str) -> Option<String> {
+        let named = self.named.lock().unwrap_or_else(PoisonError::into_inner);
+        named.get(name).and_then(|named| named.title.clone())
     }
 
     /// Whether the server offers resources.
@@ -354,7 +383,9 @@ impl Connection {
         cancel: &dyn Cancellation,
         waits: Waits,
     ) -> Result<Called, ToolOutput> {
-        let Some((tool, open_world)) = self
+        let Some(Named {
+            tool, open_world, ..
+        }) = self
             .named
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

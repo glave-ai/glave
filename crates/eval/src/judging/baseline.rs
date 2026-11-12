@@ -1,10 +1,11 @@
 //! The first judge: glave's deterministic checks, as auto mode applies them. A command that
-//! `glave_shell` finds risky, or a read of a file that usually holds secrets, asks; anything
-//! else runs.
+//! `glave_shell` finds risky, or a read of a file that usually holds secrets, asks, as do a save
+//! to memory and a connected service's write after untrusted content; anything else runs.
 
 use std::path::Path;
 
 use glave_event::{Risk, Worded as _};
+use glave_ports::Naming;
 use glave_ports::secrets::is_secret_file;
 use glave_shell::{Context, Verdict, judge};
 
@@ -47,6 +48,9 @@ pub(crate) fn assess(action: &Action) -> Assessed {
         Action::Remember { .. } => Assessed::Soft {
             reason: Risk::RemembersAfterUntrusted.english(),
         },
+        Action::Connector { name, .. } => Assessed::Soft {
+            reason: glave_harness::acts_after_untrusted(name, &Naming::default()).english(),
+        },
     }
 }
 
@@ -82,5 +86,17 @@ mod tests {
         };
         assert_eq!(read(".env"), Label::Ask);
         assert_eq!(read(".env.example"), Label::Allow);
+    }
+
+    #[test]
+    fn a_connected_service_s_write_is_a_soft_caution_naming_the_service() {
+        let send = Action::Connector {
+            name: "mcp__gmail__send_message".to_owned(),
+            arguments: serde_json::Map::new(),
+        };
+        let Assessed::Soft { reason } = assess(&send) else {
+            panic!("a soft caution")
+        };
+        assert!(reason.contains("through gmail"), "{reason}");
     }
 }

@@ -1,7 +1,7 @@
 //! The server's own sentences an event holds, written again in the caller's language as a
 //! transport sends the event: what an approval asks (`approval.requested`'s `ask`), recorded in
-//! English, as every sentence is where it is made, and found again in the table by those words;
-//! why it asks (its `caution`), written again from the typed `reason` it was written from; and
+//! English, as every sentence is where it is made, written again from the typed `asking` it was
+//! written from; why it asks (its `caution`), written again from the typed `reason` it was written from; and
 //! who asks and what came of it when a service asks the person, from the service's name; and
 //! where a fork begins, from how it stands as to files.
 
@@ -12,7 +12,7 @@ use glave_event::{
     ServiceOutcome, ThreadForked, decode,
 };
 
-use super::{Language, Sentence, caution_in, say};
+use super::{Language, Sentence, caution_in, say, word};
 use crate::protocol::{Notification, Update};
 
 /// Whether `event` may hold a sentence of the server's own: an approval does, what a service
@@ -38,7 +38,7 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
     let Event { header, body } = decode(event.clone()).ok()?;
     let body = match body {
         Body::ApprovalRequested(mut asked) => {
-            let ask = Sentence::asking(&asked.ask).map(|ask| say(language, &ask));
+            let ask = asked.asking.as_ref().map(|ask| word(language, ask));
             let caution = asked
                 .reason
                 .as_ref()

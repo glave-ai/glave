@@ -138,6 +138,7 @@ fn a_call_plan_mode_refuses_says_why_in_the_model_s_terms() {
         tool: "edit".into(),
         effect,
         summary: "edit src/lib.rs".into(),
+        ask: glave_event::Ask::Edit,
         secret: false,
         caution: Caution::of(caution, None),
         outside_sandbox: None,

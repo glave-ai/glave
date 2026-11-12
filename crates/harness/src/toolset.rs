@@ -18,7 +18,7 @@ use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
 pub(crate) use connectors::{
-    Route, TOOL_SEARCH, connector_called, connector_of, one_line, wrapper,
+    Route, TOOL_SEARCH, connector_called, connector_of, one_line, short_of, words_of, wrapper,
 };
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.

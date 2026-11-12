@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
-use glave_event::{Caution, Phrase, Risk, Settled, Worded};
+use glave_event::{Ask, Caution, Phrase, Risk, Settled, Worded};
 use glave_ports::computer::{Reason, Refusal};
 
 use super::*;
@@ -125,17 +125,20 @@ fn what_replies_drew_on_is_written_again_in_their_sources() {
 }
 
 #[test]
-fn every_sentence_an_approval_asks_with_is_found_in_the_table_by_its_english() {
-    for english in glave_harness::ASKS {
-        let sentence = Sentence::asking(english);
-        let said = sentence.as_ref().map(|it| say(Language::English, it));
-        assert_eq!(said.as_deref(), Some(english), "{english} has no entry");
-    }
-    assert_eq!(
-        Sentence::asking("Run this?"),
-        None,
-        "words it does not hold"
+fn what_an_approval_asks_is_written_again_from_its_parts() {
+    let send = Ask::With {
+        act: "Send email".into(),
+        service: "Gmail".into(),
+    };
+    assert_eq!(word(Language::English, &send), "Send email with Gmail?");
+    assert_eq!(word(Language::English, &send), send.english());
+    let accented = word(Language::Accented, &send);
+    assert!(
+        accented.starts_with("[Send email ŵîţĥ Gmail?"),
+        "what it does and the service stay as they are: {accented}"
     );
+    let command = word(Language::Accented, &Ask::Command);
+    assert!(command.starts_with("[Ŕûñ ţĥîš çöɱɱåñð?"), "{command}");
 }
 
 #[test]
@@ -150,7 +153,7 @@ fn an_approval_in_a_page_of_events_is_written_again_and_nothing_else() {
     };
     let asked = serde_json::json!({
         "call_id": "call_1", "tool": "bash", "summary": "bash: ls", "ask": "Run this command?",
-        "detail": "ls", "secret": false
+        "asking": {"says": "ask-command"}, "detail": "ls", "secret": false
     });
     let said = serde_json::json!({"role": "assistant", "parts": [{"type": "text", "text": "Run this command?"}]});
     let mut page: Result<Reply, ApiError> = Ok(Reply::Events {
@@ -329,8 +332,11 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
     let brings = glave_ports::settings::Brings::every()
         .into_iter()
         .map(|it| Box::new(it) as Box<dyn Worded>);
+    let asks = Ask::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
     let all = worded.chain(phrases).chain(refusals).chain(projects);
-    for words in all.chain(memories).chain(brings) {
+    for words in all.chain(memories).chain(brings).chain(asks) {
         assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
         let said = word(Language::English, words.as_ref());
         assert_eq!(said, words.english(), "{}", words.id());
@@ -351,6 +357,7 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
             + glave_ports::ProjectRefusal::ALL.len()
             + glave_ports::memories::MemoryRefusal::ALL.len()
             + glave_ports::settings::Brings::ALL.len()
+            + Ask::ALL.len()
     );
 }
 
@@ -418,8 +425,8 @@ fn a_caution_is_written_again_from_its_reason_and_one_recorded_without_stays_as_
     let asked = |reason: Option<&Caution>| {
         requested(&serde_json::json!({
             "call_id": "call_1", "tool": "bash", "summary": "bash: rm -rf ~/notes",
-            "ask": "Run this command?", "detail": "rm -rf ~/notes", "secret": false,
-            "caution": english, "reason": reason
+            "ask": "Run this command?", "asking": {"says": "ask-command"},
+            "detail": "rm -rf ~/notes", "secret": false, "caution": english, "reason": reason
         }))
     };
     let caution = |event: &glave_event::RawEvent| {
