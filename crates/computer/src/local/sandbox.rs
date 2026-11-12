@@ -40,7 +40,7 @@ pub(crate) use linux::Outbound;
 /// now (`specs/sandbox.md`, "The outbound proxy").
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Outbound;
+pub(crate) struct Outbound {}
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
