@@ -102,18 +102,18 @@ fn a_client_answers_what_a_service_asks_and_the_turn_goes_on() {
         assert!(same);
         // What a client reads back holds nothing of what was typed, nor what the service keeps
         // while it asks: the thread's project holds it, and `file/read` never gives it.
-        let mut state = None;
+        let mut kept = None;
         for event in events(&server, thread).await {
             assert!(!event.to_json().unwrap().contains(TYPED));
             if let Body::ServiceAsked(asked) = decode(event).unwrap().body {
-                state = Some(asked.state.sha256);
+                kept = Some(asked.state.sha256);
             }
         }
-        let state = state.unwrap();
-        assert!(blobs.get(&scope(), &state).await.unwrap().is_some());
+        let kept = kept.unwrap();
+        assert!(blobs.get(&scope(), &kept).await.unwrap().is_some());
         let read = Request::FileRead {
             thread,
-            sha256: state,
+            sha256: kept,
             offset: None,
         };
         let read = server.request(read).await.err().map(|error| error.code);

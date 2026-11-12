@@ -76,8 +76,8 @@ where
 
     /// Whether a `file` part of `thread`'s messages or tool results names `sha256`, as the file
     /// or the copy of an image the model is sent: read back from the thread's end, where the
-    /// images a client draws are, a page at a time until it is found. A deleted thread names
-    /// none.
+    /// images a client draws are, a page at a time until it is found. A deleted thread is no
+    /// such thread.
     async fn names_file(
         &self,
         scope: &Scope,
