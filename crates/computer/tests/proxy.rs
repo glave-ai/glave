@@ -11,8 +11,10 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use glave_computer::{Allowed, Held, Host, Internet, Limits, Mode, Network, Proxy, Rules};
+use glave_computer::{Held, Internet, Limits, Network, Proxy, Rules};
 use glave_ports::block_on;
+use glave_ports::computer::NetworkMode;
+use glave_ports::host::{Host, HostPattern};
 use glave_ports::testing::any_secret;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -183,13 +185,13 @@ fn connect(host: &str, port: u16) -> String {
 
 fn guarded(patterns: &[&str]) -> Rules {
     Rules::new(
-        Mode::Guarded,
-        patterns.iter().map(|p| Allowed::parse(p).unwrap()),
+        NetworkMode::Guarded,
+        patterns.iter().map(|p| HostPattern::parse(p).unwrap()),
     )
 }
 
 fn open(_: u16) -> Rules {
-    Rules::new(Mode::Open, None)
+    Rules::new(NetworkMode::Open, None)
 }
 
 #[test]
@@ -253,7 +255,7 @@ fn a_host_not_allowed_is_refused_and_never_looked_up() {
             "{said}"
         );
         let off = start(
-            |_| Rules::new(Mode::Offline, None),
+            |_| Rules::new(NetworkMode::Offline, None),
             net.clone(),
             None,
             limits(),
@@ -392,17 +394,17 @@ fn only_a_client_with_the_proxys_credential_is_served() {
 }
 
 #[test]
-fn a_guarded_host_goes_only_at_the_webs_ports_or_the_one_allowed() {
+fn a_guarded_host_goes_only_at_the_port_its_entry_names() {
     block_on!(async {
         let net = StandIn::new();
         let running = start(
-            |_| guarded(&["allowed.example"]),
+            |_| guarded(&["allowed.example:9"]),
             net.clone(),
             None,
             limits(),
         )
         .await;
-        // The server is at neither 80 nor 443, and the entry names no port.
+        // The server is at a port of the system's choosing, never 9.
         let said = ask(&running, &connect("allowed.example", running.server), b"").await;
         assert!(said.starts_with("HTTP/1.1 403 Forbidden\r\n"), "{said}");
         assert_eq!(net.looked_up(), [] as [String; 0]);

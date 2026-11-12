@@ -4,6 +4,7 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 
+use glave_ports::host::Host;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::OwnedSemaphorePermit;
@@ -13,7 +14,7 @@ use super::head::{self, Credential, Request, Unread};
 use super::hold::hold;
 use super::network::Network;
 use super::pump::pump;
-use super::rules::{Host, Refusal, Step, kept};
+use super::rules::{Refusal, Step, kept};
 use super::{Limits, Shared};
 use crate::token::same;
 

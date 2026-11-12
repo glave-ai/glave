@@ -1,6 +1,7 @@
 //! Whether a host is this computer: the one check behind every "https, or plain http only
 //! here" rule and every "only from this computer" door. Where clouds serve a machine's
-//! credentials, the one list of those addresses, and which addresses a client may reach. And
+//! credentials, the one list of those addresses, and which addresses a client may reach. A host
+//! as a URL or a connection names it, and the one pattern every list of hosts is written in. And
 //! origins: where a host is, as its scheme and name, read one way for every origin glave keeps.
 
 mod address;
@@ -8,6 +9,8 @@ mod inside;
 #[cfg(feature = "lookup")]
 mod lookup;
 mod metadata;
+mod named;
+mod pattern;
 
 use std::fmt;
 use std::net::IpAddr;
@@ -17,6 +20,8 @@ pub use inside::{INSIDE, is_inside};
 #[cfg(feature = "lookup")]
 pub use lookup::Lookup;
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
+pub use named::Host;
+pub use pattern::{BadHostPattern, HostPattern};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any
 /// case, or a loopback address, bare (`::1`) or bracketed (`[::1]`).

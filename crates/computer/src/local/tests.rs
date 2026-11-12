@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use glave_ports::computer::{Image, Network};
+use glave_ports::computer::Image;
 use glave_ports::{block_on, conformance};
 
 use super::process::Utf8;
@@ -124,29 +124,18 @@ fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
 }
 
 #[test]
-fn what_the_host_cannot_honour_is_refused() {
+fn an_image_is_refused_on_the_host() {
     let (_dir, _, copies) = scratch("refuse");
     let computers = LocalComputers::new(&copies, safe_environment());
-    for environment in [
-        Environment {
-            image: Image::Oci("rust:1".into()),
-            ..Environment::host()
-        },
-        Environment {
-            setup: vec!["make".into()],
-            ..Environment::host()
-        },
-        Environment {
-            network: Some(Network::Off),
-            ..Environment::host()
-        },
-    ] {
-        let refused = block_on!(computers.create(&environment));
-        assert!(
-            matches!(refused, Err(ComputerError::Unsupported(_))),
-            "{refused:?}"
-        );
-    }
+    let environment = Environment {
+        image: Image::Oci("rust:1".into()),
+        ..Environment::host()
+    };
+    let refused = block_on!(computers.create(&environment));
+    assert!(
+        matches!(refused, Err(ComputerError::Unsupported(_))),
+        "{refused:?}"
+    );
 }
 
 #[test]

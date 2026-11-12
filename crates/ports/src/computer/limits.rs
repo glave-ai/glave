@@ -1,7 +1,7 @@
 //! What a worker may be, as an organization's policy limits it (`[workers]` in `policy.toml`):
 //! policy sets the limits, and the workers check each environment against them.
 
-use super::environment::Network;
+use super::sandbox::NetworkMode;
 
 /// Policy's limits on workers (`[workers]` in `policy.toml`). Every one is optional.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -10,9 +10,9 @@ pub struct Limits {
     pub cpus: Option<u32>,
     /// The most memory, in GB; also its size when its environment names none.
     pub memory_gb: Option<u32>,
-    /// The most network a worker may have; `None` allows it all. An allow-list is not
-    /// enforced yet, so a policy asking for one is refused before workers start.
-    pub network: Option<Network>,
+    /// The most network a worker may have; `None` allows it all. `guarded` is not enforced on
+    /// workers yet, so a policy asking for it is refused before they start.
+    pub network: Option<NetworkMode>,
     /// How far apart from its host a worker must be kept.
     pub isolation: Isolation,
 }

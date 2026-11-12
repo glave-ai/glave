@@ -11,9 +11,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
-use glave_ports::computer::{
-    ComputerError, Computers as _, Environment, Image, Isolation, Limits, Network,
-};
+use glave_ports::computer::{ComputerError, Computers as _, Environment, Image, Isolation, Limits};
 use glave_ports::{Clock as _, SystemClock, block_on};
 use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
@@ -349,7 +347,6 @@ fn a_runtime_class_the_cluster_lacks_or_isolation_it_cannot_give_leaves_nothing_
         };
         let environment = Environment {
             image: Image::Oci(IMAGE.into()),
-            network: Some(Network::On),
             ..Environment::host()
         };
         let needs = WorkerComputers::new(computer, limits)

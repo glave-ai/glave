@@ -13,7 +13,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 | Level | Is | Holds |
 | --- | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy (its approved connections among it, `policy.md`), company skills, its note about itself, environments, its brand, the budget |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy (its approved connections among it, `policy.md`), company skills, its note about itself, its brand, the budget |
 | Team | A flat group of people, made in glave by its admins ("Identity") | What it is granted on top of its people's roles (#645): models, connections, a budget ("Configuration is files"), and "may add their own" |
 | Person | Someone who signs in, with a role in each organization they belong to ("Identity") | Their Chats and projects, their computer, their own files (`~/.glave`), their own sign-ins (git hosts, connections) |
 | Project | One person's named place for work: one folder. It belongs to the organization and to that person alone | Its folder, whose files are its instructions, skills and setup; its threads; its memory, which is the person's |
@@ -34,6 +34,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 ## Two roles: the server and the computer
 
 - **The server** holds history, projects, sign-ins and keys, reads the configuration files ("Configuration is files"), runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
+- **A computer is made from an environment:** this machine as it is, or the image the server's `[computers]` names for a person's computer in the cloud. An environment belongs to no project or organization, and how much of the network a computer reaches is policy's and the person's, never the environment's (`computers.md`, "Environments").
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
 - **People work with glave in the browser; the CLI is commands.** It runs one turn (`glave "…"`, approvals asked in place, for scripts and CI), tasks and schedules, and serves. `glave` alone opens the browser at the current folder's project, or prints the link where there's no browser. A terminal UI comes later (#308), laid out like the app (Chats and projects, a thread, what needs the person), as another thin client of the server; until then the CLI is commands and has no chat.

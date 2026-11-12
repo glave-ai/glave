@@ -338,7 +338,7 @@ impl Constraints {
             _ => None,
         }));
         if self.network_off().is_some() {
-            limits.network = Some(glave_ports::computer::Network::Off);
+            limits.network = Some(glave_ports::computer::NetworkMode::Offline);
         }
         limits
     }

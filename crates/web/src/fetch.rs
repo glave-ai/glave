@@ -178,10 +178,10 @@ impl Fetcher {
         if !url.username().is_empty() || url.password().is_some() {
             return Err(FetchError::Credentials);
         }
-        let host = url
-            .host_str()
-            .ok_or_else(|| FetchError::NotUrl(url.to_string()))?;
-        match self.policy.host(host) {
+        let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+            return Err(FetchError::NotUrl(url.to_string()));
+        };
+        match self.policy.host(host, port) {
             HostRule::Allowed => {}
             HostRule::Denied(rule) => {
                 return Err(FetchError::Denied {

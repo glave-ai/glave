@@ -112,18 +112,43 @@ impl SandboxLevel {
     }
 }
 
-/// How much of the network sandboxed commands reach.
+/// How much of the network commands reach, in the words people and policy use for it
+/// (`specs/sandbox.md`, "The outbound proxy"), from the least to the most.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkMode {
+    /// Nothing goes out.
+    Offline,
+    /// The hosts allowed go out; any other is held for the person.
+    Guarded,
+    /// Any public host, at any port; never a private network or cloud metadata.
+    Open,
+}
+
+impl NetworkMode {
+    /// The mode as people write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Offline => "offline",
+            Self::Guarded => "guarded",
+            Self::Open => "open",
+        }
+    }
+}
+
+/// The way out a sandboxed command is given. A [`NetworkMode`] says how much goes out; this
+/// says by which way, and only `Proxied` goes by a mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxNetwork {
-    /// None of it.
+    /// No way out at all: `offline`, held by the sandbox itself.
     Off,
-    /// All that this computer reaches, directly.
+    /// All that this computer reaches, directly, past glave: no mode applies, and private
+    /// networks and cloud metadata are not withheld.
     Direct,
-    /// Only what glave's outbound proxy lets through, which withholds private networks and
-    /// cloud metadata (`specs/sandbox.md`, "The outbound proxy"). A computer that cannot keep
-    /// its commands to the proxy refuses them as unsupported rather than letting them out
-    /// directly.
+    /// Only through glave's outbound proxy, which decides each connection by its mode (`open`
+    /// until modes come in settings). A computer that cannot keep its commands to the proxy
+    /// refuses them as unsupported rather than letting them out directly.
     Proxied,
 }
 

@@ -7,11 +7,11 @@
 use std::fmt::{self, Write as _};
 use std::sync::Arc;
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, NetworkMode};
 use glave_ports::{BoxFuture, Entropy as _, OsEntropy};
 use tokio::task::JoinSet;
 
-use crate::proxy::{Internet, Limits, Mode, Network, Proxy, Rules};
+use crate::proxy::{Internet, Limits, Network, Proxy, Rules};
 
 /// Where a proxy takes its commands' connections: a Unix socket on Linux, loopback on macOS.
 #[cfg(target_os = "linux")]
@@ -50,7 +50,7 @@ fn serve<N: Network>(proxy: Proxy<N>, listener: Listener) -> BoxFuture<'static, 
 
 impl Default for Outbound {
     fn default() -> Self {
-        Self::over(Rules::new(Mode::Open, []), Internet)
+        Self::over(Rules::new(NetworkMode::Open, []), Internet)
     }
 }
 

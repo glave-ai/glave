@@ -76,8 +76,6 @@ worded! {
             "the environment asks for { $asked } CPUs, and policy allows at most { $most } ([workers] cpu)",
         TooMuchMemory { asked, most } = "computer-too-much-memory"
             "the environment asks for { $asked } GB of memory, and policy allows at most { $most } ([workers] memory_gb)",
-        NoNetworkAllowed = "computer-no-network-allowed"
-            "the environment asks for the network, and policy allows people's computers none ([workers] network = \"off\", or [sandbox] network = false)",
         SecretNamed { name } = "computer-secret-named"
             "{ $name } is named like a secret; a computer's variables are never secrets",
     }
@@ -219,7 +217,6 @@ mod tests {
             "people's computers run images pinned by digest, so the same bytes run every time: write the image as name@sha256:<digest>, not <image>",
             "the environment asks for <asked> CPUs, and policy allows at most <most> ([workers] cpu)",
             "the environment asks for <asked> GB of memory, and policy allows at most <most> ([workers] memory_gb)",
-            "the environment asks for the network, and policy allows people's computers none ([workers] network = \"off\", or [sandbox] network = false)",
             "<name> is named like a secret; a computer's variables are never secrets",
         ];
         let every = Refusal::every();

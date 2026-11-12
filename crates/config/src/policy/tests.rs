@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use glave_event::Permissions;
+use glave_ports::computer::NetworkMode;
 use glave_ports::settings::Judge;
 
 use super::*;
@@ -415,12 +416,12 @@ fn worker_limits_narrow() {
         policy_at(ORG, "version = 1\n[workers]\ncpu = 4\nmemory_gb = 8\n"),
         policy_at(
             PROJECT_POLICY,
-            "version = 1\n[workers]\ncpu = 2\nnetwork = \"off\"\n",
+            "version = 1\n[workers]\ncpu = 2\nnetwork = \"offline\"\n",
         ),
     ]);
     let limits = rules.worker_limits();
     assert_eq!((limits.cpus, limits.memory_gb), (Some(2), Some(8)));
-    assert_eq!(limits.network, Some(glave_ports::computer::Network::Off));
+    assert_eq!(limits.network, Some(NetworkMode::Offline));
     assert!(effective::settle(no_choices(), &rules).is_ok());
     for unknown in ["cpus = 2", "max_minutes = 90", "network = \"allowlist\""] {
         let refused = files::policy(

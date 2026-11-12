@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use glave_event::PrincipalId;
 use glave_ports::block_on;
-use glave_ports::computer::{Command, Ending, Home, Limits, Network, Sources, WorkspaceId};
+use glave_ports::computer::{Command, Ending, Home, Limits, NetworkMode, Sources, WorkspaceId};
 use glave_ports::{Holder, InMemoryLeases, Leases, OrgId, OsEntropy, SystemClock};
 
 use super::super::home::PersonComputer;
@@ -132,7 +132,7 @@ fn with_the_network_taken_a_person_s_computer_wakes_and_its_commands_have_no_net
         "glave-computer@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
     let woken = super::environment(image);
     let taken = Limits {
-        network: Some(Network::Off),
+        network: Some(NetworkMode::Offline),
         ..Limits::default()
     };
     let decided = crate::worker::limits::decide(&woken, &taken);

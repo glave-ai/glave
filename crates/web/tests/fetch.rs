@@ -8,7 +8,8 @@ mod fetch {
     use std::time::Duration;
 
     use glave_event::{Arguments, Part, ToolKind, WebPage};
-    use glave_ports::settings::{Domain, WebPolicy};
+    use glave_ports::host::HostPattern;
+    use glave_ports::settings::WebPolicy;
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource, block_on};
     use glave_web::pages::{Pages, Reply};
     use glave_web::{FetchError, Fetcher, Limits, WEB_FETCH, Web, WebSettings};
@@ -19,8 +20,8 @@ mod fetch {
     fn local() -> WebPolicy {
         WebPolicy {
             allow: vec![
-                Domain::parse("127.0.0.1").unwrap(),
-                Domain::parse("*").unwrap(),
+                HostPattern::parse("127.0.0.1").unwrap(),
+                HostPattern::parse("*").unwrap(),
             ],
             ..WebPolicy::default()
         }
@@ -200,8 +201,8 @@ mod fetch {
     #[test]
     fn the_host_policy_denies_and_deny_wins() {
         let policy = WebPolicy {
-            allow: vec![Domain::parse("127.0.0.1").unwrap()],
-            deny: vec![Domain::parse("127.0.0.*").unwrap()],
+            allow: vec![HostPattern::parse("127.0.0.1").unwrap()],
+            deny: vec![HostPattern::parse("127.0.0.1:80").unwrap()],
             ..WebPolicy::default()
         };
         let fetcher = fetcher(policy);
@@ -210,6 +211,8 @@ mod fetch {
             matches!(denied, Err(FetchError::Denied { .. })),
             "{denied:?}"
         );
+        let elsewhere_here = Url::parse("http://127.0.0.1:8080/").unwrap();
+        assert!(fetcher.check(&elsewhere_here).is_ok(), "denied at 80 alone");
         let elsewhere = block_on!(fetcher.fetch("https://example.com/"));
         assert!(
             matches!(elsewhere, Err(FetchError::NotAllowed(_))),
