@@ -1,6 +1,6 @@
 //! `recall` (`specs/memory.md`, "Recall"): memories and past conversations found by keyword.
 //! Memories are matched here, from the view the ledger already gives; conversations through the
-//! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
+//! store's sealed search index (`EventLog::search`). Both are scoped exactly as memory is: the
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
 //! when memory is off, never another organization's, and never a deleted chat. Hits are ranked
 //! together by how many of the query's words they share. A hit from untrusted tool output says
@@ -145,10 +145,15 @@ impl<L: EventLog + 'static> Memories<L> {
         limit: usize,
     ) -> Result<Vec<(usize, Recalled)>, MemoryError> {
         let log = &self.inner.log;
-        // A few more than needed, since the asking thread's own events are skipped and a hit
-        // further down may share more words.
+        // A few more than needed, since a hit further down may share more words. The asking
+        // thread's own events are left out by the search, so they never crowd out other chats.
         let found = log
-            .search(&ledger, query, limit.saturating_mul(2).saturating_add(4))
+            .search(
+                &ledger,
+                query,
+                Some(asking),
+                limit.saturating_mul(2).saturating_add(4),
+            )
             .await
             .map_err(storage)?;
         let (mut hits, mut seen) = (Vec::new(), BTreeMap::new());

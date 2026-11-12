@@ -67,7 +67,7 @@ async fn threads<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) 
         "another organization's writes must not touch a thread's view",
     )?;
     let found = log
-        .search(&ours, "marigold", 10)
+        .search(&ours, "marigold", None, 10)
         .await
         .map_err(|e| e.to_string())?;
     ensure(
@@ -103,7 +103,7 @@ async fn unseen<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) -
         "locate must find a thread in its own organization",
     )?;
     ensure(
-        log.search(&theirs, "marigold", 10)
+        log.search(&theirs, "marigold", None, 10)
             .await
             .map_err(|e| e.to_string())?
             .is_empty(),

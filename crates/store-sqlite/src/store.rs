@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
+use glave_ports::search::{MOST_CACHED, SearchCache};
 use glave_ports::{Clock, InMemoryObjects, Objects, OrgId};
 use rusqlite::{Connection, params};
 use thiserror::Error;
@@ -50,6 +51,8 @@ pub struct Store {
     objects: Arc<dyn Objects>,
     /// The keys' clock, which times uploads for the sweep too.
     clock: Arc<dyn Clock>,
+    /// The search index's rows, opened, for every log of this store.
+    index: Arc<SearchCache>,
 }
 
 impl Store {
@@ -108,11 +111,21 @@ impl Store {
             keys,
             objects,
             clock,
+            index: Arc::new(SearchCache::new(MOST_CACHED)),
         })
     }
 
     pub fn log(&self) -> SqliteLog {
-        SqliteLog::new(Arc::clone(&self.connection), Arc::clone(&self.keys))
+        SqliteLog::new(
+            Arc::clone(&self.connection),
+            Arc::clone(&self.keys),
+            Arc::clone(&self.index),
+        )
+    }
+
+    /// The memory the search index's cache takes now, which its benchmark measures.
+    pub fn search_cache_bytes(&self) -> usize {
+        self.index.bytes()
     }
 
     pub fn blobs(&self) -> SqliteBlobs {

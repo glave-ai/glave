@@ -8,7 +8,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 
 use crate::log::{EventLog, LogError, check_append};
 use crate::scope::{Located, OrgId, Scope};
-use crate::search::{Found, deletes_thread, indexed, query_terms};
+use crate::search::{Found, deletes_thread, indexed, query_terms, weight};
 use crate::view::{ThreadQuery, ThreadView};
 
 /// One searchable event and its words.
@@ -68,8 +68,14 @@ impl InMemoryLog {
         Ok(())
     }
 
-    fn search_now(&self, scope: &Scope, query: &str, limit: usize) -> Result<Vec<Found>, LogError> {
-        let wanted = query_terms(query);
+    fn search_now(
+        &self,
+        scope: &Scope,
+        query: &str,
+        except: Option<ThreadId>,
+        limit: usize,
+    ) -> Result<Vec<Found>, LogError> {
+        let wanted: BTreeSet<String> = query_terms(query).into_iter().collect();
         let index = self
             .index
             .lock()
@@ -77,16 +83,28 @@ impl InMemoryLog {
         let Some(entries) = index.get(scope) else {
             return Ok(Vec::new());
         };
-        // Most query words matched first; among equals, the newest first.
-        let mut found: Vec<(usize, usize, Found)> = entries
+        // Each word weighed by how few events hold it; the best match first, then the newest.
+        let weights: Vec<(&String, f64)> = wanted
             .iter()
-            .enumerate()
-            .filter_map(|(order, (found, words))| {
-                let matched = wanted.iter().filter(|word| words.contains(*word)).count();
-                (matched > 0).then_some((matched, order, *found))
+            .map(|word| {
+                let with = entries
+                    .iter()
+                    .filter(|(_, words)| words.contains(word))
+                    .count();
+                (word, weight(entries.len(), with))
             })
             .collect();
-        found.sort_by_key(|(matched, order, _)| std::cmp::Reverse((*matched, *order)));
+        let mut found: Vec<(f64, usize, Found)> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, (found, _))| Some(found.thread) != except)
+            .filter_map(|(order, (found, words))| {
+                let matched = weights.iter().filter(|(word, _)| words.contains(*word));
+                let total: f64 = matched.clone().map(|(_, weight)| weight).sum();
+                (matched.count() > 0).then_some((total, order, *found))
+            })
+            .collect();
+        found.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
         Ok(found
             .into_iter()
             .take(limit)
@@ -247,9 +265,10 @@ impl EventLog for InMemoryLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
-        ready(self.search_now(scope, query, limit))
+        ready(self.search_now(scope, query, except, limit))
     }
 
     fn locate(
