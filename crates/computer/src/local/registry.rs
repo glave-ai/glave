@@ -4,12 +4,13 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_ports::computer::{
-    ComputerError, ComputerId, Environment, Refusal, Sandbox, WorkspaceId,
+    ComputerError, ComputerId, Environment, Refusal, Sandbox, SandboxNetwork, WorkspaceId,
 };
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
+use tokio::sync::OnceCell;
 use uuid::{Builder, Uuid};
 
 use super::sandbox::{Outbound, Prepared};
@@ -33,13 +34,29 @@ pub(crate) struct Opened {
     pub(crate) hidden: Arc<[PathBuf]>,
     /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
     pub(crate) glave_on_path: Option<PathBuf>,
-    /// The sandbox its commands last ran in, prepared once and kept while they ask for the
-    /// same one.
-    pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,
+    /// The sandboxes its commands last ran in.
+    pub(crate) prepared: Kept,
     /// Where its commands start, owned by it.
     pub(crate) processes: glave_process::Processes,
     /// How the outbound proxy its sandboxed commands may be kept to is made.
     pub(crate) outbound: Outbound,
+}
+
+/// The sandboxes a workspace's commands last ran in, each prepared once and kept while they ask
+/// for the same one: the last kept to the outbound proxy apart from the last of any other, so a
+/// command let out directly, or one whose network was taken, doesn't end the thread's network
+/// and what listens there (`specs/sandbox.md`, "The outbound proxy").
+#[derive(Debug, Default)]
+pub(crate) struct Kept {
+    proxied: Mutex<Option<Slot>>,
+    other: Mutex<Option<Slot>>,
+}
+
+/// One kept sandbox, prepared once however many commands ask for it at the same time.
+#[derive(Debug)]
+struct Slot {
+    sandbox: Sandbox,
+    prepared: Arc<OnceCell<Arc<Prepared>>>,
 }
 
 impl Opened {
@@ -50,30 +67,39 @@ impl Opened {
         sandbox: &Sandbox,
         helper: Option<&Path>,
     ) -> Result<Arc<Prepared>, ComputerError> {
-        let kept = self
-            .prepared
-            .lock()
-            .ok()
-            .and_then(|kept| kept.clone())
-            .filter(|kept| kept.sandbox == *sandbox && kept.lasts());
-        if let Some(kept) = kept {
-            return Ok(kept);
-        }
-        let git_common = self.git_common.as_deref();
-        let glave_on_path = self.glave_on_path.as_deref();
-        let prepared = Prepared::new(
-            sandbox,
-            &self.root,
-            git_common,
-            (helper, &self.outbound, &self.processes),
-            &self.hidden,
-            glave_on_path,
-        );
-        let prepared = Arc::new(prepared.await?);
-        if let Ok(mut kept) = self.prepared.lock() {
-            *kept = Some(Arc::clone(&prepared));
-        }
-        Ok(prepared)
+        let slot = if sandbox.network == SandboxNetwork::Proxied {
+            &self.prepared.proxied
+        } else {
+            &self.prepared.other
+        };
+        let prepared = {
+            let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
+            let kept = slot.as_ref().filter(|kept| {
+                kept.sandbox == *sandbox && kept.prepared.get().is_none_or(|kept| kept.lasts())
+            });
+            if let Some(kept) = kept {
+                Arc::clone(&kept.prepared)
+            } else {
+                let prepared = Arc::new(OnceCell::new());
+                *slot = Some(Slot {
+                    sandbox: sandbox.clone(),
+                    prepared: Arc::clone(&prepared),
+                });
+                prepared
+            }
+        };
+        let prepared = prepared.get_or_try_init(|| async {
+            let prepared = Prepared::new(
+                sandbox,
+                &self.root,
+                self.git_common.as_deref(),
+                (helper, &self.outbound, &self.processes),
+                &self.hidden,
+                self.glave_on_path.as_deref(),
+            );
+            prepared.await.map(Arc::new)
+        });
+        Ok(Arc::clone(prepared.await?))
     }
 }
 

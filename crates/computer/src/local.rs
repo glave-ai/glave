@@ -29,7 +29,7 @@ pub(crate) mod worktree;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use glave_ports::computer::{
@@ -46,7 +46,7 @@ use glave_process::{Owner, Processes};
 use background::Backgrounds;
 use command::Keep;
 pub(crate) use registry::new_id;
-use registry::{Opened, Registry};
+use registry::{Kept, Opened, Registry};
 
 use crate::disk::Largest;
 pub use git::ask_repository;
@@ -267,7 +267,7 @@ impl LocalComputers {
             environment,
             hidden: Arc::clone(&self.hidden),
             glave_on_path: self.glave_on_path.clone(),
-            prepared: Mutex::new(None),
+            prepared: Kept::default(),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
             outbound: self.outbound.clone(),
         };

@@ -1,104 +1,105 @@
 //! A thread's network namespace (`specs/sandbox.md`, "The outbound proxy"): made once for a
 //! prepared sandbox whose commands are kept to the outbound proxy, in a user namespace of its
-//! own, by bubblewrap, and held there by glave's own program, the forwarder (`forward.rs`),
-//! whose port on its loopback reaches the proxy. Each of the thread's commands joins it
-//! (`enter.rs`) before bubblewrap starts it, so they share one loopback, where a server one of
-//! them keeps running is reached by the next, and whose one way out is the proxy. It lasts as
-//! long as the prepared sandbox: dropped, the forwarder is stopped with its process group, as
-//! it is when glave ends however it ends (the lifeline, and bubblewrap's `--die-with-parent`),
-//! and the namespace goes with the last process in it.
+//! own, by bubblewrap, around the system's shell, which holds it and does nothing else. glave's
+//! own program joins it (`enter.rs`) as the forwarder (`forward.rs`), whose port on its loopback
+//! reaches the proxy, and joins it again before bubblewrap starts each of the thread's commands,
+//! so they share one loopback, where a server one of them keeps running is reached by the next,
+//! and whose one way out is the proxy. glave's program is only ever started from glave's own
+//! process, where its path (`/proc/self/exe` on Linux) names it, never inside bubblewrap, where
+//! that path names bubblewrap. It lasts as long as the prepared sandbox: dropped, the shell and
+//! the forwarder are stopped with their process groups, as they are when glave ends however it
+//! ends (the lifeline, and bubblewrap's `--die-with-parent`), and the namespace goes with the
+//! last process in it.
 
 use std::ffi::OsString;
-use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
 use glave_ports::computer::ComputerError;
 use glave_process::{Child, Processes, Program};
-use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, BufReader};
+use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, BufReader};
 use tokio::time::timeout;
 
 use super::bubblewrap;
-use crate::local::sandbox::ENTER_HELPER_ARG;
+use super::identity::Process;
+use crate::local::sandbox::{ENTER_HELPER_ARG, FORWARD_HELPER_ARG};
 
-/// How long the forwarder has to say it is ready, which takes it milliseconds.
+/// How long the shell and the forwarder each have to say they are ready, which takes them
+/// milliseconds.
 const READY_WITHIN: Duration = Duration::from_secs(10);
 
-/// The most read of what the forwarder says, and of why it did not start.
+/// The most read of what either says, and of why it did not start.
 const MOST_SAID: u64 = 1024;
 
-/// A thread's network namespace, while its forwarder holds it.
+/// A thread's network namespace, while the shell holds it and the forwarder serves in it.
 #[derive(Debug)]
 pub(super) struct Namespace {
-    /// The forwarder's process number, and the inodes of the user and network namespaces it
-    /// is in, which name them while they last.
-    pid: u32,
-    user: u64,
-    network: u64,
+    /// The shell holding it, and the forwarder in it, as recorded when they started.
+    holder: Process,
+    forwarder: Process,
     /// The port of its loopback the forwarder listens on.
     port: u16,
-    /// bubblewrap, and in its process group the forwarder; stopped when this is dropped.
-    _holder: Child,
+    /// Each stopped with its process group when this is dropped.
+    _held: (Child, Child),
 }
 
 impl Namespace {
-    /// Makes one through `processes`, with `bwrap`, held by `helper`, glave's own program,
-    /// forwarding to the proxy's `socket`; and checks that bubblewrap can start a command in it.
+    /// Makes one through `processes`, with `bwrap`, and starts in it `helper`, glave's own
+    /// program, forwarding to the proxy's `socket`; and checks that bubblewrap can start a
+    /// command in it. Where any of it can't, commands kept to the proxy are refused.
     pub(super) async fn start(
         processes: &Processes,
         bwrap: &Path,
         helper: &Path,
         socket: &Path,
     ) -> Result<Self, ComputerError> {
-        let mut program = Program::new(bwrap);
-        program
-            .args(bubblewrap::holding(helper, socket))
-            .env_clear()
-            .no_input()
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut holder = processes
-            .spawn(&mut program)
-            .await
-            .map_err(|error| not_made(&error.to_string()))?;
-        let said = match holder.stdout.take() {
-            Some(stdout) => timeout(READY_WITHIN, first_line(stdout)).await.ok(),
-            None => None,
-        };
+        let mut shell = Program::new(bwrap);
+        // Its input stays open while glave holds it, so the shell waits on it.
+        shell.args(bubblewrap::holding()).piped_input();
+        let (shell, said) = started_saying(processes, shell).await?;
+        let holder = said
+            .trim()
+            .parse()
+            .ok()
+            .and_then(|pid| Process::of(pid).ok())
+            .map(|(holder, _)| holder);
         // Never this computer's own network, whatever bubblewrap did.
-        let own = inode(std::process::id(), "net");
-        let held = said
-            .flatten()
-            .as_deref()
-            .and_then(ready)
-            .and_then(|(pid, port)| {
-                let (user, network) = (inode(pid, "user")?, inode(pid, "net")?);
-                Some((pid, user, network, port))
-            })
-            .filter(|&(_, _, network, _)| Some(network) != own);
-        let Some((pid, user, network, port)) = held else {
-            holder.stop().await;
-            return Err(not_made(&why_not(&mut holder).await));
+        let own = Process::of(std::process::id())
+            .ok()
+            .map(|(own, _)| own.network);
+        let Some(holder) = holder.filter(|holder| Some(holder.network) != own) else {
+            return Err(refused(&format!("the shell holding it said {said:?}")));
+        };
+        let mut forwarding = Program::new(helper);
+        forwarding
+            .args(entering(&holder))
+            .arg(helper)
+            .arg(FORWARD_HELPER_ARG)
+            .arg(socket)
+            .no_input();
+        let (forwarding, said) = started_saying(processes, forwarding).await?;
+        let forwarder = forwarding
+            .id()
+            .and_then(|pid| Process::of(pid).ok())
+            .map(|(forwarder, _)| forwarder)
+            .filter(|forwarder| {
+                (forwarder.user, forwarder.network) == (holder.user, holder.network)
+            });
+        let (Some(forwarder), Ok(port)) = (forwarder, said.trim().parse()) else {
+            return Err(refused(&format!("the forwarder said {said:?}")));
         };
         let namespace = Self {
-            pid,
-            user,
-            network,
+            holder,
+            forwarder,
             port,
-            _holder: holder,
+            _held: (shell, forwarding),
         };
-        let (bwrap, entering) = (bwrap.to_owned(), namespace.entering());
-        let helper = helper.to_owned();
+        let (bwrap, helper, entering) = (bwrap.to_owned(), helper.to_owned(), entering(&holder));
         tokio::task::spawn_blocking(move || bubblewrap::starts_in(&bwrap, &helper, &entering))
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
-            .map_err(|said| {
-                ComputerError::Unsupported(format!(
-                    "commands cannot be kept to glave's outbound proxy on this computer: \
-                     bubblewrap cannot start a command in the thread's network here: {said}"
-                ))
-            })?;
+            .map_err(|said| refused(&format!("bubblewrap cannot start a command in it: {said}")))?;
         Ok(namespace)
     }
 
@@ -107,33 +108,64 @@ impl Namespace {
         self.port
     }
 
-    /// The arguments for glave's own program that join it, up to the command to run there.
+    /// The arguments for glave's own program that join it, up to the program to run there.
     pub(super) fn entering(&self) -> Vec<OsString> {
-        [
-            ENTER_HELPER_ARG.to_owned(),
-            self.pid.to_string(),
-            self.user.to_string(),
-            self.network.to_string(),
-            "--".to_owned(),
-        ]
-        .map(OsString::from)
-        .into()
+        entering(&self.holder)
     }
 
-    /// Whether it is still held, so the next command can join it: its forwarder may have been
-    /// stopped from outside glave.
+    /// Whether a command can still join it and reach the proxy: the shell and the forwarder are
+    /// still the processes recorded, in it, though either may have been stopped from outside
+    /// glave.
     pub(super) fn lasts(&self) -> bool {
-        inode(self.pid, "net") == Some(self.network) && inode(self.pid, "user") == Some(self.user)
+        self.holder.namespaces().is_some() && self.forwarder.namespaces().is_some()
     }
 }
 
-/// What not starting the forwarder fails with.
-fn not_made(why: &str) -> ComputerError {
-    ComputerError::Failed(format!("could not make the thread's network: {why}"))
+/// The arguments for glave's own program that join `holder`'s namespaces.
+fn entering(holder: &Process) -> Vec<OsString> {
+    let named = holder.args().map(OsString::from);
+    [OsString::from(ENTER_HELPER_ARG)]
+        .into_iter()
+        .chain(named)
+        .chain([OsString::from("--")])
+        .collect()
+}
+
+/// What commands kept to the proxy get where the thread's network can't be made, saying why.
+fn refused(why: &str) -> ComputerError {
+    ComputerError::Unsupported(format!(
+        "commands cannot be kept to glave's outbound proxy on this computer: the thread's \
+         network could not be made: {why}"
+    ))
+}
+
+/// Starts `program` through `processes` with nothing of glave's environment, and the first line
+/// it says, once it has said one; or, stopped, why it did not.
+async fn started_saying(
+    processes: &Processes,
+    mut program: Program,
+) -> Result<(Child, String), ComputerError> {
+    program
+        .env_clear()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = processes
+        .spawn(&mut program)
+        .await
+        .map_err(|error| refused(&error.to_string()))?;
+    let said = match child.stdout.take() {
+        Some(stdout) => timeout(READY_WITHIN, first_line(stdout)).await.ok(),
+        None => None,
+    };
+    if let Some(line) = said.flatten().filter(|line| !line.trim().is_empty()) {
+        return Ok((child, line));
+    }
+    child.stop().await;
+    Err(refused(&why_not(&mut child).await))
 }
 
 /// The first line `stdout` gives, at most [`MOST_SAID`] bytes of it.
-async fn first_line(stdout: impl tokio::io::AsyncRead + Unpin) -> Option<String> {
+async fn first_line(stdout: impl AsyncRead + Unpin) -> Option<String> {
     let mut line = String::new();
     BufReader::new(stdout.take(MOST_SAID))
         .read_line(&mut line)
@@ -142,23 +174,10 @@ async fn first_line(stdout: impl tokio::io::AsyncRead + Unpin) -> Option<String>
     Some(line)
 }
 
-/// The forwarder's process number and port, from the line it says them on.
-fn ready(line: &str) -> Option<(u32, u16)> {
-    let (pid, port) = line.trim().split_once(' ')?;
-    Some((pid.parse().ok()?, port.parse().ok()?))
-}
-
-/// The inode of the namespace of `kind` that process `pid` is in, while there is one.
-fn inode(pid: u32, kind: &str) -> Option<u64> {
-    std::fs::metadata(format!("/proc/{pid}/ns/{kind}"))
-        .ok()
-        .map(|found| found.ino())
-}
-
-/// What a holder that did not start said, once it has ended.
-async fn why_not(holder: &mut Child) -> String {
+/// What a program that did not start said, once it has ended.
+async fn why_not(child: &mut Child) -> String {
     let mut said = Vec::new();
-    if let Some(stderr) = holder.stderr.take() {
+    if let Some(stderr) = child.stderr.take() {
         let _ = timeout(READY_WITHIN, stderr.take(MOST_SAID).read_to_end(&mut said)).await;
     }
     let said = String::from_utf8_lossy(&said);

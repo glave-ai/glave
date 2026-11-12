@@ -9,6 +9,7 @@ mod bubblewrap;
 mod enter;
 mod forward;
 mod helper;
+mod identity;
 mod landlocked;
 mod mounts;
 mod names;

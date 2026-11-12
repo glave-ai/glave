@@ -560,8 +560,9 @@ fn sandbox_proxied_commands_send_no_datagram_out_so_no_lookup() {
 
 /// On Linux a thread's commands kept to the proxy share one network namespace: a server one of
 /// them keeps running in the background is reached at loopback by the thread's next command,
-/// and not by another thread's, in a namespace of its own; once the threads' workspaces close,
-/// no process is left in either namespace, so both are gone.
+/// a command let out directly between included, and not by another thread's, in a namespace of
+/// its own; once the threads' workspaces close, no process is left in either namespace, so both
+/// are gone.
 #[cfg(target_os = "linux")]
 #[test]
 fn sandbox_a_thread_s_proxied_commands_share_one_loopback() {
@@ -583,10 +584,15 @@ fn sandbox_a_thread_s_proxied_commands_share_one_loopback() {
         fetch("--noproxy '*'", "http://127.0.0.1:$(cat port)/")
     ));
     let network = proxied("readlink /proc/self/ns/net");
+    let let_out = sandboxed(&dir, SandboxNetwork::Direct, "true");
     let (reached, refused, namespaces) = block_on!(async {
         let ours = thread(&computers, &dir).await.unwrap();
         let theirs = thread(&computers, &dir).await.unwrap();
         computers.start(ours, &serve).await.unwrap();
+        // A command let out directly between, in a sandbox of its own, leaves the thread's
+        // network as it was.
+        said(&computers, ours, &reach).await.unwrap();
+        said(&computers, ours, &let_out).await.unwrap();
         let reached = said(&computers, ours, &reach).await.unwrap();
         let refused = said(&computers, theirs, &reach).await.unwrap();
         let namespaces = [

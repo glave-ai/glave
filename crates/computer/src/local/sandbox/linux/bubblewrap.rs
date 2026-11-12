@@ -7,7 +7,6 @@ use std::time::Duration;
 use glave_process::Program;
 
 use super::mounts::{Layout, Mount};
-use crate::local::sandbox::FORWARD_HELPER_ARG;
 
 /// Runs bubblewrap with the seccomp filter on descriptor 3, read from standard input, and
 /// standard input then empty: `sh -c <this> <bwrap> <args>…`.
@@ -156,13 +155,17 @@ pub(super) fn args(
     args
 }
 
-/// The arguments for bubblewrap that make a thread's network namespace and hold it with
-/// `helper`, glave's own program, as the forwarder to the outbound proxy's `socket`
-/// (`namespace.rs`): user and network namespaces of its own, its loopback up, killed with its
-/// parent, with no capabilities, and the whole machine read-only. It stays in the process group
-/// glave gave bubblewrap, so stopping the group stops it.
-pub(super) fn holding(helper: &Path, socket: &Path) -> Vec<OsString> {
-    let mut args: Vec<OsString> = [
+/// What holds a thread's network namespace: the shell, which says its process's number and
+/// waits until its input ends.
+const HOLD: &str = "echo $$ && read -r held";
+
+/// The arguments for bubblewrap that make a thread's network namespace and hold it with the
+/// system's shell (`namespace.rs`): user and network namespaces of its own, its loopback up,
+/// killed with its parent, with no capabilities, and the whole machine read-only. Never glave's
+/// own program, whose path on Linux (`/proc/self/exe`) names bubblewrap in here. It stays in the
+/// process group glave gave bubblewrap, so stopping the group stops it.
+pub(super) fn holding() -> [&'static str; 12] {
+    [
         "--unshare-user",
         "--unshare-net",
         "--die-with-parent",
@@ -172,9 +175,8 @@ pub(super) fn holding(helper: &Path, socket: &Path) -> Vec<OsString> {
         "/",
         "/",
         "--",
+        SH,
+        "-c",
+        HOLD,
     ]
-    .map(OsString::from)
-    .into();
-    args.extend([helper.into(), FORWARD_HELPER_ARG.into(), socket.into()]);
-    args
 }

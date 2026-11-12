@@ -1,10 +1,9 @@
-//! glave as the forwarder that holds a thread's network namespace (`namespace.rs`): started as
-//! `glave __glave-forward <socket>` inside bubblewrap, in a user and network namespace of its
-//! own, it listens on a port of the namespace's loopback, says its process's number and that
-//! port on a line of its standard output, and carries each connection made there to the
-//! outbound proxy's Unix socket outside, until glave stops it. The thread's commands join the
-//! namespace (`enter.rs`), so the proxy is their one way out, and a program that ignores the
-//! proxy's variables finds no network at all.
+//! glave as the forwarder in a thread's network namespace (`namespace.rs`): started as
+//! `glave __glave-forward <socket>` once it has joined the namespace (`enter.rs`), it listens on
+//! a port of the namespace's loopback, says that port on a line of its standard output, and
+//! carries each connection made there to the outbound proxy's Unix socket, until glave stops
+//! it. The thread's commands join the namespace too, so the proxy is their one way out, and a
+//! program that ignores the proxy's variables finds no network at all.
 
 use std::ffi::OsString;
 use std::io::{self, Write as _};
@@ -55,13 +54,12 @@ pub(in crate::local::sandbox) fn forward(args: &[OsString]) -> String {
     "could not carry connections from the namespace's loopback".into()
 }
 
-/// Says this process's number and the port `listener` has, as `<pid> <port>` on a line of
-/// standard output: glave joins the namespace through the one, and its commands reach the
-/// proxy at the other.
+/// Says the port `listener` has on a line of standard output: the thread's commands reach the
+/// proxy there.
 fn say_ready(listener: &std::net::TcpListener) -> io::Result<()> {
     let port = listener.local_addr()?.port();
     let mut said = io::stdout();
-    writeln!(said, "{} {port}", std::process::id())?;
+    writeln!(said, "{port}")?;
     said.flush()
 }
 

@@ -122,8 +122,6 @@ pub fn sandbox_helper(args: &[OsString]) -> Option<String> {
 /// A sandbox ready to wrap commands in one workspace.
 #[derive(Debug)]
 pub(crate) struct Prepared {
-    /// What it was prepared from, so a command asking for another sandbox gets its own.
-    pub(crate) sandbox: Sandbox,
     temps: Temps,
     /// glave's sandbox cache folder, when there is glave's own folder.
     cache: Option<PathBuf>,
@@ -200,7 +198,6 @@ impl Prepared {
         let (every, prefix) = (temps.every.clone(), temps.every_prefix);
         let _ = tokio::task::spawn_blocking(move || run_temp::remove_left(&every, prefix)).await;
         Ok(Self {
-            sandbox: sandbox.clone(),
             temps,
             cache,
             enforcer,
