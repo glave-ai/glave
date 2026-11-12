@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use glave_computer::{LocalComputers, Peek, Wake, Waking};
 use glave_event::{HookPoint, Permissions, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
-use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel};
+use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::settings::{Hook, Hooks};
 use glave_ports::stream::Reserved;
 use glave_ports::{BoxFuture, Caller, EventLog, InMemoryLog, OrgId};
@@ -107,7 +107,7 @@ impl Sleepy {
         let mut sleepy = Self::new(reached, scratch);
         sleepy.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: false,
+            network: SandboxNetwork::Off,
             home: Some(home.to_owned()),
             glave_home: Some(home.join(".glave")),
         });

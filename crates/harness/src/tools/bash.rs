@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Arguments, Lifted, OutsideSandbox};
-use glave_ports::computer::{ComputerError, Ending as Exit, OnTimeout, Sandbox};
+use glave_ports::computer::{ComputerError, Ending as Exit, OnTimeout, Sandbox, SandboxNetwork};
 use glave_ports::{Cancellation, ToolSpec};
 use serde::Deserialize;
 use serde_json::{Map, json};
@@ -248,9 +248,9 @@ async fn let_out(
     };
     let wider = match lifted {
         Lifted::Sandbox => None,
-        Lifted::Network if sandbox.network => return Ok(None),
+        Lifted::Network if sandbox.network.is_on() => return Ok(None),
         Lifted::Network => Some(Sandbox {
-            network: true,
+            network: SandboxNetwork::Direct,
             ..sandbox.clone()
         }),
     };

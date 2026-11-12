@@ -9,7 +9,7 @@ use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Setting
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 pub(crate) use glave_ports::block_on;
-use glave_ports::computer::{Sandbox, SandboxLevel};
+use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
@@ -146,7 +146,7 @@ impl Kit {
         }
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
-            network: false,
+            network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
         };

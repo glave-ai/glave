@@ -8,7 +8,7 @@ use glave_event::Arguments;
 use glave_ports::block_on;
 
 use glave_computer::sandbox_available;
-use glave_ports::computer::{Sandbox, SandboxLevel, is_protected};
+use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork, is_protected};
 
 use crate::cancel::Cancel;
 use crate::tools::Tool;
@@ -35,7 +35,7 @@ fn scratch(name: &str) -> glave_ports::testing::TempDir {
 fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
     Sandbox {
         level,
-        network,
+        network: SandboxNetwork::when(network),
         home: Some(home.to_owned()),
         glave_home: Some(home.join(".glave")),
     }

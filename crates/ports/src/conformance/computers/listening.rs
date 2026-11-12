@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use super::helpers::failed;
 use super::{Verdict, ensure};
 use crate::computer::{
-    Command, ComputerError, Computers, Listening, Sandbox, SandboxLevel, WorkspaceId,
+    Command, ComputerError, Computers, Listening, Sandbox, SandboxLevel, SandboxNetwork,
+    WorkspaceId,
 };
 
 /// How long the suite gives a command to say where it listens.
@@ -35,7 +36,7 @@ pub(super) async fn listening<C: Computers>(computers: &C, here: WorkspaceId) ->
     listed_with_its_port(computers, here, None).await?;
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: true,
+        network: SandboxNetwork::Direct,
         home: None,
         glave_home: None,
     };
