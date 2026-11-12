@@ -15,6 +15,9 @@ name = "computer"
 path = "tests/main.rs"
 
 [dependencies]
+# The outbound proxy's credential, which clients send as `Proxy-Authorization: Basic` (already
+# in the tree).
+base64.workspace = true
 # The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
 # Whose a person's computer is, as its lease names them.

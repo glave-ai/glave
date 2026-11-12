@@ -8,4 +8,5 @@ mod faulty;
 mod ledger;
 
 mod faults;
+mod proxy;
 mod remote;
