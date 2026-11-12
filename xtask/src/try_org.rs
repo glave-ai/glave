@@ -7,7 +7,9 @@
 //! stand-in on this computer (`model.rs`) that answers every chat and says what each answer
 //! cost, and stands in for OpenRouter for an account connected with any key, and it has one
 //! service, glave's MCP test server, whose tool the stand-in calls when told to "ask me
-//! something", to try what a service asks the person; with `--credits`,
+//! something", to try what a service asks the person; told to "draw me" something, with an
+//! OpenRouter account connected, it makes an image through glave's image tool, the stand-in's
+//! picture coming back as OpenRouter's image API would send it; with `--credits`,
 //! it is the server's own OpenRouter, as on Glave Cloud, with no account to connect, and
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
@@ -34,6 +36,7 @@ use tokio::sync::mpsc;
 const RUNS: &str = "glave-try-org";
 
 mod model;
+mod picture;
 mod router;
 mod seed;
 

@@ -15,7 +15,7 @@ mod kept;
 mod told;
 
 use glave_event::{Part, Permissions};
-use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSpec};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Purpose, ToolSpec};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, Thread};
@@ -157,6 +157,11 @@ where
         }
         if !thread.delegated() {
             set.offer_compact();
+            for purpose in [Purpose::ImageGenerate, Purpose::ImageEdit] {
+                if self.provider.serves(purpose) {
+                    set.offer_media(purpose);
+                }
+            }
         }
         if planning {
             set.system.push_str(crate::plan::PLAN_MODE);

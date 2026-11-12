@@ -190,6 +190,8 @@ where
             return Ok(compact_asked(call, step, live));
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
+        } else if step.toolset.is_media(&call.tool) {
+            return self.call_media(thread, call, step, cancel, live).await;
         }
         self.call_offered(thread, call, step, cancel, live).await
     }
@@ -419,7 +421,7 @@ where
     /// Asks the person about a call when it needs them: for its caution, unless the judge clears
     /// it, or for the mode; Full access asks no one ([`Self::ask`]). `None` when the call may run;
     /// otherwise the result the model is given instead.
-    async fn approve(
+    pub(crate) async fn approve(
         &self,
         thread: &mut Thread,
         needs: &Needs,
@@ -753,9 +755,9 @@ fn settle(
 
 /// What a call needs before it runs: the person's yes, asked as `request`, unless the judge may
 /// clear its caution and does. A `firm` caution only the person can clear.
-struct Needs {
-    request: ApprovalRequest,
-    firm: bool,
+pub(crate) struct Needs {
+    pub(crate) request: ApprovalRequest,
+    pub(crate) firm: bool,
 }
 
 /// What the judge made of a soft caution.

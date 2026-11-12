@@ -9,6 +9,9 @@ publish = false
 autotests = false
 
 [dependencies]
+# The picture `try-org`'s stand-in sends as OpenRouter's image API does, in base64 (already in
+# the tree, under glave-harness).
+base64.workspace = true
 # The one list of the prefixes providers put on keys and tokens, which the secret scan reads,
 # the one clock (`cargo xtask package-age`), and the fake HTTP server `try-org`'s stand-in model
 # answers from (`conformance`).
