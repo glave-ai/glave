@@ -40,6 +40,10 @@ pub(crate) struct Record {
     /// Why a cleanup wanted it gone but kept it, such as `idle`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) held: Option<String>,
+    /// Where a scratch folder's files went in the Trash when room was freed, to bring back if
+    /// its thread opens it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) trashed: Option<PathBuf>,
 }
 
 /// A record as written: its version beside it.
@@ -165,6 +169,7 @@ pub(crate) async fn open(
         branch: branch.to_owned(),
         owner: owner.map(str::to_owned),
         held: None,
+        trashed: None,
     };
     write_record(&dest, &record).await?;
     let inside = dest.join(&prefix);

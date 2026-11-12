@@ -174,7 +174,7 @@ pub struct DiskUse {
     pub bytes: u64,
 }
 
-/// A worktree a computer keeps for a thread.
+/// A worktree a computer keeps for a thread, or a thread's scratch folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeptWorktree {
     /// Its folder, as that computer names it.
@@ -184,13 +184,22 @@ pub struct KeptWorktree {
     /// Whose it is: the label it was opened with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// A thread's scratch folder, not a worktree: what it holds is nowhere else, so freeing it
+    /// moves what it holds to the Trash.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub scratch: bool,
 }
 
-/// What became of a worktree a computer was asked to free.
+/// What became of a worktree or a scratch folder a computer was asked to free.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Freed {
     Removed,
+    /// A scratch folder holding files, moved to the Trash: where it is now, as that computer
+    /// names it.
+    Trashed {
+        to: String,
+    },
     /// It stays: nothing of it was touched. Why, for the record.
     Kept {
         why: String,

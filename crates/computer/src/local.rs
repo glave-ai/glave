@@ -9,6 +9,7 @@ mod command;
 mod credentials;
 mod files;
 mod finding;
+mod freeing;
 pub(crate) mod git;
 mod host;
 mod listing;
@@ -236,6 +237,11 @@ impl LocalComputers {
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(new_id()?);
+        // A scratch folder is never freed between being made and its workspace registered.
+        let _scratch = match (sources, &self.scratch) {
+            (Sources::Scratch { .. }, Some(base)) => Some(self.worktree_locks.hold(base).await?),
+            _ => None,
+        };
         let (root, git_common) = self.made(&environment, sources).await?;
         let environment = self.command_environment(&environment);
         let variable = |name: &str| {
@@ -306,7 +312,13 @@ impl LocalComputers {
                         "this computer makes no scratch folders; work in a project folder".into(),
                     )
                 })?;
-                (scratch::open(base, name, owner.as_deref()).await?, None)
+                // Where freeing room put what it held, as `freeing` names it.
+                let trash = crate::worktrees::Trash::for_environment(&self.environment, "");
+                let owner = owner.as_deref();
+                (
+                    scratch::open(base, name, owner, trash.as_ref()).await?,
+                    None,
+                )
             }
             Sources::Project { name } => {
                 let base = self.projects.as_ref().ok_or_else(|| {
@@ -474,21 +486,7 @@ impl Computers for LocalComputers {
         &self,
         computer: ComputerId,
     ) -> BoxFuture<'_, Result<Vec<KeptWorktree>, ComputerError>> {
-        Box::pin(async move {
-            self.registry.environment(computer)?;
-            let Some(base) = &self.worktrees else {
-                return Ok(Vec::new());
-            };
-            let recorded = crate::worktrees::recorded(base).await?;
-            Ok(recorded
-                .into_iter()
-                .map(|(path, record)| KeptWorktree {
-                    path: path.to_string_lossy().into_owned(),
-                    branch: Some(record.branch).filter(|branch| !branch.is_empty()),
-                    owner: record.owner,
-                })
-                .collect())
-        })
+        Box::pin(self.kept_for_threads(computer))
     }
 
     fn free_worktree<'a>(
@@ -496,36 +494,7 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         path: &'a str,
     ) -> BoxFuture<'a, Result<Freed, ComputerError>> {
-        Box::pin(async move {
-            self.registry.environment(computer)?;
-            let kept_because = |why: &str| {
-                Ok(Freed::Kept {
-                    why: why.to_owned(),
-                })
-            };
-            let Some(base) = &self.worktrees else {
-                return kept_because("this computer keeps no worktrees");
-            };
-            let (environment, processes) = (&self.environment, &self.processes);
-            let found = crate::worktrees::at(base, Path::new(path), environment, processes);
-            let Some(kept) = found.await? else {
-                return kept_because("it is not here any more");
-            };
-            // Nothing opens a worktree of this repository meanwhile, and a thread that had this
-            // one open is seen last, with the removal to follow at once.
-            let _turn = self.worktree_locks.lock(&kept.repository).await?;
-            if let Some(risk) = kept.at_risk() {
-                return kept_because(&risk);
-            }
-            if !crate::worktrees::only_rebuildable(&kept, environment, processes).await? {
-                return kept_because("it holds more than a build would make again");
-            }
-            if self.registry.open_on(&kept.path)? {
-                return kept_because("a thread has it open");
-            }
-            crate::worktrees::remove(&kept, environment, processes).await?;
-            Ok(Freed::Removed)
-        })
+        Box::pin(self.free_kept(computer, path))
     }
 
     fn destroy(&self, computer: ComputerId) -> BoxFuture<'_, Result<(), ComputerError>> {

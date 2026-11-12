@@ -39,7 +39,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// the `credential` it took with them: nothing opened a clone. `2026-11-11` made a sandbox's
 /// `network` a choice of `off`, `direct` or `proxied` (only through the outbound proxy): a
 /// server that predates it can't read a sandbox at all, so it never lets a command kept to the
-/// proxy out directly.
+/// proxy out directly. It also added threads' scratch folders to `computer/worktrees`
+/// (`scratch`), and `trashed` to what `computer/free_worktree` answers, for one moved to the
+/// Trash.
 pub(crate) const PROTOCOL: &str = "2026-11-11";
 
 /// The notification that carries a command's output.

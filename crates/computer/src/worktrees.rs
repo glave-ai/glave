@@ -119,26 +119,47 @@ pub async fn list(
 pub async fn list_scratch(base: &Path) -> Result<Vec<Kept>, ComputerError> {
     let mut found = Vec::new();
     for path in folders(base).await? {
-        let Some(record) = read_record(&path).await? else {
-            continue;
-        };
-        let Ok(path) = tokio::fs::canonicalize(&path).await else {
-            continue;
-        };
-        let empty = match tokio::fs::read_dir(&path).await {
-            Ok(mut entries) => matches!(entries.next_entry().await, Ok(None)),
-            Err(_) => false,
-        };
-        found.push(Kept {
-            path,
-            repository: PathBuf::new(),
-            branch: None,
-            owner: record.owner,
-            held: record.held,
-            condition: Condition::Scratch { empty },
-        });
+        if let Some(kept) = describe_scratch(&path).await? {
+            found.push(kept);
+        }
     }
     Ok(found)
+}
+
+/// `path` as a scratch folder kept directly under `base`: `None` when it is not one.
+pub(crate) async fn scratch_at(base: &Path, path: &Path) -> Result<Option<Kept>, ComputerError> {
+    let (Ok(base), Ok(path)) = (
+        tokio::fs::canonicalize(base).await,
+        tokio::fs::canonicalize(path).await,
+    ) else {
+        return Ok(None);
+    };
+    if path.parent() != Some(base.as_path()) {
+        return Ok(None);
+    }
+    describe_scratch(&path).await
+}
+
+/// What the scratch folder at `path` is, or `None` when glave did not record it.
+async fn describe_scratch(path: &Path) -> Result<Option<Kept>, ComputerError> {
+    let Some(record) = read_record(path).await? else {
+        return Ok(None);
+    };
+    let Ok(path) = tokio::fs::canonicalize(path).await else {
+        return Ok(None);
+    };
+    let empty = match tokio::fs::read_dir(&path).await {
+        Ok(mut entries) => matches!(entries.next_entry().await, Ok(None)),
+        Err(_) => false,
+    };
+    Ok(Some(Kept {
+        path,
+        repository: PathBuf::new(),
+        branch: None,
+        owner: record.owner,
+        held: record.held,
+        condition: Condition::Scratch { empty },
+    }))
 }
 
 /// A cleanup wants `kept` gone for `why` (such as `idle`): removed when that is safe, moved
@@ -151,11 +172,16 @@ pub async fn release(
     trash: Option<&Trash>,
 ) -> Result<Released, ComputerError> {
     match kept.condition {
-        Condition::Safe | Condition::Scratch { empty: true } => {
+        Condition::Safe => {
             remove(kept, environment, processes).await?;
             Ok(Released::Removed)
         }
-        Condition::RepositoryGone | Condition::Scratch { empty: false } => match trash {
+        // Only if it is still empty: a file written since goes to the Trash with it.
+        Condition::Scratch { empty: true } if tokio::fs::remove_dir(&kept.path).await.is_ok() => {
+            let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
+            Ok(Released::Removed)
+        }
+        Condition::RepositoryGone | Condition::Scratch { .. } => match trash {
             Some(trash) => {
                 let moved = trash.put(&kept.path).await?;
                 let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
