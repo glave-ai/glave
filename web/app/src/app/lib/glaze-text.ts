@@ -97,11 +97,11 @@ function cards(): Pick<
       label: needsYou,
       reasonLabel: $localize`:@@glaze.approval.reason:The model says`,
       allowOnceLabel: $localize`:@@glaze.approval.allowOnce:Allow once`,
-      allowForThreadLabel: $localize`:@@glaze.approval.allowThread:Allow for this thread`,
+      allowForThreadLabel: $localize`:@@glaze.approval.allowThread:Allow for this chat`,
       denyLabel: $localize`:@@glaze.approval.deny:Deny`,
       decidedLabels: {
         allow_once: $localize`:@@glaze.approval.allowedOnce:Allowed once`,
-        allow_for_thread: $localize`:@@glaze.approval.allowedThread:Allowed for this thread`,
+        allow_for_thread: $localize`:@@glaze.approval.allowedThread:Allowed for this chat`,
         deny: $localize`:@@glaze.approval.denied:Denied`,
       },
     },

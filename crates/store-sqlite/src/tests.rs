@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use super::*;
 
+mod migrations;
 mod sealing;
 
 /// Objects that live only in this process.
@@ -219,33 +220,6 @@ fn the_projects_pass_the_projects_conformance_suite() {
     assert_eq!(block_on!(conformance::projects(&store.projects())), Ok(()));
 }
 
-/// A file another version of glave wrote, older or newer, is refused with what to do, and left
-/// as it was: until glave 0.1 there is one schema and no migration, but for added tables.
-#[test]
-fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
-    for found in [6, schema::VERSION + 1] {
-        let (_dir, path) = temp_db(&format!("schema-{found}"));
-        {
-            let connection = rusqlite::Connection::open(&path).unwrap();
-            connection
-                .pragma_update(None, "user_version", found)
-                .unwrap();
-        }
-        let result = block_on!(Store::open(&path, keys(), objects()));
-        assert!(
-            matches!(&result, Err(StoreError::Schema(message))
-                if message.contains("Remove glave's data folder")),
-            "schema {found}: {:?}",
-            result.err()
-        );
-        let raw = rusqlite::Connection::open(&path).unwrap();
-        let version: u32 = raw
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, found, "the file is not changed");
-    }
-}
-
 #[test]
 fn the_directory_passes_the_directory_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
@@ -253,54 +227,6 @@ fn the_directory_passes_the_directory_conformance_suite() {
         block_on!(conformance::directory(&store.directory())),
         Ok(())
     );
-}
-
-/// A file of the schema before, which a person's glave wrote, opens: its unsealed index is made
-/// again sealed, and it keeps what it held.
-#[test]
-fn a_file_of_the_schema_before_gets_the_sealed_index_and_keeps_its_data() {
-    let (_dir, path) = temp_db("schema-before");
-    {
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection.execute_batch(schema::SCHEMA).unwrap();
-        connection
-            .execute_batch(
-                "CREATE VIRTUAL TABLE event_search USING fts5(terms, org UNINDEXED,
-                     project UNINDEXED, thread UNINDEXED, seq UNINDEXED, tokenize = 'ascii');
-                 INSERT INTO event_search VALUES ('0123abcd', 'o', 'p', 't', 1);
-                 INSERT INTO settings (key, value) VALUES ('kept', 'yes');",
-            )
-            .unwrap();
-        connection
-            .pragma_update(None, "user_version", schema::BEFORE)
-            .unwrap();
-    }
-    block_on!(async {
-        let store = Store::open(&path, file_keys(&path), objects())
-            .await
-            .unwrap();
-        assert_eq!(conformance::search(&store.log()).await, Ok(()));
-        assert_eq!(conformance::directory(&store.directory()).await, Ok(()));
-    });
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    let version: u32 = raw
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, schema::VERSION);
-    let kept: String = raw
-        .query_row("SELECT value FROM settings WHERE key = 'kept'", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(kept, "yes", "what the file held is kept");
-    let unsealed: i64 = raw
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE sql LIKE '%fts5%'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(unsealed, 0, "the unsealed index is gone");
 }
 
 /// A deleted chat leaves no row in the search index, so even its words' hashes go, and every
@@ -326,27 +252,6 @@ fn a_deleted_chat_leaves_no_row_in_the_search_index() {
         2,
         "the other threads keep theirs"
     );
-}
-
-#[test]
-fn a_new_file_gets_the_schema_and_opens_again() {
-    let (_dir, path) = temp_db("fresh");
-    block_on!(async {
-        drop(
-            Store::open(&path, file_keys(&path), objects())
-                .await
-                .unwrap(),
-        );
-        let again = Store::open(&path, file_keys(&path), objects())
-            .await
-            .unwrap();
-        assert_eq!(conformance::search(&again.log()).await, Ok(()));
-    });
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    let version: u32 = raw
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, schema::VERSION);
 }
 
 #[test]

@@ -355,7 +355,7 @@ describe('NewProjectComponent', () => {
     expect(root.querySelector('input[type="radio"]')).toBeNull();
     expect(root.querySelector('app-folder-picker')).toBeNull();
     expect(find(root, 'new-project-no-folder').textContent).toBe(
-      'Its threads start in an empty folder for now; a computer for it comes later.',
+      'Its chats start in an empty folder for now; a computer for it comes later.',
     );
     expect(fake.paramsOf('folder/list')).toEqual([]);
     expect(fake.paramsOf('credential/list')).toEqual([]);

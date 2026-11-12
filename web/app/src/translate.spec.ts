@@ -31,8 +31,8 @@ describe('translate', () => {
   it('writes right to left in ar-XB, keeping what a message is given whole', async () => {
     await translate('ar-XB');
     const name = 'Atlas';
-    expect($localize`:@@projectsNav.newIn:New thread in ${name}:PROJECT:`).toBe(
-      ['New', 'thread', 'in'].map((word) => `\u200f\u202e${word}\u202c\u200f`).join(' ') + ' Atlas',
+    expect($localize`:@@projectsNav.newIn:New chat in ${name}:PROJECT:`).toBe(
+      ['New', 'chat', 'in'].map((word) => `\u200f\u202e${word}\u202c\u200f`).join(' ') + ' Atlas',
     );
   });
 });

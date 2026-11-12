@@ -59,6 +59,16 @@ global-artifacts-jobs = ["./release-installers"]
 # target, as a release would.
 pr-run-mode = "plan"
 
+# The macOS runners each target builds on, and the installers are tried on (dist's plan), named
+# here rather than left to dist's defaults: GitHub retires an image on its own schedule, and
+# dist 0.33.0's default for Apple silicon, macos-14, stopped running when GitHub retired it on
+# 2026-11-02. Each is a label GitHub lists as supported
+# (https://docs.github.com/en/actions/reference/runners/github-hosted-runners); the next
+# retirement is a change here.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
+x86_64-apple-darwin = "macos-15-intel"
+
 # Actions in dist's workflow whose dist default lags the major the other workflows use, each
 # written after the `@` as given. Bumped here by hand (.github/dependabot.yml says why); an
 # entry goes once a dist upgrade's own default reaches it.

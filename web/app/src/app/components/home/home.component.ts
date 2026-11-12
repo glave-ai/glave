@@ -101,7 +101,7 @@ export class HomeComponent {
     const error = this.error();
     return error === null
       ? null
-      : $localize`:@@home.failed:Could not start a thread: ${error}:ERROR:`;
+      : $localize`:@@home.failed:Could not start a chat: ${error}:ERROR:`;
   });
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);

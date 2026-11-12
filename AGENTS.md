@@ -41,7 +41,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store and the objects that hold blobs' bytes, key erasure, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, the settings config fills and the domain crates read (hooks, the judge, a project's protections, the limits of people's computers, what the web tools reach, `.mcp.json`), glave's own streams beside threads (the ledgers' reserved ids, reads caught up, appends retried), the caller, the clock and entropy, the leases work in flight runs under (a holder and an expiry on the store's clock), in-memory versions, conformance suites and the test doubles every crate shares
+crates/ports/       glave-ports: event log, blob store and the objects that hold blobs' bytes, key erasure, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, the settings config fills and the domain crates read (hooks, the judge, a project's protections, the limits of people's computers, what the web tools reach, `.mcp.json`), glave's own streams beside threads (the ledgers' reserved ids, reads caught up, appends retried), the caller, the clock and entropy, the leases work in flight runs under (a holder and an expiry on the store's clock), what each store's migrations run from a version (`migrations`), in-memory versions, conformance suites and the test doubles every crate shares
 crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, browsers signed in by one-time links or passkeys (webauthn-rs) to sessions kept as hashes, the person an issuer's subject is
 crates/acme/        glave-acme: HTTPS of glave's own for a domain: a certificate from an ACME authority over TLS-ALPN-01 (instant-acme), renewed with a third of its life left, kept sealed in the store
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
@@ -140,7 +140,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
   A click may show its result at once; the server's answer is what stays. No item names a pane, a fold or a place on screen: every item prints as one line of plain text, which the CLI proves.
 - **One project shows no projects.** With only the person's Chats, the UI shows no project grouping or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
-- **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
+- **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`), or a word of glave's code (thread, repo, worktree, CLI, config, JSON, MCP, endpoint): a chat is a chat.
 - **Startup and size are measured** in the merge queue before every merge, after every merge to `main`, and weekly (`budgets.yml`), not on a pull request's own pushes. A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
 
 ## Rust
@@ -176,7 +176,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Make illegal states unrepresentable: newtypes for IDs (`ProjectId`, `EventId`), enums over flags, validated constructors.
 - IDs are UUID v7 (time-ordered).
 - Everything persisted or sent over the wire carries a schema version. Migrations can be replayed.
-- Until glave 0.1 ships there is no compatibility: formats change in place, each store has one schema, and people remove their data. From 0.1 on, versions, migrations and upgrade-on-read apply.
+- An update never empties a store. A store's schema changes only by a new numbered migration, appended to its list, never by editing one that shipped (`specs/storage.md`, "Migrations"), and every change to an event payload's shape or meaning bumps its `v`, the older version upgraded as it is read (`specs/events.md`, "Versioning"). Other formats (the session and computer protocols, glave's files on a computer) change in place until glave 0.1 ships; from 0.1 on, versions and upgrade-on-read apply to them too.
 
 **Async and concurrency**
 - tokio. Never block inside async code; use `spawn_blocking` for blocking work.

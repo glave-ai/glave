@@ -76,7 +76,7 @@ describe('FolderGoneComponent', () => {
     const { root, fixture } = await render(fake);
     byTestId<HTMLButtonElement>(root, 'gone-remove')?.click();
     await settle(fixture);
-    expect(byTestId(root, 'gone-confirm')?.textContent).toContain('Its threads go to the archive');
+    expect(byTestId(root, 'gone-confirm')?.textContent).toContain('Its chats go to the archive');
     byTestId<HTMLButtonElement>(root, 'gone-confirm-cancel')?.click();
     await settle(fixture);
     expect(fake.paramsOf('project/remove')).toEqual([]);

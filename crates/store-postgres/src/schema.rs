@@ -1,22 +1,39 @@
-//! The database schema: one, made whole in a new database. Until glave 0.1 ships it changes in
-//! place, with [`VERSION`] bumped, and a database of another version is refused (AGENTS.md,
-//! "Types"). `glave_migrations` records the version. The one exception is a change that only
-//! adds tables, or makes again one that holds nothing but what is derived from the events, made
-//! in a database of the version before as well ([`ADDED`]).
+//! The database schema, carried forward (`specs/storage.md`, "Migrations"): a new database is
+//! made at the baseline and brought through every migration since, an older one through those
+//! it lacks, all in one transaction that records each version in `glave_migrations`. Servers
+//! starting at once queue on a lock, so one migrates and the rest find it done. A database a
+//! newer glave set up, or one from before the baseline, is refused and left as it was.
 
+use std::time::Duration;
+
+use glave_ports::migrations::{Change, Migration, Refused, Schema};
 use tokio_postgres::Client;
+use tokio_postgres::error::SqlState;
 
 use crate::store::{StoreError, describe};
 
-/// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
-/// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 21;
+/// The schema this build makes and reads. A migration that has shipped is never edited: a
+/// change to the schema is a new one, appended.
+pub const SCHEMA: Schema<'static> = Schema {
+    baseline: 20,
+    made: BASELINE,
+    migrations: &[Migration {
+        change: Change::Adds,
+        sql: SEALED_INDEX,
+    }],
+};
 
-/// The version before [`VERSION`], whose databases get [`ADDED`] and are this build's after.
-const BEFORE: i32 = 20;
+/// How long a server waits for another to finish bringing the database up to date: minutes,
+/// since a migration is real work.
+const MIGRATED_WITHIN: Duration = Duration::from_mins(5);
 
-/// Every table, made in one transaction in a new database.
-const SCHEMA: &str = "
+/// How long a migration waits for a table it changes that servers of the release before are
+/// using: moments, since every lock they take is held for one statement or transaction, and a
+/// migration waiting for one holds up every query of that table behind it.
+const TABLES_WITHIN: Duration = Duration::from_secs(5);
+
+/// Every table as of version 20, but its unsealed search index, which 21 makes again sealed.
+const BASELINE: &str = "
     -- The event log. `pos` is the write order across threads, so searches can put the most
     -- recent first. `data` is the payload sealed under the data key `key_id` names. One event
     -- per position: a second writer fails on the key instead of scrambling a thread.
@@ -191,12 +208,12 @@ const SCHEMA: &str = "
     );
 ";
 
-/// What version 21 changes: the search index sealed (`specs/storage.md`, "Search index"). Each
-/// searchable event's words, as keyed hashes under its project key (`Keys::seal_terms`), sealed
-/// under the data key `key_id` names, written in the same transaction as the event; `pos` is the
-/// write order, so a search reads only the rows after the last it read. A database of the
-/// version before loses its unsealed index, so its chats from before are not searched.
-const ADDED: &str = "
+/// 21: the search index sealed (`specs/storage.md`, "Search index"). Each searchable event's
+/// words, as keyed hashes under its project key (`Keys::seal_terms`), sealed under the data key
+/// `key_id` names, written in the same transaction as the event; `pos` is the write order, so a
+/// search reads only the rows after the last it read. A database of 20 loses its unsealed index,
+/// derived from the events, so its chats from before are not searched.
+const SEALED_INDEX: &str = "
     DROP TABLE IF EXISTS event_search;
 
     CREATE TABLE event_search (
@@ -239,52 +256,89 @@ pub(crate) async fn refuse_bypassing(client: &Client) -> Result<(), StoreError> 
     Ok(())
 }
 
-/// Makes the schema in a new database, and checks an existing one is this build's. Openers
-/// queue on a lock for the schema they share, so two never make it at once. A database of any
-/// other version is refused with what to do about it, never changed.
-pub(crate) async fn prepare(client: &mut Client) -> Result<(), StoreError> {
-    let schema = |e: tokio_postgres::Error| StoreError::Schema(describe(&e));
-    let transaction = client.transaction().await.map_err(schema)?;
+/// Brings the database in `client`'s search path up to `schema` ([`SCHEMA`] but in tests),
+/// making it the first time: every step it lacks, in one transaction that records each version
+/// it reaches, so one that fails leaves it at the version it had. Servers starting at once queue
+/// on a lock for the schema they share, taken before the version is read, so no step runs twice.
+pub async fn migrate(client: &mut Client, schema: &Schema<'_>) -> Result<(), StoreError> {
+    let failed = |e: tokio_postgres::Error| StoreError::Schema(describe(&e));
+    let transaction = client.transaction().await.map_err(failed)?;
     transaction
-        .batch_execute(
-            "SELECT pg_advisory_xact_lock(hashtext('glave_migrations:' || current_schema()));
+        .batch_execute(&format!(
+            "SET LOCAL lock_timeout = {};
+             SELECT pg_advisory_xact_lock(hashtext('glave_migrations:' || current_schema()));
+             SET LOCAL lock_timeout = {};
              CREATE TABLE IF NOT EXISTS glave_migrations (
                  version  integer     PRIMARY KEY,
                  applied  timestamptz NOT NULL DEFAULT now()
              );",
-        )
+            MIGRATED_WITHIN.as_millis(),
+            TABLES_WITHIN.as_millis()
+        ))
         .await
-        .map_err(schema)?;
+        .map_err(|e| match e.code() {
+            Some(&SqlState::LOCK_NOT_AVAILABLE) => StoreError::Schema(format!(
+                "another glave server was bringing the database up to date and had not \
+                 finished within {}",
+                glave_ports::spoken(MIGRATED_WITHIN)
+            )),
+            _ => failed(e),
+        })?;
     let found: i32 = transaction
         .query_one(
             "SELECT COALESCE(MAX(version), 0) FROM glave_migrations",
             &[],
         )
         .await
-        .map_err(schema)?
+        .map_err(failed)?
         .try_get(0)
-        .map_err(schema)?;
-    if found == VERSION {
-        return transaction.commit().await.map_err(schema);
+        .map_err(failed)?;
+    let found = u32::try_from(found)
+        .map_err(|_| StoreError::Schema(format!("the database records schema {found}")))?;
+    let plan = schema.plan(found).map_err(refused)?;
+    for step in &plan.steps {
+        let version = i32::try_from(step.version)
+            .map_err(|_| StoreError::Schema(format!("schema {} is too large", step.version)))?;
+        transaction.batch_execute(step.sql).await.map_err(|e| {
+            let why = match e.code() {
+                Some(&SqlState::LOCK_NOT_AVAILABLE) => format!(
+                    "a table it changes stayed in use for {}; starting again tries again",
+                    glave_ports::spoken(TABLES_WITHIN)
+                ),
+                _ => describe(&e),
+            };
+            StoreError::Schema(format!(
+                "could not bring the database up to date (schema {version}): {why}"
+            ))
+        })?;
+        transaction
+            .execute(
+                "INSERT INTO glave_migrations (version) VALUES ($1)",
+                &[&version],
+            )
+            .await
+            .map_err(failed)?;
     }
-    if found != 0 && found != BEFORE {
-        return Err(StoreError::Schema(format!(
-            "this database was set up by another version of glave, which this one cannot read \
-             before glave 0.1 (schema {found}, not {VERSION}). Empty it (drop glave's tables, or \
-             the schema they are in) and start glave again"
-        )));
+    transaction.commit().await.map_err(failed)
+}
+
+/// Why a database is not opened, with what to do about it.
+fn refused(refused: Refused) -> StoreError {
+    let what = match refused {
+        Refused::Newer { .. } => "Update glave on every server that uses it and start them again",
+        Refused::Older { .. } => {
+            "Empty it (drop glave's tables, or the schema they are in) and start glave again"
+        }
+    };
+    StoreError::Schema(format!("this database was {refused}. {what}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_migration_keeps_the_rules_of_a_migration() {
+        assert_eq!(SCHEMA.broken_rule(), None);
     }
-    // A database of the version before only gains the tables changed since.
-    if found == 0 {
-        transaction.batch_execute(SCHEMA).await.map_err(schema)?;
-    }
-    transaction.batch_execute(ADDED).await.map_err(schema)?;
-    transaction
-        .execute(
-            "INSERT INTO glave_migrations (version) VALUES ($1)",
-            &[&VERSION],
-        )
-        .await
-        .map_err(schema)?;
-    transaction.commit().await.map_err(schema)
 }

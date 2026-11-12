@@ -44,7 +44,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 export class MemoryComponent {
   protected readonly copy = {
     heading: $localize`:@@memory.heading:Memory`,
-    intro: $localize`:@@memory.intro:What glave keeps between threads: about you, and about this project. Edit or forget any of it.`,
+    intro: $localize`:@@memory.intro:What glave keeps between chats: about you, and about this project. Edit or forget any of it.`,
     personal: $localize`:@@memory.personal:about you`,
     project: $localize`:@@memory.project:this project`,
     edit: $localize`:@@memory.edit:Edit`,

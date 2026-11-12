@@ -72,7 +72,7 @@ export function background(
       return { commands: running === null ? [] : [DOCS], previewed: false };
     case 'command/stop':
       if (running === null || params['command'] !== DOCS_COMMAND) {
-        return new Refusal(-32027, 'that command is not running in this thread');
+        return new Refusal(-32027, 'that command is not running in this chat');
       }
       running.running = false;
       return {};

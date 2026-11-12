@@ -212,7 +212,7 @@ fn a_fork_says_plainly_that_files_are_not_rewound_and_where_it_works() {
             forked_record(&server, forked.id).await,
             (
                 ForkFiles::Same,
-                "Forked here from an earlier thread. Files aren't rewound: this thread works \
+                "Forked here from an earlier chat. Files aren't rewound: this chat works \
                  in the same folder, with them as they are now."
                     .to_owned()
             )
@@ -229,8 +229,8 @@ fn a_fork_says_plainly_that_files_are_not_rewound_and_where_it_works() {
             forked_record(&server, forked.id).await,
             (
                 ForkFiles::Other,
-                "Forked here from an earlier thread. Files aren't rewound: this thread works \
-                 in another folder, without the earlier thread's changes."
+                "Forked here from an earlier chat. Files aren't rewound: this chat works \
+                 in another folder, without the earlier chat's changes."
                     .to_owned()
             )
         );
@@ -284,7 +284,7 @@ fn a_fork_point_within_a_turn_or_past_the_end_is_refused_and_nothing_is_made() {
             assert_eq!(refused.code, code::INVALID_PARAMS);
             assert_eq!(
                 &*refused.message,
-                "a thread is forked only between its turns, and that point is within one or \
+                "a chat is forked only between its turns, and that point is within one or \
                  past its end"
             );
         }
