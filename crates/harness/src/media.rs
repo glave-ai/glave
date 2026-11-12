@@ -19,7 +19,7 @@ use glave_ports::{
 };
 use serde_json::json;
 
-use crate::approval::{ApprovalRequest, Approver};
+use crate::approval::{ApprovalRequest, Approver, ask_of};
 use crate::calls::Needs;
 use crate::cancel::Cancel;
 use crate::files::kind_of;
@@ -90,6 +90,7 @@ where
                 tool: name.to_owned(),
                 effect: Effect::Runs,
                 summary: summary.clone(),
+                ask: ask_of(name),
                 secret: false,
                 caution: None,
                 outside_sandbox: None,
