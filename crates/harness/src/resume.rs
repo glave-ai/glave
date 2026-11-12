@@ -99,6 +99,7 @@ where
             rebound: bound.filter(|_| moved),
             prefix: crate::prefix::Prefixed::None,
             summary_failed: None,
+            keys: crate::keys::Keys::of(&events),
         };
         self.take_history(&mut thread, &events).await;
         Ok(thread)
@@ -203,6 +204,7 @@ where
             .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
         thread.messages = conversation(&events);
         thread.unnumbered = crate::bind::own_records(&events);
+        thread.keys = crate::keys::Keys::of(&events);
         thread.opened = self.opened(&thread.scope, thread.id, &events).await?;
         if thread.waits() {
             return Err(HarnessError::Waits(thread.id));

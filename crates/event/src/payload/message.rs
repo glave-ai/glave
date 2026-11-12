@@ -23,6 +23,10 @@ pub struct MessageAdded {
     /// no readable reasoning, or was recorded before glave kept this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thought: Option<Thought>,
+    /// The idempotency key the person sent it with, when they sent one: a retry with the same
+    /// key, on any server, finds it here and starts nothing (`specs/invariants.md`, 4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// The model's reasoning in a line: its headline, and how long the model reasoned.

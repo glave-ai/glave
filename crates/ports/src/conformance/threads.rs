@@ -79,6 +79,7 @@ fn said(text: &str) -> MessageAdded {
         parts: vec![Part::Text { text: text.into() }],
         author: None,
         thought: None,
+        key: None,
     }
 }
 
@@ -394,6 +395,7 @@ async fn opening_messages<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> V
         ],
         author: None,
         thought: None,
+        key: None,
     };
     let events = vec![
         writer.next(20, &started()?)?,

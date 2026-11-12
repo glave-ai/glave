@@ -12,7 +12,7 @@ Run it on your own machine and it just works: privately, with any model. A compa
 - **Real work on a real computer:** glave reads, writes and runs code in your project folders, in a sandbox (macOS and Linux). It asks before anything risky, and a small judge lets through the risky-looking things you clearly asked for, so it doesn't nag.
 - **Your projects, your threads:** many threads per project, each working on its own git branch, with memory you can see, edit and erase.
 - **Connections:** connect GitHub (or GitLab, Gitea, Bitbucket) and MCP servers. Tokens are sealed and handed out per use, never left lying on the machine.
-- **Yours:** everything is stored encrypted on your machine, or in your company's Postgres. No account with us, and nothing sent anywhere except to the models you choose.
+- **Yours:** stored on your machine, or in your company's Postgres. What you say and keep (messages, files, memories, secrets) is encrypted there; ids and times are not yet. No account with us, and nothing sent anywhere except to the models you choose.
 
 ## Run it
 

@@ -9,6 +9,7 @@ use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::compaction::Asked;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::keys::SentBefore;
 use crate::repeats::Repeats;
 use crate::service::Round;
 use crate::telemetry;
@@ -85,6 +86,7 @@ where
         let said = Said {
             text: prompt,
             files: &[],
+            key: None,
         };
         self.run_turn_with_files(thread, said, caller, cancel, live)
             .await
@@ -103,6 +105,7 @@ where
     ) -> Result<TurnResult, HarnessError> {
         let prompt = Prompt {
             files: said.files,
+            key: said.key,
             ..Prompt::new(said.text, caller)
         };
         self.run_prompt(thread, prompt, cancel, live).await
@@ -161,6 +164,15 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnResult, HarnessError> {
         self.close_left_open(thread).await?;
+        // Sent before with its key, on this server or another: answered as that turn ended.
+        let before = prompt
+            .key
+            .and_then(|key| thread.sent_before(prompt.caller.person, key));
+        match before {
+            Some(SentBefore::Ended(ended)) => return Ok(ended),
+            Some(SentBefore::Open) => return Err(HarnessError::Waits(thread.id)),
+            None => {}
+        }
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
@@ -315,6 +327,7 @@ where
             parts: parts.clone(),
             author: Some(Principal::glave()),
             thought: None,
+            key: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
@@ -345,6 +358,7 @@ where
         self.stage(thread, &mut events, result)?;
         self.commit(thread, events).await?;
         staged.recorded(thread);
+        thread.keys.ended(result);
         // Nothing is open any more, whatever was when the thread was read.
         thread.opened = None;
         // On its person's own computer, read again after a turn that changed files there: what

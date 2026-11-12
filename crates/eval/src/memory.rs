@@ -360,6 +360,7 @@ async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<
             parts: vec![Part::Text { text: text.clone() }],
             author: None,
             thought: None,
+            key: None,
         };
         events.push(encode(header, &message).map_err(|e| fail(&e))?);
     }

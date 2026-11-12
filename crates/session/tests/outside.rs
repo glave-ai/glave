@@ -135,6 +135,7 @@ fn a_message_from_outside_is_still_a_conflict() {
             }],
             author: None,
             thought: None,
+            key: None,
         };
         store
             .log()

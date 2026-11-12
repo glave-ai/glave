@@ -41,6 +41,11 @@ impl IdempotencyKey {
         }
         Ok(Self(key))
     }
+
+    /// The key, as the client sent it.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl TryFrom<String> for IdempotencyKey {

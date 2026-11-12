@@ -29,6 +29,7 @@ pub(super) fn said(thread: ThreadId, seq: u64, role: Role, text: &str) -> Result
         parts: vec![Part::Text { text: text.into() }],
         author: None,
         thought: None,
+        key: None,
     };
     encode(header(thread, seq)?, &message).map_err(|e| e.to_string())
 }

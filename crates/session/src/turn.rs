@@ -221,7 +221,12 @@ where
         }
         let sent = loop {
             if queue {
-                match self.queue(caller, thread, prompt, &files, &choice) {
+                let said = Said {
+                    text: prompt,
+                    files: &files,
+                    key: key.map(IdempotencyKey::as_str),
+                };
+                match self.queue(caller, thread, said, &choice) {
                     Ok(Queue::Queued(queued)) => break Ok(Sent::Queued(queued)),
                     // Started again once it has ended; never, if its work went without ending.
                     Ok(Queue::Ending(mut ending)) => match ending.wait_for(|ended| *ended).await {
@@ -239,6 +244,7 @@ where
             let said = Said {
                 text: prompt,
                 files: &files,
+                key: key.map(IdempotencyKey::as_str),
             };
             let work = turn(thread, said, caller, &choice, unattended, finish.clone());
             let started = self
@@ -316,6 +322,7 @@ where
     B: BlobStore + 'static,
 {
     let (prompt, files) = (said.text.to_owned(), said.files.to_vec());
+    let key = said.key.map(str::to_owned);
     let (caller, choice) = (caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
@@ -333,6 +340,7 @@ where
                     Said {
                         text: &prompt,
                         files: &files,
+                        key: key.as_deref(),
                     },
                     &caller,
                     &cancel,
