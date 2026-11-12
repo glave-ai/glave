@@ -1,7 +1,7 @@
 //! The outbound proxy a prepared sandbox's commands go out through (`specs/sandbox.md`, "The
 //! outbound proxy"): one per prepared sandbox, so one per thread, with a secret of its own that
 //! only its commands are given. On Linux it listens on a Unix socket in the sandbox's own
-//! folder, which a forwarder in each command's network namespace reaches; on macOS on a port of
+//! folder, which the forwarder in the thread's network namespace reaches; on macOS on a port of
 //! this computer's loopback, which the command reaches itself.
 
 use std::fmt::{self, Write as _};
@@ -64,7 +64,7 @@ impl fmt::Debug for Outbound {
 const DRAWS: usize = 2;
 
 /// The variables that name the proxy, as programs read them.
-pub(super) const PROXY: [&str; 6] = [
+const PROXY: [&str; 6] = [
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "ALL_PROXY",
@@ -75,7 +75,7 @@ pub(super) const PROXY: [&str; 6] = [
 
 /// The variables that name what is reached without the proxy: loopback, which the proxy
 /// refuses.
-pub(super) const NO_PROXY: [&str; 2] = ["NO_PROXY", "no_proxy"];
+const NO_PROXY: [&str; 2] = ["NO_PROXY", "no_proxy"];
 
 /// Loopback, by every name it goes by.
 const LOOPBACK: &str = "localhost,127.0.0.1,::1";

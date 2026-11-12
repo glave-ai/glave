@@ -29,7 +29,7 @@ pub(crate) mod worktree;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use glave_ports::computer::{
@@ -46,7 +46,7 @@ use glave_process::{Owner, Processes};
 use background::Backgrounds;
 use command::Keep;
 pub(crate) use registry::new_id;
-use registry::{Opened, Registry};
+use registry::{Kept, Opened, Registry};
 
 use crate::disk::Largest;
 pub use git::ask_repository;
@@ -89,7 +89,8 @@ pub struct LocalComputers {
     /// time when none.
     host: Option<ComputerId>,
     /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback),
-    /// [`crate::forward_helper`] (a sandboxed command's way to the outbound proxy) and
+    /// [`crate::forward_helper`] (a thread's network on Linux, whose one way out is the outbound
+    /// proxy) and
     /// [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
     helper: Option<PathBuf>,
     /// How the outbound proxy sandboxed commands may be kept to is made.
@@ -266,7 +267,7 @@ impl LocalComputers {
             environment,
             hidden: Arc::clone(&self.hidden),
             glave_on_path: self.glave_on_path.clone(),
-            prepared: Mutex::new(None),
+            prepared: Kept::default(),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
             outbound: self.outbound.clone(),
         };

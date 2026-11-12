@@ -1,8 +1,8 @@
-//! Commands kept to the outbound proxy, in the real sandbox: on Linux each in a network
-//! namespace of its own whose one way out is glave's forwarder to the proxy, on macOS reaching
-//! only this computer's loopback, where the proxy listens. The proxy reaches a stand-in for the
-//! internet (names resolve to what these tests say, and the one public address is a server on
-//! this computer), so nothing leaves it. On Linux they need the built glave as the forwarder
+//! Commands kept to the outbound proxy, in the real sandbox: on Linux in their thread's network
+//! namespace, whose one way out is glave's forwarder to the proxy, on macOS reaching only this
+//! computer's loopback, where the proxy listens. The proxy reaches a stand-in for the internet
+//! (names resolve to what these tests say, and the one public address is a server on this
+//! computer), so nothing leaves it. On Linux they need the built glave as the forwarder
 //! (`GLAVE_TEST_SANDBOX_HELPER`), and must find it where `GLAVE_REQUIRE_SANDBOX` is set.
 
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ use std::time::Duration;
 use glave_ports::block_on;
 use glave_ports::computer::{
     Command, ComputerError, Computers, Ending, Environment, NetworkMode, Sandbox, SandboxLevel,
-    SandboxNetwork, Sources,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -90,66 +90,87 @@ fn kept() -> Option<Kept> {
     })
 }
 
+/// This computer's commands, reaching the stand-in internet through their proxies, with `dir`
+/// as the home folder, forwarding through `helper` on Linux.
+fn computers(dir: &Path, helper: Option<&Path>) -> LocalComputers {
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), dir.as_os_str().to_owned())])
+        .collect();
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_outbound(
+        Outbound::over(Rules::new(NetworkMode::Open, []), StandIn::new()),
+    );
+    match helper {
+        Some(helper) => computers.with_helper(helper),
+        None => computers,
+    }
+}
+
+/// A thread of its own: a workspace on `dir/app`, so a sandbox and a proxy of its own.
+async fn thread(computers: &LocalComputers, dir: &Path) -> Result<WorkspaceId, ComputerError> {
+    let computer = computers.create(&Environment::host()).await?;
+    let sources = Sources::Folder {
+        path: dir.join("app").to_string_lossy().into_owned(),
+    };
+    Ok(computers.open(computer.id, &sources).await?.id)
+}
+
+/// `script` in the `project` sandbox with `network`, with `dir` as the home folder.
+fn sandboxed(dir: &Path, network: SandboxNetwork, script: &str) -> Command {
+    let mut command = Command::new(script);
+    command.sandbox = Some(Sandbox {
+        level: SandboxLevel::Project,
+        network,
+        home: Some(dir.to_owned()),
+        glave_home: Some(dir.join(".glave")),
+    });
+    command.timeout_secs = Some(60);
+    command
+}
+
+/// Runs `command` in `workspace` to its end, and says what it printed.
+async fn said(
+    computers: &LocalComputers,
+    workspace: WorkspaceId,
+    command: &Command,
+) -> Result<String, ComputerError> {
+    let output = Collect::default();
+    let finished = computers
+        .run(workspace, command, &output, &CancelSwitch::default())
+        .await?;
+    let printed = output.0.lock().unwrap().clone();
+    assert!(
+        !matches!(finished.ending, Ending::TimedOut { .. }),
+        "{}: {printed}",
+        command.script
+    );
+    Ok(printed)
+}
+
 /// Runs each of `scripts` in `dir/app`, in the `project` sandbox with `network`, kept to the
 /// proxy or not, while an HTTP server answers [`HELLO`] on loopback at the port each script's
-/// `$SERVER` names. Each script runs in the thread its number names: each thread is a
-/// workspace of its own, so a sandbox and a proxy of its own. Returns what each printed.
+/// `$SERVER` names. Each script runs in the thread its number names. Returns what each printed.
 fn run(
     dir: &Path,
     helper: Option<&Path>,
     network: SandboxNetwork,
     scripts: &[(usize, &str)],
 ) -> Result<Vec<String>, ComputerError> {
-    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
-        .filter(|(name, _)| name == "PATH")
-        .chain([("HOME".into(), dir.as_os_str().to_owned())])
-        .collect();
-    let mut computers = LocalComputers::new(dir.join("copies"), environment).with_outbound(
-        Outbound::over(Rules::new(NetworkMode::Open, []), StandIn::new()),
-    );
-    if let Some(helper) = helper {
-        computers = computers.with_helper(helper);
-    }
-    let sandbox = Sandbox {
-        level: SandboxLevel::Project,
-        network,
-        home: Some(dir.to_owned()),
-        glave_home: Some(dir.join(".glave")),
-    };
+    let computers = computers(dir, helper);
     block_on!(async {
         let mut server = JoinSet::new();
         let port = serve(&mut server).await;
         let threads = scripts.iter().map(|(thread, _)| thread + 1).max();
         let mut workspaces = Vec::new();
         for _ in 0..threads.unwrap_or_default() {
-            let computer = computers.create(&Environment::host()).await?;
-            let sources = Sources::Folder {
-                path: dir.join("app").to_string_lossy().into_owned(),
-            };
-            workspaces.push(computers.open(computer.id, &sources).await?.id);
+            workspaces.push(thread(&computers, dir).await?);
         }
-        let mut said = Vec::new();
+        let mut printed = Vec::new();
         for (thread, script) in scripts {
-            let mut command = Command::new(format!("SERVER={port}\n{script}"));
-            command.sandbox = Some(sandbox.clone());
-            command.timeout_secs = Some(60);
-            let output = Collect::default();
-            let finished = computers
-                .run(
-                    workspaces[*thread],
-                    &command,
-                    &output,
-                    &CancelSwitch::default(),
-                )
-                .await?;
-            let printed = output.0.lock().unwrap().clone();
-            assert!(
-                !matches!(finished.ending, Ending::TimedOut { .. }),
-                "{script}: {printed}"
-            );
-            said.push(printed);
+            let command = sandboxed(dir, network, &format!("SERVER={port}\n{script}"));
+            printed.push(said(&computers, workspaces[*thread], &command).await?);
         }
-        Ok(said)
+        Ok(printed)
     })
 }
 
@@ -197,10 +218,10 @@ fn fetch(options: &str, url: &str) -> String {
 }
 
 /// The stand-in host is reached through the proxy, with the proxy's variables and only those:
-/// no secret in the command's own variables, loopback left to the command, and a direct
+/// its secret in their URL and in no other variable, loopback left to the command, and a direct
 /// connection to anywhere else fails, as it would for a program that ignores the variables.
 /// This computer's loopback is reached directly on macOS, which has no network of a command's
-/// own, and not on Linux, where the command's loopback is its namespace's.
+/// own, and not on Linux, where the command's loopback is its thread's namespace's.
 #[test]
 fn sandbox_proxied_commands_reach_a_host_only_through_the_proxy() {
     let Some(Kept { helper }) = kept() else {
@@ -214,7 +235,8 @@ fn sandbox_proxied_commands_reach_a_host_only_through_the_proxy() {
         &[
             &fetch("", "http://allowed.example:$SERVER/"),
             "for name in HTTPS_PROXY all_proxy NO_PROXY; do printenv $name; done; \
-             printenv GLAVE_PROXY_SECRET || echo no-secret",
+             secret=${HTTPS_PROXY#http://t:}; secret=${secret%@*}; \
+             echo \"secret in $(env | grep -c -- \"$secret\")\"",
             &fetch("--noproxy '*'", "http://127.0.0.1:$SERVER/"),
             &fetch("--noproxy '*'", "http://93.184.216.34:$SERVER/"),
         ],
@@ -233,7 +255,8 @@ fn sandbox_proxied_commands_reach_a_host_only_through_the_proxy() {
     );
     assert_eq!(lines.next(), Some(https), "{variables}");
     assert_eq!(lines.next(), Some("localhost,127.0.0.1,::1"), "{variables}");
-    assert_eq!(lines.next(), Some("no-secret"), "{variables}");
+    // In the six variables that name the proxy, and nowhere else.
+    assert_eq!(lines.next(), Some("secret in 6"), "{variables}");
     assert!(!direct.contains(HELLO), "{direct}");
     assert!(direct.contains("status=000"), "{direct}");
     if cfg!(target_os = "macos") {
@@ -534,4 +557,116 @@ fn sandbox_proxied_commands_send_no_datagram_out_so_no_lookup() {
         .unwrap();
     let (n, _) = resolver.recv_from(&mut got).unwrap();
     assert_eq!(got.get(..n), Some(&b"lookup"[..]));
+}
+
+/// On Linux a thread's commands kept to the proxy share one network namespace: a server one of
+/// them keeps running in the background is reached at loopback by the thread's next command,
+/// a command let out directly between included, and not by another thread's, in a namespace of
+/// its own; once the threads' workspaces close, no process is left in either namespace, so both
+/// are gone.
+#[cfg(target_os = "linux")]
+#[test]
+fn sandbox_a_thread_s_proxied_commands_share_one_loopback() {
+    let Some(Kept { helper }) = kept() else {
+        return;
+    };
+    let dir = scratch("one-loopback");
+    let computers = computers(&dir, helper.as_deref());
+    let proxied = |script: &str| sandboxed(&dir, SandboxNetwork::Proxied, script);
+    // A server at a port of loopback, which it writes down once it listens.
+    let serve = proxied(
+        "python3 -c \"import http.server, os; \
+         s = http.server.HTTPServer(('127.0.0.1', 0), http.server.SimpleHTTPRequestHandler); \
+         open('port.new', 'w').write(str(s.server_port)); os.rename('port.new', 'port'); \
+         s.serve_forever()\"",
+    );
+    let reach = proxied(&format!(
+        "for _ in $(seq 100); do test -s port && break; sleep 0.1; done; {}",
+        fetch("--noproxy '*'", "http://127.0.0.1:$(cat port)/")
+    ));
+    let network = proxied("readlink /proc/self/ns/net");
+    let let_out = sandboxed(&dir, SandboxNetwork::Direct, "true");
+    let (reached, refused, namespaces) = block_on!(async {
+        let ours = thread(&computers, &dir).await.unwrap();
+        let theirs = thread(&computers, &dir).await.unwrap();
+        computers.start(ours, &serve).await.unwrap();
+        // A command let out directly between, in a sandbox of its own, leaves the thread's
+        // network as it was.
+        said(&computers, ours, &reach).await.unwrap();
+        said(&computers, ours, &let_out).await.unwrap();
+        let reached = said(&computers, ours, &reach).await.unwrap();
+        let refused = said(&computers, theirs, &reach).await.unwrap();
+        let namespaces = [
+            said(&computers, ours, &network).await.unwrap(),
+            said(&computers, theirs, &network).await.unwrap(),
+        ];
+        computers.close(ours).await.unwrap();
+        computers.close(theirs).await.unwrap();
+        (reached, refused, namespaces)
+    });
+    assert!(reached.contains("status=200"), "{reached}");
+    assert!(refused.contains("status=000"), "{refused}");
+    let [ours, theirs] = namespaces.map(|said| said.trim().to_owned());
+    assert!(ours.starts_with("net:["), "{ours}");
+    assert_ne!(ours, theirs);
+    for namespace in [ours, theirs] {
+        assert!(gone(&namespace), "{namespace} is still in use");
+    }
+}
+
+/// On Linux a thread whose forwarder was stopped from outside glave has lost its network, and
+/// its next command kept to the proxy starts in a new one, never in this computer's.
+#[cfg(target_os = "linux")]
+#[test]
+fn sandbox_a_thread_whose_forwarder_was_stopped_gets_a_new_network() {
+    let Some(Kept { helper }) = kept() else {
+        return;
+    };
+    let dir = scratch("forwarder-stopped");
+    let computers = computers(&dir, helper.as_deref());
+    let network = sandboxed(&dir, SandboxNetwork::Proxied, "readlink /proc/self/ns/net");
+    let (first, second) = block_on!(async {
+        let ours = thread(&computers, &dir).await.unwrap();
+        let first = said(&computers, ours, &network).await.unwrap();
+        // With no command running, the forwarder alone is in it.
+        for pid in in_namespace(first.trim()) {
+            let pid = rustix::process::Pid::from_raw(pid).unwrap();
+            rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
+        }
+        assert!(gone(first.trim()), "{first}");
+        let second = said(&computers, ours, &network).await.unwrap();
+        (first, second)
+    });
+    let here = std::fs::read_link("/proc/self/ns/net").unwrap();
+    assert!(second.starts_with("net:["), "{second}");
+    assert_ne!(first.trim(), second.trim());
+    assert_ne!(Path::new(second.trim()), here);
+}
+
+/// The processes in `namespace` (`net:[<inode>]`) that this one may look at.
+#[cfg(target_os = "linux")]
+fn in_namespace(namespace: &str) -> Vec<i32> {
+    std::fs::read_dir("/proc")
+        .unwrap()
+        .flatten()
+        .filter(|process| {
+            std::fs::read_link(process.path().join("ns/net"))
+                .is_ok_and(|link| link.as_os_str() == namespace)
+        })
+        .filter_map(|process| process.file_name().to_str()?.parse().ok())
+        .collect()
+}
+
+/// Whether no process is in `namespace` any more, within seconds: what was stopped takes a
+/// moment to end.
+#[cfg(target_os = "linux")]
+fn gone(namespace: &str) -> bool {
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while !in_namespace(namespace).is_empty() {
+        if std::time::Instant::now() > until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    true
 }

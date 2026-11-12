@@ -1,8 +1,9 @@
 //! glave started again as a helper of its own: the lifeline's, which stops what glave started
 //! once glave ends however it ends (`specs/one-server.md`, "No orphaned processes"), the
 //! Linux sandbox's, which confines itself and then becomes a command (`specs/sandbox.md`), the
-//! forwarder in a sandboxed command's network namespace, which carries its connections to the
-//! outbound proxy and runs the command (`specs/sandbox.md`, "The outbound proxy"), and
+//! outbound proxy's on Linux, the forwarder that holds a thread's network namespace, carrying
+//! its connections to the proxy, and the one that joins it and then becomes a command
+//! (`specs/sandbox.md`, "The outbound proxy"), and
 //! a terminal's, which takes its terminal in a session of its own and runs the person's shell
 //! in it, staying the session's leader (`specs/computers.md`, "Terminals").
 //! Each is run first thing in `main`, before glave starts a thread. And this glave, first on
@@ -19,21 +20,17 @@ use glave_computer::LocalComputers;
 const ON_PATH: &str = "bin";
 
 /// Runs glave as one of its helpers when it was started as one, and then returns the code to
-/// exit with: the lifeline's once what glave left running is stopped, the forwarder's its
-/// command's once it ended, or 126 if it could not start it, the sandbox's and a
-/// terminal's only when confining itself, taking the terminal or starting the program failed.
+/// exit with: the lifeline's once what glave left running is stopped, and the others' only
+/// when holding or joining a thread's network, confining itself, taking the terminal or
+/// starting the program failed.
 pub(crate) fn run() -> Option<ExitCode> {
     let args: Vec<OsString> = std::env::args_os().collect();
     if let Some(code) = glave_process::lifeline_helper(&args) {
         return Some(code);
     }
-    match glave_computer::forward_helper(&args) {
-        Some(Ok(code)) => return Some(code),
-        Some(Err(failure)) => {
-            eprintln!("glave sandbox: {failure}");
-            return Some(ExitCode::from(126));
-        }
-        None => {}
+    if let Some(failure) = glave_computer::forward_helper(&args) {
+        eprintln!("glave sandbox: {failure}");
+        return Some(ExitCode::from(126));
     }
     if let Some(failure) = glave_computer::terminal_helper(&args) {
         if failure.is_empty() {

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use glave_ports::computer::Image;
 use glave_ports::{block_on, conformance};

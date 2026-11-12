@@ -1,9 +1,9 @@
 //! Where glave has no sandbox (Windows, for now): a sandboxed command is refused.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox};
+use glave_process::Processes;
 
 use super::run_temp::RunTemp;
 use super::{Launch, Outbound, Reached, Temps};
@@ -14,14 +14,6 @@ pub(super) fn available() -> bool {
     false
 }
 
-pub(super) fn helper(_args: &[OsString]) -> String {
-    "the sandbox helper runs only on Linux".into()
-}
-
-pub(super) fn forward(_args: &[OsString]) -> Result<std::process::ExitCode, String> {
-    Err("the forwarder runs only on Linux".into())
-}
-
 #[derive(Debug)]
 pub(super) enum Enforcer {}
 
@@ -30,13 +22,17 @@ impl Enforcer {
         _sandbox: &Sandbox,
         _root: &Path,
         _git_common: Option<&Path>,
-        (_helper, _outbound): (Option<&Path>, &Outbound),
+        (_helper, _outbound, _processes): (Option<&Path>, &Outbound, &Processes),
         _reached: Reached<'_>,
         _hidden: &[PathBuf],
     ) -> std::future::Ready<Result<(Self, Temps), ComputerError>> {
         std::future::ready(Err(ComputerError::Unsupported(
             "the sandbox is not available on this computer (macOS and Linux only for now)".into(),
         )))
+    }
+
+    pub(super) fn lasts(&self) -> bool {
+        match *self {}
     }
 
     pub(super) fn launch(
