@@ -145,10 +145,15 @@ impl<L: EventLog + 'static> Memories<L> {
         limit: usize,
     ) -> Result<Vec<(usize, Recalled)>, MemoryError> {
         let log = &self.inner.log;
-        // A few more than needed, since the asking thread's own events are skipped and a hit
-        // further down may share more words.
+        // A few more than needed, since a hit further down may share more words. The asking
+        // thread's own events are left out by the search, so they never crowd out other chats.
         let found = log
-            .search(&ledger, query, limit.saturating_mul(2).saturating_add(4))
+            .search(
+                &ledger,
+                query,
+                Some(asking),
+                limit.saturating_mul(2).saturating_add(4),
+            )
             .await
             .map_err(storage)?;
         let (mut hits, mut seen) = (Vec::new(), BTreeMap::new());

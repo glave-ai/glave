@@ -48,12 +48,15 @@ pub trait EventLog: Send + Sync {
 
     /// Searches `scope`'s conversations by keyword, with the store's search index: the events
     /// whose words (`search::indexed`, kept as events are appended) match any of `query`'s
-    /// (`search::query_terms`), those sharing the most first, then newest first, at most
-    /// `limit`. Never another scope's.
+    /// (`search::query_terms`), the best match first, then newest first, at most
+    /// `limit`, words found in few events counting for more than words found in many. Never
+    /// another scope's, nor the thread `except` (the one asking), so its own words don't crowd
+    /// out other conversations.
     fn search(
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send;
 

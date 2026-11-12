@@ -174,12 +174,14 @@ impl EventLog for SqliteLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
         let (scope, query, log) = (*scope, query.to_owned(), self.clone());
         async move {
             let cache = Arc::clone(&log.index);
-            log.keys.search(&cache, &log, (&scope, &query), limit).await
+            let asked = (&scope, query.as_str(), except);
+            log.keys.search(&cache, &log, asked, limit).await
         }
     }
 

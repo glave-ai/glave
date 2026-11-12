@@ -1,15 +1,17 @@
 //! The search index held in memory (`specs/storage.md`, "Search index"). A store keeps each
 //! searchable event's words sealed, so it cannot match them itself: a search opens a project's
 //! rows once, newest first up to [`MOST_LOADED`], into an inverted index kept in a
-//! [`SearchCache`], and later searches read only the rows written since. A row gone (a deleted
-//! chat) or one committed out of order changes the count or sum of the rows' positions, which
-//! the index checks before each search, loading again when they differ.
+//! [`SearchCache`], and later searches read only the rows written since, as much again at most.
+//! A row gone (a deleted chat), one committed out of order, or rows past what one read takes
+//! change the count or the sums of the rows' positions, which the index checks before each
+//! search, loading again when they differ.
 
+use glave_event::ThreadId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::sync::Mutex;
 
-use super::Found;
+use super::{Found, weight};
 use crate::log::LogError;
 use crate::scope::Scope;
 
@@ -22,12 +24,33 @@ const MOST_HELD: u64 = 32 * MIB;
 /// Bytes of memory every project's index in one store's cache takes together, at most.
 pub const MOST_CACHED: usize = 64 * 1024 * 1024;
 
-/// How many rows a project's index has, and the sum of their positions: what tells a search
-/// whether rows went, or came in out of order, since it last read.
+/// The modulus of [`Fingerprint::squares`], small enough that a square of a position below it
+/// fits in 63 bits, as SQL computes it.
+pub const SQUARES_MODULUS: i64 = 1_000_000_007;
+
+/// How many rows a project's index has, the sum of their positions, and the sum of their
+/// squares modulo [`SQUARES_MODULUS`]: what tells a search whether rows went, or came in out of
+/// order, since it last read. The second sum is not linear, so rows gone and rows come late that
+/// keep the count and the first sum equal still change it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Fingerprint {
     pub rows: u64,
     pub sum: i64,
+    pub squares: i64,
+}
+
+impl Fingerprint {
+    /// This fingerprint with a row at `pos` added.
+    fn with(self, pos: i64) -> Self {
+        let root = pos.rem_euclid(SQUARES_MODULUS);
+        Self {
+            rows: self.rows.saturating_add(1),
+            sum: self.sum.wrapping_add(pos),
+            squares: self
+                .squares
+                .wrapping_add(root.wrapping_mul(root).rem_euclid(SQUARES_MODULUS)),
+        }
+    }
 }
 
 /// One row of a project's index, opened: the event it is for, its words' keyed hashes (none
@@ -57,7 +80,7 @@ pub trait IndexRows: Sync {
 struct Index {
     found: Vec<Found>,
     postings: HashMap<u64, Vec<u32>>,
-    words: usize,
+    bytes: usize,
     held: u64,
     last: i64,
     seen: Fingerprint,
@@ -70,6 +93,10 @@ impl Index {
             ..Self::default()
         };
         index.add(rows);
+        index.found.shrink_to_fit();
+        index.postings.shrink_to_fit();
+        index.postings.values_mut().for_each(Vec::shrink_to_fit);
+        index.measure();
         index
     }
 
@@ -81,7 +108,6 @@ impl Index {
             self.found.push(row.found);
             self.last = self.last.max(row.pos);
             self.held = self.held.saturating_add(row.sealed);
-            self.words += row.terms.len();
             for term in row.terms {
                 self.postings.entry(term).or_default().push(at);
             }
@@ -91,42 +117,56 @@ impl Index {
     /// Adds `rows`, read with `now`, when they are all that changed since the last read and the
     /// index stays within [`MOST_HELD`]; `false` when it must be loaded again.
     fn caught_up(&mut self, now: Fingerprint, rows: Vec<IndexRow>) -> bool {
-        let added = u64::try_from(rows.len()).unwrap_or(u64::MAX);
-        let sum = rows
-            .iter()
-            .fold(self.seen.sum, |sum, row| sum.wrapping_add(row.pos));
-        if self.seen.rows.saturating_add(added) != now.rows || sum != now.sum {
+        let read = rows.iter().fold(self.seen, |seen, row| seen.with(row.pos));
+        if read != now {
             return false;
         }
-        self.add(rows);
+        if !rows.is_empty() {
+            self.add(rows);
+            self.measure();
+        }
         self.seen = now;
         self.held <= MOST_HELD
     }
 
-    /// The events sharing the most of `terms`, then the newest, at most `limit`.
-    fn find(&self, terms: &[u64], limit: usize) -> Vec<Found> {
-        let mut shared: BTreeMap<u32, u32> = BTreeMap::new();
+    /// The events best matching `terms`, none of the thread `except`, then the newest, at most
+    /// `limit`: each word weighs as rare as it is among the index's events ([`weight`]).
+    fn find(&self, terms: &[u64], except: Option<ThreadId>, limit: usize) -> Vec<Found> {
+        let mut scores: BTreeMap<u32, f64> = BTreeMap::new();
         for term in terms.iter().collect::<BTreeSet<_>>() {
-            for at in self.postings.get(term).into_iter().flatten() {
-                *shared.entry(*at).or_default() += 1;
+            let events = self.postings.get(term).map_or(&[][..], Vec::as_slice);
+            let weight = weight(self.found.len(), events.len());
+            for at in events {
+                *scores.entry(*at).or_default() += weight;
             }
         }
-        let mut ranked: Vec<(u32, u32)> = shared.into_iter().map(|(at, n)| (n, at)).collect();
-        ranked.sort_unstable_by(|a, b| b.cmp(a));
+        let mut ranked: Vec<(f64, u32, Found)> = scores
+            .into_iter()
+            .filter_map(|(at, score)| {
+                let found = *self.found.get(usize::try_from(at).ok()?)?;
+                (Some(found.thread) != except).then_some((score, at, found))
+            })
+            .collect();
+        ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(b.1.cmp(&a.1)));
         ranked
             .into_iter()
             .take(limit)
-            .filter_map(|(_, at)| self.found.get(usize::try_from(at).ok()?).copied())
+            .map(|(_, _, found)| found)
             .collect()
     }
 
-    /// The memory it takes, near enough: each event, each word's place, each distinct word.
+    /// Takes the memory it holds now: what each list has room for, and the map's slots.
+    fn measure(&mut self) {
+        let slot = size_of::<u64>() + size_of::<Vec<u32>>() + 1;
+        let lists: usize = self.postings.values().map(Vec::capacity).sum();
+        self.bytes = size_of::<Self>()
+            + self.found.capacity() * size_of::<Found>()
+            + lists * size_of::<u32>()
+            + self.postings.capacity() * slot;
+    }
+
     fn bytes(&self) -> usize {
-        let word = size_of::<u64>() + size_of::<Vec<u32>>() + size_of::<usize>();
-        size_of::<Self>()
-            + self.found.len() * size_of::<Found>()
-            + self.words * size_of::<u32>()
-            + self.postings.len() * word
+        self.bytes
     }
 }
 
@@ -154,18 +194,19 @@ impl SearchCache {
             .map_or(0, |held| held.iter().map(|(_, index)| index.bytes()).sum())
     }
 
-    /// The events of `scope` sharing the most of `terms` (keyed hashes, as `rows` holds them),
-    /// then the newest, at most `limit`, reading only what changed since the last search.
+    /// The events of `scope` best matching `terms` (keyed hashes, as `rows` holds them), none of
+    /// the thread `except`, then the newest, at most `limit`, reading only what changed since
+    /// the last search: at most [`MOST_LOADED`], past which the index is loaded again.
     pub async fn search(
         &self,
         rows: &impl IndexRows,
         scope: &Scope,
-        terms: &[u64],
+        (terms, except): (&[u64], Option<ThreadId>),
         limit: usize,
     ) -> Result<Vec<Found>, LogError> {
         let index = match self.take(scope)? {
             Some(mut index) => {
-                let (now, added) = rows.rows(scope, index.last, u64::MAX).await?;
+                let (now, added) = rows.rows(scope, index.last, MOST_LOADED).await?;
                 if index.caught_up(now, added) {
                     index
                 } else {
@@ -174,7 +215,7 @@ impl SearchCache {
             }
             None => load(rows, scope).await?,
         };
-        let found = index.find(terms, limit);
+        let found = index.find(terms, except, limit);
         self.keep(*scope, index)?;
         Ok(found)
     }

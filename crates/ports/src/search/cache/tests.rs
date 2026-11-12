@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::*;
 use crate::block_on;
 use crate::scope::{OrgId, ProjectId};
+use crate::search::SQUARES_MODULUS;
 
 /// A store's index rows held in a list, counting the loads it serves.
 #[derive(Default)]
@@ -67,9 +68,14 @@ impl Rows {
             .map(|(_, row)| row.clone())
             .collect();
         rows.sort_by_key(|row| row.pos);
+        // The squares as SQL sums them: each reduced, the sum not.
         let print = Fingerprint {
             rows: rows.len() as u64,
             sum: rows.iter().map(|row| row.pos).sum(),
+            squares: rows
+                .iter()
+                .map(|row| (row.pos % SQUARES_MODULUS).pow(2) % SQUARES_MODULUS)
+                .sum(),
         };
         (print, rows)
     }
@@ -127,15 +133,15 @@ fn most_shared_words_come_first_then_the_newest() {
     rows.write(here, 3, 1, &[10, 12]);
     rows.write(scope(3), 4, 1, &[10, 11, 12]);
     let cache = SearchCache::new(MOST_CACHED);
-    let found = block_on!(cache.search(&rows, &here, &[10, 11, 12, 12], 10)).unwrap();
+    let found = block_on!(cache.search(&rows, &here, (&[10, 11, 12, 12], None), 10)).unwrap();
     assert_eq!(found, [at(1, 1), at(3, 1), at(2, 1)]);
     assert_eq!(
-        block_on!(cache.search(&rows, &here, &[10], 2)).unwrap(),
+        block_on!(cache.search(&rows, &here, (&[10], None), 2)).unwrap(),
         [at(3, 1), at(2, 1)],
         "at most `limit`, newest first among equals"
     );
     assert_eq!(
-        block_on!(cache.search(&rows, &here, &[99], 10)).unwrap(),
+        block_on!(cache.search(&rows, &here, (&[99], None), 10)).unwrap(),
         [],
         "no event shares a word with the query"
     );
@@ -148,12 +154,12 @@ fn a_warm_index_reads_only_what_was_written_since() {
     let cache = SearchCache::new(MOST_CACHED);
     rows.write(here, 1, 1, &[10]);
     assert_eq!(
-        block_on!(cache.search(&rows, &here, &[10], 10)).unwrap(),
+        block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap(),
         [at(1, 1)]
     );
     rows.write(here, 2, 1, &[10]);
     assert_eq!(
-        block_on!(cache.search(&rows, &here, &[10], 10)).unwrap(),
+        block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap(),
         [at(2, 1), at(1, 1)]
     );
     assert_eq!(
@@ -170,17 +176,17 @@ fn rows_gone_or_written_out_of_order_load_the_index_again() {
     let cache = SearchCache::new(MOST_CACHED);
     rows.write(here, 1, 1, &[10]);
     rows.write(here, 2, 1, &[10]);
-    block_on!(cache.search(&rows, &here, &[10], 10)).unwrap();
+    block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap();
     rows.delete(1);
     rows.write(here, 3, 1, &[10]);
     assert_eq!(
-        block_on!(cache.search(&rows, &here, &[10], 10)).unwrap(),
+        block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap(),
         [at(3, 1), at(2, 1)],
         "a deleted chat's rows leave the index held in memory too"
     );
     assert_eq!(rows.loads.load(Ordering::SeqCst), 2);
     rows.write_late(here, 1, 4, &[10]);
-    let late = block_on!(cache.search(&rows, &here, &[10], 10)).unwrap();
+    let late = block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap();
     assert!(late.contains(&at(4, 1)), "a row committed late is found");
     assert_eq!(rows.loads.load(Ordering::SeqCst), 3);
 }
@@ -194,12 +200,12 @@ fn the_cache_lets_the_least_recently_searched_go_past_its_size() {
     }
     let one = {
         let alone = SearchCache::new(MOST_CACHED);
-        block_on!(alone.search(&rows, &scope(2), &[1], 1)).unwrap();
+        block_on!(alone.search(&rows, &scope(2), (&[1], None), 1)).unwrap();
         alone.bytes()
     };
     let cache = SearchCache::new(one * 2);
     for project in 2..6 {
-        block_on!(cache.search(&rows, &scope(project), &[1], 1)).unwrap();
+        block_on!(cache.search(&rows, &scope(project), (&[1], None), 1)).unwrap();
         assert!(
             cache.bytes() <= one * 2,
             "{} over {}",
@@ -208,13 +214,13 @@ fn the_cache_lets_the_least_recently_searched_go_past_its_size() {
         );
     }
     let loads = rows.loads.load(Ordering::SeqCst);
-    block_on!(cache.search(&rows, &scope(5), &[1], 1)).unwrap();
+    block_on!(cache.search(&rows, &scope(5), (&[1], None), 1)).unwrap();
     assert_eq!(
         rows.loads.load(Ordering::SeqCst),
         loads,
         "the latest is kept"
     );
-    block_on!(cache.search(&rows, &scope(2), &[1], 1)).unwrap();
+    block_on!(cache.search(&rows, &scope(2), (&[1], None), 1)).unwrap();
     assert_eq!(
         rows.loads.load(Ordering::SeqCst),
         loads + 1,
@@ -233,7 +239,7 @@ fn an_index_past_its_size_is_loaded_again_newest_first() {
         rows.write_sized(here, u128::from(n), MIB);
     }
     let limit = usize::try_from(fit).unwrap() + 10;
-    let found = block_on!(cache.search(&rows, &here, &[1], limit)).unwrap();
+    let found = block_on!(cache.search(&rows, &here, (&[1], None), limit)).unwrap();
     assert_eq!(
         found.len() as u64,
         fit,
@@ -243,7 +249,89 @@ fn an_index_past_its_size_is_loaded_again_newest_first() {
     for n in 0..=(MOST_HELD - MOST_LOADED) / MIB {
         rows.write_sized(here, u128::from(fit + 1 + n), MIB);
     }
-    let found = block_on!(cache.search(&rows, &here, &[1], limit * 2)).unwrap();
+    let found = block_on!(cache.search(&rows, &here, (&[1], None), limit * 2)).unwrap();
     assert_eq!(found.len() as u64, fit, "past its size, loaded again");
     assert_eq!(rows.loads.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn rare_words_count_for_more_than_common_ones() {
+    let rows = Rows::default();
+    let here = scope(2);
+    // 10 is in every event; 11 in one, older than the rest.
+    rows.write(here, 1, 1, &[10, 11]);
+    for thread in 2..8 {
+        rows.write(here, thread, 1, &[10, 12]);
+    }
+    let cache = SearchCache::new(MOST_CACHED);
+    let found = block_on!(cache.search(&rows, &here, (&[11, 12], None), 1)).unwrap();
+    assert_eq!(found, [at(1, 1)], "the rare word outweighs the common one");
+}
+
+#[test]
+fn a_search_leaves_out_the_thread_asking() {
+    let rows = Rows::default();
+    let here = scope(2);
+    rows.write(here, 1, 1, &[10]);
+    for seq in 1..20 {
+        rows.write(here, 2, seq, &[10]);
+    }
+    let cache = SearchCache::new(MOST_CACHED);
+    let asking = Some(at(2, 1).thread);
+    let found = block_on!(cache.search(&rows, &here, (&[10], asking), 3)).unwrap();
+    assert_eq!(
+        found,
+        [at(1, 1)],
+        "its own recent events never crowd out another chat"
+    );
+}
+
+#[test]
+fn a_catch_up_reads_at_most_a_load_then_loads_again() {
+    let rows = Rows::default();
+    let here = scope(2);
+    let cache = SearchCache::new(MOST_CACHED);
+    rows.write_sized(here, 0, MIB);
+    block_on!(cache.search(&rows, &here, (&[1], None), 1)).unwrap();
+    let past = MOST_LOADED / MIB + 2;
+    for n in 1..=past {
+        rows.write_sized(here, u128::from(n), MIB);
+    }
+    let limit = usize::try_from(past).unwrap() + 5;
+    let found = block_on!(cache.search(&rows, &here, (&[1], None), limit)).unwrap();
+    assert_eq!(
+        found.len() as u64,
+        MOST_LOADED / MIB,
+        "loaded again, newest first"
+    );
+    assert_eq!(found.first(), Some(&at(u128::from(past), 1)));
+    assert_eq!(
+        rows.loads.load(Ordering::SeqCst),
+        2,
+        "the cut-off read loaded once more"
+    );
+}
+
+#[test]
+fn rows_gone_and_rows_late_that_keep_the_count_and_sum_still_reload() {
+    let rows = Rows::default();
+    let here = scope(2);
+    let cache = SearchCache::new(MOST_CACHED);
+    // Positions 3 and 4 are taken by writers yet to commit.
+    for pos in [1, 2, 5, 6, 7] {
+        rows.write_late(here, pos, u128::try_from(pos).unwrap(), &[10]);
+    }
+    block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap();
+    // 1 and 6 go and 3 and 4 commit: the count and the sum are as they were.
+    rows.delete(1);
+    rows.delete(6);
+    rows.write_late(here, 3, 3, &[10]);
+    rows.write_late(here, 4, 4, &[10]);
+    let found = block_on!(cache.search(&rows, &here, (&[10], None), 10)).unwrap();
+    assert_eq!(found, [at(7, 1), at(5, 1), at(4, 1), at(3, 1), at(2, 1)]);
+    assert_eq!(
+        rows.loads.load(Ordering::SeqCst),
+        2,
+        "the squares told them apart"
+    );
 }

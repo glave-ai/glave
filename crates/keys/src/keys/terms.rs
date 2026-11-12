@@ -68,13 +68,14 @@ impl<S: KeyStorage> Keys<S> {
         Ok(Some(Sealed { key_id, bytes }))
     }
 
-    /// The events of `scope` sharing the most of `query`'s words, then the newest, at most
-    /// `limit`, from the index `rows` keeps, through `cache` (`glave_ports::search`).
+    /// The events of `scope` best matching `query`'s words, then the newest, at most `limit`,
+    /// none of the thread `except`, from the index `rows` keeps, through `cache`
+    /// (`glave_ports::search`).
     pub async fn search(
         &self,
         cache: &SearchCache,
         rows: &impl IndexRows,
-        (scope, query): (&Scope, &str),
+        (scope, query, except): (&Scope, &str, Option<ThreadId>),
         limit: usize,
     ) -> Result<Vec<Found>, LogError> {
         let words = query_terms(query);
@@ -86,7 +87,7 @@ impl<S: KeyStorage> Keys<S> {
             .await
             .map_err(LogError::sealing)?;
         match hashed {
-            Some(hashed) => cache.search(rows, scope, &hashed, limit).await,
+            Some(hashed) => cache.search(rows, scope, (&hashed, except), limit).await,
             None => Ok(Vec::new()),
         }
     }

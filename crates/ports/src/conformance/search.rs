@@ -107,7 +107,7 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
         log.append(scope, events).await.map_err(|e| e.to_string())?;
     }
     let find = |scope, query: &'static str, limit| async move {
-        log.search(&scope, query, limit)
+        log.search(&scope, query, None, limit)
             .await
             .map_err(|e| format!("search for {query:?} failed: {e}"))
     };
@@ -129,6 +129,14 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
     ensure(
         find(here, "make db first postgres", 10).await? == [at(first, 1)?, at(second, 1)?],
         "the event matching more of the words must come first",
+    )?;
+    let asking = log
+        .search(&here, "make db first postgres", Some(first), 10)
+        .await
+        .map_err(|e| format!("a search leaving out a thread failed: {e}"))?;
+    ensure(
+        asking == [at(second, 1)?],
+        "a search must leave out the thread asking",
     )?;
     ensure(
         find(here, "deploy postgres", 1).await?.len() == 1,
@@ -163,7 +171,7 @@ async fn deleting<L: EventLog>(
         .await
         .map_err(|e| e.to_string())?;
     let find = |scope, query: &'static str| async move {
-        log.search(&scope, query, 10)
+        log.search(&scope, query, None, 10)
             .await
             .map_err(|e| format!("search for {query:?} failed: {e}"))
     };

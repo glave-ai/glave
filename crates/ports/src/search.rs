@@ -14,7 +14,9 @@ use glave_event::{
 
 use crate::memories::FROM_MEMORY;
 
-pub use self::cache::{Fingerprint, IndexRow, IndexRows, MOST_CACHED, MOST_LOADED, SearchCache};
+pub use self::cache::{
+    Fingerprint, IndexRow, IndexRows, MOST_CACHED, MOST_LOADED, SQUARES_MODULUS, SearchCache,
+};
 
 /// Distinct words one event is indexed under, at most: a long output is found by its first.
 const MOST_TERMS: usize = 2_048;
@@ -120,6 +122,14 @@ pub fn deletes_thread(events: &[RawEvent]) -> bool {
     events
         .iter()
         .any(|event| event.kind.as_str() == ThreadDeleted::TYPE)
+}
+
+/// How much a word found in `with` of `events` counts toward a match: BM25's inverse document
+/// frequency, so a rare word outweighs a common one. Every store ranks by it.
+pub(crate) fn weight(events: usize, with: usize) -> f64 {
+    let count = |n: usize| f64::from(u32::try_from(n).unwrap_or(u32::MAX));
+    let (events, with) = (count(events), count(with));
+    ((events - with + 0.5) / (with + 0.5)).ln_1p()
 }
 
 /// The words a query searches for.

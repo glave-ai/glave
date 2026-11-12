@@ -157,13 +157,14 @@ impl EventLog for PostgresLog {
         &self,
         scope: &Scope,
         query: &str,
+        except: Option<ThreadId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
         let (scope, query) = (*scope, query.to_owned());
         let this = self.clone();
         async move {
             (this.keys)
-                .search(&this.index, &this, (&scope, &query), limit)
+                .search(&this.index, &this, (&scope, &query, except), limit)
                 .await
         }
     }

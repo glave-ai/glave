@@ -128,10 +128,10 @@ async fn measure(path: &Path) -> Result<(Duration, Duration, usize)> {
         let store = open(path).await?;
         let log = store.log();
         let started = Instant::now();
-        log.search(&scope(), "w17 w4242 w90001", 10).await?;
+        log.search(&scope(), "w17 w4242 w90001", None, 10).await?;
         colds.push(started.elapsed());
         let started = Instant::now();
-        log.search(&scope(), "w17 w31337", 10).await?;
+        log.search(&scope(), "w17 w31337", None, 10).await?;
         warm = started.elapsed();
         bytes = store.search_cache_bytes();
     }

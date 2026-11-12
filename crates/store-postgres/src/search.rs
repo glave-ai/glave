@@ -2,7 +2,7 @@
 //! (`glave_ports::search::SearchCache`, `specs/storage.md`, "Search index").
 
 use glave_event::ThreadId;
-use glave_ports::search::{Fingerprint, Found, IndexRow, IndexRows};
+use glave_ports::search::{Fingerprint, Found, IndexRow, IndexRows, SQUARES_MODULUS};
 use glave_ports::{LogError, Scope};
 use tokio_postgres::IsolationLevel;
 use uuid::Uuid;
@@ -18,9 +18,11 @@ const ROWS: &str = "
         FROM event_search WHERE org = $1 AND project = $2 AND pos > $3
     ) AS newest WHERE upto <= $4 ORDER BY pos";
 
+/// How many rows, the sum of their positions, and of their squares modulo `$3`.
 const FINGERPRINT: &str = "
-    SELECT COUNT(*), COALESCE(SUM(pos), 0)::bigint FROM event_search
-    WHERE org = $1 AND project = $2";
+    SELECT COUNT(*), COALESCE(SUM(pos), 0)::bigint,
+           COALESCE(SUM(((pos % $3) * (pos % $3)) % $3), 0)::bigint
+    FROM event_search WHERE org = $1 AND project = $2";
 
 impl IndexRows for PostgresLog {
     /// Read in one repeatable-read snapshot, so the fingerprint and rows agree.
@@ -41,7 +43,7 @@ impl IndexRows for PostgresLog {
             .await
             .map_err(database)?;
         let print = transaction
-            .query_one(FINGERPRINT, &[&org, &project])
+            .query_one(FINGERPRINT, &[&org, &project, &SQUARES_MODULUS])
             .await
             .map_err(database)?;
         let statement = transaction.prepare_cached(ROWS).await.map_err(database)?;
@@ -55,6 +57,7 @@ impl IndexRows for PostgresLog {
         let print = Fingerprint {
             rows: u64::try_from(count).map_err(LogError::corrupt)?,
             sum: print.try_get(1).map_err(LogError::corrupt)?,
+            squares: print.try_get(2).map_err(LogError::corrupt)?,
         };
         let mut rows = Vec::with_capacity(stored.len());
         for row in &stored {

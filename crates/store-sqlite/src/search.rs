@@ -2,7 +2,7 @@
 //! (`glave_ports::search::SearchCache`, `specs/storage.md`, "Search index").
 
 use glave_event::{Seq, ThreadId};
-use glave_ports::search::{Fingerprint, Found, IndexRow, IndexRows};
+use glave_ports::search::{Fingerprint, Found, IndexRow, IndexRows, SQUARES_MODULUS};
 use glave_ports::{LogError, Scope};
 use rusqlite::{Connection, params};
 
@@ -58,10 +58,12 @@ fn read(
     most: i64,
 ) -> rusqlite::Result<(Fingerprint, Vec<Stored>)> {
     let transaction = connection.transaction()?;
-    let (rows, sum): (i64, i64) = transaction.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(pos), 0) FROM event_search WHERE org = ?1 AND project = ?2",
-        params![org, project],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+    let (rows, sum, squares): (i64, i64, i64) = transaction.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(pos), 0),
+                COALESCE(SUM(((pos % ?3) * (pos % ?3)) % ?3), 0)
+         FROM event_search WHERE org = ?1 AND project = ?2",
+        params![org, project, SQUARES_MODULUS],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     let stored = {
         let mut statement = transaction.prepare_cached(ROWS)?;
@@ -78,5 +80,5 @@ fn read(
     };
     transaction.commit()?;
     let rows = u64::try_from(rows).unwrap_or_default();
-    Ok((Fingerprint { rows, sum }, stored))
+    Ok((Fingerprint { rows, sum, squares }, stored))
 }
