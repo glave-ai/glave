@@ -5,13 +5,33 @@
 
 use std::fmt;
 
+use serde_json::{Map, Value};
+
 use crate::model::Completion;
+
+/// How good, and so how slow and dear, what a media call makes is (`specs/gateway.md`, "Media
+/// tools"): the server's settings map each tier to a model and its settings.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Quality {
+    /// Seconds and cents, for trying ideas.
+    Low,
+    #[default]
+    Medium,
+    /// The slowest and dearest, for finals.
+    High,
+}
 
 /// What a media call asks beyond the prompt and images its request holds.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MediaAsk {
     /// The image's shape, width to height, such as `16:9`; none leaves it to the model.
     pub aspect_ratio: Option<String>,
+    pub quality: Quality,
+    /// Whether the image's background is to be transparent.
+    pub transparent: bool,
+    /// What the server's settings add for the model that serves the call, as its service
+    /// names them (`quality`, `resolution`): a gateway sets them from the target, a tool never.
+    pub settings: Map<String, Value>,
 }
 
 /// One file a media call made, whole, as its provider made it.

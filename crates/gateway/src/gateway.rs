@@ -13,6 +13,7 @@ use tracing::Instrument as _;
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
 use crate::filtering::{Filtering, Keeping};
+use crate::media::{self, IMAGE_IN_TOKENS};
 use crate::plan::{candidates, prepare};
 use crate::price::Price;
 use crate::routes::{RouteError, Routes};
@@ -186,11 +187,9 @@ impl Gateway {
                 })
             }
             Call::Make(ask) => {
-                target
-                    .handle
-                    .make(&sent, ask)
-                    .instrument(span.clone())
-                    .await
+                let ask = media::sent_to(ask, target, request.purpose);
+                let made = target.handle.make(&sent, &ask);
+                made.instrument(span.clone()).await
             }
         };
         let sent = sent.map(
@@ -263,16 +262,12 @@ impl ModelProvider for Gateway {
         made.map(|made| made.completion)
     }
 
-    /// A media tool's call, by its purpose's own route, held and charged as `media`.
+    /// A media tool's call, by its purpose's own route, to its tier's targets or the first
+    /// that can honour it, held and charged as `media`.
     async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
-        let targets = self.routes.targets(request.purpose);
-        if targets.is_empty() {
-            return Err(ProviderError::Unserved {
-                failure: Failure::Rejected,
-                reason: format!("this server has no model for {}", request.purpose.id()),
-            });
-        }
-        self.serve(targets, request, Call::Make(ask)).await
+        let route = self.routes.targets(request.purpose);
+        let targets = media::chosen(route, request.purpose, ask)?;
+        self.serve(&targets, request, Call::Make(ask)).await
     }
 
     fn serves(&self, purpose: Purpose) -> bool {
@@ -281,14 +276,20 @@ impl ModelProvider for Gateway {
 }
 
 /// The most a call to `target` could cost at its `price`, in dollars: the input, estimated
-/// cautiously, and the longest answer allowed.
+/// cautiously, each image a media call sends in among it, and the longest answer allowed, a
+/// media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
-    let output = request
-        .max_output_tokens
+    let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
+        .or(request.max_output_tokens)
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
+    let images = if request.purpose.is_media() {
+        u64::try_from(request.files.len()).map_or(u64::MAX, |n| n.saturating_mul(IMAGE_IN_TOKENS))
+    } else {
+        0
+    };
     let counts = glave_event::TokenCounts {
-        input: needs.reserve_tokens(),
+        input: needs.reserve_tokens().saturating_add(images),
         output: u64::from(output),
         ..glave_event::TokenCounts::default()
     };
