@@ -157,12 +157,9 @@ pub(crate) enum Field {
     Declined,
 }
 
-/// What a line typed for `field` answers, the end of input declining: why it cannot be read, to
-/// ask again, when it does not fit.
-pub(crate) fn field_answer(field: &ServiceField, typed: Option<&str>) -> Result<Field, String> {
-    let Some(typed) = typed else {
-        return Ok(Field::Declined);
-    };
+/// What a line typed for `field` answers: why it cannot be read, to ask again, when it does not
+/// fit.
+pub(crate) fn field_answer(field: &ServiceField, typed: &str) -> Result<Field, String> {
     let typed = typed.trim();
     if typed.is_empty() {
         let none = if field.required {
@@ -212,9 +209,9 @@ pub(crate) fn field_answer(field: &ServiceField, typed: Option<&str>) -> Result<
         .ok_or_else(|| format!("That doesn't fit {}: try again.", field.label))
 }
 
-/// Whether a line typed at "Send?" says yes: nothing else does, the end of input least of all.
-pub(crate) fn confirmed(typed: Option<&str>) -> bool {
-    typed.is_some_and(|typed| matches!(typed.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+/// Whether a line typed at "Send?" says yes: nothing else does.
+pub(crate) fn confirmed(typed: &str) -> bool {
+    matches!(typed.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 /// Sends `answer` with `send`, and what went wrong, for the person to read. One refused as not
@@ -345,7 +342,7 @@ mod tests {
 
     #[test]
     fn a_field_is_answered_as_its_kind_reads() {
-        let value = |field: &ServiceField, typed: &str| field_answer(field, Some(typed)).unwrap();
+        let value = |field: &ServiceField, typed: &str| field_answer(field, typed).unwrap();
         let text = field(true, ServiceFieldKind::Text { default: None });
         assert_eq!(value(&text, " hi "), Field::Value(json!("hi")));
         assert_eq!(
@@ -375,7 +372,7 @@ mod tests {
         };
         assert_eq!(value(&number(true), "3"), Field::Value(json!(3)));
         assert_eq!(value(&number(false), "1.5"), Field::Value(json!(1.5)));
-        assert!(field_answer(&number(true), Some("1.5")).is_err());
+        assert!(field_answer(&number(true), "1.5").is_err());
         assert_eq!(value(&number(true), ""), Field::Skipped);
         let yes_no = field(
             false,
@@ -385,11 +382,11 @@ mod tests {
         );
         assert_eq!(value(&yes_no, "n"), Field::Value(json!(false)));
         assert_eq!(value(&yes_no, ""), Field::Value(json!(true)), "its default");
-        assert!(field_answer(&yes_no, Some("maybe")).is_err());
+        assert!(field_answer(&yes_no, "maybe").is_err());
         let one = field(true, choice(false, &[]));
         assert_eq!(value(&one, "2"), Field::Value(json!("idea")));
-        assert!(field_answer(&one, Some("3")).is_err());
-        assert!(field_answer(&one, Some("1,2")).is_err());
+        assert!(field_answer(&one, "3").is_err());
+        assert!(field_answer(&one, "1,2").is_err());
         let many = field(false, choice(true, &["bug"]));
         assert_eq!(value(&many, "2 1"), Field::Value(json!(["idea", "bug"])));
         assert_eq!(
@@ -400,20 +397,12 @@ mod tests {
     }
 
     #[test]
-    fn the_end_of_input_declines_and_says_no_yes() {
-        // Not as Enter does, which would send this default.
-        let given = field(
-            false,
-            ServiceFieldKind::YesNo {
-                default: Some(true),
-            },
-        );
-        assert_eq!(field_answer(&given, None), Ok(Field::Declined));
-        assert!(!confirmed(None));
-        assert!(!confirmed(Some("")));
-        assert!(!confirmed(Some("n")));
-        assert!(confirmed(Some(" Y ")));
-        assert!(confirmed(Some("yes")));
+    fn only_yes_sends() {
+        assert!(!confirmed(""));
+        assert!(!confirmed("n"));
+        assert!(!confirmed("yep"));
+        assert!(confirmed(" Y "));
+        assert!(confirmed("yes"));
     }
 
     #[test]
