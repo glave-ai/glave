@@ -5,8 +5,7 @@ use std::fmt;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-
-use super::rules::Host;
+use glave_ports::host::Host;
 
 /// The most a request's head may hold, its line and headers.
 pub(crate) const MOST: usize = 16 * 1024;

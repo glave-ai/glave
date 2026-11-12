@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use glave_ports::settings::{Domain, WebPolicy};
+use glave_ports::host::HostPattern;
+use glave_ports::settings::WebPolicy;
 use glave_web::pages::{Pages, Reply};
 
 use crate::error::EvalError;
@@ -37,7 +38,7 @@ pub(crate) async fn serve(dir: &Path) -> Result<Pages, EvalError> {
 /// else. It is still offered, as the CLI offers it, and says why it refused.
 pub(crate) fn reach(pages: bool) -> Result<WebPolicy, EvalError> {
     let only = |pattern| {
-        (Domain::parse(pattern).map(|domain| vec![domain]))
+        (HostPattern::parse(pattern).map(|hosts| vec![hosts]))
             .map_err(|err| EvalError::Setup(err.to_string()))
     };
     Ok(if pages {

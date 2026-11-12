@@ -1,35 +1,20 @@
-//! An environment: the recipe a computer is made from, such as the image a person's computer
-//! runs (`[computers]`).
+//! An environment: what a computer is made from: this machine as it is, or the image a
+//! person's computer in the cloud runs (`[computers]`).
 
 use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// The recipe a computer is made from.
+/// What a computer is made from. How much of the network it reaches is policy's, never its own.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Environment {
     /// What the computer runs: the host itself, or an OCI image.
     pub image: Image,
-    /// Shell commands run once, in order, when the computer is made.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub setup: Vec<String>,
     #[serde(default)]
     pub size: Size,
-    /// How commands may reach the network; `None` leaves it to policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network: Option<Network>,
-    /// The hosts commands may reach when the network is an allowlist.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allow: Vec<String>,
-    /// Names of secrets commands may ask for; values come through the credential helper.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub secrets: Vec<String>,
-    /// Minutes without work before the computer sleeps; `None` leaves it to policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idle_minutes: Option<u32>,
-    /// Variables every command sees. Never secrets: those are named in `secrets`.
+    /// Variables every command sees. Never secrets.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
 }
@@ -103,18 +88,6 @@ pub struct Size {
     pub cpus: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_gb: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk_gb: Option<u32>,
-}
-
-/// How commands may reach the network.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Network {
-    Off,
-    /// Only the hosts the environment allows.
-    Allowlist,
-    On,
 }
 
 #[cfg(test)]
@@ -125,9 +98,6 @@ mod tests {
     fn environments_round_trip_as_json() {
         let mut environment = Environment {
             image: Image::Oci("ghcr.io/acme/rust:1.99".into()),
-            setup: vec!["scripts/setup.sh".into()],
-            network: Some(Network::Allowlist),
-            allow: vec!["crates.io".into()],
             ..Environment::host()
         };
         environment.size.cpus = Some(2);
@@ -142,5 +112,7 @@ mod tests {
         let host: Environment = serde_json::from_str(r#"{"image":"host"}"#).unwrap();
         assert_eq!(host, Environment::host());
         assert!(serde_json::from_str::<Environment>(r#"{"image":" "}"#).is_err());
+        let unread = r#"{"image":"host","network":"off"}"#;
+        assert!(serde_json::from_str::<Environment>(unread).is_err());
     }
 }

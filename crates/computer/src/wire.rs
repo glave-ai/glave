@@ -41,8 +41,10 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// server that predates it can't read a sandbox at all, so it never lets a command kept to the
 /// proxy out directly. It also added threads' scratch folders to `computer/worktrees`
 /// (`scratch`), and `trashed` to what `computer/free_worktree` answers, for one moved to the
-/// Trash.
-pub(crate) const PROTOCOL: &str = "2026-11-11";
+/// Trash. `2026-11-12` took out the environment's `setup`, `network`, `allow`, `secrets`,
+/// `idle_minutes` and `disk_gb` on `computer/create`, which every computer refused: the network
+/// is policy's.
+pub(crate) const PROTOCOL: &str = "2026-11-12";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

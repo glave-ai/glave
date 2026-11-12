@@ -26,9 +26,9 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, its policy, company skills, a note about itself, its brand (name, logo, accent), the budget: data in its scope, not files (`specs/model.md`) |
 | Team | A flat group of people, granted models, connections and budgets |
 | Person | Someone who signs in, with a role: their Chats and projects, their computer, their own files (`~/.glave`) and sign-ins |
-| Project | The scope boundary, and personal: one person's project (one folder, whose files are its instructions, skills and setup), or their Chats, their project of kind `personal`. No members: people share through the repository and the organization. Holds memory, history, files, policy, budget, default environment |
+| Project | The scope boundary, and personal: one person's project (one folder, whose files are its instructions, skills and setup), or their Chats, their project of kind `personal`. No members: people share through the repository and the organization. Holds memory, history, files, policy, budget |
 | Thread | A conversation or task in a project. Workers fork from a parent with permissions and budget ⊆ the parent's |
-| Environment | What a person's computer in the cloud is made from: its image (`[computers]`), its network and its limits |
+| Environment | What a computer is made from: this machine as it is, or the image a person's computer in the cloud runs (`[computers]`). Its network is policy's, never its own (`specs/model.md`) |
 | Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. A fresh machine per task is an idea for later, on Kubernetes |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |

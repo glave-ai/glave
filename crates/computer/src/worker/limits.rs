@@ -1,10 +1,9 @@
 //! What a worker may be: the limits an organization's policy sets, and the check of an
-//! environment against them before anything starts. What glave cannot enforce yet is refused
-//! by name rather than quietly ignored.
+//! environment against them before anything starts.
 
 use std::ffi::OsStr;
 
-use glave_ports::computer::{ComputerError, Environment, Image, Limits, Network, Refusal};
+use glave_ports::computer::{ComputerError, Environment, Image, Limits, NetworkMode, Refusal};
 use glave_ports::secrets::is_secret_variable;
 
 /// A worker's settings once its environment passed the limits.
@@ -14,10 +13,6 @@ pub(crate) struct Decided {
     pub(crate) cpus: Option<u32>,
     pub(crate) memory_gb: Option<u32>,
     pub(crate) network: bool,
-}
-
-fn unsupported(message: &str) -> ComputerError {
-    ComputerError::Unsupported(message.to_owned())
 }
 
 /// Whether `reference` names its image by digest (`name@sha256:<64 hex digits>`), so the same
@@ -55,24 +50,9 @@ pub(crate) fn decide(environment: &Environment, limits: &Limits) -> Result<Decid
         environment.size.memory_gb,
         limits.memory_gb,
     )?;
-    if environment.size.disk_gb.is_some() {
-        return Err(unsupported(
-            "disk size is not enforced on workers yet; remove it from the environment",
-        ));
-    }
-    let network = network(environment, limits)?;
-    if !environment.secrets.is_empty() {
-        return Err(unsupported(
-            "secrets for workers come with the credential helper that asks for each use; \
-             remove them from the environment",
-        ));
-    }
-    if environment.idle_minutes.is_some() {
-        return Err(unsupported(
-            "workers do not sleep yet: they are released when their thread's session ends; \
-             remove idle_minutes from the environment",
-        ));
-    }
+    // The hosts allowed can't be held to on a worker yet, so `guarded`, which policy refuses
+    // when read, narrows to none rather than refusing the wake.
+    let network = limits.network.is_none_or(|most| most == NetworkMode::Open);
     if let Some(name) = environment
         .env
         .keys()
@@ -102,26 +82,6 @@ fn within(
         )),
         (Some(asked), _) => Ok(Some(asked)),
         (None, most) => Ok(most),
-    }
-}
-
-/// Whether the worker gets a network: what the environment asks, within policy.
-fn network(environment: &Environment, limits: &Limits) -> Result<bool, ComputerError> {
-    let allowed = !matches!(limits.network, Some(Network::Off));
-    if matches!(limits.network, Some(Network::Allowlist))
-        || matches!(environment.network, Some(Network::Allowlist))
-        || !environment.allow.is_empty()
-    {
-        return Err(unsupported(
-            "an allow-list of hosts is not enforced on workers yet: choose network on or off",
-        ));
-    }
-    match environment.network {
-        Some(Network::On) if !allowed => {
-            Err(ComputerError::Refused(Refusal::NoNetworkAllowed.into()))
-        }
-        Some(Network::Off) => Ok(false),
-        _ => Ok(allowed),
     }
 }
 
@@ -166,10 +126,7 @@ mod tests {
         };
         let decided = decide(&environment(), &limits).unwrap();
         assert_eq!((decided.cpus, decided.memory_gb), (Some(2), Some(4)));
-        assert!(
-            decided.network,
-            "on unless policy or the environment says off"
-        );
+        assert!(decided.network, "on unless policy says offline");
         let mut big = environment();
         big.size.cpus = Some(8);
         let refused = decide(&big, &limits).unwrap_err();
@@ -177,41 +134,24 @@ mod tests {
     }
 
     #[test]
-    fn the_network_is_on_or_off_and_never_more_than_policy_allows() {
-        let off = Limits {
-            network: Some(Network::Off),
+    fn the_network_is_policy_s_and_guarded_narrows_to_none_until_it_holds() {
+        let network = |mode| Limits {
+            network: Some(mode),
             ..Limits::default()
         };
-        assert!(!decide(&environment(), &off).unwrap().network);
-        let mut wants = environment();
-        wants.network = Some(Network::On);
-        assert!(matches!(
-            decide(&wants, &off),
-            Err(ComputerError::Refused(_))
-        ));
-        wants.network = Some(Network::Allowlist);
-        assert!(matches!(
-            decide(&wants, &Limits::default()),
-            Err(ComputerError::Unsupported(_))
-        ));
-        wants.network = Some(Network::Off);
-        assert!(!decide(&wants, &Limits::default()).unwrap().network);
+        let offline = decide(&environment(), &network(NetworkMode::Offline));
+        assert!(!offline.unwrap().network);
+        assert!(
+            decide(&environment(), &network(NetworkMode::Open))
+                .unwrap()
+                .network
+        );
+        let guarded = decide(&environment(), &network(NetworkMode::Guarded));
+        assert!(!guarded.unwrap().network, "never a refused wake");
     }
 
     #[test]
-    fn what_is_not_enforced_yet_is_refused_by_name() {
-        let mut secrets = environment();
-        secrets.secrets = vec!["GITHUB_TOKEN".into()];
-        assert!(matches!(
-            decide(&secrets, &Limits::default()),
-            Err(ComputerError::Unsupported(_))
-        ));
-        let mut disk = environment();
-        disk.size.disk_gb = Some(50);
-        assert!(decide(&disk, &Limits::default()).is_err());
-        let mut idle = environment();
-        idle.idle_minutes = Some(30);
-        assert!(decide(&idle, &Limits::default()).is_err());
+    fn a_variable_named_like_a_secret_is_refused() {
         let mut leaky = environment();
         leaky.env.insert("API_TOKEN".into(), "x".into());
         assert!(matches!(

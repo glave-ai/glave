@@ -8,7 +8,8 @@ mod fetch {
     use std::time::Duration;
 
     use glave_event::{Arguments, Part, ToolKind, WebPage};
-    use glave_ports::settings::{Domain, WebPolicy};
+    use glave_ports::host::HostPattern;
+    use glave_ports::settings::WebPolicy;
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource, block_on};
     use glave_web::pages::{Pages, Reply};
     use glave_web::{FetchError, Fetcher, Limits, WEB_FETCH, Web, WebSettings};
@@ -19,8 +20,8 @@ mod fetch {
     fn local() -> WebPolicy {
         WebPolicy {
             allow: vec![
-                Domain::parse("127.0.0.1").unwrap(),
-                Domain::parse("*").unwrap(),
+                HostPattern::parse("127.0.0.1").unwrap(),
+                HostPattern::parse("*").unwrap(),
             ],
             ..WebPolicy::default()
         }
@@ -200,8 +201,8 @@ mod fetch {
     #[test]
     fn the_host_policy_denies_and_deny_wins() {
         let policy = WebPolicy {
-            allow: vec![Domain::parse("127.0.0.1").unwrap()],
-            deny: vec![Domain::parse("127.0.0.*").unwrap()],
+            allow: vec![HostPattern::parse("127.0.0.1").unwrap()],
+            deny: vec![HostPattern::parse("127.0.0.1:80").unwrap()],
             ..WebPolicy::default()
         };
         let fetcher = fetcher(policy);
@@ -210,6 +211,8 @@ mod fetch {
             matches!(denied, Err(FetchError::Denied { .. })),
             "{denied:?}"
         );
+        let elsewhere_here = Url::parse("http://127.0.0.1:8080/").unwrap();
+        assert!(fetcher.check(&elsewhere_here).is_ok(), "denied at 80 alone");
         let elsewhere = block_on!(fetcher.fetch("https://example.com/"));
         assert!(
             matches!(elsewhere, Err(FetchError::NotAllowed(_))),
@@ -217,6 +220,32 @@ mod fetch {
         );
         let url = Url::parse("https://docs.rs/").unwrap();
         assert!(self::fetcher(WebPolicy::default()).check(&url).is_ok());
+    }
+
+    #[test]
+    fn a_private_host_named_with_a_port_is_reached_at_that_port_alone() {
+        block_on!(async {
+            let pages = serve(&[("/", Reply::html("dev server"))]).await;
+            let port = pages.base().rsplit(':').next().unwrap().to_owned();
+            for named in ["localhost", "127.0.0.1"] {
+                let fetcher = fetcher(WebPolicy {
+                    allow: vec![
+                        HostPattern::parse("*").unwrap(),
+                        HostPattern::parse(&format!("{named}:{port}")).unwrap(),
+                    ],
+                    ..WebPolicy::default()
+                });
+                let page = fetcher.fetch(&format!("http://{named}:{port}/")).await;
+                assert!(page.is_ok_and(|page| page.text.contains("dev server")));
+                // Redis's port, say: `*` names it, but the host only may be private at its own.
+                let other = fetcher.fetch(&format!("http://{named}:6379/")).await;
+                assert!(
+                    matches!(&other, Err(FetchError::NotAllowed(host)) if host.ends_with(":6379")),
+                    "{named}: {other:?}"
+                );
+            }
+            assert_eq!(pages.hits(), 2, "nothing went elsewhere");
+        });
     }
 
     #[test]
