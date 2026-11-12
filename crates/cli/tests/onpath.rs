@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use glave_computer::{CancelSwitch, LocalComputers};
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, Computers, Ending, Environment, Sandbox, SandboxLevel, Sources,
+    Command, Computers, Ending, Environment, Sandbox, SandboxLevel, SandboxNetwork, Sources,
 };
 use glave_ports::testing::Captured;
 use glave_provider_openai::fake::FakeServer;
@@ -60,7 +60,7 @@ fn a_sandboxed_command_with_glave_on_its_path_cannot_act_as_the_person() {
         let mut command = Command::new(script);
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: true,
+            network: SandboxNetwork::Direct,
             home: Some(dir.clone()),
             glave_home: Some(place.home.clone()),
         });

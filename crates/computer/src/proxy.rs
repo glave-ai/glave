@@ -8,13 +8,15 @@ mod connection;
 mod head;
 mod hold;
 mod network;
-mod pump;
+pub(crate) mod pump;
 mod rules;
 
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::net::TcpListener;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
@@ -104,16 +106,27 @@ impl<N: Network> Proxy<N> {
 
     /// Serves the connections `listener` takes, each as a task this owns, until dropped, which
     /// ends them all. They are at most the connections and holds its limits allow.
+    pub async fn serve(self, listener: TcpListener) {
+        self.serve_on(listener).await;
+    }
+
+    /// Serves the connections a Unix socket's `listener` takes, as [`Proxy::serve`] does: the
+    /// one way out of a Linux sandbox's network namespace of its own.
+    #[cfg(target_os = "linux")]
+    pub(crate) async fn serve_unix(self, listener: tokio::net::UnixListener) {
+        self.serve_on(listener).await;
+    }
+
     #[expect(
         clippy::infinite_loop,
         reason = "the proxy serves until its owner drops it, which ends every connection"
     )]
-    pub async fn serve(self, listener: TcpListener) {
+    async fn serve_on<L: Listening>(self, listener: L) {
         let mut connections = JoinSet::new();
         loop {
             while connections.try_join_next().is_some() {}
-            let client = match listener.accept().await {
-                Ok((client, _)) => client,
+            let client = match listener.take().await {
+                Ok(client) => client,
                 Err(error) => {
                     tracing::warn!(%error, "the outbound proxy could not take a connection");
                     // Out of files, say: let the connections it has end before taking more.
@@ -122,8 +135,7 @@ impl<N: Network> Proxy<N> {
                 }
             };
             let Ok(place) = Arc::clone(&self.shared.connections).try_acquire_owned() else {
-                // As much as the socket takes at once: a full one isn't waited for.
-                let _ = client.try_write(BUSY);
+                L::turn_away(&client);
                 continue;
             };
             let shared = Arc::clone(&self.shared);
@@ -133,6 +145,43 @@ impl<N: Network> Proxy<N> {
                 }
             });
         }
+    }
+}
+
+/// Where commands' connections to the proxy arrive: a TCP port, or a Unix socket.
+trait Listening: Send {
+    type Client: AsyncRead + AsyncWrite + Unpin + Send + 'static;
+
+    /// The next connection.
+    fn take(&self) -> impl Future<Output = io::Result<Self::Client>> + Send;
+
+    /// Says "busy" to a connection over the cap: as much as its socket takes at once, since a
+    /// full one isn't waited for.
+    fn turn_away(client: &Self::Client);
+}
+
+impl Listening for TcpListener {
+    type Client = TcpStream;
+
+    async fn take(&self) -> io::Result<TcpStream> {
+        self.accept().await.map(|(client, _)| client)
+    }
+
+    fn turn_away(client: &TcpStream) {
+        let _ = client.try_write(BUSY);
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Listening for tokio::net::UnixListener {
+    type Client = tokio::net::UnixStream;
+
+    async fn take(&self) -> io::Result<Self::Client> {
+        self.accept().await.map(|(client, _)| client)
+    }
+
+    fn turn_away(client: &Self::Client) {
+        let _ = client.try_write(BUSY);
     }
 }
 

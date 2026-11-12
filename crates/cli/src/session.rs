@@ -277,7 +277,11 @@ fn protections(choices: &Choices, project: Protections, here: Option<&Sandbox>) 
     let shown = format!("permissions: {}", mode.name());
     match project.sandbox(mode, here) {
         Some(sandbox) => {
-            let network = if sandbox.network { " + network" } else { "" };
+            let network = if sandbox.network.is_on() {
+                " + network"
+            } else {
+                ""
+            };
             format!("{shown} · sandbox: {}{network}", sandbox.level.name())
         }
         None => shown,

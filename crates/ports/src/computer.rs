@@ -29,8 +29,8 @@ pub use glave_event::Forge;
 pub use limits::{Isolation, Limits};
 pub use refusal::{Reason, Refusal};
 pub use sandbox::{
-    PROTECTED, Sandbox, SandboxLevel, git_settings, is_kept, is_protected, is_protected_refusal,
-    refuse_protected,
+    PROTECTED, Sandbox, SandboxLevel, SandboxNetwork, git_settings, is_kept, is_protected,
+    is_protected_refusal, refuse_protected,
 };
 pub use terminal::{
     MAX_OWNED_TERMINALS, MAX_TERMINALS, Screenful, TERMINAL_CHUNK, TERMINAL_KEPT, TerminalInfo,

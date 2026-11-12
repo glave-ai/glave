@@ -1,4 +1,5 @@
 use glave_ports::block_on;
+use glave_ports::computer::{SandboxLevel, SandboxNetwork};
 use glave_ports::testing::TempDir;
 
 use super::*;
@@ -133,7 +134,6 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use glave_event::Arguments;
-    use glave_ports::computer::SandboxLevel;
 
     use crate::cancel::Cancel;
     use crate::tools::Tool;
@@ -156,7 +156,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
         // The sandbox as the binding records it; no command runs here.
         ws.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: false,
+            network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
         });
