@@ -22,7 +22,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
 
 use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
@@ -92,7 +92,7 @@ impl Enforcer {
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
-        let proxied = if sandbox.network && sandbox.proxied {
+        let proxied = if sandbox.network == SandboxNetwork::Proxied {
             Some(proxied(&how, helper, outbound, folder.run())?)
         } else {
             None
@@ -101,7 +101,7 @@ impl Enforcer {
         let layout = Layout {
             root: root.to_owned(),
             level: sandbox.level,
-            network: sandbox.network,
+            network: sandbox.network.is_on(),
             base: folder.base().to_owned(),
             empty_file: folder.empty_file(),
             empty_folder: folder.empty_folder(),
@@ -226,7 +226,7 @@ async fn choose(
         .map(Path::to_path_buf)
         .collect();
     // With the network, Unix sockets too: the mounts hide the person's daemons' (`mounts.rs`).
-    let sockets = if sandbox.network {
+    let sockets = if sandbox.network.is_on() {
         seccomp::Sockets::InternetAndUnix
     } else {
         seccomp::Sockets::Offline

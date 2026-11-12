@@ -12,8 +12,8 @@ use std::process::Command as Process;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources,
-    WorkspaceId,
+    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 
 use super::landlocked;
@@ -68,6 +68,17 @@ fn run(
     helper: Option<&Path>,
     script: &str,
 ) -> Result<(Ending, String), ComputerError> {
+    let sandbox = sandbox.map(|(level, network)| (level, SandboxNetwork::when(network)));
+    run_with(dir, sandbox, helper, script)
+}
+
+/// [`run`], with the network as `sandbox` names it.
+fn run_with(
+    dir: &Path,
+    sandbox: Option<(SandboxLevel, SandboxNetwork)>,
+    helper: Option<&Path>,
+    script: &str,
+) -> Result<(Ending, String), ComputerError> {
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), dir.as_os_str().to_owned())])
@@ -80,7 +91,6 @@ fn run(
     command.sandbox = sandbox.map(|(level, network)| Sandbox {
         level,
         network,
-        proxied: false,
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
     });
@@ -327,6 +337,26 @@ fn landlock_confines_read_only_commands() {
     assert!(dir.join("outside.txt").exists());
 }
 
+/// Landlock gives a command no network of its own, so one kept to the outbound proxy is
+/// refused rather than let out directly.
+#[test]
+fn landlock_refuses_a_command_kept_to_the_proxy() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-proxied");
+    let kept = (SandboxLevel::ReadOnly, SandboxNetwork::Proxied);
+    let refused = run_with(&dir, Some(kept), Some(&helper), "echo out");
+    assert!(
+        matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("Landlock")),
+        "{refused:?}"
+    );
+    // Control: the network direct runs there.
+    let direct = (SandboxLevel::ReadOnly, SandboxNetwork::Direct);
+    let (_, said) = run_with(&dir, Some(direct), Some(&helper), "echo out").unwrap();
+    assert!(said.contains("out"), "{said}");
+}
+
 /// Under Landlock a command opens no other session's terminal either, though the same script
 /// outside the sandbox opens it both ways. (bubblewrap's `/dev` is its own:
 /// `sandbox/tests/terminals.rs`.)
@@ -412,8 +442,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
     let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
-        network: false,
-        proxied: false,
+        network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home),
     };
@@ -452,8 +481,7 @@ fn landlock_keeps_glave_on_path_readable() {
         .with_glave_on_path(&on_path);
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
-        network: false,
-        proxied: false,
+        network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home.clone()),
     };

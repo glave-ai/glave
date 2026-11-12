@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, Sandbox};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxNetwork};
 
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
 use super::run_temp::RunTemp;
@@ -47,7 +47,7 @@ impl Enforcer {
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
-        if sandbox.network && sandbox.proxied {
+        if sandbox.network == SandboxNetwork::Proxied {
             return Err(ComputerError::Unsupported(
                 "commands cannot be kept to glave's outbound proxy on macOS yet".into(),
             ));
@@ -96,7 +96,7 @@ impl Enforcer {
             git_common,
             git_own,
         };
-        let profile = profile(&places, sandbox.level, sandbox.network);
+        let profile = profile(&places, sandbox.level, sandbox.network.is_on());
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];
         args.extend(profile.params.iter().map(|(name, path)| param(name, path)));
         let temps = Temps {

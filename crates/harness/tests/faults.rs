@@ -12,8 +12,8 @@ use glave_event::{Body, Event, Outcome, StopReason};
 use glave_harness::{AllowAll, Cancel, Workspace};
 use glave_ports::computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
-    FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel, Save,
-    Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel,
+    SandboxNetwork, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, InMemoryLog};
 use serde_json::json;
@@ -189,8 +189,7 @@ fn a_sandbox_that_starts_no_command_is_given_up_in_seconds_saying_so() {
     computers.stuck_sandbox.store(true, Ordering::SeqCst);
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: false,
-        proxied: false,
+        network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
     };

@@ -102,7 +102,7 @@ fn a_computer_running_another_glave_is_used_not_refused() {
 }
 
 /// The protocol version this glave speaks.
-const PROTOCOL: &str = "2026-11-09";
+const PROTOCOL: &str = "2026-11-11";
 
 /// What checking a computer that answers `server/discover` with `info` says.
 fn discovered(info: serde_json::Value) -> Result<(), ComputerError> {

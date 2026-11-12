@@ -13,13 +13,14 @@ use std::time::Duration;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Sandbox, SandboxLevel, Sources,
+    Command, ComputerError, Computers, Ending, Environment, Sandbox, SandboxLevel, SandboxNetwork,
+    Sources,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-use super::{Collect, bubblewrap, scratch};
+use super::{Collect, bubblewrap, run_with, scratch};
 use crate::local::sandbox::Outbound;
 use crate::proxy::{Mode, Network, Rules};
 use crate::{CancelSwitch, LocalComputers};
@@ -77,13 +78,13 @@ fn forwarder() -> Option<PathBuf> {
     helper
 }
 
-/// Runs each of `scripts` in `dir/project`, in the `project` sandbox with the network, kept to
+/// Runs each of `scripts` in `dir/project`, in the `project` sandbox with `network`, kept to
 /// the proxy or not, while an HTTP server answers [`HELLO`] on loopback at the port each
 /// script's `$SERVER` names. Returns what each printed.
 fn run(
     dir: &Path,
     helper: &Path,
-    proxied: bool,
+    network: SandboxNetwork,
     scripts: &[&str],
 ) -> Result<Vec<String>, ComputerError> {
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
@@ -95,8 +96,7 @@ fn run(
         .with_outbound(Outbound::over(Rules::new(Mode::Open, []), StandIn::new()));
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: true,
-        proxied,
+        network,
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
     };
@@ -168,7 +168,7 @@ fn sandbox_proxied_commands_reach_a_host_only_through_the_proxy() {
     let said = run(
         &dir,
         &helper,
-        true,
+        SandboxNetwork::Proxied,
         &[
             &fetch("", "http://allowed.example:$SERVER/"),
             "printenv HTTPS_PROXY all_proxy NO_PROXY; printenv GLAVE_PROXY_SECRET || echo no-secret",
@@ -199,7 +199,7 @@ fn sandbox_proxied_commands_reach_a_host_only_through_the_proxy() {
     let said = run(
         &dir,
         &helper,
-        false,
+        SandboxNetwork::Direct,
         &[&fetch("", "http://127.0.0.1:$SERVER/")],
     )
     .unwrap();
@@ -219,7 +219,7 @@ fn sandbox_proxied_commands_reach_no_metadata_private_address_or_proxy_without_i
     let said = run(
         &dir,
         &helper,
-        true,
+        SandboxNetwork::Proxied,
         &[
             &fetch("", "http://metadata.example/"),
             &fetch("", "http://169.254.169.254/latest/meta-data/"),
@@ -264,7 +264,7 @@ fn sandbox_proxied_commands_send_no_datagram_so_no_lookup() {
     let said = run(
         &dir,
         &helper,
-        true,
+        SandboxNetwork::Proxied,
         &[&send("127.0.0.1"), &send("10.0.0.53")],
     )
     .unwrap();
@@ -276,10 +276,30 @@ fn sandbox_proxied_commands_send_no_datagram_so_no_lookup() {
     assert!(resolver.recv_from(&mut got).is_err(), "{here}");
     assert!(elsewhere.contains("unreachable"), "{elsewhere}");
     // Control: with the network and no proxy, the datagram arrives.
-    run(&dir, &helper, false, &[&send("127.0.0.1")]).unwrap();
+    run(&dir, &helper, SandboxNetwork::Direct, &[&send("127.0.0.1")]).unwrap();
     resolver
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
     let (n, _) = resolver.recv_from(&mut got).unwrap();
     assert_eq!(got.get(..n), Some(&b"lookup"[..]));
+}
+
+/// Without glave's own program to forward in its namespace, a command kept to the proxy is
+/// refused rather than let out directly.
+#[test]
+fn sandbox_refuses_a_command_kept_to_the_proxy_without_a_forwarder() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("unforwarded");
+    let kept = (SandboxLevel::Project, SandboxNetwork::Proxied);
+    let refused = run_with(&dir, Some(kept), None, "echo out");
+    assert!(
+        matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("glave's own program")),
+        "{refused:?}"
+    );
+    // Control: the network direct runs without it.
+    let direct = (SandboxLevel::Project, SandboxNetwork::Direct);
+    let (_, said) = run_with(&dir, Some(direct), None, "echo out").unwrap();
+    assert!(said.contains("out"), "{said}");
 }

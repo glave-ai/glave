@@ -14,7 +14,7 @@ use glave_event::PrincipalId;
 use glave_ports::OrgId;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Sandbox, SandboxLevel,
-    Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
+    SandboxNetwork, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -315,8 +315,7 @@ fn environment(image: &str) -> Environment {
 pub fn person_sandbox(network: bool) -> Sandbox {
     Sandbox {
         level: SandboxLevel::Project,
-        network,
-        proxied: false,
+        network: SandboxNetwork::when(network),
         home: Some(PERSON_HOME.into()),
         glave_home: Some(format!("{PERSON_HOME}/.glave").into()),
     }

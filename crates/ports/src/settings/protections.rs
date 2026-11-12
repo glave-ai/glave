@@ -36,7 +36,7 @@ impl Protections {
         };
         Some(Sandbox {
             level,
-            network: here.network && !self.offline,
+            network: here.network.unless(self.offline),
             ..here.clone()
         })
     }
@@ -45,6 +45,7 @@ impl Protections {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::computer::SandboxNetwork;
     use Permissions::{Ask, Auto, FullAccess, Plan};
 
     #[test]
@@ -64,15 +65,14 @@ mod tests {
     fn each_mode_comes_to_its_own_sandbox_and_never_one_that_cannot_run() {
         let here = Sandbox {
             level: SandboxLevel::Project,
-            network: true,
-            proxied: false,
+            network: SandboxNetwork::Direct,
             home: None,
             glave_home: None,
         };
         let level = |protections: Protections, mode, here: Option<&Sandbox>| {
             protections
                 .sandbox(mode, here)
-                .map(|sandbox| (sandbox.level, sandbox.network))
+                .map(|sandbox| (sandbox.level, sandbox.network.is_on()))
         };
         let none = Protections::default();
         for cautious in [Plan, Ask] {

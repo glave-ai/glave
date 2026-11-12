@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers as _, Ending, Sandbox, SandboxLevel, Sources, WorkspaceId,
+    Command, ComputerError, Computers as _, Ending, Sandbox, SandboxLevel, SandboxNetwork, Sources,
+    WorkspaceId,
 };
 
 use super::super::objects::PERSON_HOME;
@@ -158,14 +159,13 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             Some(Sandbox {
                 level,
                 network,
-                proxied: false,
                 home: Some(PathBuf::from(PERSON_HOME)),
                 glave_home: Some(PathBuf::from(format!("{PERSON_HOME}/.glave"))),
             })
         };
-        let offline = sandbox(SandboxLevel::Project, false);
-        let online = sandbox(SandboxLevel::Project, true);
-        let reading = sandbox(SandboxLevel::ReadOnly, false);
+        let offline = sandbox(SandboxLevel::Project, SandboxNetwork::Off);
+        let online = sandbox(SandboxLevel::Project, SandboxNetwork::Direct);
+        let reading = sandbox(SandboxLevel::ReadOnly, SandboxNetwork::Off);
         let py = |source: &str, args: &str| {
             format!("python3 -c '{}' {args}", source.replace('\'', "'\\''"))
         };
@@ -236,6 +236,14 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             if !holds {
                 wrong.push(what);
             }
+        }
+        // Kept to the outbound proxy: gVisor gives bubblewrap no namespace to keep it there, so
+        // the command is refused, never let out directly.
+        let proxied = sandbox(SandboxLevel::Project, SandboxNetwork::Proxied);
+        let kept = run(&computers, project.id, proxied, "echo out").await;
+        said.push(format!("proxied: {kept:?}"));
+        if !matches!(kept, Err(ComputerError::Unsupported(_))) {
+            wrong.push("proxied: refused");
         }
         // What it costs: a command's start, and work.
         let mut cost = Vec::new();

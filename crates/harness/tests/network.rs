@@ -11,7 +11,7 @@ use glave_event::{Body, Event, Lifted, Principal, StopReason, ThreadId, TurnResu
 use glave_harness::{
     ApprovalRequest, Approver, Cancel, Decision, Defaults, HarnessError, NoOneToAsk,
 };
-use glave_ports::computer::Sandbox;
+use glave_ports::computer::{Sandbox, SandboxNetwork};
 use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest};
 use serde_json::json;
 
@@ -298,7 +298,7 @@ fn an_answer_given_before_the_network_was_taken_never_gives_a_command_the_networ
         // While it waits, the network is taken from commands.
         let mut defaults = Defaults::clone(&harness.defaults());
         defaults.sandbox = defaults.sandbox.map(|sandbox| Sandbox {
-            network: false,
+            network: SandboxNetwork::Off,
             ..sandbox
         });
         harness.set_defaults(defaults);

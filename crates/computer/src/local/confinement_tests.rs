@@ -294,8 +294,7 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
     });
     let guarded = glave_ports::computer::Sandbox {
         level: glave_ports::computer::SandboxLevel::Project,
-        network: false,
-        proxied: false,
+        network: glave_ports::computer::SandboxNetwork::Off,
         home: None,
         glave_home: None,
     };

@@ -74,11 +74,13 @@ impl Asks {
         }
         let walled = workspace.is_walled();
         match workspace.sandbox() {
-            Some(sandbox) if !sandbox.network && workspace.asks_network() && walled => {
+            Some(sandbox) if !sandbox.network.is_on() && workspace.asks_network() && walled => {
                 Self::NetworkOnly
             }
-            Some(sandbox) if !sandbox.network && workspace.asks_network() => Self::OutsideOrNetwork,
-            Some(sandbox) if !sandbox.network => Self::Nothing,
+            Some(sandbox) if !sandbox.network.is_on() && workspace.asks_network() => {
+                Self::OutsideOrNetwork
+            }
+            Some(sandbox) if !sandbox.network.is_on() => Self::Nothing,
             _ if walled => Self::Contained,
             _ => Self::Outside,
         }
@@ -99,7 +101,7 @@ pub(crate) fn outside(
     }
     let sandbox = workspace.sandbox()?;
     let asked = crate::tools::outside_sandbox(arguments)?;
-    (asked.lifted == Lifted::Sandbox || !sandbox.network).then_some(asked)
+    (asked.lifted == Lifted::Sandbox || !sandbox.network.is_on()).then_some(asked)
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -167,7 +169,7 @@ fn let_out_refused(
 pub(crate) fn recorded(sandbox: &Sandbox) -> Recorded {
     Recorded {
         level: sandbox.level,
-        network: sandbox.network,
+        network: sandbox.network.is_on(),
         enforcement: ENFORCEMENT,
     }
 }

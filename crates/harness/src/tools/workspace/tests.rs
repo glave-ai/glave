@@ -1,5 +1,5 @@
 use glave_ports::block_on;
-use glave_ports::computer::SandboxLevel;
+use glave_ports::computer::{SandboxLevel, SandboxNetwork};
 use glave_ports::testing::TempDir;
 
 use super::*;
@@ -156,8 +156,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
         // The sandbox as the binding records it; no command runs here.
         ws.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
-            network: false,
-            proxied: false,
+            network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
         });

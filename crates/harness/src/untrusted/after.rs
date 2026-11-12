@@ -15,7 +15,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 /// read untrusted content.
 pub(crate) fn offline_after(sandbox: Option<Sandbox>, untrusted: bool) -> Option<Sandbox> {
     sandbox.map(|sandbox| Sandbox {
-        network: sandbox.network && !untrusted,
+        network: sandbox.network.unless(untrusted),
         ..sandbox
     })
 }
@@ -50,7 +50,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::computer::SandboxLevel;
+    use glave_ports::computer::{SandboxLevel, SandboxNetwork};
 
     use super::*;
 
@@ -59,21 +59,28 @@ mod tests {
         let sandbox = |network| Sandbox {
             level: SandboxLevel::Project,
             network,
-            proxied: false,
             home: None,
             glave_home: None,
         };
         assert_eq!(
-            offline_after(Some(sandbox(true)), false),
-            Some(sandbox(true))
+            offline_after(Some(sandbox(SandboxNetwork::Direct)), false),
+            Some(sandbox(SandboxNetwork::Direct))
         );
         assert_eq!(
-            offline_after(Some(sandbox(true)), true),
-            Some(sandbox(false))
+            offline_after(Some(sandbox(SandboxNetwork::Direct)), true),
+            Some(sandbox(SandboxNetwork::Off))
         );
         assert_eq!(
-            offline_after(Some(sandbox(false)), true),
-            Some(sandbox(false))
+            offline_after(Some(sandbox(SandboxNetwork::Off)), true),
+            Some(sandbox(SandboxNetwork::Off))
+        );
+        assert_eq!(
+            offline_after(Some(sandbox(SandboxNetwork::Proxied)), false),
+            Some(sandbox(SandboxNetwork::Proxied))
+        );
+        assert_eq!(
+            offline_after(Some(sandbox(SandboxNetwork::Proxied)), true),
+            Some(sandbox(SandboxNetwork::Off))
         );
         assert_eq!(
             offline_after(None, true),
