@@ -3,61 +3,87 @@
 //! asks the provider. The one place their shapes live.
 
 use glave_event::Arguments;
-use glave_ports::{MediaAsk, Purpose, ToolSpec};
+use glave_ports::{MediaAsk, Purpose, Quality, ToolSpec};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 pub(crate) const IMAGE_GENERATE: &str = "image_generate";
 pub(crate) const IMAGE_EDIT: &str = "image_edit";
 
-/// The shapes an image may be asked for in, width to height: the ones every image model glave
-/// serves makes.
+/// The shapes an image may be asked for in, width to height: the ones every default model
+/// makes.
 const ASPECT_RATIOS: [&str; 8] = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"];
+
+/// A new image's shape when the call asks none.
+const SQUARE: &str = "1:1";
 
 /// The most images a call draws on beside the one it edits.
 const MOST_REFERENCES: usize = 8;
 
+/// The longest prompt, in characters.
+const LONGEST_PROMPT: usize = 8_000;
+
 /// The longest a call's prompt shows in its line, in characters.
 const SHOWN_CHARS: usize = 80;
 
+/// The quality tiers, by name, as every media tool takes them.
+const QUALITIES: [(&str, Quality); 3] = [
+    ("low", Quality::Low),
+    ("medium", Quality::Medium),
+    ("high", Quality::High),
+];
+
 /// How the model is told of the tool for `purpose`.
 pub(crate) fn spec(purpose: Purpose) -> ToolSpec {
-    let prompt = json!({"type": "string", "description": "The whole description: subject, \
-        style, composition, colours and any words it shows. The image model sees nothing else \
-        of this conversation."});
-    let aspect_ratio = json!({"type": "string", "enum": ASPECT_RATIOS,
-        "description": "Width to height. Unset: square for a new image, the image's own shape \
-        for an edit."});
-    let references = json!({"type": "array", "maxItems": MOST_REFERENCES, "items": {"type": "string"},
-        "description": "Images to draw on, such as a character, a style or a product: each a \
-        saved file (blob:<sha256>) or a path in the workspace."});
+    let file = "a saved file (blob:<sha256>) or a path on this computer";
+    let mut properties = json!({
+        "prompt": {"type": "string", "maxLength": LONGEST_PROMPT, "description": "The whole \
+            description: subject, style, composition, colours and any words it shows. The image \
+            model sees nothing else of this conversation; name each reference by its order \
+            (\"the first reference\")."},
+        "aspect_ratio": {"type": "string", "enum": ASPECT_RATIOS, "description": "Width to \
+            height. Every default model makes these; another model makes the nearest."},
+        "quality": {"type": "string", "enum": ["low", "medium", "high"], "description": "low: \
+            seconds and cents, for trying ideas; medium (the default); high: slowest and \
+            dearest, for finals."},
+        "references": {"type": "array", "maxItems": MOST_REFERENCES, "items": {"type": "string"},
+            "description": format!("Images to draw on, such as a character, a style or a \
+            product, in order: each {file}.")},
+        "transparent": {"type": "boolean", "description": "A transparent background, as a PNG. \
+            Default false."},
+    });
     if purpose == Purpose::ImageEdit {
+        if let Some(fields) = properties.as_object_mut() {
+            fields.insert(
+                "image".to_owned(),
+                json!({"type": "string", "description": format!("The image to change: {file}.")}),
+            );
+        }
+        if let Some(ratio) = properties.pointer_mut("/aspect_ratio/description") {
+            *ratio = Value::from("Width to height. Default the image's own.");
+        }
         return ToolSpec {
             name: IMAGE_EDIT.to_owned(),
             description: "Change an image as described, keeping the rest; the original stays \
-                 as it was. The image comes first and any references after it, in order, so \
-                 the prompt can name them (\"the second image\"). One image a call. Returns the \
-                 saved file, blob:<sha256>, and shows you the image."
+                 as it was. One image a call. Returns the saved file, blob:<sha256>, and shows \
+                 you the image."
                 .to_owned(),
-            parameters: json!({"type": "object", "properties": {
-                "image": {"type": "string", "description": "The image to change: a saved file \
-                    (blob:<sha256>) or a path in the workspace."},
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "references": references,
-            }, "required": ["image", "prompt"]}),
+            parameters: json!({"type": "object", "properties": properties,
+                "required": ["image", "prompt"]}),
         };
+    }
+    if let Some(ratio) = properties.pointer_mut("/aspect_ratio/description") {
+        *ratio = Value::from(
+            "Width to height, default 1:1. Every default model makes these; another model makes \
+             the nearest.",
+        );
     }
     ToolSpec {
         name: IMAGE_GENERATE.to_owned(),
         description: "Make an image from a description. One image a call: for several, call \
              it several times. Returns the saved file, blob:<sha256>, and shows you the image."
             .to_owned(),
-        parameters: json!({"type": "object", "properties": {
-            "prompt": prompt,
-            "aspect_ratio": aspect_ratio,
-            "references": references,
-        }, "required": ["prompt"]}),
+        parameters: json!({"type": "object", "properties": properties, "required": ["prompt"]}),
     }
 }
 
@@ -86,9 +112,13 @@ struct Given {
     #[serde(default)]
     aspect_ratio: Option<String>,
     #[serde(default)]
+    quality: Option<String>,
+    #[serde(default)]
     image: Option<String>,
     #[serde(default)]
     references: Vec<String>,
+    #[serde(default)]
+    transparent: bool,
 }
 
 /// What a media call asks the provider: its prompt, the images it draws on as the model named
@@ -114,10 +144,13 @@ pub(super) fn asked(purpose: Purpose, arguments: &Arguments) -> Result<Asked, St
     let Arguments::Json(map) = arguments else {
         return Err("The arguments were not JSON.".to_owned());
     };
-    let given: Given = serde_json::from_value(serde_json::Value::Object(map.clone()))
+    let given: Given = serde_json::from_value(Value::Object(map.clone()))
         .map_err(|error| format!("The arguments don't fit the tool: {error}."))?;
     if given.prompt.trim().is_empty() {
         return Err("Say what to make in prompt.".to_owned());
+    }
+    if given.prompt.chars().count() > LONGEST_PROMPT {
+        return Err(format!("prompt is at most {LONGEST_PROMPT} characters."));
     }
     if let Some(ratio) = &given.aspect_ratio
         && !ASPECT_RATIOS.contains(&ratio.as_str())
@@ -127,12 +160,21 @@ pub(super) fn asked(purpose: Purpose, arguments: &Arguments) -> Result<Asked, St
             ASPECT_RATIOS.join(", ")
         ));
     }
+    let quality = match given.quality.as_deref() {
+        None => Quality::default(),
+        Some(named) => QUALITIES
+            .iter()
+            .find(|(name, _)| *name == named)
+            .map(|(_, quality)| *quality)
+            .ok_or_else(|| format!("quality {named:?} is not low, medium or high."))?,
+    };
     if given.references.len() > MOST_REFERENCES {
         return Err(format!("At most {MOST_REFERENCES} references a call."));
     }
-    match (purpose, &given.image) {
+    let aspect_ratio = match (purpose, &given.image) {
         (Purpose::ImageEdit, None) => return Err("Name the image to change in image.".to_owned()),
-        (Purpose::ImageEdit, Some(_)) | (_, None) => {}
+        (Purpose::ImageEdit, Some(_)) => given.aspect_ratio,
+        (_, None) => given.aspect_ratio.or_else(|| Some(SQUARE.to_owned())),
         (_, Some(_)) => {
             return Err(
                 "image_generate takes no image: use image_edit to change one, or name \
@@ -140,12 +182,15 @@ pub(super) fn asked(purpose: Purpose, arguments: &Arguments) -> Result<Asked, St
                     .to_owned(),
             );
         }
-    }
+    };
     Ok(Asked {
         prompt: given.prompt,
         images: given.image.into_iter().chain(given.references).collect(),
         ask: MediaAsk {
-            aspect_ratio: given.aspect_ratio,
+            aspect_ratio,
+            quality,
+            transparent: given.transparent,
+            ..MediaAsk::default()
         },
     })
 }
