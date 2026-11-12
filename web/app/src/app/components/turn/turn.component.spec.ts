@@ -70,6 +70,7 @@ const RESULTS: TurnResults = {
           summary: 'bash: cargo test',
           status: 'done',
           output: '',
+          images: [],
         },
       ],
     },

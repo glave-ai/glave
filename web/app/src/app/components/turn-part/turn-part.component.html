@@ -15,3 +15,6 @@
     }
   }
 }
+@for (shown of images(); track shown.key) {
+  <app-thread-image [image]="shown.image" />
+}

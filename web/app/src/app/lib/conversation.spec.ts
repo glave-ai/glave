@@ -415,6 +415,37 @@ describe('conversation', () => {
     expect(mergeEvents(events, [])).toBe(events);
     expect(mergeEvents(events, [event('b', {}, 2)])).toBe(events);
   });
+
+  it('keeps the images a tool result holds, in order, and nothing else of its files', () => {
+    const blob = (sha: string, mediaType: string): Record<string, unknown> => ({
+      sha256: sha,
+      bytes: 9,
+      media_type: mediaType,
+    });
+    const items = threadItems([
+      event('tool.call.requested', { call_id: 'i1', tool: 'image_generate', arguments: {} }),
+      event('tool.call.completed', {
+        call_id: 'i1',
+        is_error: false,
+        output: [
+          { type: 'text', text: '{"files":[]}' },
+          { type: 'file', blob: blob('a'.repeat(64), 'image/png'), name: 'image.png' },
+          { type: 'file', blob: blob('b'.repeat(64), 'application/pdf'), name: 'terms.pdf' },
+          { type: 'file', blob: blob('c'.repeat(64), 'image/webp') },
+        ],
+      }),
+    ]);
+    expect(items).toMatchObject([
+      {
+        kind: 'call',
+        status: 'done',
+        images: [
+          { sha256: 'a'.repeat(64), mediaType: 'image/png', name: 'image.png' },
+          { sha256: 'c'.repeat(64), mediaType: 'image/webp', name: 'image' },
+        ],
+      },
+    ]);
+  });
 });
 
 describe('what a service asks', () => {

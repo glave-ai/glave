@@ -127,6 +127,7 @@ describe('ThreadItemComponent', () => {
       summary: 'bash: cargo test',
       status: 'failed',
       output: 'FAILED',
+      images: [],
     });
     const receipt = root.querySelector('[data-testid="thread-receipt"]');
     expect(receipt?.querySelector('.what')?.textContent).toBe('bash: cargo test');

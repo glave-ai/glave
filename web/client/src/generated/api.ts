@@ -514,6 +514,23 @@ export type FileInfo = {
 };
 
 /**
+ * A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
+ * file of any size comes within the 16 MiB a message may be on every transport.
+ */
+export type FilePiece = {
+  /** The whole file's size. */
+  readonly bytes: number;
+  /** This piece, in base64. */
+  readonly data: string;
+  /** Its media type, such as `image/png`, as what it holds says. */
+  readonly media_type: string;
+  /** Where the next piece starts; absent at the file's end. */
+  readonly next?: number | null;
+  /** Where in the file this piece starts. */
+  readonly offset: number;
+};
+
+/**
  * A person's filters among the providers a router passes their calls on to. What is not
  * chosen does not filter.
  */
@@ -1973,6 +1990,17 @@ export type CreditsLimitResult = {
   readonly credits: CreditsInfo;
 };
 
+export type FileReadParams = {
+  readonly offset?: number | null;
+  readonly sha256: string;
+  readonly thread: ThreadId;
+};
+
+/** A piece of a file a thread holds. */
+export type FileReadResult = {
+  readonly piece: FilePiece;
+};
+
 export type FileUploadParams = {
   /** Its content, in base64. */
   readonly data: string;
@@ -3118,6 +3146,7 @@ export interface Methods {
   readonly "credits/add": { readonly params: CreditsAddParams; readonly result: CreditsAddResult };
   readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
   readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
+  readonly "file/read": { readonly params: FileReadParams; readonly result: FileReadResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };
   readonly "filters/set": { readonly params: FiltersSetParams; readonly result: FiltersSetResult };

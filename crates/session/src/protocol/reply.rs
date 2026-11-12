@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
-    ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary, Permissions,
-    PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources, ScheduleInfo,
-    SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo, ThreadChanges,
-    ThreadSteps, Told, TrustAsk, WatchEnd,
+    ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, FilePiece, GoneFolder,
+    Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary,
+    Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources,
+    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo,
+    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 mod listening;
@@ -276,6 +276,9 @@ pub enum Reply {
     /// A file kept for a message.
     #[schemars(title = "File")]
     File { file: FileInfo },
+    /// A piece of a file a thread holds.
+    #[schemars(title = "FilePiece")]
+    FilePiece { piece: FilePiece },
     /// A message sent while a turn ran, queued to it: answered at once.
     #[schemars(title = "Queued")]
     Queued { queued: QueuedMessage },

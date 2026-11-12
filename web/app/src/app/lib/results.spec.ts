@@ -49,6 +49,7 @@ function call(seq: number, status: CallItem['status'] = 'done'): CallItem {
     summary: 'cargo test',
     status,
     output: '',
+    images: [],
   };
 }
 

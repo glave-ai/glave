@@ -30,6 +30,7 @@ impl Request {
             | Self::TurnStart { thread, .. }
             | Self::TurnCancel { thread }
             | Self::ThreadCompact { thread }
+            | Self::FileRead { thread, .. }
             | Self::ApprovalDecide { thread, .. }
             | Self::QuestionAnswer { thread, .. }
             | Self::ServiceAnswer { thread, .. }

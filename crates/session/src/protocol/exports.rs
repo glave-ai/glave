@@ -13,7 +13,7 @@ pub use super::connectors::{
 pub use super::credentials::{Ability, CredentialInfo, DeviceCode};
 pub use super::credits::{CreditsAccount, CreditsInfo, PersonSpent};
 pub use super::error::{ApiError, ErrorData};
-pub use super::files::{AttachedFile, FileInfo};
+pub use super::files::{AttachedFile, FileInfo, FilePiece};
 pub use super::live::Update;
 pub use super::meta::{IdempotencyKey, Meta};
 pub use super::models::{EndpointInfo, ModelInfo};

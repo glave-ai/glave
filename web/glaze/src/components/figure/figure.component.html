@@ -1,0 +1,22 @@
+<figure class="figure glz-stack glz-gap-1">
+  @if (src(); as url) {
+    <img class="frame image" [attr.data-testid]="ids().image" [src]="url" [alt]="alt()" />
+  } @else if (failed(); as why) {
+    <p class="frame failed" [attr.data-testid]="ids().failed">{{ why }}</p>
+  } @else {
+    <span class="frame" role="img" [attr.aria-label]="alt()"></span>
+  }
+  <!-- In every state, so the figure is as tall before the image comes as after. -->
+  <figcaption [class.unseen]="unsaved()">
+    <a
+      glzButton
+      size="sm"
+      variant="ghost"
+      [attr.data-testid]="ids().download"
+      [attr.href]="src()"
+      [attr.download]="name()"
+    >
+      {{ downloadLabel() }}
+    </a>
+  </figcaption>
+</figure>

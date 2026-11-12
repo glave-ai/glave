@@ -35,6 +35,7 @@ describe('runs', () => {
       summary: 'bash: ls',
       status,
       output: '',
+      images: [],
     });
     expect(stepping([turn([], true)])).toBeNull();
     const running = stepping([turn([call('running')])]);

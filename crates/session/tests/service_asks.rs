@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use glave_event::{Body, CallId, Outcome, Seq, ServiceAnswer, ThreadId, decode};
-use glave_ports::ToolSource;
 use glave_ports::testing::{ASKING_TOOL, AskingTool};
+use glave_ports::{BlobStore as _, ToolSource};
 use glave_session::protocol::{Notification, Permissions, Reply, Request, Status, code};
 use glave_session::{Answering, TurnItem};
 use serde_json::json;
@@ -21,8 +21,13 @@ fn typed() -> ServiceAnswer {
     }
 }
 
-/// A server whose model calls the tool of `source`, unasked by its mode, then says "Filed."
-async fn asked_of(dir: &std::path::Path, source: &Arc<AskingTool>, answering: Answering) -> Tested {
+/// A server whose model calls the tool of `source`, unasked by its mode, then says "Filed.";
+/// and its blobs.
+async fn asked_of(
+    dir: &std::path::Path,
+    source: &Arc<AskingTool>,
+    answering: Answering,
+) -> (Tested, SharedBlobs) {
     let answers = vec![
         answer(None, Some((ASKING_TOOL, json!({})))),
         answer(Some("Filed."), None),
@@ -30,7 +35,8 @@ async fn asked_of(dir: &std::path::Path, source: &Arc<AskingTool>, answering: An
     let mut setup = Setup::asking(answers, answering);
     setup.settings.permissions = Permissions::FullAccess;
     setup.tools = vec![Arc::clone(source) as Arc<dyn ToolSource>];
-    setup.build(dir).await.0
+    let blobs = setup.blobs.clone();
+    (setup.build(dir).await.0, blobs)
 }
 
 fn answering(thread: ThreadId, call: &CallId, asked: Seq, answer: ServiceAnswer) -> Request {
@@ -47,7 +53,7 @@ fn a_client_answers_what_a_service_asks_and_the_turn_goes_on() {
     let dir = folder("service-asks-answered");
     block_on!(async {
         let source = AskingTool::asking(&["Which repository?"]);
-        let server = asked_of(&dir, &source, Answering::Clients).await;
+        let (server, blobs) = asked_of(&dir, &source, Answering::Clients).await;
         let thread = start(&server, false).await;
         let mut stream = stream_turn(&server, thread, "file it", None).await.unwrap();
         let mut ended = None;
@@ -94,10 +100,24 @@ fn a_client_answers_what_a_service_asks_and_the_turn_goes_on() {
         // Compared without printing: a failure must not show what was typed.
         let same = given[1].as_ref().unwrap().answer == typed();
         assert!(same);
-        // What a client reads back holds nothing of what was typed.
+        // What a client reads back holds nothing of what was typed, nor what the service keeps
+        // while it asks: the thread's project holds it, and `file/read` never gives it.
+        let mut kept = None;
         for event in events(&server, thread).await {
             assert!(!event.to_json().unwrap().contains(TYPED));
+            if let Body::ServiceAsked(asked) = decode(event).unwrap().body {
+                kept = Some(asked.state.sha256);
+            }
         }
+        let kept = kept.unwrap();
+        assert!(blobs.get(&scope(), &kept).await.unwrap().is_some());
+        let read = Request::FileRead {
+            thread,
+            sha256: kept,
+            offset: None,
+        };
+        let read = server.request(read).await.err().map(|error| error.code);
+        assert_eq!(read, Some(code::NO_FILE));
         let stale = answering(
             thread,
             &CallId::new("call_99").unwrap(),
@@ -116,7 +136,7 @@ fn with_no_one_to_answer_it_is_declined_and_nothing_waits() {
     let dir = folder("service-asks-nobody");
     block_on!(async {
         let source = AskingTool::asking(&["Which repository?"]);
-        let server = asked_of(&dir, &source, Answering::NoOne).await;
+        let (server, _) = asked_of(&dir, &source, Answering::NoOne).await;
         let thread = start(&server, false).await;
         let reply = turn(&server, thread, "file it").await.unwrap();
         assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));

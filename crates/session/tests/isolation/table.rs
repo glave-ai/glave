@@ -403,6 +403,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
                 json!({"project": "@project", "name": "notes.txt", "media_type": "text/plain", "data": "aGk="}),
             ],
         ),
+        (
+            "file/read",
+            vec![json!({"thread": "@thread", "sha256": "e".repeat(64), "offset": 0})],
+        ),
         ("thread/compact", on_thread()),
         (
             "approval/decide",

@@ -3,6 +3,7 @@ import { type Page } from '@playwright/test';
 import { PROJECT, THREAD, fakeApi } from './fake-api';
 import { FORMATTED } from './fake-formatted';
 import { LONG, LONG_TURNS } from './fake-long';
+import { PHOTOS } from './fake-photos';
 import {
   type Felt,
   FEEL,
@@ -102,6 +103,33 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   held.letGo();
   await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
   await expect(byTestId(page, 'panel-running')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
+
+test('nothing moves on opening a thread as the images its agent read come in late, or turn out to be gone', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  // Tall enough for the whole thread, so what moves is in view, not scrolled out of it.
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  const held = await hold(page, '/', 'file/read');
+  await page.goto(`/t/${PHOTOS}${SIGNED_IN}`);
+  await held.sent;
+  await expect(byTestId(page, 'thread-message').last()).toContainText('a dog awake');
+  // Each image holds its place, the link that saves it unseen, while it comes.
+  const figures = byTestId(page, 'thread-image');
+  await expect(figures).toHaveCount(2);
+  for (const figure of await figures.all()) {
+    await expect(figure).toHaveAttribute('aria-busy', 'true');
+  }
+  await expect(byTestId(page, 'thread-image-download').first()).toBeHidden();
+  await atRest(page);
+  held.letGo();
+  await expect(byTestId(page, 'thread-image-image')).toBeVisible();
+  await expect(byTestId(page, 'thread-image-download').first()).toBeVisible();
+  await expect(byTestId(page, 'thread-image-failed')).toHaveText('this file is no longer here');
   await atRest(page);
   expectStill(await feltOn(page));
 });

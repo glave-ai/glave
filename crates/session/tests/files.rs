@@ -2,16 +2,19 @@
 //! project as what it holds says it is, `turn/start` names it, and the model is sent it, a
 //! photo as a copy made once beside the untouched original; a video, a file too large, one
 //! glave does not read, an image that cannot be opened, one not kept here, and an image for a
-//! model that does not read images are refused plainly, before anything is sent.
+//! model that does not read images are refused plainly, before anything is sent. A file the
+//! thread's messages or tool results name is read back, a piece at a time, and nothing else is.
 
 use std::io::Cursor;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{Body, Part, ThreadId, decode};
+use glave_ports::BlobStore as _;
 use glave_session::protocol::{
-    ApiError, AttachedFile, FileInfo, Meta, ModelInfo, Reply, Request, code,
+    ApiError, AttachedFile, FileInfo, FilePiece, Meta, ModelInfo, Reply, Request, code,
 };
+use serde_json::json;
 
 use crate::support::*;
 
@@ -302,5 +305,128 @@ fn messages_with_files_that_cannot_be_sent_are_refused_before_anything_is() {
             .await;
         assert!(matches!(&task, Err(error) if error.code == code::INVALID_PARAMS));
         assert!(seen.lock().unwrap().is_empty(), "nothing reached the model");
+    });
+}
+
+/// The piece of the file `sha256` in `thread` from `offset`, as `file/read` answers it.
+async fn read<L: glave_ports::EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+    sha256: &glave_event::Sha256,
+    offset: Option<u64>,
+) -> Result<FilePiece, ApiError> {
+    let read = server
+        .request(Request::FileRead {
+            thread,
+            sha256: sha256.clone(),
+            offset,
+        })
+        .await?;
+    match read {
+        Reply::FilePiece { piece } => Ok(piece),
+        other => panic!("a piece, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_a_thread_holds_is_read_back_a_piece_at_a_time() {
+    let dir = folder("files-read");
+    block_on!(async {
+        let (server, _) = setup().build(&dir).await;
+        let thread = start(&server, false).await;
+        let photo = photo();
+        let kept = upload(&server, "IMG_0002.jpg", "image/jpeg", &photo)
+            .await
+            .unwrap();
+        send(&server, thread, vec![attached(&kept)], None)
+            .await
+            .unwrap();
+        let whole = read(&server, thread, &kept.sha256, None).await.unwrap();
+        assert_eq!(whole.media_type, "image/jpeg");
+        assert_eq!(
+            (whole.bytes, whole.offset, whole.next),
+            (kept.bytes, 0, None)
+        );
+        assert_eq!(STANDARD.decode(&whole.data).unwrap(), photo);
+        let from = kept.bytes - 10;
+        let tail = read(&server, thread, &kept.sha256, Some(from))
+            .await
+            .unwrap();
+        let tail = STANDARD.decode(&tail.data).unwrap();
+        assert_eq!(tail, photo.get(photo.len() - 10..).unwrap());
+        let past = read(&server, thread, &kept.sha256, Some(kept.bytes + 1))
+            .await
+            .unwrap();
+        assert!(past.data.is_empty() && past.next.is_none());
+        let never = glave_ports::digest(b"never kept");
+        let gone = read(&server, thread, &never, None).await;
+        assert!(not_held(&gone), "{gone:?}");
+    });
+}
+
+/// Whether `read` was refused as a file the thread does not hold.
+fn not_held(read: &Result<FilePiece, ApiError>) -> bool {
+    matches!(read, Err(error) if error.code == code::NO_FILE
+        && error.message == "this file is no longer here")
+}
+
+#[test]
+fn only_a_file_the_thread_s_own_messages_and_results_name_is_read_back() {
+    let dir = folder("files-read-named");
+    let pixel = STANDARD.decode(PIXEL).unwrap();
+    std::fs::write(dir.join("cat.png"), &pixel).unwrap();
+    block_on!(async {
+        let script = vec![
+            answer(None, Some(("read", json!({"path": "cat.png"})))),
+            answer(Some("A cat."), None),
+            answer(Some("A dog."), None),
+        ];
+        let mut setup = Setup::new(script);
+        setup.settings.titles = false;
+        let blobs = setup.blobs.clone();
+        let (server, _) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        send(&server, thread, Vec::new(), None).await.unwrap();
+        let (mut shown, mut config) = (None, None);
+        for event in events(&server, thread).await {
+            match decode(event).unwrap().body {
+                Body::ToolCallCompleted(done) => {
+                    shown = done.output.into_iter().find_map(|part| match part {
+                        Part::File { blob, .. } => Some(blob.sha256),
+                        _ => None,
+                    });
+                }
+                Body::TurnStarted(started) => config = Some(started.config.sha256),
+                _ => {}
+            }
+        }
+        // The image the agent read, as its call's result names it.
+        let shown = read(&server, thread, &shown.unwrap(), None).await.unwrap();
+        assert_eq!(STANDARD.decode(&shown.data).unwrap(), pixel);
+        // The turn's configuration is kept in the project's blobs too, and never given.
+        let config = config.unwrap();
+        assert!(blobs.get(&scope(), &config).await.unwrap().is_some());
+        assert!(not_held(&read(&server, thread, &config, None).await));
+        // Another thread's file, in the same project, is that thread's alone.
+        let other = start(&server, false).await;
+        let mut dog = Cursor::new(Vec::new());
+        let strip = image::GrayImage::new(2, 1);
+        strip.write_to(&mut dog, image::ImageFormat::Png).unwrap();
+        let dog = upload(&server, "dog.png", "image/png", dog.get_ref())
+            .await
+            .unwrap();
+        send(&server, other, vec![attached(&dog)], None)
+            .await
+            .unwrap();
+        assert!(read(&server, other, &dog.sha256, None).await.is_ok());
+        assert!(not_held(&read(&server, thread, &dog.sha256, None).await));
+        // A deleted thread holds none, though its files wait for the sweep.
+        let delete = Request::ThreadDelete { thread: other };
+        server.request(delete).await.unwrap();
+        let deleted = read(&server, other, &dog.sha256, None).await;
+        assert!(
+            matches!(&deleted, Err(error) if error.code == code::NO_THREAD),
+            "{deleted:?}"
+        );
     });
 }

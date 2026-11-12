@@ -448,6 +448,17 @@ methods! {
         /// Its content, in base64.
         data: String,
     } -> [File],
+    /// A piece of a file `thread` holds, by its content's SHA-256: one its own messages or tool
+    /// results name, such as an image the agent made, and nothing else its project keeps. Read
+    /// from `offset` (the start when absent) a piece at a time, each answer saying where the
+    /// next starts.
+    "file/read" => FileRead {
+        thread: ThreadId,
+        #[schemars(with = "String")]
+        sha256: Sha256,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<u64>,
+    } -> [FilePiece],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,

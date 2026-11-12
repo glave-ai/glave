@@ -17,6 +17,7 @@ const CALL: CallItem = {
   summary: 'bash: exit 3',
   status: 'failed',
   output: 'exit 3',
+  images: [],
 };
 
 const SAID: MessageItem = {
@@ -91,5 +92,31 @@ describe('TurnPartComponent', () => {
     expect(message?.getAttribute('aria-label')).toBe('Update');
     expect(root.querySelector('[data-testid="reply-sources"]')).not.toBeNull();
     await expectAccessible(root);
+  });
+
+  it('shows the images a run’s calls made under it, in view while it is closed, each once', async () => {
+    const fox = { sha256: 'f'.repeat(64), mediaType: 'image/png', name: 'fox.png' };
+    const read = (key: string): CallItem => ({
+      ...CALL,
+      key,
+      call: key,
+      tool: 'read',
+      summary: 'read fox.png',
+      status: 'done',
+      images: [fox],
+    });
+    // The same image read twice: shown twice, each in a place of its own.
+    const root = await render({
+      kind: 'run',
+      key: 'run-2',
+      sentence: 'Read 2 files',
+      items: [read('c2'), read('c3')],
+    });
+    const figures = root.querySelectorAll('[data-testid="thread-image"]');
+    expect(figures).toHaveLength(2);
+    for (const figure of Array.from(figures)) {
+      expect(figure.closest('details')).toBeNull();
+      expect(figure.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('fox.png');
+    }
   });
 });
