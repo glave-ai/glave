@@ -527,12 +527,8 @@ fn a_worktree_is_freed_only_when_all_it_holds_can_be_rebuilt_and_nothing_has_it_
     });
 }
 
-/// A server frees an archived chat's scratch folder through the port as it frees a worktree:
-/// listed with the worktrees, kept while a thread has it open, removed when empty, and otherwise
-/// moved whole to the person's Trash, never deleted.
-#[test]
-fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
-    let base = glave_ports::testing::TempDir::new("scratch-free").unwrap();
+/// A person's home in `base`, and computers making scratch folders there whose Trash is theirs.
+fn person_s_scratch(base: &Path) -> (PathBuf, LocalComputers) {
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let environment = std::env::vars_os()
@@ -540,6 +536,16 @@ fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
         .chain([("HOME".into(), home.clone().into_os_string())]);
     let computers =
         LocalComputers::new(base.join("copies"), environment).with_scratch(base.join("scratch"));
+    (home, computers)
+}
+
+/// A server frees an archived chat's scratch folder through the port as it frees a worktree:
+/// listed with the worktrees, kept while a thread has it open, removed when empty, and otherwise
+/// moved whole to the person's Trash, never deleted.
+#[test]
+fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
+    let base = glave_ports::testing::TempDir::new("scratch-free").unwrap();
+    let (home, computers) = person_s_scratch(&base);
     let scratch = |name: &str| Sources::Scratch {
         name: name.to_owned(),
         owner: Some(format!("org/project/{name}")),
@@ -599,13 +605,7 @@ fn a_scratch_folder_is_freed_to_the_trash_and_never_while_open() {
 #[test]
 fn a_scratch_folder_freed_as_its_thread_opens_it_is_found_whole() {
     let base = glave_ports::testing::TempDir::new("scratch-race").unwrap();
-    let home = base.join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let environment = std::env::vars_os()
-        .filter(|(name, _)| name == "PATH")
-        .chain([("HOME".into(), home.clone().into_os_string())]);
-    let computers =
-        LocalComputers::new(base.join("copies"), environment).with_scratch(base.join("scratch"));
+    let (_, computers) = person_s_scratch(&base);
     let sources = Sources::Scratch {
         name: "chat".to_owned(),
         owner: Some("org/project/chat".to_owned()),
