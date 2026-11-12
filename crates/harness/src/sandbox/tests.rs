@@ -36,6 +36,7 @@ fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
     Sandbox {
         level,
         network,
+        proxied: false,
         home: Some(home.to_owned()),
         glave_home: Some(home.join(".glave")),
     }

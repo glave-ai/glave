@@ -1,14 +1,17 @@
 //! The sandbox on Linux. bubblewrap first: a mount namespace whose root is read-only, with the
 //! workspace writable but its protected paths laid over read-only, secret locations hidden,
-//! the network namespace unshared when the network is off, and a seccomp filter. Where
-//! bubblewrap cannot start, Landlock and the same filter, at the `read-only` level only.
-//! Neither: a sandboxed command is refused, saying what to install.
+//! the network namespace unshared when the network is off, or when it goes only through the
+//! outbound proxy, and a seccomp filter. Where bubblewrap cannot start, Landlock and the same
+//! filter, at the `read-only` level only. Neither: a sandboxed command is refused, saying what
+//! to install.
 
 mod bubblewrap;
+mod forward;
 mod helper;
 mod landlocked;
 mod mounts;
 mod names;
+mod outbound;
 mod seccomp;
 mod temp;
 #[cfg(test)]
@@ -25,9 +28,12 @@ use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
+use outbound::Serving;
 use temp::RunFolder;
 
+pub(super) use forward::forward;
 pub(super) use helper::helper;
+pub(crate) use outbound::Outbound;
 
 /// The protected paths' stand-ins a command holds until it ends (bubblewrap only).
 pub(super) type Held = Option<mounts::Held>;
@@ -53,11 +59,21 @@ enum How {
     Landlock { helper: PathBuf },
 }
 
+/// Commands kept to the outbound proxy: glave's own program, which forwards in each command's
+/// namespace, and the proxy it reaches.
+#[derive(Debug)]
+struct Proxied {
+    helper: PathBuf,
+    serving: Serving,
+}
+
 #[derive(Debug)]
 pub(super) struct Enforcer {
     how: How,
     layout: Arc<Layout>,
     stand_ins: StandIns,
+    /// Stopped before its socket's folder goes.
+    proxied: Option<Proxied>,
     _folder: RunFolder,
 }
 
@@ -66,7 +82,7 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        helper: Option<&Path>,
+        (helper, outbound): (Option<&Path>, &Outbound),
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
@@ -76,6 +92,11 @@ impl Enforcer {
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
+        let proxied = if sandbox.network && sandbox.proxied {
+            Some(proxied(&how, helper, outbound, folder.run())?)
+        } else {
+            None
+        };
         let names = SecretNames::new().map_err(|error| ComputerError::Failed(error.to_string()))?;
         let layout = Layout {
             root: root.to_owned(),
@@ -109,6 +130,7 @@ impl Enforcer {
             how,
             layout: Arc::new(layout),
             stand_ins: Arc::new(Mutex::new(HashMap::new())),
+            proxied,
             _folder: folder,
         };
         Ok((enforcer, temps))
@@ -129,9 +151,21 @@ impl Enforcer {
                         .await
                         .map_err(|error| ComputerError::Failed(error.to_string()))?
                         .map_err(|refused| ComputerError::Refused(refused.into()))?;
+                let forward = self.proxied.as_ref().map(|proxied| bubblewrap::Forward {
+                    helper: &proxied.helper,
+                    socket: proxied.serving.socket(),
+                });
+                let args = bubblewrap::args(bwrap, *offline, &self.layout, &mounts, forward);
+                let env = self.proxied.iter().map(|proxied| {
+                    (
+                        OsString::from(forward::SECRET),
+                        proxied.serving.secret().into(),
+                    )
+                });
                 Ok(Launch {
                     program: PathBuf::from(bubblewrap::SH),
-                    args: bubblewrap::args(bwrap, *offline, &self.layout, &mounts),
+                    args,
+                    env: env.collect(),
                     input: Some(filter.clone()),
                     own_session: false,
                     temp,
@@ -148,6 +182,7 @@ impl Enforcer {
                 Ok(Launch {
                     program: helper.clone(),
                     args: vec![SANDBOX_HELPER_ARG.into(), plan.into(), OsString::from("--")],
+                    env: Vec::new(),
                     input: None,
                     own_session: true,
                     temp,
@@ -236,6 +271,40 @@ async fn choose(
     };
     Err(ComputerError::Unsupported(format!(
         "the sandbox cannot run on this computer: {why}. To use it, {INSTALL}.{fallback}"
+    )))
+}
+
+/// The proxy for commands kept to it, started in `folder`, where `how` gives each command a
+/// network namespace of its own and glave's own program, `helper`, can forward in it. Anywhere
+/// else they are refused rather than let out directly: Landlock has no namespace, and under
+/// gVisor bubblewrap cannot make one.
+fn proxied(
+    how: &How,
+    helper: Option<&Path>,
+    outbound: &Outbound,
+    folder: &Path,
+) -> Result<Proxied, ComputerError> {
+    let why = match (how, helper) {
+        (
+            How::Bubblewrap {
+                offline: bubblewrap::Offline::OwnNetwork,
+                ..
+            },
+            Some(helper),
+        ) => {
+            return Ok(Proxied {
+                helper: helper.to_owned(),
+                serving: Serving::start(outbound, folder)?,
+            });
+        }
+        (How::Bubblewrap { .. }, Some(_)) => {
+            "bubblewrap cannot give a command a network namespace of its own here"
+        }
+        (How::Landlock { .. }, _) => "Landlock cannot give a command a network of its own",
+        (_, None) => "glave's own program is not known, to forward in the command's network",
+    };
+    Err(ComputerError::Unsupported(format!(
+        "commands cannot be kept to glave's outbound proxy on this computer: {why}"
     )))
 }
 

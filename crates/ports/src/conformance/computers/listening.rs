@@ -36,6 +36,7 @@ pub(super) async fn listening<C: Computers>(computers: &C, here: WorkspaceId) ->
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: true,
+        proxied: false,
         home: None,
         glave_home: None,
     };

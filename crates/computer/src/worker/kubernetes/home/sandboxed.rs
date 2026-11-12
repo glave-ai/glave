@@ -158,6 +158,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             Some(Sandbox {
                 level,
                 network,
+                proxied: false,
                 home: Some(PathBuf::from(PERSON_HOME)),
                 glave_home: Some(PathBuf::from(format!("{PERSON_HOME}/.glave"))),
             })

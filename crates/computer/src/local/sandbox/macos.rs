@@ -8,7 +8,7 @@ use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
 use super::run_temp::RunTemp;
-use super::{Launch, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
+use super::{Launch, Outbound, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -22,6 +22,10 @@ pub(super) fn available() -> bool {
 
 pub(super) fn helper(_args: &[OsString]) -> String {
     "the sandbox helper runs only on Linux".into()
+}
+
+pub(super) fn forward(_args: &[OsString]) -> Result<std::process::ExitCode, String> {
+    Err("the forwarder runs only on Linux".into())
 }
 
 /// The profile's arguments, but for each command's own temp folder.
@@ -39,10 +43,15 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        _helper: Option<&Path>,
+        (_helper, _outbound): (Option<&Path>, &Outbound),
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
+        if sandbox.network && sandbox.proxied {
+            return Err(ComputerError::Unsupported(
+                "commands cannot be kept to glave's outbound proxy on macOS yet".into(),
+            ));
+        }
         if !available() {
             return Err(ComputerError::Unsupported(format!(
                 "the sandbox is not available on this computer: {SANDBOX_EXEC} is missing"
@@ -110,6 +119,7 @@ impl Enforcer {
         std::future::ready(Ok(Launch {
             program: PathBuf::from(SANDBOX_EXEC),
             args,
+            env: Vec::new(),
             input: None,
             own_session: false,
             temp,

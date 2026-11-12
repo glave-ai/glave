@@ -119,6 +119,12 @@ pub struct Sandbox {
     pub level: SandboxLevel,
     /// Whether commands may use the network.
     pub network: bool,
+    /// Whether commands with the network reach it only through glave's outbound proxy, which
+    /// withholds private networks and cloud metadata (`specs/sandbox.md`, "The outbound
+    /// proxy"). A computer that cannot keep its commands to the proxy refuses them as
+    /// unsupported rather than letting them out directly.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub proxied: bool,
     /// The person's home folder, whose credential folders commands may not read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home: Option<PathBuf>,
@@ -161,6 +167,7 @@ mod tests {
             protect: Some(Sandbox {
                 level: SandboxLevel::Project,
                 network: false,
+                proxied: false,
                 home: None,
                 glave_home: None,
             }),

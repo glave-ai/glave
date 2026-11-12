@@ -238,6 +238,7 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
             network: true,
+            proxied: false,
             home: std::env::var_os("HOME").map(PathBuf::from),
             glave_home: None,
         });
@@ -295,6 +296,7 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: Some(dir.to_path_buf()),
             glave_home: Some(glave_home.clone()),
         });

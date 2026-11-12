@@ -65,6 +65,7 @@ mod tests {
         let here = Sandbox {
             level: SandboxLevel::Project,
             network: true,
+            proxied: false,
             home: None,
             glave_home: None,
         };

@@ -4,6 +4,8 @@
 //! where `GLAVE_REQUIRE_LANDLOCK` is set. ext4 tells cases apart, so only the exact spellings
 //! of protected names are protected, and those are what these check.
 
+mod proxied;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
@@ -78,6 +80,7 @@ fn run(
     command.sandbox = sandbox.map(|(level, network)| Sandbox {
         level,
         network,
+        proxied: false,
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
     });
@@ -410,6 +413,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,
+        proxied: false,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home),
     };
@@ -449,6 +453,7 @@ fn landlock_keeps_glave_on_path_readable() {
     let sandbox = Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,
+        proxied: false,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home.clone()),
     };

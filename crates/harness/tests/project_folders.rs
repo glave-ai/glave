@@ -426,6 +426,7 @@ fn a_project_that_gives_full_access_runs_its_commands_without_the_sandbox_once_t
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: Some(base.to_path_buf()),
             glave_home: Some(base.join(".glave")),
         };
@@ -478,6 +479,7 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
             network: true,
+            proxied: false,
             home: Some(base.to_path_buf()),
             glave_home: Some(base.join(".glave")),
         };

@@ -118,6 +118,7 @@ fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandb
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: false,
+        proxied: false,
         home: Some(home),
         glave_home: Some(glave_home),
     };
@@ -219,6 +220,7 @@ fn the_running_glave_is_first_on_every_command_s_path() {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: false,
+        proxied: false,
         home: Some(home.clone()),
         glave_home: Some(glave_home.clone()),
     };
@@ -538,6 +540,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: false,
+        proxied: false,
         home: None,
         glave_home: None,
     };
@@ -714,6 +717,7 @@ fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: true,
+        proxied: false,
         home: Some(home),
         glave_home: Some(dir.join("glave")),
     };

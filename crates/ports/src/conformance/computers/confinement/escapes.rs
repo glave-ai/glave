@@ -225,6 +225,7 @@ fn guarded(path: &str, content: &[u8]) -> FileWrite {
         protect: Some(Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: None,
             glave_home: None,
         }),

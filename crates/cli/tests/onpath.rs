@@ -61,6 +61,7 @@ fn a_sandboxed_command_with_glave_on_its_path_cannot_act_as_the_person() {
         command.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
             network: true,
+            proxied: false,
             home: Some(dir.clone()),
             glave_home: Some(place.home.clone()),
         });

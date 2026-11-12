@@ -165,6 +165,7 @@ pub(super) async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) ->
     command.sandbox = Some(Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,
+        proxied: false,
         home: None,
         glave_home: None,
     });

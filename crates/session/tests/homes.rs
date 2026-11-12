@@ -47,6 +47,7 @@ fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
                 Some(Sandbox {
                     level: SandboxLevel::Project,
                     network: true,
+                    proxied: false,
                     home: None,
                     glave_home: None,
                 }),

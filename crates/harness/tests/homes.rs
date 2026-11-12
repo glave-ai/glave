@@ -108,6 +108,7 @@ impl Sleepy {
         sleepy.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: Some(home.to_owned()),
             glave_home: Some(home.join(".glave")),
         });

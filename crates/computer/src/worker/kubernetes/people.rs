@@ -311,6 +311,7 @@ pub fn person_sandbox(network: bool) -> Sandbox {
     Sandbox {
         level: SandboxLevel::Project,
         network,
+        proxied: false,
         home: Some(PERSON_HOME.into()),
         glave_home: Some(format!("{PERSON_HOME}/.glave").into()),
     }

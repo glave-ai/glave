@@ -190,6 +190,7 @@ fn a_sandbox_that_starts_no_command_is_given_up_in_seconds_saying_so() {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: false,
+        proxied: false,
         home: None,
         glave_home: None,
     };

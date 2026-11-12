@@ -12,7 +12,7 @@ use glave_ports::computer::{
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::{Builder, Uuid};
 
-use super::sandbox::Prepared;
+use super::sandbox::{Outbound, Prepared};
 
 /// The most computers one machine holds at once.
 const MAX_COMPUTERS: usize = 64;
@@ -38,6 +38,8 @@ pub(crate) struct Opened {
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,
     /// Where its commands start, owned by it.
     pub(crate) processes: glave_process::Processes,
+    /// How the outbound proxy its sandboxed commands may be kept to is made.
+    pub(crate) outbound: Outbound,
 }
 
 impl Opened {
@@ -63,7 +65,7 @@ impl Opened {
             sandbox,
             &self.root,
             git_common,
-            helper,
+            (helper, &self.outbound),
             &self.hidden,
             glave_on_path,
         );

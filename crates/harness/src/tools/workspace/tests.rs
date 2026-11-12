@@ -157,6 +157,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
         ws.sandbox = Some(Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: None,
             glave_home: None,
         });

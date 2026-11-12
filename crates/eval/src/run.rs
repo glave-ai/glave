@@ -301,6 +301,7 @@ async fn workspace(
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: task.network,
+        proxied: false,
         home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
         glave_home: None,
     };

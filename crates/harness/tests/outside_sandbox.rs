@@ -107,6 +107,7 @@ pub(crate) async fn walled(base: &Path, network: bool) -> glave_harness::Workspa
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network,
+        proxied: false,
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
     };

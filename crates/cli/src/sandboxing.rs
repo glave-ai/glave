@@ -24,6 +24,7 @@ pub(crate) fn sandbox_at(
     Sandbox {
         level,
         network: choices.network.value,
+        proxied: false,
         home: std::env::var_os("HOME").map(PathBuf::from),
         glave_home: glave_home.map(Path::to_path_buf),
     }

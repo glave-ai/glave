@@ -147,6 +147,7 @@ impl Kit {
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
             network: false,
+            proxied: false,
             home: None,
             glave_home: None,
         };

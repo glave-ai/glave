@@ -295,6 +295,7 @@ async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
     command.sandbox = Some(Sandbox {
         level: SandboxLevel::ReadOnly,
         network: false,
+        proxied: false,
         home: None,
         glave_home: None,
     });
