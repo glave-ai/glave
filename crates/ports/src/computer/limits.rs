@@ -10,8 +10,7 @@ pub struct Limits {
     pub cpus: Option<u32>,
     /// The most memory, in GB; also its size when its environment names none.
     pub memory_gb: Option<u32>,
-    /// The most network a worker may have; `None` allows it all. A worker can't be held to
-    /// `guarded` yet: policy refuses it when read, and a worker given it gets no network.
+    /// The most network a worker may have; `None` allows it all.
     pub network: Option<NetworkMode>,
     /// How far apart from its host a worker must be kept.
     pub isolation: Isolation,

@@ -1,19 +1,14 @@
 //! The sandbox on Linux. bubblewrap first: a mount namespace whose root is read-only, with the
 //! workspace writable but its protected paths laid over read-only, secret locations hidden,
-//! a network namespace of the command's own when the network is off, its thread's when it
-//! goes only through the outbound proxy, and a seccomp filter. Where bubblewrap cannot start,
-//! Landlock and the same filter, at the `read-only` level only. Neither: a sandboxed command
-//! is refused, saying what to install.
+//! a network namespace of the command's own when the network is off, and a seccomp filter.
+//! Where bubblewrap cannot start, Landlock and the same filter, at the `read-only` level only.
+//! Neither: a sandboxed command is refused, saying what to install.
 
 mod bubblewrap;
-mod enter;
-mod forward;
 mod helper;
-mod identity;
 mod landlocked;
 mod mounts;
 mod names;
-mod namespace;
 mod seccomp;
 mod temp;
 #[cfg(test)]
@@ -24,21 +19,14 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::MAX_SOCKET_PATH;
-use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
-use glave_process::Processes;
-use tokio::net::UnixListener;
+use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
 
-use super::outbound::{Outbound, Serving, variables};
 use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
-use namespace::Namespace;
 use temp::RunFolder;
 
-pub(super) use enter::enter;
-pub(super) use forward::forward;
 pub(super) use helper::helper;
 
 /// The protected paths' stand-ins a command holds until it ends (bubblewrap only).
@@ -65,22 +53,11 @@ enum How {
     Landlock { helper: PathBuf },
 }
 
-/// Commands kept to the outbound proxy: the thread's network namespace, which glave's own
-/// program joins for each command, and the proxy its forwarder reaches.
-#[derive(Debug)]
-struct Proxied {
-    helper: PathBuf,
-    namespace: Namespace,
-    serving: Serving,
-}
-
 #[derive(Debug)]
 pub(super) struct Enforcer {
     how: How,
     layout: Arc<Layout>,
     stand_ins: StandIns,
-    /// Stopped before its socket's folder goes.
-    proxied: Option<Proxied>,
     _folder: RunFolder,
 }
 
@@ -89,22 +66,16 @@ impl Enforcer {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        helpers: (Option<&Path>, &Outbound, &Processes),
+        helper: Option<&Path>,
         reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         let git_common = resolved(git_common).await;
-        let (helper, ..) = helpers;
         let how = choose(sandbox, root, git_common.as_deref(), helper).await?;
         let folder = tokio::task::spawn_blocking(RunFolder::new)
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
-        let proxied = if sandbox.network == SandboxNetwork::Proxied {
-            Some(proxied(&how, helpers, folder.run()).await?)
-        } else {
-            None
-        };
         let names = SecretNames::new().map_err(|error| ComputerError::Failed(error.to_string()))?;
         let layout = Layout {
             root: root.to_owned(),
@@ -138,18 +109,9 @@ impl Enforcer {
             how,
             layout: Arc::new(layout),
             stand_ins: Arc::new(Mutex::new(HashMap::new())),
-            proxied,
             _folder: folder,
         };
         Ok((enforcer, temps))
-    }
-
-    /// Whether a command can still start in it: the network of a thread whose commands are kept
-    /// to the proxy ends if its forwarder is stopped from outside glave.
-    pub(super) fn lasts(&self) -> bool {
-        self.proxied
-            .as_ref()
-            .is_none_or(|proxied| proxied.namespace.lasts())
     }
 
     pub(super) async fn launch(&self, temp: RunTemp) -> Result<Launch, ComputerError> {
@@ -168,24 +130,9 @@ impl Enforcer {
                         .map_err(|error| ComputerError::Failed(error.to_string()))?
                         .map_err(|refused| ComputerError::Refused(refused.into()))?;
                 let args = bubblewrap::args(bwrap, *offline, &self.layout, &mounts);
-                let (program, args, env) = match &self.proxied {
-                    // Joined first, so bubblewrap starts the command in the thread's network.
-                    Some(proxied) => {
-                        let mut entering = proxied.namespace.entering();
-                        entering.push(bubblewrap::SH.into());
-                        entering.extend(args);
-                        let env = variables(proxied.serving.secret(), proxied.namespace.port());
-                        let env = env
-                            .into_iter()
-                            .map(|(name, value)| (name.into(), value.into()));
-                        (proxied.helper.clone(), entering, env.collect())
-                    }
-                    None => (PathBuf::from(bubblewrap::SH), args, Vec::new()),
-                };
                 Ok(Launch {
-                    program,
+                    program: PathBuf::from(bubblewrap::SH),
                     args,
-                    env,
                     input: Some(filter.clone()),
                     own_session: false,
                     temp,
@@ -202,7 +149,6 @@ impl Enforcer {
                 Ok(Launch {
                     program: helper.clone(),
                     args: vec![SANDBOX_HELPER_ARG.into(), plan.into(), OsString::from("--")],
-                    env: Vec::new(),
                     input: None,
                     own_session: true,
                     temp,
@@ -292,65 +238,6 @@ async fn choose(
     Err(ComputerError::Unsupported(format!(
         "the sandbox cannot run on this computer: {why}. To use it, {INSTALL}.{fallback}"
     )))
-}
-
-/// The proxy for commands kept to it, started in `folder`, and their thread's network
-/// namespace, held through `processes`, where `how` can make one and glave's own program,
-/// `helper`, can forward in it and join it. Anywhere else they are refused rather than let out
-/// directly: Landlock has no namespace, and under gVisor bubblewrap cannot make one.
-async fn proxied(
-    how: &How,
-    (helper, outbound, processes): (Option<&Path>, &Outbound, &Processes),
-    folder: &Path,
-) -> Result<Proxied, ComputerError> {
-    let why = match (how, helper) {
-        (
-            How::Bubblewrap {
-                bwrap,
-                offline: bubblewrap::Offline::OwnNetwork,
-                ..
-            },
-            Some(helper),
-        ) => {
-            let (listener, socket) = proxy_socket(folder)?;
-            let serving = Serving::start(outbound, listener)?;
-            let namespace = Namespace::start(processes, bwrap, helper, &socket).await?;
-            return Ok(Proxied {
-                helper: helper.to_owned(),
-                namespace,
-                serving,
-            });
-        }
-        (How::Bubblewrap { .. }, Some(_)) => {
-            "bubblewrap cannot give commands a network namespace of their own here"
-        }
-        (How::Landlock { .. }, _) => "Landlock cannot give a command a network of its own",
-        (_, None) => "glave's own program is not known, to forward in the thread's network",
-    };
-    Err(ComputerError::Unsupported(format!(
-        "commands cannot be kept to glave's outbound proxy on this computer: {why}"
-    )))
-}
-
-/// The socket's name in the sandbox's folder.
-const SOCKET: &str = "proxy.sock";
-
-/// A socket for the proxy in `folder`, private to this user, and its path.
-fn proxy_socket(folder: &Path) -> Result<(UnixListener, PathBuf), ComputerError> {
-    let socket = folder.join(SOCKET);
-    if socket.as_os_str().len() > MAX_SOCKET_PATH {
-        return Err(ComputerError::Failed(format!(
-            "the outbound proxy's socket would be too long a path: {}",
-            socket.display()
-        )));
-    }
-    let listener = UnixListener::bind(&socket).map_err(|error| {
-        ComputerError::Failed(format!(
-            "could not start the outbound proxy at {}: {error}",
-            socket.display()
-        ))
-    })?;
-    Ok((listener, socket))
 }
 
 /// Every terminal's device in `dev` but `tty`, the command's own controlling terminal: `pts`,

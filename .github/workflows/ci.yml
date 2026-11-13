@@ -610,7 +610,6 @@ jobs:
       # The judge's tests and the modes' too: the judge decides only in Auto behind the
       # sandbox's wall, and Ask first is its read-only sandbox. And what an eval's attempt is kept
       # from reading.
-      # The built glave forwards in the network namespace of a command kept to the outbound proxy.
       - name: bubblewrap and seccomp
         env:
           GLAVE_REQUIRE_SANDBOX: "1"

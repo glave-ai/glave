@@ -237,14 +237,6 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 wrong.push(what);
             }
         }
-        // Kept to the outbound proxy: gVisor gives bubblewrap no namespace to keep it there, so
-        // the command is refused, never let out directly.
-        let proxied = sandbox(SandboxLevel::Project, SandboxNetwork::Proxied);
-        let kept = run(&computers, project.id, proxied, "echo out").await;
-        said.push(format!("proxied: {kept:?}"));
-        if !matches!(kept, Err(ComputerError::Unsupported(_))) {
-            wrong.push("proxied: refused");
-        }
         // What it costs: a command's start, and work.
         let mut cost = Vec::new();
         for (what, script, count) in [
