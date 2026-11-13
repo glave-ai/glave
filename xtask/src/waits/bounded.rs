@@ -164,8 +164,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/computer/src/worker/kubernetes/people.rs",
         "let _sleeping = person.sleeping.lock().await;",
         1,
-        "a person's computer put to sleep, one sleep at a time: each within its Pod's going \
-         (GONE_WAIT) and its lease's letting go (ANSWERS_WITHIN)",
+        "a person's computer put to sleep, one sleep at a time, each over two minutes at most: \
+         its Pod removed and then its NetworkPolicy, each waited for up to GONE_WAIT beside its \
+         requests' own timeouts, then its lease let go of within ANSWERS_WITHIN; or a turn's \
+         heartbeat holding it for one take of the lease, within ANSWERS_WITHIN",
     ),
     (
         "crates/computer/src/waking.rs",

@@ -49,11 +49,11 @@ pub(super) async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> O
                 ),
             };
             let awake = match &*person.state.borrow() {
-                State::Awake(_, home) => Some(home.clone()),
+                State::Awake(wake, home) => Some((*wake, home.clone())),
                 _ => None,
             };
-            if let Some(home) = awake {
-                slept(person, &home).await;
+            if let Some((wake, home)) = awake {
+                slept(person, wake, &home).await;
             }
             Some(said)
         }
