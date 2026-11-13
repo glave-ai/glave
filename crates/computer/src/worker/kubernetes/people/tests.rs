@@ -436,7 +436,7 @@ fn a_person_s_computer_that_loses_its_machine_says_why_and_starts_again_on_its_d
 }
 
 /// A new person in a new organization, and the key their computer is named by.
-fn someone() -> (OrgId, PrincipalId, String) {
+pub(super) fn someone() -> (OrgId, PrincipalId, String) {
     let org = OrgId::from_uuid(crate::local::new_id().unwrap());
     let person = PrincipalId::try_from(crate::local::new_id().unwrap()).unwrap();
     let key = People::key(org.as_uuid(), person.as_uuid());
@@ -444,7 +444,7 @@ fn someone() -> (OrgId, PrincipalId, String) {
 }
 
 /// A server of its own holding leases in `leases`.
-fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
+pub(super) fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
     Leasing {
         leases: Arc::clone(leases),
         holder: Holder::new(&SystemClock, &OsEntropy).unwrap(),
@@ -452,7 +452,7 @@ fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
 }
 
 /// A server alone on its store.
-fn alone() -> Leasing {
+pub(super) fn alone() -> Leasing {
     leasing(&(Arc::new(InMemoryLeases::new(Arc::new(SystemClock))) as Arc<dyn Leases>))
 }
 
