@@ -210,7 +210,7 @@ url = "2"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 # Passkeys (WebAuthn) for the person's own server (glave-identity): kanidm's relying party, its
 # 0.6 line on RustCrypto rather than OpenSSL (a pre-release, so pinned exactly).
-webauthn-rs = { version = "=0.6.1-dev", default-features = false }
+webauthn-rs = { version = "=0.6.2", default-features = false }
 # Web Push's message encryption (RFC 8291, aes128gcm) for glave-push, on RustCrypto crates
 # already in the tree (p256, aes-gcm, hkdf, sha2). No default features: VAPID is signed with p256
 # itself, not jwt-simple.
