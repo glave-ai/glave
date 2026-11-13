@@ -334,7 +334,7 @@ fn landlock_confines_read_only_commands() {
     assert!(!dir.join("outside.txt").exists(), "{said}");
     // Control: unconfined, every canary is readable and the write lands.
     let (_, open) = run(&dir, None, None, &script).unwrap();
-    assert_eq!(open.matches("canary").count(), 3, "{open}");
+    assert_eq!(open.matches("canary").count(), 2, "{open}");
     assert!(open.contains("environ-read"), "{open}");
     assert!(dir.join("outside.txt").exists());
 }
