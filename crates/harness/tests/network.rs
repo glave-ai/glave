@@ -167,7 +167,7 @@ fn a_command_without_the_network_asks_for_it_each_time_and_stays_in_the_sandbox_
 }
 
 #[test]
-fn with_no_one_there_a_command_never_gets_the_network() {
+fn with_no_one_there_and_no_judge_a_command_never_gets_the_network() {
     let Some(base) = sandboxed("network-no-one") else {
         return;
     };

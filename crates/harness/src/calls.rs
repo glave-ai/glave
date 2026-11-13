@@ -472,7 +472,7 @@ where
         }
     }
 
-    /// In auto mode with a judge, asks it whether a soft caution may run because the person
+    /// In auto mode with a judge, asks it whether a caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
     /// thread caused; a cleared action is recorded as an approval glave decided, its question
     /// and answer in one write.
@@ -745,7 +745,7 @@ fn settle(
     }
 }
 
-/// What the judge made of a soft caution.
+/// What the judge made of a caution.
 pub(crate) enum Judged {
     /// The person asked for it: it runs without asking.
     Cleared,

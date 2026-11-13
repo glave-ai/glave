@@ -1,7 +1,7 @@
 //! Commands that act beyond this computer: publishing a package or image, deploying, changing a
 //! cluster, cloud infrastructure, a shared database or a payments account. Ordinary when the
-//! person asked for exactly that, so they are soft cautions: the judge may find the person's
-//! say-so in what they asked. Pushes are found with the other git rules, and forges' tools
+//! person asked for exactly that, so the judge may find the person's say-so in what they
+//! asked, as for every caution. Pushes are found with the other git rules, and forges' tools
 //! (`gh`, `glab`, `tea`) in `forge.rs`.
 
 use glave_event::Risk;

@@ -379,6 +379,7 @@ mod judging {
             "glab variable set TOKEN x",
             "glab auth login",
             "tea login add --token x",
+            "sudo gh secret set X",
             "bash -c 'gh api -X DELETE repos/acme/app'",
         ] {
             assert_eq!(kind(script), Some(Kind::Credentials), "{script}");

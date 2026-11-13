@@ -69,6 +69,13 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
     if let Some(found) = name.and_then(|name| prints_credential(name, words)) {
         return Some(found);
     }
+    // Before `sudo`'s too, so the judge is told what it changes rather than how it runs.
+    if let Some(found) = forge
+        .as_ref()
+        .filter(|found| found.kind == Kind::Credentials)
+    {
+        return Some(found.clone());
+    }
     if let Some(found) = admin(&command.words) {
         return Some(found);
     }

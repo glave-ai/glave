@@ -1,4 +1,4 @@
-//! The judge in Auto, behind the sandbox's wall, the one place it decides: a soft caution the
+//! The judge in Auto, behind the sandbox's wall, the one place it decides: a caution the
 //! person asked for runs, recorded as an approval glave decided in one write, so it never waits
 //! for anyone, a write through a forge's API as much as a push; one they didn't ask for still
 //! asks; and where every change asks the judge is never consulted.
