@@ -27,7 +27,7 @@ Your browser opens, signed in, at the project in the folder you ran it from (gla
 
 Prefer the terminal? `glave "fix the failing test"` answers right there, asking in place before anything risky; `glave -c "…"` continues the folder's last thread. `glave --help` lists everything.
 
-With Homebrew instead: `brew install glave-ai/tap/glave`. Both ways work once the first release is published; until then, build glave from source.
+It works once the first release is published; until then, build glave from source.
 
 ### On a server
 
