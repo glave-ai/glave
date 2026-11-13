@@ -66,17 +66,6 @@ fn run(
     helper: Option<&Path>,
     script: &str,
 ) -> Result<(Ending, String), ComputerError> {
-    let sandbox = sandbox.map(|(level, network)| (level, SandboxNetwork::when(network)));
-    run_with(dir, sandbox, helper, script)
-}
-
-/// [`run`], with the network as `sandbox` names it.
-fn run_with(
-    dir: &Path,
-    sandbox: Option<(SandboxLevel, SandboxNetwork)>,
-    helper: Option<&Path>,
-    script: &str,
-) -> Result<(Ending, String), ComputerError> {
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| name == "PATH")
         .chain([("HOME".into(), dir.as_os_str().to_owned())])
@@ -88,7 +77,7 @@ fn run_with(
     let mut command = Command::new(script);
     command.sandbox = sandbox.map(|(level, network)| Sandbox {
         level,
-        network,
+        network: SandboxNetwork::when(network),
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
     });
@@ -339,26 +328,6 @@ fn landlock_confines_read_only_commands() {
     assert!(dir.join("outside.txt").exists());
 }
 
-/// Landlock gives a command no network of its own, so one kept to the outbound proxy is
-/// refused rather than let out directly.
-#[test]
-fn landlock_refuses_a_command_kept_to_the_proxy() {
-    let Some(helper) = landlock() else {
-        return;
-    };
-    let dir = scratch("landlock-proxied");
-    let kept = (SandboxLevel::ReadOnly, SandboxNetwork::Proxied);
-    let refused = run_with(&dir, Some(kept), Some(&helper), "echo out");
-    assert!(
-        matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("Landlock")),
-        "{refused:?}"
-    );
-    // Control: the network direct runs there.
-    let direct = (SandboxLevel::ReadOnly, SandboxNetwork::Direct);
-    let (_, said) = run_with(&dir, Some(direct), Some(&helper), "echo out").unwrap();
-    assert!(said.contains("out"), "{said}");
-}
-
 /// Under Landlock a command opens no other session's terminal either, though the same script
 /// outside the sandbox opens it both ways. (bubblewrap's `/dev` is its own:
 /// `sandbox/tests/terminals.rs`.)
@@ -556,24 +525,4 @@ fn landlock_refuses_the_project_level_and_says_what_to_install() {
         matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("install bubblewrap")),
         "{refused:?}"
     );
-}
-
-/// Without glave's own program to forward in its namespace, a command kept to the proxy is
-/// refused rather than let out directly.
-#[test]
-fn sandbox_refuses_a_command_kept_to_the_proxy_without_a_forwarder() {
-    if !bubblewrap() {
-        return;
-    }
-    let dir = scratch("unforwarded");
-    let kept = (SandboxLevel::Project, SandboxNetwork::Proxied);
-    let refused = run_with(&dir, Some(kept), None, "echo out");
-    assert!(
-        matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("glave's own program")),
-        "{refused:?}"
-    );
-    // Control: the network direct runs without it.
-    let direct = (SandboxLevel::Project, SandboxNetwork::Direct);
-    let (_, said) = run_with(&dir, Some(direct), None, "echo out").unwrap();
-    assert!(said.contains("out"), "{said}");
 }

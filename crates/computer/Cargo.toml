@@ -15,9 +15,6 @@ name = "computer"
 path = "tests/main.rs"
 
 [dependencies]
-# The outbound proxy's credential, which clients send as `Proxy-Authorization: Basic` (already
-# in the tree).
-base64.workspace = true
 # The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
 # Whose a person's computer is, as its lease names them.
@@ -40,8 +37,8 @@ regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
 # Process calls on Linux: the Landlock helper's own session and the user id that names the
-# sandbox's folder and tmux's; and `setns`, by which a command joins its thread's network.
-rustix = { workspace = true, features = ["process", "pty", "termios", "thread"] }
+# sandbox's folder and tmux's.
+rustix = { workspace = true, features = ["process", "pty", "termios"] }
 # TLS between the harness and a computer served across machines (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true
@@ -66,9 +63,6 @@ kubernetes = ["dep:kube", "dep:k8s-openapi", "dep:glave-event"]
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
-# TLS 1.2 for a test server that `curl` on Apple's Secure Transport, which has no TLS 1.3,
-# reaches through the outbound proxy.
-rustls = { workspace = true, features = ["tls12"] }
 # A pseudo-terminal of the sandbox tests' own, standing in for another session's terminal.
 rustix = { workspace = true, features = ["pty"] }
 # Paused time, so fault tests stall and time out on a clock they move, never a real one.

@@ -1,7 +1,6 @@
 //! The macOS sandbox profile for one project: Codex's deny-everything base, then reads everywhere
 //! except secret locations and other terminals, writes to the project and temp folder except
-//! protected paths, and the network only when allowed: all of it, or only loopback, where glave's
-//! outbound proxy listens.
+//! protected paths, and the network only when allowed.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -51,29 +50,11 @@ const OTHER_TERMINALS: &str = r#"(require-not (regex #"^/dev/(tty|pty)."))"#;
 const NETWORK_RULES: &str = r#"; network: allowed
 (allow network-outbound (remote ip))
 ; Seatbelt names a remote host only as `*` or `localhost`, so cloud metadata (169.254.169.254)
-; cannot be withheld here: that needs the outbound proxy (specs/sandbox.md, "Cloud metadata").
+; cannot be withheld here (specs/sandbox.md, "Cloud metadata").
 (allow network-inbound (local ip))
 (allow network-bind (local ip))
 (allow network-outbound (remote unix-socket (literal "/private/var/run/mDNSResponder")))
 (allow mach-lookup (global-name "com.apple.TrustEvaluationAgent"))
-"#;
-
-/// When the network goes only through glave's outbound proxy: this computer's loopback, where
-/// the proxy listens, and of the system's services only the two Security.framework's TLS needs
-/// (measured: without `SecurityServer` it cannot read a certificate, without `trustd` it cannot
-/// check one), never Codex's whole network set, whose `ocspd`, `networkd` and configuration
-/// services TLS through the proxy does without. No name lookups. `trustd` itself fetches what a
-/// certificate names (its issuer, OCSP) directly, not through the proxy: a named gap
-/// (`specs/sandbox.md`, "The outbound proxy", step 3). All of loopback, not only the proxy's
-/// port, so a command still reaches the servers it starts, as it does in its own network
-/// namespace on Linux. Seatbelt's `localhost` is `127.0.0.1`, `::1` and `fe80::1%lo0`, never
-/// `::ffff:127.0.0.1`, which only `*` would cover.
-const PROXIED_RULES: &str = r#"; network: only loopback, where glave's outbound proxy listens
-(allow network-outbound (remote ip "localhost:*"))
-(allow network-inbound (local ip "localhost:*"))
-(allow network-bind (local ip "localhost:*"))
-; TLS: reading certificates, and checking them
-(allow mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.trustd.agent"))
 "#;
 
 /// The real paths a profile refers to. macOS matches resolved paths, so these must be resolved.
@@ -119,7 +100,6 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetw
             profile.text.push_str(NETWORK_RULES);
             profile.text.push_str(NETWORK);
         }
-        SandboxNetwork::Proxied => profile.text.push_str(PROXIED_RULES),
     }
     profile
 }
@@ -503,42 +483,9 @@ mod tests {
     }
 
     #[test]
-    fn the_proxied_network_is_loopback_alone_with_no_lookups() {
-        let profile = profile(&places(), SandboxLevel::Project, SandboxNetwork::Proxied);
-        assert!(
-            profile
-                .text
-                .contains(r#"(allow network-outbound (remote ip "localhost:*"))"#)
-        );
-        assert!(
-            !profile
-                .text
-                .contains("(allow network-outbound (remote ip))"),
-            "no host but loopback"
-        );
-        assert!(!profile.text.contains("mDNSResponder"), "no lookups");
-        assert!(
-            profile.text.contains("com.apple.trustd.agent"),
-            "TLS through the proxy still checks certificates"
-        );
-        for service in [
-            "com.apple.ocspd",
-            "com.apple.networkd",
-            "com.apple.SystemConfiguration",
-            "com.apple.TrustEvaluationAgent",
-        ] {
-            assert!(!profile.text.contains(service), "{service}");
-        }
-    }
-
-    #[test]
     fn no_profile_reaches_the_data_protection_keychain() {
         for level in [SandboxLevel::ReadOnly, SandboxLevel::Project] {
-            for network in [
-                SandboxNetwork::Off,
-                SandboxNetwork::Direct,
-                SandboxNetwork::Proxied,
-            ] {
+            for network in [SandboxNetwork::Off, SandboxNetwork::Direct] {
                 let profile = profile(&places(), level, network);
                 assert!(!profile.text.contains("securityd"), "{level:?} {network:?}");
             }
