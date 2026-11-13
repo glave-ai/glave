@@ -24,6 +24,8 @@ fn search(api: &Api) -> Value {
 #[test]
 fn web_search_is_on_by_default_searches_untrusted_is_counted_and_stays_off_once_turned_off() {
     let place = place("search");
+    // A home with no settings of the person's own, as on a first start.
+    std::fs::remove_file(place.home.join("mcp.json")).unwrap();
     let (_exa, stand_in) = serving(&["--results", RESULTS]);
     let address = format!("{stand_in}?tools=web_search_exa");
     choose(&place, "project_memory", "\"off\"");

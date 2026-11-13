@@ -104,7 +104,6 @@ fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_ca
     let origin = format!("http://localhost:{port}");
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     let servers = place.home.join("mcp.json");
-    // Web search's, on by default.
     let owners = std::fs::read_to_string(&servers).unwrap();
     block_on!(async {
         let owner = Remote::new(&url, token.trim().to_owned()).unwrap();

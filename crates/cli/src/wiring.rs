@@ -412,7 +412,10 @@ async fn signed(
     } else {
         let connected =
             Connected::for_person(store, person, &home, search, reachable, offered).await?;
-        connected.search_by_default().await?;
+        // Search on by default is a convenience: a home it can't be written in starts anyway.
+        if let Err(error) = connected.search_by_default().await {
+            tracing::warn!("web search not turned on by default: {error}");
+        }
         Some(connected)
     };
     Ok(match hosts {

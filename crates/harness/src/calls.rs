@@ -538,8 +538,8 @@ where
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead. Full access asks no
-    /// one: the call goes ahead. Plan mode asks no one either: what would ask is refused, since nothing changes until
-    /// the person approves the plan.
+    /// one: the call goes ahead. Plan mode asks no one either: what would ask is refused, since
+    /// nothing changes until the person approves the plan.
     pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
