@@ -306,11 +306,22 @@ impl People {
                 if let Some((wake, computer)) = awake {
                     let _ = person.computers.status(computer).await;
                     // Using it, so this server keeps its lease when no other does: a computer
-                    // in use always has a holder to look after it (decision 18).
+                    // in use always has a holder to look after it (decision 18). Never as it is
+                    // put to sleep, and only while it is still awake from that wake, so a lease
+                    // taken here never outlives a sleep; a sleep that comes meanwhile waits for
+                    // the one take.
                     if !holds(&person)
-                        && let Ok(Some(held)) = person.leasing.take(person.org, person.id).await
+                        && let Ok(_sleeping) = person.sleeping.try_lock()
                     {
-                        renew_while_awake(&person, held, wake);
+                        let still = matches!(
+                            &*person.state.borrow(),
+                            State::Awake(of, _) if *of == wake
+                        );
+                        if still
+                            && let Ok(Some(held)) = person.leasing.take(person.org, person.id).await
+                        {
+                            renew_while_awake(&person, held, wake);
+                        }
                     }
                 }
             }
@@ -370,17 +381,17 @@ fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
     })
 }
 
-/// Lets go of `person`'s computer, awake with `home` until it went away on its own: what is
-/// left of it removed and its lease let go of, and only then counted asleep, so the next call
-/// wakes it again and that wake takes the lease after this sleep let go of it. One sleep at a
-/// time: a call that finds the computer gone meanwhile waits for this one, then wakes it. One
-/// no longer awake with `home`, asleep already or woken again since, is not this sleep's.
-async fn slept(person: &Person, home: &WorkspaceInfo) {
+/// Lets go of `person`'s computer, awake from its wake `wake` with `home` until it went away
+/// on its own: what is left of it removed and its lease let go of, and only then counted
+/// asleep, so the next call wakes it again and that wake takes the lease after this sleep let
+/// go of it. One sleep at a time: a call that finds the computer gone meanwhile waits for this
+/// one, then wakes it. One no longer awake from that wake, asleep already or woken again since,
+/// is not this sleep's.
+async fn slept(person: &Person, wake: u64, home: &WorkspaceInfo) {
     let _sleeping = person.sleeping.lock().await;
-    let wake = match &*person.state.borrow() {
-        State::Awake(wake, awake) if awake.computer == home.computer => *wake,
-        _ => return,
-    };
+    if !matches!(&*person.state.borrow(), State::Awake(of, _) if *of == wake) {
+        return;
+    }
     // Only under its lease: a Pod by its name may be another server's by now. Let go of once
     // it is removed, so another server wakes it at once rather than once the lease lapses.
     let held = *person.held.lock().unwrap_or_else(PoisonError::into_inner);
@@ -389,7 +400,7 @@ async fn slept(person: &Person, home: &WorkspaceInfo) {
         person.leasing.release(&held).await;
     }
     let_go_of_lease(person, wake);
-    let_go(person, home);
+    let_go(person, wake, home);
 }
 
 /// Forgets the lease of `person`'s computer that its wake `wake` took, if this server still
@@ -401,12 +412,12 @@ fn let_go_of_lease(person: &Person, wake: u64) {
     }
 }
 
-/// Counts `person`'s computer asleep here, if it was awake with `home`: the next call reaches
-/// it again, or wakes it.
-fn let_go(person: &Person, home: &WorkspaceInfo) {
+/// Counts `person`'s computer asleep here, if it was awake with `home` from its wake `wake`:
+/// the next call reaches it again, or wakes it.
+fn let_go(person: &Person, wake: u64, home: &WorkspaceInfo) {
     person.computers.forget(home.computer);
     person.state.send_if_modified(|state| match state {
-        State::Awake(_, awake) if awake.computer == home.computer => {
+        State::Awake(of, _) if *of == wake => {
             *state = State::Asleep;
             true
         }
@@ -476,7 +487,7 @@ async fn renewing(
             && renewed.is_multiple_of(look)
             && matches!(person.pod.running().await, Ok(false))
         {
-            slept(&person, &home).await;
+            slept(&person, wake, &home).await;
         }
     }
 }
@@ -547,8 +558,8 @@ where
 /// and woken again.
 async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, ComputerError> {
     let was = person.state.borrow().clone();
-    if let State::Awake(_, home) = was
-        && !gone(person, &home).await
+    if let State::Awake(wake, home) = was
+        && !gone(person, wake, &home).await
     {
         return Ok(Home {
             computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
@@ -613,13 +624,13 @@ async fn peeked(person: &Person) -> Result<Option<Home>, ComputerError> {
     }
 }
 
-/// Whether `person`'s computer, awake with `home`, has ended on its own; if so, what is left of
-/// it is removed and it counts asleep, so the next ask wakes it again. One that cannot be
-/// reached but whose Pod still runs, or whose Pod cannot be read (the API server restarting),
-/// is kept: waking would replace it, and its next call tries a new bridge. One whose Pod
-/// another server woke again since is let go of here, the new Pod left as it is, and reached
-/// at the next ask.
-async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
+/// Whether `person`'s computer, awake with `home` from its wake `wake`, has ended on its own; if
+/// so, what is left of it is removed and it counts asleep, so the next ask wakes it again. One
+/// that cannot be reached but whose Pod still runs, or whose Pod cannot be read (the API server
+/// restarting), is kept: waking would replace it, and its next call tries a new bridge. One
+/// whose Pod another server woke again since is let go of here, the new Pod left as it is, and
+/// reached at the next ask.
+async fn gone(person: &Person, wake: u64, home: &WorkspaceInfo) -> bool {
     if matches!(
         person.computers.status(home.computer).await,
         Ok(info) if info.state == ComputerState::Running
@@ -631,7 +642,7 @@ async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
         Err(_) => false,
         Ok(Some(pod)) if reached_in.as_ref().is_none_or(|reached| *reached == pod) => false,
         Ok(Some(_)) => {
-            let_go(person, home);
+            let_go(person, wake, home);
             true
         }
         Ok(None) => {
@@ -641,7 +652,7 @@ async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
             {
                 person.pod.sizing.wake_at(bigger);
             }
-            slept(person, home).await;
+            slept(person, wake, home).await;
             true
         }
     }
