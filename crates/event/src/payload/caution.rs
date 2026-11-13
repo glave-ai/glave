@@ -125,7 +125,8 @@ pub enum Settled {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         why: Option<String>,
     },
-    /// Full access declined it: it never shows the model a secret.
+    /// Full access declined it, as it did a secret until 2026-11-13 (#1397): read so that
+    /// threads recorded then still open.
     Declined,
 }
 
