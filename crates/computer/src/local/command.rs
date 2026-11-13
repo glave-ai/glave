@@ -311,11 +311,6 @@ fn bash(
         .envs(own.iter().map(|(name, value)| (name, value.expose())))
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
         .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
-        .envs(
-            sandbox
-                .into_iter()
-                .flat_map(|(launch, _)| launch.env.iter().cloned()),
-        )
         .envs(caches.iter().flat_map(|caches| {
             CACHES
                 .iter()

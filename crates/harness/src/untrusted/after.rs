@@ -75,14 +75,6 @@ mod tests {
             Some(sandbox(SandboxNetwork::Off))
         );
         assert_eq!(
-            offline_after(Some(sandbox(SandboxNetwork::Proxied)), false),
-            Some(sandbox(SandboxNetwork::Proxied))
-        );
-        assert_eq!(
-            offline_after(Some(sandbox(SandboxNetwork::Proxied)), true),
-            Some(sandbox(SandboxNetwork::Off))
-        );
-        assert_eq!(
             offline_after(None, true),
             None,
             "no sandbox, as in Full access"

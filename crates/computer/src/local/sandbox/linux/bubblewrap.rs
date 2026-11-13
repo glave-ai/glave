@@ -113,8 +113,7 @@ fn empty_sandbox_by(mut program: Program, network: &[&str]) -> Result<(), String
 
 /// The arguments for `sh` that start one command in the sandbox, up to the command itself. A
 /// command without the network gets a network namespace of its own with nothing in it; one
-/// with it, the network bubblewrap starts in: this computer's, or for one kept to the outbound
-/// proxy, its thread's, which glave's own program joined first (`namespace.rs`).
+/// with it, this computer's.
 pub(super) fn args(
     bwrap: &Path,
     offline: Offline,
@@ -153,30 +152,4 @@ pub(super) fn args(
     args.extend(["--chdir".into(), layout.root.clone().into_os_string()]);
     args.extend(["--seccomp", "3", "--"].map(OsString::from));
     args
-}
-
-/// What holds a thread's network namespace: the shell, which says its process's number and
-/// waits until its input ends.
-const HOLD: &str = "echo $$ && read -r held";
-
-/// The arguments for bubblewrap that make a thread's network namespace and hold it with the
-/// system's shell (`namespace.rs`): user and network namespaces of its own, its loopback up,
-/// killed with its parent, with no capabilities, and the whole machine read-only. Never glave's
-/// own program, whose path on Linux (`/proc/self/exe`) names bubblewrap in here. It stays in the
-/// process group glave gave bubblewrap, so stopping the group stops it.
-pub(super) fn holding() -> [&'static str; 12] {
-    [
-        "--unshare-user",
-        "--unshare-net",
-        "--die-with-parent",
-        "--cap-drop",
-        "ALL",
-        "--ro-bind",
-        "/",
-        "/",
-        "--",
-        SH,
-        "-c",
-        HOLD,
-    ]
 }

@@ -1,16 +1,13 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
-//! computers suite runs against it across the protocol, its commands never see glave's secrets,
-//! and a sandboxed one is kept to the outbound proxy. And `--tls`, ending when its input does,
-//! and `--socket` as a computer in a Pod runs it, reached through bridges that each end alone.
+//! computers suite runs against it across the protocol, and its commands never see glave's
+//! secrets. And `--tls`, ending when its input does, and `--socket` as a computer in a Pod runs it, reached through bridges that each end alone.
 
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token};
-use glave_ports::computer::{
-    Command, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, SandboxNetwork, Sources,
-};
+use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
 use glave_ports::testing::{SocketPath, TempDir, any_secret, read_program};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
@@ -91,51 +88,6 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
             status.success(),
             "the server ends cleanly when its input does"
         );
-    });
-}
-
-/// The binary as it ships keeps a sandboxed command to its thread's outbound proxy: on Linux
-/// glave names itself by `/proc/self/exe`, so it must start its forwarder from its own process,
-/// never inside bubblewrap, where that path is bubblewrap. The proxy answers, refusing cloud
-/// metadata before reaching anything, so nothing leaves this computer.
-#[test]
-fn the_binary_keeps_a_sandboxed_command_to_the_outbound_proxy() {
-    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
-    if !glave_computer::sandbox_available() && !required {
-        return;
-    }
-    let dir = TempDir::new("e2e-computer-proxied").unwrap();
-    let work = dir.join("work");
-    std::fs::create_dir_all(&work).unwrap();
-    read_program(GLAVE).unwrap();
-    block_on!(async {
-        let home = dir.join("home");
-        let (_child, remote) = served_on_stdio(&[("GLAVE_HOME", home.as_os_str())]).await;
-        let made = remote.create(&Environment::host()).await.unwrap();
-        let path = work.to_string_lossy().into_owned();
-        let here = remote
-            .open(made.id, &Sources::Folder { path })
-            .await
-            .unwrap();
-        let mut command = Command::new(
-            "curl -sS --max-time 20 -o /dev/null -w 'status=%{http_code}' \
-             http://169.254.169.254/latest/ 2>&1; true",
-        );
-        command.sandbox = Some(Sandbox {
-            level: SandboxLevel::Project,
-            network: SandboxNetwork::Proxied,
-            home: Some(dir.to_path_buf()),
-            glave_home: Some(home),
-        });
-        let seen = Collect::default();
-        let finished = remote.run(here.id, &command, &seen, &NeverCancelled).await;
-        let seen = seen.0.lock().unwrap().clone();
-        assert_eq!(
-            finished.map(|done| done.ending),
-            Ok(Ending::Exited { code: 0 })
-        );
-        assert!(seen.contains("status=403"), "{seen}");
-        remote.destroy(made.id).await.unwrap();
     });
 }
 

@@ -8,8 +8,6 @@
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-mod outbound;
 #[cfg(any(target_os = "macos", test))]
 mod profile;
 mod run_temp;
@@ -27,77 +25,31 @@ use macos as platform;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 use unsupported as platform;
 
-/// glave's own program as Linux's helpers: the sandbox's, the forwarder, and the one that
-/// joins a thread's network.
+/// glave's own program as the Linux sandbox's helper.
 #[cfg(target_os = "linux")]
-use linux::{enter, forward, helper};
+use linux::helper;
 #[cfg(not(target_os = "linux"))]
-use only_on_linux::{enter, forward, helper};
+use only_on_linux::helper;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox, git_settings};
-use glave_process::Processes;
 
 use run_temp::RunTemp;
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) use outbound::Outbound;
-
-/// How a sandbox's outbound proxy is made: nothing, where there is no sandbox to keep commands
-/// to one (`specs/sandbox.md`, "The outbound proxy").
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Outbound {}
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
 
-/// Runs this process as one of the outbound proxy's helpers on Linux when `args` (the whole
-/// command line) are one's: `glave __glave-forward <socket>` holds a thread's network
-/// namespace, carrying the connections made to a port of its loopback to the outbound proxy's
-/// socket until it is stopped; `glave __glave-enter <pid> <user> <network> -- <command>…`
-/// joins that namespace, then becomes the command. Returns `None` when they are not, and
-/// otherwise only when either failed, saying what went wrong. A program that passes its own
-/// path to [`crate::LocalComputers::with_helper`] calls this first thing in `main`, before it
-/// starts any threads: a process with more than one cannot join a user namespace.
-pub fn forward_helper(args: &[OsString]) -> Option<String> {
-    let rest = args.get(2..).unwrap_or_default();
-    match args.get(1) {
-        Some(first) if first == FORWARD_HELPER_ARG => Some(forward(rest)),
-        Some(first) if first == ENTER_HELPER_ARG => Some(enter(rest)),
-        _ => None,
-    }
-}
-
-/// Linux's helpers where there is no Linux: each says so.
+/// Linux's helper where there is no Linux: it says so.
 #[cfg(not(target_os = "linux"))]
 mod only_on_linux {
     use std::ffi::OsString;
 
-    const ONLY_ON_LINUX: &str = "this helper of glave's runs only on Linux";
-
     pub(super) fn helper(_args: &[OsString]) -> String {
-        ONLY_ON_LINUX.into()
-    }
-
-    pub(super) fn forward(_args: &[OsString]) -> String {
-        ONLY_ON_LINUX.into()
-    }
-
-    pub(super) fn enter(_args: &[OsString]) -> String {
-        ONLY_ON_LINUX.into()
+        "this helper of glave's runs only on Linux".into()
     }
 }
-
-/// The first argument that makes glave the forwarder holding a thread's network namespace
-/// (see [`forward_helper`]).
-pub(crate) const FORWARD_HELPER_ARG: &str = "__glave-forward";
-
-/// The first argument that makes glave join a thread's network namespace for one command
-/// (see [`forward_helper`]).
-pub(crate) const ENTER_HELPER_ARG: &str = "__glave-enter";
 
 /// Whether this machine can enforce every sandbox level: Seatbelt on macOS, bubblewrap on
 /// Linux. (Landlock, Linux's fallback, enforces only `read-only`, and only for a program that
@@ -153,10 +105,6 @@ struct Temps {
 pub(crate) struct Launch {
     pub(crate) program: PathBuf,
     pub(crate) args: Vec<OsString>,
-    /// Variables the wrapper is given besides the command's, and which win over them: the
-    /// outbound proxy's URL, with its secret, for a command kept to it, at the port its thread's
-    /// forwarder listens on in the thread's namespace on Linux, at the proxy's own on macOS.
-    pub(crate) env: Vec<(OsString, OsString)>,
     /// Bytes for the wrapper's standard input, which is then closed: Linux's seccomp filter.
     pub(crate) input: Option<Vec<u8>>,
     /// The wrapper starts a session of its own, so the command must not get a process group
@@ -171,10 +119,7 @@ pub(crate) struct Launch {
 impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
     /// its repository's shared git folder, writable too. `helper` is a program that runs
-    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start, and
-    /// [`forward_helper`], which on Linux holds the network namespace of commands kept to the
-    /// outbound proxy `outbound` makes, forwarding to it, started through `processes` (on macOS
-    /// they reach the proxy directly). `hidden` is what
+    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start. `hidden` is what
     /// this computer hides beside the home folder's credential stores. `glave_on_path`, glave's
     /// own folder on commands' `PATH`, stays readable, never writable, though it sits in
     /// glave's folder.
@@ -182,7 +127,7 @@ impl Prepared {
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
-        helpers: (Option<&Path>, &Outbound, &Processes),
+        helper: Option<&Path>,
         hidden: &[PathBuf],
         glave_on_path: Option<&Path>,
     ) -> Result<Self, ComputerError> {
@@ -192,8 +137,7 @@ impl Prepared {
             glave_on_path,
         };
         let (enforcer, temps) =
-            platform::Enforcer::prepare(sandbox, root, git_common, helpers, reached, hidden)
-                .await?;
+            platform::Enforcer::prepare(sandbox, root, git_common, helper, reached, hidden).await?;
         // What a glave killed outright left: it could not remove its own.
         let (every, prefix) = (temps.every.clone(), temps.every_prefix);
         let _ = tokio::task::spawn_blocking(move || run_temp::remove_left(&every, prefix)).await;
@@ -210,12 +154,6 @@ impl Prepared {
         self.cache
             .clone()
             .unwrap_or_else(|| launch.temp.path().join("caches"))
-    }
-
-    /// Whether a command can still start in it: on Linux the network of a thread whose
-    /// commands are kept to the outbound proxy can end, and the next is prepared anew.
-    pub(crate) fn lasts(&self) -> bool {
-        self.enforcer.lasts()
     }
 
     /// How to start the next command, from the workspace as it is now, in a temp folder of
