@@ -1845,7 +1845,7 @@ dependencies = [
 
 [[package]]
 name = "glave"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -1895,7 +1895,7 @@ dependencies = [
 
 [[package]]
 name = "glave-acme"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-keys",
@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "glave-aws"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "glave-azure"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-ports",
  "jiff",
@@ -1947,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "glave-bucket"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bytes",
  "futures-core",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "glave-computer"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -1992,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "glave-config"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "glave-eval"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-computer",
  "glave-event",
@@ -2034,7 +2034,7 @@ dependencies = [
 
 [[package]]
 name = "glave-event"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "jiff",
  "proptest",
@@ -2047,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "glave-gateway"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -2061,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "glave-google"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "glave-harness"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "glave-computer",
@@ -2100,7 +2100,7 @@ dependencies = [
 
 [[package]]
 name = "glave-identity"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "glave-keys"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "chacha20poly1305",
  "getrandom 0.4.3",
@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "glave-mail"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "glave-mcp"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2179,7 +2179,7 @@ dependencies = [
 
 [[package]]
 name = "glave-memory"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-computer",
  "glave-event",
@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "glave-office"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "calamine",
  "glave-ports",
@@ -2216,7 +2216,7 @@ dependencies = [
 
 [[package]]
 name = "glave-ports"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "getrandom 0.4.3",
  "glave-event",
@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "glave-process"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-ports",
  "rustix",
@@ -2247,7 +2247,7 @@ dependencies = [
 
 [[package]]
 name = "glave-provider-anthropic"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -2260,7 +2260,7 @@ dependencies = [
 
 [[package]]
 name = "glave-provider-openai"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "glave-push"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -2291,7 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "glave-session"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -2338,7 +2338,7 @@ dependencies = [
 
 [[package]]
 name = "glave-shell"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "proptest",
@@ -2348,7 +2348,7 @@ dependencies = [
 
 [[package]]
 name = "glave-store-postgres"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "deadpool-postgres",
  "glave-event",
@@ -2369,7 +2369,7 @@ dependencies = [
 
 [[package]]
 name = "glave-store-sqlite"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-keys",
@@ -2385,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "glave-web"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "glave-event",
  "glave-ports",
@@ -6750,7 +6750,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "glave-identity",
