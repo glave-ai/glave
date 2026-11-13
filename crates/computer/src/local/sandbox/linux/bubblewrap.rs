@@ -81,22 +81,7 @@ pub(super) fn starts(bwrap: &Path) -> Result<Offline, String> {
 
 /// Runs an empty sandbox with `network`'s arguments, and says why it did not run.
 fn empty_sandbox(bwrap: &Path, network: &[&str]) -> Result<(), String> {
-    empty_sandbox_by(Program::new(bwrap), network)
-}
-
-/// Whether `bwrap` can start a command in a thread's network namespace, which `helper`, glave's
-/// own program, joins with `entering` first (`namespace.rs`): it cannot where a user namespace
-/// made inside another may not make its own. Blocking; says why not.
-pub(super) fn starts_in(bwrap: &Path, helper: &Path, entering: &[OsString]) -> Result<(), String> {
-    let mut program = Program::new(helper);
-    program.args(entering).arg(bwrap);
-    empty_sandbox_by(program, &[])
-}
-
-/// Runs an empty sandbox by `program`, bubblewrap or what becomes it, with `network`'s
-/// arguments, and says why it did not run.
-fn empty_sandbox_by(mut program: Program, network: &[&str]) -> Result<(), String> {
-    let output = program
+    let output = Program::new(bwrap)
         .args(ISOLATION)
         .args(network)
         .args(["--ro-bind", "/", "/", "--dev", "/dev"])

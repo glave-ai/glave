@@ -1,6 +1,7 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
 //! computers suite runs against it across the protocol, and its commands never see glave's
-//! secrets. And `--tls`, ending when its input does, and `--socket` as a computer in a Pod runs it, reached through bridges that each end alone.
+//! secrets. And `--tls`, ending when its input does, and `--socket` as a computer in a Pod runs
+//! it, reached through bridges that each end alone.
 
 use std::process::Stdio;
 use std::sync::Mutex;
