@@ -119,7 +119,9 @@ impl SandboxLevel {
 pub enum NetworkMode {
     /// Nothing goes out.
     Offline,
-    /// Any public host, at any port; never a private network or cloud metadata.
+    /// All that the computer reaches, at any port. A person's computer on Kubernetes is kept
+    /// from private networks and cloud metadata by its NetworkPolicy; elsewhere nothing
+    /// withholds them.
     Open,
 }
 
