@@ -75,15 +75,6 @@ impl LocalComputers {
         self
     }
 
-    /// Makes the outbound proxy that sandboxed commands may be kept to with `outbound`: a
-    /// test's, reaching a stand-in for the internet.
-    #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
-    #[must_use]
-    pub(crate) fn with_outbound(mut self, outbound: super::sandbox::Outbound) -> Self {
-        self.outbound = outbound;
-        self
-    }
-
     /// Records the commands its workspaces start in `processes`' ledger while they run, so a
     /// glave that starts after this one crashed stops them (`glave_process`). Without it they
     /// are still stopped with their workspace, only not recorded.

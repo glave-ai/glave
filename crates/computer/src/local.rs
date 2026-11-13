@@ -52,8 +52,7 @@ use crate::disk::Largest;
 pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
-use sandbox::Outbound;
-pub use sandbox::{forward_helper, sandbox_available, sandbox_helper};
+pub use sandbox::{sandbox_available, sandbox_helper};
 use terminal::Terminals;
 pub use terminal::terminal_helper;
 
@@ -88,13 +87,9 @@ pub struct LocalComputers {
     /// The id this machine goes by as the host computer, kept across runs; a new one each
     /// time when none.
     host: Option<ComputerId>,
-    /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback),
-    /// [`crate::forward_helper`] (a thread's network on Linux, whose one way out is the outbound
-    /// proxy) and
-    /// [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
+    /// glave's own program, which runs [`crate::sandbox_helper`] (Linux's Landlock fallback)
+    /// and [`crate::terminal_helper`] (a terminal's shell, in a session of its own).
     helper: Option<PathBuf>,
-    /// How the outbound proxy sandboxed commands may be kept to is made.
-    outbound: Outbound,
     /// The person's terminals open here.
     terminals: Terminals,
     /// Places on this machine its sandboxed commands may not read, beside the home folder's
@@ -140,7 +135,6 @@ impl LocalComputers {
             projects: None,
             host: None,
             helper: None,
-            outbound: Outbound::default(),
             terminals: Terminals::default(),
             hidden: Arc::new([]),
             glave_on_path: None,
@@ -269,7 +263,6 @@ impl LocalComputers {
             glave_on_path: self.glave_on_path.clone(),
             prepared: Kept::default(),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
-            outbound: self.outbound.clone(),
         };
         let info = WorkspaceInfo {
             at: match opening {

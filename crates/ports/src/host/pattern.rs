@@ -1,5 +1,5 @@
 //! A host pattern: which hosts an entry of a list names, read one way for every list of hosts
-//! glave keeps (`[web]`'s allow and deny, the outbound proxy's hosts allowed).
+//! glave keeps (`[web]`'s allow and deny).
 
 use std::fmt;
 use std::net::{IpAddr, Ipv6Addr};
