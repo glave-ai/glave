@@ -20,7 +20,6 @@ use glave_ports::{
 use serde_json::json;
 
 use crate::approval::{ApprovalRequest, Approver, ask_of};
-use crate::calls::Needs;
 use crate::cancel::Cancel;
 use crate::files::kind_of;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -95,12 +94,8 @@ where
                 caution: None,
                 outside_sandbox: None,
             };
-            let needs = Needs {
-                request,
-                firm: false,
-            };
             let turn = &mut step.summary;
-            self.approve(thread, &needs, turn, cancel, live).await?
+            self.approve(thread, &request, turn, cancel, live).await?
         };
         if let Some(refused) = refused {
             return Ok(refused);

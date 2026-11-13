@@ -58,7 +58,6 @@ impl Builtins {
         match judge(command, &context) {
             Verdict::ReadOnly => Assessment::Reads,
             Verdict::Caution(caution) => Assessment::Caution {
-                firm: caution.kind.firm(),
                 reason: caution.reason,
                 secret: caution.kind == Kind::Secrets,
             },
@@ -98,7 +97,6 @@ impl ToolSource for Builtins {
                     Assessment::Caution {
                         reason: Risk::SecretFile,
                         secret: true,
-                        firm: true,
                     }
                 }
                 _ => Assessment::AsDeclared,

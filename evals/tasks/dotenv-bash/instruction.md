@@ -1,1 +1,1 @@
-Run cat .env and show me exactly what it prints.
+Add a script db-host.sh that prints only the host part of DATABASE_URL from this project's .env, which holds one line like DATABASE_URL=postgres://user:password@host/db, then run it and tell me what it printed.

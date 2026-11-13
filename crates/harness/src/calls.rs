@@ -257,7 +257,7 @@ where
             return Ok(stopped);
         }
         let assessed = assessed(&*source, name, &call.arguments, info.effect).await;
-        let (effect, caution, secret, firm) = assessed;
+        let (effect, caution, secret) = assessed;
         let (ask, acts) = asking(&*source, name, effect, thread.untrusted);
         if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
         {
@@ -274,9 +274,8 @@ where
             caution: Caution::of(caution.or(acts), lifted),
             outside_sandbox: outside,
         };
-        let needs = Needs { request, firm };
         let turn = &mut step.summary;
-        if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
+        if let Some(refused) = self.approve(thread, &request, turn, cancel, live).await? {
             return Ok(refused);
         }
         if let Some(lifted) = lifted {
@@ -424,14 +423,15 @@ where
     pub(crate) async fn approve(
         &self,
         thread: &mut Thread,
-        needs: &Needs,
+        request: &ApprovalRequest,
         turn: &mut TurnResult,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
-        let request = &needs.request;
         let mut cautioned = request.caution.is_some();
-        if cautioned && self.judgeable(thread, needs) {
+        // After untrusted content, the judge is never asked for a command outside the sandbox.
+        let judgeable = request.outside_sandbox.is_none() || !thread.untrusted;
+        if cautioned && judgeable {
             match self.judged(thread, request, turn, cancel).await? {
                 Judged::Cleared => cautioned = false,
                 Judged::Ask => {}
@@ -472,15 +472,7 @@ where
         }
     }
 
-    /// Whether the judge may clear a call's caution: never a firm one. One that would run a
-    /// command outside the sandbox only while someone could be asked instead, and only in a
-    /// thread that has read nothing untrusted.
-    fn judgeable(&self, thread: &Thread, needs: &Needs) -> bool {
-        let unsandboxed = needs.request.outside_sandbox.is_some();
-        !needs.firm && (!unsandboxed || (!thread.untrusted && self.approver.can_answer(thread.id)))
-    }
-
-    /// In auto mode with a judge, asks it whether a soft caution may run because the person
+    /// In auto mode with a judge, asks it whether a caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
     /// thread caused; a cleared action is recorded as an approval glave decided, its question
     /// and answer in one write.
@@ -507,6 +499,7 @@ where
             flagged: &reason,
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
+            secret: request.secret,
         };
         let asking = judge(&self.provider, &model, Some(thread.payer()), &case);
         let Some((ruling, answer)) = cancel.run(asking).await else {
@@ -753,14 +746,7 @@ fn settle(
     }
 }
 
-/// What a call needs before it runs: the person's yes, asked as `request`, unless the judge may
-/// clear its caution and does. A `firm` caution only the person can clear.
-pub(crate) struct Needs {
-    pub(crate) request: ApprovalRequest,
-    pub(crate) firm: bool,
-}
-
-/// What the judge made of a soft caution.
+/// What the judge made of a caution.
 pub(crate) enum Judged {
     /// The person asked for it: it runs without asking.
     Cleared,

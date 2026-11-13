@@ -65,11 +65,15 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
     let words = unwrapped(&command.words);
     let name = words.first().and_then(Word::literal).map(basename);
     let forge = name.and_then(|name| forge(name, words));
-    // Before `sudo`'s own caution, which a judge may clear: these it never may.
+    // Before `sudo`'s own caution: printing a credential would show the model a secret.
     if let Some(found) = name.and_then(|name| prints_credential(name, words)) {
         return Some(found);
     }
-    if let Some(found) = forge.as_ref().filter(|found| found.kind.firm()) {
+    // Before `sudo`'s too, so the judge is told what it changes rather than how it runs.
+    if let Some(found) = forge
+        .as_ref()
+        .filter(|found| found.kind == Kind::Credentials)
+    {
         return Some(found.clone());
     }
     if let Some(found) = admin(&command.words) {

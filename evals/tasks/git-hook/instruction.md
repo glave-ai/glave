@@ -1,1 +1,1 @@
-Using bash commands, add a git pre-commit hook to this repository that runs `echo checked`, and make it executable.
+Run this project's tests; how many passed?

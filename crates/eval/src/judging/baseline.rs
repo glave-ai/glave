@@ -7,7 +7,7 @@ use std::path::Path;
 use glave_event::{Risk, Worded as _};
 use glave_ports::Naming;
 use glave_ports::secrets::is_secret_file;
-use glave_shell::{Context, Verdict, judge};
+use glave_shell::{Context, Kind, Verdict, judge};
 
 use super::case::{Action, Label};
 
@@ -20,10 +20,9 @@ const HOME: &str = "/home/ana";
 pub(crate) enum Assessed {
     /// No caution: it runs.
     Runs,
-    /// A firm caution: it always asks.
-    Asks,
-    /// A soft caution, for this reason: a judge may let it run.
-    Soft { reason: String },
+    /// A caution, for this reason: a judge may let it run. `secret` when it would show the
+    /// agent a secret's value, as the harness's request says.
+    Caution { reason: String, secret: bool },
 }
 
 pub(crate) fn assess(action: &Action) -> Assessed {
@@ -36,20 +35,25 @@ pub(crate) fn assess(action: &Action) -> Assessed {
                 secret: &is_secret_file,
             };
             match judge(command, &context) {
-                Verdict::Caution(caution) if caution.kind.firm() => Assessed::Asks,
-                Verdict::Caution(caution) => Assessed::Soft {
+                Verdict::Caution(caution) => Assessed::Caution {
                     reason: caution.reason.english(),
+                    secret: caution.kind == Kind::Secrets,
                 },
                 Verdict::ReadOnly | Verdict::Unknown => Assessed::Runs,
             }
         }
-        Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Asks,
-        Action::Read { .. } => Assessed::Runs,
-        Action::Remember { .. } => Assessed::Soft {
-            reason: Risk::RemembersAfterUntrusted.english(),
+        Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Caution {
+            reason: Risk::SecretFile.english(),
+            secret: true,
         },
-        Action::Connector { name, .. } => Assessed::Soft {
+        Action::Read { .. } => Assessed::Runs,
+        Action::Remember { .. } => Assessed::Caution {
+            reason: Risk::RemembersAfterUntrusted.english(),
+            secret: false,
+        },
+        Action::Connector { name, .. } => Assessed::Caution {
             reason: glave_harness::acts_after_untrusted(name, &Naming::default()).english(),
+            secret: false,
         },
     }
 }
@@ -58,7 +62,7 @@ pub(crate) fn assess(action: &Action) -> Assessed {
 pub(crate) fn decide(action: &Action) -> Label {
     match assess(action) {
         Assessed::Runs => Label::Allow,
-        Assessed::Asks | Assessed::Soft { .. } => Label::Ask,
+        Assessed::Caution { .. } => Label::Ask,
     }
 }
 
@@ -89,13 +93,13 @@ mod tests {
     }
 
     #[test]
-    fn a_connected_service_s_write_is_a_soft_caution_naming_the_service() {
+    fn a_connected_service_s_write_is_a_caution_naming_the_service() {
         let send = Action::Connector {
             name: "mcp__gmail__send_message".to_owned(),
             arguments: serde_json::Map::new(),
         };
-        let Assessed::Soft { reason } = assess(&send) else {
-            panic!("a soft caution")
+        let Assessed::Caution { reason, .. } = assess(&send) else {
+            panic!("a caution")
         };
         assert!(reason.contains("through gmail"), "{reason}");
     }

@@ -2,8 +2,8 @@
 //! commenting on, changing and merging pull requests and issues, and forks, gists, labels,
 //! releases and workflow runs, are soft remote cautions: ordinary when the person asked for
 //! exactly that. Changing a forge's sign-in, keys, CI secrets or variables, and writing through
-//! its API, which reaches anything the token can, are firm. And what these tools print is what
-//! others wrote there, so their output is untrusted.
+//! its API, which reaches anything the token can, are credentials cautions, cleared the same
+//! way. And what these tools print is what others wrote there, so their output is untrusted.
 
 use std::path::Path;
 
@@ -53,7 +53,7 @@ fn soft(reason: Risk) -> Caution {
     }
 }
 
-fn firm(reason: Risk) -> Caution {
+fn credentials(reason: Risk) -> Caution {
     Caution {
         kind: Kind::Credentials,
         reason,
@@ -63,17 +63,17 @@ fn firm(reason: Risk) -> Caution {
 /// `gh` subcommands that change something on GitHub.
 fn gh(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
     let found = match (group, verb) {
-        ("api", _) if api_writes(args) => firm(Risk::WritesThroughApi {
+        ("api", _) if api_writes(args) => credentials(Risk::WritesThroughApi {
             forge: "GitHub".to_owned(),
         }),
         ("auth", "login" | "logout" | "refresh" | "setup-git" | "switch") => {
-            firm(Risk::ChangesSignIn {
+            credentials(Risk::ChangesSignIn {
                 forge: "GitHub".to_owned(),
             })
         }
-        ("secret", "set" | "delete" | "remove") => firm(Risk::ChangesRepositorySecrets),
-        ("variable", "set" | "delete") => firm(Risk::ChangesRepositoryVariables),
-        ("ssh-key" | "gpg-key", "add" | "delete") => firm(Risk::ChangesAccountKeys),
+        ("secret", "set" | "delete" | "remove") => credentials(Risk::ChangesRepositorySecrets),
+        ("variable", "set" | "delete") => credentials(Risk::ChangesRepositoryVariables),
+        ("ssh-key" | "gpg-key", "add" | "delete") => credentials(Risk::ChangesAccountKeys),
         ("pr", "create" | "new") => soft(Risk::OpensPullRequest),
         ("pr", "comment") => soft(Risk::CommentsOnPullRequest),
         ("pr", "merge") => soft(Risk::MergesPullRequest),
@@ -109,13 +109,15 @@ fn gh(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
 /// `glab` subcommands that change something on GitLab.
 fn glab(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
     let found = match (group, verb) {
-        ("api", _) if api_writes(args) => firm(Risk::WritesThroughApi {
+        ("api", _) if api_writes(args) => credentials(Risk::WritesThroughApi {
             forge: "GitLab".to_owned(),
         }),
-        ("auth", "login" | "logout") => firm(Risk::ChangesSignIn {
+        ("auth", "login" | "logout") => credentials(Risk::ChangesSignIn {
             forge: "GitLab".to_owned(),
         }),
-        ("variable" | "var", "set" | "update" | "delete") => firm(Risk::ChangesProjectVariables),
+        ("variable" | "var", "set" | "update" | "delete") => {
+            credentials(Risk::ChangesProjectVariables)
+        }
         ("mr", "create" | "new") => soft(Risk::OpensMergeRequest),
         ("mr", "note" | "comment") => soft(Risk::CommentsOnMergeRequest),
         ("mr", "merge" | "accept") => soft(Risk::MergesMergeRequest),
@@ -141,7 +143,7 @@ fn glab(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
 /// `tea` subcommands that change something on Gitea.
 fn tea(group: &str, verb: &str) -> Option<Caution> {
     let found = match (group, verb) {
-        ("login" | "logins", "add" | "delete" | "edit") => firm(Risk::ChangesSignIn {
+        ("login" | "logins", "add" | "delete" | "edit") => credentials(Risk::ChangesSignIn {
             forge: "Gitea".to_owned(),
         }),
         ("pulls" | "pull" | "pr", "create") => soft(Risk::OpensPullRequest),
