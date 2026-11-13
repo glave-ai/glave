@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn commands_that_print_credentials_are_firm_secrets_cautions() {
+    fn commands_that_print_credentials_are_secrets_cautions() {
         for script in [
             "printf 'protocol=https\\nhost=github.com\\n' | git credential fill",
             "git -C . credential fill",
@@ -212,10 +212,9 @@ mod tests {
             "sudo -u ana gh auth token",
             "bash -c 'gh auth token'",
         ] {
-            // Firm even behind `sudo`, whose own caution a judge may clear.
+            // Secrets even behind `sudo`, so Full access declines them.
             match verdict(script) {
                 Verdict::Caution(caution) if caution.kind == Kind::Secrets => {
-                    assert!(caution.kind.firm(), "{script}");
                     assert!(
                         caution.reason.english().starts_with("it prints"),
                         "{script}"
@@ -239,9 +238,7 @@ mod tests {
             "git -C . -c credential.helper=cache push",
         ] {
             match verdict(script) {
-                Verdict::Caution(caution) if caution.kind == Kind::Secrets => {
-                    assert!(caution.kind.firm(), "{script}");
-                }
+                Verdict::Caution(caution) if caution.kind == Kind::Secrets => {}
                 other => panic!("{script}: {other:?}"),
             }
         }
