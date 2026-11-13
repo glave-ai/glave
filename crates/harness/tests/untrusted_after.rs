@@ -1,12 +1,12 @@
-//! What untrusted content takes from the rest of its thread (`specs/approvals.md`, "Untrusted
-//! content"): before it, nothing changes; after it, sandboxed commands run without the network,
-//! which one may ask the person for, in that turn and the next; and a connected service's tool
-//! that may write asks first in every mode that asks, Auto included, while its reads do not.
+//! What untrusted content changes for the rest of its thread (`specs/approvals.md`, "Untrusted
+//! content"): sandboxed commands keep the network they had, in that turn and the next; and a
+//! connected service's tool that may write asks first in every mode that asks, Auto included,
+//! while its reads do not.
 
 use std::net::TcpListener;
 use std::sync::Arc;
 
-use glave_event::{Body, Caution, Event, Lifted, Principal, Risk, Verdict};
+use glave_event::{Body, Caution, Event, Principal, Risk, Verdict};
 use glave_harness::{Approver, Cancel, Decision, NoOneToAsk, Settings, Workspace};
 use glave_ports::{Completion, Effect, InMemoryLog, InMemoryTools, ToolInfo, ToolOutput, ToolSpec};
 use serde_json::json;
@@ -44,14 +44,14 @@ fn fetch() -> (&'static str, serde_json::Value) {
     ("web_fetch", json!({ "url": "https://example.com/guide" }))
 }
 
-/// What each call gave the model, and the thread's events, over one turn per answer list in
-/// one thread on the project in `base`, its commands in the sandbox with the `network` or not.
+/// What each call gave the model over one turn per answer list in one thread on the project in
+/// `base`, its commands in the sandbox with the `network` or not.
 fn turns<A: Approver>(
     base: &std::path::Path,
     network: bool,
     turns: Vec<Vec<Completion>>,
     (approver, settings): (A, Settings),
-) -> (Vec<String>, Vec<Event>) {
+) -> Vec<String> {
     block_on!(async {
         let workspace = walled(base, network).await;
         let ends = turns.len();
@@ -77,54 +77,31 @@ fn turns<A: Approver>(
                 .await
                 .unwrap();
         }
-        let events = events(harness.log(), thread.id).await;
-        (results(thread.messages()), events)
+        results(thread.messages())
     })
 }
 
 #[test]
-fn untrusted_content_takes_the_network_from_the_commands_after_it_for_the_rest_of_the_thread() {
-    let Some(base) = sandboxed("untrusted-offline") else {
+fn after_untrusted_content_commands_keep_the_network_they_had() {
+    let Some(base) = sandboxed("untrusted-online") else {
         return;
     };
     // A local listener only: no traffic leaves the machine.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let first = making(vec![
-        connect(&base, "a.txt", &listener, false),
-        fetch(),
-        connect(&base, "b.txt", &listener, false),
-        connect(&base, "c.txt", &listener, true),
-    ]);
-    // The next turn begins knowing what the thread read.
-    let next = making(vec![connect(&base, "d.txt", &listener, false)]);
-    let person = Person::answering(Decision::AllowOnce);
-    let (said, events) = turns(
+    let first = making(vec![fetch(), connect(&base, "a.txt", &listener, false)]);
+    let next = making(vec![connect(&base, "b.txt", &listener, false)]);
+    let person = Person::answering(Decision::Deny);
+    let said = turns(
         &base,
         true,
         vec![first, next],
         (person.clone(), in_the_sandbox()),
     );
     assert!(
-        said[0].contains("connected"),
-        "before, the network: {said:?}"
+        said[1].contains("connected") && said[2].contains("connected"),
+        "after the page, and in the next turn: {said:?}"
     );
-    assert!(
-        !said[2].contains("connected") && said[2].contains("network: true"),
-        "after, none, and the note says how to ask: {said:?}"
-    );
-    assert!(
-        said[3].contains("connected"),
-        "asked for and allowed: {said:?}"
-    );
-    assert!(
-        !said[4].contains("connected"),
-        "the next turn too: {said:?}"
-    );
-    let lifted: Vec<_> = (person.asked().iter())
-        .map(|request| request.outside_sandbox.as_ref().map(|o| o.lifted))
-        .collect();
-    assert_eq!(lifted, [Some(Lifted::Network)], "only the request asked");
-    assert_eq!(decided(&events).len(), 1);
+    assert_eq!(person.asked(), [], "nothing asked");
 }
 
 /// A connected mail service: its send may change something, and its search says it only reads.

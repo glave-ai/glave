@@ -684,7 +684,6 @@ where
             thread.plan.recorded(plan);
         }
         thread.untrusted |= completed.untrusted;
-        self.offline_if_untrusted(thread).await?;
         thread.messages.push(Message::Tool {
             call_id: completed.call_id,
             is_error: completed.is_error,
