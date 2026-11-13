@@ -499,6 +499,7 @@ where
             flagged: &reason,
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
+            secret: request.secret,
         };
         let asking = judge(&self.provider, &model, Some(thread.payer()), &case);
         let Some((ruling, answer)) = cancel.run(asking).await else {

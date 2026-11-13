@@ -64,7 +64,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
     let gate = Arc::new(Semaphore::new(at_once.max(1)));
     let mut tasks = JoinSet::new();
     for (index, case) in cases.iter().enumerate() {
-        let Assessed::Caution { reason } = assess(&case.action) else {
+        let Assessed::Caution { reason, secret } = assess(&case.action) else {
             continue;
         };
         let (provider, gate, model) = (Arc::clone(&provider), Arc::clone(&gate), model.to_owned());
@@ -86,6 +86,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
                     flagged: &reason,
                     untrusted,
                     outside_sandbox: None,
+                    secret,
                 },
             )
             .await;
