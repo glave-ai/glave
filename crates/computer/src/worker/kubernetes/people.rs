@@ -7,6 +7,7 @@
 //! again.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -29,6 +30,7 @@ use crate::worker::WorkerComputers;
 use crate::worker::limits::pinned;
 use crate::{Grow, Lost, Peek, Short, Wake, Waking};
 
+mod grow;
 mod lease;
 mod reach;
 
@@ -47,13 +49,15 @@ const MAX_PEOPLE: usize = 4_096;
 /// while one runs: a quarter of its idle limit, at most a minute.
 const HEARTBEAT: Duration = Duration::from_mins(1);
 
-/// Where one person's computer is.
+/// Where one person's computer is. Each wake this server starts is numbered after the last, so
+/// what one wake leaves running, the renewal of its lease, never acts on a later one.
 #[derive(Debug, Clone)]
 enum State {
     Asleep,
-    Waking,
-    /// Awake: the workspace of its home.
-    Awake(WorkspaceInfo),
+    /// Being woken by the wake of that number.
+    Waking(u64),
+    /// Awake from the wake of that number: the workspace of its home.
+    Awake(u64, WorkspaceInfo),
     /// The last wake failed, when, and why; a call a minute later or more tries again.
     Failed(Instant, String),
 }
@@ -61,7 +65,15 @@ enum State {
 impl State {
     /// Whether it is no longer waking: awake, or its wake failed.
     fn settled(&self) -> bool {
-        !matches!(self, Self::Waking)
+        !matches!(self, Self::Waking(_))
+    }
+
+    /// The wake that is waking it or woke it; none while it sleeps or once its wake failed.
+    fn wake(&self) -> Option<u64> {
+        match self {
+            Self::Waking(wake) | Self::Awake(wake, _) => Some(*wake),
+            Self::Asleep | Self::Failed(..) => None,
+        }
     }
 }
 
@@ -71,8 +83,8 @@ struct Person {
     org: OrgId,
     id: PrincipalId,
     leasing: Leasing,
-    /// Its lease while this server holds it, and what renews it.
-    held: Mutex<Option<lease::Held>>,
+    /// Its lease while this server holds it, with the wake it was taken for, and what renews it.
+    held: Mutex<Option<(u64, lease::Held)>>,
     renewing: Mutex<Option<JoinHandle<()>>>,
     /// The computer as whatever works there holds it, waking at its first call that needs it.
     planned: Home,
@@ -84,7 +96,11 @@ struct Person {
     growing: tokio::sync::Mutex<()>,
     computers: Arc<WorkerComputers>,
     state: watch::Sender<State>,
+    /// How many wakes this server has started for it: the next one's number.
+    wakes: AtomicU64,
     waking: Mutex<Option<JoinHandle<()>>>,
+    /// Held by the one sleep at a time, until it has let go of the lease.
+    sleeping: tokio::sync::Mutex<()>,
 }
 
 /// A turn or task using a person's computer: while it is kept, the computer is asked how it is
@@ -210,7 +226,7 @@ impl People {
             let grows = std::sync::Weak::clone(me);
             let grow: Grow = Arc::new(move |short| {
                 let me = std::sync::Weak::clone(&grows);
-                Box::pin(async move { grow(&me.upgrade()?, short, ceiling).await })
+                Box::pin(async move { grow::grow(&me.upgrade()?, short, ceiling).await })
             });
             let looks = std::sync::Weak::clone(me);
             let lost: Lost = Arc::new(move || {
@@ -256,7 +272,9 @@ impl People {
                 growing: tokio::sync::Mutex::new(()),
                 computers: Arc::new(computers),
                 state: watch::Sender::new(State::Asleep),
+                wakes: AtomicU64::new(0),
                 waking: Mutex::new(None),
+                sleeping: tokio::sync::Mutex::new(()),
             }
         });
         if held.len() >= MAX_PEOPLE {
@@ -282,17 +300,17 @@ impl People {
             loop {
                 tokio::time::sleep(every).await;
                 let awake = match &*person.state.borrow() {
-                    State::Awake(home) => Some(home.computer),
+                    State::Awake(wake, home) => Some((*wake, home.computer)),
                     _ => None,
                 };
-                if let Some(computer) = awake {
+                if let Some((wake, computer)) = awake {
                     let _ = person.computers.status(computer).await;
                     // Using it, so this server keeps its lease when no other does: a computer
                     // in use always has a holder to look after it (decision 18).
                     if !holds(&person)
                         && let Ok(Some(held)) = person.leasing.take(person.org, person.id).await
                     {
-                        renew_while_awake(&person, held);
+                        renew_while_awake(&person, held, wake);
                     }
                 }
             }
@@ -352,73 +370,35 @@ fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
     })
 }
 
-/// Grows `person`'s computer for what a command ran `short` of, within `ceiling`, one growth
-/// at a time: a computer held at its CPU limit in place where the cluster can, else at its next
-/// wake; one killed for memory, its glave with it, at its next wake, which the next call makes.
-/// What to tell whoever ran the command; nothing when it did not run short.
-async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> Option<String> {
-    let _growing = person.growing.lock().await;
-    let now = person.pod.sizing.now();
-    match short {
-        Short::Cpu => {
-            let bigger = now.grown(short, ceiling)?;
-            if holds(person) && person.pod.resize(bigger).await.is_ok() {
-                return Some(format!(
-                    "glave: this computer now has {}.",
-                    bigger.said(short)
-                ));
-            }
-            person.pod.sizing.wake_at(bigger);
-            Some(format!(
-                "glave: this computer gets {} when it next wakes.",
-                bigger.said(short)
-            ))
-        }
-        Short::Memory => {
-            if !person.pod.ran_out_of_memory().await {
-                return None;
-            }
-            let said = match now.grown(short, ceiling) {
-                Some(bigger) => {
-                    person.pod.sizing.wake_at(bigger);
-                    format!(
-                        "glave: this computer ran out of memory at {} and restarts with {}; \
-                         anything it ran in the background stopped. Run the command again.",
-                        now.said(short),
-                        bigger.said(short)
-                    )
-                }
-                None => format!(
-                    "glave: this computer ran out of memory at {}, as much as it gets.",
-                    now.said(short)
-                ),
-            };
-            let awake = match &*person.state.borrow() {
-                State::Awake(home) => Some(home.clone()),
-                _ => None,
-            };
-            if let Some(home) = awake {
-                slept(person, &home).await;
-            }
-            Some(said)
-        }
-    }
-}
-
 /// Lets go of `person`'s computer, awake with `home` until it went away on its own: what is
-/// left of it removed, and counted asleep, so the next call wakes it again.
+/// left of it removed and its lease let go of, and only then counted asleep, so the next call
+/// wakes it again and that wake takes the lease after this sleep let go of it. One sleep at a
+/// time: a call that finds the computer gone meanwhile waits for this one, then wakes it. One
+/// no longer awake with `home`, asleep already or woken again since, is not this sleep's.
 async fn slept(person: &Person, home: &WorkspaceInfo) {
+    let _sleeping = person.sleeping.lock().await;
+    let wake = match &*person.state.borrow() {
+        State::Awake(wake, awake) if awake.computer == home.computer => *wake,
+        _ => return,
+    };
     // Only under its lease: a Pod by its name may be another server's by now. Let go of once
     // it is removed, so another server wakes it at once rather than once the lease lapses.
     let held = *person.held.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(held) = held.filter(lease::Held::holds) {
+    if let Some((_, held)) = held.filter(|(of, held)| *of == wake && held.holds()) {
         let _ = person.computers.destroy(home.computer).await;
-        *person.held.lock().unwrap_or_else(PoisonError::into_inner) = None;
-        let_go(person, home);
         person.leasing.release(&held).await;
-        return;
     }
+    let_go_of_lease(person, wake);
     let_go(person, home);
+}
+
+/// Forgets the lease of `person`'s computer that its wake `wake` took, if this server still
+/// keeps it; a later wake's is kept.
+fn let_go_of_lease(person: &Person, wake: u64) {
+    let mut held = person.held.lock().unwrap_or_else(PoisonError::into_inner);
+    if held.is_some_and(|(of, _)| of == wake) {
+        *held = None;
+    }
 }
 
 /// Counts `person`'s computer asleep here, if it was awake with `home`: the next call reaches
@@ -426,7 +406,7 @@ async fn slept(person: &Person, home: &WorkspaceInfo) {
 fn let_go(person: &Person, home: &WorkspaceInfo) {
     person.computers.forget(home.computer);
     person.state.send_if_modified(|state| match state {
-        State::Awake(awake) if awake.computer == home.computer => {
+        State::Awake(_, awake) if awake.computer == home.computer => {
             *state = State::Asleep;
             true
         }
@@ -434,14 +414,18 @@ fn let_go(person: &Person, home: &WorkspaceInfo) {
     });
 }
 
-/// Keeps `held`, the lease of `person`'s computer, renewed while it wakes or is awake, in place
-/// of any renewal before it.
-fn renew_while_awake(person: &Arc<Person>, held: lease::Held) {
-    *person.held.lock().unwrap_or_else(PoisonError::into_inner) = Some(held);
+/// Keeps `held`, the lease of `person`'s computer, renewed while its wake `wake` goes on, in
+/// place of any renewal before it; a wake that has ended keeps nothing.
+fn renew_while_awake(person: &Arc<Person>, held: lease::Held, wake: u64) {
+    if person.state.borrow().wake() != Some(wake) {
+        return;
+    }
+    *person.held.lock().unwrap_or_else(PoisonError::into_inner) = Some((wake, held));
     let task = tokio::spawn(renewing(
         Arc::downgrade(person),
         person.leasing.clone(),
         held,
+        wake,
     ));
     let mut renewing = person
         .renewing
@@ -452,11 +436,17 @@ fn renew_while_awake(person: &Arc<Person>, held: lease::Held) {
     }
 }
 
-/// Renews `held` every [`lease::RENEW`] while `person`'s computer wakes or is awake, and once a
-/// minute looks that it still runs: what is left of one that slept on its own is removed under
-/// the lease, and let go of. Once it sleeps, renewing stops; once it is no longer surely
-/// this server's, the wake stops and the computer is left to whoever holds it.
-async fn renewing(person: std::sync::Weak<Person>, leasing: Leasing, mut held: lease::Held) {
+/// Renews `held` every [`lease::RENEW`] while `person`'s computer wakes or is awake from its
+/// wake `wake`, and once a minute looks that it still runs: what is left of one that slept on
+/// its own is removed under the lease, and let go of. Once that wake ends (the computer sleeps,
+/// or its wake failed), renewing stops, a later wake left to its own; once the lease is no
+/// longer surely this server's, the wake stops and the computer is left to whoever holds it.
+async fn renewing(
+    person: std::sync::Weak<Person>,
+    leasing: Leasing,
+    mut held: lease::Held,
+    wake: u64,
+) {
     let look = (HEARTBEAT.as_secs() / lease::RENEW.as_secs()).max(1);
     let mut renewed = 0u64;
     loop {
@@ -465,16 +455,24 @@ async fn renewing(person: std::sync::Weak<Person>, leasing: Leasing, mut held: l
             return;
         };
         let now = person.state.borrow().clone();
-        if matches!(now, State::Asleep | State::Failed(..)) {
+        if now.wake() != Some(wake) {
             return;
         }
         if !leasing.renew(&mut held).await {
-            lost(&person);
+            lost(&person, wake);
             return;
         }
-        *person.held.lock().unwrap_or_else(PoisonError::into_inner) = Some(held);
+        if let Some((of, kept)) = person
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+            && *of == wake
+        {
+            *kept = held;
+        }
         renewed = renewed.saturating_add(1);
-        if let State::Awake(home) = now
+        if let State::Awake(_, home) = now
             && renewed.is_multiple_of(look)
             && matches!(person.pod.running().await, Ok(false))
         {
@@ -483,19 +481,28 @@ async fn renewing(person: std::sync::Weak<Person>, leasing: Leasing, mut held: l
     }
 }
 
-/// Leaves `person`'s computer to the server that holds its lease now: a wake running here
-/// stops, and it counts asleep here, its Pod touched no more; the next call reaches it again.
-fn lost(person: &Person) {
-    *person.held.lock().unwrap_or_else(PoisonError::into_inner) = None;
-    if let Some(task) = person
-        .waking
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .take()
-    {
-        task.abort();
-    }
-    if let State::Awake(home) = person.state.send_replace(State::Asleep) {
+/// Leaves `person`'s computer to the server that holds its lease now, while its wake `wake`
+/// goes on: that wake stops if it is still waking, and the computer counts asleep here, its Pod
+/// touched no more; the next call reaches it again. A later wake is not this one's to stop.
+fn lost(person: &Person, wake: u64) {
+    let_go_of_lease(person, wake);
+    let mut was = None;
+    person.state.send_if_modified(|state| {
+        if state.wake() != Some(wake) {
+            return false;
+        }
+        if let Some(task) = person
+            .waking
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            task.abort();
+        }
+        was = Some(std::mem::replace(state, State::Asleep));
+        true
+    });
+    if let Some(State::Awake(_, home)) = was {
         person.computers.forget(home.computer);
     }
 }
@@ -507,20 +514,27 @@ fn holds(person: &Person) -> bool {
         .held
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .is_some_and(|held| held.holds())
+        .is_some_and(|(_, held)| held.holds())
 }
 
-/// Starts waking `person`'s computer from `environment`, unless it is awake or waking.
-fn start(person: &Arc<Person>, environment: &Environment) {
-    let starts = person.state.send_if_modified(|state| match state {
+/// Starts waking `person`'s computer, unless it is awake or waking, as the next of its wakes:
+/// `reach`, given that wake's number, reaches it and opens their home on it.
+fn start<F>(person: &Arc<Person>, reach: impl FnOnce(u64) -> F)
+where
+    F: Future<Output = Result<WorkspaceInfo, ComputerError>> + Send + 'static,
+{
+    let mut started = None;
+    person.state.send_if_modified(|state| match state {
         State::Asleep | State::Failed(..) => {
-            *state = State::Waking;
+            let wake = person.wakes.fetch_add(1, Ordering::Relaxed);
+            *state = State::Waking(wake);
+            started = Some(wake);
             true
         }
-        State::Waking | State::Awake(_) => false,
+        State::Waking(_) | State::Awake(..) => false,
     });
-    if starts {
-        let task = tokio::spawn(woken(Arc::clone(person), environment.clone()));
+    if let Some(wake) = started {
+        let task = tokio::spawn(woken(Arc::clone(person), wake, reach(wake)));
         let mut waking = person.waking.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(before) = waking.replace(task) {
             before.abort();
@@ -533,7 +547,7 @@ fn start(person: &Arc<Person>, environment: &Environment) {
 /// and woken again.
 async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, ComputerError> {
     let was = person.state.borrow().clone();
-    if let State::Awake(home) = was
+    if let State::Awake(_, home) = was
         && !gone(person, &home).await
     {
         return Ok(Home {
@@ -548,7 +562,9 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
             "your computer could not wake: {why}"
         )));
     }
-    start(person, environment);
+    start(person, |wake| {
+        reached(Arc::clone(person), environment.clone(), wake)
+    });
     let mut state = person.state.subscribe();
     let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
     let now = match woke {
@@ -563,14 +579,14 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
         ),
     };
     match now {
-        State::Awake(home) => Ok(Home {
+        State::Awake(_, home) => Ok(Home {
             computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
             home,
         }),
         State::Failed(_, why) => Err(ComputerError::Failed(format!(
             "your computer could not wake: {why}"
         ))),
-        State::Asleep | State::Waking => Err(ComputerError::Failed(
+        State::Asleep | State::Waking(_) => Err(ComputerError::Failed(
             "your computer went to sleep as it woke".into(),
         )),
     }
@@ -583,11 +599,11 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
 async fn peeked(person: &Person) -> Result<Option<Home>, ComputerError> {
     let now = person.state.borrow().clone();
     match now {
-        State::Awake(home) => Ok(Some(Home {
+        State::Awake(_, home) => Ok(Some(Home {
             computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
             home,
         })),
-        State::Waking => Ok(None),
+        State::Waking(_) => Ok(None),
         State::Asleep | State::Failed(..) => match person.pod.running().await {
             Ok(false) => Ok(None),
             Ok(true) | Err(_) => Err(ComputerError::Unreachable(
@@ -650,25 +666,37 @@ impl Drop for People {
     }
 }
 
-/// Reaches `person`'s computer, waking it from `environment` if it sleeps, and opens their home
-/// on it, then says how it went to whoever waits.
-async fn woken(person: Arc<Person>, environment: Environment) {
-    let state = match reached(&person, &environment).await {
-        Ok(home) => State::Awake(home),
+/// Reaches `person`'s computer as its wake `wake` (`reaching`), then says how it went to whoever
+/// waits, while that wake still goes on.
+async fn woken(
+    person: Arc<Person>,
+    wake: u64,
+    reaching: impl Future<Output = Result<WorkspaceInfo, ComputerError>>,
+) {
+    let state = match reaching.await {
+        Ok(home) => State::Awake(wake, home),
         Err(error) => State::Failed(Instant::now(), error.message().to_owned()),
     };
-    person.state.send_replace(state);
+    person.state.send_if_modified(|now| {
+        let ours = matches!(now, State::Waking(of) if *of == wake);
+        if ours {
+            *now = state;
+        }
+        ours
+    });
 }
 
-/// `person`'s computer reached from `environment` ([`reach::reached`]), and their home opened on
-/// it.
+/// `person`'s computer reached from `environment` ([`reach::reached`]) by its wake `wake`, and
+/// their home opened on it.
 async fn reached(
-    person: &Arc<Person>,
-    environment: &Environment,
+    person: Arc<Person>,
+    environment: Environment,
+    wake: u64,
 ) -> Result<WorkspaceInfo, ComputerError> {
     let machine = Reaching {
-        person,
-        environment,
+        person: &person,
+        environment: &environment,
+        wake,
     };
     reach::reached(
         &machine,
@@ -679,10 +707,11 @@ async fn reached(
     .await
 }
 
-/// A person's computer as this server reaches it, woken from `environment`.
+/// A person's computer as this server reaches it by its wake `wake`, woken from `environment`.
 struct Reaching<'a> {
     person: &'a Arc<Person>,
     environment: &'a Environment,
+    wake: u64,
 }
 
 impl reach::Machine for Reaching<'_> {
@@ -701,7 +730,7 @@ impl reach::Machine for Reaching<'_> {
     }
 
     fn keep(&self, held: lease::Held) {
-        renew_while_awake(self.person, held);
+        renew_while_awake(self.person, held, self.wake);
     }
 }
 

@@ -20,6 +20,8 @@ use super::{Leasing, People};
 use crate::CancelSwitch;
 use crate::worker::route::Tail;
 
+mod sleeps;
+
 #[test]
 fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
     let (Ok(_), Ok(image)) = (
