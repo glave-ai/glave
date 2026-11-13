@@ -2,7 +2,7 @@
 //! Exa's hosted MCP server offering only its search, which the person turns on and off as a
 //! setting. On, its server is in their own `mcp.json`, at its address; off, it is not. Turning
 //! it off takes out only the server glave wrote; one the person set up there themselves stays.
-//! Its searches go to Exa, so it is never on until they turn it on.
+//! It is on by default: settings not written yet are written with it.
 
 use glave_mcp::address;
 use glave_session::Searching;
@@ -69,6 +69,22 @@ impl Connected {
                 name: search.name.to_owned(),
             },
         }))
+    }
+
+    /// Turns web search on where the person has no settings of their own yet, as it is by
+    /// default; settings they have, written by them or by turning it off, stay as they are.
+    pub(crate) async fn search_by_default(&self) -> Result<(), ApiError> {
+        let Some(search) = &self.search else {
+            return Ok(());
+        };
+        let path = self.home.join(crate::mcp::FILE);
+        if tokio::fs::symlink_metadata(&path).await.is_ok() {
+            return Ok(());
+        }
+        self.writer
+            .add(&self.home, search.name, &search.url)
+            .await?;
+        Ok(())
     }
 
     /// Turns web search on or off in the person's own settings: how it is then.
