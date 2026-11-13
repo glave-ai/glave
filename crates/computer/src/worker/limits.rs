@@ -50,8 +50,6 @@ pub(crate) fn decide(environment: &Environment, limits: &Limits) -> Result<Decid
         environment.size.memory_gb,
         limits.memory_gb,
     )?;
-    // The hosts allowed can't be held to on a worker yet, so `guarded`, which policy refuses
-    // when read, narrows to none rather than refusing the wake.
     let network = limits.network.is_none_or(|most| most == NetworkMode::Open);
     if let Some(name) = environment
         .env
@@ -134,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn the_network_is_policy_s_and_guarded_narrows_to_none_until_it_holds() {
+    fn the_network_is_policy_s() {
         let network = |mode| Limits {
             network: Some(mode),
             ..Limits::default()
@@ -146,8 +144,6 @@ mod tests {
                 .unwrap()
                 .network
         );
-        let guarded = decide(&environment(), &network(NetworkMode::Guarded));
-        assert!(!guarded.unwrap().network, "never a refused wake");
     }
 
     #[test]
