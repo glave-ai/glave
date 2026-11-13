@@ -20,6 +20,8 @@ use super::{Leasing, People};
 use crate::CancelSwitch;
 use crate::worker::route::Tail;
 
+mod sleeps;
+
 #[test]
 fn a_person_s_computer_is_woken_once_by_the_first_calls_that_need_it() {
     let (Ok(_), Ok(image)) = (
@@ -436,7 +438,7 @@ fn a_person_s_computer_that_loses_its_machine_says_why_and_starts_again_on_its_d
 }
 
 /// A new person in a new organization, and the key their computer is named by.
-pub(super) fn someone() -> (OrgId, PrincipalId, String) {
+fn someone() -> (OrgId, PrincipalId, String) {
     let org = OrgId::from_uuid(crate::local::new_id().unwrap());
     let person = PrincipalId::try_from(crate::local::new_id().unwrap()).unwrap();
     let key = People::key(org.as_uuid(), person.as_uuid());
@@ -444,7 +446,7 @@ pub(super) fn someone() -> (OrgId, PrincipalId, String) {
 }
 
 /// A server of its own holding leases in `leases`.
-pub(super) fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
+fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
     Leasing {
         leases: Arc::clone(leases),
         holder: Holder::new(&SystemClock, &OsEntropy).unwrap(),
@@ -452,7 +454,7 @@ pub(super) fn leasing(leases: &Arc<dyn Leases>) -> Leasing {
 }
 
 /// A server alone on its store.
-pub(super) fn alone() -> Leasing {
+fn alone() -> Leasing {
     leasing(&(Arc::new(InMemoryLeases::new(Arc::new(SystemClock))) as Arc<dyn Leases>))
 }
 

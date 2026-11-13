@@ -12,10 +12,10 @@ use glave_ports::{
     block_on,
 };
 
-use super::super::Kubernetes;
-use super::lease::{self, Leasing};
-use super::tests::{alone, leasing, someone};
-use super::{People, Person, State, holds, planned_home, renew_while_awake, slept, start};
+use super::super::super::Kubernetes;
+use super::super::lease::{self, Leasing};
+use super::super::{People, Person, State, holds, planned_home, renew_while_awake, slept, start};
+use super::{alone, leasing, someone};
 
 /// People's computers holding their leases as `leasing`, on a cluster nothing is asked of: a
 /// test that asked it anything would fail to connect.

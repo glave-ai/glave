@@ -766,6 +766,4 @@ impl Drop for Unopened<'_> {
 }
 
 #[cfg(test)]
-mod sleeps;
-#[cfg(test)]
 mod tests;
