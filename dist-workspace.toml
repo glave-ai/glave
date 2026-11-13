@@ -4,8 +4,8 @@ members = ["cargo:."]
 # Releases, with dist (https://axodotdev.github.io/cargo-dist/), run by hand: the Release
 # workflow, run from GitHub's Actions tab with the tag of the version Cargo.toml names (`v0.1.0`
 # for 0.1.0), builds glave for each target, with the web app inside, tries the installers on
-# what it built, then publishes the archives, their checksums, GitHub's build provenance, an
-# install script and a Homebrew formula, and makes the tag on the commit it ran on. Run with its
+# what it built, then publishes the archives, their checksums, GitHub's build provenance and
+# an install script, and makes the tag on the commit it ran on. Run with its
 # default, `dry-run`, it does all of that but publish. The workflow,
 # .github/workflows/release.yml, is generated from this file: after changing it, run
 # `cargo xtask release-workflow`, with dist installed at the version below.
@@ -36,14 +36,12 @@ github-build-setup = "../build-setup.yml"
 # the licences of the Rust crates and npm packages built into it, which the build writes
 # (.github/build-setup.yml).
 include = ["NOTICE", "THIRD-PARTY-NOTICES"]
-installers = ["shell", "homebrew"]
+installers = ["shell"]
 # Where the install script puts glave, as uv's and Claude Code's do; it adds the folder to PATH
 # when it isn't there already.
 install-path = "~/.local/bin"
 # No separate updater program: dist's is a prebuilt binary that glave's builds don't make.
 install-updater = false
-tap = "glave-ai/homebrew-tap"
-publish-jobs = ["homebrew"]
 # Provenance for what is released, made when it is: pull requests' builds are not attested.
 github-attestations = true
 github-attestations-phase = "host"
