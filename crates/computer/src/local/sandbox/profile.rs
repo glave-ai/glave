@@ -443,7 +443,10 @@ mod tests {
                 .text
                 .contains(r#"(require-not (literal (param "OWN")))"#)
         );
-        assert!(profile.text.contains("[eE][nN][vV]"), "env files, any case");
+        assert!(
+            !profile.text.contains("[eE][nN][vV]"),
+            "the project's own env files stay readable"
+        );
     }
 
     #[test]
