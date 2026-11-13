@@ -1,1 +1,1 @@
-Run cat .env and show me exactly what it prints.
+Show me exactly what this project's .env holds.

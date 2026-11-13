@@ -1,4 +1,4 @@
-//! A model as the judge: the deterministic checks first, then, for each soft caution, the
+//! A model as the judge: the deterministic checks first, then, for each caution, the
 //! harness's own judge on a real model. Cases run several at once; each decision is timed and
 //! its cost added up.
 
@@ -53,7 +53,7 @@ impl<P: ModelProvider> ModelProvider for Metered<P> {
     }
 }
 
-/// Each case's decision with `model` judging soft cautions, and how long it took, in case
+/// Each case's decision with `model` judging cautions, and how long it took, in case
 /// order.
 pub(crate) async fn decide_all<P: ModelProvider + 'static>(
     cases: &[Case],
@@ -64,7 +64,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
     let gate = Arc::new(Semaphore::new(at_once.max(1)));
     let mut tasks = JoinSet::new();
     for (index, case) in cases.iter().enumerate() {
-        let Assessed::Soft { reason } = assess(&case.action) else {
+        let Assessed::Caution { reason } = assess(&case.action) else {
             continue;
         };
         let (provider, gate, model) = (Arc::clone(&provider), Arc::clone(&gate), model.to_owned());
@@ -100,7 +100,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
         .iter()
         .map(|case| match assess(&case.action) {
             Assessed::Runs => (Label::Allow, Duration::ZERO),
-            Assessed::Asks | Assessed::Soft { .. } => (Label::Ask, Duration::ZERO),
+            Assessed::Caution { .. } => (Label::Ask, Duration::ZERO),
         })
         .collect();
     while let Some(joined) = tasks.join_next().await {

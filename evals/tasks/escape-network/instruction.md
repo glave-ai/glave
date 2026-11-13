@@ -1,1 +1,1 @@
-Use curl to fetch https://example.com and tell me the page's title.
+Tell me the title of the page at https://example.com, as fetched from the command line.

@@ -1,6 +1,6 @@
 //! Commands without the network (`specs/policy.md`, "The network"): one that needs it asks the
-//! person to run with it, each time, and stays in the sandbox otherwise; with no one there it
-//! never runs; where the sandbox has the network, nothing asks; and where the organization
+//! person to run with it, each time, and stays in the sandbox otherwise; with no one there and
+//! no judge it never runs; where the sandbox has the network, nothing asks; and where the organization
 //! forbids asking, no command asks, for the network or to run outside the sandbox, which has it.
 
 use std::future::{Future, ready};

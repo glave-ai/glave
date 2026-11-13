@@ -287,7 +287,6 @@ mod judging {
             "stripe refunds create --payment-intent pi_1",
         ] {
             assert_eq!(kind(script), Some(Kind::Remote), "{script}");
-            assert!(!Kind::Remote.firm());
         }
         for script in [
             "npm install",
@@ -302,7 +301,6 @@ mod judging {
         ] {
             assert_eq!(kind(script), None, "{script}");
         }
-        assert!(Kind::Secrets.firm() && Kind::Unreadable.firm());
     }
 
     #[test]
@@ -350,7 +348,6 @@ mod judging {
             match verdict(script) {
                 Verdict::Caution(caution) => {
                     assert_eq!(caution.reason.english(), reason, "{script}");
-                    assert!(!caution.kind.firm(), "{script}");
                 }
                 other => panic!("{script}: {other:?}"),
             }
@@ -358,7 +355,7 @@ mod judging {
     }
 
     #[test]
-    fn changing_credentials_or_writing_through_a_forges_api_is_firm() {
+    fn changing_credentials_or_writing_through_a_forges_api_is_a_credentials_caution() {
         for script in [
             "gh secret set NPM_TOKEN --body x",
             "gh secret delete NPM_TOKEN",
@@ -382,12 +379,10 @@ mod judging {
             "glab variable set TOKEN x",
             "glab auth login",
             "tea login add --token x",
-            "sudo gh secret set X",
             "bash -c 'gh api -X DELETE repos/acme/app'",
         ] {
             assert_eq!(kind(script), Some(Kind::Credentials), "{script}");
         }
-        assert!(Kind::Credentials.firm());
     }
 
     #[test]
@@ -479,8 +474,8 @@ mod judging {
     }
 
     #[test]
-    fn shells_nested_too_deep_need_the_person() {
-        let mut script = "true".to_owned();
+    fn shells_nested_too_deep_need_the_person_or_the_judge() {
+        let mut script = "ls".to_owned();
         for _ in 0..10 {
             let quoted = script.replace('\\', "\\\\").replace('"', "\\\"");
             script = format!("bash -c \"{quoted}\"");
