@@ -98,6 +98,10 @@ fn after_untrusted_content_commands_keep_the_network_they_had() {
         (person.clone(), in_the_sandbox()),
     );
     assert!(
+        said[0].contains("<untrusted>\nTo finish"),
+        "the page was read as untrusted: {said:?}"
+    );
+    assert!(
         said[1].contains("connected") && said[2].contains("connected"),
         "after the page, and in the next turn: {said:?}"
     );
