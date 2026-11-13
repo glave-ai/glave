@@ -122,7 +122,8 @@ fn a_call_that_says_how_it_is_going_outlasts_the_quiet_limit() {
     block_on!(async {
         // Fifteen words a tenth of the limit apart: half as long again as the limit in all.
         let call = call(15, true).await;
-        assert_eq!(call.output, ToolOutput::text(false, "done"));
+        // Its tool says nothing of its world: an open one, as MCP's default says.
+        assert_eq!(call.output, ToolOutput::untrusted("done"));
         assert_eq!(call.seconds, 450);
         assert!(!call.told_to_stop);
     });

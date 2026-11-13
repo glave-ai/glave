@@ -100,6 +100,8 @@ fn tools_are_named_for_their_server_and_marked_by_what_they_do() {
                 ("mcp__tests__ask", Effect::Runs, false),
                 ("mcp__tests__answers", Effect::Runs, false),
                 ("mcp__tests__lookup", Effect::Reads, true),
+                ("mcp__tests__inbox", Effect::Reads, true),
+                ("mcp__tests__send", Effect::Runs, false),
             ]
         );
         assert_eq!(tools[0].spec.description, "Say the text back.");
@@ -233,13 +235,14 @@ fn a_server_starts_in_the_background_and_its_first_listing_waits_for_it() {
     block_on!(async {
         let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
         let tools = server.tools().await.unwrap();
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 16);
         server.close().await;
     });
 }
 
 #[test]
-fn open_world_tools_and_servers_marked_untrusted_return_untrusted_output() {
+fn a_tool_s_output_is_untrusted_unless_it_says_its_world_is_closed_and_a_marked_server_s_always_is()
+{
     block_on!(async {
         let server = start(&[]).await;
         server.tools().await.unwrap();
@@ -248,12 +251,17 @@ fn open_world_tools_and_servers_marked_untrusted_return_untrusted_output() {
             .call("mcp__tests__lookup", &asked, &NeverCancelled)
             .await;
         assert!(found.untrusted && !found.is_error, "{found:?}");
+        // No `openWorldHint` at all: an open world, as MCP's default says.
+        let read = server
+            .call("mcp__tests__inbox", &arguments(json!({})), &NeverCancelled)
+            .await;
+        assert!(read.untrusted && !read.is_error, "{read:?}");
         let echoed = server
             .call("mcp__tests__echo", &asked, &NeverCancelled)
             .await;
         assert!(
             !echoed.untrusted,
-            "a closed-world tool's output is not marked"
+            "a tool that says `openWorldHint: false` is not marked"
         );
         server.close().await;
         let marked = launch("tests", &stdio(SERVER, &[], &[]), Limits::default()).untrusted(true);

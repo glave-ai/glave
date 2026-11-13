@@ -185,7 +185,7 @@ fn asked(events: &[Event]) -> Vec<(String, Option<String>)> {
 
 /// Why a send to the mail service asks after untrusted content, as the person reads it.
 const ACTS: &str = "It can send or change something through mail, and this chat has read \
-     content from outside, such as a web page, that could have asked for it.";
+     content from outside, such as a web page or an email, that could have asked for it.";
 
 #[test]
 fn after_untrusted_content_a_connected_service_s_write_asks_in_auto_and_its_reads_do_not() {

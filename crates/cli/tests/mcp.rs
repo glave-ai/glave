@@ -79,6 +79,8 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "mcp__tests__ask",
             "mcp__tests__answers",
             "mcp__tests__lookup",
+            "mcp__tests__inbox",
+            "mcp__tests__send",
             "list_mcp_resources",
             "read_mcp_resource",
             "agent",

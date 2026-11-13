@@ -63,7 +63,7 @@ pub(crate) struct Connection {
 struct Named {
     /// The server's own name for it.
     tool: String,
-    /// Whether it says it reaches an open world (`openWorldHint`).
+    /// Whether it may reach an open world: unless it says `openWorldHint: false`.
     open_world: bool,
     /// Its title for people, when it gives one.
     title: Option<String>,
@@ -218,13 +218,14 @@ impl Connection {
                 },
                 parallel: read_only,
             });
-            // MCP's flag for a tool that reaches beyond the server, such as a web search: what
-            // it returns is untrusted, as a web page is.
+            // MCP's flag for a tool that reaches beyond the server, such as a web search or an
+            // inbox others write to: what it returns is untrusted, as a web page is. Unsaid, it
+            // does, as MCP's default says; only `openWorldHint: false` vouches for a closed world.
             let open_world = tool
                 .annotations
                 .as_ref()
                 .and_then(|hints| hints.open_world_hint)
-                .unwrap_or(false);
+                .unwrap_or(true);
             let title = (tool.title.clone()).or_else(|| {
                 tool.annotations
                     .as_ref()
@@ -373,8 +374,8 @@ impl Connection {
 
     /// Calls the tool the model knows as `name`, within `waits`, asking `answerer` what the server
     /// asks: `Ok` with what the server answered, a result or an error in its own words, untrusted
-    /// when the tool reaches an open world, or what it asks; `Err` with glave's own words when it
-    /// gave no answer.
+    /// unless the tool says its world is closed, or what it asks; `Err` with glave's own words
+    /// when it gave no answer.
     pub(crate) async fn call(
         &self,
         name: &str,
