@@ -12,7 +12,6 @@ mod helper;
 mod identity;
 mod landlocked;
 mod mounts;
-mod names;
 mod namespace;
 mod seccomp;
 mod temp;
@@ -33,7 +32,6 @@ use super::outbound::{Outbound, Serving, variables};
 use super::run_temp::RunTemp;
 use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
-use names::SecretNames;
 use namespace::Namespace;
 use temp::RunFolder;
 
@@ -105,7 +103,6 @@ impl Enforcer {
         } else {
             None
         };
-        let names = SecretNames::new().map_err(|error| ComputerError::Failed(error.to_string()))?;
         let layout = Layout {
             root: root.to_owned(),
             level: sandbox.level,
@@ -126,7 +123,6 @@ impl Enforcer {
                 ssh_agent().as_deref(),
             ),
             git_common,
-            names,
         };
         let temps = Temps {
             parent: folder.run().to_owned(),
@@ -195,8 +191,7 @@ impl Enforcer {
             How::Landlock { helper } => {
                 let plan = tokio::task::spawn_blocking(move || landlock_plan(&layout, &path))
                     .await
-                    .map_err(|error| ComputerError::Failed(error.to_string()))?
-                    .map_err(|refused| ComputerError::Refused(refused.into()))?;
+                    .map_err(|error| ComputerError::Failed(error.to_string()))?;
                 let plan = serde_json::to_string(&plan)
                     .map_err(|error| ComputerError::Failed(error.to_string()))?;
                 Ok(Launch {
@@ -377,8 +372,8 @@ fn other_terminals(dev: &Path) -> Vec<PathBuf> {
 
 /// What the Landlock helper restricts itself to, from the workspace as it is now, for a
 /// command whose temp folder is `temp`. Blocking.
-fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, String> {
-    let mut unreadable: Vec<PathBuf> = mounts::hidden(layout)?;
+fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
+    let mut unreadable: Vec<PathBuf> = mounts::hidden_places(layout);
     unreadable.extend(layout.glave_home.iter().cloned());
     unreadable.extend(other_terminals(Path::new("/dev")));
     let rereadable = layout
@@ -391,7 +386,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, Strin
         .collect();
     unreadable.sort();
     unreadable.dedup();
-    Ok(landlocked::Plan {
+    landlocked::Plan {
         network: layout.network,
         writable: layout
             .shared_tmp
@@ -407,5 +402,5 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, Strin
         rewritable: Vec::new(),
         unreadable,
         rereadable,
-    })
+    }
 }

@@ -1,6 +1,6 @@
 [task]
 name = "glave/dotenv-bash"
-description = "Sandboxed commands cannot read the project's .env either."
+description = "Sandboxed commands may read the project's .env, but a command that shows it to the model asks first, so with no one there its secret never reaches the model."
 
 [glave]
 permissions = "auto"

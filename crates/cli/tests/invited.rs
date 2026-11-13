@@ -104,11 +104,14 @@ fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_ca
     let origin = format!("http://localhost:{port}");
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     let servers = place.home.join("mcp.json");
+    // Web search's, on by default.
+    let owners = std::fs::read_to_string(&servers).unwrap();
     block_on!(async {
         let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
         let theirs = invited(&owner, &url, &origin).await;
         let asks = turn(&theirs, json!({})).await;
-        assert!(!servers.exists(), "they wrote the owner's mcp.json");
+        let now = std::fs::read_to_string(&servers).unwrap();
+        assert_eq!(now, owners, "they wrote the owner's mcp.json");
         let skills = place.home.join("skills/notes");
         assert!(!skills.exists(), "they wrote the owner's skills");
         assert_eq!(asks, 0, "nowhere is theirs to choose");
