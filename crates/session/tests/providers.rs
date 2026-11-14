@@ -283,10 +283,46 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_model_account() {
         ] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
+            assert_eq!(
+                refused.message.to_string(),
+                "whoever runs this server connects its model accounts"
+            );
         }
         let none = client.call(Request::ModelList {}).await.unwrap();
         assert!(ids(&none).is_empty(), "{none}");
         client.close().await;
+    });
+}
+
+/// Whether `server/discover` tells `caller` they may connect model accounts.
+async fn offers_accounts(tested: &Tested, caller: &glave_ports::Caller) -> bool {
+    match tested
+        .request_as(caller, Request::Discover {})
+        .await
+        .unwrap()
+    {
+        glave_session::protocol::Reply::Server(info) => info.model_accounts,
+        other => panic!("server info, not {other:?}"),
+    }
+}
+
+#[test]
+fn discover_offers_model_accounts_only_to_whom_the_server_takes_them_from() {
+    block_on!(async {
+        let dir = folder("providers-discover");
+        let tested = fresh(&dir).await;
+        let local = glave_ports::Caller::default();
+        assert!(offers_accounts(&tested, &local).await, "the person here");
+        assert!(!offers_accounts(&tested, &elsewhere()).await, "anyone else");
+        tested.shutdown().await;
+
+        let dir = folder("providers-discover-none");
+        let set_up = server(&dir, Vec::new(), Answering::Clients).await;
+        assert!(
+            !offers_accounts(&set_up, &local).await,
+            "models set up for it"
+        );
+        set_up.shutdown().await;
     });
 }
 

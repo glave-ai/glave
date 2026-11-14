@@ -141,5 +141,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect.poll(() => logo.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
     await expect(byTestId(page, 'appearance-line')).toContainText('Everyone in Acme');
     await expect(byTestId(page, 'appearance-accent')).toHaveCount(0);
+    // Nor model accounts, which the server takes only from the person on its computer.
+    await expect(byTestId(page, 'settings-add-account')).toHaveCount(0);
   });
 }

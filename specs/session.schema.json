@@ -927,7 +927,7 @@
       ]
     },
     "Connects": {
-      "description": "What a caller may connect of their own on a server: each where the server keeps it and it\nis theirs to connect, so a client never offers what would only be refused.",
+      "description": "What a caller may connect of their own on a server beside model accounts\n(`model_accounts`): each where the server keeps it and it is theirs to connect, so a client\nnever offers what would only be refused.",
       "properties": {
         "connections": {
           "description": "Sign-ins to remote servers and glave's connectors (`connection/start`,\n`connector/connect`).",
@@ -935,10 +935,6 @@
         },
         "git_hosts": {
           "description": "Git hosts, GitHub's among them (`credential/connect`).",
-          "type": "boolean"
-        },
-        "models": {
-          "description": "Model accounts (`provider/connect`).",
           "type": "boolean"
         }
       },
@@ -3293,6 +3289,10 @@
         },
         "invites": {
           "description": "Whether the caller may invite someone here: the server takes invites (glave accounts\nat a public origin, or a company login), and the caller's role permits it. So a person\nalone, whose organization is shown to no one, can still make the first.",
+          "type": "boolean"
+        },
+        "model_accounts": {
+          "description": "Whether the caller may connect model accounts here (`provider/*`): the host keeps them,\nand the caller is the person on its computer. Elsewhere the server's own models are\nset up by whoever runs it, so a client offers no accounts.",
           "type": "boolean"
         },
         "modes": {

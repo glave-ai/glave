@@ -279,8 +279,9 @@ export type ConnectorTag = {
 export type ConnectorTagId = "ai-media" | "ai-models" | "analytics" | "api-testing" | "automation" | "ci-cd" | "code-hosting" | "company-formation" | "compliance" | "content-management" | "crm" | "customer-support" | "databases" | "design" | "documentation" | "domains" | "email" | "feature-flags" | "files" | "finance" | "forms" | "hosting" | "identity" | "issues" | "knowledge" | "marketing" | "media-library" | "meetings" | "monitoring" | "notes" | "payments" | "presentations" | "project-management" | "scheduling" | "security" | "site-search" | "to-do-lists" | "web-scraping" | "web-search" | "websites" | "whiteboards";
 
 /**
- * What a caller may connect of their own on a server: each where the server keeps it and it
- * is theirs to connect, so a client never offers what would only be refused.
+ * What a caller may connect of their own on a server beside model accounts
+ * (`model_accounts`): each where the server keeps it and it is theirs to connect, so a client
+ * never offers what would only be refused.
  */
 export type Connects = {
   /**
@@ -290,8 +291,6 @@ export type Connects = {
   readonly connections?: boolean;
   /** Git hosts, GitHub's among them (`credential/connect`). */
   readonly git_hosts?: boolean;
-  /** Model accounts (`provider/connect`). */
-  readonly models?: boolean;
 };
 
 /**
@@ -1215,6 +1214,12 @@ export type ServerInfo = {
    * alone, whose organization is shown to no one, can still make the first.
    */
   readonly invites?: boolean;
+  /**
+   * Whether the caller may connect model accounts here (`provider/*`): the host keeps them,
+   * and the caller is the person on its computer. Elsewhere the server's own models are
+   * set up by whoever runs it, so a client offers no accounts.
+   */
+  readonly model_accounts?: boolean;
   /**
    * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
    * those the policy leaves, in the order a person is offered them, the recommended first.

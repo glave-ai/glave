@@ -5,7 +5,7 @@
   </div>
   <div class="list">
     <app-appearance />
-    @if (connectsModels()) {
+    @if (modelAccounts()) {
       <glz-card>
         <h2 glzCardHeader>{{ copy.models }}</h2>
         @for (account of accounts(); track account.id) {

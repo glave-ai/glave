@@ -93,6 +93,11 @@ pub struct ServerInfo {
     /// with a glave account, whether or not the server takes sign-ups.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub organizations: bool,
+    /// Whether the caller may connect model accounts here (`provider/*`): the host keeps them,
+    /// and the caller is the person on its computer. Elsewhere the server's own models are
+    /// set up by whoever runs it, so a client offers no accounts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub model_accounts: bool,
     /// Whether it tells people's browsers when glave needs them (`push/get`), so a client
     /// offers that only where it does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -103,13 +108,11 @@ pub struct ServerInfo {
     pub connects: Connects,
 }
 
-/// What a caller may connect of their own on a server: each where the server keeps it and it
-/// is theirs to connect, so a client never offers what would only be refused.
+/// What a caller may connect of their own on a server beside model accounts
+/// (`model_accounts`): each where the server keeps it and it is theirs to connect, so a client
+/// never offers what would only be refused.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Connects {
-    /// Model accounts (`provider/connect`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub models: bool,
     /// Git hosts, GitHub's among them (`credential/connect`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub git_hosts: bool,

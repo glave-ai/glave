@@ -185,7 +185,6 @@ where
             return Connects::default();
         }
         Connects {
-            models: self.providers_for(caller).is_ok(),
             git_hosts: self.connects_git_hosts(caller).is_ok(),
             connections: self.connections_for(caller).is_ok(),
         }

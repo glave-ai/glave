@@ -65,6 +65,11 @@ export class ServerService {
   );
   /** What the person may connect here, as the server says: nothing until it has said. */
   readonly connects = computed<Connects>(() => this.info()?.connects ?? NOTHING);
+  /**
+   * Whether the person may connect model accounts here, as the server says: elsewhere the
+   * server's own models are set up by whoever runs it, and Settings offers no accounts.
+   */
+  readonly modelAccounts = computed(() => this.info()?.model_accounts ?? false);
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

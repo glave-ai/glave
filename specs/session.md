@@ -56,6 +56,7 @@ A person with nothing set up connects their own account from a client: they choo
 - **Its models follow its service's catalog,** kept in the store and listed again daily and when the person asks (`provider/refresh`, which answers the accounts), so a model the service adds shows up without reconnecting (`gateway.md`, "Catalogs"). A refresh a service could not answer keeps what it listed before and is refused with `-32020`, saying what to do.
 - **The models follow at once.** After each change the server runs the accounts' models: `model/list` names them and threads may choose them, and threads that chose no model go to the default from their next turn. What the settings choose stays first (`policy.md`, "Model accounts"); with nothing chosen, the first account's first model is the default. With no account and nothing chosen, the server runs no model: `model/list` is empty and a turn is refused with `-32021`, saying to connect an account.
 - **Only the person on this computer:** a local transport, or a browser here with the local token. A caller signed in otherwise is refused with `-32012`, and a server whose models an organization sets up (`--issuer`) refuses with `-32022`: organizations will configure models through their control plane.
+- **`server/discover` says `model_accounts`** to whoever may connect them, worked out for each caller as those methods check, so a client offers model accounts only to them (#1427): elsewhere, as on Glave Cloud, the server's own models are set up by whoever runs it, and Settings shows no accounts.
 
 ## Git hosts
 
@@ -612,6 +613,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Where commands listen** (#356): `command/list`'s `ports`, for the person on this computer, and the web app's row.
 - **Previews** (#356): `command/list`'s `previewed` and each port's `url`, `framed` and `unframed`, the dev server's own address where glave's pages are at `localhost`, the policy's `frame-src` there and `'none'` elsewhere, and the web app's Preview tab and Open preview. Not yet: previews at a name of their own for a server reached from elsewhere and for commands on other computers (#356, #1259); a frame of a server on IPv6's loopback alone.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, and WebSocket.
+- **Model accounts offered only where taken** (#1427): `server/discover`'s `model_accounts`, and the web app's Settings showing its Models card only then.
 
 ## Later
 

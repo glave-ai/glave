@@ -310,6 +310,13 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_git_host() {
         ] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
+            assert!(
+                refused
+                    .message
+                    .to_string()
+                    .contains("whoever runs this server connects"),
+                "{refused}"
+            );
         }
         client.close().await;
     });

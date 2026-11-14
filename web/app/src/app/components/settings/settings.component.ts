@@ -29,7 +29,8 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
 
 /**
- * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove), connections (what is
+ * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove) where
+ * the server says the person connects them, connections (what is
  * connected, and the page where they are) and memory (its own page), whether glave may search
  * the web, the passkeys that sign the person in where glave is reached from elsewhere, the
  * notifications pushed to their browsers, whether their own computer stays awake while glave
@@ -82,13 +83,13 @@ export class SettingsComponent {
   private readonly session = inject(SessionService);
   private readonly push = inject(PushService);
   private readonly router = inject(Router);
-  private readonly about = inject(ServerService);
-  private readonly info = this.about.info;
-  /** Whether the person may connect model accounts here, as the server says. */
-  protected readonly connectsModels = computed(() => this.about.connects().models ?? false);
+  private readonly serverService = inject(ServerService);
+  private readonly info = this.serverService.info;
+  /** Whether the person connects model accounts here, as the server says: else no Models card. */
+  protected readonly modelAccounts = this.serverService.modelAccounts;
   /** Whether the person may connect anything that shows on the Connections page here. */
   protected readonly connects = computed(() => {
-    const connects = this.about.connects();
+    const connects = this.serverService.connects();
     return (connects.git_hosts ?? false) || (connects.connections ?? false);
   });
   private readonly providers = inject(ProvidersService);
@@ -153,8 +154,11 @@ export class SettingsComponent {
   });
 
   constructor() {
-    void this.about.load();
-    void this.providers.load();
+    void this.serverService.load().then(async () => {
+      if (this.modelAccounts()) {
+        await this.providers.load();
+      }
+    });
     void this.hosts.load();
     void this.connections.load();
   }
