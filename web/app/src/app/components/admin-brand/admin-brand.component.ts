@@ -20,6 +20,7 @@ import {
   GlzCheckboxComponent,
   GlzColorChoiceComponent,
   type GlzColorOption,
+  GlzCopyButtonComponent,
   GlzFormFieldComponent,
   GlzInputDirective,
 } from '@glave/glaze';
@@ -31,6 +32,7 @@ import { sentence, unreached } from '../../lib/text';
 import { PLAIN } from '../../services/appearance.service';
 import { BrandService } from '../../services/brand.service';
 import { onChange } from '../../services/changes.service';
+import { OrganizationsService } from '../../services/organizations.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
 /** What the form says, field by field. */
@@ -54,7 +56,8 @@ function follow<T>(field: WritableSignal<T>, was: T, now: T): void {
  * its logo, its accent with how that reads in light and dark, and the switch that makes everyone
  * use it. Nothing is kept until Save. The values shown are the server's, for the color chosen.
  * Each field the person has not edited follows what the server keeps, as another admin changes it
- * and again just before Save, so Save writes back only what the person changed.
+ * and again just before Save, so Save writes back only what the person changed. Beside them, the
+ * organization's id, to quote when asking for help, with a button that copies it.
  */
 @Component({
   selector: 'app-admin-brand',
@@ -65,6 +68,7 @@ function follow<T>(field: WritableSignal<T>, was: T, now: T): void {
     GlzCardComponent,
     GlzCheckboxComponent,
     GlzColorChoiceComponent,
+    GlzCopyButtonComponent,
     GlzFormFieldComponent,
     GlzInputDirective,
     PageHeaderComponent,
@@ -82,6 +86,9 @@ export class AdminBrandComponent {
     logoHint: $localize`:@@adminBrand.logoHint:Shown at the top of the sidebar, for everyone in your organization.`,
     upload: $localize`:@@adminBrand.upload:Upload a logo`,
     remove: $localize`:@@adminBrand.remove:Remove`,
+    id: $localize`:@@adminBrand.id:Organization ID`,
+    idHint: $localize`:@@adminBrand.idHint:Quote it when you ask for help with your organization.`,
+    copyId: $localize`:@@adminBrand.copyId:Copy the organization ID`,
     accent: $localize`:@@adminBrand.accent:Accent color`,
     accentHint: $localize`:@@adminBrand.accentHint:Pick one of these, or your exact brand color.`,
     any: $localize`:@@adminBrand.any:Pick your own color`,
@@ -101,6 +108,11 @@ export class AdminBrandComponent {
     ...brandSwatches(),
   ];
   private readonly service = inject(BrandService);
+  private readonly organizations = inject(OrganizationsService);
+  /** The id of the organization this page edits: the one the person works in now. */
+  protected readonly organizationId = computed(
+    () => this.organizations.organizations().find((each) => each.current === true)?.id ?? null,
+  );
   private readonly injector = inject(Injector);
   private readonly picker = viewChild.required<ElementRef<HTMLInputElement>>('picker');
   /** The element: on a `glzButton`, a reference alone is the component. */
@@ -147,6 +159,7 @@ export class AdminBrandComponent {
 
   constructor() {
     void this.load();
+    void this.organizations.load();
     onChange('brand', () => void this.reread());
     inject(DestroyRef).onDestroy(() => {
       this.showPicked(null);
