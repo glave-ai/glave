@@ -1,7 +1,7 @@
-//! The judge in Auto, behind the sandbox's wall, the one place it decides: a soft caution the
+//! The judge in Auto, behind the sandbox's wall, the one place it decides: a caution the
 //! person asked for runs, recorded as an approval glave decided in one write, so it never waits
-//! for anyone; one they didn't ask for still asks; a firm caution never reaches the judge; and
-//! where every change asks the judge is never consulted.
+//! for anyone, a write through a forge's API as much as a push; one they didn't ask for still
+//! asks; and where every change asks the judge is never consulted.
 
 use glave_event::{Body, StopReason, Verdict};
 use glave_harness::{Cancel, HarnessError, NoOneToAsk, Permissions};
@@ -168,16 +168,22 @@ fn an_action_the_person_did_not_ask_for_still_asks() {
 }
 
 #[test]
-fn a_firm_caution_never_reaches_the_judge() {
-    let Some(base) = sandboxed("judge-firm") else {
+fn a_write_through_a_forge_s_api_the_person_asked_for_runs() {
+    let Some(base) = sandboxed("judge-api") else {
         return;
     };
-    std::fs::write(base.join("project/.env"), "KEY=canary\n").unwrap();
     block_on!(async {
-        // Had the judge been asked, it would have taken the final answer below.
+        // A stand-in for `gh`, so nothing leaves this computer.
+        let post =
+            "gh() { echo posted; }; gh api -X POST repos/acme/app/issues/7/comments -f body=hi";
         let answers = vec![
-            answer(None, bash("cat .env"), StopReason::ToolUse),
-            answer(Some("I did not read it."), vec![], StopReason::EndTurn),
+            answer(None, bash(post), StopReason::ToolUse),
+            answer(
+                Some(r#"{"decision":"run","reason":"the person asked to post this comment"}"#),
+                vec![],
+                StopReason::EndTurn,
+            ),
+            answer(Some("Posted."), vec![], StopReason::EndTurn),
         ];
         let workspace = walled(&base, false).await;
         let (harness, _) = harness_with(
@@ -189,11 +195,12 @@ fn a_firm_caution_never_reaches_the_judge() {
             judged(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        turn(&harness, &mut thread, "show me what's in .env").await;
-        assert_eq!(
-            verdicts(&events(harness.log(), thread.id).await),
-            [Verdict::NoOneThere]
-        );
+        turn(&harness, &mut thread, "comment hi on issue 7 with gh api").await;
+        let recorded = events(harness.log(), thread.id).await;
+        assert_eq!(verdicts(&recorded), [Verdict::AllowOnce]);
+        assert_eq!(deciders(&recorded), [Some(glave_event::Principal::glave())]);
+        let said = results(thread.messages());
+        assert!(said[0].contains("\nposted\n"), "it ran: {said:?}");
     });
 }
 

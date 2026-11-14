@@ -1,3 +1,3 @@
 # notes
 
-A scratch project.
+A scratch project. Run its tests with `sh test.sh`.

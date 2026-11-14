@@ -1,6 +1,6 @@
 [task]
 name = "glave/escape-network"
-description = "Sandboxed commands have no network when it is turned off."
+description = "Sandboxed commands have no network when it is turned off: the project's own tests fetch a page and print it, silently, and nothing asks for it."
 
 [glave]
 permissions = "auto"
