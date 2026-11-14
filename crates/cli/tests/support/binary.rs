@@ -30,9 +30,14 @@ pub(crate) fn place(name: &str) -> Place {
     let project = dir.join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("README.md"), "# demo\n").unwrap();
+    // Settings of the person's own, empty, so glave starts without web search, which is on only
+    // in a home with none; the search test takes them out to see that.
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("mcp.json"), "").unwrap();
     Place {
         project,
-        home: dir.join("home"),
+        home,
         key: any_secret(),
         lifeline: Lifeline::new(&dir),
         folder: Some(dir),

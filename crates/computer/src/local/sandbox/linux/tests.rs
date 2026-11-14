@@ -286,7 +286,7 @@ fn landlock_confines_read_only_commands() {
     std::fs::write(dir.join(".ssh/id_ed25519"), "canary-ssh\n").unwrap();
     std::fs::create_dir_all(dir.join(".glave")).unwrap();
     std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
-    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    std::fs::write(project.join(".env"), "env-ok\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -307,7 +307,11 @@ fn landlock_confines_read_only_commands() {
     )
     .unwrap();
     assert!(!said.contains("canary"), "{said}");
-    assert!(said.contains("notes-ok"), "{said}");
+    // The project's own `.env` is the project's: commands read it.
+    assert!(
+        said.contains("notes-ok") && said.contains("env-ok"),
+        "{said}"
+    );
     assert!(
         said.contains("temp-ok") && said.contains("tmp-ok"),
         "{said}"
@@ -319,7 +323,7 @@ fn landlock_confines_read_only_commands() {
     assert!(!dir.join("outside.txt").exists(), "{said}");
     // Control: unconfined, every canary is readable and the write lands.
     let (_, open) = run(&dir, None, None, &script).unwrap();
-    assert_eq!(open.matches("canary").count(), 3, "{open}");
+    assert_eq!(open.matches("canary").count(), 2, "{open}");
     assert!(open.contains("environ-read"), "{open}");
     assert!(dir.join("outside.txt").exists());
 }
@@ -485,7 +489,7 @@ fn landlock_runs_with_named_pipes_beside_what_it_hides() {
     let project = dir.join("project");
     // Each folder holding something hidden has its entries granted one by one, a pipe too.
     std::fs::create_dir_all(dir.join(".ssh")).unwrap();
-    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    std::fs::write(dir.join(".ssh/id_ed25519"), "canary-ssh\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
     for pipe in [dir.join("pipe"), project.join("pipe")] {
         let made = Process::new("mkfifo").arg(&pipe).status().unwrap();
@@ -495,7 +499,7 @@ fn landlock_runs_with_named_pipes_beside_what_it_hides() {
         &dir,
         Some((SandboxLevel::ReadOnly, false)),
         Some(&helper),
-        "cat notes.md .env",
+        &format!("cat notes.md {}/.ssh/id_ed25519", dir.display()),
     )
     .unwrap();
     assert!(

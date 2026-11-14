@@ -183,7 +183,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
             ("read a file in the project", offline.clone(), "cat readme".into(), Comes::Prints("hello")),
             ("read the machine", offline.clone(), "cat /etc/os-release >/dev/null && echo read".into(), Comes::Prints("read")),
             ("read a key in the home", offline.clone(), "cat ~/.ssh/id_rsa".into(), Comes::Fails),
-            ("read a project's .env", offline.clone(), "cat .env".into(), Comes::Fails),
+            ("read a project's .env", offline.clone(), "cat .env".into(), Comes::Prints("secret")),
             ("write a git hook", offline.clone(), "echo x > .git/hooks/pre-commit".into(), Comes::Fails),
             ("write git's config", offline.clone(), "echo x >> .git/config".into(), Comes::Fails),
             ("write glave's project settings", offline.clone(), "mkdir -p .glave/x".into(), Comes::Fails),

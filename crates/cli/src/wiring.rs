@@ -400,7 +400,7 @@ async fn signed(
     let others_sign_in = !args.issuers.is_empty();
     let github = setup.choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
-    // Web search is the person's to turn on where they may add servers of their own.
+    // Web search is the person's to turn on or off where they may add servers of their own.
     let forbidden = setup.loaded.constraints.own_mcp_forbidden().is_some();
     let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
     let home = home::folder()?;
@@ -410,7 +410,13 @@ async fn signed(
     let connected = if others_sign_in {
         None
     } else {
-        Some(Connected::for_person(store, person, &home, search, reachable, offered).await?)
+        let connected =
+            Connected::for_person(store, person, &home, search, reachable, offered).await?;
+        // Search on by default is a convenience: a home it can't be written in starts anyway.
+        if let Err(error) = connected.search_by_default().await {
+            tracing::warn!("web search not turned on by default: {error}");
+        }
+        Some(connected)
     };
     Ok(match hosts {
         Some(hosts) => {
