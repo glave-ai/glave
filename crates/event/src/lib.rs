@@ -28,8 +28,8 @@ pub use money::{Currency, Decimal, Money, Nanos};
 pub use payload::{
     Accent, AcmeRegistered, AppearanceSet, AwakeSet, BrandSet, CertificateIssued, Color, Filters,
     FiltersSet, Grouping, GroupingSet, HeldLogo, Hides, InstructionsFile, InstructionsRead,
-    LanguageSet, MailAsked, MaxPrice, MemorySet, Serve, SignupFinished, SignupStarted, SkillFound,
-    Sort,
+    LanguageSet, MailAsked, MaxPrice, MemorySet, SearchSet, Serve, SignupFinished, SignupStarted,
+    SkillFound, Sort,
 };
 pub use payload::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
 pub use payload::{

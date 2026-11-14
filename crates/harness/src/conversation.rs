@@ -96,6 +96,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::PasskeyUsed(_)
         | Body::PasskeyRemoved(_)
         | Body::AwakeSet(_)
+        | Body::SearchSet(_)
         | Body::LanguageSet(_)
         | Body::GroupingSet(_)
         | Body::FiltersSet(_)
