@@ -123,11 +123,11 @@ impl Mailer for Smtp {
 
 /// Whether `host` is a mail server on this computer, reached over loopback, where nothing
 /// crosses a network for TLS to protect: a relay of the machine's own, or `cargo xtask try-org`'s.
+/// Only a loopback address written out: a name such as `localhost` is looked up as mail is sent,
+/// and a lookup that answers elsewhere would carry the message and the password in the clear.
 fn on_this_computer(host: &str) -> bool {
-    host == "localhost"
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
+    host.parse::<std::net::IpAddr>()
+        .is_ok_and(|address| address.is_loopback())
 }
 
 /// What went wrong sending, without what the mail server said back, which may hold the address.
@@ -173,8 +173,9 @@ mod tests {
     #[test]
     fn only_a_mail_server_on_this_computer_is_spoken_to_without_tls() {
         for (host, here) in [
-            ("localhost", true),
+            ("localhost", false),
             ("127.0.0.1", true),
+            ("127.1.2.3", true),
             ("::1", true),
             ("mail.example.com", false),
             ("localhost.example.com", false),

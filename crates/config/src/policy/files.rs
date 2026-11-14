@@ -128,7 +128,7 @@ pub struct CreditsFile {
 
 /// `[email]`: the SMTP server glave sends invites through (`specs/model.md`, "Identity"), over
 /// TLS: STARTTLS, or TLS from the first byte on port 465; plainly to one on this computer
-/// (`localhost`, a loopback address). Its password is never in a file: it
+/// (a loopback address written out, such as `127.0.0.1`). Its password is never in a file: it
 /// comes from `GLAVE_SMTP_PASSWORD`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]

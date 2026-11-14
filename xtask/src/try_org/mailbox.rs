@@ -13,7 +13,7 @@ use tokio::task::JoinSet;
 /// How long glave may take to say its next line: it sends a message in one go.
 const LINE_WITHIN: Duration = Duration::from_secs(30);
 
-/// The longest message it reads: glave's are a few lines.
+/// The most lines of a message it keeps, reading the rest to its end: glave's are a few lines.
 const MOST_LINES: usize = 1_000;
 
 /// The stand-in, taking messages until it is dropped.
@@ -78,9 +78,13 @@ async fn converse(stream: TcpStream) -> Result<(), String> {
             "DATA" => {
                 say("354 go on").await?;
                 let mut text = Vec::new();
+                // Read to the end of the message however long, so what follows is a command.
                 while let Some(line) = next(&mut lines).await? {
-                    if line == "." || text.len() >= MOST_LINES {
+                    if line == "." {
                         break;
+                    }
+                    if text.len() >= MOST_LINES {
+                        continue;
                     }
                     let unstuffed = line.strip_prefix('.').filter(|_| line.starts_with(".."));
                     text.push(unstuffed.unwrap_or(&line).to_owned());
