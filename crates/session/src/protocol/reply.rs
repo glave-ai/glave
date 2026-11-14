@@ -25,6 +25,10 @@ pub use listening::{ListedCommand, Port};
 
 /// What the server is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts the server says, each a yes or no, absent when no"
+)]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
