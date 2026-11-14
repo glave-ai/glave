@@ -415,6 +415,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::PasskeyUsed(_) => "passkey.used",
             Body::PasskeyRemoved(_) => "passkey.removed",
             Body::AwakeSet(_) => "awake.set",
+            Body::SearchSet(_) => "search.set",
             Body::LanguageSet(_) => "language.set",
             Body::GroupingSet(_) => "grouping.set",
             Body::FiltersSet(_) => "filters.set",

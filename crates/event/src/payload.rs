@@ -32,6 +32,7 @@ pub(crate) mod project;
 pub(crate) mod provider;
 pub(crate) mod push;
 pub(crate) mod remembering;
+pub(crate) mod search;
 pub(crate) mod secrets;
 pub(crate) mod service;
 pub(crate) mod signup;
@@ -83,6 +84,7 @@ pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
 pub use push::{PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed};
 pub use remembering::MemorySet;
+pub use search::SearchSet;
 pub use secrets::{SecretAdded, SecretRemoved};
 pub use service::{
     AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,

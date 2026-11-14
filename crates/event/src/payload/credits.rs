@@ -27,6 +27,8 @@ open_kind! {
         Model => "model",
         /// A media tool's call, such as an image made, at the provider's reported cost.
         Media => "media",
+        /// A web search, at its service's price for one.
+        Search => "search",
     }
 }
 
