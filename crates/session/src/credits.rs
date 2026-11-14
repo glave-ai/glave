@@ -3,7 +3,9 @@
 //! Owners and Admins the whole account and everyone's spending, anyone else their own;
 //! `credits/limit` sets the month's limit, for its Owners alone (`Permit::Billing`, checked
 //! with the other admin methods); and `credits/add` is the operation money comes in by, for
-//! whoever runs the server today and the billing service that calls it later.
+//! whoever runs the server today and the billing service that calls it later. Whoever runs it
+//! lists the personal spaces sign-ups made with their balances (`credits/list`), and a sign-up
+//! link of theirs may carry what the space it makes starts with, added as the space is made.
 
 use std::cmp::Reverse;
 
@@ -12,13 +14,18 @@ use glave_gateway::{Account, Credits};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 
 use crate::people::People;
-use crate::protocol::{ApiError, CreditsAccount, CreditsInfo, PersonSpent, Reply, code};
+use crate::protocol::{
+    ApiError, CreditsAccount, CreditsInfo, PersonSpent, Reply, SpaceCredits, code,
+};
 use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
 
 /// The longest reference of a payment, in bytes.
 const LONGEST_REFERENCE: usize = 256;
+
+/// The most personal spaces `credits/list` answers, the newest.
+const MOST_LISTED: usize = 500;
 
 /// How much of an account a caller sees: the whole of it, or their own spending alone; and
 /// whether they may set its limit.
@@ -199,6 +206,59 @@ where
             None => self.own_seen(caller, org, &account, seen).await?,
         };
         Ok(Reply::Credits { credits })
+    }
+
+    /// Answers `credits/list`: only for whoever runs the server, the personal spaces sign-ups
+    /// made, the newest [`MOST_LISTED`], each with its person's name and its balance.
+    pub(crate) async fn list_credits(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let credits = self.credits()?;
+        if !local(caller) {
+            return Err(ApiError::new(
+                code::NOT_ALLOWED,
+                Sentence::OperatorAddsCredits,
+            ));
+        }
+        let mut spaces = Vec::new();
+        for org in self.signed_up(MOST_LISTED).await? {
+            let people = self.people_apart(org).await?;
+            let name = people
+                .first_owner_but(None)
+                .and_then(|person| people.known_as(person));
+            let balance = credits.account(org).await?.balance;
+            spaces.push(SpaceCredits {
+                organization: org,
+                name,
+                balance,
+            });
+        }
+        Ok(Reply::CreditsSpaces { spaces })
+    }
+
+    /// Refuses starting credits on a sign-up link where the server keeps none, or that are not
+    /// an amount in US dollars more than nothing.
+    pub(crate) fn starting_credits(&self, amount: Money) -> Result<(), ApiError> {
+        self.credits()?;
+        if amount.currency != Currency::USD || amount.nanos <= Nanos::ZERO {
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NotDollars));
+        }
+        Ok(())
+    }
+
+    /// Adds `amount` to the personal space `org` a sign-up link made as it starts, the link's
+    /// code's hash `link` its payment's reference, so it adds once. The space is made and its
+    /// person signed in either way: one the store does not take is said in the server's log,
+    /// for whoever runs it to add by hand.
+    pub(crate) async fn start_credits(&self, org: OrgId, amount: Money, link: &str) {
+        let Some(credits) = self.inner.credits.as_deref() else {
+            return;
+        };
+        let reference = format!("signup-{link}");
+        if let Err(error) = credits
+            .add(org, amount, &reference, Principal::glave())
+            .await
+        {
+            tracing::warn!(%error, %org, "a sign-up's starting credits were not added");
+        }
     }
 }
 

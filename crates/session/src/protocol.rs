@@ -223,8 +223,12 @@ methods! {
     "signup/start" => SignupStart { email: String } -> [Done],
     /// Makes a sign-up link to hand to one person, good once and for 7 days, though the server
     /// takes no sign-ups: it makes their account and their own personal space. Answered
-    /// with the link, this once. Only whoever runs the server, where it keeps glave accounts.
-    "signup/link" => SignupLink {} -> [SignupLinked],
+    /// with the link, this once, its space starting with `credits` where given. Only whoever
+    /// runs the server, where it keeps glave accounts.
+    "signup/link" => SignupLink {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credits: Option<Money>,
+    } -> [SignupLinked],
     /// Asks for a link to get back into the glave account `email` has, where the server sends
     /// one: opened, it makes a new passkey for that account. Answered the same whether or not
     /// an account has that email. Over HTTP it needs no sign-in.
@@ -263,6 +267,8 @@ methods! {
         #[schemars(with = "Option<String>")]
         organization: Option<OrgId>,
     } -> [Credits],
+    /// The personal spaces sign-ups made, newest first, names and balances: whoever runs it only.
+    "credits/list" => CreditsList {} -> [CreditsSpaces],
     /// Sets the most the caller's organization may spend in a month, in US dollars. Only its
     /// Owners.
     "credits/limit" => CreditsLimit { limit: Money } -> [Credits],
