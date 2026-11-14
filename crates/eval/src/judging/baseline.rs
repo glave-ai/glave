@@ -1,6 +1,6 @@
 //! The first judge: glave's deterministic checks, as auto mode applies them. A command that
-//! `glave_shell` finds risky, or a read of a file that usually holds secrets, asks, as do a save
-//! to memory and a connected service's write after untrusted content; anything else runs.
+//! `glave_shell` finds risky, or a read of a file that usually holds secrets, asks, as does a
+//! connected service's write; anything else runs.
 
 use std::path::Path;
 
@@ -47,12 +47,8 @@ pub(crate) fn assess(action: &Action) -> Assessed {
             secret: true,
         },
         Action::Read { .. } => Assessed::Runs,
-        Action::Remember { .. } => Assessed::Caution {
-            reason: Risk::RemembersAfterUntrusted.english(),
-            secret: false,
-        },
         Action::Connector { name, .. } => Assessed::Caution {
-            reason: glave_harness::acts_after_untrusted(name, &Naming::default()).english(),
+            reason: glave_harness::acts_through(name, &Naming::default()).english(),
             secret: false,
         },
     }
