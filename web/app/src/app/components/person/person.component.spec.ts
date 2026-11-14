@@ -9,6 +9,21 @@ import { SERVER } from '../../testing/fixtures';
 import { settle } from '../../testing/links';
 import { PersonComponent } from './person.component';
 
+/** The person's menu, made anew, where the server says `said` of itself. */
+async function menuFor(said: object): Promise<HTMLElement> {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([{ path: '**', children: [] }]),
+      ...provideFakeSession(new FakeSession().answer('server/discover', said)),
+    ],
+  });
+  await TestBed.inject(ServerService).load();
+  const fixture = TestBed.createComponent(PersonComponent);
+  await fixture.whenStable();
+  return fixture.nativeElement as HTMLElement;
+}
+
 describe('PersonComponent', () => {
   it('shows who is signed in, and opens to Settings and Sign out', async () => {
     TestBed.configureTestingModule({
@@ -50,19 +65,7 @@ describe('PersonComponent', () => {
       [{ ...shown, role: 'member' }, false],
       [SERVER, false],
     ] as const) {
-      TestBed.resetTestingModule();
-      TestBed.configureTestingModule({
-        providers: [
-          provideRouter([{ path: '**', children: [] }]),
-          ...provideFakeSession(new FakeSession().answer('server/discover', said)),
-        ],
-      });
-      await TestBed.inject(ServerService).load();
-      const fixture = TestBed.createComponent(PersonComponent);
-      await fixture.whenStable();
-      const admin = (fixture.nativeElement as HTMLElement).querySelector(
-        '[data-testid="nav-admin"]',
-      );
+      const admin = (await menuFor(said)).querySelector('[data-testid="nav-admin"]');
       expect(admin !== null).toBe(offered);
       if (offered) {
         expect(admin?.getAttribute('href')).toBe('/admin');
@@ -173,17 +176,7 @@ describe('PersonComponent', () => {
       [{ ...SERVER, invites: true, organizations: true }, true],
       [{ ...SERVER, invites: true }, false],
     ] as const) {
-      TestBed.resetTestingModule();
-      TestBed.configureTestingModule({
-        providers: [
-          provideRouter([{ path: '**', children: [] }]),
-          ...provideFakeSession(new FakeSession().answer('server/discover', said)),
-        ],
-      });
-      await TestBed.inject(ServerService).load();
-      const fixture = TestBed.createComponent(PersonComponent);
-      await fixture.whenStable();
-      const root = fixture.nativeElement as HTMLElement;
+      const root = await menuFor(said);
       expect(root.querySelector('[data-testid="nav-invite"]')).not.toBeNull();
       expect(root.querySelector('[data-testid="nav-new-organization"]') !== null).toBe(offered);
       expect(root.querySelector('[data-testid="nav-create-to-invite"]')).toBeNull();

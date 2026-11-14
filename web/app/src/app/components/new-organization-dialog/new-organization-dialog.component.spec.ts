@@ -4,16 +4,10 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { SessionService } from '../../services/session.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { settle } from '../../testing/links';
 import { NewOrganizationDialogComponent } from './new-organization-dialog.component';
 
 const NURFZ: OrganizationInfo = { id: 'nurfz', name: 'Nurfz', people: 1, role: 'owner' };
-
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
 
 function byTestId<T extends HTMLElement>(testId: string): T | null {
   return document.querySelector<T>(`[data-testid="${testId}"]`);
