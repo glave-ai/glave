@@ -1,7 +1,7 @@
 //! What a throwaway glave's organization starts with, so its Admin shows at once with people
 //! in it: two people who joined by invites and gave their names, an Admin and a Member, and an
-//! invite still waiting. All through the session API over HTTP, as the people themselves would: the owner's
-//! requests from this computer with the server's local token, at its address; each invitee's
+//! invite still waiting; and a sign-up link, for trying one's own personal space. All through
+//! the session API over HTTP, as the people themselves would: the owner's requests from this computer with the server's local token, at its address; each invitee's
 //! at `localhost`, the door people who share this computer come in by, as a browser making its
 //! first passkey there, played by glave-identity's authenticator in software. Nothing in glave
 //! knows they are samples.
@@ -22,8 +22,9 @@ const WAITING: &str = "member";
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// Gives the organization of the glave whose folder is `home`, serving now, its people and
-/// its waiting invite, whose link it answers: someone new opening it signs up.
-pub(crate) async fn seed(home: &Path) -> Result<String, String> {
+/// its waiting invite, whose link it answers: someone new opening it signs up; and a sign-up
+/// link its owner made.
+pub(crate) async fn seed(home: &Path) -> Result<(String, String), String> {
     let read = |name: &str| {
         std::fs::read_to_string(home.join(name))
             .map(|text| text.trim().to_owned())
@@ -64,7 +65,12 @@ pub(crate) async fn seed(home: &Path) -> Result<String, String> {
         .get("code")
         .and_then(Value::as_str)
         .ok_or("glave answered invite/create with no code")?;
-    Ok(format!("{people}/#invite={code}"))
+    let made = owner.call("signup/link", json!({})).await?;
+    let link = made
+        .get("link")
+        .and_then(Value::as_str)
+        .ok_or("glave answered signup/link with no link")?;
+    Ok((format!("{people}/#invite={code}"), link.to_owned()))
 }
 
 /// Joins with the invite `code` in a new browser at `origin`, making its first passkey there:

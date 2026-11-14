@@ -101,6 +101,11 @@ where
     ) -> Result<Reply, ApiError> {
         // Read first: a name it can't take leaves the passkey's request to answer again.
         let person_name = person_name.as_deref().map(given_name).transpose()?;
+        // An account a handed-over sign-up link makes has no address: its name is how it is
+        // known, so none leaves the request to answer again with one.
+        if person_name.is_none() && self.signing_unaddressed(ceremony) {
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NameNeeded));
+        }
         if let Some(joining) = self.joining(ceremony) {
             return self.join(joining, credential, name, person_name).await;
         }

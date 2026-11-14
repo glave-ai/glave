@@ -2766,6 +2766,14 @@ export type SigninSetupResult = {
   readonly code: Secret;
 };
 
+export type SignupLinkParams = Readonly<Record<string, never>>;
+
+/** A sign-up link whoever runs the server made, sent this once, and when it stops working. */
+export type SignupLinkResult = {
+  readonly expires: At;
+  readonly link: Secret;
+};
+
 export type SignupStartParams = {
   readonly email: string;
 };
@@ -3223,6 +3231,7 @@ export interface Methods {
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
   readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
   readonly "signin/setup": { readonly params: SigninSetupParams; readonly result: SigninSetupResult };
+  readonly "signup/link": { readonly params: SignupLinkParams; readonly result: SignupLinkResult };
   readonly "signup/start": { readonly params: SignupStartParams; readonly result: SignupStartResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };

@@ -240,6 +240,7 @@ where
             Request::SignupStart { email } => {
                 boxed(|| self.start_link(caller, &email, Emailed::Signup)).await
             }
+            Request::SignupLink {} => boxed(|| self.make_signup_link(caller)).await,
             Request::RecoveryStart { email } => {
                 boxed(|| self.start_link(caller, &email, Emailed::Recovery)).await
             }

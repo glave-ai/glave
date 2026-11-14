@@ -35,6 +35,7 @@ mod serve;
 mod server;
 mod sessions;
 mod settings;
+mod signup;
 mod skills;
 mod starter;
 mod subagents;
