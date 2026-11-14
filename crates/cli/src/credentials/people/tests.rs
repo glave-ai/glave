@@ -69,14 +69,25 @@ fn each_person_s_commands_get_their_own_git_hosts_and_never_another_s() {
             "ada's commands are offered hers"
         );
         let given = theirs.request(&asked()).await.unwrap();
-        assert_eq!(given.password.expose(), token.expose());
+        assert!(
+            given.password.expose() == token.expose(),
+            "ada's command is given her own token"
+        );
 
-        for (org, person) in [(team, grace), (own_org, ada), (own_org, here)] {
+        let others = [
+            ("grace in the team", team, grace),
+            ("ada in the server's own organization", own_org, ada),
+            ("the person on this computer", own_org, here),
+        ];
+        for (who, org, person) in others {
             let other = people.credentials(org, person);
-            assert!(other.hosts().await.is_empty(), "{person} in {org}");
-            assert!(other.request(&asked()).await.is_none(), "{person} in {org}");
+            assert!(other.hosts().await.is_empty(), "{who} is offered none");
+            assert!(
+                other.request(&asked()).await.is_none(),
+                "{who} is given none"
+            );
             let listed = people.of(org, person).await.unwrap().list().await.unwrap();
-            assert!(listed.is_empty(), "{person} in {org} lists none");
+            assert!(listed.is_empty(), "{who} lists none");
         }
         let own_listed = people.of(own_org, here).await.unwrap();
         assert!(
