@@ -1,7 +1,6 @@
 //! Asking the person before acting: how much to ask (what a thread's mode comes to), before
-//! the model sees a file that usually holds secrets, which Full access, never asking, declines
-//! instead, and before a connected service's write after untrusted content. See
-//! `specs/approvals.md`.
+//! the model sees a file that usually holds secrets, and before a connected service's write
+//! after untrusted content. See `specs/approvals.md`.
 
 mod act;
 
@@ -38,8 +37,7 @@ pub struct ApprovalRequest {
     /// What it asks the person, by what would run: "Run this command?".
     pub ask: Ask,
     /// The model would see a secret: a file that usually holds one, such as `.env`, or what a
-    /// command prints. With no one to ask, and in Full access, which asks no one, these requests
-    /// are declined.
+    /// command prints. With no one to ask, these requests are declined.
     pub secret: bool,
     /// Why the call needs the person in any mode that asks, when it does: the model and the
     /// judge are told it as a clause ("it deletes ~/x", [`Caution::because`]), and the person
@@ -150,8 +148,7 @@ pub(crate) enum ApprovalMode {
     Changes,
     /// Changes and commands go through; only risky ones ask, or go to the judge.
     Risky,
-    /// Nothing asks, risky actions included (Full access): what would show the model a secret
-    /// is declined at once instead.
+    /// Nothing asks, risky actions and secrets included (Full access).
     Never,
 }
 

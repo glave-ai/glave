@@ -7,7 +7,8 @@
 //!
 //! The servers of `mcp.json` the organization's catalog (`[mcp] catalog`) names are the
 //! catalog's, and only the others are the person's own, which `[mcp] own = false` forbids.
-//! glave writes to `mcp.json` only when the person turns web search on, or off (`written.rs`).
+//! glave writes to `mcp.json` only for web search: on by default where the file is not there
+//! yet, and when the person turns it on, or off (`written.rs`).
 //!
 //! The connectors of glave's catalog the person connected start beside their own servers,
 //! named by their ids, unless `mcp.json` has a server of that name or at that address. A policy

@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use glave_ports::computer::{PROTECTED, SandboxLevel};
 
 use super::super::secrets::HOME_SECRETS;
-use super::names::SecretNames;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
 /// Under the home folder, on Linux besides the common list: keyrings and browser profiles
@@ -76,7 +75,6 @@ pub(super) struct Layout {
     pub(super) daemons: Vec<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
-    pub(super) names: SecretNames,
 }
 
 /// One mount, in the order bubblewrap applies them: later ones lie over earlier ones.
@@ -143,8 +141,6 @@ pub(super) fn plan(
     temp: &Path,
     stand_ins: &StandIns,
 ) -> Result<(Vec<Mount>, Held), String> {
-    let secret_files = secret_files(&layout.root, &layout.names)
-        .map_err(|error| format!("could not read {}: {error}", layout.root.display()))?;
     let mut mounts: Vec<Mount> = layout
         .shared_tmp
         .iter()
@@ -186,7 +182,6 @@ pub(super) fn plan(
     ) {
         hide(&real, &mut mounts);
     }
-    mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
     // A folder's mount before those inside it, which it would otherwise lie over: glave's
     // folder holds the cache, and the workspace when it is a thread's worktree there, and is
     // itself inside the workspace when that is the home folder. Stable, so of two mounts at one
@@ -332,8 +327,8 @@ fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 }
 
 /// The real paths of the home folder's credential folders and files, and of whatever else the
-/// computer hides, that exist, except one that holds the workspace.
-fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
+/// computer hides, that exist, except one that holds the workspace. Blocking.
+pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     let in_home = layout.home.iter().flat_map(|home| {
         HOME_SECRETS
             .iter()
@@ -353,17 +348,6 @@ fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
         .collect()
 }
 
-/// What commands may not read, for Landlock: the home folder's credentials, whatever else the
-/// computer hides and the project's files named like secrets. Blocking.
-pub(super) fn hidden(layout: &Layout) -> Result<Vec<PathBuf>, String> {
-    let mut hidden = hidden_places(layout);
-    hidden.extend(
-        secret_files(&layout.root, &layout.names)
-            .map_err(|error| format!("could not read {}: {error}", layout.root.display()))?,
-    );
-    Ok(hidden)
-}
-
 /// `path` hidden under the stand-in of its kind; links are left, their targets judged alone.
 fn hide(path: &Path, mounts: &mut Vec<Mount>) {
     match std::fs::symlink_metadata(path) {
@@ -372,31 +356,4 @@ fn hide(path: &Path, mounts: &mut Vec<Mount>) {
         Ok(_) => mounts.push(Mount::HiddenFile(path.to_owned())),
         Err(_) => {}
     }
-}
-
-/// Files in the project named like secrets, outside `.git` folders, links not followed.
-fn secret_files(root: &Path, names: &SecretNames) -> std::io::Result<Vec<PathBuf>> {
-    let mut found = Vec::new();
-    let mut folders = vec![root.to_owned()];
-    let mut first = true;
-    while let Some(folder) = folders.pop() {
-        let entries = match std::fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            // A folder glave cannot read, commands cannot read either.
-            Err(_) if !first => continue,
-            Err(error) => return Err(error),
-        };
-        first = false;
-        for entry in entries.flatten() {
-            let Ok(kind) = entry.file_type() else {
-                continue;
-            };
-            if kind.is_dir() && entry.file_name() != ".git" {
-                folders.push(entry.path());
-            } else if kind.is_file() && names.is_secret(&entry.file_name().to_string_lossy()) {
-                found.push(entry.path());
-            }
-        }
-    }
-    Ok(found)
 }
