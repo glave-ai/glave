@@ -15,8 +15,8 @@
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
 //! joined by invites, and an invite waiting (`seed.rs`), so its Admin has something to show at
 //! once; xtask prints a sign-up link its owner made, to try an organization of one's own while
-//! sign-up is closed. Once the server is ready, xtask opens it in the person's browser, signed in, as `glave`
-//! alone does, and again each time the person presses Enter in its window, so no link can expire
+//! sign-up is closed. Once the server is ready, xtask opens it in the person's browser, signed
+//! in, as `glave` alone does, and again each time the person presses Enter in its window, so no link can expire
 //! on them. On Ctrl-C, a hang-up, the end of the program that started xtask or the server's own
 //! end, it stops the server and removes the folder. glave's lifeline stops the server if xtask
 //! is killed outright; a folder such a run left is removed by the next, which finds its lock
