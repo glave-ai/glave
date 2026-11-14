@@ -25,6 +25,7 @@ mod media;
 mod plan;
 mod price;
 mod routes;
+mod search;
 mod target;
 mod telemetry;
 
@@ -34,4 +35,5 @@ pub use gateway::Gateway;
 pub use media::Tier;
 pub use price::Price;
 pub use routes::{RouteError, Routes};
+pub use search::WebSearch;
 pub use target::{Capabilities, Model, Target};

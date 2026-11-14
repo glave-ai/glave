@@ -6,6 +6,7 @@ use glave_event::Reasoning;
 use glave_ports::auth::KeyHeader;
 use glave_ports::{
     Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, Purpose,
+    SearchAsk, SearchResults,
 };
 use glave_provider_anthropic::{Anthropic, EFFORTS};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -159,9 +160,21 @@ impl ModelProvider for Model {
         }
     }
 
+    /// None: the web is searched through the gateway's own search service.
+    fn search(
+        &self,
+        request: &ModelRequest,
+        _: &SearchAsk,
+    ) -> impl Future<Output = Result<SearchResults, ProviderError>> + Send {
+        std::future::ready(Err(ProviderError::Unserved {
+            failure: glave_ports::Failure::Rejected,
+            reason: format!("a model serves no {}", request.purpose.id()),
+        }))
+    }
+
     /// What its gateway routes say, never the endpoint: none serves a media tool alone.
     fn serves(&self, purpose: Purpose) -> bool {
-        !purpose.is_media()
+        !purpose.is_tool()
     }
 }
 

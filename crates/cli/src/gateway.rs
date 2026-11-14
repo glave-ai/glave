@@ -13,7 +13,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 use glave_event::{Currency, Filters, Nanos};
 use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
 use glave_ports::{
-    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, Purpose,
+    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
+    Purpose, SearchAsk, SearchResults,
 };
 
 use crate::config::Endpoint;
@@ -250,6 +251,17 @@ impl ModelProvider for GatewaySwitch {
     async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
         match self.current() {
             Some(gateway) => gateway.make(request, ask).await,
+            None => Err(no_model()),
+        }
+    }
+
+    async fn search(
+        &self,
+        request: &ModelRequest,
+        ask: &SearchAsk,
+    ) -> Result<SearchResults, ProviderError> {
+        match self.current() {
+            Some(gateway) => gateway.search(request, ask).await,
             None => Err(no_model()),
         }
     }

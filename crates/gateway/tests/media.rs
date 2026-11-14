@@ -5,27 +5,12 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use glave_event::{Body, CostKind, Principal, PrincipalId};
+use glave_event::{Body, CostKind, Principal};
 use glave_gateway::{Credits, Gateway, Routes};
 use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
-use glave_ports::{
-    EventLog as _, MediaAsk, ModelProvider, OrgId, Payer, ProviderError, Purpose, Scope,
-};
-use jiff::Timestamp;
+use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
 
-use crate::support::{Fake, block_on, dollars, price, request};
-
-fn person() -> PrincipalId {
-    PrincipalId::new(Timestamp::from_second(1).unwrap(), [1; 10]).unwrap()
-}
-
-fn org() -> OrgId {
-    OrgId::from_uuid(
-        PrincipalId::new(Timestamp::from_second(2).unwrap(), [2; 10])
-            .unwrap()
-            .as_uuid(),
-    )
-}
+use crate::support::{Fake, block_on, dollars, org, person, price, request};
 
 #[test]
 fn a_media_call_goes_only_to_its_own_route_and_comes_back_with_what_it_made() {
