@@ -158,6 +158,7 @@ where
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
                     here: self.passkeys_here(),
                     signin: self.signin_ways(),
+                    invite_only: self.invite_only(),
                     exists: crate::protocol::Exists {
                         organization,
                         credits: self.inner.credits.is_some(),

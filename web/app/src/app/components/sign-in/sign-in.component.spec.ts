@@ -96,8 +96,11 @@ describe('SignInComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('header glz-top-bar')?.textContent).toContain('glave');
+    const about = root.querySelector('[data-testid="sign-in-about"]');
+    expect(about?.textContent.trim()).toBe('What is Glave?');
+    expect(about?.getAttribute('href')).toBe('https://glave.dev');
     const said = root.querySelector('main')?.textContent ?? '';
-    expect(said).toContain('Open glave on this computer to sign this browser in');
+    expect(said).toContain('Open Glave on this computer to sign this browser in');
     expect(said).not.toMatch(/serve|--|config|terminal/u);
     expect(root.querySelector('[data-testid="sign-in-passkey"]')).toBeNull();
     await expectAccessible(root);
@@ -116,11 +119,16 @@ describe('SignInComponent', () => {
   it('signs in with a passkey where glave is reached from elsewhere', async () => {
     const fake = reached();
     const { fixture, navigate, root } = await render(fake, answering(ANSWER));
+    expect(root.querySelector('h1')?.textContent).toBe(
+      'Your AI, on your own computer in the cloud.',
+    );
     const said = root.querySelector('main')?.textContent ?? '';
-    expect(said).toContain('Sign in to glave');
+    expect(said).toContain('Glave is an AI assistant with a computer of its own.');
     expect(said).not.toMatch(/serve|--|config|terminal|passkey\//u);
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]');
+    expect(button?.textContent.trim()).toBe('Sign in with a passkey');
     await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]')?.click();
+    button?.click();
     await fixture.whenStable();
     expect(fake.paramsOf('passkey/get')).toEqual([
       expect.objectContaining({ ceremony: 'c1' }) as unknown,
@@ -155,8 +163,8 @@ describe('SignInComponent', () => {
     const fake = signingIn({ here: window.location.origin, signin: ['link', 'passkey'] });
     const { fixture, navigate, root } = await render(fake, answering(ANSWER));
     const said = root.querySelector('main')?.textContent ?? '';
-    expect(said).toContain('the passkey you made for glave on this computer');
-    expect(said).toContain('Open glave on this computer: it signs this browser in');
+    expect(said).toContain('the passkey you made for Glave on this computer');
+    expect(said).toContain('Open Glave on this computer: it signs this browser in');
     const button = root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]');
     expect(button?.textContent.trim()).toBe('Sign in with Touch ID');
     await expectAccessible(root);
@@ -175,7 +183,7 @@ describe('SignInComponent', () => {
       const { root } = await render(signingIn(discovered), answering(ANSWER));
       expect(root.querySelector('[data-testid="sign-in-passkey"]')).toBeNull();
       expect(root.querySelector('main')?.textContent).toContain(
-        'Open glave on this computer to sign this browser in',
+        'Open Glave on this computer to sign this browser in',
       );
     }
   });
@@ -191,6 +199,31 @@ describe('SignInComponent', () => {
     TestBed.resetTestingModule();
     const { root } = await render(reached(), answering(ANSWER));
     expect(root.querySelector('[data-testid="sign-in-sign-up"]')).toBeNull();
+  });
+
+  it('says an invite is the way in only where the server is invite-only, and only in greeting', async () => {
+    const inviteOnly = {
+      origin: 'https://glave.test',
+      signin: ['link', 'passkey'],
+      invite_only: true,
+    };
+    const greeted = await render(signingIn(inviteOnly), answering(ANSWER));
+    expect(greeted.root.querySelector('[data-testid="sign-in-invite-only"]')?.textContent).toBe(
+      'Glave is invite-only. Got an invite? Open its link to start.',
+    );
+    await expectAccessible(greeted.root);
+    TestBed.resetTestingModule();
+    window.history.replaceState(null, '', '/#setup=f00d');
+    const setup = await render(signingIn(inviteOnly), answering(ANSWER));
+    expect(setup.root.querySelector('[data-testid="sign-in-invite-only"]')).toBeNull();
+    TestBed.resetTestingModule();
+    window.history.replaceState(null, '', '/');
+    const here = { ...inviteOnly, here: window.location.origin };
+    const { root } = await render(signingIn(here), answering(ANSWER));
+    expect(root.querySelector('main')?.textContent).toContain(
+      'the passkey you made for Glave on this computer',
+    );
+    expect(root.querySelector('[data-testid="sign-in-invite-only"]')).toBeNull();
   });
 
   it('offers a way back in by email only where the server sends one', async () => {

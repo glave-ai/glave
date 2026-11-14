@@ -24,6 +24,7 @@ fn a_server_for_one_person_says_nothing_else_exists() {
         assert_eq!(info.exists, Exists::default());
         let sent = serde_json::to_value(&info).unwrap();
         assert!(sent.get("exists").is_none(), "{sent}");
+        assert!(sent.get("invite_only").is_none(), "{sent}");
     });
 }
 

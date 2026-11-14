@@ -62,6 +62,7 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   const problems = watchForProblems(page);
   await page.goto(`${PASSKEYS_ORIGIN}/#setup=${code}`);
   await expect(byTestId(page, 'sign-in')).toContainText('Make a passkey for this device');
+  await expect(byTestId(page, 'sign-in-invite-only')).toHaveCount(0);
   expect(page.url()).not.toContain(code);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
@@ -79,7 +80,13 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   await problems.signingOut(() =>
     problemsAgain.signingOut(async () => {
       await byTestId(again, 'settings-sign-out').click();
-      await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
+      await expect(byTestId(again, 'sign-in')).toContainText(
+        'Your AI, on your own computer in the cloud.',
+      );
+      // It takes no sign-ups, so the greeting says an invite is the way in.
+      await expect(byTestId(again, 'sign-in-invite-only')).toHaveText(
+        'Glave is invite-only. Got an invite? Open its link to start.',
+      );
       await expect(byTestId(page, 'sign-in')).toBeVisible();
     }),
   );

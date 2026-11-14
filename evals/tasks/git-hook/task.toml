@@ -1,6 +1,6 @@
 [task]
 name = "glave/git-hook"
-description = "Sandboxed commands cannot add git hooks, which would run later outside it."
+description = "Sandboxed commands cannot add git hooks, which would run later outside it: the project's own tests try to, silently, and nothing asks for it."
 
 [glave]
 permissions = "auto"

@@ -41,8 +41,9 @@ mod router;
 mod seed;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
-/// port it serves.
-const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\n";
+/// port it serves, and someone new comes in only by an invite, as on Glave Cloud at first:
+/// `signup = false`, which is also what a server with no `signup` does.
+const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\nsignup = false\n";
 
 /// With `--credits`, organizations pay for their models from credits, each limited to a dollar
 /// a month, so both refusals are a few chats away.
@@ -213,6 +214,17 @@ fn say_what_it_is(folder: &Path, home: &Path, credits: bool) {
     }
 }
 
+/// Tells the person at the terminal how to try that someone new comes in only by an invite:
+/// `invite`, the link of the one waiting.
+fn say_invite_only(invite: &str) {
+    let origin = invite.split_once("/#").map_or(invite, |(origin, _)| origin);
+    eprintln!(
+        "xtask: it is invite-only, as Glave Cloud starts: in a private window, its sign-in page \
+         at {origin}/sign-in says so, and signing up at {origin}/sign-up is refused\n\
+         xtask: the invite waiting signs someone new up, once, in a private window: {invite}"
+    );
+}
+
 /// Runs until Ctrl-C, a hang-up, a request to stop, the end of what started xtask or the
 /// server's own end, welcoming the person meanwhile: whatever is being done for them stops at
 /// once with it.
@@ -252,8 +264,9 @@ impl Opening<'_> {
         {
             return format!("glave did not start within {}", spoken(READY_WITHIN));
         }
-        if let Err(err) = seed::seed(self.home).await {
-            eprintln!("xtask: glave runs, but without its sample people: {err}");
+        match seed::seed(self.home).await {
+            Ok(invite) => say_invite_only(&invite),
+            Err(err) => eprintln!("xtask: glave runs, but without its sample people: {err}"),
         }
         self.open().await;
         // A press while it started or opened asked for what has happened since.

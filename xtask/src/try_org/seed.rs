@@ -22,8 +22,8 @@ const WAITING: &str = "member";
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// Gives the organization of the glave whose folder is `home`, serving now, its people and
-/// its waiting invite.
-pub(crate) async fn seed(home: &Path) -> Result<(), String> {
+/// its waiting invite, whose link it answers: someone new opening it signs up.
+pub(crate) async fn seed(home: &Path) -> Result<String, String> {
     let read = |name: &str| {
         std::fs::read_to_string(home.join(name))
             .map(|text| text.trim().to_owned())
@@ -57,10 +57,14 @@ pub(crate) async fn seed(home: &Path) -> Result<(), String> {
             .ok_or("glave answered invite/create with no code")?;
         join(&browser, &people, code, name).await?;
     }
-    owner
+    let waiting = owner
         .call("invite/create", json!({ "role": WAITING }))
-        .await
-        .map(drop)
+        .await?;
+    let code = waiting
+        .get("code")
+        .and_then(Value::as_str)
+        .ok_or("glave answered invite/create with no code")?;
+    Ok(format!("{people}/#invite={code}"))
 }
 
 /// Joins with the invite `code` in a new browser at `origin`, making its first passkey there:

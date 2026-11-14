@@ -17,7 +17,6 @@ use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, Scop
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::untrusted::offline_after;
 
 /// What a thread working in a folder of its own opens with, and what its project chooses and
 /// turns on, as the host reads them. Without one, every thread opens with the settings'
@@ -151,8 +150,7 @@ where
             } else {
                 thread.defaults.home_sandbox.as_ref()
             };
-            // Without the network once the thread has read untrusted content.
-            let wanted = offline_after(protections.sandbox(mode, most), thread.untrusted);
+            let wanted = protections.sandbox(mode, most);
             let asks = thread.defaults.ask_network;
             let walled = self.walled(thread);
             if workspace.sandbox() != wanted.as_ref()

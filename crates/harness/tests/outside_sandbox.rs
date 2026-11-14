@@ -1,7 +1,8 @@
-//! Running one command outside the sandbox: it asks the person in every mode, each time; the
-//! judge may clear it only while someone could be asked and the thread has read nothing
-//! untrusted, and never sees the model's reason; with no one there it never runs; and where
-//! commands run without a sandbox, the request changes nothing. Someone other than the person
+//! Running one command outside the sandbox: a caution as any other, so it asks the person in
+//! every mode that asks, each time, an answer for the thread counting once; the judge may
+//! clear it, with or without someone there, unless the thread has read something untrusted,
+//! and never sees the model's reason; with no one there and nothing to clear it, it never runs;
+//! and where commands run without a sandbox, the request changes nothing. Someone other than the person
 //! the harness works for never leaves the sandbox on its computer, and no one is asked.
 
 use std::future::{Future, ready};
@@ -252,7 +253,7 @@ fn allowed_while_its_turn_waited_it_counts_once() {
 }
 
 #[test]
-fn with_no_one_there_it_never_runs_even_where_the_judge_would_let_it() {
+fn with_no_one_there_and_no_judge_it_never_runs() {
     let Some(base) = sandboxed("no-one") else {
         return;
     };
@@ -272,7 +273,7 @@ fn with_no_one_there_it_never_runs_even_where_the_judge_would_let_it() {
             NoOneToAsk,
             InMemoryLog::new(),
             1,
-            judged(),
+            in_the_sandbox(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
@@ -342,7 +343,7 @@ fn after_untrusted_content_the_judge_never_clears_it_and_the_person_is_asked() {
 }
 
 #[test]
-fn the_judge_may_clear_it_while_someone_could_be_asked_and_never_sees_the_model_s_reason() {
+fn the_judge_may_clear_it_with_no_one_there_and_never_sees_the_model_s_reason() {
     let Some(base) = sandboxed("judged") else {
         return;
     };
@@ -353,8 +354,15 @@ fn the_judge_may_clear_it_while_someone_could_be_asked_and_never_sees_the_model_
             answer(Some(run), vec![], StopReason::EndTurn),
             answer(Some("Done."), vec![], StopReason::EndTurn),
         ];
-        let person = Person::answering(Decision::Deny);
-        let (harness, seen) = with_person(&base, answers, &person, judged()).await;
+        let workspace = in_sandbox(&base).await;
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged(),
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
             .run_turn(
@@ -366,8 +374,7 @@ fn the_judge_may_clear_it_while_someone_could_be_asked_and_never_sees_the_model_
             .await
             .unwrap();
         assert!(base.join("asked.txt").exists());
-        assert_eq!(turn.outside_sandbox, 1);
-        assert!(person.asked().is_empty(), "the judge let it run");
+        assert_eq!(turn.outside_sandbox, 1, "the judge let it run");
         let shown = judges(&seen.lock().unwrap());
         assert_eq!(shown.len(), 1);
         assert!(shown[0].contains("outside the sandbox"), "{}", shown[0]);
