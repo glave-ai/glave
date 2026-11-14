@@ -284,9 +284,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("organization/list", vec![json!({})]),
         // A new organization of the caller's own, naming no one's.
         ("organization/create", vec![json!({"name": "Nurfz"})]),
-        // The caller's own organization's credits, where the server keeps them; adding them
-        // is for whoever runs the server alone.
+        // The caller's own organization's credits, where the server keeps them; adding them,
+        // and listing the personal spaces sign-ups made, is for whoever runs the server alone.
         ("credits/get", vec![json!({})]),
+        ("credits/list", vec![json!({})]),
         (
             "credits/limit",
             vec![json!({"limit": {"nanos": 1_000_000_000, "currency": "USD"}})],

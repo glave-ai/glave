@@ -111,7 +111,7 @@ fn a_search_is_held_at_its_price_charged_as_search_and_refused_when_nothing_is_l
         matches!(out, ProviderError::Unpaid(Unpaid::Spent)),
         "out of credits: {out:?}"
     );
-    assert!(out.to_string().contains("out of credits"), "{out}");
+    assert!(out.to_string().contains("balance is used up"), "{out}");
     assert_eq!(service.calls.load(Ordering::SeqCst), 0, "never sent");
 
     let by = Principal::person(person());

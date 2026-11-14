@@ -1304,6 +1304,15 @@ export type SignInWay = "link" | "passkey" | "signup" | "recovery";
 /** Which of a model's providers a router prefers. */
 export type Sort = "price" | "speed";
 
+/** A personal space a sign-up made, as whoever runs the server sees it. */
+export type SpaceCredits = {
+  /** What is left of its credits. */
+  readonly balance: Money;
+  /** The name its person gave, else their email, when it knows either. */
+  readonly name?: string | null;
+  readonly organization: string;
+};
+
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
  * `thread.deleted` decides.
@@ -2012,6 +2021,13 @@ export type CreditsLimitParams = {
 /** The organization's credits, as much as the caller may see. */
 export type CreditsLimitResult = {
   readonly credits: CreditsInfo;
+};
+
+export type CreditsListParams = Readonly<Record<string, never>>;
+
+/** The personal spaces sign-ups made, newest first, with their balances. */
+export type CreditsListResult = {
+  readonly spaces: readonly (SpaceCredits)[];
 };
 
 export type FileReadParams = {
@@ -2792,7 +2808,9 @@ export type SigninSetupResult = {
   readonly code: Secret;
 };
 
-export type SignupLinkParams = Readonly<Record<string, never>>;
+export type SignupLinkParams = {
+  readonly credits?: Money | null;
+};
 
 /** A sign-up link whoever runs the server made, sent this once, and when it stops working. */
 export type SignupLinkResult = {
@@ -3187,6 +3205,7 @@ export interface Methods {
   readonly "credits/add": { readonly params: CreditsAddParams; readonly result: CreditsAddResult };
   readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
   readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
+  readonly "credits/list": { readonly params: CreditsListParams; readonly result: CreditsListResult };
   readonly "file/read": { readonly params: FileReadParams; readonly result: FileReadResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };

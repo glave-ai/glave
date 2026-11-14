@@ -1,7 +1,8 @@
 //! `glave credits`: an organization's credits, where the server keeps them (`specs/gateway.md`,
 //! "Credits"), through the session API of the person's server (`reach.rs`): what is left and
 //! what was spent this month, the month's limit set, and credits added by whoever runs the
-//! server, the same operation a billing service calls.
+//! server, the same operation a billing service calls, and the personal spaces sign-ups made
+//! with their balances, for whoever runs the server to add to one.
 
 use std::fmt::Write as _;
 use std::process::ExitCode;
@@ -9,7 +10,7 @@ use std::process::ExitCode;
 use anyhow::{Context as _, bail};
 use glave_event::Money;
 use glave_ports::{Entropy as _, OrgId, OsEntropy};
-use glave_session::protocol::{CreditsInfo, Reply, Request};
+use glave_session::protocol::{CreditsInfo, Reply, Request, SpaceCredits};
 use uuid::Uuid;
 
 use crate::reach;
@@ -21,6 +22,8 @@ glave credits: what is left to spend on models, where this glave keeps credits
 Usage:
   glave credits                 what is left, and what was spent this month and by whom
   glave credits limit <dollars> set the most it may spend in a month (its owners)
+  glave credits list            the personal spaces people made by signing up, newest first,
+                                each with its balance and id, for whoever runs this glave
   glave credits add <dollars> [--organization <id>] [--reference <reference>]
                                 add credits, for whoever runs this glave, from its computer:
                                 to its own organization, or the one --organization names;
@@ -31,6 +34,7 @@ Usage:
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Show,
+    List,
     Limit(Money),
     Add {
         amount: Money,
@@ -44,6 +48,7 @@ fn parse(words: &[String]) -> anyhow::Result<Command> {
     let dollars = |text: &str| Money::parse_dollars(text).map_err(anyhow::Error::new);
     match words.as_slice() {
         [] => Ok(Command::Show),
+        ["list"] => Ok(Command::List),
         ["limit", amount] => Ok(Command::Limit(dollars(amount)?)),
         ["add", amount, rest @ ..] => {
             let (mut organization, mut reference) = (None, None);
@@ -79,6 +84,7 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
     run_with(words, USAGE, |words| async move {
         let request = match parse(&words)? {
             Command::Show => Request::CreditsGet {},
+            Command::List => Request::CreditsList {},
             Command::Limit(limit) => Request::CreditsLimit { limit },
             Command::Add {
                 amount,
@@ -90,12 +96,12 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
                 organization,
             },
         };
-        let Reply::Credits { credits } =
-            Box::pin(reach::with(async |server| server.request(request).await)).await?
-        else {
-            bail!("glave answered about credits with something else");
-        };
-        print!("{}", said(&credits));
+        let reply = Box::pin(reach::with(async |server| server.request(request).await)).await?;
+        match reply {
+            Reply::Credits { credits } => print!("{}", said(&credits)),
+            Reply::CreditsSpaces { spaces } => print!("{}", listed(&spaces)),
+            _ => bail!("glave answered about credits with something else"),
+        }
         Ok(())
     })
 }
@@ -109,6 +115,20 @@ fn fresh_reference() -> anyhow::Result<String> {
             let _ = write!(text, "{byte:02x}");
             text
         }))
+}
+
+/// The personal spaces sign-ups made, for the terminal: each one's balance to the cent, its
+/// id, which `glave credits add --organization` takes, and its person's name.
+fn listed(spaces: &[SpaceCredits]) -> String {
+    if spaces.is_empty() {
+        return "No one has signed up yet.\n".to_owned();
+    }
+    spaces.iter().fold(String::new(), |mut text, space| {
+        let name = space.name.as_deref().unwrap_or("(no name)");
+        let balance = format!("{:.2}", space.balance);
+        let _ = writeln!(text, "{balance:>10}  {}  {name}", space.organization);
+        text
+    })
 }
 
 /// `credits` for the terminal: amounts to the cent, and the month's spending by person.
@@ -156,6 +176,7 @@ mod tests {
     #[test]
     fn the_words_after_credits_pick_a_command() {
         assert_eq!(parse(&words(&[])).unwrap(), Command::Show);
+        assert_eq!(parse(&words(&["list"])).unwrap(), Command::List);
         assert_eq!(
             parse(&words(&["limit", "25"])).unwrap(),
             Command::Limit(dollars(25_000_000_000))
@@ -186,6 +207,29 @@ mod tests {
             assert!(parse(&words(wrong)).is_err(), "{wrong:?}");
         }
         assert!(fresh_reference().unwrap().starts_with("by-hand-"));
+    }
+
+    #[test]
+    fn spaces_read_with_their_balance_id_and_name() {
+        let id = "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13";
+        let org = OrgId::from_uuid(Uuid::try_parse(id).unwrap());
+        let spaces = [
+            SpaceCredits {
+                organization: org,
+                name: Some("Ada".into()),
+                balance: dollars(5_000_000_000),
+            },
+            SpaceCredits {
+                organization: org,
+                name: None,
+                balance: dollars(0),
+            },
+        ];
+        assert_eq!(
+            listed(&spaces),
+            format!("     $5.00  {id}  Ada\n     $0.00  {id}  (no name)\n")
+        );
+        assert_eq!(listed(&[]), "No one has signed up yet.\n");
     }
 
     #[test]

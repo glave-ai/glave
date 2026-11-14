@@ -405,12 +405,12 @@ pub enum ProviderError {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unpaid {
     /// Nothing is left of the balance: everything added is charged.
-    #[error("you're out of credits: add credits to keep going")]
+    #[error("your balance is used up: ask whoever runs this server to add more")]
     Spent,
     /// Something is free now, after what calls running hold, but less than the call could cost.
     #[error(
-        "this could cost up to {:.2}, more than the {:.2} of credits free now: add credits, or \
-         choose a cheaper model",
+        "this could cost up to {:.2}, more than the {:.2} of your balance free now: choose a \
+         cheaper model, or ask whoever runs this server to add more",
         needs.cents_up(),
         free.cents_down()
     )]
@@ -436,7 +436,7 @@ pub enum Unpaid {
         needs: Money,
     },
     /// No catalog says what the model costs, so no one can say what the call could.
-    #[error("{model} has no price here, so credits can't pay for it: choose another model")]
+    #[error("{model} has no price here, so your balance can't pay for it: choose another model")]
     Unpriced { model: String },
 }
 

@@ -6,7 +6,7 @@
 use std::process::ExitCode;
 
 use anyhow::bail;
-use glave_event::{At, Secret};
+use glave_event::{At, Money, Secret};
 use glave_session::protocol::{Reply, Request};
 
 use crate::reach;
@@ -17,20 +17,29 @@ glave signup: let someone sign up for their own personal space, while this glave
 sign-ups
 
 Usage:
-  glave signup link             a link to give one person, from this glave's computer: good
-                                once and for 7 days, it makes their account and
-                                their own personal space";
+  glave signup link [--credits <dollars>]
+                                a link to give one person, from this glave's computer: good
+                                once and for 7 days, it makes their account and their own
+                                personal space; where this glave keeps credits, --credits is
+                                the balance the space starts with";
+
+/// The starting balance the words after `signup` ask for, if any, once they ask for a link.
+fn parse(words: &[String]) -> anyhow::Result<Option<Money>> {
+    let words: Vec<&str> = words.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["link"] => Ok(None),
+        ["link", "--credits", dollars] => Ok(Some(Money::parse_dollars(dollars)?)),
+        ["link", "--credits"] => bail!("how many dollars?\n\n{USAGE}"),
+        [] => bail!("{USAGE}"),
+        ["link", first, ..] | [first, ..] => bail!("unexpected {first:?}\n\n{USAGE}"),
+    }
+}
 
 /// `glave signup ...`.
 pub(crate) fn main(words: &[String]) -> ExitCode {
     run_with(words, USAGE, |words| async move {
-        let words: Vec<&str> = words.iter().map(String::as_str).collect();
-        match words.as_slice() {
-            ["link"] => {}
-            [] => bail!("{USAGE}"),
-            [first, ..] => bail!("unexpected {first:?}\n\n{USAGE}"),
-        }
-        let request = Request::SignupLink {};
+        let credits = parse(&words)?;
+        let request = Request::SignupLink { credits };
         let Reply::SignupLinked { link, expires } =
             Box::pin(reach::with(async |server| server.request(request).await)).await?
         else {
@@ -55,6 +64,30 @@ fn said(link: &Secret, expires: At) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_words_after_signup_ask_for_a_link_with_its_starting_balance() {
+        let words = |text: &[&str]| {
+            text.iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(parse(&words(&["link"])).unwrap(), None);
+        let five = Money::parse_dollars("5").unwrap();
+        assert_eq!(
+            parse(&words(&["link", "--credits", "5"])).unwrap(),
+            Some(five)
+        );
+        for wrong in [
+            &[][..],
+            &["link", "--credits"],
+            &["link", "--credits", "five"],
+            &["link", "--other", "5"],
+            &["off"],
+        ] {
+            assert!(parse(&words(wrong)).is_err(), "{wrong:?}");
+        }
+    }
 
     #[test]
     fn a_link_reads_with_until_when() {

@@ -15,12 +15,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, EventId, Header, MailAsked, OrganizationKind, PersonJoined, PrincipalId, Profile,
-    RawEvent, Secret, Seq, SignupFinished, SignupStarted, encode,
+    At, Body, EventId, Header, MailAsked, Money, OrganizationKind, PersonJoined, PrincipalId,
+    Profile, RawEvent, Secret, Seq, SignupFinished, SignupStarted, encode,
 };
 use glave_identity::signin::{Proof, kept, one_time_code};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId, Scope};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::mailing::{ASKED_WITHIN, just_now};
@@ -148,6 +148,8 @@ pub(crate) struct Signing {
     /// The address its link went to: none for one whoever runs the server handed over.
     pub(crate) email: Option<String>,
     pub(crate) emailed: Emailed,
+    /// What the personal space it makes starts with, from a link whoever runs the server made.
+    credits: Option<Money>,
 }
 
 /// The passkeys being made by emailed links on this server.
@@ -211,6 +213,7 @@ where
             to: Some(to_kept.clone()),
             expires: At::from(expires),
             recovery: emailed == Emailed::Recovery,
+            credits: None,
         };
         let sending = AtomicBool::new(false);
         self.record_signups(|signups| {
@@ -259,9 +262,12 @@ where
         let now = self.inner.harness.clock().now();
         self.catch_up_signups().await?;
         // While the server takes no sign-ups, only a link whoever runs it handed over opens.
-        let addressed = self
-            .signups(|signups| signups.opens(&hash, emailed, now).map(|it| it.to.is_some()))
-            .filter(|addressed| takes_signups || !addressed)
+        let (addressed, credits) = self
+            .signups(|signups| {
+                let it = signups.opens(&hash, emailed, now)?;
+                Some((it.to.is_some(), it.credits))
+            })
+            .filter(|(addressed, _)| takes_signups || !addressed)
             .ok_or_else(gone)?;
         // The address its link went to, if it went to one: the one the code carries, which its
         // hash covers.
@@ -290,6 +296,7 @@ where
             hash,
             email,
             emailed,
+            credits,
         });
         Ok(crate::browsers::options(ceremony))
     }
@@ -324,10 +331,12 @@ where
         // Checked, then the link spent, and only then is anything of the account kept: a link
         // spent meanwhile leaves nothing behind.
         let checked = browsers.checked(&signing.ceremony, credential, name)?;
-        self.spend(&signing).await?;
         if signing.emailed == Emailed::Recovery {
+            self.spend(&signing, None).await?;
             return self.recovered(&signing, &browsers, checked).await;
         }
+        let org = self.new_org_id()?;
+        self.spend(&signing, Some(org)).await?;
         // The address is this account's from now on, unless another took it meanwhile.
         if let Some(email) = &signing.email
             && accounts.claim_email(email, signing.person).await? != signing.person
@@ -345,14 +354,17 @@ where
                 ..Profile::default()
             },
         };
-        self.make_organization(&joined, OrganizationKind::Personal, None)
+        self.make_organization(org, &joined, OrganizationKind::Personal, None)
             .await?;
+        if let Some(amount) = signing.credits {
+            self.start_credits(org, amount, &signing.hash).await;
+        }
         Ok(self.signed_in(session, &browsers))
     }
 
-    /// Spends the link that `signing` was begun with, once across servers: refused when it
-    /// opens nothing any more.
-    async fn spend(&self, signing: &Signing) -> Result<(), ApiError> {
+    /// Spends the link that `signing` was begun with, once across servers, naming the
+    /// organization it makes: refused when it opens nothing any more.
+    async fn spend(&self, signing: &Signing, organization: Option<OrgId>) -> Result<(), ApiError> {
         let now = self.inner.harness.clock().now();
         self.record_signups(|signups| {
             signups
@@ -360,6 +372,7 @@ where
                 .ok_or_else(|| self.gone(signing.emailed))?;
             Ok(Some(SignupFinished {
                 hash: signing.hash.clone(),
+                organization: organization.map(OrgId::as_uuid),
             }))
         })
         .await
@@ -383,6 +396,32 @@ where
         let now = self.inner.harness.clock().now();
         self.signups(|held| held.drop_expired(now));
         Ok(())
+    }
+
+    /// The organizations sign-ups made, the people's personal spaces, the latest `most`, newest
+    /// first: read from the start of the sign-ups ledger, and kept by nothing after.
+    pub(crate) async fn signed_up(&self, most: usize) -> Result<Vec<OrgId>, ApiError> {
+        // Glave's own: the server's own organization's sign-ups ledger.
+        let scope = Scope::of_organization(self.inner.own);
+        let log = self.inner.harness.log();
+        let mut next = 0;
+        let mut made = VecDeque::new();
+        catch_up(log, &scope, Reserved::Signups.id(), None, |page| {
+            for raw in page {
+                let Some((_, Body::SignupFinished(finished))) = in_order(&mut next, raw) else {
+                    continue;
+                };
+                let Some(org) = finished.organization else {
+                    continue;
+                };
+                if made.len() >= most {
+                    made.pop_front();
+                }
+                made.push_back(OrgId::from_uuid(org));
+            }
+        })
+        .await?;
+        Ok(made.into_iter().rev().collect())
     }
 
     /// Appends what `make` makes of the sign-ups as they are then, after anything others wrote
