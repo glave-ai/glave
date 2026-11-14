@@ -71,3 +71,8 @@ header {
   color: var(--glz-color-danger);
   text-align: center;
 }
+
+// No ways to sign in here (glave on this computer signs the browser in): no room for them.
+.actions:empty {
+  display: none;
+}
