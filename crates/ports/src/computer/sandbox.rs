@@ -159,7 +159,7 @@ impl SandboxNetwork {
 
     /// Off when `taken`, else as it is: the network taken away keeps no way out.
     #[must_use]
-    pub fn unless(self, taken: bool) -> Self {
+    pub(crate) fn unless(self, taken: bool) -> Self {
         if taken { Self::Off } else { self }
     }
 }
