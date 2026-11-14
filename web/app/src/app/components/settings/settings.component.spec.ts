@@ -4,6 +4,7 @@ import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { keyBytes } from '../../lib/push';
+import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS } from '../../testing/fixtures';
@@ -16,6 +17,7 @@ const SERVER = {
   protocols: ['2026-10'],
   permissions: 'auto',
   modes: ['auto', 'ask', 'full-access'],
+  connects: { models: true, git_hosts: true, connections: true },
 } as const;
 import { SettingsComponent } from './settings.component';
 
@@ -67,6 +69,28 @@ describe('SettingsComponent', () => {
     expect(fake.paramsOf('signin/end')).toEqual([{}]);
     expect(TestBed.inject(SessionService).signedIn()).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('offers only what the server says the person may connect', async () => {
+    const fake = new FakeSession()
+      .answer('server/discover', { ...SERVER, connects: undefined })
+      .answer('provider/list', { providers: [] })
+      .answer('credential/list', { credentials: [] });
+    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="settings-add-account"]')).toBeNull();
+    expect(root.querySelector('[data-testid="settings-connections"]')).toBeNull();
+    expect(root.querySelector('[data-testid="settings-memory"]')).not.toBeNull();
+
+    fake.answer('server/discover', { ...SERVER, connects: { git_hosts: true } });
+    await TestBed.inject(ServerService).reread();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="settings-add-account"]')).toBeNull();
+    expect(root.querySelector('[data-testid="settings-connections"]')).not.toBeNull();
+    await expectAccessible(root);
   });
 
   it('stops this browser’s notifications before it signs out, so no one after sees them', async () => {

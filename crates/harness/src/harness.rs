@@ -26,7 +26,7 @@ use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
 use crate::compaction::Measured;
 use crate::defaults::Defaults;
-use crate::homes::{Homes, ShortOfRoom};
+use crate::homes::{CredentialsOf, Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
@@ -101,6 +101,9 @@ pub struct Harness<P, L, B, A> {
     /// Each person's own computer, where their threads work; none by default, so every thread
     /// works on the harness's computer.
     pub(crate) homes: Option<Arc<dyn Homes>>,
+    /// Where the commands on each person's own computer ask for credentials: theirs. None by
+    /// default, so only the harness's person's computer gets the workspace's.
+    pub(crate) credentials_of: Option<CredentialsOf>,
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
@@ -322,6 +325,7 @@ where
             settings,
             learned_windows: LearnedWindows::default(),
             homes: None,
+            credentials_of: None,
             memory: None,
             project_folders: None,
             lingering: Mutex::default(),
@@ -372,6 +376,14 @@ where
         let sandbox = homes.as_ref().and_then(|homes| homes.sandbox());
         self.change_defaults(|defaults| defaults.home_sandbox = sandbox);
         self.homes = homes;
+        self
+    }
+
+    /// Lets the commands on each person's own computer ask `credentials_of` for that person's
+    /// credentials, at each use.
+    #[must_use]
+    pub fn with_credentials_of(mut self, credentials_of: Option<CredentialsOf>) -> Self {
+        self.credentials_of = credentials_of;
         self
     }
 

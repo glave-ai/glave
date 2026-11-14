@@ -82,7 +82,15 @@ export class SettingsComponent {
   private readonly session = inject(SessionService);
   private readonly push = inject(PushService);
   private readonly router = inject(Router);
-  private readonly info = inject(ServerService).info;
+  private readonly about = inject(ServerService);
+  private readonly info = this.about.info;
+  /** Whether the person may connect model accounts here, as the server says. */
+  protected readonly connectsModels = computed(() => this.about.connects().models ?? false);
+  /** Whether the person may connect anything that shows on the Connections page here. */
+  protected readonly connects = computed(() => {
+    const connects = this.about.connects();
+    return (connects.git_hosts ?? false) || (connects.connections ?? false);
+  });
   private readonly providers = inject(ProvidersService);
   private readonly models = inject(ModelsService);
   private readonly locale = inject(LOCALE_ID);
@@ -145,7 +153,7 @@ export class SettingsComponent {
   });
 
   constructor() {
-    void inject(ServerService).load();
+    void this.about.load();
     void this.providers.load();
     void this.hosts.load();
     void this.connections.load();

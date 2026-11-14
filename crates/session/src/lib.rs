@@ -89,7 +89,7 @@ pub use approvals::Answering;
 pub use awake::{KeepAwake, Unawake};
 pub use connections::{Connecting, Connections, OfferedAccount, Returned, Searching};
 pub use connectors::{Catalog, CatalogError, Connector};
-pub use credentials::{GitHosts, NewCredential};
+pub use credentials::{GitHosts, NewCredential, PeoplesGitHosts};
 pub use dispatch::Answered;
 pub use filters::PersonFilters;
 pub use glave_identity::signin;

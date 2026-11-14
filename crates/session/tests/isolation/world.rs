@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 
 use super::table::Kind;
 use crate::connections::InMemory;
-use crate::credentials::Hosts;
+use crate::credentials::People;
 use crate::providers::Accounts;
 use crate::support::*;
 
@@ -179,7 +179,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.push = Some(Arc::new(pushing));
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
-        setup.hosts = Some(Arc::new(Hosts::default()));
+        setup.hosts = Some(Arc::new(People::default()));
         setup.connections = Some(Arc::new(InMemory::default()));
         setup.secrets = Some(KeepSecrets::new(Arc::clone(&parts.eraser), personal, local));
     }

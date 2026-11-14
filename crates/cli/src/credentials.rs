@@ -7,6 +7,7 @@ mod abilities;
 mod asked;
 mod check;
 mod device;
+mod people;
 pub(crate) mod renewing;
 
 use std::fmt::Write as _;
@@ -23,6 +24,7 @@ use crate::accounts::{Ledger, random};
 use crate::data::Data;
 use check::{Checked, Http};
 use device::{Flows, Github, Grant, Polled};
+pub(crate) use people::PeoplesHosts;
 use renewing::Renewals;
 
 /// The longest token or user name taken, in bytes.
@@ -41,20 +43,28 @@ pub(crate) struct Hosts {
 }
 
 impl Hosts {
-    /// The git hosts of `person` in `store`, when they may connect them here: everywhere but
-    /// a server people sign in to with OIDC (`others_sign_in`), where an organization will
-    /// grant them instead.
+    /// The git hosts of `person` in `store`, and everyone else's beside them, when people may
+    /// connect them here: everywhere but a server people sign in to with OIDC
+    /// (`others_sign_in`), where an organization will grant them instead.
     pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         github: Option<&GithubFile>,
         others_sign_in: bool,
-    ) -> anyhow::Result<Option<Arc<Self>>> {
+    ) -> anyhow::Result<Option<(Arc<Self>, PeoplesHosts)>> {
         if others_sign_in {
             return Ok(None);
         }
         let ledger = crate::accounts::open(store, person).await?;
-        Self::open(ledger, github).await.map(Some)
+        let own = Self::open(ledger, github).await?;
+        let org = store.org().await?;
+        let people = PeoplesHosts::new(
+            store.clone(),
+            github.cloned(),
+            (org, person),
+            Arc::clone(&own),
+        );
+        Ok(Some((own, people)))
     }
 
     /// The git hosts `ledger` keeps, signing in to GitHub through `github`'s app when set, else

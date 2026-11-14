@@ -93,7 +93,7 @@ where
 {
     /// The host's accounts, for the person on this computer only: elsewhere an organization
     /// sets up its models itself.
-    fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
+    pub(crate) fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
         let providers = self.inner.providers.as_deref();
         let elsewhere = Sentence::ModelAccountsOnItsComputer;
         theirs(caller, providers, Sentence::ModelsNotHere, elsewhere)

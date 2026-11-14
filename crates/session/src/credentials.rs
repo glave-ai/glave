@@ -1,13 +1,16 @@
-//! Git hosts (`specs/session.md`, "Git hosts"): the person on this computer connects their
+//! Git hosts (`specs/session.md`, "Git hosts"): a person whose computer it is connects their
 //! GitHub, or any git host with a token, and git and the host's own tool sign in with it from
-//! then on, asking for it at each use. The host keeps them sealed and hands them out; the
-//! server decides who may ask.
+//! then on, asking for it at each use. The host keeps each person's sealed in their own
+//! accounts ledger and hands them out, only ever to that person's commands; the server decides
+//! who may ask.
 
-use glave_event::{CredentialId, Secret};
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
+use std::sync::Arc;
 
-use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply};
-use crate::providers::theirs;
+use glave_event::{CredentialId, PrincipalId, Secret};
+use glave_ports::computer::GitCredentials;
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, OrgId};
+
+use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -17,6 +20,26 @@ pub struct NewCredential {
     pub url: String,
     pub token: Secret,
     pub username: Option<String>,
+}
+
+/// What keeps each person's git hosts apart, each in their own accounts ledger: the host.
+pub trait PeoplesGitHosts: Send + Sync {
+    /// The git hosts of `person` in `org`: theirs alone.
+    fn of(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> BoxFuture<'_, Result<Arc<dyn GitHosts>, ApiError>>;
+
+    /// What the commands of `person` in `org` ask for credentials, at each use: their git hosts
+    /// alone, read when asked.
+    fn credentials(&self, org: OrgId, person: PrincipalId) -> Arc<dyn GitCredentials>;
+}
+
+/// What the harness asks for the credentials of each person's own computer: theirs, from
+/// `people`.
+pub(crate) fn credentials_of(people: Arc<dyn PeoplesGitHosts>) -> glave_harness::CredentialsOf {
+    Arc::new(move |org, person| people.credentials(org, person))
 }
 
 /// What keeps a person's git hosts: the host, which also hands their credentials to commands.
@@ -51,11 +74,33 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The host's git hosts, for the person on this computer only.
-    fn git_hosts_for(&self, caller: &Caller) -> Result<&dyn GitHosts, ApiError> {
-        let hosts = self.inner.git_hosts.as_deref();
-        let elsewhere = Sentence::AccountsOnItsComputer;
-        theirs(caller, hosts, Sentence::AccountsNotHere, elsewhere)
+    /// Whether `caller` may connect git hosts here: where the host keeps them, for the person
+    /// whose computer their threads work on (`specs/sandbox.md`, "Whose computer"): the
+    /// server's own person, or anyone where people have computers of their own.
+    pub(crate) fn connects_git_hosts(
+        &self,
+        caller: &Caller,
+    ) -> Result<&dyn PeoplesGitHosts, ApiError> {
+        let people = self
+            .inner
+            .git_hosts
+            .as_deref()
+            .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::AccountsNotHere))?;
+        if !self.computer_is_theirs(caller.person) {
+            return Err(ApiError::new(
+                code::NOT_ALLOWED,
+                Sentence::AccountsOnItsComputer,
+            ));
+        }
+        Ok(people)
+    }
+
+    /// The caller's own git hosts, in the organization the request works in.
+    async fn git_hosts_for(&self, caller: &Caller) -> Result<Arc<dyn GitHosts>, ApiError> {
+        let people = self.connects_git_hosts(caller)?;
+        people
+            .of(self.org_of(caller), self.person_of(caller)?)
+            .await
     }
 
     /// Answers `credential/connect`.
@@ -64,13 +109,13 @@ where
         caller: &Caller,
         new: NewCredential,
     ) -> Result<Reply, ApiError> {
-        let credential = self.git_hosts_for(caller)?.connect(new).await?;
+        let credential = self.git_hosts_for(caller).await?.connect(new).await?;
         Ok(Reply::Credential { credential })
     }
 
     /// Answers `credential/list`.
     pub(crate) async fn list_credentials(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let hosts = self.git_hosts_for(caller)?;
+        let hosts = self.git_hosts_for(caller).await?;
         Ok(Reply::Credentials {
             credentials: hosts.list().await?,
             install: hosts.install(),
@@ -84,13 +129,13 @@ where
         caller: &Caller,
         credential: CredentialId,
     ) -> Result<Reply, ApiError> {
-        self.git_hosts_for(caller)?.remove(credential).await?;
+        self.git_hosts_for(caller).await?.remove(credential).await?;
         Ok(Reply::Done {})
     }
 
     /// Answers `credential/device/start`.
     pub(crate) async fn start_device(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let device = self.git_hosts_for(caller)?.start_device().await?;
+        let device = self.git_hosts_for(caller).await?.start_device().await?;
         Ok(Reply::Device { device })
     }
 
@@ -100,7 +145,7 @@ where
         caller: &Caller,
         flow: String,
     ) -> Result<Reply, ApiError> {
-        let hosts = self.git_hosts_for(caller)?;
+        let hosts = self.git_hosts_for(caller).await?;
         Ok(match hosts.poll_device(flow.clone()).await? {
             Some(credential) => Reply::Credential { credential },
             None => Reply::Waiting { flow },

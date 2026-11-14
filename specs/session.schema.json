@@ -926,6 +926,24 @@
         }
       ]
     },
+    "Connects": {
+      "description": "What a caller may connect of their own on a server: each where the server keeps it and it\nis theirs to connect, so a client never offers what would only be refused.",
+      "properties": {
+        "connections": {
+          "description": "Sign-ins to remote servers and glave's connectors (`connection/start`,\n`connector/connect`).",
+          "type": "boolean"
+        },
+        "git_hosts": {
+          "description": "Git hosts, GitHub's among them (`credential/connect`).",
+          "type": "boolean"
+        },
+        "models": {
+          "description": "Model accounts (`provider/connect`).",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "ContextUse": {
       "description": "How full a thread's context is: what its conversation last sent and got back, of the window\ncompaction aims for.",
       "properties": {
@@ -3243,6 +3261,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "connects": {
+          "$ref": "#/$defs/Connects",
+          "description": "What the caller may connect here, so a client offers only that; absent where they may\nconnect none of it."
+        },
         "email": {
           "description": "Whether it sends email (`[email]`) with links to its public origin, as an invite's: so\na client asks for an address only where one is used.",
           "type": "boolean"

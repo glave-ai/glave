@@ -30,7 +30,7 @@ use crate::approvals::{Answering, Approvals};
 use crate::awake::{Awake, KeepAwake};
 use crate::choice::Choice;
 use crate::connections::Connections;
-use crate::credentials::GitHosts;
+use crate::credentials::{PeoplesGitHosts, credentials_of};
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
@@ -93,9 +93,10 @@ pub struct Wiring<P, L, B> {
     /// What reads the host's own settings again at the start of each turn, which the models
     /// and the person's own tools follow; none where they are read only at the start.
     pub rereads: Option<Arc<dyn Rereads>>,
-    /// The git hosts the person on this computer connects; none where whoever runs the
-    /// server sets up what its threads sign in to.
-    pub git_hosts: Option<Arc<dyn GitHosts>>,
+    /// The git hosts each person whose computer it is connects, each person's their own and
+    /// asked for by their commands alone; none where whoever runs the server sets up what its
+    /// threads sign in to.
+    pub git_hosts: Option<Arc<dyn PeoplesGitHosts>>,
     /// The connections the person on this computer signs in to; none where whoever runs the server
     /// sets up what its threads sign in to.
     pub connections: Option<Arc<dyn Connections>>,
@@ -251,8 +252,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) rereads: Option<Arc<dyn Rereads>>,
     /// Held while model accounts or the host's settings change and the models follow.
     pub(crate) changing_models: tokio::sync::Mutex<()>,
-    /// Where git hosts are kept, when the person here may connect them.
-    pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
+    /// Where each person's git hosts are kept, where people may connect them.
+    pub(crate) git_hosts: Option<Arc<dyn PeoplesGitHosts>>,
     /// Where sign-ins to connections are kept, when the person here may sign in.
     pub(crate) connections: Option<Arc<dyn Connections>>,
     /// Once it listens over HTTP, where a browser on this computer reaches it.
@@ -362,7 +363,8 @@ where
             .with_hooks(wiring.hooks)
             .with_memory_if(wiring.memory)
             .with_project_folders(wiring.project_folders)
-            .with_homes(wiring.homes.clone());
+            .with_homes(wiring.homes.clone())
+            .with_credentials_of(wiring.git_hosts.clone().map(credentials_of));
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {

@@ -97,6 +97,33 @@ pub struct ServerInfo {
     /// offers that only where it does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub push: bool,
+    /// What the caller may connect here, so a client offers only that; absent where they may
+    /// connect none of it.
+    #[serde(default, skip_serializing_if = "Connects::is_none")]
+    pub connects: Connects,
+}
+
+/// What a caller may connect of their own on a server: each where the server keeps it and it
+/// is theirs to connect, so a client never offers what would only be refused.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Connects {
+    /// Model accounts (`provider/connect`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub models: bool,
+    /// Git hosts, GitHub's among them (`credential/connect`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub git_hosts: bool,
+    /// Sign-ins to remote servers and glave's connectors (`connection/start`,
+    /// `connector/connect`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub connections: bool,
+}
+
+impl Connects {
+    /// Whether it says the caller may connect nothing.
+    pub(crate) fn is_none(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never

@@ -1,18 +1,23 @@
 //! Git hosts through the session API, over every transport: connecting one checks its token
 //! and keeps it, never answering it back; signing in to GitHub in the browser gives a code and
-//! then the host once approved; removing one destroys it. Only the person on this computer may
-//! do this: a caller signed in with OIDC is refused, and a server whose accounts someone else
-//! sets up refuses everyone.
+//! then the host once approved; removing one destroys it. Only the person whose computer it is
+//! may do this: the person on this computer, or anyone where people have computers of their
+//! own, each their own (`people.rs`); anyone else signed in is refused, and a server whose
+//! accounts someone else sets up refuses everyone.
 
+mod people;
+
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{CredentialId, Forge, Secret};
+use glave_event::{CredentialId, Forge, PrincipalId, Secret};
+use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 use glave_ports::testing::any_secret;
-use glave_ports::{BoxFuture, Clock as _, SystemClock};
+use glave_ports::{BoxFuture, Clock as _, OrgId, SystemClock};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, GitHosts, NewCredential};
+use glave_session::{Answering, GitHosts, NewCredential, PeoplesGitHosts};
 use serde_json::Value;
 
 use crate::conformance::{Client, InProcess, OverHttp, OverJsonRpc};
@@ -23,20 +28,83 @@ use crate::support::*;
 /// The token the fake host refuses; it takes any other.
 const BAD: &str = "a-token-it-refuses";
 
+/// Each person's hosts, kept apart by organization and person, each making ids of its own.
+#[derive(Default)]
+pub(crate) struct People {
+    hosts: Mutex<BTreeMap<(OrgId, PrincipalId), Arc<Hosts>>>,
+}
+
+impl People {
+    /// The hosts of `person` in `org`, made the first time.
+    fn hosts_of(&self, org: OrgId, person: PrincipalId) -> Arc<Hosts> {
+        let mut hosts = self.hosts.lock().unwrap();
+        let seed = u8::try_from(hosts.len()).unwrap() + 1;
+        let kept = hosts.entry((org, person)).or_insert_with(|| {
+            Arc::new(Hosts {
+                seed,
+                ..Hosts::default()
+            })
+        });
+        Arc::clone(kept)
+    }
+}
+
+impl PeoplesGitHosts for People {
+    fn of(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> BoxFuture<'_, Result<Arc<dyn GitHosts>, ApiError>> {
+        let hosts = self.hosts_of(org, person);
+        Box::pin(async move { Ok(hosts as Arc<dyn GitHosts>) })
+    }
+
+    fn credentials(&self, org: OrgId, person: PrincipalId) -> Arc<dyn GitCredentials> {
+        self.hosts_of(org, person)
+    }
+}
+
 /// A host that keeps accounts in memory; its sign-in in the browser is approved on the
 /// second poll.
 #[derive(Default)]
 pub(crate) struct Hosts {
+    /// What sets its ids apart from another person's.
+    seed: u8,
     kept: Mutex<Vec<CredentialInfo>>,
     polls: Mutex<u32>,
+}
+
+impl GitCredentials for Hosts {
+    fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
+        let kept = self.kept.lock().unwrap();
+        let hosts = kept
+            .iter()
+            .filter_map(|info| CredentialHost::named(&info.url, info.forge))
+            .collect();
+        Box::pin(std::future::ready(hosts))
+    }
+
+    fn request<'a>(&'a self, ask: &'a CredentialAsk) -> BoxFuture<'a, Option<GitCredential>> {
+        let kept = self.kept.lock().unwrap();
+        let given = kept
+            .iter()
+            .filter_map(|info| CredentialHost::named(&info.url, info.forge))
+            .find(|host| host.is_for(ask))
+            .and_then(|_| {
+                GitCredential::new("x-access-token", format!("token-{}", self.seed)).ok()
+            });
+        Box::pin(std::future::ready(given))
+    }
 }
 
 impl Hosts {
     fn keep(&self, url: String, login: Option<String>) -> CredentialInfo {
         let mut kept = self.kept.lock().unwrap();
         let n = u8::try_from(kept.len()).unwrap();
+        let mut bytes = [n + 1; 10];
+        bytes[0] = self.seed;
         let info = CredentialInfo {
-            id: CredentialId::new(SystemClock.now(), [n + 1; 10]).unwrap(),
+            id: CredentialId::new(SystemClock.now(), bytes).unwrap(),
             forge: Forge::Github,
             url,
             login,
@@ -112,7 +180,7 @@ impl GitHosts for Hosts {
 /// A server whose git hosts the fake host keeps.
 async fn fresh(dir: &Path) -> Tested {
     let mut setup = Setup::new(Vec::new());
-    setup.hosts = Some(Arc::new(Hosts::default()));
+    setup.hosts = Some(Arc::new(People::default()));
     setup.build(dir).await.0
 }
 

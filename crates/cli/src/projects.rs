@@ -80,7 +80,15 @@ async fn keys(folder: &Path) -> (PathBuf, Vec<FolderKey>) {
 
 /// The scope of `person`'s personal project, made the first time.
 pub(crate) async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
-    let org = org(store).await?;
+    personal_in(store, org(store).await?, person).await
+}
+
+/// The scope of `person`'s personal project in `org`, made the first time.
+pub(crate) async fn personal_in(
+    store: &Data,
+    org: OrgId,
+    person: PrincipalId,
+) -> anyhow::Result<Scope> {
     let new = new_project(
         ProjectKind::Personal,
         glave_session::PERSONAL_NAME.to_owned(),

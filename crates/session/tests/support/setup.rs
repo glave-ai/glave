@@ -26,8 +26,8 @@ use glave_ports::{
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
-    Answering, Connections, GitHosts, KeepAwake, PersonFilters, ProjectTrust, Providers, Secrets,
-    Server, TaskLimits, Wiring, Worktrees,
+    Answering, Connections, KeepAwake, PeoplesGitHosts, PersonFilters, ProjectTrust, Providers,
+    Secrets, Server, TaskLimits, Wiring, Worktrees,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -129,8 +129,8 @@ pub(crate) struct Setup {
     pub worktrees: Option<PathBuf>,
     /// Where model accounts are kept; with none, connecting one is refused.
     pub providers: Option<Arc<dyn Providers>>,
-    /// Where accounts with hosts are kept; with none, connecting one is refused.
-    pub hosts: Option<Arc<dyn GitHosts>>,
+    /// Where each person's git hosts are kept; with none, connecting one is refused.
+    pub hosts: Option<Arc<dyn PeoplesGitHosts>>,
     /// Where sign-ins to connections are kept; with none, signing in is refused.
     pub connections: Option<Arc<dyn Connections>>,
     /// Where new projects' folders are made; with none, making one is refused.

@@ -1,5 +1,5 @@
 import { Service, computed, inject, signal } from '@angular/core';
-import type { Exists, Permissions, ServerInfo } from '@glave/client';
+import type { Connects, Exists, Permissions, ServerInfo } from '@glave/client';
 
 import { SessionService } from './session.service';
 
@@ -14,6 +14,8 @@ import { SessionService } from './session.service';
  */
 /** What a server that has said nothing beyond a person's own has: none of it. */
 const NONE: Exists = { organization: false };
+/** What a person may connect where the server has not said they may connect anything. */
+const NOTHING: Connects = {};
 
 @Service()
 export class ServerService {
@@ -61,6 +63,8 @@ export class ServerService {
   readonly createToInvite = computed(
     () => (this.info()?.personal ?? false) && this.organizations(),
   );
+  /** What the person may connect here, as the server says: nothing until it has said. */
+  readonly connects = computed<Connects>(() => this.info()?.connects ?? NOTHING);
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */
