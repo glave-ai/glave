@@ -1,7 +1,7 @@
 //! Sign-up links whoever runs the server makes (`specs/model.md`, "Identity"): from its
 //! computer, while it takes no sign-ups and sends no email, a link to hand to one person, which
-//! makes their account, named as they give it and with no address, and an organization of
-//! their own with them its Owner, as signing up does. It opens once, for a week, on the servers
+//! makes their account, named as they give it and with no address, and their personal space,
+//! an organization with them its Owner that takes no invites, as signing up does. It opens once, for a week, on the servers
 //! of the store it was made in alone; no one else may make one, and a server that keeps no
 //! glave accounts at a public origin says it makes none.
 
@@ -92,6 +92,27 @@ fn a_link_signs_someone_up_to_their_own_organization_with_no_sign_up_or_email() 
 
         // Once.
         assert_eq!(open(&served, code).await, json!(code::NO_INVITE));
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_link_makes_a_personal_space_which_takes_no_invites() {
+    block_on!(async {
+        let dir = folder("signup-links-personal");
+        let (served, _) = serve_mailless(&dir).await;
+        let code = code_of(&link_for(&mut operator(&served)).await);
+        let opened = open(&served, code).await;
+        let mut ada = elsewhere(&served, opened["session"].as_str().map(str::to_owned));
+        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert_eq!(told["personal"], json!(true), "{told}");
+        assert!(told.get("invites").is_none(), "{told}");
+        assert_eq!(told["organizations"], json!(true), "{told}");
+        let invite = Request::InviteCreate {
+            role: glave_event::OrgRole::Member,
+            email: None,
+        };
+        assert_eq!(asked(&mut ada, &invite).await, json!(code::NOT_ALLOWED));
         served.close().await;
     });
 }

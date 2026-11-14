@@ -162,6 +162,13 @@ sentences! {
     InviteSignIn = "invite-sign-in"
         "sign in through your organization first, then open the invite link again",
     TooManyInvites = "too-many-invites" "too many invites are waiting: revoke some first",
+    InvitesNeedOrganization = "invites-need-organization"
+        "to invite people, create an organization",
+    NoNewOrganizations = "no-new-organizations"
+        "only someone signed in with a glave account can create an organization here",
+    OrganizationUnnamed = "organization-unnamed" "give the organization a name",
+    TooManyOrganizations { most: usize } = "too-many-organizations"
+        "you've created { $most } organizations, the most anyone can",
 
     // Threads and turns.
     NoThread { thread: String } = "no-thread" "no chat { $thread } in this project",

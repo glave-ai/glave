@@ -84,6 +84,15 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
+    /// Whether the caller works in their personal space: the one signing up made them, never
+    /// shared, so no one is invited to it (`invites` is false). A client offers to create an
+    /// organization instead, where `organizations` says they may.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub personal: bool,
+    /// Whether the caller may create an organization (`organization/create`): they signed in
+    /// with a glave account, whether or not the server takes sign-ups.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub organizations: bool,
     /// Whether it tells people's browsers when glave needs them (`push/get`), so a client
     /// offers that only where it does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -563,6 +572,9 @@ pub enum Reply {
     Organizations {
         organizations: Vec<OrganizationInfo>,
     },
+    /// An organization the caller belongs to, as it is to them.
+    #[schemars(title = "Organization")]
+    Organization { organization: OrganizationInfo },
     /// The organization's credits, as much as the caller may see.
     #[schemars(title = "Credits")]
     Credits { credits: CreditsInfo },

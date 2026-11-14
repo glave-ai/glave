@@ -52,6 +52,15 @@ export class ServerService {
    * shown yet: once one is, Admin is where they invite.
    */
   readonly invitesAlone = computed(() => (this.info()?.invites ?? false) && !this.admin());
+  /** Whether the person may create an organization here, as the server says. */
+  readonly organizations = computed(() => this.info()?.organizations ?? false);
+  /**
+   * Whether the person works in their personal space, which takes no invites, where they may
+   * create an organization: so the menu says to create one to invite people.
+   */
+  readonly createToInvite = computed(
+    () => (this.info()?.personal ?? false) && this.organizations(),
+  );
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

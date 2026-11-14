@@ -43,6 +43,24 @@ fn reply(brand: &BrandSet) -> Reply {
     }
 }
 
+/// An organization's name as it is kept: trimmed, none when that leaves nothing; refused past
+/// [`LONGEST_NAME`] characters.
+pub(crate) fn brand_name(name: Option<String>) -> Result<Option<String>, ApiError> {
+    let name = name
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty());
+    if name
+        .as_ref()
+        .is_some_and(|name| name.chars().count() > LONGEST_NAME)
+    {
+        return Err(ApiError::new(
+            code::INVALID_PARAMS,
+            Sentence::BrandName { most: LONGEST_NAME },
+        ));
+    }
+    Ok(name)
+}
+
 /// A brand that says nothing: glave's plain look, and anyone's own choice.
 const fn none() -> BrandSet {
     BrandSet {
@@ -99,18 +117,7 @@ where
         locked: bool,
     ) -> Result<Reply, ApiError> {
         self.permitted(caller, Permit::Brand).await?;
-        let name = name
-            .map(|name| name.trim().to_owned())
-            .filter(|name| !name.is_empty());
-        if name
-            .as_ref()
-            .is_some_and(|name| name.chars().count() > LONGEST_NAME)
-        {
-            return Err(ApiError::new(
-                code::INVALID_PARAMS,
-                Sentence::BrandName { most: LONGEST_NAME },
-            ));
-        }
+        let name = brand_name(name)?;
         let org = self.org_of(caller);
         let scope = Scope::of_organization(org);
         let before = self.brand_of(org).await?.and_then(|brand| brand.logo);

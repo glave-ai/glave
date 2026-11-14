@@ -12,7 +12,7 @@ use glave_session::Answering;
 use glave_session::protocol::{Grouping, Notification, Request, Setting};
 
 use crate::list_watching::{bea, hear, long_ago};
-use crate::signups::{serve, signed_up};
+use crate::signups::{organized, serve, signed_up};
 use crate::support::following::*;
 use crate::support::web::{Served, Web, asked, elsewhere};
 use crate::support::*;
@@ -114,11 +114,11 @@ fn a_client_back_from_away_hears_every_setting_may_have_changed() {
 /// Ada, signed up, and the session and ids of her two organizations: the first her own, the
 /// second one she joined by Carol's invite.
 async fn ada_in_two_organizations(served: &Served, outbox: &Outbox) -> (String, String, String) {
-    let mut carol = signed_up(served, outbox, "carol@example.com").await;
+    let mut carol = organized(served, outbox, "carol@example.com", "Carol's").await;
     ada_invited_by(&mut carol, served, outbox).await
 }
 
-/// [`ada_in_two_organizations`], the second the organization of `carol`, its admin.
+/// [`ada_in_two_organizations`], the second the organization `carol` works in, its admin.
 async fn ada_invited_by(
     carol: &mut Web,
     served: &Served,
@@ -252,10 +252,19 @@ fn a_brand_changed_is_heard_by_everyone_in_its_organization_and_nobody_else() {
         let dir = folder("list-brand-organization");
         let outbox = Arc::new(Outbox::default());
         let served = serve(&dir, true, &outbox).await;
-        let mut carol = signed_up(&served, &outbox, "carol@example.com").await;
+        let mut carol = organized(&served, &outbox, "carol@example.com", "Carol's").await;
         let (session, own, carols) = ada_invited_by(&mut carol, &served, &outbox).await;
         let dave = signed_up(&served, &outbox, "dave@example.com").await;
-        let of = |person: &Web| elsewhere(&served, person.token.clone());
+        // Carol in the organization she made, Dave in his own.
+        let carols_token = carol.token.clone();
+        let of = |person: &Web| {
+            let web = elsewhere(&served, person.token.clone());
+            if person.token == carols_token {
+                web.working_in(&carols)
+            } else {
+                web
+            }
+        };
         let ada = |org: &str| working_in(&served, &session, org);
         let mut admin = watching(of(&carol)).await;
         let mut member = watching(ada(&carols)).await;

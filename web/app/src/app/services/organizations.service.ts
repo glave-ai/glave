@@ -1,6 +1,7 @@
 import { Service, computed, effect, inject, signal } from '@angular/core';
-import type { OrganizationInfo } from '@glave/client';
+import { ApiError, type OrganizationInfo } from '@glave/client';
 
+import { unreached } from '../lib/text';
 import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
@@ -59,6 +60,20 @@ export class OrganizationsService {
   /** Works in the organization `organization` from now on. */
   choose(organization: OrganizationInfo): void {
     this.session.chooseOrganization(organization.id);
+  }
+
+  /**
+   * Creates an organization named `name`, the person its Owner, then works in it: `null`; or,
+   * refused, the server's sentence why.
+   */
+  async create(name: string): Promise<string | null> {
+    try {
+      const { organization } = await this.session.call('organization/create', { name });
+      this.choose(organization);
+      return null;
+    } catch (error: unknown) {
+      return error instanceof ApiError ? error.message : unreached();
+    }
   }
 
   private read(): Promise<void> {

@@ -36,6 +36,7 @@ use tokio::sync::mpsc;
 /// The folder in the temporary folder that holds each run's own.
 const RUNS: &str = "glave-try-org";
 
+mod mailbox;
 mod model;
 mod picture;
 mod router;
@@ -45,6 +46,18 @@ mod seed;
 /// port it serves, and someone new comes in only by an invite, as on Glave Cloud at first:
 /// `signup = false`, which is also what a server with no `signup` does.
 const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\nsignup = false\n";
+
+/// With `--signup`, glave's settings: as [`SETTINGS`], and anyone may sign up, sent a link
+/// through the stand-in mail server (`mailbox.rs`) from [`FROM`].
+const SIGNUP: &str = "[serve]\norigin = \"http://localhost\"\nsignup = true\n";
+
+/// Who glave's email comes from, with `--signup`.
+const FROM: &str = "glave <glave@try-org.localhost>";
+
+/// With `--signup`, how to try it.
+const SIGNING_UP: &str = "xtask: anyone may sign up: in a private window, sign up at the \
+     localhost address glave prints and open the link shown here; alone in their personal \
+     space, the menu says to create an organization to invite people (New organization)";
 
 /// With `--credits`, organizations pay for their models from credits, each limited to a dollar
 /// a month, so both refusals are a few chats away.
@@ -68,11 +81,26 @@ const READY_EVERY: Duration = Duration::from_millis(200);
 const OPENS_WITHIN: Duration = Duration::from_secs(30);
 
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
-    let (credits, floor) = match args {
+    let signup = args.iter().any(|arg| arg == "--signup");
+    let rest: Vec<&str> = args
+        .iter()
+        .map(String::as_str)
+        .filter(|arg| *arg != "--signup")
+        .collect();
+    let (credits, floor) = match rest.as_slice() {
         [] => (false, false),
-        [flag] if flag == "--credits" => (true, false),
-        [credits, floor] if credits == "--credits" && floor == "--floor" => (true, true),
-        _ => return Err("try-org takes --credits or --credits --floor, or nothing".into()),
+        ["--credits"] => (true, false),
+        ["--credits", "--floor"] => (true, true),
+        _ => {
+            return Err(
+                "try-org takes --credits or --credits --floor, and --signup, or nothing".into(),
+            );
+        }
+    };
+    let chosen = Chosen {
+        credits,
+        floor,
+        signup,
     };
     if !std::io::stderr().is_terminal() {
         return Err(
@@ -96,7 +124,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
                 .map_err(std::io::Error::other)
         })
         .map_err(|err| format!("could not hold {}: {err}", folder.display()));
-    let served = lock.and_then(|_held| serve(&root, &folder, credits, floor));
+    let served = lock.and_then(|_held| serve(&root, &folder, &chosen));
     let removed = std::fs::remove_dir_all(&folder)
         .map_err(|err| format!("could not remove {}: {err}", folder.display()));
     // The folder of runs too, once no other run's is in it.
@@ -104,16 +132,38 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     served.and(removed)
 }
 
+/// What the person chose to try beside the organization: credits, a floor among providers,
+/// and sign-ups.
+struct Chosen {
+    credits: bool,
+    floor: bool,
+    signup: bool,
+}
+
+/// glave's settings for what was `chosen`, its mail going to the stand-in at `mailbox`'s port
+/// where it takes sign-ups.
+fn settings(chosen: &Chosen, mailbox: Option<u16>) -> String {
+    let serve = match mailbox {
+        Some(port) => {
+            format!("{SIGNUP}\n[email]\nhost = \"127.0.0.1\"\nport = {port}\nfrom = \"{FROM}\"\n")
+        }
+        None => SETTINGS.to_owned(),
+    };
+    format!(
+        "{serve}{}{}",
+        if chosen.credits { CREDITS } else { "" },
+        if chosen.floor { FLOOR } else { "" }
+    )
+}
+
 /// Serves glave from a folder in `folder` until Ctrl-C, a hang-up, xtask's parent's end or its
-/// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`), its
-/// organizations paying from credits when `credits` says.
-fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), String> {
+/// own: glave's folder, `home`, with the projects glave makes beside it (`home-projects`), as
+/// `chosen` says.
+fn serve(root: &Path, folder: &Path, chosen: &Chosen) -> Result<(), String> {
     let home = folder.join("home");
-    let settings = format!(
-        "{SETTINGS}{}{}",
-        if credits { CREDITS } else { "" },
-        if floor { FLOOR } else { "" }
-    );
+    let mailbox = chosen.signup.then(mailbox::bind).transpose()?;
+    let settings = settings(chosen, mailbox.as_ref().map(|(_, port)| *port));
+    let credits = chosen.credits;
     // Asked of cargo before the runtime starts: asking blocks.
     let glave = crate::web::debug_glave()?;
     let service = serde_json::json!({"mcpServers": {model::SERVICE: {
@@ -127,6 +177,9 @@ fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), S
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
     crate::cmd::with_lifeline(|processes: Processes| async move {
         let model = model::start()?;
+        let _mailbox = mailbox
+            .map(|(taking, _)| mailbox::start(taking))
+            .transpose()?;
         let router = format!("{}{}", model.url, model::OPENROUTER);
         let mut command = Program::new(&glave);
         command
@@ -161,7 +214,10 @@ fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), S
             .await
             .map_err(|err| failed(&err))?;
         say_what_it_is(folder, &home, credits);
-        if floor {
+        if chosen.signup {
+            eprintln!("{SIGNING_UP}");
+        }
+        if chosen.floor {
             eprintln!(
                 "xtask: this server allows only providers based in the US: the model picker \
                  hides the rest, and says why"
@@ -171,6 +227,7 @@ fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), S
             processes: &processes,
             program: glave,
             home: &home,
+            signup: chosen.signup,
         };
         let ended = until_stopped(&mut child, &opening).await;
         child.stop().await;
@@ -264,6 +321,8 @@ struct Opening<'a> {
     processes: &'a Processes,
     program: PathBuf,
     home: &'a Path,
+    /// Whether it takes sign-ups (`--signup`), so is not invite-only.
+    signup: bool,
 }
 
 impl Opening<'_> {
@@ -280,7 +339,9 @@ impl Opening<'_> {
         }
         match seed::seed(self.home).await {
             Ok((invite, signup)) => {
-                say_invite_only(&invite);
+                if !self.signup {
+                    say_invite_only(&invite);
+                }
                 say_signup_link(&signup, self.home);
             }
             Err(err) => eprintln!("xtask: glave runs, but without its sample people: {err}"),

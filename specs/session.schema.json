@@ -3283,6 +3283,10 @@
         "name": {
           "type": "string"
         },
+        "organizations": {
+          "description": "Whether the caller may create an organization (`organization/create`): they signed in\nwith a glave account, whether or not the server takes sign-ups.",
+          "type": "boolean"
+        },
         "origin": {
           "description": "Where people reach the server from elsewhere, if they do: its public origin.",
           "type": [
@@ -3293,6 +3297,10 @@
         "permissions": {
           "$ref": "#/$defs/Permissions",
           "description": "What the agent may do in a thread that, and whose project, chose no mode:\n`--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, \"Modes\")."
+        },
+        "personal": {
+          "description": "Whether the caller works in their personal space: the one signing up made them, never\nshared, so no one is invited to it (`invites` is false). A client offers to create an\norganization instead, where `organizations` says they may.",
+          "type": "boolean"
         },
         "protocols": {
           "description": "The protocol versions spoken.",
@@ -6574,6 +6582,32 @@
         },
         "required": [
           "models"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "organization/create": {
+      "params": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "An organization the caller belongs to, as it is to them.",
+        "properties": {
+          "organization": {
+            "$ref": "#/$defs/OrganizationInfo"
+          }
+        },
+        "required": [
+          "organization"
         ],
         "type": "object"
       },

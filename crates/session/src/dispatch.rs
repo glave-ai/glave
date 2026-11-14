@@ -136,6 +136,10 @@ where
                     Ok(may) => may,
                     Err(failed) => return Answered::Reply(Err(failed)),
                 };
+                let personal = match boxed(|| self.in_personal(caller)).await {
+                    Ok(personal) => personal,
+                    Err(failed) => return Answered::Reply(Err(failed)),
+                };
                 let role = if organization && caller.auth.is_some() {
                     match boxed(|| self.role_of(caller)).await {
                         Ok(role) => Some(role),
@@ -166,6 +170,8 @@ where
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                     invites,
+                    personal,
+                    organizations: self.account_of(caller).is_some(),
                     push: self.inner.push.is_some(),
                 }))
             }
@@ -183,6 +189,9 @@ where
             Request::InviteList {} => boxed(|| self.list_invites(caller)).await,
             Request::InviteRevoke { invite } => boxed(|| self.revoke_invite(caller, invite)).await,
             Request::OrganizationList {} => boxed(|| self.list_organizations(caller)).await,
+            Request::OrganizationCreate { name } => {
+                boxed(|| self.create_organization(caller, &name)).await
+            }
             Request::CreditsGet {} => boxed(|| self.get_credits(caller)).await,
             Request::CreditsAdd {
                 amount,

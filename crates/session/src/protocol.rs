@@ -245,6 +245,10 @@ methods! {
     /// The organizations the caller belongs to, their own first, each as it is to them: what
     /// a client switches between, naming one in `Glave-Organization`.
     "organization/list" => OrganizationList {} -> [Organizations],
+    /// Creates an organization named `name` (trimmed, at most 80 characters), the caller its
+    /// Owner, to invite people to: answered with it, to work in by naming it. Only someone
+    /// signed in with a glave account, sign-up open or not, and at most 10 each.
+    "organization/create" => OrganizationCreate { name: String } -> [Organization],
     /// The organization's credits, where the server keeps them: its balance, the month's limit
     /// and spending, and each person's, to its Owners and Admins; to anyone else, their own
     /// spending this month.

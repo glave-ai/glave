@@ -96,6 +96,7 @@ impl People {
             .find(|it| {
                 same_kept(&it.created.hash, presented)
                     && it.works(now)
+                    && !self.personal()
                     && self.may_give(&it.created.by, it.created.role, local)
             })
             .map(|it| &it.created)
@@ -140,6 +141,12 @@ where
         let theirs = permits(self.permitted(caller, Permit::Invites).await?);
         if role == OrgRole::Owner && !theirs.contains(&Permit::Owners) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
+        }
+        if self.in_personal(caller).await? {
+            return Err(ApiError::new(
+                code::NOT_ALLOWED,
+                Sentence::InvitesNeedOrganization,
+            ));
         }
         let sending = match email {
             Some(to) => Some(self.sender(to)?),
@@ -232,13 +239,21 @@ where
         }
     }
 
-    /// Whether `caller` may make invites here: the server takes them, they signed in, and
-    /// their role permits inviting.
+    /// Whether `caller` may make invites here: the server takes them, they signed in, their
+    /// role permits inviting, and they work in no personal space.
     pub(crate) async fn may_invite(&self, caller: &Caller) -> Result<bool, ApiError> {
         if self.joins_by().is_err() || caller.auth.is_none() {
             return Ok(false);
         }
-        Ok(permits(self.role_of(caller).await?).contains(&Permit::Invites))
+        let permitted = permits(self.role_of(caller).await?).contains(&Permit::Invites);
+        Ok(permitted && !self.in_personal(caller).await?)
+    }
+
+    /// Whether `caller` works in a personal space, which takes no invites.
+    pub(crate) async fn in_personal(&self, caller: &Caller) -> Result<bool, ApiError> {
+        let org = self.org_of(caller);
+        self.catch_up_people(org).await?;
+        Ok(self.people(org, |people| people.personal()))
     }
 
     /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, and how

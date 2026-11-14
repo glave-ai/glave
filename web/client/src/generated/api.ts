@@ -1200,6 +1200,11 @@ export type ServerInfo = {
    */
   readonly modes: readonly (Permissions)[];
   readonly name: string;
+  /**
+   * Whether the caller may create an organization (`organization/create`): they signed in
+   * with a glave account, whether or not the server takes sign-ups.
+   */
+  readonly organizations?: boolean;
   /** Where people reach the server from elsewhere, if they do: its public origin. */
   readonly origin?: string | null;
   /**
@@ -1207,6 +1212,12 @@ export type ServerInfo = {
    * `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Modes").
    */
   readonly permissions: Permissions;
+  /**
+   * Whether the caller works in their personal space: the one signing up made them, never
+   * shared, so no one is invited to it (`invites` is false). A client offers to create an
+   * organization instead, where `organizations` says they may.
+   */
+  readonly personal?: boolean;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
   /**
@@ -2262,6 +2273,15 @@ export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
 };
 
+export type OrganizationCreateParams = {
+  readonly name: string;
+};
+
+/** An organization the caller belongs to, as it is to them. */
+export type OrganizationCreateResult = {
+  readonly organization: OrganizationInfo;
+};
+
 export type OrganizationListParams = Readonly<Record<string, never>>;
 
 /** The organizations the caller belongs to, their own first. */
@@ -3184,6 +3204,7 @@ export interface Methods {
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "memory/set": { readonly params: MemorySetParams; readonly result: MemorySetResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "organization/create": { readonly params: OrganizationCreateParams; readonly result: OrganizationCreateResult };
   readonly "organization/list": { readonly params: OrganizationListParams; readonly result: OrganizationListResult };
   readonly "passkey/add": { readonly params: PasskeyAddParams; readonly result: PasskeyAddResult };
   readonly "passkey/add_options": { readonly params: PasskeyAddOptionsParams; readonly result: PasskeyAddOptionsResult };
