@@ -33,7 +33,7 @@ export const RESEARCH_HISTORY = [
   call(
     4,
     'call_1',
-    'mcp__search__web_search_exa',
+    'web_search',
     { query: 'Tokio 2.0 release' },
     RESEARCH,
     'Searched the web: Tokio 2.0 release',

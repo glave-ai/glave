@@ -78,7 +78,7 @@ describe('conversation', () => {
     const items = threadItems([
       event('tool.call.requested', {
         call_id: 'c1',
-        tool: 'mcp__search__web_search_exa',
+        tool: 'web_search',
         arguments: { json: { query: 'tokio', numResults: 5 } },
         summary: 'Searched the web: tokio',
       }),
@@ -90,7 +90,7 @@ describe('conversation', () => {
       }),
     ]);
     expect(items).toMatchObject([
-      { kind: 'call', tool: 'mcp__search__web_search_exa', summary: 'Searched the web: tokio' },
+      { kind: 'call', tool: 'web_search', summary: 'Searched the web: tokio' },
       { kind: 'call', tool: 'bash', summary: 'bash' },
     ]);
   });

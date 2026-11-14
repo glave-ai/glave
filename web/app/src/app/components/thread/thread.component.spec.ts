@@ -63,7 +63,11 @@ describe('ThreadComponent', () => {
     expect(off.root.querySelector('[data-testid="thread-searching"]')).toBeNull();
     TestBed.resetTestingModule();
     const on = session(ANSWERED).answer('search/get', {
-      search: { kind: 'chosen', on: true, detail: 'Uses Exa, free. Your searches go to Exa.' },
+      search: {
+        kind: 'chosen',
+        on: true,
+        detail: 'Uses Brave Search. Your searches go to Brave Search.',
+      },
     });
     const { root } = await open(on);
     const globe = root.querySelector('[data-testid="thread-searching"]');
