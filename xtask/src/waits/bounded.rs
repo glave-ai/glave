@@ -29,6 +29,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "Ctrl-C itself, from the person at the terminal",
     ),
     (
+        "xtask/src/try_org/mailbox.rs",
+        "while let Ok((stream, _)) = listener.accept().await {",
+        1,
+        "glave's next message to the stand-in mail server, for as long as the throwaway glave \
+         runs: dropping the stand-in with it stops the wait",
+    ),
+    (
         "xtask/src/try_org.rs",
         "ended = child.wait() => ended.map(drop).map_err(failed),",
         1,

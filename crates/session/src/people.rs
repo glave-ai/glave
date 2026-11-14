@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::PoisonError;
 
 use glave_event::{
-    At, AuthMethod, Body, EventId, Header, OrgRole, Payload, PersonJoined, Principal, PrincipalId,
-    RawEvent, RoleSet, Seq, encode,
+    At, AuthMethod, Body, EventId, Header, OrgRole, OrganizationKind, Payload, PersonJoined,
+    Principal, PrincipalId, RawEvent, RoleSet, Seq, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId, Scope};
@@ -77,8 +77,10 @@ pub(crate) struct People {
     removed: BTreeMap<PrincipalId, Principal>,
     /// Whether someone was removed since the watches were last told.
     heard_removal: bool,
-    /// Whom glave made its Owner as it made it, by sign-up: whose own it is.
+    /// Whom glave made its Owner as it made it, by sign-up or `organization/create`.
     founder: Option<PrincipalId>,
+    /// What glave made it as, where it recorded that (`organization.made`).
+    kind: Option<OrganizationKind>,
     /// The invites made and not yet spent or revoked, expired ones included until dropped.
     pub(crate) invites: Invites,
 }
@@ -185,6 +187,7 @@ impl People {
                     kept.role = Some(set.role);
                 }
             }
+            Body::OrganizationMade(made) => self.kind = Some(made.kind),
             Body::InviteCreated(created) => self.invites.made(created, at),
             Body::InviteRevoked(revoked) => self.invites.spent(revoked.invite),
             Body::InviteAccepted(accepted) => {
@@ -230,9 +233,23 @@ impl People {
         alone && self.role(person) == OrgRole::Owner && owners <= 1
     }
 
-    /// Whether glave made `person` its Owner as it made it: whether it is their own.
-    pub(crate) fn founded_by(&self, person: PrincipalId) -> bool {
-        self.founder == Some(person)
+    /// Whether it is someone's personal space: glave made it as they signed up, so it is never
+    /// shared and takes no invites. One made before glave recorded what it made is.
+    pub(crate) fn personal(&self) -> bool {
+        self.founder.is_some()
+            && self
+                .kind
+                .is_none_or(|kind| kind == OrganizationKind::Personal)
+    }
+
+    /// Whether it is `person`'s personal space.
+    pub(crate) fn personal_to(&self, person: PrincipalId) -> bool {
+        self.personal() && self.founder == Some(person)
+    }
+
+    /// Whether `person` created it to share (`organization/create`).
+    pub(crate) fn created_by(&self, person: PrincipalId) -> bool {
+        self.kind == Some(OrganizationKind::Shared) && self.founder == Some(person)
     }
 
     /// Its first Owner in id order who is not `but`, if any.

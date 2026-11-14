@@ -137,6 +137,59 @@ describe('PersonComponent', () => {
     expect(root.querySelector('[data-testid="nav-invite"]')).toBeNull();
   });
 
+  it('in a personal space, offers to create an organization to invite people instead of an invite', async () => {
+    const personal = {
+      ...SERVER,
+      origin: 'https://glave.example',
+      personal: true,
+      organizations: true,
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(new FakeSession().answer('server/discover', personal)),
+      ],
+    });
+    await TestBed.inject(ServerService).load();
+    const fixture = TestBed.createComponent(PersonComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="nav-invite"]')).toBeNull();
+    const create = root.querySelector<HTMLElement>('[data-testid="nav-new-organization"]');
+    expect(create?.textContent).toContain('New organization');
+    expect(root.querySelector('[data-testid="nav-create-to-invite"]')?.textContent).toBe(
+      'Create an organization to invite people',
+    );
+    await expectAccessible(root);
+    create?.click();
+    await settle(fixture);
+    expect(
+      document.querySelector<HTMLDialogElement>('[data-testid="new-organization"]')?.open,
+    ).toBe(true);
+  });
+
+  it('beside inviting, offers a new organization with no word of invites, where the server says', async () => {
+    for (const [said, offered] of [
+      [{ ...SERVER, invites: true, organizations: true }, true],
+      [{ ...SERVER, invites: true }, false],
+    ] as const) {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([{ path: '**', children: [] }]),
+          ...provideFakeSession(new FakeSession().answer('server/discover', said)),
+        ],
+      });
+      await TestBed.inject(ServerService).load();
+      const fixture = TestBed.createComponent(PersonComponent);
+      await fixture.whenStable();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.querySelector('[data-testid="nav-invite"]')).not.toBeNull();
+      expect(root.querySelector('[data-testid="nav-new-organization"]') !== null).toBe(offered);
+      expect(root.querySelector('[data-testid="nav-create-to-invite"]')).toBeNull();
+    }
+  });
+
   it('says so when the invite dialog cannot load its code', async () => {
     TestBed.configureTestingModule({
       deferBlockBehavior: DeferBlockBehavior.Manual,
@@ -154,7 +207,8 @@ describe('PersonComponent', () => {
     await TestBed.inject(ServerService).load();
     const fixture = TestBed.createComponent(PersonComponent);
     await fixture.whenStable();
-    const dialog = (await fixture.getDeferBlocks()).at(-1);
+    // The invite dialog's, the first of the menu's dialogs.
+    const dialog = (await fixture.getDeferBlocks()).at(0);
     await dialog?.render(DeferBlockState.Error);
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('[role="alert"]')?.textContent).toContain('could not load');

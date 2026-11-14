@@ -14,14 +14,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, EventId, Header, MailAsked, OrgRole, PersonJoined, Principal, PrincipalId, Profile,
-    RawEvent, RoleSet, Secret, Seq, SignupFinished, SignupStarted, encode,
+    At, Body, EventId, Header, MailAsked, OrganizationKind, PersonJoined, PrincipalId, Profile,
+    RawEvent, Secret, Seq, SignupFinished, SignupStarted, encode,
 };
 use glave_identity::signin::{Proof, kept, one_time_code};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, Scope};
 use jiff::{SignedDuration, Timestamp};
-use uuid::Builder;
 
 use crate::mailing::{ASKED_WITHIN, just_now};
 use crate::protocol::{ApiError, Reply, code};
@@ -285,8 +284,8 @@ where
     }
 
     /// Answers `passkey/create` for a passkey being made by an emailed link: the link spent,
-    /// then, for a sign-up, the new account's first passkey, a new organization with the person
-    /// its Owner, and the browser signed in; to get back in, the account's new passkey.
+    /// then, for a sign-up, the new account's first passkey, their personal space with them its
+    /// Owner, and the browser signed in; to get back in, the account's new passkey.
     pub(crate) async fn finish_link(
         &self,
         signing: Signing,
@@ -308,14 +307,18 @@ where
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignupTaken));
         }
         let session = browsers.keep(checked).await?;
-        let now = self.inner.harness.clock().now();
-        let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();
-        let random = self.inner.harness.entropy().bytes()?;
-        let org =
-            OrgId::from_uuid(Builder::from_unix_timestamp_millis(millis, &random).into_uuid());
-        self.found(org, signing.person, &signing.email, person_name)
+        let joined = PersonJoined {
+            person: signing.person,
+            issuer: None,
+            subject: None,
+            profile: Profile {
+                name: person_name,
+                email: Some(signing.email.clone()),
+                ..Profile::default()
+            },
+        };
+        self.make_organization(&joined, OrganizationKind::Personal, None)
             .await?;
-        accounts.join(signing.person, org).await?;
         Ok(self.signed_in(session, &browsers))
     }
 
@@ -330,40 +333,6 @@ where
             Ok(Some(SignupFinished {
                 hash: signing.hash.clone(),
             }))
-        })
-        .await
-    }
-
-    /// Records `person`, with `email` and `name`, as the first of the new organization `org`,
-    /// its Owner, as glave makes them.
-    async fn found(
-        &self,
-        org: OrgId,
-        person: PrincipalId,
-        email: &str,
-        name: Option<String>,
-    ) -> Result<(), ApiError> {
-        let joined = PersonJoined {
-            person,
-            issuer: None,
-            subject: None,
-            profile: Profile {
-                name,
-                email: Some(email.to_owned()),
-                ..Profile::default()
-            },
-        };
-        let owner = RoleSet {
-            person,
-            role: OrgRole::Owner,
-            by: Principal::glave(),
-        };
-        self.record_people(org, |_, next| {
-            let after = next.saturating_add(1);
-            Ok(Some(vec![
-                self.people_event(next, &joined)?,
-                self.people_event(after, &owner)?,
-            ]))
         })
         .await
     }

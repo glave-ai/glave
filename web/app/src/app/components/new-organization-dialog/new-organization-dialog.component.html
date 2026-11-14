@@ -1,0 +1,36 @@
+<!-- Made as it opens and gone when it closes, as the rename dialog is. -->
+@if (open()) {
+  <glz-dialog testId="new-organization" [heading]="copy.heading" [(open)]="open">
+    <form class="glz-stack glz-gap-3" (submit)="create($event)">
+      <glz-form-field [label]="copy.name" [hint]="hint">
+        <input
+          glzInput
+          autocomplete="organization"
+          data-testid="new-organization-name"
+          [maxLength]="limit"
+          [value]="draft()"
+          (input)="typed($event)"
+        />
+      </glz-form-field>
+      <p class="note">{{ copy.note }}</p>
+      @if (problem(); as problem) {
+        <p class="error" role="alert" data-testid="new-organization-problem">{{ problem }}</p>
+      }
+    </form>
+    <div glzDialogActions class="glz-row glz-gap-2">
+      <button glzButton data-testid="new-organization-cancel" (click)="cancel()">
+        {{ copy.cancel }}
+      </button>
+      <button
+        glzButton
+        variant="primary"
+        data-testid="new-organization-create"
+        [disabled]="invalid()"
+        [attr.aria-disabled]="busy()"
+        (click)="create()"
+      >
+        {{ createLabel() }}
+      </button>
+    </div>
+  </glz-dialog>
+}

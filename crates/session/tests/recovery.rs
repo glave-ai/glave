@@ -12,7 +12,7 @@ use glave_ports::testing::Outbox;
 use glave_session::protocol::{LinkKind, Request, code};
 use serde_json::{Value, json};
 
-use crate::signups::{linked, serve_timed, signed_up};
+use crate::signups::{linked, organized, serve_timed, signed_up};
 use crate::support::web::{ORIGIN, Web, asked, elsewhere, make_passkey};
 use crate::support::*;
 
@@ -143,7 +143,7 @@ fn the_last_passkey_may_go_once_the_account_can_get_back_in_by_email() {
         let removed = asked(&mut ada, &Request::PasskeyRemove { passkey: id }).await;
         assert_eq!(removed, json!({}), "her address gets her back in");
         // Someone she invites by a link alone has no address to get back in with: theirs stays.
-        let mut bob = signed_up(&served, &outbox, "bob@example.com").await;
+        let mut bob = organized(&served, &outbox, "bob@example.com", "Bob's").await;
         let invite = Request::InviteCreate {
             role: OrgRole::Member,
             email: None,

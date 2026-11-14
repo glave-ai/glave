@@ -50,12 +50,34 @@
       {{ copy.invite }}
     </button>
   }
+  @if (organizationsMade()) {
+    <button
+      glzNavItem
+      data-testid="nav-new-organization"
+      [icon]="icons.newOrganization"
+      (click)="newOrganization()"
+    >
+      <span class="place">
+        <span>{{ copy.newOrganization }}</span>
+        @if (createToInvite()) {
+          &ngsp;<span class="note" data-testid="nav-create-to-invite">{{
+            copy.createToInvite
+          }}</span>
+        }
+      </span>
+    </button>
+  }
   <button glzNavItem data-testid="person-sign-out" [icon]="icons.signOut" (click)="signOut()">
     {{ copy.signOut }}
   </button>
 </glz-popover>
 @defer (when inviting()) {
   <app-invite-dialog [(open)]="inviting" />
+} @error {
+  <app-unloaded class="error" />
+}
+@defer (when creating()) {
+  <app-new-organization-dialog [(open)]="creating" />
 } @error {
   <app-unloaded class="error" />
 }

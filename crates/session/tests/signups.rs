@@ -157,21 +157,9 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         assert_eq!(orgs[0]["current"], json!(true));
         assert_eq!(orgs[0]["people"], json!(1));
         assert_eq!(orgs[0]["role"], json!("owner"));
-        // Alone in it, she is shown no organization, and may invite the first.
+        // Her personal space, shown as no organization (`founding.rs` has the rest).
         let told = asked(&mut ada, &Request::Discover {}).await;
-        assert_eq!(told["invites"], json!(true), "{told}");
-        assert!(told.get("exists").is_none(), "{told}");
-        // While her invite waits it is shown, so she can see and cancel it; cancelled, not.
-        let invite = Request::InviteCreate {
-            role: OrgRole::Member,
-            email: None,
-        };
-        let made = asked(&mut ada, &invite).await;
-        let told = asked(&mut ada, &Request::Discover {}).await;
-        assert_eq!(told["exists"]["organization"], json!(true), "{told}");
-        let id = serde_json::from_value(made["invite"]["id"].clone()).unwrap();
-        asked(&mut ada, &Request::InviteRevoke { invite: id }).await;
-        let told = asked(&mut ada, &Request::Discover {}).await;
+        assert_eq!(told["personal"], json!(true), "{told}");
         assert!(told.get("exists").is_none(), "{told}");
         let listed = Request::PeopleList {
             after: None,
@@ -207,6 +195,19 @@ pub(crate) async fn signed_up(served: &Served, outbox: &Outbox, email: &str) -> 
     let code = emailed_code(outbox, before + 1).await;
     let made = make(served, code, &mut device).await;
     elsewhere(served, made["session"].as_str().map(str::to_owned))
+}
+
+/// [`signed_up`], then working in an organization they created, `name`, to invite people to.
+pub(crate) async fn organized(served: &Served, outbox: &Outbox, email: &str, name: &str) -> Web {
+    organizing(signed_up(served, outbox, email).await, name).await
+}
+
+/// `web`, working in an organization it creates, `name`.
+async fn organizing(mut web: Web, name: &str) -> Web {
+    let create = Request::OrganizationCreate { name: name.into() };
+    let made = asked(&mut web, &create).await;
+    let id = made["organization"]["id"].as_str().unwrap().to_owned();
+    web.working_in(&id)
 }
 
 /// The name `person` goes by among `listed`'s people, the first who is not the caller's own
@@ -252,6 +253,7 @@ fn a_name_given_with_the_first_passkey_goes_with_the_person_and_can_be_changed()
         );
 
         // An invite she makes says who made it, and someone it makes an account for is named.
+        let mut ada = organizing(ada, "Analytical").await;
         let invite = Request::InviteCreate {
             role: OrgRole::Member,
             email: None,
@@ -270,7 +272,7 @@ fn a_name_given_with_the_first_passkey_goes_with_the_person_and_can_be_changed()
         assert_eq!(named(&asked(&mut ada, &listed).await, false), json!("Bob"));
 
         // Joining another organization, her name goes with her; changed, it changes in both.
-        let mut carol = signed_up(&served, &outbox, "carol@example.com").await;
+        let mut carol = organized(&served, &outbox, "carol@example.com", "Carol's").await;
         let team = asked(&mut carol, &invite).await;
         let accept = Request::InviteAccept {
             code: Secret::new(team["code"].as_str().unwrap()),
@@ -309,7 +311,7 @@ fn an_invite_shows_its_maker_the_organization_until_it_expires() {
         let dir = folder("signups-invite-waits");
         let outbox = Arc::new(Outbox::default());
         let (served, clock) = serve_timed(&dir, true, &outbox).await;
-        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        let mut ada = organized(&served, &outbox, "ada@example.com", "Ada's").await;
         let invite = Request::InviteCreate {
             role: OrgRole::Member,
             email: None,
@@ -330,12 +332,12 @@ fn an_invite_shows_its_maker_the_organization_until_it_expires() {
 }
 
 #[test]
-fn someone_who_signed_up_and_joined_a_team_lists_their_own_then_the_team_by_its_owner() {
+fn someone_who_signed_up_and_joined_a_team_lists_their_own_then_the_team() {
     block_on!(async {
         let dir = folder("signups-team");
         let outbox = Arc::new(Outbox::default());
         let served = serve(&dir, true, &outbox).await;
-        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        let mut ada = organized(&served, &outbox, "ada@example.com", "Analytical").await;
         let mut bob = signed_up(&served, &outbox, "bob@example.com").await;
         let invite = Request::InviteCreate {
             role: OrgRole::Member,
@@ -345,7 +347,7 @@ fn someone_who_signed_up_and_joined_a_team_lists_their_own_then_the_team_by_its_
         let code = Secret::new(made["code"].as_str().unwrap());
         let accepted = asked(&mut bob, &Request::InviteAccept { code }).await;
         assert_eq!(accepted["person"]["role"], json!("member"), "{accepted}");
-        // His own first, then Ada's, named by her address while it has no name of its own.
+        // His own first, then Ada's, by its name.
         let listed = asked(&mut bob, &Request::OrganizationList {}).await;
         let seen: Vec<_> = listed["organizations"]
             .as_array()
@@ -361,12 +363,7 @@ fn someone_who_signed_up_and_joined_a_team_lists_their_own_then_the_team_by_its_
                 )
             })
             .collect();
-        let team = (
-            json!("ada@example.com's team"),
-            false,
-            json!("member"),
-            json!(2),
-        );
+        let team = (json!("Analytical"), false, json!("member"), json!(2));
         assert_eq!(
             seen,
             [(json!("Personal"), true, json!("owner"), json!(1)), team]

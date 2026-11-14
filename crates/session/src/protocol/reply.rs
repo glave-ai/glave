@@ -25,6 +25,10 @@ pub use listening::{ListedCommand, Port};
 
 /// What the server is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts the server says, each a yes or no, absent when no"
+)]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
@@ -74,6 +78,15 @@ pub struct ServerInfo {
     /// alone, whose organization is shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
+    /// Whether the caller works in their personal space: the one signing up made them, never
+    /// shared, so no one is invited to it (`invites` is false). A client offers to create an
+    /// organization instead, where `organizations` says they may.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub personal: bool,
+    /// Whether the caller may create an organization (`organization/create`): they signed in
+    /// with a glave account, where the server takes sign-ups.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub organizations: bool,
     /// Whether it tells people's browsers when glave needs them (`push/get`), so a client
     /// offers that only where it does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -546,6 +559,9 @@ pub enum Reply {
     Organizations {
         organizations: Vec<OrganizationInfo>,
     },
+    /// An organization the caller belongs to, as it is to them.
+    #[schemars(title = "Organization")]
+    Organization { organization: OrganizationInfo },
     /// The organization's credits, as much as the caller may see.
     #[schemars(title = "Credits")]
     Credits { credits: CreditsInfo },

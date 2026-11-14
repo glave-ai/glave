@@ -59,7 +59,11 @@ impl Smtp {
             .from
             .parse()
             .map_err(|_| SmtpError::From(settings.from.clone()))?;
-        let builder = if settings.port == SMTPS {
+        let builder = if on_this_computer(&settings.host) {
+            Ok(AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(
+                &settings.host,
+            ))
+        } else if settings.port == SMTPS {
             AsyncSmtpTransport::<Tokio1Executor>::relay(&settings.host)
         } else {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&settings.host)
@@ -117,6 +121,15 @@ impl Mailer for Smtp {
     }
 }
 
+/// Whether `host` is a mail server on this computer, reached over loopback, where nothing
+/// crosses a network for TLS to protect: a relay of the machine's own, or `cargo xtask try-org`'s.
+fn on_this_computer(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
 /// What went wrong sending, without what the mail server said back, which may hold the address.
 fn said(error: &lettre::transport::smtp::Error) -> String {
     match error.status() {
@@ -155,6 +168,20 @@ mod tests {
         let mut half = settings("glave@example.com", 587);
         half.user = Some("glave".into());
         assert!(matches!(Smtp::new(half), Err(SmtpError::Credentials)));
+    }
+
+    #[test]
+    fn only_a_mail_server_on_this_computer_is_spoken_to_without_tls() {
+        for (host, here) in [
+            ("localhost", true),
+            ("127.0.0.1", true),
+            ("::1", true),
+            ("mail.example.com", false),
+            ("localhost.example.com", false),
+            ("10.0.0.1", false),
+        ] {
+            assert_eq!(on_this_computer(host), here, "{host}");
+        }
     }
 
     #[test]

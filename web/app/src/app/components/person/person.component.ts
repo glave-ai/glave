@@ -21,11 +21,13 @@ import Settings from 'lucide/dist/esm/icons/settings.mjs';
 import ShieldUser from 'lucide/dist/esm/icons/shield-user.mjs';
 import UserPlus from 'lucide/dist/esm/icons/user-plus.mjs';
 import Check from 'lucide/dist/esm/icons/check.mjs';
+import Plus from 'lucide/dist/esm/icons/plus.mjs';
 
 import { type Place, place } from '../../lib/organizations';
 import { OrganizationsService } from '../../services/organizations.service';
 import { ServerService } from '../../services/server.service';
 import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
+import { NewOrganizationDialogComponent } from '../new-organization-dialog/new-organization-dialog.component';
 import { UnloadedComponent } from '../unloaded/unloaded.component';
 import { SessionService } from '../../services/session.service';
 
@@ -34,13 +36,16 @@ import { SessionService } from '../../services/session.service';
  * organization the ones to switch to (their own as Personal, then each team, the current one
  * checked), their Settings, Admin for the
  * organization's Admins and Owners where the server shows one, else "Invite someone" where
- * they may invite though they are alone, and Sign out. The session API does not say who
+ * they may invite though they are alone, "New organization" where they may create one (in
+ * their personal space, which takes no invites, saying it is how to invite people), and Sign
+ * out. The session API does not say who
  * someone is yet, so it says "You".
  */
 @Component({
   selector: 'app-person',
   imports: [
     InviteDialogComponent,
+    NewOrganizationDialogComponent,
     UnloadedComponent,
     RouterLink,
     GlzAvatarComponent,
@@ -62,6 +67,8 @@ export class PersonComponent {
     settings: $localize`:@@person.settings:Settings`,
     admin: $localize`:@@person.admin:Admin`,
     invite: $localize`:@@person.invite:Invite someone`,
+    newOrganization: $localize`:@@person.newOrganization:New organization`,
+    createToInvite: $localize`:@@person.createToInvite:Create an organization to invite people`,
     switchTo: $localize`:@@person.switchTo:Switch to`,
     signOut: $localize`:@@person.signOut:Sign out`,
   } as const;
@@ -69,6 +76,7 @@ export class PersonComponent {
     settings: Settings,
     admin: ShieldUser,
     invite: UserPlus,
+    newOrganization: Plus,
     current: Check,
     signOut: LogOut,
   };
@@ -81,6 +89,12 @@ export class PersonComponent {
   protected readonly invitesAlone = this.server.invitesAlone;
   /** Whether the dialog that makes an invite is open; its code loads the first time it is. */
   protected readonly inviting = signal(false);
+  /** Whether "New organization" is in the menu: the server says the person may create one. */
+  protected readonly organizationsMade = this.server.organizations;
+  /** Whether it says that's how to invite people: they work in their personal space. */
+  protected readonly createToInvite = this.server.createToInvite;
+  /** Whether the dialog that creates an organization is open; its code loads the first time. */
+  protected readonly creating = signal(false);
   private readonly organizations = inject(OrganizationsService);
   private readonly locale = inject(LOCALE_ID);
   /** Whether the menu switches between organizations: the person is in more than one. */
@@ -112,6 +126,10 @@ export class PersonComponent {
 
   protected invite(): void {
     this.inviting.set(true);
+  }
+
+  protected newOrganization(): void {
+    this.creating.set(true);
   }
 
   /**

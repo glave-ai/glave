@@ -4,7 +4,9 @@
 //! latest replacing every one before it. `person.removed`: someone an admin took out of the
 //! organization, who comes back only by an invite. Invites (`specs/model.md`, "Invites"): one made with
 //! the SHA-256 of its code and the role it gives (`invite.created`), spent by the person who
-//! opened it (`invite.accepted`), or revoked before (`invite.revoked`).
+//! opened it (`invite.accepted`), or revoked before (`invite.revoked`). `organization.made`: what
+//! glave made the organization as, first in its ledger: a person's personal space, as they signed
+//! up, or an organization someone created to share.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -20,6 +22,7 @@ pub(crate) const REMOVED: &str = "person.removed";
 pub(crate) const INVITE_CREATED: &str = "invite.created";
 pub(crate) const INVITE_ACCEPTED: &str = "invite.accepted";
 pub(crate) const INVITE_REVOKED: &str = "invite.revoked";
+pub(crate) const MADE: &str = "organization.made";
 
 /// What a person may do in their organization. A person given no role is a Member.
 #[derive(
@@ -45,6 +48,25 @@ pub enum OrgRole {
     Admin,
     /// Everything, billing and ownership included.
     Owner,
+}
+
+/// What glave made an organization as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrganizationKind {
+    /// A person's own, made as they signed up: never shared, so it takes no invites.
+    Personal,
+    /// One someone created to share with people they invite.
+    Shared,
+}
+
+/// An organization glave made, and as what: the first event of its people ledger, in the same
+/// append as its first Owner's `person.joined` and `role.set`. An organization glave made by
+/// sign-up before this was recorded is personal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMade {
+    pub kind: OrganizationKind,
 }
 
 /// What an identity provider's token says of a person besides who they are, or what someone
@@ -160,6 +182,11 @@ impl Payload for InviteRevoked {
     const VERSION: u32 = 1;
 }
 
+impl Payload for OrganizationMade {
+    const TYPE: &'static str = MADE;
+    const VERSION: u32 = 1;
+}
+
 /// The people ledger's events, or `None` for a type or version that is none of them.
 pub(crate) fn decode(
     kind: &str,
@@ -176,6 +203,7 @@ pub(crate) fn decode(
         INVITE_CREATED => parse(data).map(Body::InviteCreated),
         INVITE_ACCEPTED => parse(data).map(Body::InviteAccepted),
         INVITE_REVOKED => parse(data).map(Body::InviteRevoked),
+        MADE => parse(data).map(Body::OrganizationMade),
         _ => return None,
     })
 }

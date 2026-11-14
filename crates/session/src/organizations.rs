@@ -38,7 +38,7 @@ where
                 // The person on the server's computer, whose own the server's is, is no one
                 // in its ledger.
                 let (own, role) = match caller.person {
-                    Some(person) => (people.founded_by(person), people.role(person)),
+                    Some(person) => (people.personal_to(person), people.role(person)),
                     None => (org == self.inner.own, OrgRole::Owner),
                 };
                 let owner = people

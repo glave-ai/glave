@@ -427,6 +427,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::PushClaimed(_) => "push.claimed",
             Body::PersonJoined(_) => "person.joined",
             Body::RoleSet(_) => "role.set",
+            Body::OrganizationMade(_) => "organization.made",
             Body::PersonRemoved(_) => "person.removed",
             Body::InviteCreated(_) => "invite.created",
             Body::InviteAccepted(_) => "invite.accepted",
