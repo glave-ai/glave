@@ -172,6 +172,7 @@ where
                     invites,
                     personal,
                     organizations: self.account_of(caller).is_some(),
+                    model_accounts: self.providers_for(caller).is_ok(),
                     push: self.inner.push.is_some(),
                 }))
             }

@@ -1195,6 +1195,12 @@ export type ServerInfo = {
    */
   readonly invites?: boolean;
   /**
+   * Whether the caller may connect model accounts here (`provider/*`): the host keeps them,
+   * and the caller is the person on its computer. Elsewhere the server's own models are
+   * set up by whoever runs it, so a client offers no accounts.
+   */
+  readonly model_accounts?: boolean;
+  /**
    * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
    * those the policy leaves, in the order a person is offered them, the recommended first.
    */

@@ -377,7 +377,10 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
             .unwrap();
         assert_eq!(never["search"]["kind"], "never", "{never}");
         let reason = never["search"]["reason"].as_str().unwrap_or_default();
-        assert!(reason.contains("on the computer glave runs on"), "{never}");
+        assert_eq!(
+            reason,
+            "whoever runs this server turns web search on or off"
+        );
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;
