@@ -1,13 +1,73 @@
-.page {
-  max-width: calc(var(--glz-content-width) + 2 * var(--glz-inset-page-inline));
-  margin-inline: auto;
-  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline);
+:host {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100dvh;
 }
 
-.hint {
+// The bar rests on the page, with no line under it.
+header {
+  --glz-top-bar-surface: transparent;
+  --glz-top-bar-border: 0;
+}
+
+.name {
+  font-size: var(--glz-text-wordmark);
+  letter-spacing: var(--glz-tracking-tight);
+}
+
+.about {
   color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-md);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--glz-color-text);
+    text-decoration: underline;
+  }
+}
+
+// One column in the middle of what is left, a little above centre.
+.page {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--glz-inset-page-block) var(--glz-space-8);
+  padding-inline: var(--glz-inset-page-inline);
+}
+
+.column {
+  inline-size: 100%;
+  max-inline-size: 27.5rem;
+}
+
+.words {
+  text-align: center;
+}
+
+.headline {
+  font-size: var(--glz-text-4xl);
+  font-weight: var(--glz-weight-bold);
+  line-height: var(--glz-leading-tight);
+  letter-spacing: var(--glz-tracking-display);
+  text-wrap: balance;
+}
+
+.lede {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xl);
+  line-height: var(--glz-leading-normal);
+  text-wrap: pretty;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-normal);
+  text-align: center;
 }
 
 .problem {
   color: var(--glz-color-danger);
+  text-align: center;
 }
