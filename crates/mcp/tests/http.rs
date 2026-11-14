@@ -6,7 +6,6 @@ use std::io::{BufRead as _, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use glave_event::ToolKind;
 use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
