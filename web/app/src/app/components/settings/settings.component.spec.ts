@@ -40,6 +40,7 @@ describe('SettingsComponent', () => {
     );
     expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="settings-models"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="page-back"]')).not.toBeNull();
     // Memory and connections live in Settings, each on its own page.
     expect(root.querySelector('[data-testid="settings-memory"]')?.getAttribute('href')).toBe(
@@ -195,7 +196,7 @@ describe('SettingsComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).toBeNull();
     expect(root.querySelector('[data-testid="settings-add-account"]')).toBeNull();
-    expect(root.textContent).not.toContain('Models');
+    expect(root.querySelector('[data-testid="settings-models"]')).toBeNull();
     expect(fake.calls.map((call) => call.method)).not.toContain('provider/list');
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
       'glave 0.1.0',
