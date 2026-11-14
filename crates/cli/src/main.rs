@@ -50,6 +50,7 @@ mod server;
 mod serving;
 mod session;
 mod setup;
+mod signup;
 mod skills;
 mod socket;
 mod starter;

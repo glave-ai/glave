@@ -47,15 +47,21 @@ pub(crate) async fn serve_sharing(
     outbox: &Arc<Outbox>,
     log: Shared,
 ) -> (Served, glave_ports::testing::ManualClock) {
-    serve_behind(dir, (signup, None), outbox, log).await
+    serve_behind(dir, (signup, None), Some(outbox), log).await
+}
+
+/// A server reached at [`ORIGIN`] keeping glave accounts, taking no sign-ups and sending no
+/// email, with the clock its server reads.
+pub(crate) async fn serve_mailless(dir: &Path) -> (Served, glave_ports::testing::ManualClock) {
+    serve_behind(dir, (false, None), None, Shared::default()).await
 }
 
 /// [`serve_sharing`], behind proxies that add `forwarded` addresses to `X-Forwarded-For`
-/// where it says, as Google Cloud's load balancer adds two.
+/// where it says, as Google Cloud's load balancer adds two; sending no email without `outbox`.
 pub(crate) async fn serve_behind(
     dir: &Path,
     (signup, forwarded): (bool, Option<std::num::NonZeroU8>),
-    outbox: &Arc<Outbox>,
+    outbox: Option<&Arc<Outbox>>,
     log: Shared,
 ) -> (Served, glave_ports::testing::ManualClock) {
     let store = sqlite(&dir.join("sign-ups.db")).await;
@@ -73,7 +79,7 @@ pub(crate) async fn serve_behind(
         Box::new(clock.clone()),
     );
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
-    setup.mail = Some(Arc::clone(outbox) as Arc<dyn glave_ports::Mailer>);
+    setup.mail = outbox.map(|outbox| Arc::clone(outbox) as Arc<dyn glave_ports::Mailer>);
     let directory = Arc::new(store.directory());
     let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
     setup.accounts = Some(Arc::new(accounts.unwrap()));

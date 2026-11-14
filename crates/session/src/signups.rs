@@ -7,7 +7,8 @@
 //! the address after its secret; waiting sign-ups are kept in the server's own organization's
 //! sign-ups ledger as the SHA-256 of their codes and of their addresses alone, so every server
 //! of a cell opens each link once, counts each address's messages, and keeps no address of
-//! anyone who never finished.
+//! anyone who never finished. Whoever runs the server can also make a link from its computer to
+//! hand to one person, with no address, while it takes no sign-ups (`operator.rs`).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,6 +29,8 @@ use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 use glave_ports::stream::in_order;
+
+mod operator;
 
 /// How long a sign-up's link works: long enough to open it from a mailbox, short enough that
 /// one left there is no key for long.
@@ -125,7 +128,7 @@ impl Signups {
             && !self
                 .waiting
                 .values()
-                .any(|(at, started)| started.to == to && just_now(*at, now))
+                .any(|(at, started)| started.to.as_deref() == Some(to) && just_now(*at, now))
     }
 }
 
@@ -143,7 +146,8 @@ pub(crate) struct Signing {
     ceremony: String,
     pub(crate) person: PrincipalId,
     pub(crate) hash: String,
-    pub(crate) email: String,
+    /// The address its link went to: none for one whoever runs the server handed over.
+    pub(crate) email: Option<String>,
     pub(crate) emailed: Emailed,
 }
 
@@ -191,21 +195,21 @@ where
         let (mailer, origin, to) = self.sender(email)?;
         self.count_asked(caller).await?;
         let has_account = accounts.with_email(&to).await?.is_some();
-        let secret = one_time_code()?;
-        let code = format!("{}{TO}{}", secret.expose(), hex(to.as_bytes()));
+        let code = link_code(&to)?;
         let now = self.inner.harness.clock().now();
         let expires = now
             .checked_add(LIFETIME)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
+        let to_kept = kept(&to);
         let started = SignupStarted {
             hash: kept(&code),
-            to: kept(&to),
+            to: Some(to_kept.clone()),
             expires: At::from(expires),
             recovery: emailed == Emailed::Recovery,
         };
         let sending = AtomicBool::new(false);
         self.record_signups(|signups| {
-            let may = signups.may_send(&started.to, now);
+            let may = signups.may_send(&to_kept, now);
             sending.store(may, Ordering::Relaxed);
             Ok(may.then(|| started.clone()))
         })
@@ -236,9 +240,10 @@ where
         code: &Secret,
         emailed: Emailed,
     ) -> Result<Reply, ApiError> {
-        let gone = || gone(emailed);
+        let gone = || self.gone(emailed);
+        let takes_signups = self.takes_signups();
         let open = match emailed {
-            Emailed::Signup => self.takes_signups(),
+            Emailed::Signup => takes_signups || self.links_signups(),
             Emailed::Recovery => self.recovers(),
         };
         if !open {
@@ -248,17 +253,24 @@ where
         let hash = kept(code.expose());
         let now = self.inner.harness.clock().now();
         self.catch_up_signups().await?;
-        // The address its link went to: the one the code carries, which its hash covers.
-        let email = code
-            .expose()
-            .split_once(TO)
-            .and_then(|(_, to)| unhex(to))
-            .filter(|_| self.signups(|signups| signups.opens(&hash, emailed, now).is_some()))
+        // While the server takes no sign-ups, only a link whoever runs it handed over opens.
+        let addressed = self
+            .signups(|signups| signups.opens(&hash, emailed, now).map(|it| it.to.is_some()))
+            .filter(|addressed| takes_signups || !addressed)
             .ok_or_else(gone)?;
-        let (person, browsers) = match emailed {
-            Emailed::Signup => accounts.made().await?,
-            Emailed::Recovery => {
-                let person = accounts.with_email(&email).await?.ok_or_else(gone)?;
+        // The address its link went to, if it went to one: the one the code carries, which its
+        // hash covers.
+        let email = if addressed {
+            let to = code.expose().split_once(TO).and_then(|(_, to)| unhex(to));
+            Some(to.ok_or_else(gone)?)
+        } else {
+            None
+        };
+        let (person, browsers) = match (emailed, &email) {
+            (Emailed::Signup, _) => accounts.made().await?,
+            (Emailed::Recovery, None) => return Err(gone()),
+            (Emailed::Recovery, Some(email)) => {
+                let person = accounts.with_email(email).await?.ok_or_else(gone)?;
                 (person, accounts.browsers(person).await?)
             }
         };
@@ -304,7 +316,9 @@ where
             return self.recovered(&signing, &browsers, checked).await;
         }
         // The address is this account's from now on, unless another took it meanwhile.
-        if accounts.claim_email(&signing.email, signing.person).await? != signing.person {
+        if let Some(email) = &signing.email
+            && accounts.claim_email(email, signing.person).await? != signing.person
+        {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignupTaken));
         }
         let session = browsers.keep(checked).await?;
@@ -313,7 +327,7 @@ where
         let random = self.inner.harness.entropy().bytes()?;
         let org =
             OrgId::from_uuid(Builder::from_unix_timestamp_millis(millis, &random).into_uuid());
-        self.found(org, signing.person, &signing.email, person_name)
+        self.found(org, signing.person, signing.email.clone(), person_name)
             .await?;
         accounts.join(signing.person, org).await?;
         Ok(self.signed_in(session, &browsers))
@@ -326,7 +340,7 @@ where
         self.record_signups(|signups| {
             signups
                 .opens(&signing.hash, signing.emailed, now)
-                .ok_or_else(|| gone(signing.emailed))?;
+                .ok_or_else(|| self.gone(signing.emailed))?;
             Ok(Some(SignupFinished {
                 hash: signing.hash.clone(),
             }))
@@ -334,13 +348,13 @@ where
         .await
     }
 
-    /// Records `person`, with `email` and `name`, as the first of the new organization `org`,
-    /// its Owner, as glave makes them.
+    /// Records `person`, with any `email` and `name`, as the first of the new organization
+    /// `org`, its Owner, as glave makes them.
     async fn found(
         &self,
         org: OrgId,
         person: PrincipalId,
-        email: &str,
+        email: Option<String>,
         name: Option<String>,
     ) -> Result<(), ApiError> {
         let joined = PersonJoined {
@@ -349,7 +363,7 @@ where
             subject: None,
             profile: Profile {
                 name,
-                email: Some(email.to_owned()),
+                email,
                 ..Profile::default()
             },
         };
@@ -433,6 +447,17 @@ where
         look(&mut held)
     }
 
+    /// Every link's code of the kind `emailed` that opens nothing, used, expired or guessed, is
+    /// refused alike: where the server takes no sign-ups, saying to ask for a new one.
+    pub(crate) fn gone(&self, emailed: Emailed) -> ApiError {
+        let sentence = match emailed {
+            Emailed::Signup if self.takes_signups() => Sentence::SignupGone,
+            Emailed::Signup => Sentence::SignupLinkGone,
+            Emailed::Recovery => Sentence::RecoveryGone,
+        };
+        ApiError::new(code::NO_INVITE, sentence)
+    }
+
     fn signings(&self) -> MutexGuard<'_, Signings> {
         self.inner
             .signings
@@ -441,23 +466,13 @@ where
     }
 }
 
-/// Every emailed link's code of the kind `emailed` that opens nothing, used, expired or
-/// guessed, is refused alike.
-fn gone(emailed: Emailed) -> ApiError {
-    let sentence = match emailed {
-        Emailed::Signup => Sentence::SignupGone,
-        Emailed::Recovery => Sentence::RecoveryGone,
-    };
-    ApiError::new(code::NO_INVITE, sentence)
-}
-
 /// The subject and text of the email a link of the kind `emailed` with `code` sends, from the
 /// server at `origin`: the link, or, where the address has an account (`has_account`) for a
 /// sign-up, or none to get back in, a note with none.
 fn link_mail(emailed: Emailed, has_account: bool, origin: &str, code: &str) -> (Sentence, String) {
     let english = |sentence: &Sentence| say(Language::English, sentence);
     let linked = |fragment: &str, mail: &Sentence, ignore: &Sentence| {
-        let link = format!("{origin}/#{fragment}={code}");
+        let link = link(origin, fragment, code);
         format!("{}\n\n{link}\n\n{}\n", english(mail), english(ignore))
     };
     match (emailed, has_account) {
@@ -482,6 +497,18 @@ fn link_mail(emailed: Emailed, has_account: bool, origin: &str, code: &str) -> (
             format!("{}\n\n{origin}\n", english(&Sentence::RecoveryNoAccount)),
         ),
     }
+}
+
+/// A new emailed link's code for the address `to`: a one-time code's secret, then the address.
+fn link_code(to: &str) -> Result<String, ApiError> {
+    let secret = one_time_code()?;
+    Ok(format!("{}{TO}{}", secret.expose(), hex(to.as_bytes())))
+}
+
+/// The link to the server at `origin` that opens the page `fragment` names with `code`, in the
+/// fragment, so it reaches no server's log.
+fn link(origin: &str, fragment: &str, code: &str) -> String {
+    format!("{origin}/#{fragment}={code}")
 }
 
 /// `bytes` in lowercase hex.

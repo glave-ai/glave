@@ -88,6 +88,9 @@ Usage:
                                 what is left to spend on models, where this glave keeps
                                 credits, the monthly limit, or credits added by whoever runs it
                                 (glave credits --help)
+  glave signup link             a sign-up link to give one person, made by whoever runs
+                                this glave: an organization of their own while it takes no
+                                sign-ups (glave signup --help)
   glave doc <command>           read, make and edit spreadsheets, documents and decks,
                                 merge, split, turn and fill in PDFs, and query data with
                                 SQL, with nothing else installed (glave doc --help)

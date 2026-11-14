@@ -1,6 +1,6 @@
 //! What a throwaway glave's organization starts with, so its Admin shows at once with people
 //! in it: two people who joined by invites and gave their names, an Admin and a Member, and an
-//! invite still waiting. All through the session API over HTTP, as the people themselves would: the owner's
+//! invite still waiting; and a sign-up link, for trying an organization of one's own. All through the session API over HTTP, as the people themselves would: the owner's
 //! requests from this computer with the server's local token, at its address; each invitee's
 //! at `localhost`, the door people who share this computer come in by, as a browser making its
 //! first passkey there, played by glave-identity's authenticator in software. Nothing in glave
@@ -22,8 +22,8 @@ const WAITING: &str = "member";
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// Gives the organization of the glave whose folder is `home`, serving now, its people and
-/// its waiting invite.
-pub(crate) async fn seed(home: &Path) -> Result<(), String> {
+/// its waiting invite, and answers a sign-up link its owner made.
+pub(crate) async fn seed(home: &Path) -> Result<String, String> {
     let read = |name: &str| {
         std::fs::read_to_string(home.join(name))
             .map(|text| text.trim().to_owned())
@@ -59,8 +59,12 @@ pub(crate) async fn seed(home: &Path) -> Result<(), String> {
     }
     owner
         .call("invite/create", json!({ "role": WAITING }))
-        .await
-        .map(drop)
+        .await?;
+    let made = owner.call("signup/link", json!({})).await?;
+    made.get("link")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "glave answered signup/link with no link".to_owned())
 }
 
 /// Joins with the invite `code` in a new browser at `origin`, making its first passkey there:

@@ -56,7 +56,7 @@ pub(crate) fn just_now(sent: Timestamp, now: Timestamp) -> bool {
 
 /// `to` as glave reads an address: one address, with no name, quotes, comment or space in it,
 /// lowercase, else none. So every way of writing one mailbox's address counts as one.
-fn read_address(to: &str) -> Option<String> {
+pub(crate) fn read_address(to: &str) -> Option<String> {
     let to = to.trim();
     let plain = !to
         .chars()

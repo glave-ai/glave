@@ -2,8 +2,9 @@
 //! sign-ups, someone asked for a link to their email, kept as the SHA-256 of its code and of
 //! the address, never either, with when it stops working (`signup.started`), and that link
 //! spent when it made the person's account and organization (`signup.finished`). A link to get
-//! back into an account (`recovery`) is kept the same way, and spent when it made a passkey. The link
-//! carries the address; its code's hash, which covers it, proves it was sent there. Every email
+//! back into an account (`recovery`) is kept the same way, and spent when it made a passkey; so
+//! is a sign-up link whoever runs the server made to hand to someone, which carries no address
+//! (no `to`) and opens while the server takes no sign-ups. An emailed link carries the address; its code's hash, which covers it, proves it was sent there. Every email
 //! someone asks glave for (a link, or an invite) counts against their network, kept as the
 //! SHA-256 of it (`mail.asked`). One stream of the server's own organization, so every server
 //! of a cell opens the same links, each once, and counts each network alike.
@@ -25,13 +26,38 @@ pub struct SignupStarted {
     /// The SHA-256 of its code, in hex: never the code.
     pub hash: String,
     /// The SHA-256 of the address its link was sent to, in hex: what counts the messages sent
-    /// there, never the address.
-    pub to: String,
+    /// there, never the address. None for a sign-up link whoever runs the server made, from its
+    /// computer, to hand to someone: it was sent nowhere, and opens while the server takes no
+    /// sign-ups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
     pub expires: At,
     /// Whether its link gets someone back into the account the address has, making a new
     /// passkey for it, rather than making an account.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub recovery: bool,
+}
+
+/// `signup.started` at version 1, when every link was emailed to an address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignupStartedV1 {
+    hash: String,
+    to: String,
+    expires: At,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    recovery: bool,
+}
+
+impl From<SignupStartedV1> for SignupStarted {
+    fn from(old: SignupStartedV1) -> Self {
+        Self {
+            hash: old.hash,
+            to: Some(old.to),
+            expires: old.expires,
+            recovery: old.recovery,
+        }
+    }
 }
 
 /// A sign-up's link spent: its account and organization made, or its new passkey.
@@ -58,7 +84,7 @@ pub struct MailAsked {
 
 impl Payload for SignupStarted {
     const TYPE: &'static str = STARTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for SignupFinished {
@@ -77,13 +103,11 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    if version != 1 {
-        return None;
-    }
-    Some(match kind {
-        STARTED => parse(data).map(Body::SignupStarted),
-        FINISHED => parse(data).map(Body::SignupFinished),
-        ASKED => parse(data).map(Body::MailAsked),
+    Some(match (kind, version) {
+        (STARTED, 1) => parse::<SignupStartedV1>(data).map(|old| Body::SignupStarted(old.into())),
+        (STARTED, 2) => parse(data).map(Body::SignupStarted),
+        (FINISHED, 1) => parse(data).map(Body::SignupFinished),
+        (ASKED, 1) => parse(data).map(Body::MailAsked),
         _ => return None,
     })
 }

@@ -19,7 +19,7 @@ use crate::support::*;
 const SKILL: &str = "---\nname: notes\ndescription: Keeps notes.\n---\nKeep notes.\n";
 
 /// What `method` with `params`, from a browser at `origin`, is answered with.
-async fn from_browser(url: &str, origin: &str, method: &str, params: Value) -> Value {
+pub(crate) async fn from_browser(url: &str, origin: &str, method: &str, params: Value) -> Value {
     let message = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
     let answer = reqwest::Client::new()
         .post(format!("{url}/"))

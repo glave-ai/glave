@@ -14,7 +14,8 @@
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
 //! joined by invites, and an invite waiting (`seed.rs`), so its Admin has something to show at
-//! once. Once the server is ready, xtask opens it in the person's browser, signed in, as `glave`
+//! once; xtask prints a sign-up link its owner made, to try an organization of one's own while
+//! sign-up is closed. Once the server is ready, xtask opens it in the person's browser, signed in, as `glave`
 //! alone does, and again each time the person presses Enter in its window, so no link can expire
 //! on them. On Ctrl-C, a hang-up, the end of the program that started xtask or the server's own
 //! end, it stops the server and removes the folder. glave's lifeline stops the server if xtask
@@ -252,8 +253,17 @@ impl Opening<'_> {
         {
             return format!("glave did not start within {}", spoken(READY_WITHIN));
         }
-        if let Err(err) = seed::seed(self.home).await {
-            eprintln!("xtask: glave runs, but without its sample people: {err}");
+        match seed::seed(self.home).await {
+            Ok(link) => eprintln!(
+                "xtask: someone signing up while sign-up is closed: a private window, opening \
+                 this link, good once, to give their name, make a passkey and land in an \
+                 organization of their own:\n\
+                 xtask:   {link}\n\
+                 xtask: another, as whoever runs it:\n\
+                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- signup link",
+                self.home.display()
+            ),
+            Err(err) => eprintln!("xtask: glave runs, but without its sample people: {err}"),
         }
         self.open().await;
         // A press while it started or opened asked for what has happened since.

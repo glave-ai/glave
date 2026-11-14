@@ -92,7 +92,7 @@ fn behind_google_s_load_balancer_a_forged_address_counts_as_the_visitor_s_own() 
         let dir = folder("mailing-behind");
         let outbox = Arc::new(Outbox::default());
         let behind = (true, std::num::NonZeroU8::new(2));
-        let (served, _) = serve_behind(&dir, behind, &outbox, Shared::default()).await;
+        let (served, _) = serve_behind(&dir, behind, Some(&outbox), Shared::default()).await;
         // Each time a neighbour's address first, before the load balancer's `<client>,<itself>`.
         for asking in 0..20 {
             let forged = "198.51.100.9, 203.0.113.7, 34.120.1.1";
