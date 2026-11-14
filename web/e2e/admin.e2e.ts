@@ -1,6 +1,7 @@
 import { fakeAdmin, INVITE_CODE } from './fake-admin';
 import { fakeApi } from './fake-api';
 import { LOGO_PNG, fakeBrand } from './fake-appearance';
+import { OWN_ORGANIZATION } from './fake-signin';
 import { ADMIN_WORDS, SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -101,6 +102,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const brand = await fakeBrand(page);
     await page.goto(`/admin/brand${SIGNED_IN}`);
     await expect(byTestId(page, 'admin-brand')).toHaveAttribute('aria-current', 'page');
+    await expect(byTestId(page, 'brand-id')).toHaveText(OWN_ORGANIZATION);
     await byTestId(page, 'brand-name').fill('Acme');
     // In the order offered: no accent, blue, lime, then a person's, teal first.
     await byTestId(page, 'brand-accent-option').nth(3).click();

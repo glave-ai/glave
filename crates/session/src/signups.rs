@@ -170,6 +170,12 @@ where
             && self.inner.origin.is_some()
     }
 
+    /// Whether someone new comes here only by an invite: it keeps glave accounts, and takes no
+    /// sign-ups.
+    pub(crate) fn invite_only(&self) -> bool {
+        self.inner.accounts.is_some() && !self.takes_signups()
+    }
+
     /// Answers `signup/start` and `recovery/start` for `caller`: a link of the kind `emailed`
     /// sent to `email`, or, where the address has an account (for a sign-up) or none (to get
     /// back in, where the server takes sign-ups), a note saying so; nothing when a message
@@ -306,6 +312,11 @@ where
         name: Option<&str>,
         person_name: Option<String>,
     ) -> Result<Reply, ApiError> {
+        // An account a handed-over link makes has no address: its name is how it is known.
+        let unnamed = signing.emailed == Emailed::Signup && person_name.is_none();
+        if unnamed && signing.email.is_none() {
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NameNeeded));
+        }
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(signing.person).await?;
         // Checked, then the link spent, and only then is anything of the account kept: a link

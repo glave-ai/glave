@@ -18,13 +18,13 @@
             (input)="named($event)"
           />
         </glz-form-field>
-        <div class="glz-row glz-gap-3 logo-row">
+        <div class="glz-row glz-gap-3 row">
           @if (logoUrl(); as logo) {
             <img class="logo" data-testid="brand-logo" [src]="logo" [alt]="copy.logo" />
           } @else {
             <glz-avatar [name]="shownName()" />
           }
-          <div class="glz-stack glz-gap-1 logo-words">
+          <div class="glz-stack glz-gap-1 words">
             <span class="title">{{ copy.logo }}</span>
             <span class="details">{{ copy.logoHint }}</span>
           </div>
@@ -52,6 +52,16 @@
             (change)="pickedLogo($event)"
           />
         </div>
+        @if (organizationId(); as id) {
+          <div class="glz-row glz-gap-3 row">
+            <div class="glz-stack glz-gap-1 words">
+              <span class="title">{{ copy.id }}</span>
+              <span class="details id" dir="ltr" data-testid="brand-id">{{ id }}</span>
+              <span class="details">{{ copy.idHint }}</span>
+            </div>
+            <glz-copy-button testId="brand-id-copy" [label]="copy.copyId" [text]="id" />
+          </div>
+        }
       </div>
     </glz-card>
     <glz-card>

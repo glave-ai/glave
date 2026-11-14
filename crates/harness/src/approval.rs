@@ -84,22 +84,17 @@ impl ApprovalRequest {
 }
 
 /// What `source` says of a call of `tool` with `arguments`, whose tool declares `declared`: its
-/// effect, the caution it needs the person for, whether it would show the model a secret, and
-/// whether no judge may clear it.
+/// effect, the caution it needs the person for, and whether it would show the model a secret.
 pub(crate) async fn assessed(
     source: &dyn ToolSource,
     tool: &str,
     arguments: &Arguments,
     declared: Effect,
-) -> (Effect, Option<Risk>, bool, bool) {
+) -> (Effect, Option<Risk>, bool) {
     match source.assess(tool, arguments).await {
-        Assessment::AsDeclared => (declared, None, false, false),
-        Assessment::Reads => (Effect::Reads, None, false, false),
-        Assessment::Caution {
-            reason,
-            secret,
-            firm,
-        } => (declared, Some(reason), secret, firm),
+        Assessment::AsDeclared => (declared, None, false),
+        Assessment::Reads => (Effect::Reads, None, false),
+        Assessment::Caution { reason, secret } => (declared, Some(reason), secret),
     }
 }
 

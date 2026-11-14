@@ -42,10 +42,11 @@ fn code_of(made: &Value) -> Secret {
     )
 }
 
-/// What making a passkey with a sign-up link's `code` on a new device is answered with.
+/// What making a passkey with a sign-up link's `code` on a new device, its person giving a
+/// name, is answered with.
 async fn open(served: &Served, code: Secret) -> Value {
     let mut device = Authenticator::new(ORIGIN).unwrap();
-    make_passkey(served, code, LinkKind::Signup, &mut device).await
+    make_named_passkey(served, code, LinkKind::Signup, &mut device, Some("Ada")).await
 }
 
 #[test]
@@ -161,6 +162,21 @@ fn a_server_that_keeps_no_glave_accounts_makes_no_sign_up_links() {
         let served = serve_with(tested, signin, None).await;
         let refused = link_for(&mut operator(&served)).await;
         assert_eq!(refused, json!(code::NOT_AVAILABLE));
+        served.close().await;
+    });
+}
+
+#[test]
+fn someone_signing_up_by_a_link_gives_their_name_first() {
+    block_on!(async {
+        let dir = folder("signup-links-named");
+        let (served, _) = serve_mailless(&dir).await;
+        let code = code_of(&link_for(&mut operator(&served)).await);
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let unnamed = make_passkey(&served, code.clone(), LinkKind::Signup, &mut phone).await;
+        assert_eq!(unnamed, json!(code::INVALID_PARAMS));
+        // Refused before the link was spent: with a name, it opens.
+        assert!(open(&served, code).await["session"].is_string());
         served.close().await;
     });
 }

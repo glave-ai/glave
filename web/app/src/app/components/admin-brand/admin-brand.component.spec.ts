@@ -52,6 +52,33 @@ describe('AdminBrandComponent', () => {
     await expectAccessible(root);
   });
 
+  it('shows the id of the organization it works in, to copy', async () => {
+    const fake = new FakeSession().answer('organization/list', {
+      organizations: [
+        {
+          id: '01900000-0000-7000-8000-0000000000b2',
+          name: 'Personal',
+          people: 1,
+          own: true,
+          role: 'owner',
+        },
+        {
+          id: '01900000-0000-7000-8000-0000000000c3',
+          name: 'Acme',
+          people: 4,
+          role: 'admin',
+          current: true,
+        },
+      ],
+    });
+    const { root } = await render(fake);
+    expect(byId(root, 'brand-id')?.textContent).toBe('01900000-0000-7000-8000-0000000000c3');
+    expect(byId(root, 'brand-id-copy')?.getAttribute('aria-label')).toBe(
+      'Copy the organization ID',
+    );
+    await expectAccessible(root);
+  });
+
   it('keeps nothing until Save, then all of it, and says so', async () => {
     const fake = new FakeSession().answer('brand/set', {
       brand: { accent: 'plain', locked: false },

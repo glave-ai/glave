@@ -20,12 +20,17 @@
   font-size: var(--glz-text-sm);
 }
 
-.logo-row {
+.row {
   align-items: center;
 }
 
-.logo-words {
+.words {
   flex: 1 1 14rem;
+}
+
+.id {
+  font-family: var(--glz-font-mono);
+  overflow-wrap: anywhere;
 }
 
 .logo {

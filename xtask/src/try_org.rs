@@ -42,8 +42,9 @@ mod router;
 mod seed;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
-/// port it serves.
-const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\n";
+/// port it serves, and someone new comes in only by an invite, as on Glave Cloud at first:
+/// `signup = false`, which is also what a server with no `signup` does.
+const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\nsignup = false\n";
 
 /// With `--credits`, organizations pay for their models from credits, each limited to a dollar
 /// a month, so both refusals are a few chats away.
@@ -214,6 +215,30 @@ fn say_what_it_is(folder: &Path, home: &Path, credits: bool) {
     }
 }
 
+/// Tells the person at the terminal how to try that someone new comes in only by an invite:
+/// `invite`, the link of the one waiting.
+fn say_invite_only(invite: &str) {
+    let origin = invite.split_once("/#").map_or(invite, |(origin, _)| origin);
+    eprintln!(
+        "xtask: it is invite-only, as Glave Cloud starts: in a private window, its sign-in page \
+         at {origin}/sign-in says so, and signing up at {origin}/sign-up is refused\n\
+         xtask: the invite waiting signs someone new up, once, in a private window: {invite}"
+    );
+}
+
+/// Tells the person at the terminal of the sign-up link `link` the owner of the glave whose
+/// folder is `home` made, and how to make another.
+fn say_signup_link(link: &str, home: &Path) {
+    eprintln!(
+        "xtask: a sign-up link its owner made signs someone up while sign-up is closed, to an \
+         organization of their own: in a private window, open it, give a name and make a \
+         passkey, once: {link}\n\
+         xtask: another, as whoever runs it:\n\
+         xtask:   GLAVE_HOME={} cargo run -q -p glave -- signup link",
+        home.display()
+    );
+}
+
 /// Runs until Ctrl-C, a hang-up, a request to stop, the end of what started xtask or the
 /// server's own end, welcoming the person meanwhile: whatever is being done for them stops at
 /// once with it.
@@ -254,15 +279,10 @@ impl Opening<'_> {
             return format!("glave did not start within {}", spoken(READY_WITHIN));
         }
         match seed::seed(self.home).await {
-            Ok(link) => eprintln!(
-                "xtask: someone signing up while sign-up is closed: a private window, opening \
-                 this link, good once, to give their name, make a passkey and land in an \
-                 organization of their own:\n\
-                 xtask:   {link}\n\
-                 xtask: another, as whoever runs it:\n\
-                 xtask:   GLAVE_HOME={} cargo run -q -p glave -- signup link",
-                self.home.display()
-            ),
+            Ok((invite, signup)) => {
+                say_invite_only(&invite);
+                say_signup_link(&signup, self.home);
+            }
             Err(err) => eprintln!("xtask: glave runs, but without its sample people: {err}"),
         }
         self.open().await;

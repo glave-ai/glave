@@ -22,8 +22,9 @@ const WAITING: &str = "member";
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// Gives the organization of the glave whose folder is `home`, serving now, its people and
-/// its waiting invite, and answers a sign-up link its owner made.
-pub(crate) async fn seed(home: &Path) -> Result<String, String> {
+/// its waiting invite, whose link it answers: someone new opening it signs up; and a sign-up
+/// link its owner made.
+pub(crate) async fn seed(home: &Path) -> Result<(String, String), String> {
     let read = |name: &str| {
         std::fs::read_to_string(home.join(name))
             .map(|text| text.trim().to_owned())
@@ -57,14 +58,19 @@ pub(crate) async fn seed(home: &Path) -> Result<String, String> {
             .ok_or("glave answered invite/create with no code")?;
         join(&browser, &people, code, name).await?;
     }
-    owner
+    let waiting = owner
         .call("invite/create", json!({ "role": WAITING }))
         .await?;
-    let made = owner.call("signup/link", json!({})).await?;
-    made.get("link")
+    let code = waiting
+        .get("code")
         .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| "glave answered signup/link with no link".to_owned())
+        .ok_or("glave answered invite/create with no code")?;
+    let made = owner.call("signup/link", json!({})).await?;
+    let link = made
+        .get("link")
+        .and_then(Value::as_str)
+        .ok_or("glave answered signup/link with no link")?;
+    Ok((format!("{people}/#invite={code}"), link.to_owned()))
 }
 
 /// Joins with the invite `code` in a new browser at `origin`, making its first passkey there:
