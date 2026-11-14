@@ -60,6 +60,12 @@ pub struct ServerInfo {
     /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
+    /// Whether someone new comes here only by an invite's link: it keeps glave accounts for
+    /// people other than the person on its computer and takes no sign-ups (`[serve] signup`),
+    /// so a sign-in page can tell a stranger how to get in. Absent where anyone may sign up, and
+    /// where no one else signs in at all, as on a laptop.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub invite_only: bool,
     /// What it has beyond the one person a server works for on its own; absent where it has
     /// none of it, as on a person's own computer or server.
     #[serde(default, skip_serializing_if = "Exists::is_none")]

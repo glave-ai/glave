@@ -1,6 +1,6 @@
 //! Commands without the network (`specs/policy.md`, "The network"): one that needs it asks the
-//! person to run with it, each time, and stays in the sandbox otherwise; with no one there it
-//! never runs; where the sandbox has the network, nothing asks; and where the organization
+//! person to run with it, each time, and stays in the sandbox otherwise; with no one there and
+//! no judge it never runs; where the sandbox has the network, nothing asks; and where the organization
 //! forbids asking, no command asks, for the network or to run outside the sandbox, which has it.
 
 use std::future::{Future, ready};
@@ -167,7 +167,7 @@ fn a_command_without_the_network_asks_for_it_each_time_and_stays_in_the_sandbox_
 }
 
 #[test]
-fn with_no_one_there_a_command_never_gets_the_network() {
+fn with_no_one_there_and_no_judge_a_command_never_gets_the_network() {
     let Some(base) = sandboxed("network-no-one") else {
         return;
     };

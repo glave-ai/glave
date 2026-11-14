@@ -123,6 +123,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
                 .contains(&json!("signup")),
             "{told}"
         );
+        assert!(told.get("invite_only").is_none(), "{told}");
 
         let start = Request::SignupStart {
             email: " Ada@Example.com ".into(),
@@ -446,6 +447,7 @@ fn a_server_that_takes_no_sign_ups_says_so() {
         let told = asked(&mut anyone, &Request::Discover {}).await;
         let ways = told["signin"].as_array().cloned().unwrap_or_default();
         assert!(!ways.contains(&json!("signup")), "{told}");
+        assert_eq!(told["invite_only"], json!(true), "{told}");
         let start = Request::SignupStart {
             email: "ada@example.com".into(),
         };

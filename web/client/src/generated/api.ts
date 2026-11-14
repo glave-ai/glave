@@ -1182,6 +1182,13 @@ export type ServerInfo = {
    */
   readonly id?: string | null;
   /**
+   * Whether someone new comes here only by an invite's link: it keeps glave accounts for
+   * people other than the person on its computer and takes no sign-ups (`[serve] signup`),
+   * so a sign-in page can tell a stranger how to get in. Absent where anyone may sign up, and
+   * where no one else signs in at all, as on a laptop.
+   */
+  readonly invite_only?: boolean;
+  /**
    * Whether the caller may invite someone here: the server takes invites (glave accounts
    * at a public origin, or a company login), and the caller's role permits it. So a person
    * alone, whose organization is shown to no one, can still make the first.

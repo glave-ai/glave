@@ -32,12 +32,12 @@ usage: glave-eval judge [options]
 
 Scores glave's deterministic checks, as auto mode applies them, on the judge cases: false
 alarms on actions that should run and catches on actions that should ask, per category. With
---model, also scores the checks with that model judging every soft caution, as auto mode does
+--model, also scores the checks with that model judging every caution, as auto mode does
 with a judge; the endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY.
 
 options:
   --cases <folder>  where the cases are (default evals/judge)
-  --model <id>      a model to judge soft cautions (repeat for several)
+  --model <id>      a model to judge cautions (repeat for several)
   --at-once <n>     judge calls at once (default 8)
   --wrong           also list every wrong decision";
 
@@ -98,7 +98,7 @@ fn run(options: &Options) -> Result<(), String> {
         }
         println!(
             "{}cost: ${:.6}\n",
-            score.markdown(&format!("checks + {name} judging soft cautions")),
+            score.markdown(&format!("checks + {name} judging cautions")),
             provider.spent().decimal()
         );
         if options.wrong {

@@ -145,14 +145,10 @@ pub enum Assessment {
     AsDeclared,
     /// This call only reads, whatever the tool may do.
     Reads,
-    /// This call needs the person in any mode that asks, for `reason`. `secret` when it would
-    /// show the model a secret, as a file that usually holds one does. Unless `firm`, a judge
-    /// that finds the person's say-so in what they asked may let it run in Auto.
-    Caution {
-        reason: Risk,
-        secret: bool,
-        firm: bool,
-    },
+    /// This call needs the person in any mode that asks, for `reason`, unless a judge that
+    /// finds the person's say-so in what they asked lets it run in Auto. `secret` when it would
+    /// show the model a secret, as a file that usually holds one does.
+    Caution { reason: Risk, secret: bool },
 }
 
 /// How a service names one of its tools for the person, as far as it says.

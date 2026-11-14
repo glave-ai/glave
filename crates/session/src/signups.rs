@@ -165,6 +165,12 @@ where
             && self.inner.origin.is_some()
     }
 
+    /// Whether someone new comes here only by an invite: it keeps glave accounts, and takes no
+    /// sign-ups.
+    pub(crate) fn invite_only(&self) -> bool {
+        self.inner.accounts.is_some() && !self.takes_signups()
+    }
+
     /// Answers `signup/start` and `recovery/start` for `caller`: a link of the kind `emailed`
     /// sent to `email`, or, where the address has an account (for a sign-up) or none (to get
     /// back in, where the server takes sign-ups), a note saying so; nothing when a message
