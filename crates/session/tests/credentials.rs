@@ -289,6 +289,11 @@ fn the_person_here_connects_and_removes_a_git_host_over_each_local_transport() {
             "{answered}"
         );
         assert!(!answered.to_string().contains(&good), "{answered}");
+        let told = web.call(&Request::Discover {}).await;
+        assert_eq!(told["result"]["connects"]["git_hosts"], true, "{told}");
+        // Someone not signed in learns what the server is, not what anyone may connect.
+        let told = Web::new(&served, None).call(&Request::Discover {}).await;
+        assert!(told["result"].get("connects").is_none(), "{told}");
         served.close().await;
     });
 }
