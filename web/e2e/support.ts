@@ -590,14 +590,18 @@ export function described(violations: readonly Result[]): readonly string[] {
 }
 
 /**
- * What on the page could still start to move: each element with a transition or an animation of
- * any length, as `described` names what axe found. With motion off there should be none.
+ * What on the page could still start to move: each element drawn with a transition or an
+ * animation of any length, as `described` names what axe found. With motion off there should be
+ * none. What is not drawn (in a closed side nav, `display: none`) moves nothing until it is, and
+ * WebKit keeps the style it last read for such an element across a change of the media it
+ * matches, so it would name a phone's closed drawer's buttons with their old transitions.
  */
 function ableToMove(): readonly string[] {
   const moves = (style: CSSStyleDeclaration): boolean =>
     style.animationName !== 'none' ||
     style.transitionDuration.split(',').some((duration) => Number.parseFloat(duration) > 0);
   return [...document.querySelectorAll('*')]
+    .filter((element) => element.checkVisibility())
     .filter((element) =>
       [undefined, '::before', '::after'].some((pseudo) => moves(getComputedStyle(element, pseudo))),
     )
