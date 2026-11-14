@@ -55,6 +55,12 @@ export const PASSKEY_SIGNALS = new InjectionToken<PasskeySignals | null>('PASSKE
 /** A session a server began, by a link's code or a passkey: each answers it alike. */
 export type Began = Methods['signin/redeem']['result'];
 
+/**
+ * What `server/discover` answers, with `invite_only`, whether people join only by an invite's
+ * link, read before the schema names it: absent, as from a server that does not say, it is no.
+ */
+type Discovered = Methods['server/discover']['result'] & { readonly invite_only?: boolean };
+
 /** Makes the client for the server that served the app, signing each call in with `token`. */
 export const SESSION_CLIENT_FACTORY = new InjectionToken<
   (token: () => string, organization: () => string | null) => SessionClient
@@ -103,6 +109,8 @@ export class SessionService {
   private readonly here = signal<string | null>(null);
   /** Whether the server tells people's browsers when glave needs them, as it said. */
   private readonly pushes = signal(false);
+  /** Whether people join the server only by an invite's link, as it said. */
+  private readonly invitesOnly = signal(false);
   /** The version of glave whose app this page is, as the server said when the page loaded. */
   private readonly loaded = signal<string | null>(null);
   private server: string | undefined;
@@ -143,6 +151,11 @@ export class SessionService {
   readonly signupCode = this.signupLink.asReadonly();
   /** Whether anyone may sign up here with their email, as the server said. */
   readonly signsUp = computed(() => this.reachedElsewhere() && this.ways().includes('signup'));
+  /**
+   * Whether people join here only by an invite's link, as the server said: so the sign-in page
+   * says how to start.
+   */
+  readonly inviteOnly = this.invitesOnly.asReadonly();
   /** The code of the link to get back in the tab was opened with, until the tab signs in. */
   readonly recoverCode = this.recoverLink.asReadonly();
   /** Whether someone who lost their passkeys may get back in by email here, as the server said. */
@@ -299,7 +312,7 @@ export class SessionService {
   }
 
   /** Takes in what the server says it is and how it signs browsers in. */
-  private take(discovered: Methods['server/discover']['result']): void {
+  private take(discovered: Discovered): void {
     this.server = discovered.id ?? undefined;
     this.chosenOrganization.set(
       sessionFor(readSession(this.storage), this.server)?.organization ?? null,
@@ -311,6 +324,7 @@ export class SessionService {
     this.reachedElsewhere.set(typeof discovered.origin === 'string');
     this.here.set(discovered.here ?? null);
     this.pushes.set(discovered.push ?? false);
+    this.invitesOnly.set(discovered.invite_only === true);
   }
 
   /** Forgets the tab's sign-up link, once it opens nothing. */

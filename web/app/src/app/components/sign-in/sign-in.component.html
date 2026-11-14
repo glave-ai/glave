@@ -1,42 +1,48 @@
 <header>
-  <glz-top-bar>{{ copy.name }}</glz-top-bar>
+  <glz-top-bar>
+    <span class="name" data-testid="sign-in-name">{{ copy.name }}</span>
+    <a glzTopBarEnd class="about" data-testid="sign-in-about" [href]="aboutLink">{{
+      copy.about
+    }}</a>
+  </glz-top-bar>
 </header>
 <main class="page">
-  <glz-empty-state data-testid="sign-in" [heading]="heading()" [icon]="icon">
-    @if (setup()) {
-      <p>{{ copy.setupText }}</p>
-    } @else if (withPasskey()) {
-      <p>{{ passkeyText() }}</p>
-      <p class="hint">{{ passkeyHint() }}</p>
-    } @else {
-      <p>{{ copy.text }}</p>
-    }
+  <div class="column glz-stack glz-gap-6" data-testid="sign-in">
+    <div class="words glz-stack glz-gap-4">
+      <h1 class="headline">{{ heading() }}</h1>
+      <p class="lede">{{ lede() }}</p>
+    </div>
     @if (problem(); as problem) {
       <p class="problem" role="alert" data-testid="sign-in-problem">{{ problem }}</p>
     }
-    @if (withPasskey()) {
-      <button
-        glzEmptyStateAction
-        glzButton
-        variant="primary"
-        data-testid="sign-in-passkey"
-        [disabled]="busy()"
-        (click)="go()"
-      >
-        {{ action() }}
-      </button>
-    }
+    <div class="actions glz-stack glz-gap-3">
+      @if (withPasskey()) {
+        <button
+          glzButton
+          variant="primary"
+          size="lg"
+          data-testid="sign-in-passkey"
+          [disabled]="busy()"
+          (click)="go()"
+        >
+          <glz-icon [icon]="key" />
+          {{ action() }}
+        </button>
+      }
+      @if (signsUp()) {
+        <a glzButton size="lg" data-testid="sign-in-sign-up" [routerLink]="signUpLink">{{
+          copy.signUp
+        }}</a>
+      }
+    </div>
     @if (recovers()) {
-      <p class="hint">
+      <p class="note">
         {{ copy.lost }}
         <a data-testid="sign-in-recover" [routerLink]="recoverLink">{{ copy.recover }}</a>
       </p>
     }
-    @if (signsUp()) {
-      <p class="hint">
-        {{ copy.newHere }}
-        <a data-testid="sign-in-sign-up" [routerLink]="signUpLink">{{ copy.signUp }}</a>
-      </p>
+    @if (note(); as note) {
+      <p class="note" data-testid="sign-in-note">{{ note }}</p>
     }
-  </glz-empty-state>
+  </div>
 </main>

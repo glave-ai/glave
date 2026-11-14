@@ -96,6 +96,9 @@ describe('SignInComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('header glz-top-bar')?.textContent).toContain('glave');
+    const about = root.querySelector('[data-testid="sign-in-about"]');
+    expect(about?.textContent.trim()).toBe('What is Glave?');
+    expect(about?.getAttribute('href')).toBe('https://glave.dev');
     const said = root.querySelector('main')?.textContent ?? '';
     expect(said).toContain('Open glave on this computer to sign this browser in');
     expect(said).not.toMatch(/serve|--|config|terminal/u);
@@ -116,11 +119,16 @@ describe('SignInComponent', () => {
   it('signs in with a passkey where glave is reached from elsewhere', async () => {
     const fake = reached();
     const { fixture, navigate, root } = await render(fake, answering(ANSWER));
+    expect(root.querySelector('h1')?.textContent).toBe(
+      'Your AI, on your own computer in the cloud.',
+    );
     const said = root.querySelector('main')?.textContent ?? '';
-    expect(said).toContain('Sign in to glave');
-    expect(said).not.toMatch(/serve|--|config|terminal|passkey\//u);
+    expect(said).toContain('Glave is an AI assistant with a computer of its own.');
+    expect(said).not.toMatch(/serve|--|config|terminal|passkey\/|invite/u);
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]');
+    expect(button?.textContent.trim()).toBe('Sign in with a passkey');
     await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]')?.click();
+    button?.click();
     await fixture.whenStable();
     expect(fake.paramsOf('passkey/get')).toEqual([
       expect.objectContaining({ ceremony: 'c1' }) as unknown,
@@ -205,5 +213,20 @@ describe('SignInComponent', () => {
     TestBed.resetTestingModule();
     const { root } = await render(reached(), answering(ANSWER));
     expect(root.querySelector('[data-testid="sign-in-recover"]')).toBeNull();
+  });
+
+  it('says how to start only where the server takes people by invite alone', async () => {
+    const invited = await render(
+      signingIn({ origin: 'https://glave.test', signin: ['passkey'], invite_only: true }),
+      answering(ANSWER),
+    );
+    const note = invited.root.querySelector('[data-testid="sign-in-note"]');
+    expect(note?.textContent.trim()).toBe(
+      'Glave is invite-only for now. Got an invite? Open its link to start.',
+    );
+    await expectAccessible(invited.root);
+    TestBed.resetTestingModule();
+    const { root } = await render(reached(), answering(ANSWER));
+    expect(root.querySelector('[data-testid="sign-in-note"]')?.textContent).not.toContain('invite');
   });
 });

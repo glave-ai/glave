@@ -79,7 +79,9 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   await problems.signingOut(() =>
     problemsAgain.signingOut(async () => {
       await byTestId(again, 'settings-sign-out').click();
-      await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
+      await expect(byTestId(again, 'sign-in')).toContainText(
+        'Your AI, on your own computer in the cloud.',
+      );
       await expect(byTestId(page, 'sign-in')).toBeVisible();
     }),
   );
