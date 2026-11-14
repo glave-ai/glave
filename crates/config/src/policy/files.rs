@@ -77,6 +77,27 @@ pub struct ConfigFile {
     /// What this server allows among a router's providers for everyone it serves. Only the
     /// server's own file sets it: a person's or a project's could only be chosen around.
     pub router_floor: Option<RouterFloorFile>,
+    /// The service the web is searched through. Only the person's or the server's own file
+    /// sets it: their key goes there.
+    pub search: Option<SearchFile>,
+}
+
+/// `[search]`: the service glave's `web_search` searches through (`specs/session.md`, "Web
+/// search"), with the key in `GLAVE_SEARCH_KEY`, never in a file. Brave unless set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchFile {
+    #[serde(default)]
+    pub provider: SearchProvider,
+}
+
+/// A service glave searches the web through.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchProvider {
+    /// Brave's Search API.
+    #[default]
+    Brave,
 }
 
 /// `[router_floor]`: what a router's providers must be for any call this server makes, which a

@@ -10,7 +10,7 @@ use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
 use crate::policy::files::{
-    ConfigFile, CreditsFile, EmailFile, GithubFile, ModelEntry, RouterFloorFile,
+    ConfigFile, CreditsFile, EmailFile, GithubFile, ModelEntry, RouterFloorFile, SearchFile,
 };
 use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
@@ -110,6 +110,8 @@ pub struct Choices {
     pub credits: Option<Chosen<CreditsFile>>,
     /// What this server allows among a router's providers for everyone (`[router_floor]`).
     pub router_floor: Option<Chosen<RouterFloorFile>>,
+    /// The service the web is searched through (`[search]`).
+    pub search: Option<Chosen<SearchFile>>,
 }
 
 /// One level choices come from.
@@ -185,6 +187,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         forwarded: nearest(layers, "serve", |file| file.serve.as_ref()?.forwarded),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         router_floor: nearest(layers, "router_floor", |file| file.router_floor.clone()),
+        search: nearest(layers, "search", |file| file.search),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())

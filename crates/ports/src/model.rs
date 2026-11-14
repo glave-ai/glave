@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::failure::Failure;
 use crate::media::{Made, MediaAsk};
 use crate::scope::OrgId;
+use crate::web_search::{SearchAsk, Searched};
 
 /// A model that can answer a conversation.
 pub trait ModelProvider: Send + Sync {
@@ -42,10 +43,24 @@ pub trait ModelProvider: Send + Sync {
         }))
     }
 
-    /// Whether calls for `purpose` are served: every model call, and a media tool's only
-    /// where the provider says so.
+    /// Finds pages on the web for `ask`, `request` saying whose work it is ([`Purpose::WebSearch`]).
+    /// A provider that searches nothing refuses.
+    fn search(
+        &self,
+        request: &ModelRequest,
+        ask: &SearchAsk,
+    ) -> impl Future<Output = Result<Searched, ProviderError>> + Send {
+        let _ = ask;
+        std::future::ready(Err(ProviderError::Unserved {
+            failure: Failure::Rejected,
+            reason: format!("nothing here serves {}", request.purpose.id()),
+        }))
+    }
+
+    /// Whether calls for `purpose` are served: every model call, and a tool's only where the
+    /// provider says so.
     fn serves(&self, purpose: Purpose) -> bool {
-        !purpose.is_media()
+        !purpose.is_tool()
     }
 }
 
@@ -175,11 +190,13 @@ pub enum Purpose {
     ImageGenerate,
     /// `image_edit`: a changed copy of an image.
     ImageEdit,
+    /// `web_search`: pages on the web found for a query (`specs/session.md`, "Web search").
+    WebSearch,
 }
 
 impl Purpose {
-    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent`, `title`, or a media
-    /// tool's name.
+    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent`, `title`, or a tool's
+    /// name.
     pub fn id(self) -> &'static str {
         match self {
             Self::Main => "main",
@@ -189,12 +206,19 @@ impl Purpose {
             Self::Title => "title",
             Self::ImageGenerate => "image_generate",
             Self::ImageEdit => "image_edit",
+            Self::WebSearch => "web_search",
         }
     }
 
     /// Whether it is a media tool's: served only by a route of its own, never `main`'s.
     pub fn is_media(self) -> bool {
         matches!(self, Self::ImageGenerate | Self::ImageEdit)
+    }
+
+    /// Whether it is one of glave's own tools' that reach a service beyond the model, a media
+    /// tool's or `web_search`'s: served only where the provider says so.
+    pub fn is_tool(self) -> bool {
+        self.is_media() || self == Self::WebSearch
     }
 
     #[expect(

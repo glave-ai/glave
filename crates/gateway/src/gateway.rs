@@ -6,7 +6,7 @@ use std::sync::Arc;
 use glave_event::{CostKind, Currency, Money};
 use glave_ports::{
     Completion, Delta, EventLog, Failure, Made, MediaAsk, ModelProvider, ModelRequest,
-    ProviderError, Purpose, Route, Served, Unpaid,
+    ProviderError, Purpose, Route, SearchAsk, Searched, Served, Unpaid,
 };
 use tracing::Instrument as _;
 
@@ -17,6 +17,7 @@ use crate::media::{self, IMAGE_IN_TOKENS};
 use crate::plan::{candidates, prepare};
 use crate::price::Price;
 use crate::routes::{RouteError, Routes};
+use crate::search::{self, WebSearch};
 use crate::target::Target;
 use crate::telemetry;
 use glave_event::Filters;
@@ -44,6 +45,8 @@ pub struct Gateway {
     /// What the server allows for every call, whoever's it is, which nothing a person chooses
     /// loosens: where providers may be based, and that they keep nothing.
     floor: Option<Filters>,
+    /// The service the web is searched through; none where the server has none.
+    search: Option<WebSearch>,
 }
 
 impl Gateway {
@@ -54,7 +57,15 @@ impl Gateway {
             credits: None,
             filters: None,
             floor: None,
+            search: None,
         }
+    }
+
+    /// Searches the web through `search`, paid at its price where credits are kept.
+    #[must_use]
+    pub fn with_search(mut self, search: Option<WebSearch>) -> Self {
+        self.search = search;
+        self
     }
 
     /// Charges each call that says whose work it is to its organization's `credits`.
@@ -270,10 +281,25 @@ impl ModelProvider for Gateway {
         self.serve(&targets, request, Call::Make(ask)).await
     }
 
-    /// Whether calls for `purpose` are served: a media tool's only by a route of its own, and,
-    /// where credits are kept, only when one of its targets is priced, as an unpriced one is
-    /// refused.
+    /// A search, through the server's search service, held and charged as `search`.
+    async fn search(
+        &self,
+        request: &ModelRequest,
+        ask: &SearchAsk,
+    ) -> Result<Searched, ProviderError> {
+        let Some(search) = &self.search else {
+            return Err(search::unserved());
+        };
+        search.search(self.credits.as_deref(), request, ask).await
+    }
+
+    /// Whether calls for `purpose` are served: a search where the server searches, a media
+    /// tool's only by a route of its own, and, where credits are kept, only when one of its
+    /// targets is priced, as an unpriced one is refused.
     fn serves(&self, purpose: Purpose) -> bool {
+        if purpose == Purpose::WebSearch {
+            return self.search.is_some();
+        }
         let priced = |target: &Target| {
             (target.price.as_ref()).is_some_and(|price| price.currency == Currency::USD)
         };

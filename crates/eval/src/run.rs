@@ -18,6 +18,8 @@ use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
 use glave_provider_openai::{Config, OpenAiCompatible};
+
+use crate::search::WithSearch;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
 use glave_web::{Limits, Web, WebSettings};
@@ -40,7 +42,7 @@ const MAX_STEPS: u32 = 50;
 const REPOSITORY: &str = "glave-ai/glave";
 
 /// The harness as an attempt wires it.
-type Wired = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>;
+type Wired = Harness<WithSearch<OpenAiCompatible>, SqliteLog, SqliteBlobs, NoOneToAsk>;
 
 /// What every attempt runs with.
 pub struct Setup {
@@ -323,8 +325,14 @@ async fn wire(
     (remembering, calendar): (&Remembering, &Calendar),
 ) -> Result<Wired, EvalError> {
     let workspace = workspace(task, setup, (environment, hidden), root).await?;
-    let provider = OpenAiCompatible::new(setup.endpoint.clone())
+    let tested = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
+    // The task's web search, on as where the server has a search key.
+    let found = crate::search::results(task, web).await?;
+    let provider = WithSearch {
+        model: tested,
+        found,
+    };
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
     settings.instructions = agents_md(root, None)
         .await
@@ -359,9 +367,6 @@ async fn wire(
     })
     .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut tools: Vec<Arc<dyn ToolSource>> = vec![Arc::new(web)];
-    // The person's own servers follow glave's tools, as the CLI offers them.
-    let searching = crate::search::connection(task, pages, root, &setup.processes).await?;
-    tools.extend(searching.map(|server| Arc::new(server) as Arc<dyn ToolSource>));
     tools.extend(crate::connected::services(task).await?);
     // The project's skills, as the CLI finds them, then glave's own; the person's own are not
     // part of a task.

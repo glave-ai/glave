@@ -9,8 +9,8 @@ use glave_event::{Currency, ModelRef, Money, Nanos, Opaque, Part, StopReason, To
 use glave_gateway::{Model, Price, Target};
 pub(crate) use glave_ports::block_on;
 use glave_ports::{
-    BoxFuture, Completion, Delta, Made, MadeFile, MediaAsk, Message, ModelRequest, ProviderError,
-    Purpose, ToolChoice, ToolSpec,
+    BoxFuture, Completion, Delta, Hit, Made, MadeFile, MediaAsk, Message, ModelRequest,
+    ProviderError, Purpose, SearchAsk, Searched, ToolChoice, ToolSpec,
 };
 use tokio::sync::Semaphore;
 
@@ -123,6 +123,26 @@ impl Model for Fake {
             })
         })
     }
+
+    /// One page found, or the script's next error, as a call's would be.
+    fn search<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a SearchAsk,
+    ) -> BoxFuture<'a, Result<Searched, ProviderError>> {
+        Box::pin(async move {
+            self.send(request, &mut |_| {}).await?;
+            let hit = Hit {
+                title: ask.query.clone(),
+                url: "https://example.com/".into(),
+                snippet: "Found.".into(),
+            };
+            Ok(Searched {
+                hits: vec![hit],
+                cost: None,
+            })
+        })
+    }
 }
 
 /// `per_mtok` billionths of a dollar a million tokens, in and out: at 1,000,000, a billionth
@@ -227,4 +247,15 @@ pub(crate) fn with_reasoning(
         }],
     });
     request
+}
+
+/// The person whose work the tests' paid calls are.
+pub(crate) fn person() -> glave_event::PrincipalId {
+    glave_event::PrincipalId::new(jiff::Timestamp::from_second(1).unwrap(), [1; 10]).unwrap()
+}
+
+/// The organization the tests' paid calls charge.
+pub(crate) fn org() -> glave_ports::OrgId {
+    let id = glave_event::PrincipalId::new(jiff::Timestamp::from_second(2).unwrap(), [2; 10]);
+    glave_ports::OrgId::from_uuid(id.unwrap().as_uuid())
 }

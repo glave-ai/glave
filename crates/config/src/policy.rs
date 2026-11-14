@@ -28,7 +28,8 @@ pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{
     ConfigFile, CreditsFile, EmailFile, GithubFile, HooksFile, ModelEntry, PolicyFile,
-    RouterFloorFile, ServeFile, ServerFile, StoreFile, TaskRules, TelemetryFile, config,
+    RouterFloorFile, SearchFile, SearchProvider, ServeFile, ServerFile, StoreFile, TaskRules,
+    TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use provider::{ApiChoice, BedrockEndpointChoice, ProviderFile};
@@ -162,7 +163,8 @@ fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<
 /// never chooses. A project never chooses where telemetry goes,
 /// nor where history is kept, nor where people's computers run, nor which server to sign in to, nor where people reach this one,
 /// nor which cloud the organization's credentials go to, nor which app their GitHub sign-in
-/// goes to, nor which mail server sign-in links go through, nor who pays for models. It may take the network away from sandboxed commands, never give it back.
+/// goes to, nor which mail server sign-in links go through, nor who pays for models, nor which
+/// service searches the web. It may take the network away from sandboxed commands, never give it back.
 fn project_layer(path: &Path, values: ConfigFile) -> Layer {
     let values = ConfigFile {
         telemetry: None,
@@ -175,6 +177,7 @@ fn project_layer(path: &Path, values: ConfigFile) -> Layer {
         email: None,
         credits: None,
         router_floor: None,
+        search: None,
         network: values.network.filter(|on| !on),
         ..values
     };

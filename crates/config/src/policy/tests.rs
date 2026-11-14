@@ -392,6 +392,24 @@ fn limits_are_the_dollars_written() {
 }
 
 #[test]
+fn search_names_its_service_and_brave_is_the_one_there_is() {
+    let search = |text: &str| {
+        files::config(text, Path::new("/home/ada/.glave/config.toml"))
+            .map(|file| file.search.map(|search| search.provider))
+    };
+    assert_eq!(search("").unwrap(), None);
+    let brave = Some(SearchProvider::Brave);
+    assert_eq!(search("[search]\n").unwrap(), brave, "the default");
+    assert_eq!(search("[search]\nprovider = \"brave\"\n").unwrap(), brave);
+    for wrong in [
+        "[search]\nprovider = \"other\"\n",
+        "[search]\nkey = \"x\"\n",
+    ] {
+        assert!(search(wrong).is_err(), "{wrong}");
+    }
+}
+
+#[test]
 fn catalogs_are_enforced_and_narrow_one_another() {
     let catalog = Constraints::of(&[
         policy_at(

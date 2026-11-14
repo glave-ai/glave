@@ -7,6 +7,7 @@ use std::sync::Arc;
 use glave_event::Reasoning;
 use glave_ports::{
     BoxFuture, Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
+    SearchAsk, Searched,
 };
 
 use crate::filtering::Router;
@@ -28,6 +29,13 @@ pub trait Model: Send + Sync {
         request: &'a ModelRequest,
         ask: &'a MediaAsk,
     ) -> BoxFuture<'a, Result<Made, ProviderError>>;
+
+    /// Searches the web for what `ask` asks ([`ModelProvider::search`]).
+    fn search<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a SearchAsk,
+    ) -> BoxFuture<'a, Result<Searched, ProviderError>>;
 }
 
 #[deny(clippy::missing_trait_methods)]
@@ -46,6 +54,14 @@ impl<P: ModelProvider> Model for P {
         ask: &'a MediaAsk,
     ) -> BoxFuture<'a, Result<Made, ProviderError>> {
         Box::pin(ModelProvider::make(self, request, ask))
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        ask: &'a SearchAsk,
+    ) -> BoxFuture<'a, Result<Searched, ProviderError>> {
+        Box::pin(ModelProvider::search(self, request, ask))
     }
 }
 

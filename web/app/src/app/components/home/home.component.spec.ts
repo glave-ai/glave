@@ -212,7 +212,7 @@ describe('HomeComponent', () => {
     expect(off.querySelector('[data-testid="home-searching"]')).toBeNull();
     TestBed.resetTestingModule();
     const on = session().answer('search/get', {
-      search: { kind: 'chosen', on: true, detail: 'Uses Exa, free. Your searches go to Exa.' },
+      search: { kind: 'chosen', on: true, detail: 'Uses Brave Search. Your searches go to Brave Search.' },
     });
     const root = await render(on);
     const globe = root.querySelector('[data-testid="home-searching"]');

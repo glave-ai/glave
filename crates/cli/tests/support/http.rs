@@ -53,6 +53,7 @@ pub(crate) fn serve_http_at(
         .args(args)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env(SEARCH_STAND_IN.0, SEARCH_STAND_IN.1)
+        .env_remove("GLAVE_SEARCH_KEY")
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", url)
         .env("GLAVE_HOME", &place.home)

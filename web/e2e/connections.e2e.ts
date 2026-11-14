@@ -1,5 +1,5 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
@@ -126,26 +126,14 @@ test('web search is a switch in Settings, and the composer shows a globe while i
   const problems = watchForProblems(page);
   const site = browserName === 'webkit' ? CONNECTIONS_WEBKIT : CONNECTIONS;
   const glave = served(site);
-  const settings = join(homeOf(site), 'mcp.json');
-  writeFileSync(settings, JSON.stringify({ mcpServers: {} }));
   const code = await signInCode(site);
   await page.goto(`${glave}/settings#code=${code}`);
   const search = byTestId(page, 'web-search');
-  await expect(search).toContainText('Uses Exa, free. Your searches go to Exa.');
+  await expect(search).toContainText('Uses Brave Search. Your searches go to Brave Search.');
+  // On by default, where the server has a search key.
   const box = byTestId(page, 'web-search-on-input');
-  await expect(box).not.toBeChecked();
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme });
-    await expectAccessible(page);
-  }
-
-  await box.click();
   await expect(box).toBeChecked();
   await expect(byTestId(page, 'web-search-usage')).toHaveText('No searches this month');
-  const turnedOn = JSON.parse(readFileSync(settings, 'utf8')) as {
-    readonly mcpServers: Readonly<Record<string, { readonly url?: string }>>;
-  };
-  expect(turnedOn.mcpServers['search']?.url).toMatch(/tools=web_search_exa$/u);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
@@ -167,14 +155,13 @@ test('web search is a switch in Settings, and the composer shows a globe while i
 
   await page.goBack();
   await page.goBack();
-  // The switch shows the click at once; the file changes once the server answers it.
+  // The switch shows the click at once; the server's answer is what stays.
   const answered = page.waitForResponse(
     (response) => response.request().headers()['glave-method'] === 'search/set',
   );
   await byTestId(page, 'web-search-on-input').click();
   await expect(byTestId(page, 'web-search-on-input')).not.toBeChecked();
   await answered;
-  expect(readFileSync(settings, 'utf8')).not.toContain('web_search_exa');
   await byTestId(page, 'nav-new-chat').click();
   await expect(byTestId(page, 'home-composer-box')).toBeVisible();
   await expect(globe).toHaveCount(0);

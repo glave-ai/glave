@@ -126,7 +126,7 @@ fn a_run_is_the_calls_between_words_told_by_kind_with_its_failures() {
         .calls("edit", "edit", "a.rs", Some(false))
         .calls("search", "search", "", Some(false))
         .calls("bash", "command", "", Some(false))
-        .calls("mcp__search__web_search_exa", "web", "", Some(false))
+        .calls("web_search", "web", "", Some(false))
         .calls("mcp__x__y", "other", "", Some(false))
         .says("assistant", "Fixed.")
         .ends();

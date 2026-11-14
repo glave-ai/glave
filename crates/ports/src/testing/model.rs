@@ -11,12 +11,16 @@ use crate::media::{Made, MediaAsk};
 use crate::model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
 };
+use crate::web_search::{SearchAsk, Searched};
 
 /// Every request a scripted model received, in order.
 pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
 
 /// Every media call a scripted model was asked to make, in order, with what it asked beside.
 pub type SeenMade = Arc<Mutex<Vec<(ModelRequest, MediaAsk)>>>;
+
+/// Every search a scripted model was asked for, in order.
+pub type SeenSearched = Arc<Mutex<Vec<(ModelRequest, SearchAsk)>>>;
 
 /// One scripted answer: a completion (or what a media call made), or the error the provider
 /// gives.
@@ -45,6 +49,9 @@ pub struct ScriptedModel {
     /// What it answers every media call with; none when it serves no media tool.
     making: Option<Answer<Made>>,
     seen_made: SeenMade,
+    /// What it answers every search with; none when it searches nothing.
+    searching: Option<Answer<Searched>>,
+    seen_searched: SeenSearched,
 }
 
 impl ScriptedModel {
@@ -65,7 +72,23 @@ impl ScriptedModel {
             recording: true,
             making: None,
             seen_made: SeenMade::default(),
+            searching: None,
+            seen_searched: SeenSearched::default(),
         }
+    }
+
+    /// The same model, serving `web_search` and answering each search with `found`.
+    #[must_use]
+    pub fn searching(self, found: Answer<Searched>) -> Self {
+        Self {
+            searching: Some(found),
+            ..self
+        }
+    }
+
+    /// Every search the model is asked for, as it is asked.
+    pub fn seen_searched(&self) -> SeenSearched {
+        Arc::clone(&self.seen_searched)
     }
 
     /// The same model, serving every media tool and answering each call with `made`.
@@ -239,8 +262,28 @@ impl ModelProvider for ScriptedModel {
         std::future::ready(made)
     }
 
+    fn search(
+        &self,
+        request: &ModelRequest,
+        ask: &SearchAsk,
+    ) -> impl Future<Output = Result<Searched, ProviderError>> + Send {
+        self.seen_searched
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((request.clone(), ask.clone()));
+        let found = self
+            .searching
+            .clone()
+            .unwrap_or_else(|| Err(ProviderError::Protocol("no script searches".to_owned())));
+        std::future::ready(found)
+    }
+
     fn serves(&self, purpose: Purpose) -> bool {
-        !purpose.is_media() || self.making.is_some()
+        match purpose {
+            Purpose::WebSearch => self.searching.is_some(),
+            purpose if purpose.is_media() => self.making.is_some(),
+            _ => true,
+        }
     }
 }
 

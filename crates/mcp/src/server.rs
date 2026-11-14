@@ -118,9 +118,6 @@ pub struct McpServer {
     /// Whether what every tool and resource of the server returns is untrusted, as the person
     /// or a policy marked it.
     untrusted: bool,
-    /// The model's name for the server's tool that searches the web, when it has one: each
-    /// call is told to the person as what was searched.
-    search: Option<String>,
     /// The person's name for the account of the service it is signed in to, when they named
     /// one: each call, and an approval of it, names it.
     account: Option<String>,
@@ -344,7 +341,6 @@ impl McpServer {
             process,
             waits: limits.waits(),
             untrusted: false,
-            search: None,
             account: None,
             known_as: None,
         }
@@ -354,16 +350,6 @@ impl McpServer {
     #[must_use]
     pub fn timed_by(mut self, clock: Arc<dyn Clock>) -> Self {
         *self.again.get_mut().unwrap_or_else(PoisonError::into_inner) = Again::new(clock);
-        self
-    }
-
-    /// Marks the server's tool `tool` as its web search: each call is told to the person as
-    /// what was searched, `Searched the web: rust async runtimes`, not as its arguments; what it
-    /// finds is untrusted, whatever the server says; and the model is told, beside the server's
-    /// own notes, to search first and read the pages it found with `web_fetch`.
-    #[must_use]
-    pub fn searching_with(mut self, tool: &str) -> Self {
-        self.search = Some(crate::exposed(&self.name, tool));
         self
     }
 
@@ -408,7 +394,6 @@ impl McpServer {
             process: Arc::new(Mutex::new(None)),
             waits: limits.waits(),
             untrusted: false,
-            search: None,
             account: None,
             known_as: None,
         }
@@ -607,10 +592,9 @@ impl McpServer {
             Some(Ok(connection)) => {
                 let called = connection.call(name, arguments, answerer, cancel, self.waits);
                 match called.await {
-                    // What the server answered, an error included; a web search's results come
-                    // from the open world, whatever its server says.
+                    // What the server answered, an error included.
                     Ok(Called::Done(mut output)) => {
-                        output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
+                        output.untrusted |= self.untrusted;
                         Called::Done(output)
                     }
                     Ok(asks) => asks,

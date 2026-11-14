@@ -11,16 +11,23 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{Currency, Filters, Nanos};
-use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target};
+use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target, WebSearch};
 use glave_ports::{
-    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError, Purpose,
+    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
+    Purpose, SearchAsk, Searched,
 };
 
 use crate::config::Endpoint;
 use crate::data::DataLog;
 use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
-use glave_config::policy::{Constraints, ModelEntry, RouterFloorFile, Source, check_model};
+use glave_config::policy::{
+    Constraints, ModelEntry, RouterFloorFile, SearchProvider, Source, check_model,
+};
+use glave_event::Secret;
+use glave_web::Brave;
+
+use crate::setup::Setup;
 use glave_session::PersonFilters;
 use glave_session::protocol::ModelInfo;
 
@@ -144,6 +151,40 @@ pub(crate) fn router_floor(floor: Option<&RouterFloorFile>) -> Option<Filters> {
     })
 }
 
+/// The variable that holds the key the web is searched with, never in a file: any deployment
+/// sets its own the same way.
+const SEARCH_KEY: &str = "GLAVE_SEARCH_KEY";
+
+/// The variable that puts a stand-in in place of the search service, for tests and for trying
+/// glave by hand (`cargo xtask try-org`), which never reach it.
+const SEARCH_STAND_IN: &str = "GLAVE_SEARCH_URL";
+
+/// The service the web is searched through, as `[search]` names it, with the key in
+/// `GLAVE_SEARCH_KEY`: none without a key, or where the policy keeps people from servers of
+/// their own (`[mcp] own = false`), which turns web search off for everyone the server serves.
+pub(crate) fn web_search(setup: &Setup) -> anyhow::Result<Option<WebSearch>> {
+    if setup.loaded.constraints.own_mcp_forbidden().is_some() {
+        return Ok(None);
+    }
+    let Some(key) = std::env::var(SEARCH_KEY)
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let chosen = setup.choices.search.as_ref().map(|search| search.value);
+    let stand_in = std::env::var(SEARCH_STAND_IN).ok();
+    match chosen.unwrap_or_default().provider {
+        SearchProvider::Brave => {
+            let brave = Brave::new(Secret::new(key.trim()), stand_in.as_deref())?;
+            Ok(Some(WebSearch {
+                handle: Arc::new(brave),
+                price: Brave::price(),
+            }))
+        }
+    }
+}
+
 /// The gateway in use, or none while no model is set up: replaced whole when the person
 /// connects or removes a model account, so each call goes to the models set up when it
 /// starts. Every gateway it is given charges the organizations' credits, where the server
@@ -154,6 +195,8 @@ pub(crate) struct GatewaySwitch {
     credits: Option<Arc<Credits<DataLog>>>,
     /// What the server allows among a router's providers for everyone it serves.
     floor: Option<Filters>,
+    /// The service the web is searched through, where the server has one.
+    search: Option<WebSearch>,
     /// Each person's filters among a router's providers, which the session server answers
     /// once it is made.
     filters: Arc<PersonFilters>,
@@ -163,12 +206,13 @@ impl GatewaySwitch {
     pub(crate) fn new(
         gateway: Option<Gateway>,
         credits: Option<Arc<Credits<DataLog>>>,
-        floor: Option<Filters>,
+        (floor, search): (Option<Filters>, Option<WebSearch>),
     ) -> Self {
         let switch = Self {
             current: Arc::default(),
             credits,
             floor,
+            search,
             filters: Arc::default(),
         };
         switch.set(gateway);
@@ -180,7 +224,8 @@ impl GatewaySwitch {
         let gateway = gateway.map(|gateway| {
             let gateway = gateway
                 .with_filters(Arc::clone(&self.filters) as Arc<dyn Filtering>)
-                .with_floor(self.floor.clone());
+                .with_floor(self.floor.clone())
+                .with_search(self.search.clone());
             match &self.credits {
                 Some(credits) => gateway.with_credits(Arc::clone(credits)),
                 None => gateway,
@@ -250,6 +295,17 @@ impl ModelProvider for GatewaySwitch {
     async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
         match self.current() {
             Some(gateway) => gateway.make(request, ask).await,
+            None => Err(no_model()),
+        }
+    }
+
+    async fn search(
+        &self,
+        request: &ModelRequest,
+        ask: &SearchAsk,
+    ) -> Result<Searched, ProviderError> {
+        match self.current() {
+            Some(gateway) => gateway.search(request, ask).await,
             None => Err(no_model()),
         }
     }

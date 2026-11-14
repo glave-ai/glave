@@ -537,7 +537,8 @@ sentences! {
     SignedInAs { who: String } = "signed-in-as" "Signed in as { $who }",
     AccountReplaced { service: String } = "account-replaced"
         "Your { $service } account used everywhere else is not used here: this one takes its place.",
-    SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",
+    SearchDetail { service: String } = "search-detail"
+        "Uses { $service }. Your searches go to { $service }.",
     SearchNotHere = "search-not-here"
         "web search is set up by whoever runs this server, not from here",
     SearchOnItsComputer = "search-on-its-computer"

@@ -4,6 +4,7 @@
 
 mod approval;
 mod background;
+mod beyond;
 mod bind;
 mod builtins;
 mod caller;
@@ -55,6 +56,7 @@ mod toolset;
 mod turn;
 mod untrusted;
 mod waits;
+mod web_search;
 
 pub use approval::{AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk, acts_through};
 pub use background::{Commands, RunningCommand};

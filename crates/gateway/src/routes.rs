@@ -59,7 +59,7 @@ impl Routes {
     pub fn targets(&self, purpose: Purpose) -> &[Target] {
         match self.others.get(&purpose) {
             Some(targets) => targets,
-            None if purpose.is_media() => &[],
+            None if purpose.is_tool() => &[],
             None => &self.main,
         }
     }

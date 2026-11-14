@@ -9,7 +9,9 @@
 //! service, glave's MCP test server, whose tool the stand-in calls when told to "ask me
 //! something", to try what a service asks the person; told to "draw me" something, with an
 //! OpenRouter account connected, it makes an image through glave's image tool, the stand-in's
-//! picture coming back as OpenRouter's image API would send it; with `--credits`,
+//! picture coming back as OpenRouter's image API would send it; told to "look up" something,
+//! it searches the web through glave's own search, at a stand-in search service of its own; with
+//! `--credits`,
 //! it is the server's own OpenRouter, as on Glave Cloud, with no account to connect, and
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
@@ -141,6 +143,12 @@ fn serve(root: &Path, folder: &Path, credits: bool, floor: bool) -> Result<(), S
             )
             .env("GLAVE_HOME", &home)
             .env("GLAVE_OPENROUTER_URL", &router)
+            // Web search on, through the stand-in's own search: no key of anyone's, no cost.
+            .env("GLAVE_SEARCH_KEY", "try-org")
+            .env(
+                "GLAVE_SEARCH_URL",
+                format!("{}{}", model.url, model::SEARCH),
+            )
             .current_dir(root)
             .no_input();
         // After the variables are cleared above.
@@ -197,7 +205,8 @@ fn say_what_it_is(folder: &Path, home: &Path, credits: bool) {
          xtask: someone you invite: a private window, opening the invite's link, at the \
          localhost address glave prints\n\
          xtask: its model is a stand-in that answers every message the same, and says each \
-         answer cost $0.10\n\
+         answer cost $0.10; told to \"look up\" something, it searches the web through a \
+         stand-in search, which finds one page whatever is asked\n\
          {router_said}\n\
          xtask: it runs until Ctrl-C in this window, which stops it and removes it all; \
          press Enter here to open it in your browser again",

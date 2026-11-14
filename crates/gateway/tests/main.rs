@@ -10,3 +10,4 @@ mod fallback;
 mod filters;
 mod media;
 mod routes;
+mod search;
