@@ -350,6 +350,17 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
+        // Web search is not theirs to choose, and they are told why, as `search/set` refused.
+        let never = client
+            .call(Request::SearchGet { usage: false })
+            .await
+            .unwrap();
+        assert_eq!(never["search"]["kind"], "never", "{never}");
+        let reason = never["search"]["reason"].as_str().unwrap_or_default();
+        assert_eq!(
+            reason,
+            "whoever runs this server turns web search on or off"
+        );
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;

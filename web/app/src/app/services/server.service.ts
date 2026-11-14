@@ -61,6 +61,11 @@ export class ServerService {
   readonly createToInvite = computed(
     () => (this.info()?.personal ?? false) && this.organizations(),
   );
+  /**
+   * Whether the person may connect model accounts here, as the server says: elsewhere the
+   * server's own models are set up by whoever runs it, and Settings offers no accounts.
+   */
+  readonly modelAccounts = computed(() => this.info()?.model_accounts ?? false);
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

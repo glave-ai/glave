@@ -112,6 +112,8 @@ export async function fakeAdmin(
         invites: true,
         exists: { organization: true },
         role: 'owner',
+        // Signed in from elsewhere, where the server's own models are set up for everyone.
+        model_accounts: false,
       };
   await page.route('**/*', async (route: Route) => {
     const message = await posted(route);

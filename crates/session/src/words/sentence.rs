@@ -493,22 +493,22 @@ sentences! {
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
     MemoryOnItsComputer = "memory-on-its-computer"
-        "memory is turned on or off on the computer glave runs on, by its person",
+        "whoever runs this server turns memory on or off",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",
 
     // Accounts, sign-in and the person's own settings.
     ModelsNotHere = "models-not-here"
         "this server's models are set up by whoever runs it, not from here",
     ModelAccountsOnItsComputer = "model-accounts-on-its-computer"
-        "model accounts are connected on the computer glave runs on, by its person",
+        "whoever runs this server connects its model accounts",
     AccountsNotHere = "accounts-not-here"
         "connecting accounts is set up by whoever runs this server, not from here",
     AccountsOnItsComputer = "accounts-on-its-computer"
-        "accounts are connected on the computer glave runs on, by its person",
+        "whoever runs this server connects its accounts",
     SecretsNotHere = "secrets-not-here"
         "secrets are set up by whoever runs this server, not from here",
     SecretsOnItsComputer = "secrets-on-its-computer"
-        "secrets are added on the computer glave runs on, by its person",
+        "whoever runs this server adds its secrets",
     NotASecretName = "not-a-secret-name"
         "a secret's name is a variable's: a letter or _, then letters, digits and _, such as STRIPE_KEY",
     SecretValue = "secret-value"
@@ -549,7 +549,8 @@ sentences! {
     SearchNotHere = "search-not-here"
         "web search is set up by whoever runs this server, not from here",
     SearchOnItsComputer = "search-on-its-computer"
-        "web search is turned on or off on the computer glave runs on, by its person",    CallsThisMonth { calls: u64 } = "calls-this-month"
+        "whoever runs this server turns web search on or off",
+    CallsThisMonth { calls: u64 } = "calls-this-month"
         "{ $calls ->\n    [0] No calls\n    [1] One call\n   *[other] { $calls } calls\n } this month",
     SearchesThisMonth { searches: u64 } = "searches-this-month"
         "{ $searches ->\n    [0] No searches\n    [1] One search\n   *[other] { $searches } searches\n } this month",

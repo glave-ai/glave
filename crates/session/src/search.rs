@@ -22,13 +22,17 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Why web search is not `caller`'s to choose, if it is not: the server searches nothing,
-    /// or they are not the person on this computer.
+    /// Why web search is not `caller`'s to choose, if it is not: they are not the person on
+    /// this computer, or the server searches nothing.
     fn search_refused(&self, caller: &Caller) -> Option<ApiError> {
-        if !self.inner.harness.can_search() {
-            return Some(ApiError::new(code::NOT_AVAILABLE, Sentence::SearchNotHere));
+        if !local(caller) {
+            return Some(ApiError::new(
+                code::NOT_ALLOWED,
+                Sentence::SearchOnItsComputer,
+            ));
         }
-        (!local(caller)).then(|| ApiError::new(code::NOT_ALLOWED, Sentence::SearchOnItsComputer))
+        (!self.inner.harness.can_search())
+            .then(|| ApiError::new(code::NOT_AVAILABLE, Sentence::SearchNotHere))
     }
 
     /// Reads the person on this computer's choice from their settings ledger and hands it to
