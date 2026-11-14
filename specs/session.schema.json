@@ -3284,7 +3284,7 @@
           "type": "string"
         },
         "organizations": {
-          "description": "Whether the caller may create an organization (`organization/create`): they signed in\nwith a glave account, where the server takes sign-ups.",
+          "description": "Whether the caller may create an organization (`organization/create`): they signed in\nwith a glave account, whether or not the server takes sign-ups.",
           "type": "boolean"
         },
         "origin": {

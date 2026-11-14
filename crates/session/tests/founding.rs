@@ -1,7 +1,7 @@
-//! Creating organizations (`specs/model.md`, "Identity"): where the server takes sign-ups,
-//! anyone signed in with a glave account creates one, its Owner, to invite people to, as many
-//! as ten; their personal space, which sign-up made, never takes invites. A server that takes
-//! no sign-ups grows no organizations, and its own keeps inviting as it does.
+//! Creating organizations (`specs/model.md`, "Identity"): anyone signed in with a glave account
+//! creates one, its Owner, to invite people to, as many as ten, sign-up open or closed; their
+//! personal space, which sign-up made, never takes invites. The person on the server's computer
+//! creates none, and the server's own organization keeps inviting as it does.
 
 use std::sync::Arc;
 
@@ -11,8 +11,12 @@ use glave_ports::testing::Outbox;
 use glave_session::protocol::{Reply, Request, code};
 use serde_json::{Value, json};
 
+use glave_identity::testing::Authenticator;
+use glave_session::protocol::LinkKind;
+use glave_session::signin::LocalToken;
+
 use crate::signups::{organized, serve, signed_up};
-use crate::support::web::{Web, asked, elsewhere};
+use crate::support::web::{ORIGIN, Web, asked, elsewhere, make_passkey};
 use crate::support::*;
 
 fn create(name: &str) -> Request {
@@ -167,7 +171,7 @@ fn a_new_organization_is_apart_from_the_personal_space_and_from_everyone_else() 
 }
 
 #[test]
-fn a_server_that_takes_no_sign_ups_grows_no_organizations_and_its_own_invites() {
+fn the_person_on_the_servers_computer_creates_none_and_its_own_organization_invites() {
     let dir = folder("founding-none");
     block_on!(async {
         let mut setup = Setup::new(Vec::new());
@@ -189,5 +193,38 @@ fn a_server_that_takes_no_sign_ups_grows_no_organizations_and_its_own_invites() 
         };
         let made = server.request_as(&owner, invite).await.unwrap();
         assert!(matches!(made, Reply::Invited { .. }), "{made:?}");
+    });
+}
+
+#[test]
+fn someone_who_joined_by_an_invite_creates_one_where_sign_up_is_closed() {
+    block_on!(async {
+        let dir = folder("founding-closed");
+        let outbox = Arc::new(Outbox::default());
+        let served = serve(&dir, false, &outbox).await;
+        // The person on the server's computer invites Bob, who makes a glave account with it.
+        let mut owner = Web::new(&served, Some(LocalToken::new([21; 32]).reveal().to_owned()));
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: None,
+        };
+        let code = asked(&mut owner, &invite).await["code"].clone();
+        let code = glave_event::Secret::new(code.as_str().unwrap());
+        let made = make_passkey(
+            &served,
+            code,
+            LinkKind::Invite,
+            &mut Authenticator::new(ORIGIN).unwrap(),
+        )
+        .await;
+        let mut bob = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        let told = asked(&mut bob, &Request::Discover {}).await;
+        assert_eq!(told["organizations"], json!(true), "{told}");
+        let created = asked(&mut bob, &create("Bob's")).await;
+        assert_eq!(created["organization"]["role"], json!("owner"), "{created}");
+        // The person on the computer, who has no glave account, is told nothing of it.
+        let told = asked(&mut owner, &Request::Discover {}).await;
+        assert!(told.get("organizations").is_none(), "{told}");
+        served.close().await;
     });
 }

@@ -1,6 +1,7 @@
 //! Making organizations (`specs/model.md`, "Identity"): the personal space sign-up makes for a
-//! new account, and the organizations anyone signed in with a glave account creates where the
-//! server takes sign-ups (`organization/create`), to invite people to. Both are made the same
+//! new account, and the organizations anyone signed in with a glave account creates
+//! (`organization/create`), to invite people to, however they came: by signing up, a sign-up
+//! link or an invite (owner, 2026-11-14). Both are made the same
 //! way: what glave made it as (`organization.made`), its first person and their Owner role given
 //! by glave, in one append to its people ledger; then, for one created, its name as its brand
 //! says it; and last the person's membership, so a failure partway leaves nothing anyone sees.
@@ -72,7 +73,7 @@ where
     }
 
     /// Answers `organization/create`: a new organization named `name`, the caller its Owner,
-    /// where the server takes sign-ups and the caller signed in with a glave account. They join
+    /// for anyone signed in with a glave account, sign-up open here or not. They join
     /// it with what their organization now knows of them; refused past [`MOST_CREATED`].
     pub(crate) async fn create_organization(
         &self,
@@ -81,7 +82,6 @@ where
     ) -> Result<Reply, ApiError> {
         let (person, accounts) = self
             .account_of(caller)
-            .filter(|_| self.takes_signups())
             .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::NoNewOrganizations))?;
         let name = brand_name(Some(name.to_owned()))?
             .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::OrganizationUnnamed))?;

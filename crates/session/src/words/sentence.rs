@@ -155,7 +155,7 @@ sentences! {
     InvitesNeedOrganization = "invites-need-organization"
         "to invite people, create an organization",
     NoNewOrganizations = "no-new-organizations"
-        "this glave doesn't make new organizations: ask whoever runs it",
+        "only someone signed in with a glave account can create an organization here",
     OrganizationUnnamed = "organization-unnamed" "give the organization a name",
     TooManyOrganizations { most: usize } = "too-many-organizations"
         "you've created { $most } organizations, the most anyone can",

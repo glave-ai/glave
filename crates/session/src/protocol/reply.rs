@@ -90,7 +90,7 @@ pub struct ServerInfo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub personal: bool,
     /// Whether the caller may create an organization (`organization/create`): they signed in
-    /// with a glave account, where the server takes sign-ups.
+    /// with a glave account, whether or not the server takes sign-ups.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub organizations: bool,
     /// Whether it tells people's browsers when glave needs them (`push/get`), so a client

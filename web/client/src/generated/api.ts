@@ -1202,7 +1202,7 @@ export type ServerInfo = {
   readonly name: string;
   /**
    * Whether the caller may create an organization (`organization/create`): they signed in
-   * with a glave account, where the server takes sign-ups.
+   * with a glave account, whether or not the server takes sign-ups.
    */
   readonly organizations?: boolean;
   /** Where people reach the server from elsewhere, if they do: its public origin. */
