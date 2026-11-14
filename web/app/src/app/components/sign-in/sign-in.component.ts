@@ -39,16 +39,15 @@ export class SignInComponent {
     about: $localize`:@@signIn.about:What is Glave?`,
     headline: $localize`:@@signIn.headline:Your AI, on your own computer in the cloud.`,
     lede: $localize`:@@signIn.lede:Glave is an AI assistant with a computer of its own. It does real work for you, with your files, your apps and the web, and asks before anything that matters.`,
-    inviteOnly: $localize`:@@signIn.inviteOnly:Glave is invite-only for now. Got an invite? Open its link to start.`,
-    heading: $localize`:@@signIn.heading:Open glave on this computer to sign this browser in`,
-    text: $localize`:@@signIn.text:Opening glave signs your browser in, and gives you a link that signs in any other browser on this computer. Once signed in, a browser stays signed in.`,
-    passkeyHeading: $localize`:@@signIn.passkeyHeading:Sign in to glave`,
-    passkeyHint: $localize`:@@signIn.passkeyHint:No passkey on this device yet? On the computer glave runs on, ask glave for a sign-in link, and open it here.`,
-    hereText: $localize`:@@signIn.hereText:Sign in with the passkey you made for glave on this computer.`,
-    hereHint: $localize`:@@signIn.hereHint:No passkey in this browser? Open glave on this computer: it signs this browser in.`,
+    heading: $localize`:@@signIn.heading:Open Glave on this computer to sign this browser in`,
+    text: $localize`:@@signIn.text:Opening Glave signs your browser in, and gives you a link that signs in any other browser on this computer. Once signed in, a browser stays signed in.`,
+    passkeyHeading: $localize`:@@signIn.passkeyHeading:Sign in to Glave`,
+    passkeyHint: $localize`:@@signIn.passkeyHint:No passkey on this device yet? On the computer Glave runs on, ask Glave for a sign-in link, and open it here.`,
+    hereText: $localize`:@@signIn.hereText:Sign in with the passkey you made for Glave on this computer.`,
+    hereHint: $localize`:@@signIn.hereHint:No passkey in this browser? Open Glave on this computer: it signs this browser in.`,
     passkeyAction: $localize`:@@signIn.passkeyAction:Sign in with a passkey`,
     setupHeading: $localize`:@@signIn.setupHeading:Make a passkey for this device`,
-    setupText: $localize`:@@signIn.setupText:This link lets this device sign in to glave. Your device makes a passkey, and from now on your face, your fingerprint or its screen lock signs you in. The link works once.`,
+    setupText: $localize`:@@signIn.setupText:This link lets this device sign in to Glave. Your device makes a passkey, and from now on your face, your fingerprint or its screen lock signs you in. The link works once.`,
     setupAction: $localize`:@@signIn.setupAction:Make a passkey`,
     waiting: $localize`:@@signIn.waiting:Waiting for your device…`,
     lost: $localize`:@@signIn.lost:Lost your passkey?`,
@@ -74,6 +73,8 @@ export class SignInComponent {
     return this.session.passkeySignIn() ? 'passkey' : 'link';
   });
   protected readonly withPasskey = computed(() => this.offer() !== 'link');
+  /** Whether the page offers a way in at all: a passkey, or signing up. */
+  protected readonly hasActions = computed(() => this.withPasskey() || this.signsUp());
   /** Whether it signs in with a passkey made on this computer, rather than elsewhere. */
   private readonly here = computed(() => this.session.passkeysHere());
   /** Whether the page greets someone reaching glave from elsewhere, who may not know it yet. */
@@ -96,13 +97,10 @@ export class SignInComponent {
     return ledes[this.offer()];
   });
   /**
-   * The small line at the column's foot, if any: how to start where people join by invite,
-   * else where a passkey for this device comes from, unless the page offers signing up.
+   * The small line at the column's foot, if any: where a passkey for this device comes from,
+   * unless the page offers signing up.
    */
   protected readonly note = computed(() => {
-    if (this.session.inviteOnly()) {
-      return this.copy.inviteOnly;
-    }
     if (this.greets()) {
       return this.signsUp() ? null : this.copy.passkeyHint;
     }

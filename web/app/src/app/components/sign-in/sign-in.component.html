@@ -15,26 +15,28 @@
     @if (problem(); as problem) {
       <p class="problem" role="alert" data-testid="sign-in-problem">{{ problem }}</p>
     }
-    <div class="actions glz-stack glz-gap-3">
-      @if (withPasskey()) {
-        <button
-          glzButton
-          variant="primary"
-          size="lg"
-          data-testid="sign-in-passkey"
-          [disabled]="busy()"
-          (click)="go()"
-        >
-          <glz-icon [icon]="key" />
-          {{ action() }}
-        </button>
-      }
-      @if (signsUp()) {
-        <a glzButton size="lg" data-testid="sign-in-sign-up" [routerLink]="signUpLink">{{
-          copy.signUp
-        }}</a>
-      }
-    </div>
+    @if (hasActions()) {
+      <div class="glz-stack glz-gap-3">
+        @if (withPasskey()) {
+          <button
+            glzButton
+            variant="primary"
+            size="lg"
+            data-testid="sign-in-passkey"
+            [disabled]="busy()"
+            (click)="go()"
+          >
+            <glz-icon [icon]="key" />
+            {{ action() }}
+          </button>
+        }
+        @if (signsUp()) {
+          <a glzButton size="lg" data-testid="sign-in-sign-up" [routerLink]="signUpLink">{{
+            copy.signUp
+          }}</a>
+        }
+      </div>
+    }
     @if (recovers()) {
       <p class="note">
         {{ copy.lost }}
