@@ -43,6 +43,7 @@ pub mod stream;
 pub mod testing;
 mod tools;
 mod view;
+mod web_search;
 
 pub use blob::{
     Blob, BlobError, BlobStore, Chunks, Pieces, Swept, UNREFERENCED_FOR_MS, digest, read_all,
@@ -85,3 +86,4 @@ pub use view::{
     ThreadCursor, ThreadQuery, ThreadView, Unfinished, Wait, WaitKind, fold_from_log, title_from,
     title_of,
 };
+pub use web_search::{Hit, SearchAsk, SearchResults};

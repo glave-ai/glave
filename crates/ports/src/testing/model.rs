@@ -240,7 +240,11 @@ impl ModelProvider for ScriptedModel {
     }
 
     fn serves(&self, purpose: Purpose) -> bool {
-        !purpose.is_media() || self.making.is_some()
+        match purpose {
+            Purpose::WebSearch => false,
+            purpose if purpose.is_media() => self.making.is_some(),
+            _ => true,
+        }
     }
 }
 

@@ -63,6 +63,12 @@ impl<'a> Paying<'a> {
         })
     }
 
+    /// Whether the call is billed whole once sent, whether or not its answer is read: a media
+    /// call's or a search's.
+    fn billed_whole(&self) -> bool {
+        self.kind == CostKind::Media || self.kind == CostKind::Search
+    }
+
     /// Takes note of `delta`, part of the answer as it comes.
     pub(crate) fn saw(&self, delta: &Delta) {
         let (Delta::Text(text) | Delta::Reasoning(text)) = delta;
@@ -83,7 +89,7 @@ impl<'a> Paying<'a> {
     /// place, and writes it to the store: nothing when none of its answer came; a media call,
     /// its hold unless its provider answered with a refusal or it was never sent.
     pub(crate) async fn broke(self, error: &ProviderError) {
-        let cost = if self.kind == CostKind::Media {
+        let cost = if self.billed_whole() {
             if error.unanswered() {
                 self.worst
             } else {
@@ -121,7 +127,7 @@ impl<'a> Paying<'a> {
 impl Drop for Paying<'_> {
     fn drop(&mut self) {
         if !self.settled {
-            let cost = if self.kind == CostKind::Media {
+            let cost = if self.billed_whole() {
                 self.worst
             } else {
                 self.so_far()

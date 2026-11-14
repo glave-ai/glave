@@ -1,6 +1,6 @@
 [package]
 name = "glave-web"
-description = "glave's web_fetch tool: private addresses refused at every hop, limits, a host policy, HTML as Markdown, its output marked untrusted"
+description = "glave's web_fetch tool: private addresses refused at every hop, limits, a host policy, HTML as Markdown, its output marked untrusted; and Brave's Search API, which web_search searches through"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -30,6 +30,9 @@ glave-ports = { workspace = true, features = ["conformance"] }
 [[test]]
 name = "fetch"
 required-features = ["pages"]
+
+[[test]]
+name = "brave"
 
 [lints]
 workspace = true
