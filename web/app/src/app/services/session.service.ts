@@ -94,6 +94,8 @@ export class SessionService {
   private readonly ways = signal<readonly SignInWay[]>([]);
   /** Whether people reach the server from elsewhere, at its public origin. */
   private readonly reachedElsewhere = signal(false);
+  /** Whether someone new comes in only by an invite's link, as the server said. */
+  private readonly invitedOnly = signal(false);
   /**
    * Whether this page is at a name, where passkeys work: not where the person on the server's
    * computer signs in at its address, when people share it at `localhost`.
@@ -143,6 +145,8 @@ export class SessionService {
   readonly signupCode = this.signupLink.asReadonly();
   /** Whether anyone may sign up here with their email, as the server said. */
   readonly signsUp = computed(() => this.reachedElsewhere() && this.ways().includes('signup'));
+  /** Whether someone new gets in here only by an invite's link, as the server said. */
+  readonly inviteOnly = computed(() => this.reachedElsewhere() && this.invitedOnly());
   /** The code of the link to get back in the tab was opened with, until the tab signs in. */
   readonly recoverCode = this.recoverLink.asReadonly();
   /** Whether someone who lost their passkeys may get back in by email here, as the server said. */
@@ -309,6 +313,7 @@ export class SessionService {
     }
     this.ways.set(discovered.signin ?? []);
     this.reachedElsewhere.set(typeof discovered.origin === 'string');
+    this.invitedOnly.set(discovered.invite_only ?? false);
     this.here.set(discovered.here ?? null);
     this.pushes.set(discovered.push ?? false);
   }

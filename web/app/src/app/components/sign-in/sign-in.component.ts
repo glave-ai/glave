@@ -53,6 +53,7 @@ export class SignInComponent {
     lost: $localize`:@@signIn.lost:Lost your passkey?`,
     recover: $localize`:@@signIn.recover:Email me a link to make a new one`,
     signUp: $localize`:@@signIn.signUp:Sign up`,
+    inviteOnly: $localize`:@@signIn.inviteOnly:Glave is invite-only for now. Got an invite? Open its link to start.`,
   } as const;
   /** Where "What is Glave?" leads: glave's own site. */
   protected readonly aboutLink = 'https://glave.dev';
@@ -79,6 +80,8 @@ export class SignInComponent {
   private readonly here = computed(() => this.session.passkeysHere());
   /** Whether the page greets someone reaching glave from elsewhere, who may not know it yet. */
   private readonly greets = computed(() => this.offer() === 'passkey' && !this.here());
+  /** Whether the greeting says that an invite's link is the way in: the server takes no sign-ups. */
+  protected readonly inviteOnly = computed(() => this.greets() && this.session.inviteOnly());
   protected readonly heading = computed(() => {
     const headings: Record<Offer, string> = {
       setup: this.copy.setupHeading,
