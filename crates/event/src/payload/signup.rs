@@ -4,7 +4,8 @@
 //! spent when it made the person's account and organization (`signup.finished`). A link to get
 //! back into an account (`recovery`) is kept the same way, and spent when it made a passkey; so
 //! is a sign-up link whoever runs the server made to hand to someone, which carries no address
-//! (no `to`) and opens while the server takes no sign-ups. An emailed link carries the address; its code's hash, which covers it, proves it was sent there. Every email
+//! (no `to`) and opens while the server takes no sign-ups. An emailed link carries the
+//! address; its code's hash, which covers it, proves it was sent there. Every email
 //! someone asks glave for (a link, or an invite) counts against their network, kept as the
 //! SHA-256 of it (`mail.asked`). One stream of the server's own organization, so every server
 //! of a cell opens the same links, each once, and counts each network alike.

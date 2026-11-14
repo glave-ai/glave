@@ -295,6 +295,14 @@ where
         Ok(crate::browsers::options(ceremony))
     }
 
+    /// Whether the passkey being made with the request `ceremony` is a new account's, by a
+    /// sign-up link whoever runs the server handed over, which carries no address.
+    pub(crate) fn signing_unaddressed(&self, ceremony: &str) -> bool {
+        self.signings().0.iter().any(|it| {
+            it.ceremony == ceremony && it.emailed == Emailed::Signup && it.email.is_none()
+        })
+    }
+
     /// The passkey being made by an emailed link with the request `ceremony`, taken, if one is.
     pub(crate) fn signing(&self, ceremony: &str) -> Option<Signing> {
         let mut signing = self.signings();
@@ -312,11 +320,6 @@ where
         name: Option<&str>,
         person_name: Option<String>,
     ) -> Result<Reply, ApiError> {
-        // An account a handed-over link makes has no address: its name is how it is known.
-        let unnamed = signing.emailed == Emailed::Signup && person_name.is_none();
-        if unnamed && signing.email.is_none() {
-            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NameNeeded));
-        }
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(signing.person).await?;
         // Checked, then the link spent, and only then is anything of the account kept: a link

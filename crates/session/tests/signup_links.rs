@@ -15,7 +15,7 @@ use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
 use serde_json::{Value, json};
 
-use crate::signups::{serve, serve_mailless, signed_up};
+use crate::signups::{linked, serve, serve_mailless, serve_sharing, signed_up};
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{
     ORIGIN, Served, Web, asked, elsewhere, make_named_passkey, make_passkey, serve_with,
@@ -167,16 +167,56 @@ fn a_server_that_keeps_no_glave_accounts_makes_no_sign_up_links() {
 }
 
 #[test]
-fn someone_signing_up_by_a_link_gives_their_name_first() {
+fn someone_signing_up_by_a_link_gives_their_name_first_and_may_then_go_on() {
     block_on!(async {
         let dir = folder("signup-links-named");
         let (served, _) = serve_mailless(&dir).await;
         let code = code_of(&link_for(&mut operator(&served)).await);
+        let mut anyone = elsewhere(&served, None);
+        let create = Request::PasskeyCreateOptions {
+            code,
+            link: LinkKind::Signup,
+        };
+        let options = asked(&mut anyone, &create).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let unnamed = make_passkey(&served, code.clone(), LinkKind::Signup, &mut phone).await;
-        assert_eq!(unnamed, json!(code::INVALID_PARAMS));
-        // Refused before the link was spent: with a name, it opens.
-        assert!(open(&served, code).await["session"].is_string());
+        let mut made = |person_name: Option<&str>| Request::PasskeyCreate {
+            ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+            credential: phone.create(&options["options"]).unwrap(),
+            name: Some("Phone".into()),
+            person_name: person_name.map(str::to_owned),
+        };
+        let unnamed = made(None);
+        assert_eq!(
+            asked(&mut anyone, &unnamed).await,
+            json!(code::INVALID_PARAMS)
+        );
+        // The same request, answered again with a name: nothing to begin again.
+        let named = made(Some("Ada"));
+        assert!(asked(&mut anyone, &named).await["session"].is_string());
         served.close().await;
+    });
+}
+
+#[test]
+fn an_emailed_link_opens_nothing_once_sign_up_is_closed() {
+    block_on!(async {
+        let (open_dir, closed_dir) = (folder("signup-links-open"), folder("signup-links-closed"));
+        let outbox = Arc::new(Outbox::default());
+        let log = Shared::default();
+        let (open_one, _) = serve_sharing(&open_dir, true, &outbox, log.clone()).await;
+        // The same store, served again with sign-up turned off.
+        let (closed, _) = serve_sharing(&closed_dir, false, &outbox, log).await;
+        let start = Request::SignupStart {
+            email: "ada@example.com".into(),
+        };
+        assert_eq!(
+            asked(&mut elsewhere(&open_one, None), &start).await,
+            json!({})
+        );
+        let code = linked(&outbox, 1, "signup").await.unwrap();
+        assert_eq!(open(&closed, code.clone()).await, json!(code::NO_INVITE));
+        assert!(open(&open_one, code).await["session"].is_string());
+        closed.close().await;
+        open_one.close().await;
     });
 }

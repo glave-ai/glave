@@ -1,7 +1,7 @@
 //! What a throwaway glave's organization starts with, so its Admin shows at once with people
 //! in it: two people who joined by invites and gave their names, an Admin and a Member, and an
-//! invite still waiting; and a sign-up link, for trying an organization of one's own. All through the session API over HTTP, as the people themselves would: the owner's
-//! requests from this computer with the server's local token, at its address; each invitee's
+//! invite still waiting; and a sign-up link, for trying one's own personal space. All through
+//! the session API over HTTP, as the people themselves would: the owner's requests from this computer with the server's local token, at its address; each invitee's
 //! at `localhost`, the door people who share this computer come in by, as a browser making its
 //! first passkey there, played by glave-identity's authenticator in software. Nothing in glave
 //! knows they are samples.

@@ -222,7 +222,7 @@ methods! {
     /// account has that email. Over HTTP it needs no sign-in.
     "signup/start" => SignupStart { email: String } -> [Done],
     /// Makes a sign-up link to hand to one person, good once and for 7 days, though the server
-    /// takes no sign-ups: it makes their account and an organization of their own. Answered
+    /// takes no sign-ups: it makes their account and their own personal space. Answered
     /// with the link, this once. Only whoever runs the server, where it keeps glave accounts.
     "signup/link" => SignupLink {} -> [SignupLinked],
     /// Asks for a link to get back into the glave account `email` has, where the server sends

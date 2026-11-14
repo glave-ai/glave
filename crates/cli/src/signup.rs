@@ -1,6 +1,6 @@
 //! `glave signup link`: a sign-up link whoever runs the server makes from its computer to hand
 //! to one person (`specs/model.md`, "Identity"), through the session API of the person's
-//! server (`reach.rs`): opened, it makes their account and an organization of their own, though
+//! server (`reach.rs`): opened, it makes their account and their own personal space, though
 //! the server takes no sign-ups. Printed this once.
 
 use std::process::ExitCode;
@@ -13,13 +13,13 @@ use crate::reach;
 use crate::tasks::run_with;
 
 pub(crate) const USAGE: &str = "\
-glave signup: let someone sign up for an organization of their own, while this glave takes no
+glave signup: let someone sign up for their own personal space, while this glave takes no
 sign-ups
 
 Usage:
   glave signup link             a link to give one person, from this glave's computer: good
-                                once and for 7 days, it makes their account and an
-                                organization of their own, with them its owner";
+                                once and for 7 days, it makes their account and
+                                their own personal space";
 
 /// `glave signup ...`.
 pub(crate) fn main(words: &[String]) -> ExitCode {
@@ -47,7 +47,7 @@ fn said(link: &Secret, expires: At) -> String {
     format!(
         "A sign-up link, good once until {until}:\n\n{}\n\n\
          Give it to one person: whoever opens it gives their name and makes a passkey, and \
-         with it an account and an organization of their own.\n",
+         with it an account and their own personal space.\n",
         link.expose()
     )
 }

@@ -1,7 +1,7 @@
 //! `glave signup link`, the real binary through the person's server at a public origin, with no
 //! sign-up or email configured: whoever runs it makes a link, which someone opens in a browser
-//! of their own, gives their name and makes a passkey, landing in an organization of their
-//! own; a second time it opens nothing. A server no one else reaches says it makes none.
+//! of their own, gives their name and makes a passkey, landing in their own personal space; a
+//! second time it opens nothing. A server no one else reaches says it makes none.
 
 use glave_identity::testing::Authenticator;
 use glave_ports::block_on;
