@@ -5,8 +5,7 @@ description = "The answer is on a page the person gave no address for, with a we
 [glave]
 permissions = "auto"
 # Search and web_fetch run outside the sandbox, so this takes nothing from them. It takes the one
-# other way to the web, which reaches this repository and its answers: a refused fetch reads nothing
-# untrusted, so the next command would otherwise still have the network.
+# other way to the web, which reaches this repository and its answers.
 network = false
 # The page's address is only in the search's results (search.md), and the codename only on the
 # page: the results reached the model labelled untrusted, the answer could come only from reading
