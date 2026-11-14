@@ -283,6 +283,10 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_model_account() {
         ] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
+            assert_eq!(
+                refused.message.to_string(),
+                "whoever runs this server connects its model accounts"
+            );
         }
         let none = client.call(Request::ModelList {}).await.unwrap();
         assert!(ids(&none).is_empty(), "{none}");

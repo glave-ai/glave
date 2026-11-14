@@ -98,10 +98,14 @@ fn not_theirs_to_choose_from_elsewhere_or_where_memory_does_not_run() {
     block_on!(async {
         let (shared, _store, _dir, _) = served_seeing("remembering-elsewhere", Vec::new()).await;
         let grace = elsewhere();
-        assert!(matches!(
-            remembering(&shared, &grace).await,
-            RememberingInfo::Never { .. }
-        ));
+        let RememberingInfo::Never { reason } = remembering(&shared, &grace).await else {
+            panic!("never, for someone signed in from elsewhere");
+        };
+        // Said as true wherever the server runs: on Glave Cloud there is no one's computer.
+        assert_eq!(
+            reason.to_string(),
+            "whoever runs this server turns memory on or off"
+        );
         let refused = shared
             .request_as(&grace, Request::MemorySet { on: false })
             .await
