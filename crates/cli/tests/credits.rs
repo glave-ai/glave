@@ -34,7 +34,7 @@ fn a_turn_spends_the_credits_added_and_once_they_are_spent_the_next_is_refused()
     };
     let (sent, said) = run(&["--model", "m", "hello"]);
     assert!(!sent, "{said}");
-    assert!(said.contains("you're out of credits"), "{said}");
+    assert!(said.contains("your balance is used up"), "{said}");
     assert!(model.received().is_empty(), "the model was never asked");
     let (added, said) = run(&["credits", "add", "0.25", "--reference", "order-1"]);
     assert!(added, "{said}");
@@ -51,7 +51,7 @@ fn a_turn_spends_the_credits_added_and_once_they_are_spent_the_next_is_refused()
     assert!(said.contains("$0.25 spent of $10.00"), "{said}");
     assert!(said.contains("$0.25  you"), "{said}");
     let (sent, said) = run(&["--model", "m", "hello again"]);
-    assert!(!sent && said.contains("you're out of credits"), "{said}");
+    assert!(!sent && said.contains("your balance is used up"), "{said}");
     assert_eq!(model.received().len(), 1);
 }
 
@@ -194,7 +194,7 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
         (output.status.success(), text(&output))
     };
     let (sent, said) = run(&["--model", OWN_MODEL, "hello"]);
-    assert!(!sent && said.contains("you're out of credits"), "{said}");
+    assert!(!sent && said.contains("your balance is used up"), "{said}");
     let (added, said) = run(&["credits", "add", "1", "--reference", "order-1"]);
     assert!(added, "{said}");
     let (sent, said) = run(&["--model", OWN_MODEL, "hello"]);
