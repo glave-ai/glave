@@ -37,6 +37,9 @@
         }
       </div>
     }
+    @if (inviteOnly()) {
+      <p class="note" data-testid="sign-in-invite-only">{{ copy.inviteOnly }}</p>
+    }
     @if (recovers()) {
       <p class="note">
         {{ copy.lost }}
