@@ -53,7 +53,7 @@ export class SignInComponent {
     lost: $localize`:@@signIn.lost:Lost your passkey?`,
     recover: $localize`:@@signIn.recover:Email me a link to make a new one`,
     signUp: $localize`:@@signIn.signUp:Sign up`,
-    inviteOnly: $localize`:@@signIn.inviteOnly:Glave is invite-only for now. Got an invite? Open its link to start.`,
+    inviteOnly: $localize`:@@signIn.inviteOnly:Glave is invite-only. Got an invite? Open its link to start.`,
   } as const;
   /** Where "What is Glave?" leads: glave's own site. */
   protected readonly aboutLink = 'https://glave.dev';

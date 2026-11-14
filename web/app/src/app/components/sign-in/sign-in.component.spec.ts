@@ -209,7 +209,7 @@ describe('SignInComponent', () => {
     };
     const greeted = await render(signingIn(inviteOnly), answering(ANSWER));
     expect(greeted.root.querySelector('[data-testid="sign-in-invite-only"]')?.textContent).toBe(
-      'Glave is invite-only for now. Got an invite? Open its link to start.',
+      'Glave is invite-only. Got an invite? Open its link to start.',
     );
     await expectAccessible(greeted.root);
     TestBed.resetTestingModule();
@@ -217,7 +217,12 @@ describe('SignInComponent', () => {
     const setup = await render(signingIn(inviteOnly), answering(ANSWER));
     expect(setup.root.querySelector('[data-testid="sign-in-invite-only"]')).toBeNull();
     TestBed.resetTestingModule();
-    const { root } = await render(reached(), answering(ANSWER));
+    window.history.replaceState(null, '', '/');
+    const here = { ...inviteOnly, here: window.location.origin };
+    const { root } = await render(signingIn(here), answering(ANSWER));
+    expect(root.querySelector('main')?.textContent).toContain(
+      'the passkey you made for Glave on this computer',
+    );
     expect(root.querySelector('[data-testid="sign-in-invite-only"]')).toBeNull();
   });
 

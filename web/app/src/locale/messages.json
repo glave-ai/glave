@@ -667,7 +667,7 @@
     "signIn.headline": "Your AI, on your own computer in the cloud.",
     "signIn.hereHint": "No passkey in this browser? Open Glave on this computer: it signs this browser in.",
     "signIn.hereText": "Sign in with the passkey you made for Glave on this computer.",
-    "signIn.inviteOnly": "Glave is invite-only for now. Got an invite? Open its link to start.",
+    "signIn.inviteOnly": "Glave is invite-only. Got an invite? Open its link to start.",
     "signIn.lede": "Glave is an AI assistant with a computer of its own. It does real work for you, with your files, your apps and the web, and asks before anything that matters.",
     "signIn.lost": "Lost your passkey?",
     "signIn.passkeyAction": "Sign in with a passkey",

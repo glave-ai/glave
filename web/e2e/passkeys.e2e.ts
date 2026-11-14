@@ -85,7 +85,7 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
       );
       // It takes no sign-ups, so the greeting says an invite is the way in.
       await expect(byTestId(again, 'sign-in-invite-only')).toHaveText(
-        'Glave is invite-only for now. Got an invite? Open its link to start.',
+        'Glave is invite-only. Got an invite? Open its link to start.',
       );
       await expect(byTestId(page, 'sign-in')).toBeVisible();
     }),
