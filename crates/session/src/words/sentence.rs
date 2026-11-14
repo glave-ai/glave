@@ -101,6 +101,8 @@ sentences! {
         "people sign in to this glave another way, so an invite here makes no passkey",
     NameNotOurs = "name-not-ours"
         "your name here comes with the way you sign in, so it can't be changed here",
+    NameNeeded = "name-needed"
+        "give your name first, so the people you invite know who you are",
     NotAName = "not-a-name"
         "that can't be your name: write it on one line, in at most 100 characters",
     NoEmail = "no-email" "this glave sends no email: share the invite's link yourself",
@@ -115,6 +117,14 @@ sentences! {
     NoSignups = "no-signups" "this glave doesn't take sign-ups: ask its owner for an invite",
     SignupGone = "signup-gone"
         "that sign-up link was used already or has expired: sign up again for a new one",
+    SignupLinkGone = "signup-link-gone"
+        "that sign-up link was used already or has expired: ask whoever gave it to you for a new one",
+    NoSignupLinks = "no-signup-links"
+        "this glave doesn't make organizations by sign-up: it keeps no glave accounts at a public origin",
+    OperatorLinksSignups = "operator-links-signups"
+        "only whoever runs this glave makes sign-up links, from its computer",
+    SignupsFull = "signups-full"
+        "too many sign-up links wait already: make one again once some are used or expire",
     SignupTaken = "signup-taken"
         "that address has an account already: sign in with its passkey",
     SignupHaveAccountSubject = "signup-have-account-subject" "You already have a glave account",

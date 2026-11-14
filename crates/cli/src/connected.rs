@@ -50,7 +50,8 @@ pub(crate) struct Connected {
     home: PathBuf,
     flows: Flows,
     renewals: Renewals<ConnectionConnected>,
-    /// Web search, the person's to turn on: none where they may add no servers of their own.
+    /// Web search, on by default and the person's to turn off: none where they may add no
+    /// servers of their own.
     search: Option<WebSearch>,
     /// What changes their `mcp.json` when they turn it on or off.
     writer: Writer,
@@ -123,7 +124,7 @@ fn signed_as(url: &str, account: Option<&str>) -> SignedAs {
 impl Connected {
     /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, where
     /// they may sign in to them here (everywhere but a server people sign in to with OIDC,
-    /// whose people's own servers it does not run); with `search`, the person's to turn on;
+    /// whose people's own servers it does not run); with `search`, the person's to turn off;
     /// asking only at addresses `reachable` allows; offering the connectors of glave's catalog
     /// `offered` names.
     pub(crate) async fn for_person(

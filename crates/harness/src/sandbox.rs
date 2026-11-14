@@ -220,15 +220,15 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
         Asks::Outside => {
             "[This command may have been blocked by the sandbox: commands here cannot write \
              outside the project, change git hooks or config, or read secrets (credential \
-             stores and files such as .env and private keys are hidden). If the task needs \
-             this very command, run it again with outside_sandbox: true and a reason, and the \
-             person is asked to allow it; otherwise do the task another way or tell the person \
-             what is needed.]"
+             stores such as ~/.ssh and ~/.aws are hidden). If the task needs this very \
+             command, run it again with outside_sandbox: true and a reason, and the person \
+             is asked to allow it; otherwise do the task another way or tell the person what \
+             is needed.]"
         }
         Asks::OutsideOrNetwork => {
             "[This command may have been blocked by the sandbox: commands here cannot use the \
              network, write outside the project, change git hooks or config, or read secrets \
-             (credential stores and files such as .env and private keys are hidden). If the \
+             (credential stores such as ~/.ssh and ~/.aws are hidden). If the \
              task needs this very command, run it again with a reason and network: true when \
              it needs the internet, or outside_sandbox: true when it needs more, and the person \
              is asked to allow it; otherwise do the task another way or tell the person what is \
@@ -237,7 +237,7 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
         Asks::Nothing => {
             "[This command may have been blocked by the sandbox: commands here cannot use the \
              network, write outside the project, change git hooks or config, or read secrets \
-             (credential stores and files such as .env and private keys are hidden), and none \
+             (credential stores such as ~/.ssh and ~/.aws are hidden), and none \
              may ask to run with the network or outside the sandbox. Do the task another way, \
              or tell the person what is needed.]"
         }
@@ -249,14 +249,14 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
         Asks::Contained => {
             "[This command may have been blocked by the sandbox: commands here cannot write \
              outside the project, change git hooks or config, or read secrets (credential \
-             stores and files such as .env and private keys are hidden), and on this server \
-             only its owner's may run outside it. Do the task another way, or tell the person \
+             stores such as ~/.ssh and ~/.aws are hidden), and on this server only its \
+             owner's may run outside it. Do the task another way, or tell the person \
              what is needed.]"
         }
         Asks::NetworkOnly => {
             "[This command may have been blocked by the sandbox: commands here cannot use the \
              network, write outside the project, change git hooks or config, or read secrets \
-             (credential stores and files such as .env and private keys are hidden), and on \
+             (credential stores such as ~/.ssh and ~/.aws are hidden), and on \
              this server only its owner's may run outside it. If the task needs this very \
              command to reach the internet, run it again with network: true and a reason, and \
              the person is asked to allow it; otherwise do the task another way or tell the \

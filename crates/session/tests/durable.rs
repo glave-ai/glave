@@ -7,7 +7,6 @@
 //! again. `crashes.rs` stops a turn at every event boundary.
 
 mod crashes;
-mod memory;
 
 use std::future::ready;
 use std::path::{Path, PathBuf};

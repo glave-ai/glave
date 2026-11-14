@@ -1,11 +1,10 @@
 //! Shared helpers for memory's tests: a sealed SQLite store in memory, memory over it with
 //! given rules, scripted answers, and a harness wired to both and the scripted model.
 
-use std::future::{Future, ready};
 use std::sync::Arc;
 
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
-use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
+use glave_harness::{Approver, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 pub(crate) use glave_ports::block_on;
@@ -258,13 +257,5 @@ pub(crate) fn user_texts(message: &glave_ports::Message) -> Vec<String> {
             })
             .collect(),
         _ => Vec::new(),
-    }
-}
-
-/// Says yes to everything it is asked.
-pub(crate) struct Yes;
-impl Approver for Yes {
-    fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
-        ready(Decision::AllowOnce)
     }
 }

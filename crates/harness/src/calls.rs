@@ -189,7 +189,7 @@ where
         } else if step.toolset.is_compact(&call.tool) {
             return Ok(compact_asked(call, step, live));
         } else if step.toolset.is_memory(&call.tool) {
-            return self.call_memory(thread, call, step, cancel, live).await;
+            return self.call_memory(thread, call, cancel, live).await;
         } else if step.toolset.is_media(&call.tool) {
             return self.call_media(thread, call, step, cancel, live).await;
         }
@@ -198,7 +198,7 @@ where
 
     /// Runs one call of a tool a source offers, asking the person first when its effect needs
     /// them in this mode, when its source says it does, or when it may write to a connected
-    /// service after the thread read untrusted content, unless it goes on from an answer.
+    /// service, unless it goes on from an answer.
     async fn call_offered(
         &self,
         thread: &mut Thread,
@@ -258,7 +258,7 @@ where
         }
         let assessed = assessed(&*source, name, &call.arguments, info.effect).await;
         let (effect, caution, secret) = assessed;
-        let (ask, acts) = asking(&*source, name, effect, thread.untrusted);
+        let (ask, acts) = asking(&*source, name, effect);
         if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
         {
             return Ok(refused);
@@ -429,9 +429,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
         let mut cautioned = request.caution.is_some();
-        // After untrusted content, the judge is never asked for a command outside the sandbox.
-        let judgeable = request.outside_sandbox.is_none() || !thread.untrusted;
-        if cautioned && judgeable {
+        if cautioned {
             match self.judged(thread, request, turn, cancel).await? {
                 Judged::Cleared => cautioned = false,
                 Judged::Ask => {}
@@ -531,9 +529,8 @@ where
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead. Full access asks no
-    /// one: the call goes ahead, unless it would show the model a secret ([`Self::unasked`]).
-    /// Plan mode asks no one either: what would ask is refused, since nothing changes until
-    /// the person approves the plan.
+    /// one: the call goes ahead. Plan mode asks no one either: what would ask is refused, since
+    /// nothing changes until the person approves the plan.
     pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
@@ -542,7 +539,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
         if self.approval_for(thread) == ApprovalMode::Never {
-            return self.unasked(thread, request, live).await;
+            return Ok(None);
         }
         if self.planning(thread) {
             live(Live::ToolFinished {
@@ -588,33 +585,6 @@ where
         self.record(thread, &decided).await?;
         let no_one = (verdict == Verdict::NoOneThere).then(|| no_one_there(request));
         Ok(settle(thread, &asked, verdict, no_one, live))
-    }
-
-    /// What Full access does where another mode would ask about `request`: nothing, so the call
-    /// goes ahead, unless it would show the model a secret, which only a person's yes does. Then
-    /// glave declines it at once, saying so, its question and answer written together so that
-    /// no stop between them can leave the thread waiting for anyone.
-    async fn unasked(
-        &self,
-        thread: &mut Thread,
-        request: &ApprovalRequest,
-        live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<Option<ToolOutput>, HarnessError> {
-        if !request.secret {
-            return Ok(None);
-        }
-        let asked = request.settled(Settled::Declined);
-        let decided = ApprovalDecided {
-            call_id: request.call_id.clone(),
-            decision: Verdict::Deny,
-            by: Some(Principal::glave()),
-        };
-        crate::telemetry::approval(&request.tool, Verdict::Deny);
-        let mut events = Vec::new();
-        self.stage(thread, &mut events, &asked)?;
-        self.stage(thread, &mut events, &decided)?;
-        self.commit(thread, events).await?;
-        Ok(settle(thread, &asked, Verdict::Deny, None, live))
     }
 
     /// Takes in the answer to the approval a turn going on from the log stopped at: the one

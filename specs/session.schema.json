@@ -7982,6 +7982,28 @@
       },
       "streams": false
     },
+    "signup/link": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A sign-up link whoever runs the server made, sent this once, and when it stops working.",
+        "properties": {
+          "expires": {
+            "$ref": "#/$defs/At"
+          },
+          "link": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "link",
+          "expires"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "signup/start": {
       "params": {
         "properties": {

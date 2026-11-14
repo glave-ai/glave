@@ -14,9 +14,10 @@
 //! every organization pays for it from credits whoever runs the glave adds (`specs/gateway.md`,
 //! "Credits"). Its organization starts with people in it, an Admin and a Member with names, who
 //! joined by invites, and an invite waiting (`seed.rs`), so its Admin has something to show at
-//! once. Once the server is ready, xtask opens it in the person's browser, signed in, as `glave`
-//! alone does, and again each time the person presses Enter in its window, so no link can expire
-//! on them. On Ctrl-C, a hang-up, the end of the program that started xtask or the server's own
+//! once; xtask prints a sign-up link its owner made, to try one's own personal space while
+//! sign-up is closed. Once the server is ready, xtask opens it in the person's browser, signed
+//! in, as `glave` alone does, and again each time the person presses Enter in its window, so
+//! no link can expire on them. On Ctrl-C, a hang-up, the end of the program that started xtask or the server's own
 //! end, it stops the server and removes the folder. glave's lifeline stops the server if xtask
 //! is killed outright; a folder such a run left is removed by the next, which finds its lock
 //! free.
@@ -282,6 +283,19 @@ fn say_invite_only(invite: &str) {
     );
 }
 
+/// Tells the person at the terminal of the sign-up link `link` the owner of the glave whose
+/// folder is `home` made, and how to make another.
+fn say_signup_link(link: &str, home: &Path) {
+    eprintln!(
+        "xtask: a sign-up link its owner made signs someone up while sign-up is closed, to \
+         their own personal space: in a private window, open it, give a name and make a \
+         passkey, once: {link}\n\
+         xtask: another, as whoever runs it:\n\
+         xtask:   GLAVE_HOME={} cargo run -q -p glave -- signup link",
+        home.display()
+    );
+}
+
 /// Runs until Ctrl-C, a hang-up, a request to stop, the end of what started xtask or the
 /// server's own end, welcoming the person meanwhile: whatever is being done for them stops at
 /// once with it.
@@ -324,8 +338,12 @@ impl Opening<'_> {
             return format!("glave did not start within {}", spoken(READY_WITHIN));
         }
         match seed::seed(self.home).await {
-            Ok(_) if self.signup => {}
-            Ok(invite) => say_invite_only(&invite),
+            Ok((invite, signup)) => {
+                if !self.signup {
+                    say_invite_only(&invite);
+                }
+                say_signup_link(&signup, self.home);
+            }
             Err(err) => eprintln!("xtask: glave runs, but without its sample people: {err}"),
         }
         self.open().await;

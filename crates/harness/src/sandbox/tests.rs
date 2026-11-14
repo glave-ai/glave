@@ -274,59 +274,54 @@ fn secret_locations_are_unreadable() {
     std::fs::write(dir.join(".ssh/id_ed25519"), "canary-ssh\n").unwrap();
     std::fs::create_dir_all(dir.join(".glave")).unwrap();
     std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
-    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
-    std::fs::write(project.join(".ENV.local"), "canary-env-local\n").unwrap();
-    std::fs::write(project.join("privkey.pem"), "canary-pem\n").unwrap();
     std::fs::create_dir_all(dir.join(".config/gh")).unwrap();
     std::fs::write(dir.join(".config/gh/hosts.yml"), "canary-gh\n").unwrap();
     std::fs::create_dir_all(dir.join(".cargo")).unwrap();
     std::fs::write(dir.join(".cargo/credentials.toml"), "canary-cargo\n").unwrap();
     std::fs::write(dir.join(".cargo/config.toml"), "cargo-config-ok\n").unwrap();
     std::fs::write(dir.join(".zsh_history"), "canary-history\n").unwrap();
-    // Public certificates and Java key stores are not hidden.
-    std::fs::write(project.join("cert.pem"), "cert-ok\n").unwrap();
-    std::fs::write(project.join("fullchain.pem"), "chain-ok\n").unwrap();
-    std::fs::write(project.join("debug.keystore"), "keystore-ok\n").unwrap();
-    std::fs::write(project.join(".env.example"), "example-ok\n").unwrap();
-    std::fs::write(project.join("secrets.yaml"), "canary-yaml\n").unwrap();
-    // Source modules named `secrets` are code, not secrets.
-    std::fs::write(project.join("secrets.rs"), "rs-ok\n").unwrap();
-    std::fs::write(project.join("secrets.py"), "py-ok\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
-    // A certificate bundle is public: Python's HTTPS needs certifi's in a project's venv.
-    let certifi = project.join(".venv/lib/certifi");
-    std::fs::create_dir_all(&certifi).unwrap();
-    std::fs::write(certifi.join("cacert.pem"), "bundle-ok\n").unwrap();
     let out = run(
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
         &format!(
-            "for f in {home}/.ssh/id_ed25519 {home}/.glave/glave.db {home}/.config/gh/hosts.yml {home}/.cargo/credentials.toml {home}/.cargo/config.toml {home}/.zsh_history .env .ENV.local privkey.pem secrets.yaml .env.example secrets.rs secrets.py notes.md .venv/lib/certifi/cacert.pem cert.pem fullchain.pem debug.keystore; do cat \"$f\"; done; true",
+            "for f in {home}/.ssh/id_ed25519 {home}/.glave/glave.db {home}/.config/gh/hosts.yml {home}/.cargo/credentials.toml {home}/.cargo/config.toml {home}/.zsh_history notes.md; do cat \"$f\"; done; true",
             home = dir.display(),
         ),
     );
     assert!(!out.text.contains("canary"), "{}", out.text);
-    for open in ["cargo-config-ok", "cert-ok", "chain-ok", "keystore-ok"] {
-        assert!(out.text.contains(open), "{open}: {}", out.text);
-    }
-    assert!(out.text.contains("example-ok"), "{}", out.text);
+    assert!(out.text.contains("cargo-config-ok"), "{}", out.text);
     assert!(out.text.contains("notes-ok"), "{}", out.text);
-    assert!(out.text.contains("bundle-ok"), "{}", out.text);
-    assert!(
-        out.text.contains("rs-ok") && out.text.contains("py-ok"),
-        "{}",
-        out.text
-    );
-    // Control: without the sandbox every canary is readable.
+    // Control: without the sandbox the canary is readable.
     let open = run_in(
         &project,
         None,
-        &format!(
-            "cat {}/.ssh/id_ed25519 .env .ENV.local privkey.pem",
-            dir.display()
-        ),
+        &format!("cat {}/.ssh/id_ed25519", dir.display()),
     );
-    assert_eq!(open.text.matches("canary").count(), 4, "{}", open.text);
+    assert!(open.text.contains("canary-ssh"), "{}", open.text);
+}
+
+/// The project's own files are the project's, those named like secrets too: a test or a dev
+/// server that loads `.env` works in the sandbox.
+#[test]
+fn the_project_s_own_env_files_are_readable() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("project-env");
+    let project = dir.join("project");
+    std::fs::write(project.join(".env"), "env-ok\n").unwrap();
+    std::fs::write(project.join("privkey.pem"), "pem-ok\n").unwrap();
+    std::fs::write(project.join("secrets.yaml"), "yaml-ok\n").unwrap();
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, false, &dir),
+        "cat .env privkey.pem secrets.yaml",
+    );
+    assert!(!out.is_error, "{}", out.text);
+    for read in ["env-ok", "pem-ok", "yaml-ok"] {
+        assert!(out.text.contains(read), "{read}: {}", out.text);
+    }
 }
 
 /// A hidden file is refused, as on every platform, never read as empty: the command fails,
@@ -338,11 +333,12 @@ fn reading_a_hidden_file_fails_and_says_so() {
     }
     let dir = scratch("hidden");
     let project = dir.join("project");
-    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    std::fs::create_dir_all(dir.join(".ssh")).unwrap();
+    std::fs::write(dir.join(".ssh/id_ed25519"), "canary-ssh\n").unwrap();
     let out = run(
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
-        "cat .env",
+        &format!("cat {}/.ssh/id_ed25519", dir.display()),
     );
     assert!(out.is_error, "{}", out.text);
     assert!(!out.text.contains("canary"), "{}", out.text);
@@ -352,7 +348,11 @@ fn reading_a_hidden_file_fails_and_says_so() {
         "{}",
         out.text
     );
-    assert!(out.text.contains("files such as .env"), "{}", out.text);
+    assert!(
+        out.text.contains("credential stores such as"),
+        "{}",
+        out.text
+    );
 }
 
 /// Package managers keep their caches in the home folder, which sandboxed commands cannot

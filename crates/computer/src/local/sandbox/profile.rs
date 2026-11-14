@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
-use super::secrets::{ENV_FILES, HOME_SECRETS, OTHER_SECRET_FILES, TEMPLATE_WORDS};
+use super::secrets::HOME_SECRETS;
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
@@ -140,18 +140,6 @@ fn reads(profile: &mut Profile, places: &Places) {
             profile.params.push(("ON_PATH".into(), on_path.clone()));
         }
     }
-    let root = regex_escape(&places.root);
-    let (env, templates, others) = (
-        any_case(ENV_FILES),
-        any_case(TEMPLATE_WORDS),
-        any_case(OTHER_SECRET_FILES),
-    );
-    conditions.push(format!(
-        r#"(require-not (regex #"^{root}/(.*/)?{others}$"))"#
-    ));
-    conditions.push(format!(
-        r#"(require-any (require-not (regex #"^{root}/(.*/)?{env}$")) (regex #"^{root}/(.*/)?[^/]*{templates}[^/]*$"))"#
-    ));
     let _ = writeln!(
         profile.text,
         "; reads: everywhere except other terminals and secret locations\n(allow file-read*\n  (require-all\n    {}))",
@@ -300,34 +288,6 @@ fn allow_writes(profile: &mut Profile, what: &str, conditions: &[String]) {
     );
 }
 
-/// `path` as a literal inside a profile regular expression.
-fn regex_escape(path: &Path) -> String {
-    let mut out = String::new();
-    for c in path.to_string_lossy().chars() {
-        if r#"\.+*?()|[]{}^$""#.contains(c) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// A pattern that matches whatever the letters' case: `env` becomes `[eE][nN][vV]`.
-fn any_case(pattern: &str) -> String {
-    let mut out = String::new();
-    for c in pattern.chars() {
-        if c.is_ascii_alphabetic() {
-            out.push('[');
-            out.push(c.to_ascii_lowercase());
-            out.push(c.to_ascii_uppercase());
-            out.push(']');
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,7 +423,10 @@ mod tests {
                 .text
                 .contains(r#"(require-not (literal (param "OWN")))"#)
         );
-        assert!(profile.text.contains("[eE][nN][vV]"), "env files, any case");
+        assert!(
+            !profile.text.contains("[eE][nN][vV]"),
+            "the project's own env files stay readable"
+        );
     }
 
     #[test]
@@ -527,11 +490,5 @@ mod tests {
                 assert!(!profile.text.contains("securityd"), "{level:?} {network:?}");
             }
         }
-    }
-
-    #[test]
-    fn paths_are_escaped_for_regular_expressions() {
-        assert_eq!(regex_escape(Path::new("/a.b/(c)")), r"/a\.b/\(c\)");
-        assert_eq!(any_case("ab.c"), "[aA][bB].[cC]");
     }
 }

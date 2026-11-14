@@ -116,6 +116,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (people::INVITE_REVOKED, 1),
     (people::MADE, 1),
     (signup::STARTED, 1),
+    (signup::STARTED, 2),
     (signup::FINISHED, 1),
     (signup::ASKED, 1),
     (credits::ADDED, 1),

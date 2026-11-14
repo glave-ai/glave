@@ -137,8 +137,13 @@ fn glave_doc_writes_a_workbook_and_reads_it_back_and_leaves_glaves_folder_alone(
         "{}",
         text(&wrong)
     );
-    assert!(
-        !place.home.exists(),
+    let home: Vec<_> = std::fs::read_dir(&place.home)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        home,
+        ["mcp.json"],
         "glave doc keeps out of glave's own folder"
     );
     assert!(model.received().is_empty(), "no model is asked");

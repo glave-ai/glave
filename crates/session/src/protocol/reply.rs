@@ -554,6 +554,13 @@ pub enum Reply {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,
     },
+    /// A sign-up link whoever runs the server made, sent this once, and when it stops working.
+    #[schemars(title = "SignupLinked")]
+    SignupLinked {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        link: Secret,
+        expires: At,
+    },
     /// The invites waiting to be opened, oldest first.
     #[schemars(title = "Invites")]
     Invites { invites: Vec<InviteInfo> },

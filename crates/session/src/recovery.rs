@@ -12,7 +12,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider};
 
 use crate::protocol::{ApiError, Reply};
 use crate::server::Server;
-use crate::signups::Signing;
+use crate::signups::{Emailed, Signing};
 use crate::words::{Language, Sentence, say};
 
 impl<P, L, B> Server<P, L, B>
@@ -36,7 +36,9 @@ where
         checked: Checked,
     ) -> Result<Reply, ApiError> {
         let session = browsers.keep_emailed(checked).await?;
-        let (mailer, origin, to) = self.sender(&signing.email)?;
+        let email = signing.email.as_deref();
+        let email = email.ok_or_else(|| self.gone(Emailed::Recovery))?;
+        let (mailer, origin, to) = self.sender(email)?;
         let said = say(Language::English, &Sentence::PasskeyEmailed);
         let mail = Mail {
             to,
