@@ -83,6 +83,7 @@
     "awake.label": "\u200f\u202eWhile\u202c\u200f \u200f\u202eglave\u202c\u200f \u200f\u202eworks\u202c\u200f",
     "balance.heading": "\u200f\u202eBalance\u202c\u200f",
     "balance.left": "{$AMOUNT} \u200f\u202eleft\u202c\u200f",
+    "balance.usedUp": "\u200f\u202eUsed\u202c\u200f \u200f\u202eup\u202c\u200f",
     "commandList.openPreview": "\u200f\u202eOpen\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202epreview\u202c\u200f \u200f\u202eof\u202c\u200f {$COMMAND}",
     "commandList.stopCommand": "\u200f\u202eStop\u202c\u200f {$COMMAND}",
     "commandList.stoppingCommand": "\u200f\u202eStopping\u202c\u200f {$COMMAND}\u200f\u202e…\u202c\u200f",

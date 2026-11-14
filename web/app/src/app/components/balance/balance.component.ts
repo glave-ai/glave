@@ -14,7 +14,7 @@ import { SessionService } from '../../services/session.service';
 
 /**
  * In Settings, where the server keeps a balance: what is left of it, as the server says, in
- * dollars as the reader writes them. Only for those the server shows it to; elsewhere nothing,
+ * dollars as the reader writes them, or that it is used up at or below nothing. Only for those the server shows it to; elsewhere nothing,
  * not even room in the page.
  */
 @Component({
@@ -30,6 +30,7 @@ export class BalanceComponent {
   private readonly locale = inject(LOCALE_ID);
   protected readonly copy = {
     heading: $localize`:@@balance.heading:Balance`,
+    usedUp: $localize`:@@balance.usedUp:Used up`,
   } as const;
   /** What is left, once the server has said it. */
   private readonly balance = signal<Money | null>(null);
@@ -37,6 +38,9 @@ export class BalanceComponent {
     const balance = this.balance();
     if (balance === null) {
       return null;
+    }
+    if (balance.nanos <= 0) {
+      return this.copy.usedUp;
     }
     const amount = formatMoney(balance, this.locale);
     return $localize`:@@balance.left:${amount}:AMOUNT: left`;

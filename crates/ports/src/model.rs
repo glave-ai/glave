@@ -405,12 +405,12 @@ pub enum ProviderError {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unpaid {
     /// Nothing is left of the balance: everything added is charged.
-    #[error("your balance is used up: ask whoever runs this glave to add more")]
+    #[error("your balance is used up: ask whoever runs this server to add more")]
     Spent,
     /// Something is free now, after what calls running hold, but less than the call could cost.
     #[error(
         "this could cost up to {:.2}, more than the {:.2} of your balance free now: choose a \
-         cheaper model, or ask whoever runs this glave to add more",
+         cheaper model, or ask whoever runs this server to add more",
         needs.cents_up(),
         free.cents_down()
     )]

@@ -30,12 +30,13 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 import { WebSearchComponent } from '../web-search/web-search.component';
 
 /**
- * Settings: how glave looks (`app-appearance`), what is left of the balance where the server
- * keeps one (`app-balance`), the model accounts (add, change, remove), connections (what is
+ * Settings: how glave looks (`app-appearance`), the model accounts (add, change, remove), connections (what is
  * connected, and the page where they are) and memory (its own page), whether glave may search
  * the web, the passkeys that sign the person in where glave is reached from elsewhere, the
  * notifications pushed to their browsers, whether their own computer stays awake while glave
- * works, the server, signing this browser (its notifications stopped first) or every other out.
+ * works, the server, signing this browser (its notifications stopped first) or every other out;
+ * last, what is left of the balance where the server keeps one (`app-balance`), below every
+ * other card, so its arriving late moves none of them.
  */
 @Component({
   selector: 'app-settings',

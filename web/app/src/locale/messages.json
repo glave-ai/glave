@@ -83,6 +83,7 @@
     "awake.label": "While glave works",
     "balance.heading": "Balance",
     "balance.left": "{$AMOUNT} left",
+    "balance.usedUp": "Used up",
     "commandList.openPreview": "Open the preview of {$COMMAND}",
     "commandList.stopCommand": "Stop {$COMMAND}",
     "commandList.stoppingCommand": "Stopping {$COMMAND}…",

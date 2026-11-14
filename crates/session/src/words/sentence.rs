@@ -292,16 +292,16 @@ sentences! {
     ProviderSilent { seconds: String } = "provider-silent"
         "the model provider sent nothing for { $seconds } s",
     NoModelServes { reason: String } = "no-model-serves" "no model could serve the request: { $reason }",
-    OutOfCredits = "out-of-credits" "your balance is used up: ask whoever runs this glave to add more",
+    OutOfCredits = "out-of-credits" "your balance is used up: ask whoever runs this server to add more",
     CreditsShort { free: String, needs: String } = "credits-short"
-        "this could cost up to { $needs }, more than the { $free } of your balance free now: choose a cheaper model, or ask whoever runs this glave to add more",
+        "this could cost up to { $needs }, more than the { $free } of your balance free now: choose a cheaper model, or ask whoever runs this server to add more",
     MonthLimitReached { limit: String } = "month-limit-reached"
         "this month's spending limit of { $limit } is reached: the account's owner can raise it",
     MonthLimitShort { limit: String, free: String, needs: String } = "month-limit-short"
         "this could cost up to { $needs }, more than the { $free } free now of this month's { $limit } limit: the account's owner can raise it, or choose a cheaper model",
     NoPriceNoCredits { model: String } = "no-price-no-credits"
         "{ $model } has no price here, so your balance can't pay for it: choose another model",
-    NoCredits = "no-credits" "this glave keeps no credits: its models are paid for another way",
+    NoCredits = "no-credits" "this server keeps no balance: its models are paid for another way",
     NotDollars = "not-dollars"
         "an amount is in US dollars and more than nothing; a monthly limit may be nothing",
     OperatorAddsCredits = "operator-adds-credits"

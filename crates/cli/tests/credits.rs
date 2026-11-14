@@ -63,7 +63,7 @@ fn a_glave_that_keeps_no_credits_says_so_and_charges_nothing() {
     let output = glave(&place, &model, &["credits"], "");
     assert!(!output.status.success());
     assert!(
-        text(&output).contains("keeps no credits"),
+        text(&output).contains("keeps no balance"),
         "{}",
         text(&output)
     );

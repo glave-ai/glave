@@ -64,7 +64,7 @@ fn a_server_that_keeps_no_credits_says_so() {
         let (server, _) = Setup::new(Vec::new()).build(&dir).await;
         let refused = server.request(Request::CreditsGet {}).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_AVAILABLE);
-        assert!(refused.message.to_string().contains("keeps no credits"));
+        assert!(refused.message.to_string().contains("keeps no balance"));
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info")
         };

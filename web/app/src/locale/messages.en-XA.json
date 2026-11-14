@@ -83,6 +83,7 @@
     "awake.label": "[Ŵĥîļé ĝļåṽé ŵöŕķš one two]",
     "balance.heading": "[Ɓåļåñçé one]",
     "balance.left": "[{$AMOUNT} ļéƒţ one]",
+    "balance.usedUp": "[Ûšéð ûþ one]",
     "commandList.openPreview": "[Öþéñ ţĥé þŕéṽîéŵ öƒ {$COMMAND} one two]",
     "commandList.stopCommand": "[Šţöþ {$COMMAND} one]",
     "commandList.stoppingCommand": "[Šţöþþîñĝ {$COMMAND}… one]",

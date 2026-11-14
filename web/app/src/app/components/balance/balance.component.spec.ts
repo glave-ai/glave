@@ -44,6 +44,17 @@ describe('BalanceComponent', () => {
     await expectAccessible(root);
   });
 
+  it('says the balance is used up at or below nothing', async () => {
+    for (const nanos of [0, -120_000_000]) {
+      TestBed.resetTestingModule();
+      const fake = new FakeSession()
+        .answer('server/discover', { ...SERVER, exists: { organization: false, credits: true } })
+        .answer('credits/get', credits(nanos));
+      const root = await render(fake);
+      expect(find(root, 'balance-left')?.textContent).toBe('Used up');
+    }
+  });
+
   it('shows nothing where the server keeps no balance, and does not ask for one', async () => {
     const fake = new FakeSession().answer('server/discover', SERVER);
     const root = await render(fake);
