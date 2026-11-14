@@ -16,6 +16,7 @@ const SERVER = {
   protocols: ['2026-10'],
   permissions: 'auto',
   modes: ['auto', 'ask', 'full-access'],
+  model_accounts: true,
 } as const;
 import { SettingsComponent } from './settings.component';
 
@@ -32,8 +33,7 @@ describe('SettingsComponent', () => {
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsComponent);
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
+    await settle(fixture);
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
       'glave 0.1.0 · protocol 2026-10',
@@ -111,8 +111,7 @@ describe('SettingsComponent', () => {
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsComponent);
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
+    await settle(fixture);
     const root: HTMLElement = fixture.nativeElement;
     const row = root.querySelector('[data-testid="settings-account"]');
     expect(row?.textContent).toContain('OpenAI');
@@ -159,8 +158,7 @@ describe('SettingsComponent', () => {
       });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const fixture = TestBed.createComponent(SettingsComponent);
-    await new Promise((resolve) => setTimeout(resolve));
-    await fixture.whenStable();
+    await settle(fixture);
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-account"]')?.textContent).toContain(
       '2 models',
@@ -185,5 +183,23 @@ describe('SettingsComponent', () => {
     expect(root.querySelector('[data-testid="settings-account-problem"]')?.textContent).toBe(
       'OpenRouter is busy right now: try again in a minute.',
     );
+  });
+
+  it('offers no model accounts where the server sets up its models, and asks for none', async () => {
+    const fake = new FakeSession()
+      .answer('server/discover', { ...SERVER, model_accounts: false })
+      .answer('credential/list', { credentials: [] });
+    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await settle(fixture);
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="settings-no-accounts"]')).toBeNull();
+    expect(root.querySelector('[data-testid="settings-add-account"]')).toBeNull();
+    expect(root.textContent).not.toContain('Models');
+    expect(fake.calls.map((call) => call.method)).not.toContain('provider/list');
+    expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
+      'glave 0.1.0',
+    );
+    await expectAccessible(root);
   });
 });
