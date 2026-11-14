@@ -22,12 +22,15 @@ import { connectProblem, isServiceKind, needsAddress, servicesFor } from '../../
 import { BackService } from '../../services/back.service';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
+import { ServerService } from '../../services/server.service';
 
 /**
  * Adding a model: choose a service by its plain name, paste the key, and glave checks it
  * before keeping it. The page a first run lands on, and where settings send the person to
  * add or change an account (`?kind=` picks the service, `?url=` fills another server's
- * address); connecting the same service and address again replaces its key.
+ * address); connecting the same service and address again replaces its key. Where the server
+ * says the person connects no model accounts (someone invited to another person's server, or
+ * Glave Cloud), it says who sets up the models instead, and offers no form.
  */
 @Component({
   selector: 'app-connect',
@@ -63,6 +66,7 @@ export class ConnectComponent {
     back: $localize`:@@connect.back:Back`,
     missing: $localize`:@@connect.missing:Paste your key first.`,
     noAddress: $localize`:@@connect.noAddress:Give the server address first.`,
+    elsewhere: $localize`:@@connect.elsewhere:Whoever runs this server sets up its models.`,
   } as const;
   protected readonly picked = linkedSignal<ProviderKind>(() => {
     const kind = this.kind();
@@ -85,10 +89,19 @@ export class ConnectComponent {
   private readonly models = inject(ModelsService);
   private readonly router = inject(Router);
   private readonly backs = inject(BackService);
+  private readonly server = inject(ServerService);
+  /**
+   * Whether the server said the person connects no model accounts here: then the page says who
+   * sets up the models. Until it has said, the form shows, as it always did.
+   */
+  protected readonly elsewhere = computed(
+    () => this.server.info() !== null && !this.server.modelAccounts(),
+  );
   /** Whether a model was set up already, so the page leads back to settings. */
   protected readonly adding = computed(() => this.models.models().length > 0);
 
   constructor() {
+    void this.server.load();
     void this.models.load();
   }
 

@@ -283,6 +283,10 @@ function unanswered(method: Method, params: unknown): Answer {
       },
     };
   }
+  if (method === 'server/discover') {
+    // The person on its computer, who connects model accounts, unless a test says otherwise.
+    return { model_accounts: true };
+  }
   if (method === 'memory/get') {
     return { remembering: { kind: 'chosen', on: true } };
   }

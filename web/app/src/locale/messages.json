@@ -89,6 +89,7 @@
     "connect.back": "Back",
     "connect.connect": "Add",
     "connect.connecting": "Checking the key…",
+    "connect.elsewhere": "Whoever runs this server sets up its models.",
     "connect.heading": "Add a model",
     "connect.key": "Key",
     "connect.keyHint": "It stays on this computer, locked away. glave never shows it again.",

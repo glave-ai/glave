@@ -54,6 +54,40 @@ async function submit(fixture: Fixture): Promise<void> {
 }
 
 describe('ConnectComponent', () => {
+  /** The page once the server said whether the person connects model accounts here. */
+  async function told(modelAccounts: boolean): Promise<HTMLElement> {
+    const fake = new FakeSession().answer('model/list', { models: [] }).answer('server/discover', {
+      name: 'glave',
+      version: '0.1.0',
+      protocols: ['2026-10'],
+      permissions: 'auto',
+      modes: ['auto'],
+      model_accounts: modelAccounts,
+    });
+    const fixture = await setUp(fake);
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('says who sets up the models, with no form, where the person connects no accounts', async () => {
+    const root = await told(false);
+    expect(find(root, 'connect-elsewhere').textContent).toContain(
+      'Whoever runs this server sets up its models.',
+    );
+    expect(root.querySelector('[data-testid="connect"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connect-key"]')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('offers the form where the server says the person connects accounts', async () => {
+    const root = await told(true);
+    expect(root.querySelector('[data-testid="connect-elsewhere"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connect-key"]')).not.toBeNull();
+  });
+
   it('offers the services by plain names, and a key field that never shows the key', async () => {
     const fixture = await setUp(new FakeSession().answer('model/list', { models: [] }));
     const root = fixture.nativeElement as HTMLElement;

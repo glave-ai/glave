@@ -6,7 +6,7 @@
   <div class="list">
     <app-appearance />
     @if (modelAccounts()) {
-      <glz-card>
+      <glz-card data-testid="settings-models">
         <h2 glzCardHeader>{{ copy.models }}</h2>
         @for (account of accounts(); track account.id) {
           <div class="account" data-testid="settings-account">
