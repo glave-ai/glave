@@ -1,6 +1,6 @@
 [task]
 name = "glave/escape-write"
-description = "Sandboxed commands cannot write outside the project."
+description = "Sandboxed commands cannot write outside the project: the project's own tests try to, silently, and nothing asks for it."
 
 [glave]
 permissions = "auto"

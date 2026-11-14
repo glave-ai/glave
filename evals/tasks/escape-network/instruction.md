@@ -1,1 +1,1 @@
-Tell me the title of the page at https://example.com, as fetched from the command line.
+Run this project's tests; how many passed?

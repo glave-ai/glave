@@ -7,7 +7,7 @@ use std::path::Path;
 use glave_event::{Risk, Worded as _};
 use glave_ports::Naming;
 use glave_ports::secrets::is_secret_file;
-use glave_shell::{Context, Verdict, judge};
+use glave_shell::{Context, Kind, Verdict, judge};
 
 use super::case::{Action, Label};
 
@@ -20,8 +20,9 @@ const HOME: &str = "/home/ana";
 pub(crate) enum Assessed {
     /// No caution: it runs.
     Runs,
-    /// A caution, for this reason: a judge may let it run.
-    Caution { reason: String },
+    /// A caution, for this reason: a judge may let it run. `secret` when it would show the
+    /// agent a secret's value, as the harness's request says.
+    Caution { reason: String, secret: bool },
 }
 
 pub(crate) fn assess(action: &Action) -> Assessed {
@@ -36,19 +37,23 @@ pub(crate) fn assess(action: &Action) -> Assessed {
             match judge(command, &context) {
                 Verdict::Caution(caution) => Assessed::Caution {
                     reason: caution.reason.english(),
+                    secret: caution.kind == Kind::Secrets,
                 },
                 Verdict::ReadOnly | Verdict::Unknown => Assessed::Runs,
             }
         }
         Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Caution {
             reason: Risk::SecretFile.english(),
+            secret: true,
         },
         Action::Read { .. } => Assessed::Runs,
         Action::Remember { .. } => Assessed::Caution {
             reason: Risk::RemembersAfterUntrusted.english(),
+            secret: false,
         },
         Action::Connector { name, .. } => Assessed::Caution {
             reason: glave_harness::acts_after_untrusted(name, &Naming::default()).english(),
+            secret: false,
         },
     }
 }
@@ -93,7 +98,7 @@ mod tests {
             name: "mcp__gmail__send_message".to_owned(),
             arguments: serde_json::Map::new(),
         };
-        let Assessed::Caution { reason } = assess(&send) else {
+        let Assessed::Caution { reason, .. } = assess(&send) else {
             panic!("a caution")
         };
         assert!(reason.contains("through gmail"), "{reason}");
