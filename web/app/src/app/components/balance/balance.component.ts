@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import type { Money } from '@glave/client';
 import { GlzCardComponent, formatMoney } from '@glave/glaze';
 
