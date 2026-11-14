@@ -17,6 +17,8 @@ export function discovered(version = '0.0.0'): ServerInfo {
     permissions: 'auto',
     modes: ['auto', 'plan', 'ask', 'full-access'],
     id: FAKE_SERVER,
+    // The person on this computer may connect everything.
+    connects: { models: true, git_hosts: true, connections: true },
   };
 }
 
