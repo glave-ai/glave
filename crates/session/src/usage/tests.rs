@@ -29,19 +29,19 @@ fn only_this_month_s_calls_to_a_connection_s_tools_count_each_to_its_own_server(
             1,
             "2026-09-30T23:59:59Z",
             ToolCallRequested::TYPE,
-            &call("mcp__search__web_search_exa"),
+            &call("mcp__search__find"),
         ),
         event(
             2,
             "2026-10-01T00:00:00Z",
             ToolCallRequested::TYPE,
-            &call("mcp__search__web_search_exa"),
+            &call("mcp__search__find"),
         ),
         event(
             3,
             "2026-10-02T09:00:00Z",
             ToolCallRequested::TYPE,
-            &call("mcp__search__web_search_exa"),
+            &call("mcp__search__find"),
         ),
         event(
             4,

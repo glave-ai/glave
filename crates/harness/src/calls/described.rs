@@ -38,6 +38,8 @@ where
             return crate::compaction::described(arguments);
         } else if tools.is_media(name) {
             return crate::media::describe(name, arguments);
+        } else if tools.is_search(name) {
+            return crate::web_search::describe(arguments);
         }
         let described = tools.get(name).and_then(|(index, info)| {
             let source = self.source_for(thread, tools, index)?;
@@ -46,13 +48,16 @@ where
         described.unwrap_or_else(|| describe_call(name, arguments))
     }
 
-    /// What kind of work `call` does, as its source says: glave's own plan, memory, subagent,
-    /// compact and media tools, and a tool not offered, are `other`.
+    /// What kind of work `call` does, as its source says: `web_search` the web's; glave's own
+    /// plan, memory, subagent, compact and media tools, and a tool not offered, are `other`.
     pub(crate) fn kind(&self, thread: &Thread, tools: &ToolSet, call: &ToolCall) -> ToolKind {
         let Route::Run(call) = tools.route(call) else {
             return ToolKind::Other;
         };
         let name = call.tool.as_str();
+        if tools.is_search(name) {
+            return ToolKind::Web;
+        }
         let own = tools.is_plan(name) || tools.is_memory(name) || tools.is_agent(name);
         if own || tools.is_compact(name) || tools.is_media(name) {
             return ToolKind::Other;
