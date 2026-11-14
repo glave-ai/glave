@@ -6,53 +6,53 @@
   <div class="list">
     <app-appearance />
     @if (connectsModels()) {
-    <glz-card>
-      <h2 glzCardHeader>{{ copy.models }}</h2>
-      @for (account of accounts(); track account.id) {
-        <div class="account" data-testid="settings-account">
-          <div>
-            <p class="title">{{ account.name }}</p>
-            <p class="details">{{ account.hint }}</p>
+      <glz-card>
+        <h2 glzCardHeader>{{ copy.models }}</h2>
+        @for (account of accounts(); track account.id) {
+          <div class="account" data-testid="settings-account">
+            <div>
+              <p class="title">{{ account.name }}</p>
+              <p class="details">{{ account.hint }}</p>
+            </div>
+            <div class="glz-row glz-gap-2">
+              <a
+                glzButton
+                data-testid="settings-account-change"
+                [routerLink]="connectLink"
+                [queryParams]="account.query"
+              >
+                {{ copy.change }}
+              </a>
+              <button glzButton data-testid="settings-account-remove" (click)="ask(account.id)">
+                {{ copy.remove }}
+              </button>
+            </div>
           </div>
-          <div class="glz-row glz-gap-2">
-            <a
-              glzButton
-              data-testid="settings-account-change"
-              [routerLink]="connectLink"
-              [queryParams]="account.query"
-            >
-              {{ copy.change }}
-            </a>
-            <button glzButton data-testid="settings-account-remove" (click)="ask(account.id)">
-              {{ copy.remove }}
-            </button>
-          </div>
-        </div>
-      } @empty {
-        <p class="details" data-testid="settings-no-accounts">{{ copy.noAccounts }}</p>
-      }
-      @if (problem(); as problem) {
-        <p class="error" role="alert" data-testid="settings-account-problem">{{ problem }}</p>
-      }
-      @if (refreshed(); as refreshed) {
-        <p class="details" role="status" data-testid="settings-refreshed">{{ refreshed }}</p>
-      }
-      <div glzCardFooter class="glz-row glz-gap-2">
-        <a glzButton data-testid="settings-add-account" [routerLink]="connectLink">{{
-          copy.add
-        }}</a>
-        @if (hasAccounts()) {
-          <button
-            glzButton
-            data-testid="settings-refresh-models"
-            [disabled]="refreshing()"
-            (click)="refresh()"
-          >
-            {{ refreshLabel() }}
-          </button>
+        } @empty {
+          <p class="details" data-testid="settings-no-accounts">{{ copy.noAccounts }}</p>
         }
-      </div>
-    </glz-card>
+        @if (problem(); as problem) {
+          <p class="error" role="alert" data-testid="settings-account-problem">{{ problem }}</p>
+        }
+        @if (refreshed(); as refreshed) {
+          <p class="details" role="status" data-testid="settings-refreshed">{{ refreshed }}</p>
+        }
+        <div glzCardFooter class="glz-row glz-gap-2">
+          <a glzButton data-testid="settings-add-account" [routerLink]="connectLink">{{
+            copy.add
+          }}</a>
+          @if (hasAccounts()) {
+            <button
+              glzButton
+              data-testid="settings-refresh-models"
+              [disabled]="refreshing()"
+              (click)="refresh()"
+            >
+              {{ refreshLabel() }}
+            </button>
+          }
+        </div>
+      </glz-card>
     }
     <glz-confirm-dialog
       testId="settings-remove"
@@ -64,15 +64,15 @@
       (decided)="decided($event)"
     />
     @if (connects()) {
-    <glz-card>
-      <h2 glzCardHeader>{{ copy.connections }}</h2>
-      <p class="details" data-testid="settings-connected">{{ connected() }}</p>
-      <div glzCardFooter class="glz-row glz-gap-2">
-        <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
-          copy.connectionsOpen
-        }}</a>
-      </div>
-    </glz-card>
+      <glz-card>
+        <h2 glzCardHeader>{{ copy.connections }}</h2>
+        <p class="details" data-testid="settings-connected">{{ connected() }}</p>
+        <div glzCardFooter class="glz-row glz-gap-2">
+          <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
+            copy.connectionsOpen
+          }}</a>
+        </div>
+      </glz-card>
     }
     <app-web-search />
     <glz-card>
