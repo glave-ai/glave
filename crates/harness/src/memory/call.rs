@@ -1,23 +1,20 @@
 //! Running the model's call of a memory tool. Memory is first-party: saving needs no approval
-//! and is never hidden, but after the thread has read untrusted content or a secrets file, a
-//! save is a soft caution (`specs/memory.md`, "Safety"): in Auto the judge lets it run only
-//! when the person asked for it to be remembered, otherwise the person is asked, and with no
-//! one there nothing is saved; Full access asks no one and saves. Memory never changes an
-//! approval or what the judge sees.
+//! in any mode and is never hidden; a save after the thread read untrusted content or a secrets
+//! file only records so (`specs/memory.md`, "Safety"). Memory never changes an approval or what
+//! the judge sees.
 
-use glave_event::{Arguments, Ask, Caution, Risk};
+use glave_event::Arguments;
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
-use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
+use glave_ports::{BlobStore, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use super::state::recorded;
-use crate::approval::{ApprovalRequest, Approver};
-use crate::calls::{Judged, NOT_RUN};
+use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
-use crate::turn::{Live, Step};
+use crate::turn::Live;
 
 /// What the person sees when a memory changes, in every client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +47,6 @@ where
         &self,
         thread: &mut Thread,
         call: &ToolCall,
-        step: &mut Step,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
@@ -60,38 +56,9 @@ where
         let name = canonical(&call.tool);
         let summary = described(&call.tool, &call.arguments);
         let hooked = ToolHook::of(call, name);
-        let writes = name == REMEMBER || name == EDIT_MEMORY;
-        let refused = if let Some(answered) = step.waited(&call.call_id) {
-            // Its hooks ran and it asked before the turn stopped: its answer decides, as it
-            // would have the moment it came.
-            self.answered(thread, answered, cancel, live).await?
-        } else if let Some(stopped) =
-            (self.stopped_by_hook(thread, &hooked, &summary, cancel, live)).await?
-        {
-            Some(stopped)
-        } else if writes && on.untrusted_read {
-            let request = ApprovalRequest {
-                thread: thread.id,
-                call_id: call.call_id.clone(),
-                tool: name.to_owned(),
-                effect: Effect::Changes,
-                summary: glave_ports::describe_call_in_full(name, &call.arguments),
-                ask: Ask::Allow,
-                secret: false,
-                caution: Caution::of(Some(Risk::RemembersAfterUntrusted), None),
-                outside_sandbox: None,
-            };
-            let turn = &mut step.summary;
-            match self.judged(thread, &request, turn, cancel).await? {
-                Judged::Cleared => None,
-                Judged::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
-                Judged::Ask => self.ask(thread, &request, cancel, live).await?,
-            }
-        } else {
-            None
-        };
-        if let Some(refused) = refused {
-            return Ok(refused);
+        let hook = self.stopped_by_hook(thread, &hooked, &summary, cancel, live);
+        if let Some(stopped) = hook.await? {
+            return Ok(stopped);
         }
         self.record_started(thread, &call.call_id).await?;
         live(Live::ToolStarted {

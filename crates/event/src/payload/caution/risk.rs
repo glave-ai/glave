@@ -1,7 +1,7 @@
 //! What a call would do that needs the person, in one table: the shell's reasons for a command
-//! (`glave-shell`), a read of a file that usually holds secrets, and a save to memory or a
-//! connected service's write after untrusted content. Each is a clause the model reads as it is ("it deletes ~/x") and the
-//! person as a sentence of its own.
+//! (`glave-shell`), a read of a file that usually holds secrets, and a connected service's
+//! write. Each is a clause the model reads as it is ("it deletes ~/x") and the person as a
+//! sentence of its own.
 
 worded! {
     /// What a call would do that needs the person, with the values it is written with.
@@ -132,11 +132,12 @@ worded! {
         WipesRedis = "risk-wipes-redis" "it wipes a Redis database",
         ChangesPayments = "risk-changes-payments" "it changes a payments account",
 
-        // A save to memory.
+        // A connected service's tool that may send or change something.
+        Acts { service } = "risk-acts" "it can send or change something through { $service }",
+
+        // Recorded before #1408, never written now: kept so their approvals still read.
         RemembersAfterUntrusted = "risk-remembers-after-untrusted"
             "this chat has read untrusted content or a secrets file, so saving to memory now could carry a planted instruction into every later chat; it runs only if the person asked for this to be remembered",
-
-        // A connected service's tool that may send or change something.
         ActsAfterUntrusted { service } = "risk-acts-after-untrusted"
             "it can send or change something through { $service }, and this chat has read content from outside, such as a web page, that could have asked for it",
     }

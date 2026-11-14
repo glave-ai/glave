@@ -189,7 +189,7 @@ where
         } else if step.toolset.is_compact(&call.tool) {
             return Ok(compact_asked(call, step, live));
         } else if step.toolset.is_memory(&call.tool) {
-            return self.call_memory(thread, call, step, cancel, live).await;
+            return self.call_memory(thread, call, cancel, live).await;
         } else if step.toolset.is_media(&call.tool) {
             return self.call_media(thread, call, step, cancel, live).await;
         }
@@ -198,7 +198,7 @@ where
 
     /// Runs one call of a tool a source offers, asking the person first when its effect needs
     /// them in this mode, when its source says it does, or when it may write to a connected
-    /// service after the thread read untrusted content, unless it goes on from an answer.
+    /// service, unless it goes on from an answer.
     async fn call_offered(
         &self,
         thread: &mut Thread,
@@ -258,7 +258,7 @@ where
         }
         let assessed = assessed(&*source, name, &call.arguments, info.effect).await;
         let (effect, caution, secret) = assessed;
-        let (ask, acts) = asking(&*source, name, effect, thread.untrusted);
+        let (ask, acts) = asking(&*source, name, effect);
         if let Some(refused) = self.let_out_refused(thread, name, (lifted, lifted), &summary, live)
         {
             return Ok(refused);
@@ -429,9 +429,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
         let mut cautioned = request.caution.is_some();
-        // After untrusted content, the judge is never asked for a command outside the sandbox.
-        let judgeable = request.outside_sandbox.is_none() || !thread.untrusted;
-        if cautioned && judgeable {
+        if cautioned {
             match self.judged(thread, request, turn, cancel).await? {
                 Judged::Cleared => cautioned = false,
                 Judged::Ask => {}

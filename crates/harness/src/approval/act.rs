@@ -1,6 +1,6 @@
 //! A call of a connected service's tool, as approvals take it: asked about by what it does and
-//! the service, and a caution once the thread has read untrusted content, when the tool does
-//! not say it only reads (`specs/approvals.md`, "Untrusted content").
+//! the service, and a caution when the tool does not say it only reads (`specs/approvals.md`,
+//! "Connected services").
 
 use glave_event::{Ask, Risk};
 use glave_ports::Naming;
@@ -138,11 +138,10 @@ pub(crate) fn ask_with(tool: &str, naming: &Naming) -> Ask {
     }
 }
 
-/// Why a call of a connected service's `tool` that does not say it only reads needs the person
-/// once the thread has read untrusted content: it can send or change something there, as a
-/// planted instruction asks.
-pub fn acts_after_untrusted(tool: &str, naming: &Naming) -> Risk {
-    Risk::ActsAfterUntrusted {
+/// Why a call of a connected service's `tool` that does not say it only reads needs the person:
+/// it can send or change something there.
+pub fn acts_through(tool: &str, naming: &Naming) -> Risk {
+    Risk::Acts {
         service: service_of(tool, naming),
     }
 }
@@ -264,14 +263,14 @@ mod tests {
             service: Some("Gmail".to_owned()),
         };
         assert_eq!(
-            acts_after_untrusted("mcp__gmail__send_message", &gmail),
-            Risk::ActsAfterUntrusted {
+            acts_through("mcp__gmail__send_message", &gmail),
+            Risk::Acts {
                 service: "Gmail".into()
             }
         );
         assert_eq!(
-            acts_after_untrusted("mcp__gmail__send_message", &Naming::default()),
-            Risk::ActsAfterUntrusted {
+            acts_through("mcp__gmail__send_message", &Naming::default()),
+            Risk::Acts {
                 service: "gmail".into()
             }
         );

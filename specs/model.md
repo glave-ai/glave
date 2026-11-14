@@ -54,7 +54,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **Fresh machines per task are an idea for later.** Per-thread workers and their Docker backend were removed before v0.1 (owner, 2026-11-08): a person's computer, with the operating system's sandbox, is where work runs, and parallel work runs in worktrees on it. A fresh machine per task may return on Kubernetes (`computers.md`, "Workers").
 - **Isolating each project on its own machine** (a consultant keeping clients apart) is an option to add when someone needs it, never the default.
 - **Not at launch:** browser sessions kept logged in on a machine. A logged-in browser driven by an agent that reads untrusted pages is the riskiest piece, and it comes later, with its own design.
-- **Untrusted travels with work:** a thread an assistant starts after reading untrusted content inherits that label, so its risky actions need approval.
+- **Untrusted travels with work:** a thread an assistant starts after reading untrusted content inherits that label, so the judge of its risky actions is told of it.
 - **A person's files on a machine are personal data:** sealed under their key where the store keeps them, erased with it, and exportable.
 
 ## Configuration is files

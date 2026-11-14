@@ -1,10 +1,10 @@
 //! Asking the person before acting: how much to ask (what a thread's mode comes to), before
-//! the model sees a file that usually holds secrets, and before a connected service's write
-//! after untrusted content. See `specs/approvals.md`.
+//! the model sees a file that usually holds secrets, and before a connected service's write.
+//! See `specs/approvals.md`.
 
 mod act;
 
-pub use self::act::acts_after_untrusted;
+pub use self::act::acts_through;
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -97,19 +97,14 @@ pub(crate) async fn assessed(
 }
 
 /// What an approval of a call of `tool` from `source` asks the person, and, for a connected
-/// service's tool that does not say it only reads (`effect`), why it needs them once the thread
-/// has read untrusted content (`specs/approvals.md`, "Untrusted content").
-pub(crate) fn asking(
-    source: &dyn ToolSource,
-    tool: &str,
-    effect: Effect,
-    untrusted: bool,
-) -> (Ask, Option<Risk>) {
+/// service's tool that does not say it only reads (`effect`), why it needs them
+/// (`specs/approvals.md`, "Connected services").
+pub(crate) fn asking(source: &dyn ToolSource, tool: &str, effect: Effect) -> (Ask, Option<Risk>) {
     if !source.connected() {
         return (ask_of(tool), None);
     }
     let naming = source.naming(tool);
-    let acts = (untrusted && effect != Effect::Reads).then(|| acts_after_untrusted(tool, &naming));
+    let acts = (effect != Effect::Reads).then(|| acts_through(tool, &naming));
     (act::ask_with(tool, &naming), acts)
 }
 
@@ -424,24 +419,22 @@ mod tests {
     }
 
     #[test]
-    fn only_a_connected_service_s_write_after_untrusted_content_is_a_caution() {
+    fn only_a_connected_service_s_write_is_a_caution() {
         let tool = "mcp__gmail__send_message";
         let connected = glave_ports::InMemoryTools::new(Vec::new()).as_connected();
         let own = glave_ports::InMemoryTools::new(Vec::new());
-        let gmail = Risk::ActsAfterUntrusted {
+        let gmail = Risk::Acts {
             service: "gmail".into(),
         };
         let send = Ask::With {
             act: "Send message".into(),
             service: "gmail".into(),
         };
-        let after = asking(&connected, tool, Effect::Runs, true);
-        assert_eq!(after, (send.clone(), Some(gmail)));
-        let read = asking(&connected, tool, Effect::Reads, true);
-        assert_eq!(read, (send.clone(), None), "a read");
-        let before = asking(&connected, tool, Effect::Runs, false);
-        assert_eq!(before, (send, None), "before untrusted content");
-        let unconnected = asking(&own, tool, Effect::Runs, true);
+        let write = asking(&connected, tool, Effect::Runs);
+        assert_eq!(write, (send.clone(), Some(gmail)));
+        let read = asking(&connected, tool, Effect::Reads);
+        assert_eq!(read, (send, None), "a read");
+        let unconnected = asking(&own, tool, Effect::Runs);
         assert_eq!(
             unconnected,
             (Ask::Allow, None),
