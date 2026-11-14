@@ -368,8 +368,9 @@ impl McpServer {
     }
 
     /// Marks what the server returns as untrusted, as a web page is, when `untrusted`: the
-    /// person or a policy says the server brings in content from outside. Tools that say they
-    /// reach an open world (`openWorldHint`) are untrusted whatever this says.
+    /// person or a policy says the server brings in content from outside. Otherwise a tool's
+    /// output is untrusted unless it says `openWorldHint: false`, MCP's default being an open
+    /// world.
     #[must_use]
     pub fn untrusted(mut self, untrusted: bool) -> Self {
         self.untrusted = untrusted;

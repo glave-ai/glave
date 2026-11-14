@@ -3,8 +3,9 @@
 //! 1,787 tools of real size (GitHub's MCP server, Atlassian's, GitHub's REST API, and smaller
 //! ones), more than a model's list holds, so the harness lists each connector as one tool and
 //! the model searches. A tool answers with the first of the task's answers for it whose `when`
-//! its arguments hold, and anything else finds nothing. In-process, since what is measured is
-//! the harness's listing and search, not the protocol.
+//! its arguments hold, and anything else finds nothing, untrusted unless the tool says its world
+//! is closed. In-process, since what is measured is the harness's listing and search, not the
+//! protocol.
 
 use std::collections::BTreeMap;
 use std::future::ready;
@@ -79,8 +80,54 @@ impl ToolSource for Service {
         let answered = (self.answers.get(name).into_iter().flatten())
             .find(|answer| given.contains(&answer.when.to_lowercase()))
             .map_or(NOTHING, |answer| answer.text.as_str());
-        Box::pin(ready(ToolOutput::text(false, answered)))
+        // As glave reads a real server's tool: from an open world unless it says otherwise.
+        Box::pin(ready(ToolOutput {
+            untrusted: !closed(name),
+            ..ToolOutput::text(false, answered)
+        }))
     }
+}
+
+/// The reads that say their world is closed (MCP's `openWorldHint: false`), as a well-behaved
+/// server's reads of the account's own structure would: who the person is, which sites,
+/// channels, labels, teams and schedules there are. Every other tool says nothing of its world,
+/// as servers' tools mostly do, so what it returns is untrusted: a read of what others wrote
+/// (`search_messages`, `getJiraIssue`, `get_monitor`) as much as a write.
+const CLOSED: [&str; 29] = [
+    "getAccessibleAtlassianResources",
+    "lookupJiraAccountId",
+    "listJiraProjectIssueTypesMetadata",
+    "getJiraIssueTypeMetaWithFields",
+    "listJiraIssueTransitions",
+    "listJiraIssueLinkTypes",
+    "listJiraStatuses",
+    "getJsmOpsScheduleInfo",
+    "getJsmOpsTeamInfo",
+    "get_me",
+    "get_teams",
+    "get_team_members",
+    "list_issue_types",
+    "list_issue_fields",
+    "get_label",
+    "list_label",
+    "list_discussion_categories",
+    "list_channels",
+    "list_teams",
+    "list_labels",
+    "list_folders",
+    "list_cycles",
+    "list_oncalls",
+    "list_schedules",
+    "list_groups",
+    "list_bases",
+    "list_databases",
+    "list_tables",
+    "describe_table",
+];
+
+/// Whether the tool `name` says its world is closed: one of [`CLOSED`], on any connector.
+fn closed(name: &str) -> bool {
+    CLOSED.contains(&name.rsplit("__").next().unwrap_or(name))
 }
 
 /// Words a tool's name holds when it only reads, and words it holds when it may change
@@ -233,15 +280,16 @@ mod tests {
             let found = service
                 .call("mcp__jira__get", &asked("ops-311"), &cancel)
                 .await;
-            assert_eq!(found, ToolOutput::text(false, "In Progress"));
+            // From an open world, as a tool that says nothing of its own is.
+            assert_eq!(found, ToolOutput::untrusted("In Progress"));
             let other = service
                 .call("mcp__jira__get", &asked("OPS-1"), &cancel)
                 .await;
-            assert_eq!(other, ToolOutput::text(false, NOTHING));
+            assert_eq!(other, ToolOutput::untrusted(NOTHING));
             let none = service
                 .call("mcp__jira__other", &asked("OPS-311"), &cancel)
                 .await;
-            assert_eq!(none, ToolOutput::text(false, NOTHING));
+            assert_eq!(none, ToolOutput::untrusted(NOTHING));
         });
     }
 
@@ -269,14 +317,44 @@ mod tests {
     }
 
     #[test]
-    fn the_connectors_beside_the_tasks_are_more_than_a_model_s_list_holds() {
+    fn a_stand_in_s_reads_of_what_others_wrote_are_untrusted_and_its_metadata_is_not() {
+        for open in [
+            "mcp__gmail__search_messages",
+            "mcp__gmail__get_message",
+            "mcp__slack__get_thread",
+            "mcp__atlassian__getJiraIssue",
+            "mcp__datadog__get_monitor",
+            "mcp__github__issue_read",
+            "mcp__github_rest__actions_list_self_hosted_runners_for_org",
+            "mcp__slack__post_message",
+        ] {
+            assert!(!closed(open), "{open}");
+        }
+        let names: Vec<String> = (connectors().iter())
+            .flat_map(|connector| &connector.tools)
+            .map(|tool| tool.name.rsplit("__").next().unwrap().to_owned())
+            .collect();
+        for metadata in CLOSED {
+            assert!(names.iter().any(|name| name == metadata), "{metadata}");
+            assert!(reads(metadata), "{metadata} only reads");
+        }
+    }
+
+    /// Every connector of `evals/connectors`.
+    fn connectors() -> Vec<Connector> {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evals/connectors");
-        let mut tools = 0;
+        let mut all = Vec::new();
         for entry in std::fs::read_dir(dir).unwrap() {
             let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
             let connectors: BTreeMap<String, Connector> = serde_json::from_str(&text).unwrap();
-            tools += connectors.values().map(|c| c.tools.len()).sum::<usize>();
+            all.extend(connectors.into_values());
         }
+        all
+    }
+
+    #[test]
+    fn the_connectors_beside_the_tasks_are_more_than_a_model_s_list_holds() {
+        let tools: usize = connectors().iter().map(|c| c.tools.len()).sum();
         assert_eq!(tools, 1_787);
     }
 }

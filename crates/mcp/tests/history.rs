@@ -9,7 +9,9 @@ use std::sync::Arc;
 use glave_event::{
     Arguments, BlobRef, ModelRef, Part, RawEvent, Sha256, StopReason, ThreadId, TokenCounts, Usage,
 };
-use glave_harness::{AllowAll, Cancel, Harness, Parts, Permissions, Settings, Thread, Workspace};
+use glave_harness::{
+    AllowAll, Approver, Cancel, Harness, Parts, Permissions, Settings, Thread, Workspace,
+};
 use glave_mcp::{Limits, McpServer};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::{CountingEntropy, ManualClock, ScriptedModel, Seen, TempDir};
@@ -38,6 +40,11 @@ pub(crate) fn scope() -> Scope {
 
 /// The model's answer: a call of the server's `blocks` for `what`, or, with none, done.
 pub(crate) fn step(what: Option<&str>) -> Completion {
+    calling(what.map(|what| ("blocks", json!({ "what": what }))))
+}
+
+/// The model's answer: a call of the server's `tool` with its arguments, or, with none, done.
+pub(crate) fn calling(call: Option<(&str, Value)>) -> Completion {
     let counts = TokenCounts {
         input: 100,
         cache_read: 0,
@@ -45,15 +52,10 @@ pub(crate) fn step(what: Option<&str>) -> Completion {
         output: 10,
         reasoning: 0,
     };
-    let call = what.map(|what| RequestedCall {
-        provider_call_id: Some(format!("p_{what}")),
-        tool: "mcp__tests__blocks".into(),
-        arguments: Arguments::Json(
-            json!({ "what": what })
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        ),
+    let call = call.map(|(tool, arguments)| RequestedCall {
+        provider_call_id: Some(format!("p_{tool}_{arguments}")),
+        tool: format!("mcp__tests__{tool}"),
+        arguments: Arguments::Json(arguments.as_object().cloned().unwrap_or_default()),
     });
     Completion {
         model: ModelRef {
@@ -88,6 +90,18 @@ async fn run_turn<B: BlobStore>(
 ) {
     let mut answers: Vec<Completion> = KINDS.iter().map(|kind| step(Some(kind))).collect();
     answers.push(step(None));
+    let server = test_server(dir).await;
+    let (harness, seen) = harness_for(dir, blobs, answers, vec![server]).await;
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    harness
+        .run_turn(&mut thread, "fetch them all", &Cancel::new(), &mut |_| {})
+        .await
+        .unwrap();
+    (harness, thread, seen)
+}
+
+/// The test server as the person's own, in `dir`, once it has started.
+pub(crate) async fn test_server(dir: &Path) -> Arc<dyn ToolSource> {
     let config = ServerConfig::Stdio {
         command: SERVER.to_owned(),
         args: Vec::new(),
@@ -102,14 +116,7 @@ async fn run_turn<B: BlobStore>(
         &glave_process::Processes::unrecorded(),
     );
     server.started().await.unwrap();
-    let server: Arc<dyn ToolSource> = Arc::new(server);
-    let (harness, seen) = harness_for(dir, blobs, answers, vec![server]).await;
-    let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "fetch them all", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
-    (harness, thread, seen)
+    Arc::new(server)
 }
 
 /// A harness on this machine in full access, its model answering `answers`, with `tools`.
@@ -119,21 +126,40 @@ pub(crate) async fn harness_for<B: BlobStore>(
     answers: Vec<Completion>,
     tools: Vec<Arc<dyn ToolSource>>,
 ) -> (Harness<ScriptedModel, InMemoryLog, B, AllowAll>, Seen) {
+    let workspace = here(dir).await;
+    let mode = (AllowAll, Permissions::FullAccess);
+    harness_in(workspace, blobs, answers, tools, mode)
+}
+
+/// `dir` on this machine as the tools' workspace.
+pub(crate) async fn here(dir: &Path) -> Workspace {
     let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
         .await
         .unwrap();
+    Workspace::new(computers, info)
+}
+
+/// A harness on `workspace`, its model answering `answers`, with `tools`, what needs the person
+/// put to `approver` in `permissions`.
+pub(crate) fn harness_in<B: BlobStore, A: Approver>(
+    workspace: Workspace,
+    blobs: B,
+    answers: Vec<Completion>,
+    tools: Vec<Arc<dyn ToolSource>>,
+    (approver, permissions): (A, Permissions),
+) -> (Harness<ScriptedModel, InMemoryLog, B, A>, Seen) {
     let provider = ScriptedModel::new(answers);
     let seen = provider.seen();
     let mut settings = Settings::new("test-model", "script");
-    settings.permissions = Permissions::FullAccess;
+    settings.permissions = permissions;
     let parts = Parts {
         provider,
         log: InMemoryLog::new(),
         blobs,
-        approver: AllowAll,
+        approver,
         clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
         entropy: Box::new(CountingEntropy::starting_at(1)),
-        workspace: Workspace::new(computers, info),
+        workspace,
     };
     (Harness::new(parts, settings).with_tools(tools), seen)
 }
@@ -175,7 +201,7 @@ fn check(value: &Value, seen: &str) {
 }
 
 /// Every event `thread` holds.
-async fn events(log: &InMemoryLog, thread: ThreadId) -> Vec<RawEvent> {
+pub(crate) async fn events(log: &InMemoryLog, thread: ThreadId) -> Vec<RawEvent> {
     log.read(&scope(), thread, None, usize::MAX).await.unwrap()
 }
 
@@ -186,15 +212,18 @@ fn results(seen: &Seen) -> Vec<String> {
     last.messages
         .iter()
         .filter_map(|message| match message {
-            Message::Tool { output, .. } => Some(
-                output
-                    .iter()
-                    .filter_map(|part| match part {
-                        Part::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<String>(),
-            ),
+            Message::Tool { output, .. } => Some(text(output)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The text of `parts`.
+pub(crate) fn text(parts: &[Part]) -> String {
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { text } => Some(text.as_str()),
             _ => None,
         })
         .collect()

@@ -138,6 +138,6 @@ worded! {
 
         // A connected service's tool that may send or change something.
         ActsAfterUntrusted { service } = "risk-acts-after-untrusted"
-            "it can send or change something through { $service }, and this chat has read content from outside, such as a web page, that could have asked for it",
+            "it can send or change something through { $service }, and this chat has read content from outside, such as a web page or an email, that could have asked for it",
     }
 }
