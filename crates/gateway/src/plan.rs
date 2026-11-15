@@ -10,7 +10,7 @@ use glave_ports::{Failure, Message, ModelRequest, ProviderError, Route};
 
 use crate::estimate::Needs;
 use crate::filtering::{self, Keeping, Kept};
-use crate::target::Target;
+use crate::target::{LEAST_OUTPUT, Target};
 
 /// Why a target was skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +77,12 @@ fn skip(
         return Err(Skip::Images);
     }
     if let Some(window) = target.can.context_tokens {
-        let wanted = needs
-            .fit_tokens()
-            .saturating_add(request.max_output_tokens.map_or(0, u64::from));
+        // Room for the input and some answer: the answer asked for is made to fit what is
+        // left ([`Target::output_for`]).
+        let answer = request
+            .max_output_tokens
+            .map_or(0, |asked| asked.min(LEAST_OUTPUT));
+        let wanted = needs.fit_tokens().saturating_add(u64::from(answer));
         if wanted > window {
             return Err(Skip::Context { window });
         }
@@ -179,7 +182,7 @@ pub(crate) fn prepare<'r>(
             _ => false,
         });
     let effort = target.effort_for(request.effort.as_deref());
-    let output = target.output_for(request.max_output_tokens);
+    let output = target.output_for(request, needs.reserve_tokens());
     let unchanged = request.model == target.model
         && effort == request.effort.as_deref()
         && output == request.max_output_tokens;

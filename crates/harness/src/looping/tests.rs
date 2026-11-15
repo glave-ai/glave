@@ -120,3 +120,42 @@ fn a_long_reply_keeps_what_it_holds_bounded() {
     assert!(looping.kept.len() <= KEPT);
     assert!(looping.seen.len() <= KEPT && looping.order.len() <= KEPT);
 }
+
+#[test]
+fn code_indented_four_spaces_is_not_a_loop() {
+    let mut code = String::from("Run this:\n\n");
+    for _ in 0..60 {
+        code.push_str("    assert_eq!(parse(\"a = 1\"), Ok(Value::Int(1)));\n");
+    }
+    code.push_str(&"\tlet unchanged = true; // a tab indents code too\n".repeat(40));
+    assert!(!repeats(&answered_then(&code), 9));
+}
+
+#[test]
+fn tables_without_a_leading_pipe_or_quoted_are_not_a_loop() {
+    let mut tables = String::from("name | linux | macos\n--- | --- | ---\n");
+    tables.push_str(&"check | passed | passed\n".repeat(80));
+    tables.push_str("\n> | name | result |\n> | --- | --- |\n");
+    tables.push_str(&"> | check | passed and checked twice |\n".repeat(80));
+    assert!(!repeats(&answered_then(&tables), 6));
+}
+
+#[test]
+fn a_run_of_one_character_is_not_a_loop() {
+    let runs = format!(
+        "{}\n\n{}\n\nAnd a bar: {}\n",
+        "=".repeat(600),
+        "-".repeat(2_000),
+        "#".repeat(1_000)
+    );
+    assert!(!repeats(&answered_then(&runs), 13));
+}
+
+#[test]
+fn one_log_line_pasted_again_and_again_is_not_a_loop() {
+    let short = "WARN deprecated API used\n".repeat(200);
+    let long = "2026-11-15T10:00:00Z ERROR worker 3: connection refused by a database \
+                server, retrying\n"
+        .repeat(100);
+    assert!(!repeats(&answered_then(&format!("{short}\n{long}")), 11));
+}

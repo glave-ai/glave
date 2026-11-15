@@ -3,11 +3,13 @@
 //! close together, with little else between them. A model fallen into such a loop writes it
 //! until its output limit, so its call is stopped instead.
 //!
-//! Code blocks and table rows are not read, as Gemini CLI leaves them out: a test file's lines
-//! and a table's cells repeat by nature. A list's items that begin alike are not a loop either,
-//! since what lies between their repeats differs (each item's own words or number).
+//! Code blocks (fenced or indented) and table rows are not read, as Gemini CLI leaves them out:
+//! a test file's lines and a table's cells repeat by nature. A list's items that begin alike are
+//! not a loop either, since what lies between their repeats differs (each item's own words or
+//! number); nor is one line said again and again, as a log pasted outside a block, nor a run
+//! of one character: the loops models fall into cycle through a few lines, or within one.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 /// The characters of one chunk compared, as Gemini CLI's `CONTENT_CHUNK_SIZE`.
 const CHUNK: usize = 50;
@@ -21,18 +23,19 @@ const APART: usize = CHUNK * 5;
 /// The most different texts between a chunk's last repeats that still make a loop: half of
 /// them, as there; more are items of a list that begin alike.
 const PERIODS: usize = TIMES / 2;
+/// The most of a line held before it is read, in bytes: a line is told apart (a table's row,
+/// code) whole, and one longer is read as it comes.
+const HELD: usize = 400;
 
 /// Where the reply's current line stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Line {
-    /// Its start, holding what of it is not space so far, until it can be told what it is.
-    Start(String),
-    /// Prose, read as it comes.
+    /// Held until it ends, or grows past [`HELD`], to be told what it is.
+    Held(String),
+    /// Prose longer than what is held, read as it comes.
     Read,
-    /// Not read: a table row, or a line of a code block.
+    /// Not read: code, or a table's row, longer than what is held.
     Skipped,
-    /// A fence that opens or closes a code block.
-    Fence,
 }
 
 /// Watches one reply's visible text for a loop.
@@ -54,7 +57,7 @@ pub(crate) struct Looping {
 impl Default for Looping {
     fn default() -> Self {
         Self {
-            line: Line::Start(String::new()),
+            line: Line::Held(String::new()),
             in_code: false,
             kept: VecDeque::new(),
             first: 0,
@@ -78,48 +81,49 @@ impl Looping {
     }
 
     fn next(&mut self, char: char) {
-        if char == '\n' {
-            if self.line == Line::Read {
-                self.read('\n');
-            }
-            if self.line == Line::Fence {
-                self.in_code = !self.in_code;
-            }
-            self.line = Line::Start(String::new());
-            return;
-        }
+        let ends = char == '\n';
         match &mut self.line {
-            Line::Start(lead) => {
-                if lead.is_empty() && char.is_whitespace() {
-                    return;
+            Line::Held(held) if ends => {
+                let held = std::mem::take(held);
+                self.ended(&held);
+            }
+            Line::Held(held) => {
+                held.push(char);
+                if held.len() > HELD {
+                    let held = std::mem::take(held);
+                    self.line = if self.reads(&held) {
+                        held.trim_start().chars().for_each(|char| self.read(char));
+                        Line::Read
+                    } else {
+                        Line::Skipped
+                    };
                 }
-                lead.push(char);
-                let lead = std::mem::take(lead);
-                self.line = self.told(&lead);
-                if self.line == Line::Read {
-                    lead.chars().for_each(|char| self.read(char));
-                } else if matches!(self.line, Line::Start(_)) {
-                    self.line = Line::Start(lead);
-                }
+            }
+            Line::Read if ends => {
+                self.read('\n');
+                self.line = Line::Held(String::new());
             }
             Line::Read => self.read(char),
-            Line::Skipped | Line::Fence => {}
+            Line::Skipped if ends => self.line = Line::Held(String::new()),
+            Line::Skipped => {}
         }
     }
 
-    /// What a line beginning with `lead` is, or `Start` while that can't be told yet.
-    fn told(&self, lead: &str) -> Line {
-        let fence = lead.starts_with("```") || lead.starts_with("~~~");
-        let maybe_fence = "```".starts_with(lead) || "~~~".starts_with(lead);
-        if fence {
-            Line::Fence
-        } else if maybe_fence {
-            Line::Start(lead.to_owned())
-        } else if self.in_code || lead.starts_with('|') {
-            Line::Skipped
-        } else {
-            Line::Read
+    /// Takes in a whole `line` held: a fence opens or closes a code block, and prose is read.
+    fn ended(&mut self, line: &str) {
+        if fence(line) {
+            self.in_code = !self.in_code;
+        } else if self.reads(line) {
+            line.trim_start().chars().for_each(|char| self.read(char));
+            self.read('\n');
         }
+    }
+
+    /// Whether `line` is prose: not in a code block or one indented, nor a table's row,
+    /// whatever its first character.
+    fn reads(&self, line: &str) -> bool {
+        let indented = line.starts_with('\t') || line.starts_with("    ");
+        !self.in_code && !fence(line) && !indented && !line.contains('|')
     }
 
     /// Reads one character of prose, and whether the chunk it ends repeats.
@@ -136,6 +140,12 @@ impl Looping {
         }
         let end = self.first.saturating_add(len);
         let chunk: String = self.kept.range(len.saturating_sub(CHUNK)..).collect();
+        // A run of one character, a divider or a bar, is never a loop.
+        let mut chars = chunk.chars();
+        let first = chars.next();
+        if chars.all(|char| Some(char) == first) {
+            return;
+        }
         let ends = self.seen.entry(chunk.clone()).or_default();
         if ends
             .back()
@@ -193,7 +203,7 @@ impl Looping {
             .collect();
         periods.sort_unstable();
         periods.dedup();
-        periods.len() <= PERIODS
+        periods.len() <= PERIODS && cycles(&self.between(*from, *to))
     }
 
     /// The text kept from where `from` ends to where `to` does.
@@ -203,6 +213,30 @@ impl Looping {
         let start = from.saturating_sub(self.first).min(end);
         self.kept.range(start..end).collect()
     }
+}
+
+/// Whether `span`, the text a loop repeats in, cycles within a line, or through at least two
+/// different lines: one line said again and again is a log, or a list, not a model's loop.
+fn cycles(span: &str) -> bool {
+    if !span.contains('\n') {
+        return true;
+    }
+    let lines: Vec<&str> = span.split('\n').collect();
+    // Only the lines whole in it: the first and last may be cut.
+    let whole = lines
+        .get(1..lines.len().saturating_sub(1))
+        .unwrap_or_default();
+    let different: BTreeSet<&str> = (whole.iter())
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect();
+    different.len() >= 2
+}
+
+/// Whether `line` opens or closes a code block.
+fn fence(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("```") || line.starts_with("~~~")
 }
 
 #[cfg(test)]
