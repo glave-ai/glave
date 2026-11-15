@@ -1,12 +1,12 @@
 //! What the public lists of OpenAI-compatible services say, read the same way wherever glave
-//! reads them (`specs/gateway.md`, "Catalogs"): numbers and prices in a model list, and
+//! reads them (`specs/gateway.md`, "Catalogs"): numbers, prices and reasoning in a model list, and
 //! OpenRouter's providers (`providers`: each one's slug, name and where it is based), the
 //! endpoints that keep nothing (`endpoints/zdr`) and each model's endpoints
 //! (`models/{id}/endpoints`). What a list does not say is left out, never guessed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use glave_event::{CatalogEndpoint, CatalogProvider, Nanos, TokenPrice};
+use glave_event::{CatalogEndpoint, CatalogProvider, Nanos, Reasoning, TokenPrice};
 use serde_json::Value;
 
 /// The longest slug, name or country kept, in bytes.
@@ -14,6 +14,10 @@ const LONGEST: usize = 100;
 
 /// The most providers kept, endpoints kept of one model, and datacenters of one provider.
 pub const MOST: usize = 500;
+
+/// The most reasoning levels kept, and the longest name of one, in bytes.
+pub const MOST_EFFORTS: usize = 12;
+const LONGEST_EFFORT: usize = 32;
 
 /// The whole number at `path` in `value`, rounded when the listing writes it with decimals.
 pub fn number(value: &Value, path: &[&str]) -> Option<u64> {
@@ -49,6 +53,53 @@ pub fn plain(text: &str) -> Option<String> {
     let text = text.trim();
     let fits = !text.is_empty() && text.len() <= LONGEST;
     (fits && !text.chars().any(char::is_control)).then(|| text.to_owned())
+}
+
+/// How the listing says the model reasons: OpenRouter's `reasoning`, with the levels it
+/// offers (`supported_efforts`), whether it always reasons (`mandatory`), and the level it
+/// uses unasked, known only where the listing says whether it reasons unasked: the level
+/// reasoning starts at (`default_effort`) when it always reasons or does by default
+/// (`default_enabled`), and `none` when it does not by default, as a `default_effort` of
+/// `none` also says.
+pub fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
+    let reasoning = reasoning.filter(|value| value.is_object())?;
+    let named = |value: &Value| value.as_str().and_then(level);
+    let mut efforts: Vec<String> = Vec::new();
+    for effort in reasoning
+        .get("supported_efforts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(named)
+    {
+        if efforts.len() < MOST_EFFORTS && !efforts.contains(&effort) {
+            efforts.push(effort);
+        }
+    }
+    let mandatory = reasoning
+        .get("mandatory")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let enabled = reasoning.get("default_enabled").and_then(Value::as_bool);
+    let unasked = match reasoning.get("default_effort").and_then(named) {
+        Some(starts) if starts == "none" || mandatory || enabled == Some(true) => Some(starts),
+        _ if !mandatory && enabled == Some(false) => Some("none".to_owned()),
+        _ => None,
+    };
+    Some(Reasoning {
+        default: unasked.filter(|default| efforts.contains(default)),
+        efforts,
+        mandatory,
+    })
+}
+
+/// A level's name, when it is a plain word of letters, digits and underscores, not too long.
+pub fn level(level: &str) -> Option<String> {
+    let level = level.trim();
+    let plain = !level.is_empty()
+        && level.len() <= LONGEST_EFFORT
+        && level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    plain.then(|| level.to_owned())
 }
 
 /// A country as OpenRouter writes it, `US`: two letters.
