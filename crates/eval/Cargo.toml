@@ -21,6 +21,8 @@ path = "src/main.rs"
 [dependencies]
 glave-computer.workspace = true
 glave-event.workspace = true
+# Every attempt's calls go through the gateway, held to Glave Cloud's floor unless --no-floor.
+glave-gateway.workspace = true
 glave-harness.workspace = true
 # Each attempt keeps its memory in a sealed store of its own, as glave does.
 glave-keys.workspace = true

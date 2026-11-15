@@ -1,6 +1,6 @@
 //! What a run did, read back from the thread's events as `glave --events` exports them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use glave_event::{Body, CallId, Nanos, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode};
 
@@ -40,6 +40,8 @@ pub struct Trace {
     pub compacts: u32,
     /// Why a turn went without a source of tools, each reason once, in the order first seen.
     pub missing: Vec<String>,
+    /// The calls each provider a router passed them on to served, by its name.
+    pub upstream: BTreeMap<String, u32>,
 }
 
 impl Default for Trace {
@@ -63,6 +65,7 @@ impl Default for Trace {
             blocked: 0,
             compacts: 0,
             missing: Vec::new(),
+            upstream: BTreeMap::new(),
         }
     }
 }
@@ -121,6 +124,10 @@ impl Trace {
             Body::ToolCallCompleted(done) => self.finished(&done, steps),
             Body::ModelResponded(response) => {
                 self.model_calls = self.model_calls.saturating_add(1);
+                if let Some(upstream) = response.upstream.clone() {
+                    let served = self.upstream.entry(upstream).or_default();
+                    *served = served.saturating_add(1);
+                }
                 let counts = response.usage.counts();
                 self.input_tokens = self.input_tokens.saturating_add(counts.input);
                 self.output_tokens = self.output_tokens.saturating_add(counts.output);
@@ -208,6 +215,7 @@ mod tests {
                 blocked: 0,
                 compacts: 0,
                 missing: Vec::new(),
+                upstream: BTreeMap::new(),
             }
         );
     }

@@ -16,6 +16,7 @@ use glave_ports::{Clock as _, SystemClock};
 use glave_process::Processes;
 use glave_provider_openai::Config;
 
+use crate::floor::{Floor, SAID};
 use crate::report::{self, Report};
 use crate::run::Setup;
 use crate::suite::{self, Plan};
@@ -49,7 +50,9 @@ options:
   --subagents          let the model hand work to child threads with task
   --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)
   --python <venv>      no glave document skills and no `glave doc`, but this Python environment
-                       first on the tasks' PATH (evals/README.md, \"Documents\")";
+                       first on the tasks' PATH (evals/README.md, \"Documents\")
+  --no-floor           send calls to any of OpenRouter's providers, not only those Glave Cloud's
+                       floor allows (based in the US, keeping nothing, weights at fp8 or better)";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
@@ -67,6 +70,8 @@ struct Options {
     memory: Option<bool>,
     /// The Python environment the tasks get in place of glave's own document tools.
     python: Option<PathBuf>,
+    /// Whether calls keep to Glave Cloud's floor among OpenRouter's providers.
+    floor: bool,
 }
 
 pub fn main() -> ExitCode {
@@ -137,6 +142,9 @@ fn run(options: &Options) -> Result<bool, String> {
         }
         None => Some(runtime.block_on(glave_on_path())?),
     };
+    let floor = options
+        .floor
+        .then(|| runtime.block_on(Floor::cloud(&endpoint, &options.models)));
     let setup = Arc::new(Setup {
         endpoint,
         environment,
@@ -146,6 +154,7 @@ fn run(options: &Options) -> Result<bool, String> {
         processes,
         office: options.python.is_none(),
         glave_on_path,
+        floor: floor.transpose()?,
     });
     let attempts = options
         .repeat
@@ -175,7 +184,7 @@ fn run(options: &Options) -> Result<bool, String> {
         started.to_string(),
         setup.endpoint.provider.clone(),
         options.models.clone(),
-        attempts,
+        (attempts, setup.floor.as_ref().map(|_| SAID.to_owned())),
     );
     let table = report.markdown(baseline.as_ref());
     let json = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
@@ -334,6 +343,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         subagents: false,
         memory: None,
         python: None,
+        floor: true,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -371,6 +381,7 @@ fn options(args: &[String]) -> Result<Options, String> {
                 };
             }
             "--python" => options.python = Some(PathBuf::from(value()?)),
+            "--no-floor" => options.floor = false,
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -415,6 +426,7 @@ mod tests {
         assert_eq!(options.repeat, 1);
         assert_eq!(options.max_cost, Nanos::new(2_000_000_000));
         assert!(options.plans, "as glave runs");
+        assert!(options.floor, "as Glave Cloud's calls keep to its floor");
     }
 
     #[test]
@@ -446,6 +458,7 @@ mod tests {
             "on",
             "--python",
             "venv",
+            "--no-floor",
         ])
         .unwrap();
         assert_eq!(
@@ -463,6 +476,7 @@ mod tests {
                 subagents: true,
                 memory: Some(true),
                 python: Some("venv".into()),
+                floor: false,
             }
         );
     }

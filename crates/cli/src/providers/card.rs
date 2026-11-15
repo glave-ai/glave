@@ -3,8 +3,9 @@
 //! about a model is written into glave. OpenRouter says all of it; Anthropic its effort levels
 //! (`capabilities`); vLLM its context (`max_model_len`); most services little beyond the id.
 
-use glave_event::{CatalogModel, Nanos, Reasoning, TokenPrice};
+use glave_event::{CatalogModel, Reasoning};
 use glave_provider_anthropic::EFFORTS;
+use glave_provider_openai::lists::{number, path_in, price};
 use serde_json::Value;
 
 /// The longest name kept, in bytes.
@@ -45,35 +46,6 @@ pub(super) fn modalities<'a>(model: &'a Value, key: &str) -> Option<&'a [Value]>
         .and_then(Value::as_array)
         .filter(|listed| !listed.is_empty())
         .map(Vec::as_slice)
-}
-
-/// The whole number at `path` in `value`, rounded when the listing writes it with decimals.
-pub(super) fn number(value: &Value, path: &[&str]) -> Option<u64> {
-    let found = path_in(value, path)?;
-    found.as_u64().or_else(|| {
-        let rounded = format!("{:.0}", found.as_f64()?);
-        rounded.parse().ok()
-    })
-}
-
-/// The value at `path` in `value`.
-fn path_in<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter().try_fold(value, |value, key| value.get(key))
-}
-
-/// What the listing says the model's tokens cost: OpenRouter's `pricing`, in dollars per token
-/// as decimal text. None when it says no price, or one below zero, as a router's is.
-pub(super) fn price(pricing: Option<&Value>) -> Option<TokenPrice> {
-    let pricing = pricing?;
-    let per = |key: &str| {
-        let text = pricing.get(key).and_then(Value::as_str)?;
-        Nanos::per_million_tokens(text.trim())
-    };
-    Some(TokenPrice {
-        input: per("prompt")?,
-        output: per("completion")?,
-        cache_read: per("input_cache_read"),
-    })
 }
 
 /// How the listing says the model reasons: OpenRouter's `reasoning`, with the levels it
@@ -162,8 +134,10 @@ fn plain(level: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use glave_event::{Nanos, TokenPrice};
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn openrouter_says_everything_and_it_is_kept() {

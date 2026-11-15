@@ -1,76 +1,79 @@
 //! A task's web search, on as glave's own `web_search` is where the server has a search key,
-//! when the task has a `search.md`: the model under test with a search service beside it that
-//! answers every query with the file's results, `{web}` in them filled with the task's pages'
-//! address. Never a real search service: a task's search costs nothing and reaches nothing.
-//! Each result in the file is a `Title:` line, a `URL:` line and the lines after them, the
-//! results apart by a blank line.
+//! when the task has a `search.md`: the gateway's search service is a stand-in that answers
+//! every query with the file's results, `{web}` in them filled with the task's pages' address.
+//! Never a real search service: a task's search costs nothing and reaches nothing. Each result
+//! in the file is a `Title:` line, a `URL:` line and the lines after them, the results apart by
+//! a blank line.
 
+use std::sync::Arc;
+
+use glave_event::{Currency, Money, Nanos};
+use glave_gateway::WebSearch;
 use glave_ports::{
-    Completion, Delta, Failure, Hit, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
-    Purpose, SearchAsk, SearchResults,
+    Completion, Delta, Failure, Hit, ModelProvider, ModelRequest, ProviderError, Purpose,
+    SearchAsk, SearchResults,
 };
 
 use crate::error::EvalError;
 use crate::task::Task;
 
-/// The model under test, and the task's search results, when it searches.
-pub(crate) struct WithSearch<P> {
-    pub(crate) model: P,
-    pub(crate) found: Option<SearchResults>,
+/// A task's search service: its results, whatever is asked.
+struct TaskSearch {
+    found: SearchResults,
 }
 
-#[deny(clippy::missing_trait_methods)]
-impl<P: ModelProvider> ModelProvider for WithSearch<P> {
-    async fn complete(
+impl ModelProvider for TaskSearch {
+    /// Never a model's call.
+    fn complete(
         &self,
         request: &ModelRequest,
-        on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> Result<Completion, ProviderError> {
-        self.model.complete(request, on_delta).await
+        _: &mut (dyn FnMut(Delta) + Send),
+    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
+        std::future::ready(Err(ProviderError::Unserved {
+            failure: Failure::Rejected,
+            reason: format!("a task's search serves no {}", request.purpose.id()),
+        }))
     }
 
-    async fn make(&self, request: &ModelRequest, ask: &MediaAsk) -> Result<Made, ProviderError> {
-        self.model.make(request, ask).await
-    }
-
-    /// The task's results, whatever is asked, as many as it asks at most.
+    /// The task's results, as many as asked at most.
     fn search(
         &self,
         _: &ModelRequest,
         ask: &SearchAsk,
     ) -> impl Future<Output = Result<SearchResults, ProviderError>> + Send {
-        let found = match &self.found {
-            Some(found) => Ok(SearchResults {
-                hits: found
-                    .hits
-                    .iter()
-                    .take(usize::from(ask.count))
-                    .cloned()
-                    .collect(),
-                cost: None,
-            }),
-            None => Err(ProviderError::Unserved {
-                failure: Failure::Rejected,
-                reason: "this task searches nothing".to_owned(),
-            }),
-        };
-        std::future::ready(found)
+        let hits = self.found.hits.iter().take(usize::from(ask.count));
+        std::future::ready(Ok(SearchResults {
+            hits: hits.cloned().collect(),
+            cost: None,
+        }))
     }
 
     fn serves(&self, purpose: Purpose) -> bool {
-        match purpose {
-            Purpose::WebSearch => self.found.is_some(),
-            purpose => self.model.serves(purpose),
-        }
+        purpose == Purpose::WebSearch
     }
+}
+
+/// The gateway's search service for `task`, its results' `{web}` filled with `web`, free; none
+/// when the task has no `search.md`.
+pub(crate) async fn service(
+    task: &Task,
+    web: Option<&str>,
+) -> Result<Option<WebSearch>, EvalError> {
+    let Some(found) = results(task, web).await? else {
+        return Ok(None);
+    };
+    Ok(Some(WebSearch {
+        handle: Arc::new(TaskSearch { found }),
+        price: Money {
+            nanos: Nanos::ZERO,
+            currency: Currency::USD,
+        },
+    }))
 }
 
 /// The search results of `task`, `{web}` in them filled with `web`; none when it has no
 /// `search.md`.
-pub(crate) async fn results(
-    task: &Task,
-    web: Option<&str>,
-) -> Result<Option<SearchResults>, EvalError> {
+async fn results(task: &Task, web: Option<&str>) -> Result<Option<SearchResults>, EvalError> {
     let Some(file) = task.search_results() else {
         return Ok(None);
     };

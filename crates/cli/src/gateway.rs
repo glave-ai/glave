@@ -142,9 +142,11 @@ pub(crate) fn gateway(
 /// the filters it holds every call to; none when `[router_floor]` asks nothing.
 pub(crate) fn router_floor(floor: Option<&RouterFloorFile>) -> Option<Filters> {
     let floor = floor?;
-    (!floor.based_in.is_empty() || floor.keeps_nothing).then(|| Filters {
+    let asks = !floor.based_in.is_empty() || floor.keeps_nothing || floor.precision.is_some();
+    asks.then(|| Filters {
         based_in: floor.based_in.clone(),
         keeps_nothing: floor.keeps_nothing,
+        precision: floor.precision,
         ..Filters::default()
     })
 }
