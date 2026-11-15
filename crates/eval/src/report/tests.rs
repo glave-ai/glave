@@ -28,7 +28,7 @@ fn run(models: &[&str], attempts: Vec<Attempt>) -> Report {
         "openrouter".into(),
         models.iter().map(|&model| model.to_owned()).collect(),
         None,
-        attempts,
+        (attempts, None),
     )
 }
 
@@ -372,4 +372,41 @@ fn a_report_written_before_reasoning_reads_as_each_model_s_own_level() {
     assert_eq!(read.effort, None);
     assert_eq!(read.attempts[0].reasoning_tokens, 0);
     assert!(read.attempts[0].sent_at.is_empty());
+}
+
+#[test]
+fn the_report_says_the_floor_and_the_providers_that_served_each_model() {
+    let served = |model: &str, number: u32, by: &[(&str, u32)]| Attempt {
+        served_by: by
+            .iter()
+            .map(|(name, calls)| ((*name).to_owned(), *calls))
+            .collect(),
+        ..attempt("fix", model, number, true)
+    };
+    let attempts = vec![
+        served("a/one", 1, &[("Fireworks", 3), ("Together", 1)]),
+        served("a/one", 2, &[("Together", 4)]),
+        served("b/two", 1, &[("Anthropic", 2)]),
+    ];
+    let models = vec!["a/one".to_owned(), "b/two".to_owned()];
+    let floor = Some("based in the US".to_owned());
+    let table = Report::new(
+        String::new(),
+        "openrouter".into(),
+        models,
+        None,
+        (attempts, floor),
+    );
+    let table = table.markdown(None);
+    assert!(
+        table.contains("Served by, Glave Cloud's floor (based in the US):"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| one | Together 5 · Fireworks 3 |"),
+        "{table}"
+    );
+    assert!(table.contains("| two | Anthropic 2 |"), "{table}");
+    let without = report(vec![attempt("fix", "a/one", 1, true)]).markdown(None);
+    assert!(!without.contains("Served by"), "{without}");
 }

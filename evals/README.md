@@ -17,6 +17,14 @@ Each run keeps its workspaces, events, transcripts and `report.json` under
 `$TMPDIR/glave-eval/<time>/`; the newest ten runs are kept. `--baseline <report.json>` marks
 what changed since an earlier run.
 
+Every call goes through glave's gateway, held to Glave Cloud's floor among OpenRouter's
+providers (`specs/gateway.md`, "A server's floor"): based in the US, keeping nothing of what they
+are sent, and serving weights at fp8 or better (a closed model, none of whose providers says how
+it stores its weights, is kept), so a model is measured as people on Glave Cloud get it. Who serves each
+model is read from OpenRouter's lists at the start, so the floor needs `GLAVE_BASE_URL` to be
+OpenRouter; `--no-floor` sends calls to any provider OpenRouter picks, and any endpoint. The
+report says the floor it held and, for each model, how many calls each provider served.
+
 Each attempt starts as a fresh computer would: with an empty Cargo home of its own
 (`CARGO_HOME`, removed once it is graded), and this computer's own crate downloads hidden from
 its commands, so it cannot build offline what a fresh computer would have to download.
@@ -28,10 +36,11 @@ its cost), is named as left out, and is never taken for the cheapest.
 
 `--effort <level>` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`) asks every
 model for one reasoning level, as a person chooses it for a thread; without it each model reasons
-at its own. The report says the level asked (`effort` in `report.json`, `null` for each model's
-own), and per model the level its calls were sent at (a gateway's record where one served them,
-else the level asked, which the eval sends straight to the provider), naming any model some of
-whose calls went at another; then the reasoning tokens its calls reported in all, per call, and
+at its own. The levels each model offers are read from the endpoint's model list once at the
+start, as glave's catalog reads them, so the gateway sends the level to a model that offers it
+and none to one that does not. The report says the level asked (`effort` in `report.json`,
+`null` for each model's own), and per model the level the gateway sent its calls at, naming any
+model some of whose calls went at another; then the reasoning tokens its calls reported in all, per call, and
 the share of calls that reported none, so a run shows the model reasoned.
 
 Attempts run side by side, `--concurrency` at once, but a task's own attempts take turns: models

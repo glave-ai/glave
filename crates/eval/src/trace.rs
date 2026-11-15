@@ -19,12 +19,9 @@ pub struct Trace {
     pub(crate) reasoning_tokens: u64,
     /// Model calls that reported no reasoning tokens.
     pub(crate) calls_without_reasoning: u32,
-    /// Calls a gateway served, by the reasoning level it recorded sending them at
+    /// Model calls by the reasoning level the gateway recorded sending them at
     /// ([`DEFAULT_LEVEL`] for none, the model's own).
     pub(crate) sent_at: BTreeMap<String, u32>,
-    /// Calls that went to the provider directly, with no gateway to record their level: they
-    /// were sent the thread's own.
-    pub(crate) direct_calls: u32,
     /// Total cost in the reported currency; `None` when any call reported none.
     pub cost_nanos: Option<Nanos>,
     /// How each turn ended, in order.
@@ -50,6 +47,8 @@ pub struct Trace {
     pub compacts: u32,
     /// Why a turn went without a source of tools, each reason once, in the order first seen.
     pub missing: Vec<String>,
+    /// The calls each provider a router passed them on to served, by its name.
+    pub upstream: BTreeMap<String, u32>,
 }
 
 impl Default for Trace {
@@ -66,7 +65,6 @@ impl Default for Trace {
             reasoning_tokens: 0,
             calls_without_reasoning: 0,
             sent_at: BTreeMap::new(),
-            direct_calls: 0,
             cost_nanos: Some(Nanos::ZERO),
             outcomes: Vec::new(),
             answer: String::new(),
@@ -77,6 +75,7 @@ impl Default for Trace {
             blocked: 0,
             compacts: 0,
             missing: Vec::new(),
+            upstream: BTreeMap::new(),
         }
     }
 }
@@ -135,6 +134,10 @@ impl Trace {
             Body::ToolCallCompleted(done) => self.finished(&done, steps),
             Body::ModelResponded(response) => {
                 self.model_calls = self.model_calls.saturating_add(1);
+                if let Some(upstream) = response.upstream.clone() {
+                    let served = self.upstream.entry(upstream).or_default();
+                    *served = served.saturating_add(1);
+                }
                 let counts = response.usage.counts();
                 self.input_tokens = self.input_tokens.saturating_add(counts.input);
                 self.output_tokens = self.output_tokens.saturating_add(counts.output);
@@ -143,13 +146,9 @@ impl Trace {
                 if counts.reasoning == 0 {
                     self.calls_without_reasoning = self.calls_without_reasoning.saturating_add(1);
                 }
-                if response.target.is_some() {
-                    let level = response.effort.as_deref().unwrap_or(DEFAULT_LEVEL);
-                    let calls = self.sent_at.entry(level.to_owned()).or_default();
-                    *calls = calls.saturating_add(1);
-                } else {
-                    self.direct_calls = self.direct_calls.saturating_add(1);
-                }
+                let level = response.effort.as_deref().unwrap_or(DEFAULT_LEVEL);
+                let calls = self.sent_at.entry(level.to_owned()).or_default();
+                *calls = calls.saturating_add(1);
                 self.cost_nanos = match (self.cost_nanos, response.cost) {
                     (Some(total), Some(cost)) => total.checked_add(cost.amount.nanos),
                     _ => None,
@@ -228,8 +227,7 @@ mod tests {
                 cached_tokens: 40_000,
                 reasoning_tokens: 0,
                 calls_without_reasoning: 1,
-                sent_at: BTreeMap::new(),
-                direct_calls: 1,
+                sent_at: BTreeMap::from([("default".to_owned(), 1)]),
                 cost_nanos: Some(Nanos::new(4_200_000)),
                 outcomes: vec![Outcome::Completed],
                 answer: "Moved 214 files into 6 folders.".to_owned(),
@@ -240,6 +238,7 @@ mod tests {
                 blocked: 0,
                 compacts: 0,
                 missing: Vec::new(),
+                upstream: BTreeMap::new(),
             }
         );
     }
@@ -264,22 +263,13 @@ mod tests {
         )
     }
 
-    /// How a call went out: straight to the provider, or through a gateway at a level or none.
-    enum Went<'a> {
-        Direct,
-        Served(Option<&'a str>),
-    }
-
-    /// A `model.responded` with `reasoning` of its `output` tokens, sent as `went` says.
-    fn responded(seq: u32, output: u64, reasoning: u64, went: &Went<'_>) -> String {
+    /// A `model.responded` with `reasoning` of its `output` tokens, sent at `effort`.
+    fn responded(seq: u32, output: u64, reasoning: u64, effort: Option<&str>) -> String {
         let mut data = serde_json::json!({"model": {"provider": "openrouter", "name": "m"},
             "stop": "end_turn", "usage": {"input": 10, "cache_read": 0, "cache_write": 0,
                 "output": output, "reasoning": reasoning, "estimated": false}});
-        if let Went::Served(effort) = went {
-            data["target"] = "openrouter/m".into();
-            if let Some(effort) = effort {
-                data["effort"] = (*effort).into();
-            }
+        if let Some(effort) = effort {
+            data["effort"] = effort.into();
         }
         serde_json::json!({"glave": 1, "id": format!("0192f5c2-7000-7000-8000-{seq:012}"),
             "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": seq,
@@ -290,10 +280,10 @@ mod tests {
     #[test]
     fn reasoning_and_the_level_each_call_was_sent_at_are_counted() {
         let events = [
-            responded(1, 500, 400, &Went::Served(Some("high"))),
-            responded(2, 300, 200, &Went::Served(Some("high"))),
-            responded(3, 20, 0, &Went::Served(None)),
-            responded(4, 50, 0, &Went::Direct),
+            responded(1, 500, 400, Some("high")),
+            responded(2, 300, 200, Some("high")),
+            responded(3, 20, 0, None),
+            responded(4, 50, 0, None),
         ]
         .join("\n");
         let trace = parse(&events).unwrap();
@@ -302,9 +292,8 @@ mod tests {
         assert_eq!(trace.calls_without_reasoning, 2);
         assert_eq!(
             trace.sent_at,
-            BTreeMap::from([("default".to_owned(), 1), ("high".to_owned(), 2)])
+            BTreeMap::from([("default".to_owned(), 2), ("high".to_owned(), 2)])
         );
-        assert_eq!(trace.direct_calls, 1);
     }
 
     #[test]

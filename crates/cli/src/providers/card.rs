@@ -3,16 +3,13 @@
 //! about a model is written into glave. OpenRouter says all of it; Anthropic its effort levels
 //! (`capabilities`); vLLM its context (`max_model_len`); most services little beyond the id.
 
-use glave_event::{CatalogModel, Nanos, Reasoning, TokenPrice};
+use glave_event::{CatalogModel, Reasoning};
 use glave_provider_anthropic::EFFORTS;
+use glave_provider_openai::lists::{MOST_EFFORTS, level, number, path_in, price, reasoning};
 use serde_json::Value;
 
 /// The longest name kept, in bytes.
 const LONGEST_NAME: usize = 200;
-
-/// The most reasoning levels kept, and the longest name of one, in bytes.
-const MOST_EFFORTS: usize = 12;
-const LONGEST_EFFORT: usize = 32;
 
 /// `id`, as the listing's `model` entry describes it.
 pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
@@ -47,73 +44,6 @@ pub(super) fn modalities<'a>(model: &'a Value, key: &str) -> Option<&'a [Value]>
         .map(Vec::as_slice)
 }
 
-/// The whole number at `path` in `value`, rounded when the listing writes it with decimals.
-pub(super) fn number(value: &Value, path: &[&str]) -> Option<u64> {
-    let found = path_in(value, path)?;
-    found.as_u64().or_else(|| {
-        let rounded = format!("{:.0}", found.as_f64()?);
-        rounded.parse().ok()
-    })
-}
-
-/// The value at `path` in `value`.
-fn path_in<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter().try_fold(value, |value, key| value.get(key))
-}
-
-/// What the listing says the model's tokens cost: OpenRouter's `pricing`, in dollars per token
-/// as decimal text. None when it says no price, or one below zero, as a router's is.
-pub(super) fn price(pricing: Option<&Value>) -> Option<TokenPrice> {
-    let pricing = pricing?;
-    let per = |key: &str| {
-        let text = pricing.get(key).and_then(Value::as_str)?;
-        Nanos::per_million_tokens(text.trim())
-    };
-    Some(TokenPrice {
-        input: per("prompt")?,
-        output: per("completion")?,
-        cache_read: per("input_cache_read"),
-    })
-}
-
-/// How the listing says the model reasons: OpenRouter's `reasoning`, with the levels it
-/// offers (`supported_efforts`), whether it always reasons (`mandatory`), and the level it
-/// uses unasked, known only where the listing says whether it reasons unasked: the level
-/// reasoning starts at (`default_effort`) when it always reasons or does by default
-/// (`default_enabled`), and `none` when it does not by default, as a `default_effort` of
-/// `none` also says.
-fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
-    let reasoning = reasoning.filter(|value| value.is_object())?;
-    let level = |value: &Value| value.as_str().and_then(plain);
-    let mut efforts: Vec<String> = Vec::new();
-    for effort in reasoning
-        .get("supported_efforts")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(level)
-    {
-        if efforts.len() < MOST_EFFORTS && !efforts.contains(&effort) {
-            efforts.push(effort);
-        }
-    }
-    let mandatory = reasoning
-        .get("mandatory")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let enabled = reasoning.get("default_enabled").and_then(Value::as_bool);
-    let unasked = match reasoning.get("default_effort").and_then(level) {
-        Some(starts) if starts == "none" || mandatory || enabled == Some(true) => Some(starts),
-        _ if !mandatory && enabled == Some(false) => Some("none".to_owned()),
-        _ => None,
-    };
-    Some(Reasoning {
-        default: unasked.filter(|default| efforts.contains(default)),
-        efforts,
-        mandatory,
-    })
-}
-
 /// How Anthropic's listing says the model reasons (`capabilities`): the effort levels it marks
 /// supported, highest first as Anthropic documents them, or none when the model takes no
 /// effort or no adaptive thinking, which glave asks for with every level. It names no default,
@@ -133,7 +63,7 @@ fn efforts(model: &Value) -> Option<Reasoning> {
             .into_iter()
             .flatten()
             .filter(|(_, level)| level.get("supported") == Some(&Value::Bool(true)))
-            .filter_map(|(level, _)| plain(level))
+            .filter_map(|(name, _)| level(name))
             .collect();
         // A level Anthropic adds after these goes last.
         efforts.sort_by_key(|level| {
@@ -151,19 +81,12 @@ fn efforts(model: &Value) -> Option<Reasoning> {
     })
 }
 
-/// A level's name, when it is a plain word of letters, digits and underscores, not too long.
-fn plain(level: &str) -> Option<String> {
-    let level = level.trim();
-    let plain = !level.is_empty()
-        && level.len() <= LONGEST_EFFORT
-        && level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    plain.then(|| level.to_owned())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use glave_event::{Nanos, TokenPrice};
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn openrouter_says_everything_and_it_is_kept() {

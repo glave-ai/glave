@@ -13,13 +13,13 @@ use crate::support::{Fake, block_on, request};
 
 /// Filters that answer every call with `answer`, noting whose each was.
 #[derive(Debug)]
-struct Kept {
+pub(crate) struct Kept {
     answer: Result<Option<Filters>, ProviderError>,
     asked: Mutex<Vec<Payer>>,
 }
 
 impl Kept {
-    fn answering(answer: Result<Option<Filters>, ProviderError>) -> Arc<Self> {
+    pub(crate) fn answering(answer: Result<Option<Filters>, ProviderError>) -> Arc<Self> {
         Arc::new(Self {
             answer,
             asked: Mutex::new(Vec::new()),
@@ -72,7 +72,7 @@ fn gateway(direct: &Arc<Fake>, routed: &Arc<Fake>, filters: Arc<Kept>) -> Gatewa
 }
 
 /// The main route's request, as `payer()`'s work.
-fn theirs() -> glave_ports::ModelRequest {
+pub(crate) fn theirs() -> glave_ports::ModelRequest {
     let mut asked = request(Purpose::Main);
     asked.payer = Some(payer());
     asked

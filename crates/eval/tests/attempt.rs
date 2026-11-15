@@ -12,12 +12,12 @@ use glave_provider_openai::Config;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
-fn folder(name: &str) -> TempDir {
+pub(crate) fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("eval-attempt-{name}")).unwrap()
 }
 
 /// A task that asks for a file to be written, graded by a test script and checks.
-fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
+pub(crate) fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
     let task = dir.join("task");
     std::fs::create_dir_all(task.join("environment")).unwrap();
     std::fs::create_dir_all(task.join("tests")).unwrap();
@@ -45,10 +45,18 @@ fn setup(server: &FakeServer) -> Setup {
 
 /// [`setup`] with the model key `key`.
 fn keyed(server: &FakeServer, key: &str) -> Setup {
+    keyed_at(
+        Config::for_url(server.url(), Some(key.to_owned())).unwrap(),
+        key,
+    )
+}
+
+/// An attempt's setup at `endpoint`, whose key is `key`, with no floor.
+pub(crate) fn keyed_at(endpoint: Config, key: &str) -> Setup {
     let mut environment: Vec<_> = std::env::vars_os().collect();
     environment.push(("GLAVE_API_KEY".into(), key.into()));
     Setup {
-        endpoint: Config::for_url(server.url(), Some(key.to_owned())).unwrap(),
+        endpoint,
         environment,
         plans: false,
         subagents: false,
@@ -57,6 +65,7 @@ fn keyed(server: &FakeServer, key: &str) -> Setup {
         processes: glave_process::Processes::unrecorded(),
         office: true,
         glave_on_path: None,
+        floor: None,
     }
 }
 
@@ -127,41 +136,6 @@ fn glave_s_document_skills_go_when_python_takes_their_place() {
     };
     assert!(offered(true));
     assert!(!offered(false));
-}
-
-/// `--effort` reaches every call at OpenRouter as its `reasoning.effort`, and the attempt counts
-/// the reasoning each call reported and the level it went at; without it, none is sent.
-#[test]
-fn the_level_asked_reaches_openrouter_and_the_reasoning_is_counted() {
-    let reasoned = |reasoning: u64| {
-        Reply::Stream(vec![
-            json!({"id": "gen-fake", "model": "fake-model",
-                "choices": [{"index": 0, "delta": {"content": "Done."}}]}),
-            json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 100, "completion_tokens": 500,
-                    "completion_tokens_details": {"reasoning_tokens": reasoning}}}),
-        ])
-    };
-    let sent = |effort: Option<&str>| {
-        let dir = folder(&format!("effort-{}", effort.unwrap_or("none")));
-        let task = task(&dir, "", "exit 0\n");
-        let server = FakeServer::start(vec![reasoned(420)]).unwrap();
-        let mut setup = setup(&server);
-        setup.endpoint.provider = "openrouter".to_owned();
-        setup.effort = effort.map(str::to_owned);
-        let attempt = block_on!(attempt(&setup, &task, "fake-model", 1, &dir.join("run"))).unwrap();
-        assert!(attempt.passed(), "{:?}", attempt.failures);
-        let first = server.received().into_iter().next().unwrap();
-        (attempt, first.body)
-    };
-    let (attempt, body) = sent(Some("high"));
-    assert_eq!(body["reasoning"], json!({"effort": "high"}));
-    assert_eq!((attempt.model_calls, attempt.reasoning_tokens), (1, 420));
-    assert_eq!(attempt.calls_without_reasoning, 0);
-    assert_eq!(attempt.sent_at, [("high".to_owned(), 1)].into());
-    let (attempt, body) = sent(None);
-    assert!(body.get("reasoning").is_none(), "{body}");
-    assert_eq!(attempt.sent_at, [("default".to_owned(), 1)].into());
 }
 
 /// Each attempt starts with an empty Cargo home of its own, which goes with what it built.

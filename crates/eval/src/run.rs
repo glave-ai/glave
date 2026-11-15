@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_event::Nanos;
+use glave_gateway::Gateway;
 use glave_harness::{
     Cancel, Change, Harness, Live, NoOneToAsk, Parts, Settings, Skill, Skills, Workspace,
     agents_md, change_standing, find_skills, skill_folders,
@@ -18,7 +19,7 @@ use glave_memory::Tidier;
 use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
-use glave_provider_openai::{Config, OpenAiCompatible};
+use glave_provider_openai::Config;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
 use glave_web::{Limits, Web, WebSettings};
@@ -26,7 +27,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::calendar::Calendar;
 use crate::check::{Context, ended};
+use crate::effort::Effort;
 use crate::error::EvalError;
+use crate::floor::{self, Floor};
 use crate::memory::{MemoryReport, MemoryUse, Remembering};
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
 use crate::probe::{self, Probes};
@@ -41,7 +44,7 @@ const MAX_STEPS: u32 = 50;
 const REPOSITORY: &str = "glave-ai/glave";
 
 /// The harness as an attempt wires it.
-type Wired = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>;
+type Wired = Harness<Gateway, SqliteLog, SqliteBlobs, NoOneToAsk>;
 
 /// What every attempt runs with.
 pub struct Setup {
@@ -56,9 +59,9 @@ pub struct Setup {
     pub subagents: bool,
     /// Memory on or off for every task, to measure what it does; each task's own when `None`.
     pub memory: Option<bool>,
-    /// The reasoning level every thread asks its model for, as a person chooses it; each
-    /// model's own when `None`.
-    pub effort: Option<String>,
+    /// The reasoning level every thread asks its model for, as a person chooses it, with the
+    /// levels each model offers; each model's own when `None`.
+    pub effort: Option<Effort>,
     /// How the model's commands start: tied to the eval by its lifeline, so they end with it
     /// however it ends.
     pub processes: Processes,
@@ -68,6 +71,9 @@ pub struct Setup {
     /// glave's folder first on the commands' `PATH`, holding the glave being measured, as
     /// glave puts its own there; none where no glave was built.
     pub glave_on_path: Option<PathBuf>,
+    /// The floor among a router's providers every call keeps to, as Glave Cloud's do; none
+    /// with `--no-floor`.
+    pub floor: Option<Floor>,
 }
 
 /// How one attempt went.
@@ -121,6 +127,9 @@ pub struct Attempt {
     /// What memory held and cost, when it was on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryUse>,
+    /// The calls each provider a router passed them on to served, by its name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub served_by: BTreeMap<String, u32>,
 }
 
 impl Attempt {
@@ -162,6 +171,7 @@ impl Attempt {
             unasked_compacts: 0,
             probes: None,
             memory: None,
+            served_by: trace.upstream.clone(),
         }
     }
 }
@@ -236,13 +246,6 @@ pub async fn attempt(
     let probes = probe::grade(task, &threads, &cx);
     failures.extend((probes.as_ref()).and_then(|probes| probes.short_of(task.probe_share)));
     tidy(dir, task).await;
-    let mut graded = Attempt::graded(&task.name, model, number, &trace, seconds);
-    if trace.direct_calls > 0 {
-        // No gateway recorded their level: they went with the thread's own.
-        let level = setup.effort.as_deref().unwrap_or(trace::DEFAULT_LEVEL);
-        let calls = graded.sent_at.entry(level.to_owned()).or_default();
-        *calls = calls.saturating_add(trace.direct_calls);
-    }
     Ok(Attempt {
         failures,
         probes,
@@ -252,8 +255,13 @@ pub async fn attempt(
         } else {
             trace.compacts
         },
-        ..graded
+        ..Attempt::graded(&task.name, model, number, &trace, seconds)
     })
+}
+
+/// How `model` reasons, as its model list says, when `--effort` read it.
+fn offered<'a>(setup: &'a Setup, model: &str) -> Option<&'a glave_event::Reasoning> {
+    (setup.effort.as_ref()).and_then(|effort| effort.offered.get(model))
 }
 
 /// The failure when the endpoint's API key is in `events`: it reached the model.
@@ -346,8 +354,12 @@ async fn wire(
     (remembering, calendar): (&Remembering, &Calendar),
 ) -> Result<Wired, EvalError> {
     let workspace = workspace(task, setup, (environment, hidden), root).await?;
-    let provider = OpenAiCompatible::new(setup.endpoint.clone())
-        .map_err(|err| EvalError::Setup(err.to_string()))?;
+    let provider = floor::gateway(
+        &setup.endpoint,
+        model,
+        setup.floor.as_ref(),
+        offered(setup, model),
+    )?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
     settings.instructions = agents_md(root, None)
         .await
@@ -467,8 +479,12 @@ async fn converse(
     let harness = wire(setup, task, model, computer, (root, web), wiring).await?;
     let tidier = || {
         Ok::<_, EvalError>(Tidier {
-            provider: OpenAiCompatible::new(setup.endpoint.clone())
-                .map_err(|err| EvalError::Setup(err.to_string()))?,
+            provider: floor::gateway(
+                &setup.endpoint,
+                model,
+                setup.floor.as_ref(),
+                offered(setup, model),
+            )?,
             model: model.to_owned(),
         })
     };
@@ -478,7 +494,7 @@ async fn converse(
     let mut conversation = Talk {
         harness: &harness,
         task,
-        effort: setup.effort.as_deref(),
+        effort: (setup.effort.as_ref()).map(|effort| effort.level.as_str()),
         deadline: Instant::now() + task.timeout,
         transcript: String::new(),
         failures: Vec::new(),
