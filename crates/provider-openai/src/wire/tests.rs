@@ -185,6 +185,24 @@ fn text_only_requests_keep_their_tools_and_say_none() {
     );
 }
 
+/// A request to `model` with nothing in it.
+fn empty(model: &str) -> ModelRequest {
+    ModelRequest {
+        model: model.into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        effort: None,
+        files: Vec::new(),
+        payer: None,
+        route: None,
+        end_user: None,
+    }
+}
+
 #[test]
 fn automatic_caching_is_asked_for_only_where_it_works() {
     assert!(caches_automatically(
@@ -198,20 +216,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         "anthropic/claude-haiku-5.5"
     ));
     assert!(!caches_automatically("ollama", "gemma4:12b"));
-    let request = ModelRequest {
-        model: "anthropic/claude-haiku-5.5".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        end_user: None,
-    };
+    let request = empty("anthropic/claude-haiku-5.5");
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
     let plain = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -223,20 +228,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
 
 #[test]
 fn openrouter_is_told_not_to_cut_a_long_prompt() {
-    let request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        end_user: None,
-    };
+    let request = empty("openai/gpt-6-luna");
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
         routed["plugins"],
@@ -248,20 +240,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
 
 #[test]
 fn openrouter_keeps_prompts_private_and_every_parameter_used() {
-    let request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        end_user: None,
-    };
+    let request = empty("openai/gpt-6-luna");
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
         routed["provider"],
@@ -721,24 +700,14 @@ fn the_most_a_provider_may_cost_is_sent_exact_to_the_last_place() {
 
 #[test]
 fn the_person_goes_anonymously_where_each_service_documents_it_and_the_prompt_stays_the_same() {
-    let mut request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: "Be brief.".into(),
-        messages: vec![user("hello")],
-        tools: vec![ToolSpec {
-            name: "bash".into(),
-            description: "Run a command.".into(),
-            parameters: json!({"type": "object"}),
-        }],
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        end_user: None,
-    };
+    let mut request = empty("openai/gpt-6-luna");
+    request.system = "Be brief.".into();
+    request.messages = vec![user("hello")];
+    request.tools = vec![ToolSpec {
+        name: "bash".into(),
+        description: "Run a command.".into(),
+        parameters: json!({"type": "object"}),
+    }];
     let services = ["openrouter", "openai", "ollama", "example.com"];
     let without = services.map(|service| serde_json::to_value(chat_request(&request, service)));
     let id = glave_ports::testing::an_end_user().unwrap();
