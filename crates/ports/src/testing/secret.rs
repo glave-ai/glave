@@ -29,12 +29,11 @@ pub fn any_secret() -> String {
 /// in the source for a scanner to take as hard-coded. Where a test needs the same one twice, it
 /// binds it once. A source that fails leaves the rest zero: a test's key, never a real one.
 pub fn any_key() -> [u8; 32] {
-    let mut key = [0; 32];
-    let bytes = std::iter::repeat_with(|| OsEntropy.bytes())
+    let mut bytes = std::iter::repeat_with(|| OsEntropy.bytes())
         .map_while(Result::ok)
         .flatten();
-    key.iter_mut().zip(bytes).for_each(|(to, from)| *to = from);
-    key
+    // Each byte taken from the source as the key is made, so no written value flows into it.
+    std::array::from_fn(|_| bytes.next().unwrap_or_default())
 }
 
 /// A fake secret in a provider's shape: `prefix` (`sk-ant-`, `ghp_`, `AKIA`) and 40 random
