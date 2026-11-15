@@ -34,7 +34,7 @@ fn a_turn_spends_the_credits_added_and_once_they_are_spent_the_next_is_refused()
     };
     let (sent, said) = run(&["--model", "m", "hello"]);
     assert!(!sent, "{said}");
-    assert!(said.contains("you're out of credits"), "{said}");
+    assert!(said.contains("your balance is used up"), "{said}");
     assert!(model.received().is_empty(), "the model was never asked");
     let (added, said) = run(&["credits", "add", "0.25", "--reference", "order-1"]);
     assert!(added, "{said}");
@@ -51,7 +51,7 @@ fn a_turn_spends_the_credits_added_and_once_they_are_spent_the_next_is_refused()
     assert!(said.contains("$0.25 spent of $10.00"), "{said}");
     assert!(said.contains("$0.25  you"), "{said}");
     let (sent, said) = run(&["--model", "m", "hello again"]);
-    assert!(!sent && said.contains("you're out of credits"), "{said}");
+    assert!(!sent && said.contains("your balance is used up"), "{said}");
     assert_eq!(model.received().len(), 1);
 }
 
@@ -63,7 +63,7 @@ fn a_glave_that_keeps_no_credits_says_so_and_charges_nothing() {
     let output = glave(&place, &model, &["credits"], "");
     assert!(!output.status.success());
     assert!(
-        text(&output).contains("keeps no credits"),
+        text(&output).contains("keeps no balance"),
         "{}",
         text(&output)
     );
@@ -194,7 +194,7 @@ fn a_servers_own_openrouter_shows_who_serves_its_models_and_charges_credits() {
         (output.status.success(), text(&output))
     };
     let (sent, said) = run(&["--model", OWN_MODEL, "hello"]);
-    assert!(!sent && said.contains("you're out of credits"), "{said}");
+    assert!(!sent && said.contains("your balance is used up"), "{said}");
     let (added, said) = run(&["credits", "add", "1", "--reference", "order-1"]);
     assert!(added, "{said}");
     let (sent, said) = run(&["--model", OWN_MODEL, "hello"]);
@@ -242,7 +242,8 @@ fn a_server_people_sign_in_to_with_oidc_reads_its_own_openrouter_too() {
 fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let place = place("router-floor");
     std::fs::create_dir_all(&place.home).unwrap();
-    let settings = "[credits]\nmonthly_limit_usd = 10\n\n[router_floor]\nbased_in = [\"US\"]\n";
+    let floor = "[router_floor]\nbased_in = [\"US\"]\nprecision = \"fp8\"\n";
+    let settings = format!("[credits]\nmonthly_limit_usd = 10\n\n{floor}");
     std::fs::write(place.home.join("config.toml"), settings).unwrap();
     let router = own_openrouter();
     let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
@@ -298,4 +299,7 @@ fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let sent = &chats[0].body;
     assert!(sent.contains(r#""only":["stateside"]"#), "{sent}");
     assert!(sent.contains(r#""data_collection":"deny""#), "{sent}");
+    // The floor's precision, for a model whose providers say theirs.
+    let least = r#""quantizations":["int8","fp8","mxfp8","fp16","bf16","fp32"]"#;
+    assert!(sent.contains(least), "{sent}");
 }

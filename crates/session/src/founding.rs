@@ -29,20 +29,27 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Makes a new organization of the kind `kind` with `joined` its first person and Owner, as
-    /// glave makes them, named `name` where it is given one, and the person one of its: its id.
-    pub(crate) async fn make_organization(
-        &self,
-        joined: &PersonJoined,
-        kind: OrganizationKind,
-        name: Option<String>,
-    ) -> Result<OrgId, ApiError> {
-        let accounts = self.accounts()?;
+    /// A new organization's id, time-ordered.
+    pub(crate) fn new_org_id(&self) -> Result<OrgId, ApiError> {
         let now = self.inner.harness.clock().now();
         let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();
         let random = self.inner.harness.entropy().bytes()?;
-        let org =
-            OrgId::from_uuid(Builder::from_unix_timestamp_millis(millis, &random).into_uuid());
+        Ok(OrgId::from_uuid(
+            Builder::from_unix_timestamp_millis(millis, &random).into_uuid(),
+        ))
+    }
+
+    /// Makes the new organization `org` of the kind `kind` with `joined` its first person and
+    /// Owner, as glave makes them, named `name` where it is given one, and the person one of
+    /// its.
+    pub(crate) async fn make_organization(
+        &self,
+        org: OrgId,
+        joined: &PersonJoined,
+        kind: OrganizationKind,
+        name: Option<String>,
+    ) -> Result<(), ApiError> {
+        let accounts = self.accounts()?;
         let made = OrganizationMade { kind };
         let owner = RoleSet {
             person: joined.person,
@@ -69,7 +76,7 @@ where
                 .await?;
         }
         accounts.join(joined.person, org).await?;
-        Ok(org)
+        Ok(())
     }
 
     /// Answers `organization/create`: a new organization named `name`, the caller its Owner,
@@ -112,8 +119,8 @@ where
                 ..profile
             },
         };
-        let org = self
-            .make_organization(&joined, OrganizationKind::Shared, Some(name.clone()))
+        let org = self.new_org_id()?;
+        self.make_organization(org, &joined, OrganizationKind::Shared, Some(name.clone()))
             .await?;
         Ok(Reply::Organization {
             organization: OrganizationInfo {

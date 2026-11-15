@@ -15,8 +15,8 @@ use super::{
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, FilePiece, GoneFolder,
     Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary,
     Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources,
-    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, TaskInfo,
-    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, SpaceCredits,
+    TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 mod listening;
@@ -608,6 +608,9 @@ pub enum Reply {
     /// The organization's credits, as much as the caller may see.
     #[schemars(title = "Credits")]
     Credits { credits: CreditsInfo },
+    /// The personal spaces sign-ups made, newest first, with their balances.
+    #[schemars(title = "CreditsSpaces")]
+    CreditsSpaces { spaces: Vec<SpaceCredits> },
     // After every reply with a field of its own, since a missing `plan` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's plan, or `null`.

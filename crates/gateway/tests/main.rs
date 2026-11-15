@@ -8,6 +8,7 @@ mod support;
 mod credits;
 mod fallback;
 mod filters;
+mod floor;
 mod media;
 mod routes;
 mod search;

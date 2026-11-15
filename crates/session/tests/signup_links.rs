@@ -3,7 +3,9 @@
 //! makes their account, named as they give it and with no address, and their personal space,
 //! an organization with them its Owner that takes no invites, as signing up does. It opens once, for a week, on the servers
 //! of the store it was made in alone; no one else may make one, and a server that keeps no
-//! glave accounts at a public origin says it makes none.
+//! glave accounts at a public origin says it makes none. Where the server keeps credits, a link
+//! may carry what the space starts with, and whoever runs it lists the spaces with their
+//! balances.
 
 use std::sync::Arc;
 
@@ -15,7 +17,7 @@ use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
 use serde_json::{Value, json};
 
-use crate::signups::{linked, serve, serve_mailless, serve_sharing, signed_up};
+use crate::signups::{linked, serve, serve_charging, serve_mailless, serve_sharing, signed_up};
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{
     ORIGIN, Served, Web, asked, elsewhere, make_named_passkey, make_passkey, serve_with,
@@ -29,7 +31,7 @@ fn operator(served: &Served) -> Web {
 
 /// What `signup/link` answers `caller` with: a link, or the refusal's code.
 async fn link_for(caller: &mut Web) -> Value {
-    asked(caller, &Request::SignupLink {}).await
+    asked(caller, &Request::SignupLink { credits: None }).await
 }
 
 /// The code in a sign-up link `made`.
@@ -142,7 +144,9 @@ fn only_whoever_runs_the_server_makes_one_and_it_opens_no_other_door() {
         let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
         assert_eq!(link_for(&mut ada).await, json!(code::NOT_ALLOWED));
         let mut signed_out = elsewhere(&served, None);
-        let refused = signed_out.call(&Request::SignupLink {}).await;
+        let refused = signed_out
+            .call(&Request::SignupLink { credits: None })
+            .await;
         assert!(
             refused.get("result").is_none(),
             "needs a sign-in: {refused}"
@@ -239,5 +243,53 @@ fn an_emailed_link_opens_nothing_once_sign_up_is_closed() {
         assert!(open(&open_one, code).await["session"].is_string());
         closed.close().await;
         open_one.close().await;
+    });
+}
+
+#[test]
+fn a_link_s_space_starts_with_the_balance_it_carries_which_whoever_runs_the_server_lists() {
+    block_on!(async {
+        let dir = folder("signup-links-credits");
+        let (served, _) = serve_charging(&dir).await;
+        let mut operator = operator(&served);
+        let five = json!({"nanos": 5_000_000_000_u64, "currency": "USD"});
+        let credits = Some(serde_json::from_value(five.clone()).unwrap());
+        let made = asked(&mut operator, &Request::SignupLink { credits }).await;
+        let opened = open(&served, code_of(&made)).await;
+        let mut ada = elsewhere(&served, opened["session"].as_str().map(str::to_owned));
+        let theirs = asked(&mut ada, &Request::CreditsGet {}).await;
+        assert_eq!(theirs["credits"]["account"]["balance"], five, "{theirs}");
+        // A link with none starts at nothing.
+        let plain = code_of(&link_for(&mut operator).await);
+        assert!(open(&served, plain).await["session"].is_string());
+
+        let listed = asked(&mut operator, &Request::CreditsList {}).await;
+        let spaces = listed["spaces"].as_array().unwrap();
+        assert_eq!(spaces.len(), 2, "{listed}");
+        let nothing = json!({"nanos": 0, "currency": "USD"});
+        assert_eq!(spaces[0]["balance"], nothing, "newest first: {listed}");
+        assert_eq!(spaces[1]["balance"], five, "{listed}");
+        assert_eq!(spaces[1]["name"], json!("Ada"), "{listed}");
+        let org = spaces[1]["organization"].as_str().unwrap();
+        let mine = asked(&mut ada, &Request::OrganizationList {}).await;
+        assert_eq!(mine["organizations"][0]["id"], json!(org), "{mine}");
+        assert_eq!(
+            asked(&mut ada, &Request::CreditsList {}).await,
+            json!(code::NOT_ALLOWED)
+        );
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_link_carries_no_balance_where_the_server_keeps_none() {
+    block_on!(async {
+        let dir = folder("signup-links-no-credits");
+        let (served, _) = serve_mailless(&dir).await;
+        let five = json!({"nanos": 5_000_000_000_u64, "currency": "USD"});
+        let credits = Some(serde_json::from_value(five).unwrap());
+        let refused = asked(&mut operator(&served), &Request::SignupLink { credits }).await;
+        assert_eq!(refused, json!(code::NOT_AVAILABLE));
+        served.close().await;
     });
 }

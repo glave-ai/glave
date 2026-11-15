@@ -60,9 +60,24 @@ pub(crate) async fn serve_mailless(dir: &Path) -> (Served, glave_ports::testing:
 /// where it says, as Google Cloud's load balancer adds two; sending no email without `outbox`.
 pub(crate) async fn serve_behind(
     dir: &Path,
-    (signup, forwarded): (bool, Option<std::num::NonZeroU8>),
+    behind: (bool, Option<std::num::NonZeroU8>),
     outbox: Option<&Arc<Outbox>>,
     log: Shared,
+) -> (Served, glave_ports::testing::ManualClock) {
+    serve_keeping(dir, behind, outbox, (log, false)).await
+}
+
+/// [`serve_mailless`], keeping organizations' credits, with no monthly limit.
+pub(crate) async fn serve_charging(dir: &Path) -> (Served, glave_ports::testing::ManualClock) {
+    serve_keeping(dir, (false, None), None, (Shared::default(), true)).await
+}
+
+/// [`serve_behind`], keeping organizations' credits in `log` where `credits` says.
+async fn serve_keeping(
+    dir: &Path,
+    (signup, forwarded): (bool, Option<std::num::NonZeroU8>),
+    outbox: Option<&Arc<Outbox>>,
+    (log, credits): (Shared, bool),
 ) -> (Served, glave_ports::testing::ManualClock) {
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
@@ -87,7 +102,11 @@ pub(crate) async fn serve_behind(
     setup.signup = signup;
     setup.forwarded = forwarded;
     let ticks = setup.clock.clone();
-    let (server, _) = setup.build_on(dir, log).await;
+    let (server, _) = if credits {
+        setup.build_with_credits(dir, log, None).await
+    } else {
+        setup.build_on(dir, log).await
+    };
     let signin = SignIn::local(LocalToken::new([21; 32]), Box::new(fixed_clock()));
     (serve_with(server, signin, None).await, ticks)
 }

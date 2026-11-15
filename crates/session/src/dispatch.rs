@@ -200,6 +200,7 @@ where
                 reference,
                 organization,
             } => boxed(|| self.add_credits(caller, amount, &reference, organization)).await,
+            Request::CreditsList {} => boxed(|| self.list_credits(caller)).await,
             Request::CreditsLimit { limit } => {
                 boxed(|| self.set_credits_limit(caller, limit)).await
             }
@@ -251,7 +252,9 @@ where
             Request::SignupStart { email } => {
                 boxed(|| self.start_link(caller, &email, Emailed::Signup)).await
             }
-            Request::SignupLink {} => boxed(|| self.make_signup_link(caller)).await,
+            Request::SignupLink { credits } => {
+                boxed(|| self.make_signup_link(caller, credits)).await
+            }
             Request::RecoveryStart { email } => {
                 boxed(|| self.start_link(caller, &email, Emailed::Recovery)).await
             }

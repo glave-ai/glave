@@ -12,12 +12,12 @@ use glave_provider_openai::Config;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
-fn folder(name: &str) -> TempDir {
+pub(crate) fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("eval-attempt-{name}")).unwrap()
 }
 
 /// A task that asks for a file to be written, graded by a test script and checks.
-fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
+pub(crate) fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
     let task = dir.join("task");
     std::fs::create_dir_all(task.join("environment")).unwrap();
     std::fs::create_dir_all(task.join("tests")).unwrap();
@@ -45,17 +45,27 @@ fn setup(server: &FakeServer) -> Setup {
 
 /// [`setup`] with the model key `key`.
 fn keyed(server: &FakeServer, key: &str) -> Setup {
+    keyed_at(
+        Config::for_url(server.url(), Some(key.to_owned())).unwrap(),
+        key,
+    )
+}
+
+/// An attempt's setup at `endpoint`, whose key is `key`, with no floor.
+pub(crate) fn keyed_at(endpoint: Config, key: &str) -> Setup {
     let mut environment: Vec<_> = std::env::vars_os().collect();
     environment.push(("GLAVE_API_KEY".into(), key.into()));
     Setup {
-        endpoint: Config::for_url(server.url(), Some(key.to_owned())).unwrap(),
+        endpoint,
         environment,
         plans: false,
         subagents: false,
         memory: None,
+        effort: None,
         processes: glave_process::Processes::unrecorded(),
         office: true,
         glave_on_path: None,
+        floor: None,
     }
 }
 

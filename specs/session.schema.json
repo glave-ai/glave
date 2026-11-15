@@ -1683,7 +1683,7 @@
         },
         {
           "const": "server",
-          "description": "The server allows it for no one: where it is based, or what it keeps.",
+          "description": "The server allows it for no one: where it is based, what it keeps, or the precision it\nsays.",
           "type": "string"
         }
       ]
@@ -3604,6 +3604,30 @@
           "type": "string"
         }
       ]
+    },
+    "SpaceCredits": {
+      "description": "A personal space a sign-up made, as whoever runs the server sees it.",
+      "properties": {
+        "balance": {
+          "$ref": "#/$defs/Money",
+          "description": "What is left of its credits."
+        },
+        "name": {
+          "description": "The name its person gave, else their email, when it knows either.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "organization": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "organization",
+        "balance"
+      ],
+      "type": "object"
     },
     "Standing": {
       "description": "Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or\n`thread.deleted` decides.",
@@ -5863,6 +5887,27 @@
       },
       "streams": false
     },
+    "credits/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The personal spaces sign-ups made, newest first, with their balances.",
+        "properties": {
+          "spaces": {
+            "items": {
+              "$ref": "#/$defs/SpaceCredits"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "spaces"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "file/read": {
       "params": {
         "properties": {
@@ -8006,6 +8051,18 @@
     },
     "signup/link": {
       "params": {
+        "properties": {
+          "credits": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "result": {

@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::run::Attempt;
 
 mod compacted;
+mod reasoning;
+mod served;
 
 /// One eval run, as saved to `report.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -21,10 +23,18 @@ pub struct Report {
     /// The provider's short name, such as `openrouter`.
     pub provider: String,
     pub models: Vec<String>,
+    /// The reasoning level asked of every model (`--effort`); `null` when each model reasoned
+    /// at its own.
+    #[serde(default)]
+    pub effort: Option<String>,
     /// What a passed task took on each model, for readers of `report.json`; `None` where none
     /// passed. Reports written before it lack it and still read as baselines.
     #[serde(default)]
     per_passed_task: BTreeMap<String, Option<PerPassedTask>>,
+    /// The floor among a router's providers the run held its calls to, in words; `None` when
+    /// it held none, as with `--no-floor` and in reports written before there was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    floor: Option<String>,
     pub attempts: Vec<Attempt>,
 }
 
@@ -76,7 +86,8 @@ impl Report {
         started: String,
         provider: String,
         models: Vec<String>,
-        attempts: Vec<Attempt>,
+        effort: Option<String>,
+        (attempts, floor): (Vec<Attempt>, Option<String>),
     ) -> Self {
         let per_passed_task = (models.iter())
             .map(|model| (model.clone(), PerPassedTask::of(&ran(&attempts, model))))
@@ -85,7 +96,9 @@ impl Report {
             started,
             provider,
             models,
+            effort,
             per_passed_task,
+            floor,
             attempts,
         }
     }
@@ -111,12 +124,12 @@ impl Report {
         self.attempts.iter().map(|a| a.task.as_str()).collect()
     }
 
-    /// The model cheapest per passed task, then the pass rate of each task on each model, the
-    /// totals per model, and every failure. Rates that differ from `baseline` show what they
-    /// were.
+    /// The model cheapest per passed task, the reasoning level asked, then the pass rate of each
+    /// task on each model, the totals per model, and every failure. Rates that differ from
+    /// `baseline` show what they were.
     pub fn markdown(&self, baseline: Option<&Self>) -> String {
         let mut out = String::new();
-        let _ = writeln!(out, "{}\n", self.cheapest());
+        let _ = writeln!(out, "{}\n\n{}\n", self.cheapest(), self.reasoning());
         let names: Vec<&str> = self.models.iter().map(|model| short(model)).collect();
         let _ = writeln!(out, "| task | {} |", names.join(" | "));
         let _ = writeln!(out, "| --- |{}", " --- |".repeat(names.len()));
@@ -135,6 +148,7 @@ impl Report {
         }
         self.totals(&mut out);
         self.compacted(&mut out);
+        self.served(&mut out);
         self.probed(&mut out);
         let failed: Vec<&Attempt> = self.attempts.iter().filter(|a| !a.passed()).collect();
         if !failed.is_empty() {
@@ -180,8 +194,9 @@ impl Report {
         line
     }
 
-    /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls, asks,
-    /// blocked commands, `compact` called where no one asked, median time.
+    /// Rows of totals per model: passed, what a passed task took, cost, tokens, the level calls
+    /// were sent at and the reasoning they reported, tool calls, asks, blocked commands, `compact`
+    /// called where no one asked, median time.
     fn totals(&self, out: &mut String) {
         let per_model = |row: &Row| -> String {
             self.models
@@ -190,12 +205,16 @@ impl Report {
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 10] = [
+        let rows: [(&str, &Row); 14] = [
             ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
             ("per passed task", &|a| per_task(PerPassedTask::of(a))),
             ("cost", &|a| dollars(spent(a))),
             ("tokens", &|a| thousands(tokens(a))),
             ("input from cache", &|a| cache_hits(a)),
+            ("reasoning level", &|a| reasoning::sent(a)),
+            ("reasoning tokens", &|a| reasoning::tokens(a)),
+            ("reasoning per call", &|a| reasoning::per_call(a)),
+            ("calls without reasoning", &|a| reasoning::without(a)),
             ("tool calls", &|a| {
                 a.iter()
                     .map(|a| u64::from(a.tool_calls))

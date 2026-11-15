@@ -5,9 +5,10 @@
 //! makes the account and its organization the same way; but it goes to no address and carries
 //! none, as an invite's link need not, so the account has no email until its person gives one.
 //! Handed over rather than mailed, it lasts as an invite does, and it opens while the server
-//! takes no sign-ups.
+//! takes no sign-ups. Where the server keeps credits, it may carry the balance the personal
+//! space it makes starts with, added to its credits as the space is made.
 
-use glave_event::{At, Secret, SignupStarted};
+use glave_event::{At, Money, Secret, SignupStarted};
 use glave_identity::signin::{kept, one_time_code};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use jiff::SignedDuration;
@@ -35,8 +36,13 @@ where
     }
 
     /// Answers `signup/link` for `caller`: a new sign-up link, good once and for [`LIFETIME`],
-    /// answered this once. Only for whoever runs the server, from its computer.
-    pub(crate) async fn make_signup_link(&self, caller: &Caller) -> Result<Reply, ApiError> {
+    /// answered this once, the personal space it makes starting with `credits` where given.
+    /// Only for whoever runs the server, from its computer.
+    pub(crate) async fn make_signup_link(
+        &self,
+        caller: &Caller,
+        credits: Option<Money>,
+    ) -> Result<Reply, ApiError> {
         let (true, Some(origin)) = (self.links_signups(), &self.inner.origin) else {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoSignupLinks));
         };
@@ -45,6 +51,9 @@ where
                 code::NOT_ALLOWED,
                 Sentence::OperatorLinksSignups,
             ));
+        }
+        if let Some(amount) = credits {
+            self.starting_credits(amount)?;
         }
         let secret = one_time_code()?;
         let code = secret.expose();
@@ -58,6 +67,7 @@ where
             to: None,
             expires,
             recovery: false,
+            credits,
         };
         self.record_signups(|signups| {
             if signups.waiting.len() >= MOST_WAITING {

@@ -2,6 +2,7 @@
 //! "Credits"): amounts, which a client formats for its reader.
 
 use glave_event::{At, Money, PrincipalId};
+use glave_ports::OrgId;
 use serde::{Deserialize, Serialize};
 
 /// An organization's credits, as much of them as the caller may see.
@@ -42,4 +43,16 @@ pub struct PersonSpent {
     pub spent: Money,
     /// Whether they are the caller.
     pub you: bool,
+}
+
+/// A personal space a sign-up made, as whoever runs the server sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SpaceCredits {
+    #[schemars(with = "String")]
+    pub organization: OrgId,
+    /// The name its person gave, else their email, when it knows either.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// What is left of its credits.
+    pub balance: Money,
 }

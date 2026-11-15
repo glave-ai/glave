@@ -1,0 +1,6 @@
+@use '../page';
+
+// Its card alone takes a place in the page's column, so where no balance is kept it takes none.
+:host {
+  display: contents;
+}

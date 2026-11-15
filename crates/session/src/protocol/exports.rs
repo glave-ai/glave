@@ -11,7 +11,7 @@ pub use super::connectors::{
     ConnectorReturns, ConnectorSignIn, ConnectorStatus, ConnectorTag, ConnectorTagId,
 };
 pub use super::credentials::{Ability, CredentialInfo, DeviceCode};
-pub use super::credits::{CreditsAccount, CreditsInfo, PersonSpent};
+pub use super::credits::{CreditsAccount, CreditsInfo, PersonSpent, SpaceCredits};
 pub use super::error::{ApiError, ErrorData};
 pub use super::files::{AttachedFile, FileInfo, FilePiece};
 pub use super::live::Update;
