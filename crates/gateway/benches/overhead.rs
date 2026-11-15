@@ -238,6 +238,7 @@ fn request() -> Result<ModelRequest> {
         effort: None,
         payer: None,
         route: None,
+        session: None,
     })
 }
 

@@ -207,6 +207,7 @@ pub(crate) fn request(purpose: Purpose) -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        session: None,
     }
 }
 

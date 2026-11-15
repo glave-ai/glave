@@ -5,7 +5,7 @@ use std::future::Future;
 
 use glave_event::{
     Arguments, CallId, Cost, MaxPrice, ModelRef, ModelResponded, Money, Part, PrincipalId, Sha256,
-    Sort, StopReason, Usage,
+    Sort, StopReason, ThreadId, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -101,6 +101,11 @@ pub struct ModelRequest {
     /// asks for nothing beyond what every call asks.
     #[serde(skip)]
     pub route: Option<Route>,
+    /// The thread whose conversation the call sends, so a router (OpenRouter) keeps every
+    /// call of it with one provider, whose prompt cache holds it. None for a call that sends
+    /// no thread's conversation. Never sent but as that.
+    #[serde(skip)]
+    pub session: Option<ThreadId>,
 }
 
 /// A person's filters among a router's providers, as a router takes them for one model.

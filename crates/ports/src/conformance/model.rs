@@ -254,6 +254,7 @@ fn request() -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        session: None,
     }
 }
 

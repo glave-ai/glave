@@ -52,6 +52,11 @@ pub(crate) struct ChatRequest<'a> {
     /// person's filters among its providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Preferences<'a>>,
+    /// For OpenRouter: the thread the conversation is, so it keeps the conversation with one
+    /// provider from its first answer on, whose prompt cache holds it ("provider sticky
+    /// routing", OpenRouter's prompt caching docs). An order of providers would turn it off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -391,6 +396,10 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .map(|effort| Effort { effort }),
         reasoning_effort: effort.filter(|_| !openrouter),
         provider: openrouter.then(|| Preferences::of(request.route.as_ref())),
+        session_id: request
+            .session
+            .filter(|_| openrouter)
+            .map(|thread| thread.to_string()),
     }
 }
 

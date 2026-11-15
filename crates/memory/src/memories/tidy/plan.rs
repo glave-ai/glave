@@ -121,6 +121,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool, payer: Payer) -> Mo
         effort: None,
         payer: Some(payer),
         route: None,
+        session: None,
     }
 }
 

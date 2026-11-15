@@ -202,6 +202,7 @@ where
             files: Vec::new(),
             payer: Some(thread.payer()),
             route: None,
+            session: None,
         };
         let output = match cancel.run(self.provider.search(&request, &ask)).await {
             Some(Ok(found)) => ToolOutput::untrusted(found_text(&found)),

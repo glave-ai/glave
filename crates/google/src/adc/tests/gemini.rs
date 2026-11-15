@@ -36,6 +36,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         effort: None,
         payer: None,
         route: None,
+        session: None,
     };
     let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(

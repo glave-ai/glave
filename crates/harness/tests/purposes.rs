@@ -1,5 +1,6 @@
 //! Every model call says what it is for, so a gateway can route it, and whose work it is, so
-//! a gateway can charge it; and `model.responded` records the route and target that served it. The judge's calls are recorded in the thread
+//! a gateway can charge it; which thread's conversation it sends, so a router keeps it with
+//! one provider; and `model.responded` records the route and target that served it. The judge's calls are recorded in the thread
 //! whose action they judged.
 
 use glave_event::{Body, ModelResponded, PrincipalId, StopReason};
@@ -91,6 +92,12 @@ fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
             paid(&seen),
             charged_to(scope(), &ada, 2),
             "the thread's work"
+        );
+        let sessions: Vec<_> = seen.lock().unwrap().iter().map(|r| r.session).collect();
+        assert_eq!(
+            sessions,
+            [Some(thread.id); 2],
+            "both send the thread's conversation, so a router keeps them with one provider"
         );
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded
@@ -184,6 +191,12 @@ fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
         let summary = turn(&harness, &mut thread, "push to main").await;
         assert_eq!(asked(&seen)[1], Purpose::Judge);
         assert_eq!(paid(&seen), charged_to(scope(), &ada, 3), "the judge's too");
+        let sessions: Vec<_> = seen.lock().unwrap().iter().map(|r| r.session).collect();
+        assert_eq!(
+            sessions,
+            [Some(thread.id), None, Some(thread.id)],
+            "the judge sends a prompt of its own"
+        );
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded.iter().map(|r| r.route.as_deref()).collect();
         assert_eq!(routes, [None, Some("judge"), None]);

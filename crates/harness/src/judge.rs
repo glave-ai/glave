@@ -96,6 +96,7 @@ pub async fn judge<P: ModelProvider>(
         effort: None,
         payer,
         route: None,
+        session: None,
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {

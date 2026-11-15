@@ -81,6 +81,7 @@ where
             effort: thread.effort.clone(),
             payer: Some(thread.payer()),
             route: None,
+            session: Some(thread.id),
         };
         let retries = self.settings.retries;
         let mut retry = 0;

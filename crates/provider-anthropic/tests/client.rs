@@ -41,6 +41,7 @@ mod over_http {
             effort: None,
             payer: None,
             route: None,
+            session: None,
         }
     }
 
