@@ -9,7 +9,7 @@ fn route_at(
     router: Option<&Router>,
     beside_one: bool,
 ) -> Result<Option<Route>, Kept> {
-    super::route_at((filters, false), names, router, beside_one)
+    super::route_at((filters, None), names, router, beside_one)
 }
 
 const FLASH: &str = "deepseek/deepseek-v4.1-flash";
@@ -327,7 +327,7 @@ fn each_filter_that_hides_a_provider_is_named() {
 fn within_floor(places: &[&str], person: Filters) -> (Keeping, Result<Option<Route>, Kept>) {
     let keeping = Keeping::within(Some(&based_in(places)), Some(person));
     let asked = super::route_at(
-        (keeping.filters.as_ref().unwrap(), keeping.unstated),
+        (keeping.filters.as_ref().unwrap(), keeping.least),
         [FLASH, FLASH],
         Some(&flash()),
         true,
@@ -384,39 +384,74 @@ fn a_floor_keeps_a_call_from_what_isn_t_a_router_and_with_none_changes_nothing()
     assert!(Keeping::within(None, None).filters.is_none());
 }
 
+/// What a person's `own` filters ask within a floor of 8 bits of a router serving a model from
+/// `endpoints`, each a provider and its weights as stored.
+fn at_8_bits(own: Filters, endpoints: &[(&str, &str)]) -> Result<Option<Route>, Kept> {
+    let keeping = Keeping::within(Some(&eight_bits()), Some(own));
+    let router = Router {
+        providers: flash().providers,
+        endpoints: (endpoints.iter())
+            .map(|(slug, stored)| endpoint(slug, stored, true))
+            .collect(),
+    };
+    let filters = keeping.filters.as_ref().unwrap();
+    super::route_at(
+        (filters, keeping.least),
+        [FLASH, FLASH],
+        Some(&router),
+        true,
+    )
+}
+
 #[test]
-fn a_floor_s_precision_is_the_least_and_spares_providers_that_don_t_say_theirs() {
-    let floor = Filters {
+fn a_floor_s_precision_holds_a_model_whose_providers_say_theirs() {
+    // One that doesn't say is out, beside others that do, and the router is asked for 8 bits.
+    let open = [
+        ("fireworks", "fp8"),
+        ("groq", "fp4"),
+        ("nebius", "bf16"),
+        ("unsaid", "unknown"),
+    ];
+    let asked = at_8_bits(Filters::default(), &open).unwrap().unwrap();
+    assert_eq!(
+        asked.quantizations,
+        ["int8", "fp8", "mxfp8", "fp16", "bf16", "fp32"],
+        "never `unknown`"
+    );
+    // The person's higher precision is kept; a lower one never loosens the floor's.
+    let own = |precision| Filters {
+        precision: Some(precision),
+        ..Filters::default()
+    };
+    let full = at_8_bits(own(Precision::Full), &open).unwrap().unwrap();
+    assert_eq!(full.quantizations, ["fp16", "bf16", "fp32"]);
+    let four = at_8_bits(own(Precision::FourBit), &open).unwrap().unwrap();
+    assert_eq!(four.quantizations, asked.quantizations);
+    let low = [("groq", "fp4"), ("nebius", "unknown")];
+    assert_eq!(at_8_bits(Filters::default(), &low), Err(Kept::NoneFits));
+}
+
+#[test]
+fn a_closed_model_none_of_whose_providers_says_its_precision_is_kept() {
+    let closed = [("fireworks", "unknown"), ("groq", "unknown")];
+    assert_eq!(at_8_bits(Filters::default(), &closed), Ok(None));
+    // A person's own precision still holds providers that don't say theirs.
+    let own = Filters {
         precision: Some(Precision::EightBit),
         ..Filters::default()
     };
-    // The person's own precision, when higher, is kept; it holds providers that don't say.
-    let full = Filters {
-        precision: Some(Precision::Full),
-        ..Filters::default()
-    };
-    let keeping = Keeping::within(Some(&floor), Some(full));
-    assert_eq!(keeping.filters.unwrap().precision, Some(Precision::Full));
-    assert!(!keeping.unstated);
-    // A lower one never loosens the floor's.
-    let four = Filters {
-        precision: Some(Precision::FourBit),
-        ..Filters::default()
-    };
-    let keeping = Keeping::within(Some(&floor), Some(four));
-    assert_eq!(
-        keeping.filters.unwrap().precision,
-        Some(Precision::EightBit)
-    );
-    // With none of their own, a provider that doesn't say its precision may serve.
-    let keeping = Keeping::within(Some(&floor), None);
-    assert!(keeping.unstated);
-    let unsaid = endpoint("unsaid", "unknown", true);
+    assert_eq!(at_8_bits(own, &closed), Err(Kept::NoneFits));
+    let floor = eight_bits();
     let router = flash();
-    let facts = facts(&unsaid, &router);
-    assert_eq!(facts.precision, Precision::Unstated);
-    assert!(!floor_hides(&facts, &floor));
-    assert_eq!(hidden_by(&facts, &floor), [Hides::Precision]);
-    let low = endpoint("groq", "fp4", true);
-    assert!(floor_hides(&super::facts(&low, &router), &floor));
+    let unsaid = endpoint("unsaid", "unknown", true);
+    assert!(!floor_hides(&facts(&unsaid, &router), &floor, true));
+    assert!(floor_hides(&facts(&unsaid, &router), &floor, false));
+}
+
+/// A floor of 8 bits alone.
+fn eight_bits() -> Filters {
+    Filters {
+        precision: Some(Precision::EightBit),
+        ..Filters::default()
+    }
 }

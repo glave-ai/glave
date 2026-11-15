@@ -1,7 +1,8 @@
 //! Glave Cloud's floor (providers based in the US that keep nothing, weights at 8 bits or
-//! better) on models as a router's catalog says who serves them: closed models, whose makers
-//! say no precision, still route; an open model served only below the floor is refused with a
-//! sentence and never sent.
+//! better) on models as a router's catalog says who serves them: a closed model, none of whose
+//! providers says its precision, still routes; an open model goes only to providers that say
+//! theirs at 8 bits or better, and one served only below that is refused with a sentence and
+//! never sent.
 
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ fn providers() -> Arc<[CatalogProvider]> {
         ("fireworks", "US"),
         ("groq", "US"),
         ("together", "US"),
+        ("baseten", "US"),
         ("siliconflow", "CN"),
     ]
     .into_iter()
@@ -100,10 +102,10 @@ fn a_closed_model_whose_maker_says_no_precision_still_routes() {
     .unwrap();
     assert_eq!(only(&haiku), ["amazon-bedrock", "anthropic"]);
     assert!(haiku.zdr);
-    assert!(
-        haiku.quantizations.iter().any(|named| named == "unknown"),
-        "the router keeps endpoints that don't say: {:?}",
-        haiku.quantizations
+    assert_eq!(
+        haiku.quantizations,
+        Vec::<String>::new(),
+        "a closed model has no precision to ask for"
     );
     let luna = served(
         "openai/gpt-6-luna",
@@ -126,13 +128,16 @@ fn an_open_model_routes_only_to_providers_at_8_bits_or_better() {
             endpoint("groq", Some("fp4"), true),
             endpoint("together", Some("bf16"), true),
             endpoint("siliconflow", Some("fp8"), true),
+            // Its precision unsaid, beside providers that say theirs: it may be 4 bits.
+            endpoint("baseten", None, true),
         ],
     )
     .unwrap();
     assert_eq!(only(&flash), ["fireworks", "together"]);
     assert_eq!(
         flash.quantizations,
-        ["int8", "fp8", "mxfp8", "fp16", "bf16", "fp32", "unknown"]
+        ["int8", "fp8", "mxfp8", "fp16", "bf16", "fp32"],
+        "never `unknown` for a model whose providers say their precision"
     );
 }
 

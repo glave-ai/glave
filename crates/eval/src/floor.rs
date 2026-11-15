@@ -21,7 +21,7 @@ const READING: Duration = Duration::from_mins(2);
 pub(crate) const SAID: &str = "based in the US, keeping nothing, weights at fp8 or better";
 
 /// Glave Cloud's floor: providers based in the US that keep nothing of what they are sent,
-/// serving weights at 8 bits or better where they say.
+/// serving weights at 8 bits or better (a closed model, whose providers say none, is kept).
 fn cloud() -> Filters {
     Filters {
         based_in: vec!["US".to_owned()],

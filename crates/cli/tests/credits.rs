@@ -299,7 +299,7 @@ fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let sent = &chats[0].body;
     assert!(sent.contains(r#""only":["stateside"]"#), "{sent}");
     assert!(sent.contains(r#""data_collection":"deny""#), "{sent}");
-    // The floor's precision, with the router's name for weights it does not know how are stored.
-    let least = r#""quantizations":["int8","fp8","mxfp8","fp16","bf16","fp32","unknown"]"#;
+    // The floor's precision, for a model whose providers say theirs.
+    let least = r#""quantizations":["int8","fp8","mxfp8","fp16","bf16","fp32"]"#;
     assert!(sent.contains(least), "{sent}");
 }

@@ -19,8 +19,8 @@ what changed since an earlier run.
 
 Every call goes through glave's gateway, held to Glave Cloud's floor among OpenRouter's
 providers (`specs/gateway.md`, "A server's floor"): based in the US, keeping nothing of what they
-are sent, and serving weights at fp8 or better where they say how (the makers of closed models
-don't, and are kept), so a model is measured as people on Glave Cloud get it. Who serves each
+are sent, and serving weights at fp8 or better (a closed model, none of whose providers says how
+it stores its weights, is kept), so a model is measured as people on Glave Cloud get it. Who serves each
 model is read from OpenRouter's lists at the start, so the floor needs `GLAVE_BASE_URL` to be
 OpenRouter; `--no-floor` sends calls to any provider OpenRouter picks, and any endpoint. The
 report says the floor it held and, for each model, how many calls each provider served.

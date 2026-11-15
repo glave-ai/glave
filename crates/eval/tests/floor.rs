@@ -84,7 +84,7 @@ fn an_attempt_keeps_to_cloud_s_floor_and_says_who_served_it() {
     let quantizations = asked["quantizations"].as_array().unwrap();
     assert!(quantizations.contains(&json!("fp8")), "{asked}");
     assert!(!quantizations.contains(&json!("fp4")), "{asked}");
-    assert!(quantizations.contains(&json!("unknown")), "{asked}");
+    assert!(!quantizations.contains(&json!("unknown")), "{asked}");
 }
 
 #[test]

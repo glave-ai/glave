@@ -92,9 +92,9 @@ pub struct RouterFloorFile {
     /// Whether providers must keep nothing of what they are sent (zero data retention).
     #[serde(default)]
     pub keeps_nothing: bool,
-    /// The least precision a provider that says how it stores a model's weights may serve
-    /// them at, by a router's name for it (`fp8` admits `fp8`, `int8`, `bf16`, …). A provider
-    /// that does not say, as the makers of closed models don't, is not held to it.
+    /// The least precision a provider may serve a model's weights at, by a router's name for
+    /// it (`fp8` admits `fp8`, `int8`, `bf16`, …). A closed model, none of whose providers says
+    /// how it stores the weights, is not held to it.
     #[serde(default, deserialize_with = "least_precision")]
     pub precision: Option<Precision>,
 }
