@@ -50,5 +50,6 @@ mod tool_search;
 mod turn;
 mod untrusted;
 mod untrusted_after;
+mod walled_again;
 mod web_search;
 mod worktrees;
