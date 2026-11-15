@@ -230,3 +230,36 @@ fn nothing_new_in_protected(dir: &Path) {
         .collect();
     assert_eq!(settings, ["settings.json"], "nothing new in .glave");
 }
+
+/// Someone else's commands on this computer get none of its person's git sign-ins or secrets,
+/// nor do the folders made from their workspace.
+#[test]
+fn a_walled_workspace_has_no_credentials_or_secrets() {
+    use glave_event::{Forge, Secret};
+    use glave_ports::computer::{CredentialHost, GitCredential};
+    use glave_ports::secrets::Known;
+    use glave_ports::testing::{FixedGitCredentials, any_secret};
+
+    let dir = scratch("walled");
+    block_on!(async {
+        let known = KnownSecrets::default();
+        known.set(vec![Known::new(
+            "STRIPE_KEY".into(),
+            Secret::new(any_secret()),
+        )]);
+        let host = CredentialHost {
+            url: "https://github.com".into(),
+            forge: Forge::Github,
+        };
+        let credential = GitCredential::new("x-access-token", any_secret()).unwrap();
+        let credentials = Arc::new(FixedGitCredentials::new(vec![host], credential));
+        let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
+        let ws = ws.with_credentials(credentials).hiding(known);
+        assert!(ws.credentials().is_some() && !ws.hidden().variables().is_empty());
+        let walled = ws.walled(true);
+        assert!(walled.credentials().is_none(), "no git sign-ins");
+        assert!(walled.hidden().variables().is_empty(), "no secrets");
+        let scratch = walled.scratch("theirs", None).await.unwrap();
+        assert!(scratch.credentials().is_none() && scratch.hidden().variables().is_empty());
+    });
+}
