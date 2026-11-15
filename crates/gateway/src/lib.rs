@@ -30,7 +30,7 @@ mod target;
 mod telemetry;
 
 pub use credits::{Account, Credits, CreditsError};
-pub use filtering::{Facts, Filtering, Router, hidden_by};
+pub use filtering::{Facts, Filtering, Router, floor_hides, hidden_by};
 pub use gateway::Gateway;
 pub use media::Tier;
 pub use price::Price;

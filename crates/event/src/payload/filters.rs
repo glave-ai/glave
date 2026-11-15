@@ -91,7 +91,8 @@ pub enum Hides {
     Price,
     /// The person chose to avoid it.
     Avoided,
-    /// The server allows it for no one: where it is based, or what it keeps.
+    /// The server allows it for no one: where it is based, what it keeps, or the precision it
+    /// says.
     Server,
 }
 
