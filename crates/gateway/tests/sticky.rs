@@ -104,8 +104,8 @@ fn cloud() -> Filters {
     }
 }
 
-fn the_clouds() -> Option<Vec<String>> {
-    Some(vec!["amazon-bedrock".into(), "google-vertex".into()])
+fn the_clouds() -> Vec<String> {
+    vec!["amazon-bedrock".into(), "google-vertex".into()]
 }
 
 #[test]
@@ -138,14 +138,14 @@ fn the_order_comes_with_the_floor_and_never_widens_it() {
     let bedrock = sent(&call(&[(AT, "Amazon Bedrock")]), Some(cloud()), None);
     let route = bedrock.route.unwrap();
     assert_eq!(route.order, ["amazon-bedrock"]);
-    assert_eq!(route.only, the_clouds());
+    assert_eq!(route.only, Some(the_clouds()));
     assert!(route.zdr);
     // A provider the floor rules out, though it served the conversation before the floor
     // came, is never asked for.
     let anthropic = sent(&call(&[(AT, "Anthropic")]), Some(cloud()), None);
     let route = anthropic.route.unwrap();
-    assert!(route.order.is_empty(), "{route:?}");
-    assert_eq!(route.only, the_clouds());
+    assert_eq!(route.order, Vec::<String>::new());
+    assert_eq!(route.only, Some(the_clouds()));
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn a_provider_the_person_avoids_or_one_the_catalog_does_not_name_is_never_asked_
     };
     let avoided = sent(&call(&[(AT, "Amazon Bedrock")]), None, Some(avoid));
     let route = avoided.route.unwrap();
-    assert!(route.order.is_empty());
+    assert_eq!(route.order, Vec::<String>::new());
     assert_eq!(route.ignore, ["amazon-bedrock"]);
     let unknown = sent(&call(&[(AT, "Someone New")]), None, None);
     assert_eq!(unknown.route, None);
