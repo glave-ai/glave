@@ -259,7 +259,10 @@ fn a_walled_workspace_has_no_credentials_or_secrets() {
         let walled = ws.walled(true);
         assert!(walled.credentials().is_none(), "no git sign-ins");
         assert!(walled.hidden().variables().is_empty(), "no secrets");
-        let scratch = walled.scratch("theirs", None).await.unwrap();
-        assert!(scratch.credentials().is_none() && scratch.hidden().variables().is_empty());
+        let folder = walled
+            .folder(dir.join("src").to_str().unwrap())
+            .await
+            .unwrap();
+        assert!(folder.credentials().is_none() && folder.hidden().variables().is_empty());
     });
 }
