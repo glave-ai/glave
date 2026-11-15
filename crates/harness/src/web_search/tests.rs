@@ -69,7 +69,7 @@ fn a_refusal_is_told_in_the_search_s_terms() {
     assert!(not_searched(&limited).contains("Try again"));
     let out = ProviderError::Unpaid(glave_ports::Unpaid::Spent);
     assert!(
-        not_searched(&out).contains("out of credits"),
+        not_searched(&out).contains("balance is used up"),
         "{}",
         not_searched(&out)
     );
