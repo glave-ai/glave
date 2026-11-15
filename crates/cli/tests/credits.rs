@@ -242,7 +242,8 @@ fn a_server_people_sign_in_to_with_oidc_reads_its_own_openrouter_too() {
 fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let place = place("router-floor");
     std::fs::create_dir_all(&place.home).unwrap();
-    let settings = "[credits]\nmonthly_limit_usd = 10\n\n[router_floor]\nbased_in = [\"US\"]\n";
+    let floor = "[router_floor]\nbased_in = [\"US\"]\nprecision = \"fp8\"\n";
+    let settings = format!("[credits]\nmonthly_limit_usd = 10\n\n{floor}");
     std::fs::write(place.home.join("config.toml"), settings).unwrap();
     let router = own_openrouter();
     let (_served, api) = served_by(&router, &place, &["--model", OWN_MODEL]);
@@ -298,4 +299,7 @@ fn a_person_s_filters_can_t_reach_a_provider_outside_the_server_s_floor() {
     let sent = &chats[0].body;
     assert!(sent.contains(r#""only":["stateside"]"#), "{sent}");
     assert!(sent.contains(r#""data_collection":"deny""#), "{sent}");
+    // The floor's precision, with the router's name for weights it does not know how are stored.
+    let least = r#""quantizations":["int8","fp8","mxfp8","fp16","bf16","fp32","unknown"]"#;
+    assert!(sent.contains(least), "{sent}");
 }

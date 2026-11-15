@@ -2,6 +2,16 @@ use glave_event::{MaxPrice, Nanos, Sort};
 
 use super::*;
 
+/// What a person's `filters` ask of a target, no floor beside them.
+fn route_at(
+    filters: &Filters,
+    names: [&str; 2],
+    router: Option<&Router>,
+    beside_one: bool,
+) -> Result<Option<Route>, Kept> {
+    super::route_at((filters, false), names, router, beside_one)
+}
+
 const FLASH: &str = "deepseek/deepseek-v4.1-flash";
 
 /// A provider of `slug`'s, based in `home`.
@@ -316,8 +326,8 @@ fn each_filter_that_hides_a_provider_is_named() {
 /// router serving [`FLASH`].
 fn within_floor(places: &[&str], person: Filters) -> (Keeping, Result<Option<Route>, Kept>) {
     let keeping = Keeping::within(Some(&based_in(places)), Some(person));
-    let asked = route_at(
-        keeping.filters.as_ref().unwrap(),
+    let asked = super::route_at(
+        (keeping.filters.as_ref().unwrap(), keeping.unstated),
         [FLASH, FLASH],
         Some(&flash()),
         true,
@@ -372,4 +382,41 @@ fn a_floor_keeps_a_call_from_what_isn_t_a_router_and_with_none_changes_nothing()
     assert_eq!(keeping.filters, Some(person));
     assert!(!keeping.floor && !keeping.none_fit);
     assert!(Keeping::within(None, None).filters.is_none());
+}
+
+#[test]
+fn a_floor_s_precision_is_the_least_and_spares_providers_that_don_t_say_theirs() {
+    let floor = Filters {
+        precision: Some(Precision::EightBit),
+        ..Filters::default()
+    };
+    // The person's own precision, when higher, is kept; it holds providers that don't say.
+    let full = Filters {
+        precision: Some(Precision::Full),
+        ..Filters::default()
+    };
+    let keeping = Keeping::within(Some(&floor), Some(full));
+    assert_eq!(keeping.filters.unwrap().precision, Some(Precision::Full));
+    assert!(!keeping.unstated);
+    // A lower one never loosens the floor's.
+    let four = Filters {
+        precision: Some(Precision::FourBit),
+        ..Filters::default()
+    };
+    let keeping = Keeping::within(Some(&floor), Some(four));
+    assert_eq!(
+        keeping.filters.unwrap().precision,
+        Some(Precision::EightBit)
+    );
+    // With none of their own, a provider that doesn't say its precision may serve.
+    let keeping = Keeping::within(Some(&floor), None);
+    assert!(keeping.unstated);
+    let unsaid = endpoint("unsaid", "unknown", true);
+    let router = flash();
+    let facts = facts(&unsaid, &router);
+    assert_eq!(facts.precision, Precision::Unstated);
+    assert!(!floor_hides(&facts, &floor));
+    assert_eq!(hidden_by(&facts, &floor), [Hides::Precision]);
+    let low = endpoint("groq", "fp4", true);
+    assert!(floor_hides(&super::facts(&low, &router), &floor));
 }

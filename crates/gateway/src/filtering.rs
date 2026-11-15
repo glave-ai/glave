@@ -7,7 +7,8 @@
 //! takes (`only`), with the filters it checks itself; a call no provider fits, or one whose
 //! filters need what the catalog does not say, is never sent. A floor a server sets for everyone
 //! it serves (`Keeping`) narrows every call the same way, whoever's it is, and nothing a person
-//! chooses loosens it.
+//! chooses loosens it. A floor's precision holds only providers that say theirs: the makers of
+//! closed models say none, and a floor keeps them.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -81,6 +82,22 @@ pub fn hidden_by(facts: &Facts<'_>, filters: &Filters) -> Vec<Hides> {
     .collect()
 }
 
+/// Which of `filters` hide the provider `facts` describe where `unstated` says a provider that
+/// does not say its precision may serve, as one only a floor's precision holds may.
+fn hidden_within(facts: &Facts<'_>, filters: &Filters, unstated: bool) -> Vec<Hides> {
+    let mut hides = hidden_by(facts, filters);
+    if unstated && facts.precision == Precision::Unstated {
+        hides.retain(|hide| *hide != Hides::Precision);
+    }
+    hides
+}
+
+/// Whether a server's `floor` rules out the provider `facts` describe: where it is based, what
+/// it keeps, or a precision it says that is below the floor's.
+pub fn floor_hides(facts: &Facts<'_>, floor: &Filters) -> bool {
+    !hidden_within(facts, floor, true).is_empty()
+}
+
 /// Whether a provider at `home`, with `datacenters`, is based in one of `places`, anywhere
 /// when none: its home, and each of its datacenters where they are said.
 fn based(home: Option<&str>, datacenters: Option<&[String]>, places: &[String]) -> bool {
@@ -103,11 +120,15 @@ pub(crate) struct Keeping {
     /// Whether the countries the person chose and the floor's have none in common: no provider
     /// can fit both. Without this, none in common would read as anywhere.
     pub(crate) none_fit: bool,
+    /// Whether a provider that does not say its precision may serve: unless the person chose
+    /// a precision, since a floor's holds only providers that say theirs.
+    pub(crate) unstated: bool,
 }
 
 impl Keeping {
-    /// `person`'s filters, if any, within `floor`, if any: countries both allow, and nothing
-    /// kept if either asks. Everything else a floor leaves to the person.
+    /// `person`'s filters, if any, within `floor`, if any: countries both allow, nothing kept if
+    /// either asks, and the higher precision of the two. Everything else a floor leaves to the
+    /// person.
     pub(crate) fn within(floor: Option<&Filters>, person: Option<Filters>) -> Self {
         let own = person
             .as_ref()
@@ -136,11 +157,16 @@ impl Keeping {
                 .collect()
         };
         filters.keeps_nothing |= floor.keeps_nothing;
+        let unstated = filters
+            .precision
+            .is_none_or(|chosen| chosen == Precision::Unstated);
+        filters.precision = filters.precision.max(floor.precision);
         Self {
             filters: Some(filters),
             floor: true,
             own,
             none_fit,
+            unstated,
         }
     }
 }
@@ -156,23 +182,25 @@ pub(crate) enum Kept {
     NoneFits,
 }
 
-/// What `filters` ask of `target` for the model a call asked for, `model`, where `beside_one`
-/// says a router is among the call's targets. None when they ask nothing of it.
+/// What `keeping`'s filters ask of `target` for the model a call asked for, `model`, where
+/// `beside_one` says a router is among the call's targets. None when they ask nothing of it.
 pub(crate) fn route(
-    filters: &Filters,
+    (filters, unstated): (&Filters, bool),
     model: &str,
     target: &Target,
     beside_one: bool,
 ) -> Result<Option<Route>, Kept> {
     let names = [model, target.model.as_str()];
-    route_at(filters, names, target.router.as_deref(), beside_one)
+    let router = target.router.as_deref();
+    route_at((filters, unstated), names, router, beside_one)
 }
 
 /// What `filters` ask of a target, the router `router` or none, serving the model a call asked
 /// for by `names` (the call's name for it, then the target's own), where `beside_one` says a
-/// router is among the call's targets. None when they ask nothing.
+/// router is among the call's targets and `unstated` whether a provider that does not say its
+/// precision may serve. None when they ask nothing.
 fn route_at(
-    filters: &Filters,
+    (filters, unstated): (&Filters, bool),
     names: [&str; 2],
     router: Option<&Router>,
     beside_one: bool,
@@ -213,16 +241,19 @@ fn route_at(
             .then(|| by_provider(filters, chosen, router))
             .transpose()?,
         (true, false) => {
-            let fitting = by_endpoint(filters, chosen, router)?;
+            let fitting = by_endpoint((filters, unstated), chosen, router)?;
             own.then_some(fitting)
         }
     };
+    // The router's name for weights stored in a way it does not know, which it takes too.
+    let unknown = (unstated && precision != Precision::Unstated).then_some("unknown");
     let route = Route {
         only,
         ignore: filters.avoid.clone(),
         quantizations: precision
             .at_least()
             .into_iter()
+            .chain(unknown)
             .map(str::to_owned)
             .collect(),
         sort,
@@ -265,10 +296,10 @@ fn by_provider(
     owned(fitting)
 }
 
-/// The providers of `router`'s endpoints of the model that fit `filters`, and `chosen` when
-/// one is, by slug.
+/// The providers of `router`'s endpoints of the model that fit `filters`, those that don't say
+/// their precision too where `unstated` says so, and `chosen` when one is, by slug.
 fn by_endpoint(
-    filters: &Filters,
+    (filters, unstated): (&Filters, bool),
     chosen: Option<&str>,
     router: &Router,
 ) -> Result<Vec<String>, Kept> {
@@ -276,7 +307,7 @@ fn by_endpoint(
         .endpoints
         .iter()
         .filter(|endpoint| chosen.is_none_or(|chosen| chosen == endpoint.provider))
-        .filter(|endpoint| hidden_by(&facts(endpoint, router), filters).is_empty())
+        .filter(|endpoint| hidden_within(&facts(endpoint, router), filters, unstated).is_empty())
         .map(|endpoint| endpoint.provider.as_str())
         .collect();
     owned(fitting)

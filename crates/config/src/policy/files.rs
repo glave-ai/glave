@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use crate::error::invalid;
-use glave_event::{HookPoint, Money, Nanos, Permissions};
+use glave_event::{HookPoint, Money, Nanos, Permissions, Precision};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge};
 use glave_ports::host::PublicOrigin;
@@ -92,6 +92,26 @@ pub struct RouterFloorFile {
     /// Whether providers must keep nothing of what they are sent (zero data retention).
     #[serde(default)]
     pub keeps_nothing: bool,
+    /// The least precision a provider that says how it stores a model's weights may serve
+    /// them at, by a router's name for it (`fp8` admits `fp8`, `int8`, `bf16`, …). A provider
+    /// that does not say, as the makers of closed models don't, is not held to it.
+    #[serde(default, deserialize_with = "least_precision")]
+    pub precision: Option<Precision>,
+}
+
+/// A precision by a router's name for how weights are stored, refused when it names none: a
+/// floor a misspelling turned off would keep nothing out, unseen.
+fn least_precision<'de, D: serde::Deserializer<'de>>(
+    reader: D,
+) -> Result<Option<Precision>, D::Error> {
+    let name = String::deserialize(reader)?;
+    match Precision::of(Some(&name)) {
+        Precision::Unstated => Err(serde::de::Error::custom(format!(
+            "{name:?} is not a precision: name one such as \"fp8\" ({})",
+            Precision::FourBit.at_least().join(", ")
+        ))),
+        precision => Ok(Some(precision)),
+    }
 }
 
 /// A list of countries, each two capital letters, and at least one, refused otherwise: a floor

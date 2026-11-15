@@ -90,6 +90,7 @@ fn skip(
     let Some(filters) = &keeping.filters else {
         return Ok(None);
     };
+    let filters = (filters, keeping.unstated);
     filtering::route(filters, &request.model, target, routed).map_err(Skip::Filters)
 }
 
