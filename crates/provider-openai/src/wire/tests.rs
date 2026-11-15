@@ -89,6 +89,7 @@ fn the_longest_answer_is_named_as_each_service_takes_it() {
         files: Vec::new(),
         payer: None,
         route: None,
+        session: None,
     };
     let field = |request: &ModelRequest, provider: &str| {
         let body = serde_json::to_value(chat_request(request, provider)).unwrap();
