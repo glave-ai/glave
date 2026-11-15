@@ -40,6 +40,31 @@ fn the_loops_that_ran_to_a_deadline_are_seen_early() {
     }
 }
 
+/// The byte of `transcript`, gzipped, at which the reply is seen to repeat, read a
+/// character at a time.
+fn fires_at(transcript: &[u8]) -> Option<usize> {
+    use std::io::Read as _;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(transcript)
+        .read_to_string(&mut text)
+        .unwrap();
+    let mut looping = Looping::default();
+    let mut buffer = [0; 4];
+    text.char_indices()
+        .find(|(_, char)| looping.see(char.encode_utf8(&mut buffer)))
+        .map(|(at, _)| at)
+}
+
+#[test]
+fn the_whole_transcripts_that_ran_to_a_deadline_are_stopped_where_they_loop() {
+    // Each whole, as the eval wrote it: about 195 KB of a reply that ran 295 s to a deadline.
+    // Stopped about a third of the way in, where the loop has settled into its cycle, not in
+    // the reasoning-like text before it, which repeats less closely.
+    let search = fires_at(include_bytes!("web_search_transcript.txt.gz"));
+    let token = fires_at(include_bytes!("web_token_transcript.txt.gz"));
+    assert_eq!((search, token), (Some(56_450), Some(67_339)));
+}
+
 #[test]
 fn a_loop_on_one_line_is_seen_too() {
     assert!(repeats(&answered_then(&"Emit. Done. Ok. ".repeat(60)), 3));
