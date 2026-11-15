@@ -8,14 +8,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::{CatalogEndpoint, CatalogProvider, Filters, Precision};
+use glave_event::{CatalogEndpoint, CatalogProvider, Filters, Precision, Reasoning};
 use glave_gateway::{Gateway, Router, Routes, Target};
 use glave_provider_openai::{Config, OpenAiCompatible, lists};
 
 use crate::error::EvalError;
 
-/// How long reading OpenRouter's lists may take, all of them together.
-const READING: Duration = Duration::from_mins(2);
+/// How long reading a service's lists may take, all of them together.
+pub(crate) const READING: Duration = Duration::from_mins(2);
 
 /// Glave Cloud's floor, in words, as a report says it.
 pub(crate) const SAID: &str = "based in the US, keeping nothing, weights at fp8 or better";
@@ -101,11 +101,13 @@ async fn listed(
 }
 
 /// The gateway an attempt's calls of `model` at `endpoint` go through: held to `floor` when
-/// there is one, as a router that keeps to it.
+/// there is one, as a router that keeps to it, and offering the reasoning levels its model
+/// list says, when they were read.
 pub(crate) fn gateway(
     endpoint: &Config,
     model: &str,
     floor: Option<&Floor>,
+    reasoning: Option<&Reasoning>,
 ) -> Result<Gateway, EvalError> {
     let provider =
         OpenAiCompatible::new(endpoint.clone()).map_err(|err| EvalError::Setup(err.to_string()))?;
@@ -113,6 +115,10 @@ pub(crate) fn gateway(
     let target = Target::new(handle, endpoint.provider.clone(), model);
     let target = match floor.and_then(|floor| floor.routers.get(model)) {
         Some(router) => target.routing(router.clone()),
+        None => target,
+    };
+    let target = match reasoning {
+        Some(reasoning) => target.with_reasoning(reasoning),
         None => target,
     };
     let routes = Routes::new(vec![target]).map_err(|err| EvalError::Setup(err.to_string()))?;

@@ -34,6 +34,16 @@ the failed ones too, over the attempts that passed, with the tokens beside it. A
 route reports no cost, or only $0 as a free route does, shows "no cost reported" (and a dash for
 its cost), is named as left out, and is never taken for the cheapest.
 
+`--effort <level>` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`) asks every
+model for one reasoning level, as a person chooses it for a thread; without it each model reasons
+at its own. The levels each model offers are read from the endpoint's model list once at the
+start, as glave's catalog reads them, so the gateway sends the level to a model that offers it,
+and to one that does not its own default where its listing names one, else none. The report
+says the level asked (`effort` in `report.json`, `null` for each model's own), and per model the
+level the gateway sent its calls at, naming any model some of whose calls went at another; then
+the reasoning tokens its calls reported in all, per call, and the share of calls that reported
+none, so a run shows the model reasoned.
+
 Attempts run side by side, `--concurrency` at once, but a task's own attempts take turns: models
 write scratch files at fixed paths in the shared `/tmp`, so two attempts of one task at once would
 overwrite each other's. Each attempt also has a temp folder of its own (`TMPDIR`) for its setup

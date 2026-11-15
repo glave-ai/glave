@@ -5,15 +5,11 @@
 
 use glave_event::{CatalogModel, Reasoning};
 use glave_provider_anthropic::EFFORTS;
-use glave_provider_openai::lists::{number, path_in, price};
+use glave_provider_openai::lists::{MOST_EFFORTS, level, number, path_in, price, reasoning};
 use serde_json::Value;
 
 /// The longest name kept, in bytes.
 const LONGEST_NAME: usize = 200;
-
-/// The most reasoning levels kept, and the longest name of one, in bytes.
-const MOST_EFFORTS: usize = 12;
-const LONGEST_EFFORT: usize = 32;
 
 /// `id`, as the listing's `model` entry describes it.
 pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
@@ -48,44 +44,6 @@ pub(super) fn modalities<'a>(model: &'a Value, key: &str) -> Option<&'a [Value]>
         .map(Vec::as_slice)
 }
 
-/// How the listing says the model reasons: OpenRouter's `reasoning`, with the levels it
-/// offers (`supported_efforts`), whether it always reasons (`mandatory`), and the level it
-/// uses unasked, known only where the listing says whether it reasons unasked: the level
-/// reasoning starts at (`default_effort`) when it always reasons or does by default
-/// (`default_enabled`), and `none` when it does not by default, as a `default_effort` of
-/// `none` also says.
-fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
-    let reasoning = reasoning.filter(|value| value.is_object())?;
-    let level = |value: &Value| value.as_str().and_then(plain);
-    let mut efforts: Vec<String> = Vec::new();
-    for effort in reasoning
-        .get("supported_efforts")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(level)
-    {
-        if efforts.len() < MOST_EFFORTS && !efforts.contains(&effort) {
-            efforts.push(effort);
-        }
-    }
-    let mandatory = reasoning
-        .get("mandatory")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let enabled = reasoning.get("default_enabled").and_then(Value::as_bool);
-    let unasked = match reasoning.get("default_effort").and_then(level) {
-        Some(starts) if starts == "none" || mandatory || enabled == Some(true) => Some(starts),
-        _ if !mandatory && enabled == Some(false) => Some("none".to_owned()),
-        _ => None,
-    };
-    Some(Reasoning {
-        default: unasked.filter(|default| efforts.contains(default)),
-        efforts,
-        mandatory,
-    })
-}
-
 /// How Anthropic's listing says the model reasons (`capabilities`): the effort levels it marks
 /// supported, highest first as Anthropic documents them, or none when the model takes no
 /// effort or no adaptive thinking, which glave asks for with every level. It names no default,
@@ -105,7 +63,7 @@ fn efforts(model: &Value) -> Option<Reasoning> {
             .into_iter()
             .flatten()
             .filter(|(_, level)| level.get("supported") == Some(&Value::Bool(true)))
-            .filter_map(|(level, _)| plain(level))
+            .filter_map(|(name, _)| level(name))
             .collect();
         // A level Anthropic adds after these goes last.
         efforts.sort_by_key(|level| {
@@ -121,15 +79,6 @@ fn efforts(model: &Value) -> Option<Reasoning> {
         default: None,
         mandatory: false,
     })
-}
-
-/// A level's name, when it is a plain word of letters, digits and underscores, not too long.
-fn plain(level: &str) -> Option<String> {
-    let level = level.trim();
-    let plain = !level.is_empty()
-        && level.len() <= LONGEST_EFFORT
-        && level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    plain.then(|| level.to_owned())
 }
 
 #[cfg(test)]

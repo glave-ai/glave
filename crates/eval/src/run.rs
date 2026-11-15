@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::calendar::Calendar;
 use crate::check::{Context, ended};
+use crate::effort::Effort;
 use crate::error::EvalError;
 use crate::floor::{self, Floor};
 use crate::memory::{MemoryReport, MemoryUse, Remembering};
@@ -58,6 +59,9 @@ pub struct Setup {
     pub subagents: bool,
     /// Memory on or off for every task, to measure what it does; each task's own when `None`.
     pub memory: Option<bool>,
+    /// The reasoning level every thread asks its model for, as a person chooses it, with the
+    /// levels each model offers; each model's own when `None`.
+    pub effort: Option<Effort>,
     /// How the model's commands start: tied to the eval by its lifeline, so they end with it
     /// however it ends.
     pub processes: Processes,
@@ -89,6 +93,15 @@ pub struct Attempt {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
+    /// Output tokens the provider counted as reasoning.
+    #[serde(default)]
+    pub reasoning_tokens: u64,
+    /// Model calls that reported no reasoning tokens.
+    #[serde(default)]
+    pub calls_without_reasoning: u32,
+    /// Model calls by the reasoning level they were sent at, `default` for none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sent_at: BTreeMap<String, u32>,
     /// In the reported currency; `None` when any call reported no cost.
     pub cost_nanos: Option<Nanos>,
     pub seconds: f64,
@@ -146,6 +159,9 @@ impl Attempt {
             input_tokens: trace.input_tokens,
             output_tokens: trace.output_tokens,
             cached_tokens: trace.cached_tokens,
+            reasoning_tokens: trace.reasoning_tokens,
+            calls_without_reasoning: trace.calls_without_reasoning,
+            sent_at: trace.sent_at.clone(),
             cost_nanos: trace.cost_nanos,
             seconds,
             compactions: trace.compactions,
@@ -243,6 +259,11 @@ pub async fn attempt(
     })
 }
 
+/// How `model` reasons, as its model list says, when `--effort` read it.
+fn offered<'a>(setup: &'a Setup, model: &str) -> Option<&'a glave_event::Reasoning> {
+    (setup.effort.as_ref()).and_then(|effort| effort.offered.get(model))
+}
+
 /// The failure when the endpoint's API key is in `events`: it reached the model.
 fn leaked(setup: &Setup, events: &str) -> Option<String> {
     let key = (setup.endpoint.auth.fixed_key()).map(glave_ports::auth::Secret::expose)?;
@@ -335,8 +356,13 @@ async fn wire(
     let workspace = workspace(task, setup, (environment, hidden), root).await?;
     // The task's web search, on as where the server has a search key.
     let search = crate::search::service(task, web).await?;
-    let provider =
-        floor::gateway(&setup.endpoint, model, setup.floor.as_ref())?.with_search(search);
+    let provider = floor::gateway(
+        &setup.endpoint,
+        model,
+        setup.floor.as_ref(),
+        offered(setup, model),
+    )?
+    .with_search(search);
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
     settings.instructions = agents_md(root, None)
         .await
@@ -453,7 +479,12 @@ async fn converse(
     let harness = wire(setup, task, model, computer, (root, web), wiring).await?;
     let tidier = || {
         Ok::<_, EvalError>(Tidier {
-            provider: floor::gateway(&setup.endpoint, model, setup.floor.as_ref())?,
+            provider: floor::gateway(
+                &setup.endpoint,
+                model,
+                setup.floor.as_ref(),
+                offered(setup, model),
+            )?,
             model: model.to_owned(),
         })
     };
@@ -463,6 +494,7 @@ async fn converse(
     let mut conversation = Talk {
         harness: &harness,
         task,
+        effort: (setup.effort.as_ref()).map(|effort| effort.level.as_str()),
         deadline: Instant::now() + task.timeout,
         transcript: String::new(),
         failures: Vec::new(),
@@ -532,6 +564,8 @@ async fn events_of(
 struct Talk<'a> {
     harness: &'a Wired,
     task: &'a Task,
+    /// The reasoning level each new thread chooses; none chosen when `None`.
+    effort: Option<&'a str>,
     deadline: Instant,
     transcript: String,
     failures: Vec<String>,
@@ -584,6 +618,12 @@ impl Talk<'_> {
         let fail = |err: glave_harness::HarnessError| EvalError::Setup(err.to_string());
         let harness = self.harness;
         let mut thread = harness.start_thread(scope).await.map_err(fail)?;
+        if self.effort.is_some() {
+            harness
+                .choose_effort(&mut thread, &Caller::default(), self.effort)
+                .await
+                .map_err(fail)?;
+        }
         for (index, prompt) in turns.iter().enumerate() {
             if index > 0 {
                 thread = harness
