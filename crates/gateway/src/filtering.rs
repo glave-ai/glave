@@ -109,6 +109,10 @@ fn based(home: Option<&str>, datacenters: Option<&[String]>, places: &[String]) 
 
 /// What a call keeps to: the person's filters within the server's floor.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "four separate facts of one call, each read on its own, none a mode"
+)]
 pub(crate) struct Keeping {
     /// The filters that together say who may serve it; none when nothing narrows it.
     pub(crate) filters: Option<Filters>,

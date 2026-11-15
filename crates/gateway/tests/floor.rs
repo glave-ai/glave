@@ -63,17 +63,19 @@ fn endpoint(slug: &str, quantization: Option<&str>, zdr: bool) -> CatalogEndpoin
 /// `model` at a router whose catalog lists `endpoints` of it, under Cloud's floor: whom the
 /// call went to, or the sentence it was refused with.
 fn served(model: &str, endpoints: Vec<CatalogEndpoint>) -> Result<Route, String> {
-    let routed = Fake::new("openrouter");
-    let router = Router {
+    let openrouter = Fake::new("openrouter");
+    let catalog = Router {
         providers: providers(),
         endpoints,
     };
-    let targets = vec![routed.target(model).routing(router)];
-    let gateway = Gateway::new(Routes::new(targets).unwrap()).with_floor(Some(cloud()));
+    let targets = vec![openrouter.target(model).routing(catalog)];
+    let routes = Routes::new(targets).map_err(|err| err.to_string())?;
+    let gateway = Gateway::new(routes).with_floor(Some(cloud()));
     let answer = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {}));
-    let sent = routed.seen();
+    let sent = openrouter.seen();
     match answer {
-        Ok(_) => Ok(sent.first().unwrap().route.clone().unwrap()),
+        Ok(_) => (sent.first().and_then(|sent| sent.route.clone()))
+            .ok_or_else(|| "sent asking nothing of the router".to_owned()),
         Err(refused) => {
             assert!(sent.is_empty(), "a refused call is never sent");
             Err(refused.to_string())
@@ -154,12 +156,16 @@ fn a_model_served_only_below_the_floor_s_precision_is_refused_with_a_sentence() 
 fn a_person_s_own_precision_holds_providers_that_don_t_say_theirs() {
     // The floor keeps a closed model; a person who chose a precision chose the providers that
     // say theirs, so the same model is refused for them with the sentence that says both.
-    let routed = Fake::new("openrouter");
-    let router = Router {
+    let openrouter = Fake::new("openrouter");
+    let catalog = Router {
         providers: providers(),
         endpoints: vec![endpoint("anthropic", None, true)],
     };
-    let targets = vec![routed.target("anthropic/claude-haiku-5.5").routing(router)];
+    let targets = vec![
+        openrouter
+            .target("anthropic/claude-haiku-5.5")
+            .routing(catalog),
+    ];
     let full = Filters {
         precision: Some(Precision::Full),
         ..Filters::default()
@@ -170,7 +176,7 @@ fn a_person_s_own_precision_holds_providers_that_don_t_say_theirs() {
         .with_floor(Some(cloud()));
     let refused = block_on!(gateway.complete(&crate::filters::theirs(), &mut |_| {}));
     let refused = refused.unwrap_err().to_string();
-    assert!(routed.seen().is_empty(), "never sent");
+    assert!(openrouter.seen().is_empty(), "never sent");
     assert!(
         refused.contains("both your filters and what this server allows"),
         "{refused}"
