@@ -87,23 +87,8 @@ where
         let mut named = false;
         loop {
             live(Live::Waiting);
-            let mut thinking = Thinking::default();
-            let mut looping = Looping::default();
-            let repeating = AtomicBool::new(false);
-            // Bytes of answer that came, text and reasoning, for an answer stopped's estimate.
-            let mut came: u64 = 0;
-            let mut forward = |delta: Delta| {
-                let (Delta::Text(text) | Delta::Reasoning(text)) = &delta;
-                came = came.saturating_add(u64::try_from(text.len()).unwrap_or(u64::MAX));
-                if let Delta::Text(text) = &delta
-                    && looping.see(text)
-                {
-                    repeating.store(true, Ordering::Relaxed);
-                }
-                thinking.see(delta, self.clock.now(), live);
-            };
-            let answering = self.provider.complete(&request, &mut forward);
-            let Some(answered) = until(&repeating, answering).await else {
+            let (answered, mut thinking, came) = self.watched(&request, live).await;
+            let Some(answered) = answered else {
                 tracing::warn!(model = %request.model, "the answer repeated itself: stopped");
                 thinking.end(self.clock.now(), live);
                 let input = next_request_tokens(thread, offer);
@@ -143,6 +128,32 @@ where
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    /// Streams the answer to `request`, forwarding it live and watching its text for a loop:
+    /// `None` when it repeated itself and was stopped; with how its reasoning went, and how many
+    /// bytes of it came, text and reasoning.
+    async fn watched(
+        &self,
+        request: &ModelRequest,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> (Option<Result<Completion, ProviderError>>, Thinking, u64) {
+        let mut thinking = Thinking::default();
+        let mut looping = Looping::default();
+        let repeating = AtomicBool::new(false);
+        let mut came: u64 = 0;
+        let mut forward = |delta: Delta| {
+            let (Delta::Text(text) | Delta::Reasoning(text)) = &delta;
+            came = came.saturating_add(u64::try_from(text.len()).unwrap_or(u64::MAX));
+            if let Delta::Text(text) = &delta
+                && looping.see(text)
+            {
+                repeating.store(true, Ordering::Relaxed);
+            }
+            thinking.see(delta, self.clock.now(), live);
+        };
+        let answered = until(&repeating, self.provider.complete(request, &mut forward)).await;
+        (answered, thinking, came)
     }
 
     /// An answer from `model` stopped for repeating itself, after `came` bytes of it, to a
