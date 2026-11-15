@@ -192,6 +192,8 @@ where
             return self.call_memory(thread, call, cancel, live).await;
         } else if step.toolset.is_media(&call.tool) {
             return self.call_media(thread, call, step, cancel, live).await;
+        } else if step.toolset.is_search(&call.tool) {
+            return self.call_search(thread, call, step, cancel, live).await;
         }
         self.call_offered(thread, call, step, cancel, live).await
     }

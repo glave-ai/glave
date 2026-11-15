@@ -5,8 +5,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Auth, AuthMethod, Outcome};
-use glave_ports::{BoxFuture, Caller, EventLog};
+use glave_event::Outcome;
+use glave_ports::{BoxFuture, EventLog};
 use glave_session::protocol::{AwakeInfo, Reply, Request, code};
 use glave_session::{Answering, KeepAwake, Unawake};
 use tokio::sync::{Notify, watch};
@@ -171,19 +171,7 @@ fn the_person_turns_it_off_and_on_and_no_one_else_does() {
         ));
         assert_eq!(awake(&server).await, AwakeInfo::Chosen { on: false });
         // Someone signed in from elsewhere is not the person on this computer.
-        let elsewhere = Caller {
-            person: None,
-            auth: Some(Auth {
-                method: AuthMethod::Oidc,
-                issuer: Some("https://id.example.com".into()),
-                subject: Some("grace".into()),
-                session: None,
-            }),
-            trace: None,
-            profile: None,
-            org: None,
-            from: None,
-        };
+        let elsewhere = elsewhere();
         let refused = server
             .request_as(&elsewhere, Request::AwakeSet { on: true })
             .await;

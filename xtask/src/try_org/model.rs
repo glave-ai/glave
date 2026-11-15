@@ -3,7 +3,9 @@
 //! and says each answer cost a dime, as OpenRouter's `usage.cost` says what a call cost. So
 //! chats answer, and receipts show a cost, with no account, network or cost. Told to [`ASK`],
 //! it calls the service's tool that asks the person something, so a person can try that card;
-//! told to [`DRAW`], it calls glave's own tool that makes an image. Under [`OPENROUTER`] it
+//! told to [`DRAW`], it calls glave's own tool that makes an image; told to [`LOOK_UP`], glave's
+//! own web search, whose search service it stands in for too, at [`SEARCH`], answering every
+//! query with one page as Brave's Search API would, so no key and no cost. Under [`OPENROUTER`] it
 //! answers as OpenRouter too (`router.rs`), for an OpenRouter account connected with any key,
 //! its image API with a picture of its own (`picture.rs`).
 
@@ -24,6 +26,15 @@ pub(crate) const DRAW: &str = "draw me";
 
 /// glave's own tool that makes an image.
 const DRAWING_TOOL: &str = "image_generate";
+
+/// What, said in a message, has it call [`SEARCHING_TOOL`].
+pub(crate) const LOOK_UP: &str = "look up";
+
+/// glave's own tool that searches the web.
+const SEARCHING_TOOL: &str = "web_search";
+
+/// Where under the stand-in's address it answers as Brave's web search.
+pub(crate) const SEARCH: &str = "/res/v1/web/search";
 
 /// The name of the service it knows, as glave is told of it.
 pub(crate) const SERVICE: &str = "Tracker";
@@ -51,6 +62,8 @@ pub(crate) fn start() -> Result<FakeHttp, String> {
             super::router::answer(path)
         } else if method == "POST" && path == format!("{OPENROUTER}/images") {
             Some(super::picture::answer())
+        } else if method == "GET" && path.starts_with(SEARCH) {
+            Some(found())
         } else {
             None
         };
@@ -62,10 +75,23 @@ pub(crate) fn start() -> Result<FakeHttp, String> {
                 let drawn = json!({"prompt": "a checkerboard in two greys"}).to_string();
                 (200, calling(DRAWING_TOOL, &drawn))
             }
+            None if told(request, LOOK_UP, SEARCHING_TOOL) => {
+                let asked = json!({"query": "glave release notes"}).to_string();
+                (200, calling(SEARCHING_TOOL, &asked))
+            }
             None => (200, chat.clone()),
         }
     })
     .map_err(|err| format!("could not start the stand-in model: {err}"))
+}
+
+/// What every search finds, as Brave's web search answers.
+fn found() -> serde_json::Value {
+    json!({"type": "search", "web": {"type": "search", "results": [{
+        "title": "Release notes - try-org's stand-in search",
+        "url": "https://example.com/release-notes",
+        "description": "Every search finds this page: no search service was asked.",
+    }]}})
 }
 
 /// A streamed chat answer, as OpenAI's are, with its usage and what it cost.
@@ -153,5 +179,13 @@ mod tests {
         let draw = json!({"role": "user", "content": "Draw me a fox"});
         let drawing = json!({"messages": [draw], "tools": [{"function": {"name": DRAWING_TOOL}}]});
         assert!(told(&sent(&drawing), DRAW, DRAWING_TOOL));
+        let look = json!({"role": "user", "content": "Look up the release notes"});
+        let looking =
+            json!({"messages": [look], "tools": [{"function": {"name": SEARCHING_TOOL}}]});
+        assert!(told(&sent(&looking), LOOK_UP, SEARCHING_TOOL));
+        assert_eq!(
+            found()["web"]["results"][0]["url"],
+            "https://example.com/release-notes"
+        );
     }
 }

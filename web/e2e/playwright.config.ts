@@ -96,12 +96,14 @@ function lifeline(): string {
 }
 
 /**
- * What each glave the run starts is handed: the run's lifeline, and, in place of web search's
- * server, Exa's, an address nothing listens on (the discard port), so no test reaches Exa.
+ * What each glave the run starts is handed: the run's lifeline, and a search key with, in place
+ * of the search service, an address nothing listens on (the discard port), so web search is on
+ * and no test reaches the service.
  */
 const tied = {
   GLAVE_LIFELINE: lifeline(),
-  GLAVE_SEARCH_URL: 'http://127.0.0.1:9/mcp?tools=web_search_exa',
+  GLAVE_SEARCH_KEY: 'e2e-search-key',
+  GLAVE_SEARCH_URL: 'http://127.0.0.1:9/res/v1/web/search',
 };
 
 /**
