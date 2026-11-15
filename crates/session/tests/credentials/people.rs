@@ -10,11 +10,12 @@ use glave_harness::Homes;
 use glave_ports::Caller;
 use glave_ports::testing::any_secret;
 use glave_session::Answering;
-use glave_session::protocol::{Reply, Request, code};
+use glave_session::protocol::{Request, code};
 use serde_json::Value;
 
 use super::{People, connect};
 use crate::homes::Here;
+use crate::owners_sign_ins::signed_in_for;
 use crate::support::*;
 
 /// Someone signed in with a glave account, `n` setting them apart.
@@ -39,31 +40,6 @@ async fn listed(server: &Tested, caller: &Caller) -> Vec<Value> {
         .unwrap();
     let listed = serde_json::to_value(listed).unwrap();
     listed["credentials"].as_array().unwrap().clone()
-}
-
-/// A chat `caller` starts, and a turn in it: whether its model was told `gh` is signed in.
-async fn signed_in(server: &Tested, seen: &Seen, caller: &Caller) -> bool {
-    let started = Request::ThreadStart {
-        project: None,
-        worktree: None,
-        background: false,
-        computer: None,
-        model: None,
-        permissions: None,
-        effort: None,
-    };
-    let Reply::Thread { thread } = server.request_as(caller, started).await.unwrap() else {
-        panic!("a thread")
-    };
-    server
-        .request_as(caller, turn_start(thread.id, "hi", None))
-        .await
-        .unwrap();
-    let asked = seen.lock().unwrap();
-    let system = &asked.last().unwrap().system;
-    serde_json::to_string(system)
-        .unwrap()
-        .contains("`gh` is signed in for github.com")
 }
 
 #[test]
@@ -108,11 +84,11 @@ fn people_with_computers_of_their_own_each_connect_their_own_git_hosts_and_use_o
         assert_eq!(listed(&server, &ada).await.len(), 1, "ada's is still hers");
 
         assert!(
-            signed_in(&server, &seen, &ada).await,
+            signed_in_for(&server, &seen, &ada).await,
             "ada's computer has hers"
         );
         assert!(
-            !signed_in(&server, &seen, &grace).await,
+            !signed_in_for(&server, &seen, &grace).await,
             "grace's computer has none of ada's"
         );
         server.shutdown().await;

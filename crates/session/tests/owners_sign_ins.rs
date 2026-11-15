@@ -14,7 +14,7 @@ use glave_session::protocol::{Reply, Request};
 use crate::support::*;
 
 /// A chat `caller` starts, and a turn in it: whether its model was told `gh` is signed in.
-async fn signed_in_for(server: &Tested, seen: &Seen, caller: &Caller) -> bool {
+pub(crate) async fn signed_in_for(server: &Tested, seen: &Seen, caller: &Caller) -> bool {
     let started = Request::ThreadStart {
         project: None,
         worktree: None,
