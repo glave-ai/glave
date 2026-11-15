@@ -42,6 +42,8 @@ pub(super) struct Parts<L> {
 pub(super) struct Org<L: EventLog + 'static> {
     pub server: Tested<L>,
     pub browsers: Arc<Browsers>,
+    /// Whether everyone it serves has a computer of their own, and so their own git hosts.
+    pub homes: bool,
 }
 
 /// One person: their organization, the server they call, how they call, and the ids of what
@@ -196,7 +198,11 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     let (server, _) = setup
         .build_with_credits(dir, parts.log.clone(), limit)
         .await;
-    Org { server, browsers }
+    Org {
+        server,
+        browsers,
+        homes: n == 1,
+    }
 }
 
 /// Answers `request` from `caller`, as JSON: the reply, or the error.
@@ -209,18 +215,6 @@ pub(super) async fn ask<L: EventLog + 'static>(
         Ok(reply) => json!({"result": reply}),
         Err(error) => json!({"error": error}),
     }
-}
-
-/// What `caller` gets for `method` with `params`: none where it is refused, as it is for anyone
-/// whose computer it isn't.
-async fn try_call<L: EventLog + 'static>(
-    org: &Org<L>,
-    caller: &Caller,
-    method: &str,
-    params: Value,
-) -> Option<Value> {
-    let answer = ask(org, caller, request(method, params)).await;
-    answer.get("result").cloned()
 }
 
 /// `method` with `params`.
@@ -268,11 +262,11 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     let subscribed = call("push/subscribe", browser).await;
     person.keep(Kind::Device, subscribed["push"]["devices"][0]["id"].clone());
     if !local {
-        // Where people have computers of their own, each connects their own git host.
-        let host = json!({"url": "https://github.com", "token": any_secret()});
-        if let Some(Value::Object(connected)) =
-            try_call(org, &caller, "credential/connect", host).await
-        {
+        // Where people have computers of their own, each connects their own git host: refused,
+        // the sweep would never name theirs, so it must not be.
+        if org.homes {
+            let host = json!({"url": "https://github.com", "token": any_secret()});
+            let connected = call("credential/connect", host).await;
             person.keep(Kind::Credential, connected["credential"]["id"].clone());
         }
         return;
