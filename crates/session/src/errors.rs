@@ -225,6 +225,7 @@ impl From<&HarnessError> for ApiError {
                     failure: failed.failure(),
                 }),
             },
+            HarnessError::Repeating => Self::new(code::PROVIDER, Sentence::ModelRepeating),
             HarnessError::NotFound(thread) => no_thread(*thread),
             HarnessError::Archived(thread) => Self::new(
                 code::ARCHIVED,
@@ -518,6 +519,7 @@ mod tests {
             HarnessError::Invalid(Invalid::Title(80)),
             HarnessError::Invalid(Invalid::ForkPoint),
             HarnessError::Invalid(Invalid::ForkSubagent),
+            HarnessError::Repeating,
         ];
         let mut told: Vec<(String, ApiError)> = harness
             .iter()

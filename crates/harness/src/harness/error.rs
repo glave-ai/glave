@@ -45,6 +45,12 @@ pub enum HarnessError {
     /// shows the wait, and goes on from the log once an answer comes ([`crate::Harness::go_on`]).
     #[error("thread {0} waits for an answer")]
     Waits(ThreadId),
+    /// The model's answer repeated itself, and did again when asked once more: both were
+    /// stopped as they streamed, and the turn ended.
+    #[error(
+        "the model started repeating itself, so glave stopped it: try again, or pick another model"
+    )]
+    Repeating,
     /// No turn is open in the thread to go on with.
     #[error("no turn is open in chat {0}")]
     NoTurn(ThreadId),

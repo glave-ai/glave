@@ -2081,6 +2081,7 @@ name = "glave-harness"
 version = "0.0.0"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "glave-computer",
  "glave-event",
  "glave-ports",
