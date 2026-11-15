@@ -1669,7 +1669,7 @@
         },
         {
           "const": "server",
-          "description": "The server allows it for no one: where it is based, or what it keeps.",
+          "description": "The server allows it for no one: where it is based, what it keeps, or the precision it\nsays.",
           "type": "string"
         }
       ]
