@@ -1,6 +1,7 @@
 //! What tidy-up asks the model and how its answer is read: the memories as a numbered list
 //! (never their ids, which a cheap model copies badly), proposals back as JSON.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use glave_event::{At, Part, StopReason};
@@ -121,6 +122,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool, payer: Payer) -> Mo
         effort: None,
         payer: Some(payer),
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

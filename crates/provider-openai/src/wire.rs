@@ -54,6 +54,9 @@ struct Effort<'a> {
 struct Preferences<'a> {
     data_collection: &'static str,
     require_parameters: bool,
+    /// Tried first, OpenRouter falling back to the others allowed when they fail.
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    order: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     only: Option<&'a [String]>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
@@ -85,6 +88,7 @@ impl<'a> Preferences<'a> {
         Self {
             data_collection: "deny",
             require_parameters: true,
+            order: route.map_or(none, |route| &route.order),
             only: route.and_then(|route| route.only.as_deref()),
             ignore: route.map_or(none, |route| &route.ignore),
             quantizations: route.map_or(none, |route| &route.quantizations),

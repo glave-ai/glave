@@ -1,5 +1,7 @@
 //! The request's shape, checked as JSON.
 
+use std::collections::BTreeMap;
+
 use super::*;
 use glave_event::{CallId, Opaque};
 use glave_ports::ToolCall;
@@ -48,6 +50,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

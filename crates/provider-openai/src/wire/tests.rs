@@ -1,5 +1,7 @@
 //! The wire format's shape, checked as JSON.
 
+use std::collections::BTreeMap;
+
 use super::*;
 use glave_event::{CallId, MaxPrice, Nanos};
 use glave_ports::ToolCall;
@@ -49,6 +51,7 @@ fn a_request_has_the_chat_completions_shape() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -100,6 +103,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -132,6 +136,7 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     for provider in ["openrouter", "openai", "ollama"] {
         let sent = serde_json::to_value(chat_request(&request, provider)).unwrap();
@@ -169,6 +174,7 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -206,6 +212,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
@@ -230,6 +237,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -254,6 +262,7 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -272,6 +281,7 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
 fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
     let route = Route {
         only: Some(vec!["groq".into(), "fireworks".into()]),
+        order: vec!["fireworks".into()],
         ignore: vec!["deepseek".into()],
         quantizations: vec!["fp8".into(), "bf16".into()],
         sort: Some(Sort::Speed),
@@ -293,6 +303,7 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         files: Vec::new(),
         payer: None,
         route: Some(route),
+        upstreams: BTreeMap::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -300,6 +311,7 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         json!({
             "data_collection": "deny",
             "require_parameters": true,
+            "order": ["fireworks"],
             "only": ["groq", "fireworks"],
             "ignore": ["deepseek"],
             "quantizations": ["fp8", "bf16"],
@@ -329,6 +341,7 @@ fn a_reasoning_level_is_sent_as_each_service_takes_it() {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(routed["reasoning"], json!({"effort": "high"}));
@@ -375,6 +388,7 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         files,
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

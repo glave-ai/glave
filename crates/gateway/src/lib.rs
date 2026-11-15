@@ -6,7 +6,8 @@
 //!   targets; a purpose with no route of its own uses `main`'s.
 //! - **Fallback** is capability-checked (a target that cannot honour the request is skipped,
 //!   never sent a degraded one), sticky to the provider whose opaque reasoning the conversation
-//!   holds, and moves on only after failures that may pass.
+//!   holds, and moves on only after failures that may pass. At a router, a conversation asks
+//!   first for the provider that last served it, whose prompt cache holds its prefix.
 //! - **Credits**: where a server keeps them, each organization's money paid ahead: every call
 //!   that says whose work it is holds its worst case before it is sent and settles to what it
 //!   cost, so calls running side by side never overshoot.
@@ -26,6 +27,7 @@ mod plan;
 mod price;
 mod routes;
 mod search;
+mod sticky;
 mod target;
 mod telemetry;
 

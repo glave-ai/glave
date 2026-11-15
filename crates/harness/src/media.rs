@@ -10,6 +10,8 @@
 mod arguments;
 mod inputs;
 
+use std::collections::BTreeMap;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{BlobRef, Part};
@@ -137,6 +139,7 @@ where
             files: inputs.files,
             payer: Some(thread.payer()),
             route: None,
+            upstreams: BTreeMap::new(),
         };
         let Some(made) = cancel.run(self.provider.make(&request, &asked.ask)).await else {
             let said = format!("Stopped once it may have been sent. {MAY_BE_BILLED}");

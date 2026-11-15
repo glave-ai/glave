@@ -4,6 +4,7 @@
 //! has been (so nobody asks again), usage marked estimated when the provider reported none, a
 //! timeout after a silence, and no secret in an error.
 
+use std::collections::BTreeMap;
 use std::future::poll_fn;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
@@ -254,6 +255,7 @@ fn request() -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

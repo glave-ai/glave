@@ -1,6 +1,7 @@
 //! Which of a route's targets may serve a request, and the request each one is sent: targets
 //! that cannot honour it are skipped, and a conversation holding opaque reasoning stays with
-//! the model that produced it whenever the route has it.
+//! the model that produced it whenever the route has it; at a router, with the provider that
+//! last served it (`sticky.rs`).
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
@@ -10,6 +11,7 @@ use glave_ports::{Failure, Message, ModelRequest, ProviderError, Route};
 
 use crate::estimate::Needs;
 use crate::filtering::{self, Keeping, Kept};
+use crate::sticky;
 use crate::target::Target;
 
 /// Why a target was skipped.
@@ -43,7 +45,7 @@ pub(crate) fn candidates<'t>(
     let routed = keeping.floor || targets.iter().any(|target| target.router.is_some());
     for target in targets {
         match skip(target, request, (keeping, routed), needs) {
-            Ok(route) => capable.push((target, route)),
+            Ok(route) => capable.push((target, sticky::stay(route, target, request))),
             Err(why) => skipped.push((target, why)),
         }
     }

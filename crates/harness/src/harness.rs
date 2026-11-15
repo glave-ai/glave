@@ -201,6 +201,10 @@ pub struct Thread {
     /// The keys its messages were sent with, and how the turns that read them ended
     /// (`keys.rs`).
     pub(crate) keys: crate::keys::Keys,
+    /// The provider a router last served its conversation with at each target
+    /// (`upstreams.rs`), which its calls ask for first. A subagent's thread starts with its
+    /// parent's.
+    pub(crate) upstreams: crate::upstreams::Upstreams,
 }
 
 impl Thread {
@@ -607,6 +611,7 @@ where
             prefix: Prefixed::None,
             summary_failed: None,
             keys: crate::keys::Keys::default(),
+            upstreams: crate::upstreams::Upstreams::new(),
         };
         let mut events = Vec::new();
         origin.by = Self::other_than_for(&thread, caller.person);

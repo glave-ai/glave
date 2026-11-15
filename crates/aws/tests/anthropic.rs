@@ -4,6 +4,8 @@
 
 #[cfg(test)]
 mod over_http {
+    use std::collections::BTreeMap;
+
     use std::sync::Arc;
 
     use glave_aws::{Endpoint, Region, SigV4, Source};
@@ -38,6 +40,7 @@ mod over_http {
             effort: None,
             payer: None,
             route: None,
+            upstreams: BTreeMap::new(),
         };
         let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
         match completion.parts.as_slice() {

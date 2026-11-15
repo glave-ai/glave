@@ -9,6 +9,7 @@
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::future::{Future, ready};
 use std::sync::Arc;
@@ -238,6 +239,7 @@ fn request() -> Result<ModelRequest> {
         effort: None,
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     })
 }
 

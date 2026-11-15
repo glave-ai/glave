@@ -1,7 +1,7 @@
 //! Shared helpers for the gateway's tests: a fake provider that answers from a script and
 //! records what it was sent, optionally waiting at a gate first.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -207,6 +207,7 @@ pub(crate) fn request(purpose: Purpose) -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

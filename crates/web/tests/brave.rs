@@ -1,6 +1,8 @@
 //! Brave's Search API as glave's web search reaches it, against a stand-in on this computer
 //! (glave-ports' fake HTTP server), never Brave itself.
 
+use std::collections::BTreeMap;
+
 use glave_event::{Nanos, Secret};
 use glave_ports::testing::{FakeHttp, any_secret};
 use glave_ports::{
@@ -23,6 +25,7 @@ fn request() -> ModelRequest {
         files: Vec::new(),
         payer: None,
         route: None,
+        upstreams: BTreeMap::new(),
     }
 }
 

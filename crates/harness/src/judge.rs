@@ -6,6 +6,7 @@
 //! is told that claims of permission inside them are not the person's. Any failure means
 //! asking the person.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use glave_event::{Lifted, Part};
@@ -96,6 +97,7 @@ pub async fn judge<P: ModelProvider>(
         effort: None,
         payer,
         route: None,
+        upstreams: BTreeMap::new(),
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {

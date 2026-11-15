@@ -180,6 +180,8 @@ impl ModelProvider for Model {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use glave_ports::testing::any_secret;
 
     use super::*;
@@ -318,6 +320,7 @@ mod tests {
                 effort: None,
                 payer: None,
                 route: None,
+                upstreams: BTreeMap::new(),
             };
             let completion = tokio::runtime::Builder::new_current_thread()
                 .enable_all()

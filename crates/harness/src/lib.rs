@@ -54,6 +54,7 @@ mod tools;
 mod toolset;
 mod turn;
 mod untrusted;
+mod upstreams;
 mod waits;
 
 pub use approval::{AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk, acts_through};

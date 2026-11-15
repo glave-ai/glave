@@ -279,6 +279,7 @@ fn route_at(
         sort,
         zdr: filters.keeps_nothing,
         max_price: filters.max_price,
+        order: Vec::new(),
     };
     Ok((route != Route::default()).then_some(route))
 }
