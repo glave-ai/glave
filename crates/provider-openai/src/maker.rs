@@ -10,39 +10,64 @@ pub(crate) struct Sampler {
     pub top_p: f64,
 }
 
-/// One family: the start its models' ids share, as [`own_id`] writes them, and its rules.
+/// One family: the ids its models go by, as [`own_id`] writes them, and its rules.
 struct Family {
-    prefix: &'static str,
+    /// The start its ids share, or with [`Family::whole`] the whole of its one id.
+    name: &'static str,
+    whole: bool,
     sampler: Option<Sampler>,
     /// Every earlier assistant message carries its reasoning, empty when it had none.
     every_turn: bool,
 }
 
-/// DeepSeek V3.2's and V4.1's model cards: temperature 1.0, top_p 0.95, the values their
-/// agentic evaluations ran at.
-const DEEPSEEK: Sampler = Sampler {
+/// DeepSeek V3.2's and V4.1 Flash's model cards: temperature 1.0, top_p 0.95, the values
+/// their agentic evaluations ran at.
+const AGENTIC: Sampler = Sampler {
     temperature: 1.0,
     top_p: 0.95,
 };
 
-/// The families, the more particular first. DeepSeek's thinking mode refuses a request with
-/// tools unless every earlier reply carries `reasoning_content` ("Thinking Mode", its API
-/// docs), and its open weights are trained to expect it wherever they run.
+/// DeepSeek V4 Flash's and V4 Pro's model cards: temperature 1.0, top_p 1.0.
+const V4: Sampler = Sampler {
+    temperature: 1.0,
+    top_p: 1.0,
+};
+
+/// A DeepSeek family whose thinking mode takes tools, by the start of its ids.
+const fn deepseek(name: &'static str, sampler: Option<Sampler>) -> Family {
+    Family {
+        name,
+        whole: false,
+        sampler,
+        every_turn: true,
+    }
+}
+
+/// The families, the more particular first. DeepSeek's thinking mode, from V3.2 on, refuses a
+/// request with tools unless every earlier reply carries `reasoning_content` ("Thinking Mode",
+/// its API docs). Earlier DeepSeek models (V3.1, R1 and the Llama and Qwen models distilled
+/// from it) take no tools while thinking, so no rule of theirs is known.
 const FAMILIES: &[Family] = &[
+    deepseek("deepseek-v4-1", Some(AGENTIC)),
+    deepseek("deepseek-v4p1", Some(AGENTIC)),
+    // DeepSeek's API name for V4.1 Flash, and OpenRouter's `~deepseek/deepseek-flash-latest`.
+    deepseek("deepseek-flash", Some(AGENTIC)),
+    deepseek("deepseek-v4", Some(V4)),
+    // DeepSeek's API name for V4 Pro, and OpenRouter's `~deepseek/deepseek-pro-latest`.
+    deepseek("deepseek-pro", Some(V4)),
+    // V3.2's experimental release: its card gives no sampler.
+    deepseek("deepseek-v3-2-exp", None),
+    deepseek("deepseek-v3-2", Some(AGENTIC)),
+    // Fireworks' name for V3.2.
+    deepseek("deepseek-v3p2", Some(AGENTIC)),
+    // DeepSeek's API names for its current model, which its own API samples.
     Family {
-        prefix: "deepseek-v4",
-        sampler: Some(DEEPSEEK),
-        every_turn: true,
+        whole: true,
+        ..deepseek("deepseek-chat", None)
     },
     Family {
-        prefix: "deepseek-v3-2",
-        sampler: Some(DEEPSEEK),
-        every_turn: true,
-    },
-    Family {
-        prefix: "deepseek",
-        sampler: None,
-        every_turn: true,
+        whole: true,
+        ..deepseek("deepseek-reasoner", None)
     },
 ];
 
@@ -55,9 +80,13 @@ fn own_id(model: &str) -> String {
 
 fn family(model: &str) -> Option<&'static Family> {
     let own = own_id(model);
-    FAMILIES
-        .iter()
-        .find(|family| own.starts_with(family.prefix))
+    FAMILIES.iter().find(|family| {
+        if family.whole {
+            own == family.name
+        } else {
+            own.starts_with(family.name)
+        }
+    })
 }
 
 /// The sampler `model`'s maker documents, if any.
@@ -76,21 +105,37 @@ mod tests {
 
     #[test]
     fn a_family_is_known_by_its_id_at_any_service() {
-        for id in [
-            "deepseek/deepseek-v4.1-flash",
-            "deepseek-ai/DeepSeek-V4.1-Flash",
-            "deepseek-v4-pro",
-            "deepseek-ai/DeepSeek-V3.2",
+        for (id, documented) in [
+            ("deepseek/deepseek-v4.1-flash", AGENTIC),
+            ("deepseek-ai/DeepSeek-V4.1-Flash", AGENTIC),
+            ("accounts/fireworks/models/deepseek-v4p1-flash", AGENTIC),
+            ("deepseek-flash", AGENTIC),
+            ("~deepseek/deepseek-flash-latest", AGENTIC),
+            ("deepseek/deepseek-v4-flash-0731", V4),
+            ("deepseek-v4-pro", V4),
+            ("~deepseek/deepseek-pro-latest", V4),
+            ("deepseek-ai/DeepSeek-V3.2", AGENTIC),
+            ("accounts/fireworks/models/deepseek-v3p2", AGENTIC),
         ] {
-            assert_eq!(sampler(id), Some(DEEPSEEK), "{id}");
+            assert_eq!(sampler(id), Some(documented), "{id}");
             assert!(every_turn(id), "{id}");
         }
-        assert_eq!(sampler("deepseek-reasoner"), None, "no card says");
-        assert!(every_turn("deepseek-reasoner"));
+        for id in [
+            "deepseek-reasoner",
+            "deepseek-chat",
+            "deepseek/deepseek-v3.2-exp",
+        ] {
+            assert_eq!(sampler(id), None, "no card says, for {id}");
+            assert!(every_turn(id), "{id}");
+        }
         for id in [
             "anthropic/claude-haiku-5.5",
             "openai/gpt-6-luna",
             "gemma-4-12b",
+            "deepseek-r1:8b",
+            "deepseek/deepseek-r1-0528",
+            "deepseek/deepseek-chat-v3.1",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
         ] {
             assert_eq!(sampler(id), None, "{id}");
             assert!(!every_turn(id), "{id}");
