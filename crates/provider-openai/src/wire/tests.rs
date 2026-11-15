@@ -91,7 +91,7 @@ fn the_longest_answer_is_named_as_each_service_takes_it() {
     };
     let field = |request: &ModelRequest, provider: &str| {
         let body = serde_json::to_value(chat_request(request, provider)).unwrap();
-        let named = |name: &str| body.get(name).and_then(serde_json::Value::as_u64);
+        let named = |name: &str| body.get(name).and_then(Value::as_u64);
         (named("max_tokens"), named("max_completion_tokens"))
     };
     // OpenAI's reasoning models refuse `max_tokens`; Azure OpenAI's too.
