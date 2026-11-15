@@ -155,3 +155,59 @@ fn a_configured_price_costs_an_answer_the_provider_did_not() {
     );
     assert_eq!(cost.price_list, "ours-2026-10");
 }
+
+#[test]
+fn an_answer_is_never_asked_longer_than_its_target_gives() {
+    let provider = Fake::new("openrouter");
+    let mut short = provider.target("short");
+    short.can.max_output_tokens = Some(64);
+    let mut long = provider.target("long");
+    long.can.max_output_tokens = Some(393_000);
+    let routes = Routes::new(vec![short])
+        .unwrap()
+        .with_route(Purpose::Judge, vec![long])
+        .unwrap();
+    let gateway = Gateway::new(routes);
+    let mut unlimited = request(Purpose::Main);
+    unlimited.max_output_tokens = None;
+    for asked in [request(Purpose::Main), request(Purpose::Judge), unlimited] {
+        block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+    }
+    let sent: Vec<Option<u32>> = (provider.seen().into_iter())
+        .map(|sent| sent.max_output_tokens)
+        .collect();
+    assert_eq!(
+        sent,
+        [Some(64), Some(100), None],
+        "capped at what the catalog says the model gives; never raised, nor set unasked"
+    );
+}
+
+/// What a turn asking for 32,000 tokens, and a judge asking for 100, are sent asking for at a
+/// target that knows `context` of its model, and nothing else.
+fn sent_with_window(context: Option<u64>) -> Vec<Option<u32>> {
+    let provider = Fake::new("vllm");
+    let mut target = provider.target("local");
+    target.can.context_tokens = context;
+    let gateway = Gateway::new(Routes::new(vec![target]).unwrap());
+    let mut turn = request(Purpose::Main);
+    turn.max_output_tokens = Some(32_000);
+    for asked in [turn, request(Purpose::Judge)] {
+        block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+    }
+    (provider.seen().into_iter())
+        .map(|sent| sent.max_output_tokens)
+        .collect()
+}
+
+#[test]
+fn an_answer_fits_the_window_left_after_its_input() {
+    // A 32k local model: the turn asks for what is left after its input ("Be brief." and
+    // "hello", 14 bytes, about 5 tokens), so a server such as vLLM does not refuse it.
+    assert_eq!(sent_with_window(Some(32_768)), [Some(32_000), Some(100)]);
+    assert_eq!(sent_with_window(Some(8_192)), [Some(8_187), Some(100)]);
+    // A window with less room than the least answer, estimated cautiously, still asks for it.
+    assert_eq!(sent_with_window(Some(1_028)), [Some(1_024), Some(100)]);
+    // Nothing known: a turn's own cap is not sent, as it may not fit; a judge's is.
+    assert_eq!(sent_with_window(None), [None, Some(100)]);
+}

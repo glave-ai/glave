@@ -10,6 +10,10 @@ use crate::install::Own;
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 
+/// The longest answer a turn's model call may give by default, in tokens: OpenCode's cap
+/// (`OUTPUT_TOKEN_MAX`), which a gateway lowers to what a model's catalog says it gives.
+const MOST_OUTPUT_TOKENS: u32 = 32_000;
+
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -33,6 +37,9 @@ pub struct Settings {
     /// Model calls allowed in one turn before it stops; no cap when `None`, as in Codex and
     /// OpenCode. A subagent's turn gets the same cap of its own.
     pub max_steps: Option<u32>,
+    /// The longest answer a turn's model call may give, in tokens: 32,000 by default, as
+    /// OpenCode caps it, so an answer that never ends stops there. A gateway sends a model no more than
+    /// its catalog says it gives.
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
@@ -76,7 +83,7 @@ impl Settings {
             compaction: Compaction::default(),
             retries: Retries::default(),
             max_steps: None,
-            max_output_tokens: None,
+            max_output_tokens: Some(MOST_OUTPUT_TOKENS),
             subagents: false,
             plans: false,
             judge: Judge::Off,

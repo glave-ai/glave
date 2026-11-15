@@ -7,12 +7,16 @@ use std::sync::Arc;
 use glave_event::Reasoning;
 use glave_ports::{
     BoxFuture, Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
-    SearchAsk, SearchResults,
+    Purpose, SearchAsk, SearchResults,
 };
 
 use crate::filtering::Router;
 use crate::media::Tier;
 use crate::price::Price;
+
+/// The least answer a request is sent asking for when its window has less room than that:
+/// the provider then refuses it as too long, and the harness compacts.
+pub(crate) const LEAST_OUTPUT: u32 = 1_024;
 
 /// A model provider behind a target. Every [`ModelProvider`] is one; this form can be shared
 /// between targets of different provider types.
@@ -76,8 +80,8 @@ pub struct Capabilities {
     pub images: bool,
     /// Its context window, in tokens.
     pub context_tokens: Option<u64>,
-    /// The longest answer it gives when a request sets no limit, in tokens: what a call's
-    /// worst case holds for the answer.
+    /// The longest answer it gives, in tokens: what a call's worst case holds for the answer
+    /// when a request sets no limit, and the most a request is sent asking for.
     pub max_output_tokens: Option<u32>,
 }
 
@@ -211,6 +215,29 @@ impl Target {
         asked
             .filter(|asked| reasoning.efforts.iter().any(|offered| offered == asked))
             .or(reasoning.default.as_deref())
+    }
+
+    /// The longest answer `request`, reading about `input` tokens, is sent to this target
+    /// asking for: no more than it asks, than the catalog says the model gives, nor than its
+    /// window has room for after the input (at least [`LEAST_OUTPUT`]), since a server such as
+    /// vLLM refuses a request whose input and answer could outgrow the window. With nothing
+    /// known of the model, a turn's own cap is not sent, as it may not fit; a cap another
+    /// call chose (a title's, a judge's) is.
+    pub(crate) fn output_for(&self, request: &ModelRequest, input: u64) -> Option<u32> {
+        let asked = request.max_output_tokens?;
+        let room = self.can.context_tokens.map(|window| {
+            let left = window.saturating_sub(input).max(u64::from(LEAST_OUTPUT));
+            u32::try_from(left).unwrap_or(u32::MAX)
+        });
+        match [self.can.max_output_tokens, room]
+            .into_iter()
+            .flatten()
+            .min()
+        {
+            Some(most) => Some(asked.min(most)),
+            None if matches!(request.purpose, Purpose::Main | Purpose::Subagent) => None,
+            None => Some(asked),
+        }
     }
 
     /// The target, a router that keeps to a person's filters among the providers its catalog

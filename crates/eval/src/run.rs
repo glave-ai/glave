@@ -111,6 +111,8 @@ pub struct Attempt {
     /// Tool calls that gave nothing new (`Trace::repeated_steps`).
     #[serde(default)]
     pub repeated_steps: u32,
+    #[serde(default)]
+    pub repeating: u32,
     /// Approvals put to the person, or to no one there (`Trace::asks`).
     #[serde(default)]
     pub asks: u32,
@@ -166,6 +168,7 @@ impl Attempt {
             seconds,
             compactions: trace.compactions,
             repeated_steps: trace.repeated_steps,
+            repeating: trace.repeating,
             asks: trace.asks,
             blocked: trace.blocked,
             unasked_compacts: 0,

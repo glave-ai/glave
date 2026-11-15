@@ -314,6 +314,8 @@ impl ModelProvider for Gateway {
 /// media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
+        .or(target.output_for(request, needs.reserve_tokens()))
+        // A turn's cap not sent to a model nothing is known of still bounds what is held.
         .or(request.max_output_tokens)
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);

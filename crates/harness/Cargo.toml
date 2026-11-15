@@ -38,6 +38,8 @@ uuid.workspace = true
 glave-computer.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
+# The two whole transcripts of a reply that looped, kept small (`looping/tests.rs`).
+flate2.workspace = true
 
 [lints]
 workspace = true

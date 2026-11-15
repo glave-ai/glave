@@ -73,6 +73,8 @@ pub enum StopReason {
     Error,
     Cancelled,
     Interrupted,
+    /// glave stopped the answer as it streamed, since it repeated itself (v2).
+    Repeating,
 }
 
 /// Token counts as inclusive totals with subsets: `input` includes `cache_read` and
@@ -218,12 +220,13 @@ pub struct Cost {
 
 impl Payload for ModelResponded {
     const TYPE: &'static str = TYPE;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
+/// Version 2 only adds a stop reason, `repeating`: every version 1 payload reads as it is.
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ModelResponded>> {
     match version {
-        1 => Some(parse(data)),
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }
