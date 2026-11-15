@@ -10,6 +10,7 @@ mod client;
 #[cfg(feature = "fake-server")]
 pub mod fake;
 mod images;
+mod maker;
 mod reasoning;
 mod wire;
 
