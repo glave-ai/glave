@@ -24,7 +24,7 @@ mod model;
 pub(crate) use begin::CONFIG_LIMIT;
 pub(crate) use live::Prompt;
 pub use live::{Live, Said};
-use model::measure;
+use model::{Answer, measure};
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -209,8 +209,10 @@ where
                 .await;
             waits_if(thread, ran)?;
         }
-        // Whether this step was refused as too long once already.
+        // Whether this step was refused as too long once already, or its answer stopped for
+        // repeating itself.
         let mut squeezed = false;
+        let mut repeated = false;
         step.summary.outcome = loop {
             if cancel.is_cancelled() {
                 break cancel.outcome();
@@ -237,7 +239,14 @@ where
             };
             step.summary.model_calls = step.summary.model_calls.saturating_add(1);
             let (mut completion, thinking) = match asked {
-                Ok(asked) => asked,
+                Ok(Answer::Given(completion, thinking)) => (completion, thinking),
+                // Asked once more; a second that repeats itself ends the turn.
+                Ok(Answer::Repeating(cut)) => {
+                    self.stopped_repeating(thread, &mut step.summary, &cut, repeated)
+                        .await?;
+                    repeated = true;
+                    continue;
+                }
                 Err(HarnessError::Provider(refused))
                     if refused.failure() == Failure::TooLong
                         && !squeezed
@@ -254,6 +263,7 @@ where
                 }
             };
             squeezed = false;
+            repeated = false;
             if last {
                 // Any call the model makes anyway is ignored, so none is left without a result.
                 completion.tool_calls.clear();
@@ -274,16 +284,27 @@ where
                 .await;
             waits_if(thread, ran)?;
         };
+        self.finish(thread, step.summary, cancel).await
+    }
+
+    /// Records the end of a turn that ended as `summary` says, and tells the `Stop` hooks when
+    /// nothing from outside stopped it.
+    async fn finish(
+        &self,
+        thread: &mut Thread,
+        summary: TurnResult,
+        cancel: &Cancel,
+    ) -> Result<TurnResult, HarnessError> {
         // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
-        let stopped = cancel.is_cancelled() && step.summary.outcome == cancel.outcome();
-        if stopped && step.summary.outcome == Outcome::Cancelled {
+        let stopped = cancel.is_cancelled() && summary.outcome == cancel.outcome();
+        if stopped && summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
-        self.end(thread, &step.summary).await?;
+        self.end(thread, &summary).await?;
         if !thread.delegated() && !stopped {
-            self.on_stop(thread, step.summary.outcome, cancel).await?;
+            self.on_stop(thread, summary.outcome, cancel).await?;
         }
-        Ok(step.summary)
+        Ok(summary)
     }
 
     /// The person's own prompts pass the `UserPromptSubmit` hooks first: one a hook stops
@@ -386,6 +407,9 @@ fn outcome_of(stop: StopReason) -> Outcome {
         | StopReason::ToolUse => Outcome::Completed,
         StopReason::MaxTokens | StopReason::ContextExceeded => Outcome::LimitReached,
         StopReason::Interrupted | StopReason::Cancelled => Outcome::Interrupted,
-        StopReason::Error | StopReason::MalformedToolCall | StopReason::Pause => Outcome::Failed,
+        StopReason::Error
+        | StopReason::MalformedToolCall
+        | StopReason::Pause
+        | StopReason::Repeating => Outcome::Failed,
     }
 }

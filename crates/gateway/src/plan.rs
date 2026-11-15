@@ -10,7 +10,7 @@ use glave_ports::{EndUser, Failure, Message, ModelRequest, ProviderError, Route}
 
 use crate::estimate::Needs;
 use crate::filtering::{self, Keeping, Kept};
-use crate::target::Target;
+use crate::target::{LEAST_OUTPUT, Target};
 
 /// Why a target was skipped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +77,12 @@ fn skip(
         return Err(Skip::Images);
     }
     if let Some(window) = target.can.context_tokens {
-        let wanted = needs
-            .fit_tokens()
-            .saturating_add(request.max_output_tokens.map_or(0, u64::from));
+        // Room for the input and some answer: the answer asked for is made to fit what is
+        // left ([`Target::output_for`]).
+        let answer = request
+            .max_output_tokens
+            .map_or(0, |asked| asked.min(LEAST_OUTPUT));
+        let wanted = needs.fit_tokens().saturating_add(u64::from(answer));
         if wanted > window {
             return Err(Skip::Context { window });
         }
@@ -165,9 +168,10 @@ fn accepts(target: &Target, opaque: &Opaque) -> bool {
 }
 
 /// `request` as `target` is sent it: under the target's model name, without opaque reasoning
-/// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, and asking
-/// what `route` does when the target is a router, saying it works for `end_user` where it
-/// works for someone. True when reasoning was stripped. Borrowed when nothing changes.
+/// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, for no longer
+/// an answer than [`Target::output_for`] allows, and asking what `route` does when the target
+/// is a router, saying it works for `end_user` where it works for someone. True when reasoning
+/// was stripped. Borrowed when nothing changes.
 pub(crate) fn prepare<'r>(
     request: &'r ModelRequest,
     (route, end_user): (Option<&Route>, Option<&EndUser>),
@@ -180,7 +184,10 @@ pub(crate) fn prepare<'r>(
             _ => false,
         });
     let effort = target.effort_for(request.effort.as_deref());
-    let unchanged = request.model == target.model && effort == request.effort.as_deref();
+    let output = target.output_for(request, needs.reserve_tokens());
+    let unchanged = request.model == target.model
+        && effort == request.effort.as_deref()
+        && output == request.max_output_tokens;
     let same_user = end_user.is_none_or(|id| request.end_user.as_ref() == Some(id));
     if !foreign && unchanged && same_user && route == request.route.as_ref() {
         return (Cow::Borrowed(request), false);
@@ -188,6 +195,7 @@ pub(crate) fn prepare<'r>(
     let mut sent = request.clone();
     sent.model.clone_from(&target.model);
     sent.effort = effort.map(str::to_owned);
+    sent.max_output_tokens = output;
     sent.route = route.cloned();
     if let Some(id) = end_user {
         sent.end_user = Some(id.clone());

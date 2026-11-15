@@ -114,7 +114,17 @@ pub(crate) fn gateway(
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let target = Target::new(handle, endpoint.provider.clone(), model);
     let target = match floor.and_then(|floor| floor.routers.get(model)) {
-        Some(router) => target.routing(router.clone()),
+        Some(router) => {
+            let mut target = target.routing(router.clone());
+            // What the lists say of the model, so a turn asks for no longer an answer than
+            // its providers give nor than its window holds: the most any of them serves.
+            let endpoints = &router.endpoints;
+            target.can.context_tokens = endpoints.iter().filter_map(|e| e.context).max();
+            target.can.max_output_tokens = (endpoints.iter().filter_map(|e| e.max_output))
+                .max()
+                .map(|tokens| u32::try_from(tokens).unwrap_or(u32::MAX));
+            target
+        }
         None => target,
     };
     let target = match reasoning {

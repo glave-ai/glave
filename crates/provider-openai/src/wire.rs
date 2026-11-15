@@ -23,6 +23,10 @@ pub(crate) struct ChatRequest<'a> {
     tool_choice: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// The longest answer, as OpenAI and Azure OpenAI take it: their reasoning models refuse
+    /// `max_tokens`, and every model of theirs takes this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
     /// The sampler the model's maker documents, sent rather than left to each host's own.
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
@@ -313,6 +317,12 @@ struct WireTool<'a> {
     function: &'a ToolSpec,
 }
 
+/// Whether `provider` is OpenAI's own API or Azure OpenAI's, which name the longest answer
+/// `max_completion_tokens`.
+fn by_openai(provider: &str) -> bool {
+    provider == "openai" || provider.ends_with(".azure.com")
+}
+
 /// Builds the request body for a streaming chat completion to `provider`.
 pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> ChatRequest<'a> {
     let cache = caches_automatically(provider, &request.model);
@@ -374,7 +384,8 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
         },
         tool_choice: (request.tool_choice == ToolChoice::None && !request.tools.is_empty())
             .then_some("none"),
-        max_tokens: request.max_output_tokens,
+        max_tokens: request.max_output_tokens.filter(|_| !by_openai(provider)),
+        max_completion_tokens: request.max_output_tokens.filter(|_| by_openai(provider)),
         temperature: sampler.map(|sampler| sampler.temperature),
         top_p: sampler.map(|sampler| sampler.top_p),
         cache_control: cache.then_some(CacheControl { kind: "ephemeral" }),
