@@ -11,6 +11,7 @@ mod client;
 pub mod fake;
 mod images;
 pub mod lists;
+mod maker;
 mod reasoning;
 mod wire;
 
