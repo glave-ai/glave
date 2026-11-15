@@ -155,3 +155,30 @@ fn a_configured_price_costs_an_answer_the_provider_did_not() {
     );
     assert_eq!(cost.price_list, "ours-2026-10");
 }
+
+#[test]
+fn an_answer_is_never_asked_longer_than_its_target_gives() {
+    let provider = Fake::new("openrouter");
+    let mut short = provider.target("short");
+    short.can.max_output_tokens = Some(64);
+    let mut long = provider.target("long");
+    long.can.max_output_tokens = Some(393_000);
+    let routes = Routes::new(vec![short])
+        .unwrap()
+        .with_route(Purpose::Judge, vec![long])
+        .unwrap();
+    let gateway = Gateway::new(routes);
+    let mut unlimited = request(Purpose::Main);
+    unlimited.max_output_tokens = None;
+    for asked in [request(Purpose::Main), request(Purpose::Judge), unlimited] {
+        block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+    }
+    let sent: Vec<Option<u32>> = (provider.seen().into_iter())
+        .map(|sent| sent.max_output_tokens)
+        .collect();
+    assert_eq!(
+        sent,
+        [Some(64), Some(100), None],
+        "capped at what the catalog says the model gives; never raised, nor set unasked"
+    );
+}

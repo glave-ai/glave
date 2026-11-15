@@ -76,8 +76,8 @@ pub struct Capabilities {
     pub images: bool,
     /// Its context window, in tokens.
     pub context_tokens: Option<u64>,
-    /// The longest answer it gives when a request sets no limit, in tokens: what a call's
-    /// worst case holds for the answer.
+    /// The longest answer it gives, in tokens: what a call's worst case holds for the answer
+    /// when a request sets no limit, and the most a request is sent asking for.
     pub max_output_tokens: Option<u32>,
 }
 
@@ -211,6 +211,16 @@ impl Target {
         asked
             .filter(|asked| reasoning.efforts.iter().any(|offered| offered == asked))
             .or(reasoning.default.as_deref())
+    }
+
+    /// The longest answer a request asking for at most `asked` tokens is sent to this target
+    /// with: never more than its catalog says it gives, so a provider never refuses the
+    /// request for asking more.
+    pub(crate) fn output_for(&self, asked: Option<u32>) -> Option<u32> {
+        match (asked, self.can.max_output_tokens) {
+            (Some(asked), Some(most)) => Some(asked.min(most)),
+            (asked, _) => asked,
+        }
     }
 
     /// The target, a router that keeps to a person's filters among the providers its catalog

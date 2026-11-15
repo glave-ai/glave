@@ -58,7 +58,7 @@ pub(crate) struct Measured {
 
 /// Characters per token when nothing better is known. Code runs closer to 3, so estimates
 /// run low; the threshold leaves room for that.
-const CHARS_PER_TOKEN: u64 = 4;
+pub(crate) const CHARS_PER_TOKEN: u64 = 4;
 
 /// The longest summary asked for, in tokens.
 const SUMMARY_TOKENS: u32 = 4_000;
@@ -128,7 +128,7 @@ fn arguments_text(arguments: &Arguments) -> String {
 /// Characters every request carries besides the conversation: instructions and tools.
 /// The estimated size of the next request, in tokens: the last reported count plus what
 /// was added since, or an estimate of everything when nothing was reported yet.
-fn next_request_tokens(thread: &Thread, offer: &ToolSet) -> u64 {
+pub(crate) fn next_request_tokens(thread: &Thread, offer: &ToolSet) -> u64 {
     let now = chars(&thread.messages);
     match thread.measured {
         Some(measured) => measured

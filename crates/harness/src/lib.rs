@@ -28,6 +28,7 @@ mod instructions;
 mod join;
 mod judge;
 mod keys;
+mod looping;
 mod media;
 mod memory;
 mod outside;

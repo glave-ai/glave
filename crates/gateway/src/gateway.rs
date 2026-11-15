@@ -314,7 +314,7 @@ impl ModelProvider for Gateway {
 /// media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
-        .or(request.max_output_tokens)
+        .or(target.output_for(request.max_output_tokens))
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
     let images = if request.purpose.is_media() {

@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-0000000000a7","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10","seq":7,"at":"2026-11-15T10:00:00.000Z","type":"model.responded","v":2,"data":{"model":{"provider":"openrouter","name":"deepseek/deepseek-v4.1-flash"},"stop":"repeating","usage":{"input":12000,"cache_read":0,"cache_write":0,"output":150,"reasoning":0,"estimated":true}}}

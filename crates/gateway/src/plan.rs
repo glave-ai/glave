@@ -164,8 +164,8 @@ fn accepts(target: &Target, opaque: &Opaque) -> bool {
 }
 
 /// `request` as `target` is sent it: under the target's model name, without opaque reasoning
-/// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, and asking
-/// what `route` does when the target is a router. True when reasoning was stripped. Borrowed
+/// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, for no longer
+/// an answer than [`Target::output_for`] allows, and asking what `route` does when the target is a router. True when reasoning was stripped. Borrowed
 /// when nothing changes.
 pub(crate) fn prepare<'r>(
     request: &'r ModelRequest,
@@ -179,13 +179,17 @@ pub(crate) fn prepare<'r>(
             _ => false,
         });
     let effort = target.effort_for(request.effort.as_deref());
-    let unchanged = request.model == target.model && effort == request.effort.as_deref();
+    let output = target.output_for(request.max_output_tokens);
+    let unchanged = request.model == target.model
+        && effort == request.effort.as_deref()
+        && output == request.max_output_tokens;
     if !foreign && unchanged && route == request.route.as_ref() {
         return (Cow::Borrowed(request), false);
     }
     let mut sent = request.clone();
     sent.model.clone_from(&target.model);
     sent.effort = effort.map(str::to_owned);
+    sent.max_output_tokens = output;
     sent.route = route.cloned();
     if foreign {
         for message in &mut sent.messages {

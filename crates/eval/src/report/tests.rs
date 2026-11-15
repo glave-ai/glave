@@ -114,7 +114,10 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
                 unasked_compacts: 1,
                 ..costing("lab/free", 2, true, Some(0))
             },
-            costing("lab/failing", 1, false, Some(2_000_000)),
+            Attempt {
+                repeating: 1,
+                ..costing("lab/failing", 1, false, Some(2_000_000))
+            },
             costing("lab/failing", 2, false, Some(2_000_000)),
         ],
     )
@@ -133,6 +136,7 @@ Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost re
 | tokens | 2,468 | 2,468 | 2,468 | 2,468 |
 | input from cache | 0% | 37% | 0% | 0% |
 | tool calls | 4 | 4 | 4 | 4 |
+| answers stopped repeating | 0 | 0 | 0 | 1 |
 | asks | 2 | 2 | 2 | 2 |
 | blocked commands | 0 | 0 | 0 | 0 |
 | compacts unasked | 0 | 0 | 1 | 0 |
@@ -295,6 +299,7 @@ fn a_report_written_before_the_counts_still_reads_as_a_baseline() {
     let fields = json.as_object_mut().unwrap();
     fields.remove("compactions");
     fields.remove("repeated_steps");
+    fields.remove("repeating");
     let read: Attempt = serde_json::from_value(json).unwrap();
     assert_eq!(read, attempt);
 }

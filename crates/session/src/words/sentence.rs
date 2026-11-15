@@ -291,6 +291,8 @@ sentences! {
     ProviderBrokeOff = "provider-broke-off" "the model provider's answer broke off partway:{ \" \" }",
     ProviderSilent { seconds: String } = "provider-silent"
         "the model provider sent nothing for { $seconds } s",
+    ModelRepeating = "model-repeating"
+        "the model started repeating itself, so glave stopped it: try again, or pick another model",
     NoModelServes { reason: String } = "no-model-serves" "no model could serve the request: { $reason }",
     OutOfCredits = "out-of-credits" "your balance is used up: ask whoever runs this server to add more",
     CreditsShort { free: String, needs: String } = "credits-short"

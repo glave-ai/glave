@@ -190,7 +190,7 @@ impl Report {
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 10] = [
+        let rows: [(&str, &Row); 11] = [
             ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
             ("per passed task", &|a| per_task(PerPassedTask::of(a))),
             ("cost", &|a| dollars(spent(a))),
@@ -202,6 +202,7 @@ impl Report {
                     .sum::<u64>()
                     .to_string()
             }),
+            ("answers stopped repeating", &|a| total(a, |a| a.repeating)),
             ("asks", &|a| total(a, |a| a.asks)),
             ("blocked commands", &|a| total(a, |a| a.blocked)),
             ("compacts unasked", &|a| total(a, |a| a.unasked_compacts)),

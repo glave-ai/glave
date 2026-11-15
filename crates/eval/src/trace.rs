@@ -2,7 +2,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{Body, CallId, Nanos, Outcome, Part, RawEvent, Role, ToolCallCompleted, decode};
+use glave_event::{
+    Body, CallId, Nanos, Outcome, Part, RawEvent, Role, StopReason, ToolCallCompleted, decode,
+};
 
 /// The facts a task is graded on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +32,9 @@ pub struct Trace {
     /// command is run again. A test rerun after a change that alters its output is not one; one
     /// that prints the same as before is.
     pub repeated_steps: u32,
+    /// Answers glave stopped as they streamed because they repeated themselves: a model fallen
+    /// into a loop, its own outcome, which a turn ends on when it happens twice in a row.
+    pub repeating: u32,
     /// Approvals put to the person, or to no one where no one was there: every
     /// `approval.requested` but those glave settled itself (the judge cleared it, or Full access
     /// declined it). Each is an interruption, or a refusal with no one there.
@@ -59,6 +64,7 @@ impl Default for Trace {
             printed: String::new(),
             compactions: 0,
             repeated_steps: 0,
+            repeating: 0,
             asks: 0,
             blocked: 0,
             compacts: 0,
@@ -121,6 +127,9 @@ impl Trace {
             Body::ToolCallCompleted(done) => self.finished(&done, steps),
             Body::ModelResponded(response) => {
                 self.model_calls = self.model_calls.saturating_add(1);
+                if response.stop == StopReason::Repeating {
+                    self.repeating = self.repeating.saturating_add(1);
+                }
                 let counts = response.usage.counts();
                 self.input_tokens = self.input_tokens.saturating_add(counts.input);
                 self.output_tokens = self.output_tokens.saturating_add(counts.output);
@@ -204,12 +213,39 @@ mod tests {
                 printed: "README.md\nsrc\n".to_owned(),
                 compactions: 0,
                 repeated_steps: 0,
+                repeating: 0,
                 asks: 0,
                 blocked: 0,
                 compacts: 0,
                 missing: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn an_answer_stopped_for_repeating_counts_as_its_own_outcome() {
+        let responded = |stop: &str| {
+            serde_json::json!({"glave": 1, "id": "0192f5c2-7000-7000-8000-000000000001",
+                "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": 1,
+                "at": "2026-11-15T10:00:00.000Z", "type": "model.responded", "v": 2,
+                "data": {"model": {"provider": "openrouter", "name": "m"}, "stop": stop,
+                    "usage": {"input": 9000, "cache_read": 0, "cache_write": 0, "output": 400,
+                        "reasoning": 0, "estimated": true}}})
+            .to_string()
+        };
+        let jsonl = format!(
+            "{}\n{}\n{}\n",
+            responded("repeating"),
+            responded("repeating"),
+            responded("end_turn")
+        );
+        let trace = parse(&jsonl).unwrap();
+        assert_eq!((trace.model_calls, trace.repeating), (3, 2));
+        assert_eq!(
+            trace.output_tokens, 1_200,
+            "what each used, estimated, counts"
+        );
+        assert_eq!(trace.cost_nanos, None, "a cost no one could say");
     }
 
     /// One `bash` call and its result, as JSON Lines.
