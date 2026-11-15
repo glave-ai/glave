@@ -111,7 +111,6 @@ pub struct Attempt {
     /// Tool calls that gave nothing new (`Trace::repeated_steps`).
     #[serde(default)]
     pub repeated_steps: u32,
-    /// Answers stopped for repeating themselves (`Trace::repeating`).
     #[serde(default)]
     pub repeating: u32,
     /// Approvals put to the person, or to no one there (`Trace::asks`).
