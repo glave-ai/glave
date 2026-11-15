@@ -6,7 +6,7 @@
 //! time within one limit, so a picker can say who serves a model and a person's filters can
 //! choose among them. What OpenRouter does not say is left out, never guessed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
