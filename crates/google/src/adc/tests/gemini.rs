@@ -1,8 +1,6 @@
 //! Gemini through Vertex's OpenAI-compatible endpoint, end to end: the OpenAI-compatible
 //! provider, with the metadata server's token as its bearer.
 
-use std::collections::BTreeMap;
-
 use glave_event::Part;
 use glave_ports::{Message, ModelProvider, ModelRequest, ToolChoice};
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -38,7 +36,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         effort: None,
         payer: None,
         route: None,
-        upstreams: BTreeMap::new(),
+        session: None,
     };
     let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(

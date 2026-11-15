@@ -12,4 +12,3 @@ mod floor;
 mod media;
 mod routes;
 mod search;
-mod sticky;

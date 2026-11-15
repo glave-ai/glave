@@ -348,9 +348,7 @@ where
             ),
         });
         let mut events = Vec::new();
-        let responded = completion.responded();
-        self.stage(thread, &mut events, &responded)?;
-        thread.served(&responded);
+        self.stage(thread, &mut events, &completion.responded())?;
         let compacted = ThreadCompacted {
             through,
             parts: parts.clone(),

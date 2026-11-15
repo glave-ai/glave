@@ -1,7 +1,5 @@
 //! The wire format's shape, checked as JSON.
 
-use std::collections::BTreeMap;
-
 use super::*;
 use glave_event::{CallId, MaxPrice, Nanos};
 use glave_ports::ToolCall;
@@ -51,7 +49,7 @@ fn a_request_has_the_chat_completions_shape() {
         files: Vec::new(),
         payer: None,
         route: None,
-        upstreams: BTreeMap::new(),
+        session: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -103,7 +101,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         files: Vec::new(),
         payer: None,
         route: None,
-        upstreams: BTreeMap::new(),
+        session: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -121,22 +119,13 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
     // Every search is a call of a connection the person turned on (specs/session.md): never
     // OpenRouter's `:online` or `web` plugin, nor OpenAI's own search.
     let request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: String::new(),
-        messages: Vec::new(),
         tools: vec![ToolSpec {
             name: "web_fetch".into(),
             description: "Fetch a web page.".into(),
             parameters: json!({"type": "object"}),
         }],
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
         effort: Some("high".into()),
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
+        ..ask("openai/gpt-6-luna")
     };
     for provider in ["openrouter", "openai", "ollama"] {
         let sent = serde_json::to_value(chat_request(&request, provider)).unwrap();
@@ -159,22 +148,13 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
 #[test]
 fn text_only_requests_keep_their_tools_and_say_none() {
     let mut request = ModelRequest {
-        model: "m".into(),
-        system: String::new(),
-        messages: Vec::new(),
         tools: vec![ToolSpec {
             name: "bash".into(),
             description: "Run a command.".into(),
             parameters: json!({"type": "object"}),
         }],
         tool_choice: ToolChoice::None,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
+        ..ask("m")
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -200,20 +180,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         "anthropic/claude-haiku-5.5"
     ));
     assert!(!caches_automatically("ollama", "gemma4:12b"));
-    let request = ModelRequest {
-        model: "anthropic/claude-haiku-5.5".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
-    };
+    let request = ask("anthropic/claude-haiku-5.5");
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
     let plain = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -225,20 +192,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
 
 #[test]
 fn openrouter_is_told_not_to_cut_a_long_prompt() {
-    let request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
-    };
+    let request = ask("openai/gpt-6-luna");
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
         routed["plugins"],
@@ -250,20 +204,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
 
 #[test]
 fn openrouter_keeps_prompts_private_and_every_parameter_used() {
-    let request = ModelRequest {
-        model: "openai/gpt-6-luna".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
-    };
+    let request = ask("openai/gpt-6-luna");
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
         routed["provider"],
@@ -281,7 +222,6 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
 fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
     let route = Route {
         only: Some(vec!["groq".into(), "fireworks".into()]),
-        order: vec!["fireworks".into()],
         ignore: vec!["deepseek".into()],
         quantizations: vec!["fp8".into(), "bf16".into()],
         sort: Some(Sort::Speed),
@@ -292,18 +232,8 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         }),
     };
     let request = ModelRequest {
-        model: "deepseek/deepseek-v4.1-flash".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
         route: Some(route),
-        upstreams: BTreeMap::new(),
+        ..ask("deepseek/deepseek-v4.1-flash")
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -311,7 +241,6 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         json!({
             "data_collection": "deny",
             "require_parameters": true,
-            "order": ["fireworks"],
             "only": ["groq", "fireworks"],
             "ignore": ["deepseek"],
             "quantizations": ["fp8", "bf16"],
@@ -328,20 +257,31 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
 }
 
 #[test]
+fn openrouter_alone_is_told_the_thread_and_the_prompt_stays_as_it_was() {
+    let thread = "019a8f2e-1c3b-7d4e-8f5a-1b2c3d4e5f60";
+    let mut request = asking(vec![user("hello")], Vec::new());
+    request.system = "Be brief.".into();
+    let alone = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert!(alone.get("session_id").is_none(), "no thread, no session");
+    request.session = Some(serde_json::from_value(json!(thread)).unwrap());
+    let mut routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert_eq!(routed["session_id"], json!(thread));
+    assert!(routed.get("provider").unwrap().get("order").is_none());
+    let body = routed.as_object_mut().unwrap();
+    body.remove("session_id");
+    assert_eq!(
+        routed, alone,
+        "everything else, the prompt above all, as it was"
+    );
+    let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert!(plain.get("session_id").is_none(), "only a router is told");
+}
+
+#[test]
 fn a_reasoning_level_is_sent_as_each_service_takes_it() {
     let request = ModelRequest {
-        model: "m".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
         effort: Some("high".into()),
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        upstreams: BTreeMap::new(),
+        ..ask("m")
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(routed["reasoning"], json!({"effort": "high"}));
@@ -375,6 +315,14 @@ fn inline(bytes: &[u8], media_type: &str, data: &str) -> (glave_event::BlobRef, 
     (blob, file)
 }
 
+/// A request to `model` with nothing in it.
+fn ask(model: &str) -> ModelRequest {
+    ModelRequest {
+        model: model.into(),
+        ..asking(Vec::new(), Vec::new())
+    }
+}
+
 fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
     ModelRequest {
         model: "gpt".into(),
@@ -388,7 +336,7 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         files,
         payer: None,
         route: None,
-        upstreams: BTreeMap::new(),
+        session: None,
     }
 }
 

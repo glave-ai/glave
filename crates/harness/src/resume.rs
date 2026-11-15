@@ -100,7 +100,6 @@ where
             prefix: crate::prefix::Prefixed::None,
             summary_failed: None,
             keys: crate::keys::Keys::of(&events),
-            upstreams: crate::upstreams::Upstreams::new(),
         };
         self.take_history(&mut thread, &events).await;
         Ok(thread)
@@ -122,7 +121,6 @@ where
         thread.model = crate::chosen::chosen_in(events);
         thread.permissions = crate::chosen::permissions_in(events);
         thread.effort = crate::chosen::effort_in(events);
-        thread.upstreams = crate::upstreams::upstreams_in(events);
         // Boxed: reading a blob back is a large future, and a resume runs inside many.
         thread.prefix = Box::pin(self.prefix_kept(&thread.scope, events)).await;
         self.rebuild_memory(thread, events).await;

@@ -55,7 +55,6 @@ mod tools;
 mod toolset;
 mod turn;
 mod untrusted;
-mod upstreams;
 mod waits;
 mod web_search;
 

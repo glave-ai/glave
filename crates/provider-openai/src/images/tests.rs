@@ -1,7 +1,5 @@
 //! The image API's request, checked as JSON.
 
-use std::collections::BTreeMap;
-
 use glave_event::{BlobRef, MaxPrice, Nanos, Sort};
 use glave_ports::{Purpose, ToolChoice};
 use serde_json::json;
@@ -50,7 +48,7 @@ fn editing(route: Option<Route>) -> ModelRequest {
         files: vec![inline(&style, "anBn"), inline(&image, "cG5n")],
         payer: None,
         route,
-        upstreams: BTreeMap::new(),
+        session: None,
     }
 }
 

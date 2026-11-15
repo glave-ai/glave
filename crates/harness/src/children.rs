@@ -223,7 +223,6 @@ fn inherit(child: &mut Thread, parent: &Thread) {
     child.model.clone_from(&parent.model);
     child.permissions = parent.permissions;
     child.effort.clone_from(&parent.effort);
-    child.upstreams.clone_from(&parent.upstreams);
 }
 
 /// What a subagent's call returns once its turn in `child` ended as `ran` says.

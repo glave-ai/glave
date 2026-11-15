@@ -5,7 +5,6 @@
 //! harness works for, while their switch is on; asked about as `web_fetch` is; what it finds is
 //! untrusted, and the pages that matter are read with `web_fetch`.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::atomic::Ordering;
 
@@ -203,7 +202,7 @@ where
             files: Vec::new(),
             payer: Some(thread.payer()),
             route: None,
-            upstreams: BTreeMap::new(),
+            session: None,
         };
         let output = match cancel.run(self.provider.search(&request, &ask)).await {
             Some(Ok(found)) => ToolOutput::untrusted(found_text(&found)),

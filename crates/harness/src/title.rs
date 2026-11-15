@@ -4,8 +4,6 @@
 //! replaced, and when the call fails nothing is recorded: the thread keeps the title its first
 //! message gives it.
 
-use std::collections::BTreeMap;
-
 use glave_event::{
     At, EventId, Header, Part, Payload, Principal, RawEvent, Seq, ThreadId, ThreadRenamed, encode,
 };
@@ -119,7 +117,7 @@ where
             effort: None,
             payer: Some(case.payer),
             route: None,
-            upstreams: BTreeMap::new(),
+            session: None,
         };
         let answer = self.provider.complete(&request, &mut |_| {}).await.ok()?;
         let text: String = texts(&answer.parts).collect();

@@ -64,7 +64,7 @@ where
             effort: thread.effort.clone(),
             payer: Some(thread.payer()),
             route: None,
-            upstreams: thread.upstreams.clone(),
+            session: Some(thread.id),
         };
         let retries = self.settings.retries;
         let mut retry = 0;
@@ -153,10 +153,8 @@ where
             self.stage(thread, &mut events, &payload)?;
             calls.push(call);
         }
-        let responded = completion.responded();
-        self.stage(thread, &mut events, &responded)?;
+        self.stage(thread, &mut events, &completion.responded())?;
         self.commit(thread, events).await?;
-        thread.served(&responded);
         thread.messages.push(Message::Assistant {
             parts: completion.parts.clone(),
             tool_calls: calls.clone(),

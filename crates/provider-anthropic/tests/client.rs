@@ -3,8 +3,6 @@
 
 #[cfg(test)]
 mod over_http {
-    use std::collections::BTreeMap;
-
     use glave_event::{Arguments, Part, StopReason};
     use glave_ports::testing::fake_secret;
     use glave_ports::{
@@ -43,7 +41,7 @@ mod over_http {
             effort: None,
             payer: None,
             route: None,
-            upstreams: BTreeMap::new(),
+            session: None,
         }
     }
 

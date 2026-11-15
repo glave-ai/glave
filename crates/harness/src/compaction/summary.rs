@@ -187,7 +187,7 @@ where
             effort: thread.effort.clone(),
             payer: Some(thread.payer()),
             route: None,
-            upstreams: thread.upstreams.clone(),
+            session: Some(thread.id),
         };
         (request, words)
     }
@@ -226,11 +226,8 @@ where
                 "a summary came back that cannot stand in for the conversation"
             );
             let mut events = Vec::new();
-            let responded = completion.responded();
-            self.stage(thread, &mut events, &responded)?;
+            self.stage(thread, &mut events, &completion.responded())?;
             self.commit(thread, events).await?;
-            thread.served(&responded);
-            request.upstreams.clone_from(&thread.upstreams);
             if tried {
                 let failed = format!("the model returned no summary: {}", unusable.said());
                 return Err(ProviderError::Protocol(failed).into());

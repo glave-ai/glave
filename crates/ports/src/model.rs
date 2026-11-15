@@ -1,12 +1,11 @@
 //! The model provider port: send a conversation, stream the answer live, get the finished
 //! answer back. Providers translate their own wire formats at this edge.
 
-use std::collections::BTreeMap;
 use std::future::Future;
 
 use glave_event::{
     Arguments, CallId, Cost, MaxPrice, ModelRef, ModelResponded, Money, Part, PrincipalId, Sha256,
-    Sort, StopReason, Usage,
+    Sort, StopReason, ThreadId, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -102,12 +101,11 @@ pub struct ModelRequest {
     /// asks for nothing beyond what every call asks.
     #[serde(skip)]
     pub route: Option<Route>,
-    /// The provider a router last served the conversation with at each target, by the
-    /// target's name, as the router named it (`model.responded`'s `upstream`): the gateway asks
-    /// that router for it first, since each provider keeps its own prompt cache. Empty asks for
-    /// none. Never sent.
+    /// The thread whose conversation the call sends, so a router (OpenRouter) keeps every
+    /// call of it with one provider, whose prompt cache holds it. None for a call that sends
+    /// no thread's conversation. Never sent but as that.
     #[serde(skip)]
-    pub upstreams: BTreeMap<String, String>,
+    pub session: Option<ThreadId>,
 }
 
 /// A person's filters among a router's providers, as a router takes them for one model.
@@ -125,9 +123,6 @@ pub struct Route {
     pub zdr: bool,
     /// The most a provider's tokens may cost.
     pub max_price: Option<MaxPrice>,
-    /// The providers, by slug, the router tries first, before its own choice and still within
-    /// the rest: the one that served the conversation last, whose cache holds its prefix.
-    pub order: Vec<String>,
 }
 
 /// Whose work a model call is: the organization whose credits pay for it, and the person it

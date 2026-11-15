@@ -48,6 +48,11 @@ pub(crate) struct ChatRequest<'a> {
     /// person's filters among its providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Preferences<'a>>,
+    /// For OpenRouter: the thread the conversation is, so it keeps the conversation with one
+    /// provider from its first answer on, whose prompt cache holds it ("provider sticky
+    /// routing", OpenRouter's prompt caching docs). An order of providers would turn it off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,9 +65,6 @@ struct Effort<'a> {
 struct Preferences<'a> {
     data_collection: &'static str,
     require_parameters: bool,
-    /// Tried first, OpenRouter falling back to the others allowed when they fail.
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    order: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     only: Option<&'a [String]>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
@@ -94,7 +96,6 @@ impl<'a> Preferences<'a> {
         Self {
             data_collection: "deny",
             require_parameters: true,
-            order: route.map_or(none, |route| &route.order),
             only: route.and_then(|route| route.only.as_deref()),
             ignore: route.map_or(none, |route| &route.ignore),
             quantizations: route.map_or(none, |route| &route.quantizations),
@@ -384,6 +385,10 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .map(|effort| Effort { effort }),
         reasoning_effort: effort.filter(|_| !openrouter),
         provider: openrouter.then(|| Preferences::of(request.route.as_ref())),
+        session_id: request
+            .session
+            .filter(|_| openrouter)
+            .map(|thread| thread.to_string()),
     }
 }
 
