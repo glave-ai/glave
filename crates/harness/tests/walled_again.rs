@@ -25,6 +25,70 @@ fn sh(dir: &std::path::Path, script: &str) {
     assert!(ran.success(), "{script}");
 }
 
+/// The repository `repo` on this computer, its worktrees in `worktrees`, its commands in the
+/// sandbox (`base` their home), with the person's secret and GitHub sign-in.
+async fn persons_workspace(
+    base: &std::path::Path,
+    repo: &std::path::Path,
+    worktrees: &std::path::Path,
+) -> Workspace {
+    let environment = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH" || name == "HOME")
+        .collect::<Vec<_>>();
+    let (computers, info) = LocalComputers::for_here(environment)
+        .with_worktrees(worktrees)
+        .open_here(repo)
+        .await
+        .unwrap();
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: SandboxNetwork::when(false),
+        home: Some(base.to_owned()),
+        glave_home: Some(base.join(".glave")),
+    };
+    let known = KnownSecrets::default();
+    known.set(vec![Known::new(
+        "STRIPE_KEY".into(),
+        Secret::new(any_secret()),
+    )]);
+    let host = CredentialHost {
+        url: "https://github.com".into(),
+        forge: Forge::Github,
+    };
+    let credential = GitCredential::new("x-access-token", any_secret()).unwrap();
+    let fixed = std::sync::Arc::new(FixedGitCredentials::new(vec![host], credential));
+    Workspace::new(computers, info)
+        .with_sandbox(&sandbox)
+        .await
+        .unwrap()
+        .hiding(known)
+        .with_credentials(fixed)
+}
+
+/// A cleanup in another glave removes the worktree of `thread` at `root`, a worktree of
+/// `repo`, and records so.
+async fn removed_outside<A: glave_harness::Approver>(
+    harness: &glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, A>,
+    thread: &glave_harness::Thread,
+    repo: &std::path::Path,
+    root: &std::path::Path,
+) {
+    sh(
+        repo,
+        &format!("git worktree remove --force '{}'", root.display()),
+    );
+    let removed = WorkspaceRemoved {
+        root: root.to_string_lossy().into_owned(),
+        branch: None,
+        reason: RemovedReason::Pruned,
+        trash: None,
+    };
+    let now = SystemClock.now();
+    record_removed(harness.log(), &scope(), thread.id, now, [1; 10], &removed)
+        .await
+        .unwrap();
+}
+
 #[test]
 fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_ins() {
     if !glave_computer::sandbox_available() {
@@ -41,37 +105,7 @@ fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_
     );
     let worktrees = base.join("worktrees");
     block_on!(async {
-        let environment = std::env::vars_os()
-            .filter(|(name, _)| name == "PATH" || name == "HOME")
-            .collect::<Vec<_>>();
-        let (computers, info) = LocalComputers::for_here(environment)
-            .with_worktrees(&worktrees)
-            .open_here(&repo)
-            .await
-            .unwrap();
-        let sandbox = Sandbox {
-            level: SandboxLevel::Project,
-            network: SandboxNetwork::when(false),
-            home: Some(base.to_path_buf()),
-            glave_home: Some(base.join(".glave")),
-        };
-        let known = KnownSecrets::default();
-        known.set(vec![Known::new(
-            "STRIPE_KEY".into(),
-            Secret::new(any_secret()),
-        )]);
-        let host = CredentialHost {
-            url: "https://github.com".into(),
-            forge: Forge::Github,
-        };
-        let credential = GitCredential::new("x-access-token", any_secret()).unwrap();
-        let fixed = std::sync::Arc::new(FixedGitCredentials::new(vec![host], credential));
-        let workspace = Workspace::new(computers, info)
-            .with_sandbox(&sandbox)
-            .await
-            .unwrap()
-            .hiding(known)
-            .with_credentials(fixed);
+        let workspace = persons_workspace(&base, &repo, &worktrees).await;
         // Whether each reached it, never what it is.
         let command = "[ -n \"$STRIPE_KEY\" ] && echo has-key || echo no-key; \
              [ -n \"$GIT_CONFIG_COUNT\" ] && echo has-helper || echo no-helper";
@@ -110,25 +144,7 @@ fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_
         let root = harness.works_in(&thread).unwrap().root().to_owned();
         assert!(root.join("a.txt").exists());
 
-        // A cleanup in another glave removes it and records so.
-        let removing = format!("git worktree remove --force '{}'", root.display());
-        sh(&repo, &removing);
-        let removed = WorkspaceRemoved {
-            root: root.to_string_lossy().into_owned(),
-            branch: None,
-            reason: RemovedReason::Pruned,
-            trash: None,
-        };
-        record_removed(
-            harness.log(),
-            &scope(),
-            thread.id,
-            SystemClock.now(),
-            [1; 10],
-            &removed,
-        )
-        .await
-        .unwrap();
+        removed_outside(&harness, &thread, &repo, &root).await;
 
         harness
             .run_turn_as(&mut thread, "look", &grace, &cancel, &mut |_| {})
