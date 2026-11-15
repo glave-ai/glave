@@ -1,13 +1,15 @@
 //! A model's reasoning kept so it can be sent back: the field its text came in, and
 //! OpenRouter's `reasoning_details` merged from their deltas, signed and encrypted entries
 //! exactly as they came. It goes back within the current turn's tool calls, as Codex sent
-//! it, on every turn only where the API demands it, and only to the provider and model that
-//! produced it.
+//! it, on every turn only where the model's maker demands it, and only to the provider and
+//! model that produced it.
 
 use glave_event::{Opaque, Part};
 use glave_ports::Message;
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
+
+use crate::maker;
 
 /// The field OpenRouter's structured reasoning comes and goes in.
 const DETAILS: &str = "reasoning_details";
@@ -111,17 +113,12 @@ fn merge(previous: &mut Map<String, Value>, delta: Map<String, Value>) {
     }
 }
 
-/// The providers that refuse a request with tools unless every earlier assistant message
-/// carries its reasoning, earlier turns' too: DeepSeek's own API ("Thinking Mode", tool
-/// calls). Through OpenRouter its models need only the current turn's.
-const EVERY_TURN: &[&str] = &["api.deepseek.com"];
-
 /// The index in `messages` from which assistant messages carry their reasoning back to
-/// `provider`: those after the person's last message, the current turn's tool calls, where
-/// the model continues its own chain; earlier turns' are finished and only cost tokens. From
-/// the first for a provider in [`EVERY_TURN`].
-pub(crate) fn sent_from(messages: &[Message], provider: &str) -> usize {
-    if EVERY_TURN.contains(&provider) {
+/// `model`: those after the person's last message, the current turn's tool calls, where the
+/// model continues its own chain; earlier turns' are finished and only cost tokens. From the
+/// first where its maker wants every turn's ([`maker::every_turn`]), as DeepSeek's does.
+pub(crate) fn sent_from(messages: &[Message], model: &str) -> usize {
+    if maker::every_turn(model) {
         return 0;
     }
     messages
@@ -138,9 +135,26 @@ pub(crate) struct SentBack<'a> {
     pub reasoning_details: Option<&'a RawValue>,
 }
 
-/// The reasoning in `parts` to send back to `provider` for `model`: nothing unless they
-/// produced it, else the details exactly as kept, or the text in the field it came in.
+/// The reasoning in `parts` to send back to `provider` for `model`: the details exactly as
+/// kept, or the text in the field it came in, when they produced it; else nothing, or, where
+/// `model`'s maker wants every reply to carry its reasoning, `reasoning_content` empty, the
+/// field DeepSeek's API takes and OpenRouter reads as its own `reasoning`.
 pub(crate) fn sent_back<'a>(parts: &'a [Part], provider: &str, model: &str) -> SentBack<'a> {
+    let back = kept_back(parts, provider, model);
+    let none = back.reasoning_content.is_none()
+        && back.reasoning.is_none()
+        && back.reasoning_details.is_none();
+    if none && maker::every_turn(model) {
+        return SentBack {
+            reasoning_content: Some(String::new()),
+            ..back
+        };
+    }
+    back
+}
+
+/// The reasoning in `parts` that `provider` and `model` produced, as it goes back.
+fn kept_back<'a>(parts: &'a [Part], provider: &str, model: &str) -> SentBack<'a> {
     let origin = parts.iter().find_map(|part| match part {
         Part::Reasoning {
             opaque: Some(opaque),
