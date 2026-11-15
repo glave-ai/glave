@@ -3,6 +3,7 @@ import { ApiError, type ConnectionInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { SERVER } from '../../testing/fixtures';
 import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectionsComponent } from './connections.component';
 
@@ -46,12 +47,16 @@ function rows(root: ParentNode, testId: string): readonly string[] {
 }
 
 /** The page on `fake`, and what it says to screen readers. */
-async function page(fake: FakeSession): Promise<{
+async function page(
+  fake: FakeSession,
+  server: object = SERVER,
+): Promise<{
   readonly fixture: { whenStable(): Promise<unknown>; destroy(): void };
   readonly root: HTMLElement;
   readonly said: string[];
 }> {
   const { said, provider } = announced();
+  fake.answer('server/discover', server);
   TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), provider] });
   const fixture = TestBed.createComponent(ConnectionsComponent);
   await settle(fixture);
@@ -339,5 +344,17 @@ describe('ConnectionsComponent', () => {
       'Connections are signed in to on the computer glave runs on, by its person.',
     );
     expect(refused.root.querySelector('[data-testid="connections-loading"]')).toBeNull();
+  });
+  it('offers only GitHub where the person may not connect services or apps here', async () => {
+    const fake = new FakeSession()
+      .answer('connection/list', { connections: [TRACKER] })
+      .answer('credential/list', { credentials: [], github: 'https://github.com' });
+    const { root } = await page(fake, { ...SERVER, connects: { git_hosts: true } });
+    expect(root.querySelector('app-github-row')).not.toBeNull();
+    expect(root.querySelector('app-connectors')).toBeNull();
+    expect(root.querySelector('[data-testid="connection"]')).toBeNull();
+    expect(root.querySelector('[data-testid="connections-problem"]')).toBeNull();
+    expect(fake.paramsOf('connection/list')).toEqual([]);
+    await expectAccessible(root);
   });
 });

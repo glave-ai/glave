@@ -89,6 +89,14 @@ fn each_person_s_commands_get_their_own_git_hosts_and_never_another_s() {
             let listed = people.of(org, person).await.unwrap().list().await.unwrap();
             assert!(listed.is_empty(), "{who} lists none");
         }
+        let nobody = someone();
+        let theirs = people.credentials(team, nobody);
+        assert!(theirs.hosts().await.is_empty() && theirs.request(&asked()).await.is_none());
+        let made = crate::projects::find_personal_in(&store, team, nobody)
+            .await
+            .unwrap();
+        assert!(made.is_none(), "a command's ask makes no personal project");
+
         let own_listed = people.of(own_org, here).await.unwrap();
         assert!(
             Arc::ptr_eq(

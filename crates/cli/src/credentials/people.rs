@@ -59,16 +59,42 @@ impl PeoplesHosts {
 }
 
 impl Kept {
-    /// The git hosts of `person` in `org`, opened the first time.
+    /// The git hosts of `person` in `org`, opened the first time, their ledger's personal
+    /// project made then if they have none: as they connect one, or list them.
     async fn of(&self, org: OrgId, person: PrincipalId) -> anyhow::Result<Arc<Hosts>> {
-        let whose = (org, person);
-        if whose == self.own.0 {
-            return Ok(Arc::clone(&self.own.1));
-        }
-        if let Some(hosts) = self.recent(whose, None) {
+        if let Some(hosts) = self.open_already((org, person)) {
             return Ok(hosts);
         }
         let ledger = crate::accounts::open_in(&self.store, org, person).await?;
+        self.opened((org, person), ledger).await
+    }
+
+    /// The git hosts of `person` in `org` for their commands, making nothing: none where they
+    /// have no personal project, so nothing connected.
+    async fn reading(&self, org: OrgId, person: PrincipalId) -> anyhow::Result<Option<Arc<Hosts>>> {
+        if let Some(hosts) = self.open_already((org, person)) {
+            return Ok(Some(hosts));
+        }
+        match crate::accounts::find_in(&self.store, org, person).await? {
+            Some(ledger) => self.opened((org, person), ledger).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The git hosts kept open for `whose`, if any: the person on this computer's always.
+    fn open_already(&self, whose: Whose) -> Option<Arc<Hosts>> {
+        if whose == self.own.0 {
+            return Some(Arc::clone(&self.own.1));
+        }
+        self.recent(whose, None)
+    }
+
+    /// The git hosts `ledger` keeps for `whose`, opened now and kept open.
+    async fn opened(
+        &self,
+        whose: Whose,
+        ledger: crate::accounts::Ledger,
+    ) -> anyhow::Result<Arc<Hosts>> {
         let opened = Hosts::open(ledger, self.github.as_ref()).await?;
         // Two asking at once keep the first opened, so a sign-in waiting in one is never lost.
         self.recent(whose, Some(opened))
@@ -123,10 +149,11 @@ struct Theirs {
 }
 
 impl Theirs {
-    /// Their git hosts, or none when they can't be read, which commands then go without.
+    /// Their git hosts, or none when they have none or they can't be read, which commands then
+    /// go without.
     async fn hosts_now(&self) -> Option<Arc<Hosts>> {
-        match self.kept.of(self.org, self.person).await {
-            Ok(hosts) => Some(hosts),
+        match self.kept.reading(self.org, self.person).await {
+            Ok(hosts) => hosts,
             Err(error) => {
                 tracing::warn!("could not read a person's git hosts for a command: {error:#}");
                 None

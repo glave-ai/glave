@@ -27,6 +27,17 @@ pub(crate) async fn open_in(
     Ok(in_scope(store, scope, person))
 }
 
+/// The ledger of `person` in `org`, if they have a personal project there to keep one in:
+/// read, never made.
+pub(crate) async fn find_in(
+    store: &Data,
+    org: OrgId,
+    person: PrincipalId,
+) -> anyhow::Result<Option<Ledger>> {
+    let scope = crate::projects::find_personal_in(store, org, person).await?;
+    Ok(scope.map(|scope| in_scope(store, scope, person)))
+}
+
 /// The ledger of `person` in their personal project `scope`.
 fn in_scope(store: &Data, scope: Scope, person: PrincipalId) -> Ledger {
     Ledger::new(

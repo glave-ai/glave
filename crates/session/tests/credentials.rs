@@ -156,7 +156,8 @@ impl GitHosts for Hosts {
     fn start_device(&self) -> BoxFuture<'_, Result<DeviceCode, ApiError>> {
         Box::pin(async move {
             Ok(DeviceCode {
-                flow: "flow-1".into(),
+                // Its own, as each person's sign-ins are.
+                flow: format!("flow-{}", self.seed),
                 code: "WDJB-MJHT".into(),
                 url: "https://github.com/login/device".into(),
                 expires_in: 900,
@@ -166,7 +167,7 @@ impl GitHosts for Hosts {
 
     fn poll_device(&self, flow: String) -> BoxFuture<'_, Result<Option<CredentialInfo>, ApiError>> {
         Box::pin(async move {
-            if flow != "flow-1" {
+            if flow != format!("flow-{}", self.seed) {
                 return Err(ApiError::new(code::NO_CREDENTIAL, "no such sign-in"));
             }
             let mut polls = self.polls.lock().unwrap();

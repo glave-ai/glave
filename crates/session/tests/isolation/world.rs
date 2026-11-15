@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, Currency, Money, Nanos, PrincipalId, ThreadId};
+use glave_harness::Homes;
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir, any_secret};
 use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
@@ -23,6 +24,7 @@ use serde_json::{Value, json};
 use super::table::Kind;
 use crate::connections::InMemory;
 use crate::credentials::People;
+use crate::homes::Here;
 use crate::providers::Accounts;
 use crate::support::*;
 
@@ -180,6 +182,9 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
         setup.hosts = Some(Arc::new(People::default()));
+        // Everyone it serves has a computer of their own, so each connects their own git
+        // hosts, which the sweep then names to everyone else.
+        setup.homes = Some(Arc::new(Here::new(&dir.join("people"))) as Arc<dyn Homes>);
         setup.connections = Some(Arc::new(InMemory::default()));
         setup.secrets = Some(KeepSecrets::new(Arc::clone(&parts.eraser), personal, local));
     }
@@ -204,6 +209,18 @@ pub(super) async fn ask<L: EventLog + 'static>(
         Ok(reply) => json!({"result": reply}),
         Err(error) => json!({"error": error}),
     }
+}
+
+/// What `caller` gets for `method` with `params`: none where it is refused, as it is for anyone
+/// whose computer it isn't.
+async fn try_call<L: EventLog + 'static>(
+    org: &Org<L>,
+    caller: &Caller,
+    method: &str,
+    params: Value,
+) -> Option<Value> {
+    let answer = ask(org, caller, request(method, params)).await;
+    answer.get("result").cloned()
 }
 
 /// `method` with `params`.
@@ -251,6 +268,13 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     let subscribed = call("push/subscribe", browser).await;
     person.keep(Kind::Device, subscribed["push"]["devices"][0]["id"].clone());
     if !local {
+        // Where people have computers of their own, each connects their own git host.
+        let host = json!({"url": "https://github.com", "token": any_secret()});
+        if let Some(Value::Object(connected)) =
+            try_call(org, &caller, "credential/connect", host).await
+        {
+            person.keep(Kind::Credential, connected["credential"]["id"].clone());
+        }
         return;
     }
     let invited = call("invite/create", json!({"role": "admin"})).await;
