@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 
+use crate::maker;
 use crate::reasoning::{SentBack, sent_back, sent_from};
 
 #[derive(Debug, Serialize)]
@@ -22,6 +23,11 @@ pub(crate) struct ChatRequest<'a> {
     tool_choice: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// The sampler the model's maker documents, sent rather than left to each host's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f64>,
     /// OpenRouter's automatic prompt caching: it moves the cache point forward as the
     /// conversation grows.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -306,6 +312,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
     let cache = caches_automatically(provider, &request.model);
     let openrouter = provider == "openrouter";
     let effort = request.effort.as_deref();
+    let sampler = maker::sampler(&request.model);
     let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
     if !request.system.is_empty() {
         messages.push(WireMessage::System {
@@ -316,7 +323,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
     // after a line naming its result: a tool's message takes text alone. OpenCode sends them
     // so too.
     let mut handed: Vec<ContentPart> = Vec::new();
-    let reasoning_from = sent_from(&request.messages, provider);
+    let reasoning_from = sent_from(&request.messages, &request.model);
     for (index, message) in request.messages.iter().enumerate() {
         if let Message::Tool {
             call_id, output, ..
@@ -361,6 +368,8 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
         tool_choice: (request.tool_choice == ToolChoice::None && !request.tools.is_empty())
             .then_some("none"),
         max_tokens: request.max_output_tokens,
+        temperature: sampler.map(|sampler| sampler.temperature),
+        top_p: sampler.map(|sampler| sampler.top_p),
         cache_control: cache.then_some(CacheControl { kind: "ephemeral" }),
         plugins: if openrouter {
             vec![Plugin {

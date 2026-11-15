@@ -558,23 +558,55 @@ fn reasoning_from_another_provider_or_model_is_not_sent() {
     }
 }
 
-#[test]
-fn reasoning_goes_back_within_the_turn_and_every_turn_only_where_demanded() {
-    let user = |text: &str| Message::User {
+fn user(text: &str) -> Message {
+    Message::User {
         parts: vec![Part::Text { text: text.into() }],
+    }
+}
+
+/// A tool call's assistant message with no reasoning of its own.
+fn unreasoned(call_id: &str) -> Message {
+    Message::Assistant {
+        parts: Vec::new(),
+        tool_calls: vec![ToolCall {
+            call_id: CallId::new(call_id).unwrap(),
+            tool: "bash".into(),
+            arguments: Arguments::Json(json!({"command": "ls"}).as_object().unwrap().clone()),
+        }],
+    }
+}
+
+fn result_of(call_id: &str) -> Message {
+    Message::Tool {
+        call_id: CallId::new(call_id).unwrap(),
+        is_error: false,
+        output: vec![Part::Text { text: "ok".into() }],
+    }
+}
+
+/// The body sent to `provider` for `model` with `messages`.
+fn body_for(provider: &str, model: &str, messages: Vec<Message>) -> Value {
+    let request = ModelRequest {
+        model: model.into(),
+        ..asking(messages, Vec::new())
     };
-    let carried = |provider: &str| {
-        let request = asking(
+    serde_json::to_value(chat_request(&request, provider)).unwrap()
+}
+
+#[test]
+fn reasoning_goes_back_within_the_turn_and_every_turn_where_the_maker_demands() {
+    let carried = |provider: &str, model: &str| {
+        let body = body_for(
+            provider,
+            model,
             vec![
                 user("first"),
-                reasoned(provider, "gpt", "reasoning_content", ""),
+                reasoned(provider, model, "reasoning_content", ""),
                 user("second"),
-                reasoned(provider, "gpt", "reasoning_content", ""),
-                reasoned(provider, "gpt", "reasoning_content", ""),
+                reasoned(provider, model, "reasoning_content", ""),
+                reasoned(provider, model, "reasoning_content", ""),
             ],
-            Vec::new(),
         );
-        let body = serde_json::to_value(chat_request(&request, provider)).unwrap();
         body["messages"]
             .as_array()
             .unwrap()
@@ -583,8 +615,99 @@ fn reasoning_goes_back_within_the_turn_and_every_turn_only_where_demanded() {
             .map(|message| message.get("reasoning_content").is_some())
             .collect::<Vec<_>>()
     };
-    assert_eq!(carried("openrouter"), [false, true, true]);
-    assert_eq!(carried("api.deepseek.com"), [true, true, true]);
+    assert_eq!(carried("openrouter", "gpt"), [false, true, true]);
+    for (provider, model) in [
+        ("api.deepseek.com", "deepseek-reasoner"),
+        ("openrouter", "deepseek/deepseek-v4.1-flash"),
+        ("api.deepinfra.com", "deepseek-ai/DeepSeek-V4.1-Flash"),
+    ] {
+        assert_eq!(carried(provider, model), [true, true, true], "{model}");
+    }
+}
+
+#[test]
+fn every_reply_to_deepseek_carries_reasoning_empty_where_it_had_none() {
+    let model = "deepseek/deepseek-v4.1-flash";
+    let body = body_for(
+        "openrouter",
+        model,
+        vec![
+            user("first"),
+            unreasoned("call_1"),
+            result_of("call_1"),
+            reasoned("anthropic", "claude", "reasoning_content", ""),
+            user("second"),
+            reasoned("openrouter", model, "reasoning_content", ""),
+        ],
+    );
+    let sent: Vec<&Value> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "assistant")
+        .map(|message| &message["reasoning_content"])
+        .collect();
+    assert_eq!(sent, [&json!(""), &json!(""), &json!("Look first.")]);
+    let other = body_for("openrouter", "gpt", vec![unreasoned("call_1")]);
+    assert!(other["messages"][0].get("reasoning_content").is_none());
+}
+
+#[test]
+fn deepseek_is_sent_its_makers_sampler_and_no_other_model_any() {
+    for (provider, model) in [
+        ("openrouter", "deepseek/deepseek-v4.1-flash"),
+        ("api.deepinfra.com", "deepseek-ai/DeepSeek-V4.1-Flash"),
+    ] {
+        let body = body_for(provider, model, Vec::new());
+        assert_eq!(body["temperature"], json!(1.0), "{model}");
+        assert_eq!(body["top_p"], json!(0.95), "{model}");
+        let text = serde_json::to_string(&body).unwrap();
+        assert!(!text.contains("penalty"), "{text}");
+    }
+    for (provider, model) in [
+        ("openrouter", "anthropic/claude-haiku-5.5"),
+        ("openai", "gpt-6-luna"),
+        ("openrouter", "openai/gpt-6-luna"),
+        ("ollama", "gemma-4-12b"),
+    ] {
+        let body = body_for(provider, model, Vec::new());
+        assert!(body.get("temperature").is_none(), "{model}");
+        assert!(body.get("top_p").is_none(), "{model}");
+    }
+}
+
+#[test]
+fn a_deepseek_conversation_is_sent_again_byte_for_byte_as_it_grows() {
+    let model = "deepseek/deepseek-v4.1-flash";
+    let first = vec![
+        user("first"),
+        reasoned("openrouter", model, "reasoning_content", ""),
+        unreasoned("call_1"),
+        result_of("call_1"),
+    ];
+    let mut later = first.clone();
+    later.extend([
+        reasoned("openrouter", model, "reasoning_content", ""),
+        user("second"),
+        unreasoned("call_2"),
+        result_of("call_2"),
+    ]);
+    let sent = |messages: Vec<Message>| {
+        let body = body_for("openrouter", model, messages);
+        let messages = body["messages"].as_array().unwrap().clone();
+        let without = |key: &str| {
+            let mut body = body.clone();
+            body.as_object_mut().unwrap().remove(key);
+            body
+        };
+        (messages, without("messages"))
+    };
+    let (before, rest_before) = sent(first);
+    let (after, rest_after) = sent(later);
+    let prefix: Vec<String> = before.iter().map(Value::to_string).collect();
+    let grown: Vec<String> = after.iter().map(Value::to_string).collect();
+    assert_eq!(grown.get(..prefix.len()), Some(prefix.as_slice()));
+    assert_eq!(rest_before, rest_after, "the same parameters on every call");
 }
 
 #[test]

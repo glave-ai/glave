@@ -16,12 +16,12 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{BlobRef, Part};
 use glave_ports::{
-    BlobStore, Effect, EventLog, Message, ModelProvider, ModelRequest, Pieces, Purpose, ToolCall,
+    BlobStore, EventLog, Message, ModelProvider, ModelRequest, Pieces, Purpose, ToolCall,
     ToolChoice, ToolOutput,
 };
 use serde_json::json;
 
-use crate::approval::{ApprovalRequest, Approver, ask_of};
+use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::files::kind_of;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -76,36 +76,12 @@ where
         };
         let name = purpose.id();
         let summary = describe(name, &call.arguments);
-        let hooked = ToolHook::of(call, name);
-        let refused = if let Some(answered) = step.waited(&call.call_id) {
-            // Its hooks ran and it asked before the turn stopped: its answer decides.
-            self.answered(thread, answered, cancel, live).await?
-        } else if let Some(stopped) =
-            (self.stopped_by_hook(thread, &hooked, &summary, cancel, live)).await?
-        {
-            Some(stopped)
-        } else {
-            let request = ApprovalRequest {
-                thread: thread.id,
-                call_id: call.call_id.clone(),
-                tool: name.to_owned(),
-                effect: Effect::Runs,
-                summary: summary.clone(),
-                ask: ask_of(name),
-                secret: false,
-                caution: None,
-                outside_sandbox: None,
-            };
-            let turn = &mut step.summary;
-            self.approve(thread, &request, turn, cancel, live).await?
-        };
-        if let Some(refused) = refused {
+        let asked_about = (call, name, summary.as_str());
+        let refused = self.ask_beyond(thread, asked_about, step, cancel, live);
+        if let Some(refused) = refused.await? {
             return Ok(refused);
         }
-        self.record_started(thread, &call.call_id).await?;
-        live(Live::ToolStarted {
-            summary: summary.clone(),
-        });
+        let hooked = ToolHook::of(call, name);
         let made = (purpose, asked, inputs);
         let output = self.made(thread, made, step, cancel).await?;
         live(Live::ToolFinished {

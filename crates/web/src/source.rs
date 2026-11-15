@@ -1,8 +1,8 @@
 //! `web_fetch` as a tool source, offered while fetching is on. What it returns is marked
 //! untrusted, so the harness labels it for the model and judges risky actions after it knowing
 //! it was read; the page it read, its address and title, is recorded apart from its text, for
-//! the person to see what a reply drew on. Search is not built in: it comes from remote tools,
-//! such as an MCP server.
+//! the person to see what a reply drew on. Search is glave's own `web_search`, which the
+//! harness runs through the gateway (`brave.rs`).
 
 use std::fmt::Write as _;
 use std::future::ready;

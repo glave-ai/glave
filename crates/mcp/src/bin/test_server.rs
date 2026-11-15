@@ -11,9 +11,7 @@
 //! own (`glave_ports::testing`'s), which grants its first `--token` at each sign-in (with
 //! `--signed-in-as <who>` too, beside an ID token naming `who`), for the web app's end-to-end
 //! tests. With `--ends-with-stdin` it ends once its standard input closes, as when what started it ends,
-//! however that ends. With `--results <text>` it stands in for a hosted web search, Exa's
-//! offering only its search: its one tool is `web_search_exa`, answering every query with
-//! `text`. Built with the `test-server` feature.
+//! however that ends. Built with the `test-server` feature.
 
 #![expect(
     deprecated,
@@ -70,30 +68,12 @@ struct TestServer {
     listeners: Arc<Mutex<Vec<SubscriptionSink>>>,
     /// The tokens a request may be signed in with, under `--sign-in`.
     tokens: Arc<Vec<String>>,
-    /// What every search finds, under `--results`.
-    results: Option<Arc<str>>,
     /// What the person answered `ask`, in order.
     answers: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 fn schema(value: &serde_json::Value) -> Arc<JsonObject> {
     Arc::new(value.as_object().cloned().unwrap_or_default())
-}
-
-/// The one tool of a hosted web search offering only its search, as Exa's describes itself.
-fn web_search() -> Tool {
-    let query = json!({"type": "object", "properties": {
-        "query": {"type": "string", "description": "What to find: describe the page you want."},
-        "numResults": {"type": "number", "description": "How many results (default 10)."}
-    }, "required": ["query"]});
-    let mut search = Tool::new(
-        "web_search_exa",
-        "Search the web and get the text of the best pages. If the highlights are not enough, \
-         follow up with web_fetch_exa on the best URLs.",
-        schema(&query),
-    );
-    search.annotations = Some(ToolAnnotations::new().read_only(true).open_world(true));
-    search
 }
 
 /// `size` bytes no one would call words: the same each run, as a test needs.
@@ -143,9 +123,6 @@ fn blocks(what: &str) -> CallToolResult {
 
 impl TestServer {
     fn tools(&self) -> Vec<Tool> {
-        if self.results.is_some() {
-            return vec![web_search()];
-        }
         let text = json!({"type": "object", "properties": {"text": {"type": "string"}}});
         let name = json!({"type": "object", "properties": {"name": {"type": "string"}}});
         let none = json!({"type": "object"});
@@ -219,13 +196,7 @@ impl ServerHandler for TestServer {
                 .enable_prompts()
                 .build(),
         )
-        .with_instructions(if self.results.is_some() {
-            // As Exa's says, naming tools it may not offer.
-            "Only use tools returned by tools/list. If web_search_exa is listed, use it to find \
-             pages. If web_fetch_exa is listed, use it to read known URLs."
-        } else {
-            "Call echo to repeat text; it costs nothing."
-        })
+        .with_instructions("Call echo to repeat text; it costs nothing.")
     }
 
     fn discover(
@@ -356,12 +327,6 @@ impl ServerHandler for TestServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        if let Some(results) = &self.results {
-            return match request.name.as_ref() {
-                "web_search_exa" => Ok(CallToolResponse::Complete(said(results.as_ref()))),
-                other => Err(ErrorData::invalid_params(format!("no tool {other}"), None)),
-            };
-        }
         let result = match request.name.as_ref() {
             "echo" => said(argument(&request, "text")),
             "blocks" => blocks(&argument(&request, "what")),
@@ -599,7 +564,6 @@ fn main() -> ExitCode {
     let server = TestServer {
         legacy: flags.iter().any(|flag| flag == "--legacy"),
         tokens: Arc::new(valued("--token")),
-        results: valued("--results").into_iter().next().map(Arc::from),
         ..TestServer::default()
     };
     let fake = if flags.iter().any(|flag| flag == "--fake-sign-in") {

@@ -5,6 +5,7 @@ mod settings;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{
@@ -83,6 +84,8 @@ pub struct Harness<P, L, B, A> {
     /// their threads alone, in the places they use them: they run with the person's sign-ins.
     /// None by default; the host replaces them when the person's settings change.
     pub(crate) own: RwLock<OwnTools>,
+    /// Whether the person the harness works for has web search on (`web_search.rs`).
+    pub(crate) searching: AtomicBool,
     /// What threads run with where neither they nor their projects choose: the settings' and
     /// the workspace's at first, then the host's. Each turn takes them as it starts.
     pub(crate) defaults: RwLock<Arc<Defaults>>,
@@ -317,6 +320,7 @@ where
             })),
             workspace,
             own: RwLock::default(),
+            searching: AtomicBool::new(true),
             default: RwLock::new(DefaultModel {
                 model: settings.model.clone(),
                 provider: settings.provider.clone(),

@@ -50,4 +50,5 @@ mod turn;
 mod untrusted;
 mod untrusted_after;
 mod upstreams;
+mod web_search;
 mod worktrees;

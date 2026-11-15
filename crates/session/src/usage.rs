@@ -4,19 +4,21 @@
 //! `mcp__<name>__<tool>` after the name the person's settings give its server, so its calls are
 //! the `tool.call.requested` events naming one, in the threads of every project the person owns,
 //! archived ones too, that changed this month, but a fork's copies of another's, which counted
-//! there. The count reads every event of those threads, so it has a time limit: one that runs
-//! out, or fails, leaves the connections without a count.
+//! there. Web search's are the calls of glave's own `web_search`. The count reads every event of
+//! those threads, so it has a time limit: one that runs out, or fails, leaves them without a
+//! count.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use glave_event::{At, Body, Payload as _, RawEvent, ThreadForked, ToolCallRequested};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing, ThreadQuery};
+use glave_ports::{
+    BlobStore, Caller, EventLog, ModelProvider, Purpose, Scope, Standing, ThreadQuery,
+};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
-use crate::connections::Searching;
-use crate::protocol::{ApiError, ConnectionInfo, SearchInfo, Usage};
+use crate::protocol::{ApiError, ConnectionInfo, Usage};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -33,11 +35,12 @@ where
 {
     /// Gives each of `connections` in the person's settings how much it was used.
     pub(crate) async fn used(&self, caller: &Caller, connections: &mut [ConnectionInfo]) {
-        let servers: Vec<&str> = connections
+        let prefixes: Vec<(String, &str)> = connections
             .iter()
             .filter_map(|connection| connection.name.as_deref())
+            .map(|server| (glave_mcp::exposed(server, ""), server))
             .collect();
-        let Some(calls) = self.counted(caller, &servers).await else {
+        let Some(calls) = self.counted(caller, &prefixes).await else {
             return;
         };
         for connection in connections.iter_mut() {
@@ -50,43 +53,27 @@ where
         }
     }
 
-    /// Web search as the person sees it, from `searching`: whether it is on, who searches and
-    /// what it costs, and, while it is on and when `usage` asks, how much it searched this
-    /// month, which reads the month's threads.
-    pub(crate) async fn search_info(
+    /// How many searches the person's agent made this month, glave's own `web_search`'s calls;
+    /// none when the count fails or takes too long.
+    pub(crate) async fn searches_this_month(&self, caller: &Caller) -> Option<u64> {
+        let search = Purpose::WebSearch.id();
+        let calls = self
+            .counted(caller, &[(format!("{search}__"), search)])
+            .await?;
+        Some(calls.get(search).copied().unwrap_or(0))
+    }
+    /// The calls asked this month of the tools named after each of `prefixes`, by the name
+    /// beside it; none when there are none, or the count fails or takes longer than
+    /// [`COUNTING`], which the log says.
+    async fn counted(
         &self,
         caller: &Caller,
-        searching: Searching,
-        usage: bool,
-    ) -> SearchInfo {
-        let Searching { on, name } = searching;
-        let usage = if on && usage {
-            let counted = self.counted(caller, &[name.as_str()]).await;
-            counted.map(|calls| {
-                let searches = calls.get(&name).copied().unwrap_or(0);
-                let sentence = Sentence::SearchesThisMonth { searches }.into();
-                Usage {
-                    calls: searches,
-                    sentence,
-                }
-            })
-        } else {
-            None
-        };
-        SearchInfo::Chosen {
-            on,
-            detail: Sentence::SearchDetail.into(),
-            usage,
-        }
-    }
-
-    /// The calls asked this month of the tools of each of `servers`; none when there are no
-    /// servers, or the count fails or takes longer than [`COUNTING`], which the log says.
-    async fn counted(&self, caller: &Caller, servers: &[&str]) -> Option<BTreeMap<String, u64>> {
-        if servers.is_empty() {
+        prefixes: &[(String, &str)],
+    ) -> Option<BTreeMap<String, u64>> {
+        if prefixes.is_empty() {
             return None;
         }
-        match tokio::time::timeout(COUNTING, self.calls(caller, servers)).await {
+        match tokio::time::timeout(COUNTING, self.calls(caller, prefixes)).await {
             Ok(Ok(calls)) => Some(calls),
             Ok(Err(error)) => {
                 tracing::warn!(
@@ -102,18 +89,14 @@ where
         }
     }
 
-    /// The calls asked this month of the tools of each of `servers`, by the name the person's
-    /// settings give it. A project that cannot be read is left out, and the log says so.
+    /// The calls asked this month of the tools named after each of `prefixes`, by the name
+    /// beside it. A project that cannot be read is left out, and the log says so.
     async fn calls(
         &self,
         caller: &Caller,
-        servers: &[&str],
+        prefixes: &[(String, &str)],
     ) -> Result<BTreeMap<String, u64>, ApiError> {
         let since = month_start(self.inner.harness.clock().now())?;
-        let prefixes: Vec<(String, &str)> = servers
-            .iter()
-            .map(|server| (glave_mcp::exposed(server, ""), *server))
-            .collect();
         let mut calls = BTreeMap::new();
         for project in self.projects_of(caller).await? {
             let scope = match self.authorized(caller, project.project).await {
@@ -125,7 +108,7 @@ where
                 }
             };
             for standing in [Standing::Active, Standing::Archived] {
-                self.tally_threads(&scope, standing, since, &prefixes, &mut calls)
+                self.tally_threads(&scope, standing, since, prefixes, &mut calls)
                     .await?;
             }
         }

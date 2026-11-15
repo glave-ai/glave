@@ -4,14 +4,11 @@
 //! connector's accounts the person named); its token is renewed before it expires and handed to
 //! the person's own servers at that address, as that account, with each request (`tokens.rs`),
 //! never to a file, a command or the model. Their remote servers that
-//! ask them to sign in, and are not signed in to, are listed beside the sign-ins. Web search is
-//! a connection too, under the hood, which the person turns on and off as a setting
-//! (`search.rs`), never listed among them. The connectors of glave's catalog are connected
+//! ask them to sign in, and are not signed in to, are listed beside the sign-ins. The connectors of glave's catalog are connected
 //! here too, a record in the accounts ledger beside their sign-ins (`connectors.rs`).
 
 mod connectors;
 mod flows;
-mod search;
 mod tokens;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,18 +21,15 @@ use glave_mcp::{Reachable, address};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
-use glave_session::{
-    Accounts, Connecting, Connections, KeptConnector, OfferedAccount, Returned, Searching,
-};
+use glave_session::{Accounts, Connecting, Connections, KeptConnector, OfferedAccount, Returned};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::accounts::Ledger;
 use crate::credentials::renewing::Renewals;
 use crate::data::Data;
-use crate::mcp::{Offered, Writer};
+use crate::mcp::Offered;
 use flows::Flows;
-pub(crate) use search::WebSearch;
 
 /// The longest one of the person's remote servers is given to say whether it asks them to
 /// sign in, as `connection/list` lists it.
@@ -50,11 +44,6 @@ pub(crate) struct Connected {
     home: PathBuf,
     flows: Flows,
     renewals: Renewals<ConnectionConnected>,
-    /// Web search, on by default and the person's to turn off: none where they may add no
-    /// servers of their own.
-    search: Option<WebSearch>,
-    /// What changes their `mcp.json` when they turn it on or off.
-    writer: Writer,
     /// What their servers asked for that their sign-ins there do not grant.
     more: MoreAsked,
     /// The addresses their remote servers may be at.
@@ -124,14 +113,12 @@ fn signed_as(url: &str, account: Option<&str>) -> SignedAs {
 impl Connected {
     /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, where
     /// they may sign in to them here (everywhere but a server people sign in to with OIDC,
-    /// whose people's own servers it does not run); with `search`, the person's to turn off;
-    /// asking only at addresses `reachable` allows; offering the connectors of glave's catalog
+    /// whose people's own servers it does not run); asking only at addresses `reachable` allows; offering the connectors of glave's catalog
     /// `offered` names.
     pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         home: &Path,
-        search: Option<WebSearch>,
         reachable: Reachable,
         offered: Offered,
     ) -> anyhow::Result<Arc<Self>> {
@@ -141,8 +128,6 @@ impl Connected {
             home: home.to_owned(),
             flows: Flows::default(),
             renewals: Renewals::default(),
-            search,
-            writer: Writer::default(),
             more: MoreAsked::default(),
             reachable,
             offered: Mutex::new(offered),
@@ -209,12 +194,9 @@ impl Connected {
     }
 
     /// The address of the person's remote server `server` and what their settings call it: the
-    /// one they call that, or at that address. Web search's is none: no connection of theirs.
+    /// one they call that, or at that address.
     async fn resolved(&self, server: &str) -> Option<(String, String)> {
-        let mut remotes = self.remotes().await;
-        if let Some(url) = self.search_address() {
-            remotes.remove(&url);
-        }
+        let remotes = self.remotes().await;
         let at = address(server).and_then(|url| remotes.get_key_value(&url));
         let at = at.map(|(url, remote)| (url.clone(), remote.name.clone()));
         at.or_else(|| {
@@ -321,14 +303,8 @@ impl Connections for Connected {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>> {
         Box::pin(async move {
-            let mut remotes = self.remotes().await;
+            let remotes = self.remotes().await;
             let mut kept = self.kept().await?;
-            // Web search is a setting of the person's, not a connection they see; its server
-            // is never asked anything to list it.
-            if let Some(url) = self.search_address() {
-                remotes.remove(&url);
-                kept.retain(|kept| kept.url != url);
-            }
             // A connector's sign-in is listed with the connector (`connector/list`), unless the
             // person's settings name a server of their own at its address; a named account's
             // is always the connector's.
@@ -365,14 +341,6 @@ impl Connections for Connected {
             self.kept().await?;
             Ok(())
         })
-    }
-
-    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
-        Box::pin(self.searching())
-    }
-
-    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
-        Box::pin(self.searching_set(on))
     }
 
     fn connectors(&self) -> BoxFuture<'_, Result<Vec<OfferedAccount>, ApiError>> {

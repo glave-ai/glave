@@ -55,6 +55,8 @@ where
     /// person's secrets again; and refreshes the models' catalogs when they are due.
     pub(crate) async fn reread(&self) {
         self.refresh_when_due();
+        // The person's web search switch, before their first turn.
+        self.read_search_choice().await;
         // Secrets another process changed reach this one's commands and masking too.
         if let Some(secrets) = &self.inner.secrets
             && let Err(error) = secrets.kept().await
