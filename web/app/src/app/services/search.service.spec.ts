@@ -5,8 +5,8 @@ import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { ChangesService } from './changes.service';
 import { SearchService } from './search.service';
 
-const OFF: SearchInfo = { kind: 'chosen', on: false, detail: 'Uses Exa, free.' };
-const ON: SearchInfo = { kind: 'chosen', on: true, detail: 'Uses Exa, free.' };
+const OFF: SearchInfo = { kind: 'chosen', on: false, detail: 'Uses Brave Search.' };
+const ON: SearchInfo = { kind: 'chosen', on: true, detail: 'Uses Brave Search.' };
 
 async function settled(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));

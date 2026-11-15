@@ -5,7 +5,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { WebSearchComponent } from './web-search.component';
 
-const DETAIL = 'Uses Exa, free. Your searches go to Exa.';
+const DETAIL = 'Uses Brave Search. Your searches go to Brave Search.';
 
 async function render(fake: FakeSession): Promise<{
   readonly root: HTMLElement;

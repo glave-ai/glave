@@ -2014,7 +2014,6 @@ dependencies = [
  "glave-gateway",
  "glave-harness",
  "glave-keys",
- "glave-mcp",
  "glave-memory",
  "glave-office",
  "glave-ports",

@@ -4,8 +4,7 @@
 //! and removed. Only the person on this computer may do this: a caller signed in with OIDC is
 //! refused, a server whose sign-ins someone else sets up refuses everyone, and one no browser
 //! can come back to says so. Each connection in the person's settings says how often it was
-//! called this month; web search, no connection the person sees, says what it is for and how
-//! often it searched, and is never theirs to choose where they may not.
+//! called this month.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -13,12 +12,10 @@ use std::sync::{Arc, Mutex};
 use glave_ports::BoxFuture;
 use glave_session::protocol::{
     ApiError, ConnectionInfo, ConnectionStatus, ConnectorCategoryId, ConnectorStatus,
-    ConnectorTagId, Reply, Request, SearchInfo, SignInLink, code,
+    ConnectorTagId, Reply, Request, SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{
-    Answering, Connecting, Connections, KeptConnector, OfferedAccount, Returned, Searching,
-};
+use glave_session::{Answering, Connecting, Connections, KeptConnector, OfferedAccount, Returned};
 use serde_json::json;
 
 use crate::conformance::{Client, OverHttp};
@@ -37,8 +34,6 @@ const NOT_MINE: &str = "https://plain.example.com/mcp";
 pub(crate) struct InMemory {
     redirects: Mutex<Vec<Option<String>>>,
     kept: Mutex<Vec<ConnectionInfo>>,
-    /// Web search, the person's to turn on or off once it is set; none, not theirs.
-    searching: Mutex<Option<Searching>>,
     /// The connectors connected, and where each is used.
     connectors: Mutex<Vec<KeptConnector>>,
 }
@@ -109,20 +104,6 @@ impl Connections for InMemory {
                 return Err(ApiError::new(code::NO_CREDENTIAL, "no such connection"));
             }
             Ok(())
-        })
-    }
-
-    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
-        Box::pin(async move { Ok(self.searching.lock().unwrap().clone()) })
-    }
-
-    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
-        Box::pin(async move {
-            let mut searching = self.searching.lock().unwrap();
-            if let Some(searching) = searching.as_mut() {
-                searching.on = on;
-            }
-            Ok(searching.clone())
         })
     }
 
@@ -365,8 +346,7 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
     block_on!(async {
         let (tested, _) = fresh(&folder("conn-oidc")).await;
         let mut client = OverHttp::new(tested).await;
-        let on = Request::SearchSet { on: true };
-        for request in [start(SERVER), Request::ConnectionList {}, on.clone()] {
+        for request in [start(SERVER), Request::ConnectionList {}] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
@@ -384,24 +364,8 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;
-        for request in [start(SERVER), on] {
-            let refused = tested.request(request).await.unwrap_err();
-            assert_eq!(refused.code, code::NOT_AVAILABLE);
-        }
-        let never = tested
-            .request(Request::SearchGet { usage: true })
-            .await
-            .unwrap();
-        let Reply::Search {
-            search: SearchInfo::Never { reason },
-        } = never
-        else {
-            panic!("not theirs to choose, so not shown: {never:?}");
-        };
-        assert_eq!(
-            &*reason,
-            "web search is set up by whoever runs this server, not from here"
-        );
+        let refused = tested.request(start(SERVER)).await.unwrap_err();
+        assert_eq!(refused.code, code::NOT_AVAILABLE);
         tested.shutdown().await;
     });
 }
@@ -423,7 +387,6 @@ fn each_connection_in_the_person_s_settings_says_how_often_it_was_called_this_mo
         let mut setup = Setup::new(vec![
             call("mcp__docs__echo"),
             call("mcp__docs__echo"),
-            call("mcp__search__web_search_exa"),
             answer(Some("done"), None),
         ]);
         setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
@@ -437,90 +400,6 @@ fn each_connection_in_the_person_s_settings_says_how_often_it_was_called_this_mo
         turn(&tested, thread, "look it up").await.unwrap();
         let used = docs_used(&listed(&tested).await).unwrap();
         assert_eq!((used.calls, &*used.sentence), (2, "2 calls this month"));
-        tested.shutdown().await;
-    });
-}
-
-/// Web search as the server answers it.
-async fn search(tested: &Tested, request: Request) -> SearchInfo {
-    match tested.request(request).await.unwrap() {
-        Reply::Search { search } => search,
-        other => panic!("search, not {other:?}"),
-    }
-}
-
-/// Whether `search` is on, and how many searches it says it made this month, if it says.
-fn on_and_counted(search: &SearchInfo) -> (bool, Option<u64>) {
-    match search {
-        SearchInfo::Chosen { on, usage, .. } => (*on, usage.as_ref().map(|usage| usage.calls)),
-        SearchInfo::Never { .. } => panic!("the person's to choose, not {search:?}"),
-    }
-}
-
-#[test]
-fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_month() {
-    block_on!(async {
-        let connections = Arc::new(InMemory::default());
-        *connections.searching.lock().unwrap() = Some(Searching {
-            on: false,
-            name: "search".into(),
-        });
-        let searched = || {
-            answer(
-                None,
-                Some(("mcp__search__web_search_exa", json!({"query": "x"}))),
-            )
-        };
-        let mut setup = Setup::new(vec![searched(), searched(), answer(Some("done"), None)]);
-        setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
-        let dir = folder("search-usage");
-        let (tested, _) = setup.build(&dir).await;
-        let off = search(&tested, Request::SearchGet { usage: true }).await;
-        let SearchInfo::Chosen { on, detail, usage } = off else {
-            panic!("the person's to choose, not {off:?}");
-        };
-        assert_eq!(
-            (on, &*detail, usage),
-            (false, "Uses Exa, free. Your searches go to Exa.", None)
-        );
-        assert!(
-            listed(&tested)
-                .await
-                .iter()
-                .all(|it| it.name.as_deref() != Some("search"))
-        );
-
-        let on = search(&tested, Request::SearchSet { on: true }).await;
-        let SearchInfo::Chosen {
-            on: true,
-            usage: Some(usage),
-            ..
-        } = on
-        else {
-            panic!("on, with its searches, not {on:?}");
-        };
-        assert_eq!(
-            (usage.calls, &*usage.sentence),
-            (0, "No searches this month")
-        );
-        let thread = crate::support::start(&tested, false).await;
-        turn(&tested, thread, "search twice").await.unwrap();
-        let counted = search(&tested, Request::SearchGet { usage: true }).await;
-        let SearchInfo::Chosen {
-            usage: Some(usage), ..
-        } = counted
-        else {
-            panic!("counted, not {counted:?}");
-        };
-        assert_eq!(
-            (usage.calls, &*usage.sentence),
-            (2, "2 searches this month")
-        );
-        // A client that only shows whether it is on reads no month of threads.
-        let shown = search(&tested, Request::SearchGet { usage: false }).await;
-        assert_eq!(on_and_counted(&shown), (true, None));
-        let off = search(&tested, Request::SearchSet { on: false }).await;
-        assert_eq!(on_and_counted(&off), (false, None));
         tested.shutdown().await;
     });
 }

@@ -251,8 +251,7 @@ impl Servers {
         self.running.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// `wanted` started, in the person's home folder; a remote one signed in as the person,
-    /// and web search's telling the person what each call searched.
+    /// `wanted` started, in the person's home folder; a remote one signed in as the person.
     fn started(&self, wanted: &Wanted) -> Arc<McpServer> {
         let name = &wanted.name;
         let limits = Limits {
@@ -262,13 +261,9 @@ impl Servers {
         let server = match (&wanted.config, &self.connected) {
             (ServerConfig::Http { url, headers }, Some(connected)) => {
                 let signer = connected.signer(url, wanted.account.as_deref());
-                let server = McpServer::remote(name, url, headers, signer, limits)
+                McpServer::remote(name, url, headers, signer, limits)
                     .account(wanted.account.clone())
-                    .known_as(wanted.known_as.clone());
-                match connected.search_at(url) {
-                    Some(search) => server.searching_with(search.tool),
-                    None => server,
-                }
+                    .known_as(wanted.known_as.clone())
             }
             (config, _) => McpServer::start(
                 name,

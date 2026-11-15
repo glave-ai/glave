@@ -357,12 +357,15 @@ async fn wire(
     (remembering, calendar): (&Remembering, &Calendar),
 ) -> Result<Wired, EvalError> {
     let workspace = workspace(task, setup, (environment, hidden), root).await?;
+    // The task's web search, on as where the server has a search key.
+    let search = crate::search::service(task, web).await?;
     let provider = floor::gateway(
         &setup.endpoint,
         model,
         setup.floor.as_ref(),
         offered(setup, model),
-    )?;
+    )?
+    .with_search(search);
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
     settings.instructions = agents_md(root, None)
         .await
@@ -397,9 +400,6 @@ async fn wire(
     })
     .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut tools: Vec<Arc<dyn ToolSource>> = vec![Arc::new(web)];
-    // The person's own servers follow glave's tools, as the CLI offers them.
-    let searching = crate::search::connection(task, pages, root, &setup.processes).await?;
-    tools.extend(searching.map(|server| Arc::new(server) as Arc<dyn ToolSource>));
     tools.extend(crate::connected::services(task).await?);
     // The project's skills, as the CLI finds them, then glave's own; the person's own are not
     // part of a task.

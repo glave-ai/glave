@@ -67,17 +67,20 @@ enum Own {
     ImageGenerate,
     /// `image_edit`: where the provider changes them.
     ImageEdit,
+    /// `web_search`: where the provider searches and the person has it on.
+    WebSearch,
 }
 
 impl Own {
     /// Every one of glave's own tools.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Question,
         Self::Agent,
         Self::Plan,
         Self::Compact,
         Self::ImageGenerate,
         Self::ImageEdit,
+        Self::WebSearch,
     ];
 
     /// The tool's name.
@@ -89,6 +92,7 @@ impl Own {
             Self::Compact => crate::compaction::COMPACT,
             Self::ImageGenerate => crate::media::IMAGE_GENERATE,
             Self::ImageEdit => crate::media::IMAGE_EDIT,
+            Self::WebSearch => crate::web_search::WEB_SEARCH,
         }
     }
 }
@@ -290,8 +294,19 @@ impl ToolSet {
         self.offers(Own::ImageGenerate, name) || self.offers(Own::ImageEdit, name)
     }
 
+    /// Offers `web_search` too (`web_search.rs`).
+    pub(crate) fn offer_search(&mut self) {
+        self.offer(Own::WebSearch, crate::web_search::spec());
+    }
+
+    /// Whether `name` is `web_search`, while it is on offer.
+    pub(crate) fn is_search(&self, name: &str) -> bool {
+        self.offers(Own::WebSearch, name)
+    }
+
     /// The tools a subagent has: these, less glave's own (`agent`, `question`,
-    /// `update_plan`, `compact` and memory's), and for an explorer only those that read.
+    /// `update_plan`, `compact`, media and memory's) but `web_search`, and for an explorer only
+    /// those that read, which a search does.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;
         let by_name: HashMap<String, (usize, ToolInfo)> = self
@@ -304,8 +319,13 @@ impl ToolSet {
             .filter(|name| by_name.contains_key(*name))
             .cloned()
             .collect();
+        let own: Vec<Own> = (self.own.iter().copied())
+            .filter(|own| *own == Own::WebSearch)
+            .collect();
         let kept = |spec: &&ToolSpec| {
-            by_name.contains_key(&spec.name) || self.lists_for(&spec.name, &catalog)
+            by_name.contains_key(&spec.name)
+                || self.lists_for(&spec.name, &catalog)
+                || own.iter().any(|own| own.name() == spec.name)
         };
         Self {
             specs: self.specs.iter().filter(kept).cloned().collect(),
@@ -321,7 +341,7 @@ impl ToolSet {
                 .to_owned(),
             by_name,
             missing: self.missing.clone(),
-            own: Vec::new(),
+            own,
             memory: Vec::new(),
             news: None,
             connected: self.connected.clone(),
