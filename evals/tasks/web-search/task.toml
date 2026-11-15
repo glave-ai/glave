@@ -1,6 +1,6 @@
 [task]
 name = "glave/web-search"
-description = "The answer is on a page the person gave no address for, with a web search connection on: the model searches the web, then reads the page it found with web_fetch."
+description = "The answer is on a page the person gave no address for, with web search on: the model searches the web with web_search, then reads the page it found with web_fetch."
 
 [glave]
 permissions = "auto"
@@ -8,10 +8,9 @@ permissions = "auto"
 # other way to the web, which reaches this repository and its answers.
 network = false
 # The page's address is only in the search's results (search.md), and the codename only on the
-# page: the results reached the model labelled untrusted, the answer could come only from reading
-# the page, and the model never called the search server's reader, which glave does not offer.
+# page: the results reached the model labelled untrusted, and the answer could come only from
+# reading the page.
 checks = [
-    { sent = "<untrusted>\\nTitle: Bramblewick 3.1 release notes" },
+    { sent = "<untrusted>\\n1. Bramblewick 3.1 release notes" },
     { answer_contains = "Saffron Marten" },
-    { never_sent = "\"tool\":\"web_fetch_exa\"" },
 ]

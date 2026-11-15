@@ -99,7 +99,7 @@ fn a_reply_s_sources_are_the_pages_its_turn_read_before_it_each_once() {
     log.turn("what changed in tokio?")
         .reply("Let me search.")
         // A search's results the agent only skimmed: no page read.
-        .call("mcp__search__web_search_exa", false, None)
+        .call("web_search", false, None)
         .read("https://tokio.rs/blog", Some("Tokio blog"))
         .read("https://docs.rs/tokio", None)
         .read("https://tokio.rs/blog", Some("Tokio blog"))

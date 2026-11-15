@@ -30,7 +30,7 @@ describe('lastSourcing', () => {
 
   it('asks nothing after other tools, a search among them', () => {
     const events = [
-      requested(1, 'mcp__search__web_search_exa'),
+      requested(1, 'web_search'),
       requested(2, 'read'),
       event(3, 'turn.ended', { outcome: 'completed' }),
     ];

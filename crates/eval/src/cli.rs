@@ -16,10 +16,16 @@ use glave_ports::{Clock as _, SystemClock};
 use glave_process::Processes;
 use glave_provider_openai::Config;
 
+use crate::effort::Effort;
+use crate::floor::{Floor, SAID};
 use crate::report::{self, Report};
 use crate::run::Setup;
 use crate::suite::{self, Plan};
 use crate::task::{self, Task, Tier};
+
+/// The reasoning levels `--effort` takes: those glave's catalogs name, OpenRouter's and
+/// Anthropic's (`specs/gateway.md`, "Reasoning effort").
+const EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /// The models every change is measured on: one each from three labs, all cheap and quick.
 pub(crate) const DEFAULT_MODELS: [&str; 3] = [
@@ -48,8 +54,12 @@ options:
   --no-plan            keep update_plan out of every mode but Plan, as glave does when plans are off
   --subagents          let the model hand work to child threads with task
   --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)
+  --effort <level>     the reasoning level asked of every model: none, minimal, low, medium, high,
+                       xhigh or max (default: each model's own)
   --python <venv>      no glave document skills and no `glave doc`, but this Python environment
-                       first on the tasks' PATH (evals/README.md, \"Documents\")";
+                       first on the tasks' PATH (evals/README.md, \"Documents\")
+  --no-floor           send calls to any of OpenRouter's providers, not only those Glave Cloud's
+                       floor allows (based in the US, keeping nothing, weights at fp8 or better)";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
@@ -65,8 +75,12 @@ struct Options {
     plans: bool,
     subagents: bool,
     memory: Option<bool>,
+    /// The reasoning level asked of every model; each model's default when `None`.
+    effort: Option<String>,
     /// The Python environment the tasks get in place of glave's own document tools.
     python: Option<PathBuf>,
+    /// Whether calls keep to Glave Cloud's floor among OpenRouter's providers.
+    floor: bool,
 }
 
 pub fn main() -> ExitCode {
@@ -137,15 +151,22 @@ fn run(options: &Options) -> Result<bool, String> {
         }
         None => Some(runtime.block_on(glave_on_path())?),
     };
+    let floor = options
+        .floor
+        .then(|| runtime.block_on(Floor::cloud(&endpoint, &options.models)));
+    let effort = (options.effort.as_ref())
+        .map(|level| runtime.block_on(Effort::listed(&endpoint, level, &options.models)));
     let setup = Arc::new(Setup {
         endpoint,
         environment,
         plans: options.plans,
         subagents: options.subagents,
         memory: options.memory,
+        effort: effort.transpose()?,
         processes,
         office: options.python.is_none(),
         glave_on_path,
+        floor: floor.transpose()?,
     });
     let attempts = options
         .repeat
@@ -153,8 +174,11 @@ fn run(options: &Options) -> Result<bool, String> {
     let python = (options.python.as_ref())
         .map(|venv| format!(" · Python from {}, no glave doc", venv.display()))
         .unwrap_or_default();
+    let effort = (options.effort.as_ref())
+        .map(|effort| format!(" · reasoning {effort}"))
+        .unwrap_or_default();
     println!(
-        "glave-eval: {} tasks × {} models × {} = {attempts} attempts{python} · {}",
+        "glave-eval: {} tasks × {} models × {} = {attempts} attempts{effort}{python} · {}",
         tasks.len(),
         options.models.len(),
         options.repeat,
@@ -175,7 +199,8 @@ fn run(options: &Options) -> Result<bool, String> {
         started.to_string(),
         setup.endpoint.provider.clone(),
         options.models.clone(),
-        attempts,
+        options.effort.clone(),
+        (attempts, setup.floor.as_ref().map(|_| SAID.to_owned())),
     );
     let table = report.markdown(baseline.as_ref());
     let json = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
@@ -333,7 +358,9 @@ fn options(args: &[String]) -> Result<Options, String> {
         plans: true,
         subagents: false,
         memory: None,
+        effort: None,
         python: None,
+        floor: true,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -370,7 +397,18 @@ fn options(args: &[String]) -> Result<Options, String> {
                     other => return Err(format!("--memory is on or off, not {other:?}")),
                 };
             }
+            "--effort" => {
+                let effort = value()?;
+                if !EFFORTS.contains(&effort.as_str()) {
+                    return Err(format!(
+                        "--effort is one of {}, not {effort:?}",
+                        EFFORTS.join(", ")
+                    ));
+                }
+                options.effort = Some(effort);
+            }
             "--python" => options.python = Some(PathBuf::from(value()?)),
+            "--no-floor" => options.floor = false,
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -415,6 +453,8 @@ mod tests {
         assert_eq!(options.repeat, 1);
         assert_eq!(options.max_cost, Nanos::new(2_000_000_000));
         assert!(options.plans, "as glave runs");
+        assert_eq!(options.effort, None, "each model's own level");
+        assert!(options.floor, "as Glave Cloud's calls keep to its floor");
     }
 
     #[test]
@@ -444,8 +484,11 @@ mod tests {
             "--subagents",
             "--memory",
             "on",
+            "--effort",
+            "high",
             "--python",
             "venv",
+            "--no-floor",
         ])
         .unwrap();
         assert_eq!(
@@ -462,7 +505,9 @@ mod tests {
                 plans: false,
                 subagents: true,
                 memory: Some(true),
+                effort: Some("high".into()),
                 python: Some("venv".into()),
+                floor: false,
             }
         );
     }
@@ -520,6 +565,14 @@ mod tests {
         assert!(parse(&["--tier", "medium"]).is_err());
         assert!(parse(&["--model"]).is_err());
         assert!(parse(&["--colour"]).is_err());
+        assert!(parse(&["--effort", "hgih"]).is_err());
+        assert!(parse(&["--effort"]).is_err());
+        for level in EFFORTS {
+            assert_eq!(
+                parse(&["--effort", level]).unwrap().effort.as_deref(),
+                Some(level)
+            );
+        }
         assert!(parse(&["--max-cost", "-1"]).is_err());
         assert!(parse(&["--max-cost", "-0.5"]).is_err());
         assert!(parse(&["--max-cost", "1.x"]).is_err());
