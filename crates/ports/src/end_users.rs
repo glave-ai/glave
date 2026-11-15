@@ -120,10 +120,13 @@ mod tests {
         let mut plain = Hmac::<Sha256>::new_from_slice(&[7; 32]).unwrap();
         plain.update(org(1).as_uuid().as_bytes());
         plain.update(person(2).as_uuid().as_bytes());
-        let hex: String = plain.finalize().into_bytes()[..16]
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let hex =
+            plain.finalize().into_bytes()[..16]
+                .iter()
+                .fold(String::new(), |mut hex, byte| {
+                    let _ = write!(hex, "{byte:02x}");
+                    hex
+                });
         assert_eq!(
             id.as_str(),
             format!("g_{hex}"),
