@@ -1,7 +1,14 @@
-//! One model call of a turn: the conversation sent, tried again when that may pass, and the
-//! answer recorded.
+//! One model call of a turn: the conversation sent, tried again when that may pass, stopped
+//! when its answer repeats itself, and the answer recorded.
 
-use glave_event::{CallId, MessageAdded, Role, ToolCallRequested};
+use std::future::{Future, poll_fn};
+use std::pin::pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::Poll;
+
+use glave_event::{
+    CallId, MessageAdded, ModelRef, Role, StopReason, TokenCounts, ToolCallRequested, Usage,
+};
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ProviderError,
     Purpose, ToolCall, ToolChoice,
@@ -9,11 +16,21 @@ use glave_ports::{
 
 use super::Live;
 use crate::approval::Approver;
-use crate::compaction::{Measured, chars};
+use crate::compaction::{CHARS_PER_TOKEN, Measured, chars, next_request_tokens};
 use crate::files::refuses_files;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::looping::Looping;
 use crate::thought::Thinking;
 use crate::toolset::ToolSet;
+
+/// What a model call came to.
+pub(super) enum Answer {
+    /// The model's answer, with how its reasoning went.
+    Given(Completion, Thinking),
+    /// An answer stopped as it streamed, since it repeated itself: none of its words, and what
+    /// it used, estimated.
+    Repeating(Completion),
+}
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where
@@ -33,7 +50,7 @@ where
     }
 
     /// Sends the conversation to the model, forwarding live text as it arrives, and answers
-    /// with how its reasoning went. When its
+    /// with how its reasoning went, or that its answer was stopped for repeating itself. When its
     /// provider refuses the images and PDFs sent inline, it is asked once more with every file
     /// by its name, and the model is taken for one that reads none: a file never stops a
     /// thread.
@@ -43,7 +60,7 @@ where
         offer: &ToolSet,
         tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<(Completion, Thinking), HarnessError> {
+    ) -> Result<Answer, HarnessError> {
         let model = self.model_for(thread);
         let (messages, files) = self
             .with_files(&thread.scope, &model, self.sent(thread))
@@ -70,16 +87,22 @@ where
         let mut named = false;
         loop {
             live(Live::Waiting);
-            let mut thinking = Thinking::default();
-            let mut forward = |delta: Delta| thinking.see(delta, self.clock.now(), live);
-            let answered = self.provider.complete(&request, &mut forward).await;
+            let (answered, mut thinking, came) = self.watched(&request, live).await;
+            let Some(answered) = answered else {
+                tracing::warn!(model = %request.model, "the answer repeated itself: stopped");
+                thinking.end(self.clock.now(), live);
+                let input = next_request_tokens(thread, offer);
+                return self
+                    .cut_off(&request.model, input, came)
+                    .map(Answer::Repeating);
+            };
             match answered {
                 Ok(completion) => {
                     thinking.end(self.clock.now(), live);
                     if named {
                         self.learn_without_images(&request.model);
                     }
-                    return Ok((completion, thinking));
+                    return Ok(Answer::Given(completion, thinking));
                 }
                 Err(error) if !request.files.is_empty() && refuses_files(&error) => {
                     tracing::warn!(
@@ -105,6 +128,81 @@ where
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    /// Streams the answer to `request`, forwarding it live and watching its text for a loop:
+    /// `None` when it repeated itself and was stopped; with how its reasoning went, and how many
+    /// bytes of it came, text and reasoning.
+    async fn watched(
+        &self,
+        request: &ModelRequest,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> (Option<Result<Completion, ProviderError>>, Thinking, u64) {
+        let mut thinking = Thinking::default();
+        let mut looping = Looping::default();
+        let repeating = AtomicBool::new(false);
+        let mut came: u64 = 0;
+        let mut forward = |delta: Delta| {
+            let (Delta::Text(text) | Delta::Reasoning(text)) = &delta;
+            came = came.saturating_add(u64::try_from(text.len()).unwrap_or(u64::MAX));
+            if let Delta::Text(text) = &delta
+                && looping.see(text)
+            {
+                repeating.store(true, Ordering::Relaxed);
+            }
+            thinking.see(delta, self.clock.now(), live);
+        };
+        let answered = until(&repeating, self.provider.complete(request, &mut forward)).await;
+        (answered, thinking, came)
+    }
+
+    /// An answer from `model` stopped for repeating itself, after `came` bytes of it, to a
+    /// request of about `input` tokens: what it used, estimated, as its provider gave nothing.
+    fn cut_off(&self, model: &str, input: u64, came: u64) -> Result<Completion, HarnessError> {
+        let counts = TokenCounts {
+            input,
+            output: came.div_ceil(CHARS_PER_TOKEN),
+            ..TokenCounts::default()
+        };
+        let usage =
+            Usage::new(counts, true, None).map_err(|e| HarnessError::Event(e.to_string()))?;
+        Ok(Completion {
+            model: ModelRef {
+                provider: self.current_default().provider,
+                name: model.to_owned(),
+            },
+            response_id: None,
+            parts: Vec::new(),
+            tool_calls: Vec::new(),
+            stop: StopReason::Repeating,
+            provider_stop: None,
+            usage,
+            cost: None,
+            served: None,
+            upstream: None,
+        })
+    }
+
+    /// After an answer stopped for repeating itself: records what it used, and none of its
+    /// words, so the call asked again is sent what this one was. The first time, the turn goes
+    /// on to ask once more; `again`, the turn ends, failed, saying why.
+    pub(super) async fn stopped_repeating(
+        &self,
+        thread: &mut Thread,
+        summary: &mut glave_event::TurnResult,
+        cut: &Completion,
+        again: bool,
+    ) -> Result<(), HarnessError> {
+        summary.take_in(&cut.responded());
+        let mut events = Vec::new();
+        self.stage(thread, &mut events, &cut.responded())?;
+        self.commit(thread, events).await?;
+        if !again {
+            return Ok(());
+        }
+        summary.outcome = glave_event::Outcome::Failed;
+        self.end(thread, summary).await?;
+        Err(HarnessError::Repeating)
     }
 
     /// Records a finished model response: its message, with what its reasoning came to as
@@ -160,6 +258,22 @@ where
         });
         Ok(calls)
     }
+}
+
+/// Runs `work` until it finishes, `Some` of what it gave, or until `stop` is set as it runs:
+/// `None` then, even when it finished in the same breath, and `work` is dropped, its stream
+/// with it.
+async fn until<T>(stop: &AtomicBool, work: impl Future<Output = T>) -> Option<T> {
+    let mut work = pin!(work);
+    poll_fn(|cx| {
+        let done = work.as_mut().poll(cx);
+        if stop.load(Ordering::Relaxed) {
+            Poll::Ready(None)
+        } else {
+            done.map(Some)
+        }
+    })
+    .await
 }
 
 /// Remembers the size the provider reported, for estimating the next request.
