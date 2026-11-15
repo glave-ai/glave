@@ -61,6 +61,7 @@ pub(crate) fn keyed_at(endpoint: Config, key: &str) -> Setup {
         plans: false,
         subagents: false,
         memory: None,
+        effort: None,
         processes: glave_process::Processes::unrecorded(),
         office: true,
         glave_on_path: None,
