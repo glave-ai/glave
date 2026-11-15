@@ -24,7 +24,7 @@ use crate::args::Args;
 use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
-use crate::connected::{Connected, WebSearch};
+use crate::connected::Connected;
 use crate::credentials::{Hosts, PeoplesHosts};
 use crate::data::{Data, DataLog};
 use crate::gateway::GatewaySwitch;
@@ -36,10 +36,7 @@ use crate::setup::{self, Setup};
 use crate::trust::Trust;
 use crate::worktrees::OnThisMachine;
 use crate::{home, identity};
-
-/// The variable that puts a stand-in in place of Exa's server for web search, for tests, which
-/// must never reach Exa: every glave a test starts is given one.
-const SEARCH_STAND_IN: &str = "GLAVE_SEARCH_URL";
+use glave_gateway::WebSearch;
 
 /// The server for this folder, and what the terminal needs to show it.
 pub(crate) struct Wired {
@@ -131,12 +128,14 @@ pub(crate) async fn wire(
     let lineup = Lineup::new(&setup, configured);
     let credits = credits(choices, &store);
     let floor = choices.router_floor.as_ref().map(|floor| &floor.value);
+    let search = crate::gateway::web_search(&setup)?;
     let lined = line_up(
         args,
         lineup,
         &store,
         identity.person,
         (credits.as_ref(), floor),
+        search,
     );
     let lined = lined.await?;
     let (workspace, hosts, connected) =
@@ -402,9 +401,6 @@ async fn signed(
     let others_sign_in = !args.issuers.is_empty();
     let github = setup.choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
-    // Web search is the person's to turn on or off where they may add servers of their own.
-    let forbidden = setup.loaded.constraints.own_mcp_forbidden().is_some();
-    let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
     let home = home::folder()?;
     let reachable = crate::mcp::reachable(args, &setup.choices);
     let offered = crate::mcp::Offered::by(&setup.loaded.constraints);
@@ -412,13 +408,7 @@ async fn signed(
     let connected = if others_sign_in {
         None
     } else {
-        let connected =
-            Connected::for_person(store, person, &home, search, reachable, offered).await?;
-        // Search on by default is a convenience: a home it can't be written in starts anyway.
-        if let Err(error) = connected.search_by_default().await {
-            tracing::warn!("web search not turned on by default: {error}");
-        }
-        Some(connected)
+        Some(Connected::for_person(store, person, &home, reachable, offered).await?)
     };
     Ok(match hosts {
         Some((own, people)) => {
@@ -482,7 +472,8 @@ fn credits(choices: &Choices, store: &Data) -> Option<Arc<Credits<DataLog>>> {
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
 /// may connect here unless an organization sets up the models: on a server people sign in to
 /// with OIDC, unless it is the server's own OpenRouter, whose catalog is kept the same way.
-/// Their calls are charged to `credits`, where the server keeps them.
+/// Their calls, and the searches of `search`, are charged to `credits`, where the server keeps
+/// them.
 async fn line_up(
     args: &Args,
     lineup: Lineup,
@@ -492,6 +483,7 @@ async fn line_up(
         Option<&Arc<Credits<DataLog>>>,
         Option<&policy::RouterFloorFile>,
     ),
+    search: Option<WebSearch>,
 ) -> anyhow::Result<Lined> {
     let no_ledgers = !args.issuers.is_empty() && lineup.own_account().is_none();
     let ledgers = if no_ledgers {
@@ -518,7 +510,7 @@ async fn line_up(
         Err(error) => return Err(error),
     };
     let floor = crate::gateway::router_floor(floor);
-    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned(), floor);
+    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned(), (floor, search));
     let model_accounts = ledgers.map(|(accounts, catalogs)| {
         Arc::new(ModelAccounts::new(
             accounts,

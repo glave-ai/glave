@@ -315,6 +315,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) followed: Followed,
     /// The computer held awake while work runs, where it is.
     pub(crate) awake: Option<Awake>,
+    /// Set once the person on this computer's web search switch was read (`search.rs`).
+    pub(crate) searching: tokio::sync::OnceCell<()>,
     /// What lets go of a thread's worktrees once it is put away, where the host keeps them.
     pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
     /// The secrets the person on this computer adds, where they may.
@@ -411,6 +413,7 @@ where
                 scheduling: Mutex::new(BTreeMap::new()),
                 followed: Followed::default(),
                 awake: wiring.awake.map(Awake::new),
+                searching: tokio::sync::OnceCell::new(),
                 worktrees: wiring.worktrees,
                 homes: wiring.homes,
                 secrets: wiring.secrets,

@@ -155,6 +155,9 @@ where
         if self.settings.plans || planning || thread.plan.plan.is_some() {
             set.offer_plan();
         }
+        if self.searches(thread) {
+            set.offer_search();
+        }
         if !thread.delegated() {
             set.offer_compact();
             for purpose in [Purpose::ImageGenerate, Purpose::ImageEdit] {
