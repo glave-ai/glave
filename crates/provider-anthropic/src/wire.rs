@@ -55,6 +55,16 @@ pub(crate) struct MessagesRequest<'a> {
     /// each call pays full price only for what is new.
     cache_control: Kind,
     stream: bool,
+    /// The person the call works for, anonymously, as Anthropic's own API takes it: `user_id`,
+    /// which "Anthropic may use this id to help detect abuse"
+    /// (<https://platform.claude.com/docs/en/api/messages>, read 2026-11-15).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<Metadata<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+struct Metadata<'a> {
+    user_id: &'a str,
 }
 
 /// An object that is only its type, such as `{"type": "ephemeral"}`.
@@ -184,6 +194,17 @@ pub(crate) fn messages_request<'a>(
         output_config: effort.map(|effort| OutputConfig { effort }),
         cache_control: Kind { kind: "ephemeral" },
         stream: true,
+        metadata: None,
+    }
+}
+
+impl<'a> MessagesRequest<'a> {
+    /// Says whose call it is, anonymously, as `end_user`, when there is one.
+    pub(crate) fn for_end_user(self, end_user: Option<&'a str>) -> Self {
+        Self {
+            metadata: end_user.map(|user_id| Metadata { user_id }),
+            ..self
+        }
     }
 }
 

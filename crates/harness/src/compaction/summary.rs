@@ -187,6 +187,7 @@ where
             effort: thread.effort.clone(),
             payer: Some(thread.payer()),
             route: None,
+            end_user: None,
         };
         (request, words)
     }

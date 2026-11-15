@@ -28,6 +28,8 @@ lookup = ["dep:reqwest", "dep:tokio", "tokio/net"]
 # The operating system's randomness, for the random part of new ids.
 getrandom.workspace = true
 glave-event.workspace = true
+# The anonymous id each model call sends for its person (`end_users`).
+hmac.workspace = true
 # The clock's time.
 jiff.workspace = true
 # Hook matchers are regular expressions over tool names, as Claude Code and Codex write them.

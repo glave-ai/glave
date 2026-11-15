@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::end_users::EndUser;
+#[cfg(doc)]
+use crate::end_users::EndUsers;
 use crate::failure::Failure;
 use crate::media::{Made, MediaAsk};
 use crate::scope::OrgId;
@@ -101,6 +104,11 @@ pub struct ModelRequest {
     /// asks for nothing beyond what every call asks.
     #[serde(skip)]
     pub route: Option<Route>,
+    /// The anonymous id of the person the call works for, for its provider to tell one end
+    /// user from another ([`EndUsers`]): the gateway sets it, where the server holds the secret
+    /// and the call has a person; none sends nothing. It goes beside the prompt, never in it.
+    #[serde(skip)]
+    pub end_user: Option<EndUser>,
 }
 
 /// A person's filters among a router's providers, as a router takes them for one model.

@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use glave_event::{Opaque, Part};
-use glave_ports::{Failure, Message, ModelRequest, ProviderError, Route};
+use glave_ports::{EndUser, Failure, Message, ModelRequest, ProviderError, Route};
 
 use crate::estimate::Needs;
 use crate::filtering::{self, Keeping, Kept};
@@ -166,11 +166,11 @@ fn accepts(target: &Target, opaque: &Opaque) -> bool {
 
 /// `request` as `target` is sent it: under the target's model name, without opaque reasoning
 /// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, and asking
-/// what `route` does when the target is a router. True when reasoning was stripped. Borrowed
-/// when nothing changes.
+/// what `route` does when the target is a router, saying it works for `end_user` where it
+/// works for someone. True when reasoning was stripped. Borrowed when nothing changes.
 pub(crate) fn prepare<'r>(
     request: &'r ModelRequest,
-    route: Option<&Route>,
+    (route, end_user): (Option<&Route>, Option<&EndUser>),
     target: &Target,
     needs: &Needs<'_>,
 ) -> (Cow<'r, ModelRequest>, bool) {
@@ -181,13 +181,17 @@ pub(crate) fn prepare<'r>(
         });
     let effort = target.effort_for(request.effort.as_deref());
     let unchanged = request.model == target.model && effort == request.effort.as_deref();
-    if !foreign && unchanged && route == request.route.as_ref() {
+    let same_user = end_user.is_none_or(|id| request.end_user.as_ref() == Some(id));
+    if !foreign && unchanged && same_user && route == request.route.as_ref() {
         return (Cow::Borrowed(request), false);
     }
     let mut sent = request.clone();
     sent.model.clone_from(&target.model);
     sent.effort = effort.map(str::to_owned);
     sent.route = route.cloned();
+    if let Some(id) = end_user {
+        sent.end_user = Some(id.clone());
+    }
     if foreign {
         for message in &mut sent.messages {
             if let Message::Assistant { parts, .. } = message {

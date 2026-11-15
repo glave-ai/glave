@@ -49,6 +49,7 @@ fn a_request_has_the_chat_completions_shape() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -100,6 +101,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -132,6 +134,7 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     for provider in ["openrouter", "openai", "ollama"] {
         let sent = serde_json::to_value(chat_request(&request, provider)).unwrap();
@@ -169,6 +172,7 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -206,6 +210,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
@@ -230,6 +235,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -254,6 +260,7 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -293,6 +300,7 @@ fn a_person_s_filters_go_to_openrouter_alone_with_what_every_request_asks() {
         files: Vec::new(),
         payer: None,
         route: Some(route),
+        end_user: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -329,6 +337,7 @@ fn a_reasoning_level_is_sent_as_each_service_takes_it() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(routed["reasoning"], json!({"effort": "high"}));
@@ -375,6 +384,7 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         files,
         payer: None,
         route: None,
+        end_user: None,
     }
 }
 
@@ -707,4 +717,43 @@ fn the_most_a_provider_may_cost_is_sent_exact_to_the_last_place() {
     };
     let sent = serde_json::to_string(&Preferences::of(Some(&route)).max_price).unwrap();
     assert_eq!(sent, r#"{"prompt":0.000000001}"#);
+}
+
+#[test]
+fn the_person_goes_anonymously_where_each_service_documents_it_and_the_prompt_stays_the_same() {
+    let mut request = ModelRequest {
+        model: "openai/gpt-6-luna".into(),
+        system: "Be brief.".into(),
+        messages: vec![user("hello")],
+        tools: vec![ToolSpec {
+            name: "bash".into(),
+            description: "Run a command.".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        effort: None,
+        files: Vec::new(),
+        payer: None,
+        route: None,
+        end_user: None,
+    };
+    let services = ["openrouter", "openai", "ollama", "example.com"];
+    let without = services.map(|service| serde_json::to_value(chat_request(&request, service)));
+    let id = glave_ports::testing::an_end_user().unwrap();
+    request.end_user = Some(id.clone());
+    for (service, without) in services.into_iter().zip(without) {
+        let mut with = serde_json::to_value(chat_request(&request, service)).unwrap();
+        let object = with.as_object_mut().unwrap();
+        let user = object.remove("user");
+        let safety = object.remove("safety_identifier");
+        let sent = json!(id.as_str());
+        match service {
+            "openrouter" => assert_eq!((user, safety), (Some(sent), None)),
+            "openai" => assert_eq!((user, safety), (None, Some(sent))),
+            _ => assert_eq!((user, safety), (None, None), "{service}"),
+        }
+        assert_eq!(with, without.unwrap(), "only the id is added for {service}");
+    }
 }

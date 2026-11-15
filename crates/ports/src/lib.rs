@@ -15,6 +15,7 @@ pub mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 mod directory;
+mod end_users;
 mod env;
 mod erase;
 mod failure;
@@ -51,6 +52,7 @@ pub use blob::{
 };
 pub use caller::Caller;
 pub use directory::{Directory, DirectoryError, IdentityKey};
+pub use end_users::{EndUser, EndUsers};
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};
 pub use failure::Failure;

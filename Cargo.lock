@@ -2219,6 +2219,7 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.4.3",
  "glave-event",
+ "hmac 0.13.0",
  "jiff",
  "proptest",
  "regex",

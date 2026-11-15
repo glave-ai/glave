@@ -2,7 +2,7 @@
 //! shape of each streamed chunk coming back.
 
 use glave_event::{Arguments, Nanos, Part, Sort};
-use glave_ports::{InlineFile, Message, ModelRequest, Route, ToolChoice, ToolSpec};
+use glave_ports::{EndUser, InlineFile, Message, ModelRequest, Route, ToolChoice, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
@@ -48,6 +48,16 @@ pub(crate) struct ChatRequest<'a> {
     /// person's filters among its providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Preferences<'a>>,
+    /// The person the call works for, anonymously, to OpenRouter, which names it `user`:
+    /// "Per-end-user identifier for abuse isolation"
+    /// (<https://openrouter.ai/docs/api-reference/chat-completion>, read 2026-11-15).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<&'a str>,
+    /// The same to OpenAI, whose field for it is `safety_identifier`
+    /// (<https://developers.openai.com/api/docs/guides/safety-best-practices>, read
+    /// 2026-11-15). Other servers are sent neither, as none documents one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    safety_identifier: Option<&'a str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -308,6 +318,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
     let cache = caches_automatically(provider, &request.model);
     let openrouter = provider == "openrouter";
     let effort = request.effort.as_deref();
+    let end_user = request.end_user.as_ref().map(EndUser::as_str);
     let sampler = maker::sampler(&request.model);
     let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
     if !request.system.is_empty() {
@@ -380,6 +391,8 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .map(|effort| Effort { effort }),
         reasoning_effort: effort.filter(|_| !openrouter),
         provider: openrouter.then(|| Preferences::of(request.route.as_ref())),
+        user: end_user.filter(|_| openrouter),
+        safety_identifier: end_user.filter(|_| provider == "openai"),
     }
 }
 

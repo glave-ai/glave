@@ -48,6 +48,7 @@ fn editing(route: Option<Route>) -> ModelRequest {
         files: vec![inline(&style, "anBn"), inline(&image, "cG5n")],
         payer: None,
         route,
+        end_user: None,
     }
 }
 
