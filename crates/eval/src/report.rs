@@ -124,9 +124,9 @@ impl Report {
         self.attempts.iter().map(|a| a.task.as_str()).collect()
     }
 
-    /// The model cheapest per passed task, the reasoning level asked, then the pass rate of each task on each model, the
-    /// totals per model, and every failure. Rates that differ from `baseline` show what they
-    /// were.
+    /// The model cheapest per passed task, the reasoning level asked, then the pass rate of each
+    /// task on each model, the totals per model, and every failure. Rates that differ from
+    /// `baseline` show what they were.
     pub fn markdown(&self, baseline: Option<&Self>) -> String {
         let mut out = String::new();
         let _ = writeln!(out, "{}\n\n{}\n", self.cheapest(), self.reasoning());

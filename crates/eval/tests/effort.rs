@@ -13,6 +13,9 @@ use crate::attempt::{folder, keyed_at, task};
 /// A model whose listing offers three levels.
 const THINKS: &str = "vendor/thinks";
 
+/// A model whose listing offers no `high`, reasoning at `medium` unasked.
+const MILD: &str = "vendor/mild";
+
 /// A model whose listing says nothing of reasoning.
 const PLAIN: &str = "vendor/plain";
 
@@ -22,6 +25,8 @@ fn openrouter() -> FakeHttp {
     let models = json!({"data": [
         {"id": THINKS, "reasoning": {"mandatory": false, "default_enabled": true,
             "supported_efforts": ["high", "medium", "low"], "default_effort": "medium"}},
+        {"id": MILD, "reasoning": {"mandatory": false, "default_enabled": true,
+            "supported_efforts": ["medium", "low"], "default_effort": "medium"}},
         {"id": PLAIN},
     ]});
     let said = json!({"id": "gen-1", "model": THINKS,
@@ -66,6 +71,13 @@ fn a_level_asked_goes_out_as_reasoning_effort_through_the_gateway() {
     assert_eq!((done.model_calls, done.reasoning_tokens), (1, 420));
     assert_eq!(done.calls_without_reasoning, 0);
     assert_eq!(done.sent_at, [("high".to_owned(), 1)].into());
+}
+
+#[test]
+fn a_model_without_the_level_is_sent_its_own_default_and_the_attempt_says_so() {
+    let (done, chat) = attempted(MILD, Some("high"));
+    assert_eq!(chat["reasoning"], json!({"effort": "medium"}));
+    assert_eq!(done.sent_at, [("medium".to_owned(), 1)].into());
 }
 
 #[test]
