@@ -27,6 +27,7 @@ fn run(models: &[&str], attempts: Vec<Attempt>) -> Report {
         "2026-10-08T12:00:00Z".into(),
         "openrouter".into(),
         models.iter().map(|&model| model.to_owned()).collect(),
+        None,
         attempts,
     )
 }
@@ -124,6 +125,8 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
         "\
 Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost reported: free.
 
+Reasoning: each model's own level.
+
 | task | dear | cheap | free | failing |
 | --- | --- | --- | --- | --- |
 | fix | 1/2 | 2/2 | 2/2 | 0/2 |
@@ -132,6 +135,10 @@ Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost re
 | cost | $0.0040 | $0.0020 | - | $0.0040 |
 | tokens | 2,468 | 2,468 | 2,468 | 2,468 |
 | input from cache | 0% | 37% | 0% | 0% |
+| reasoning level | - | - | - | - |
+| reasoning tokens | 0 | 0 | 0 | 0 |
+| reasoning per call | - | - | - | - |
+| calls without reasoning | - | - | - | - |
 | tool calls | 4 | 4 | 4 | 4 |
 | asks | 2 | 2 | 2 | 2 |
 | blocked commands | 0 | 0 | 0 | 0 |
@@ -297,4 +304,72 @@ fn a_report_written_before_the_counts_still_reads_as_a_baseline() {
     fields.remove("repeated_steps");
     let read: Attempt = serde_json::from_value(json).unwrap();
     assert_eq!(read, attempt);
+}
+
+/// An attempt of `model` whose calls were sent at `levels`, reasoning `reasoning` tokens in
+/// all, `without` of them none.
+fn reasoned(model: &str, levels: &[(&str, u32)], reasoning: u64, without: u32) -> Attempt {
+    let mut attempt = attempt("fix", model, 1, true);
+    attempt.sent_at = (levels.iter())
+        .map(|(level, calls)| ((*level).to_owned(), *calls))
+        .collect();
+    attempt.model_calls = levels.iter().map(|(_, calls)| calls).sum();
+    attempt.reasoning_tokens = reasoning;
+    attempt.calls_without_reasoning = without;
+    attempt
+}
+
+#[test]
+fn reasoning_shows_its_level_tokens_per_call_and_calls_without() {
+    let attempts = vec![
+        reasoned("a/one", &[("high", 4)], 6_002, 1),
+        reasoned("b/two", &[("default", 3), ("high", 1)], 0, 4),
+    ];
+    let mut asked = report(attempts.clone());
+    asked.effort = Some("high".into());
+    let table = asked.markdown(None);
+    assert!(
+        table.contains(
+            "Reasoning: high, asked of every model. Not sent it on every call: two \
+             (model's own 3 · high 1)."
+        ),
+        "{table}"
+    );
+    assert!(
+        table.contains("| reasoning level | high | model's own 3 · high 1 |"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| reasoning tokens | 6,002 | 0 |"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| reasoning per call | 1,501 | 0 |"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| calls without reasoning | 25% | 100% |"),
+        "{table}"
+    );
+    assert_eq!(serde_json::to_value(&asked).unwrap()["effort"], "high");
+    let table = report(attempts).markdown(None);
+    assert!(
+        table.contains("Reasoning: each model's own level.\n"),
+        "{table}"
+    );
+}
+
+#[test]
+fn a_report_written_before_reasoning_reads_as_each_model_s_own_level() {
+    let mut json =
+        serde_json::to_value(report(vec![reasoned("a/one", &[("high", 2)], 10, 0)])).unwrap();
+    json.as_object_mut().unwrap().remove("effort");
+    let attempt = json["attempts"][0].as_object_mut().unwrap();
+    for field in ["reasoning_tokens", "calls_without_reasoning", "sent_at"] {
+        attempt.remove(field);
+    }
+    let read: Report = serde_json::from_value(json).unwrap();
+    assert_eq!(read.effort, None);
+    assert_eq!(read.attempts[0].reasoning_tokens, 0);
+    assert!(read.attempts[0].sent_at.is_empty());
 }

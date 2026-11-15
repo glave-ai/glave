@@ -21,6 +21,10 @@ use crate::run::Setup;
 use crate::suite::{self, Plan};
 use crate::task::{self, Task, Tier};
 
+/// The reasoning levels `--effort` takes: those glave's catalogs name, OpenRouter's and
+/// Anthropic's (`specs/gateway.md`, "Reasoning effort").
+const EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 /// The models every change is measured on: one each from three labs, all cheap and quick.
 pub(crate) const DEFAULT_MODELS: [&str; 3] = [
     "anthropic/claude-haiku-5.5",
@@ -48,6 +52,8 @@ options:
   --no-plan            keep update_plan out of every mode but Plan, as glave does when plans are off
   --subagents          let the model hand work to child threads with task
   --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)
+  --effort <level>     the reasoning level asked of every model: none, minimal, low, medium, high,
+                       xhigh or max (default: each model's own)
   --python <venv>      no glave document skills and no `glave doc`, but this Python environment
                        first on the tasks' PATH (evals/README.md, \"Documents\")";
 
@@ -65,6 +71,8 @@ struct Options {
     plans: bool,
     subagents: bool,
     memory: Option<bool>,
+    /// The reasoning level asked of every model; each model's default when `None`.
+    effort: Option<String>,
     /// The Python environment the tasks get in place of glave's own document tools.
     python: Option<PathBuf>,
 }
@@ -143,6 +151,7 @@ fn run(options: &Options) -> Result<bool, String> {
         plans: options.plans,
         subagents: options.subagents,
         memory: options.memory,
+        effort: options.effort.clone(),
         processes,
         office: options.python.is_none(),
         glave_on_path,
@@ -153,8 +162,11 @@ fn run(options: &Options) -> Result<bool, String> {
     let python = (options.python.as_ref())
         .map(|venv| format!(" · Python from {}, no glave doc", venv.display()))
         .unwrap_or_default();
+    let effort = (options.effort.as_ref())
+        .map(|effort| format!(" · reasoning {effort}"))
+        .unwrap_or_default();
     println!(
-        "glave-eval: {} tasks × {} models × {} = {attempts} attempts{python} · {}",
+        "glave-eval: {} tasks × {} models × {} = {attempts} attempts{effort}{python} · {}",
         tasks.len(),
         options.models.len(),
         options.repeat,
@@ -175,6 +187,7 @@ fn run(options: &Options) -> Result<bool, String> {
         started.to_string(),
         setup.endpoint.provider.clone(),
         options.models.clone(),
+        options.effort.clone(),
         attempts,
     );
     let table = report.markdown(baseline.as_ref());
@@ -333,6 +346,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         plans: true,
         subagents: false,
         memory: None,
+        effort: None,
         python: None,
     };
     let mut rest = args.iter();
@@ -369,6 +383,16 @@ fn options(args: &[String]) -> Result<Options, String> {
                     "off" => Some(false),
                     other => return Err(format!("--memory is on or off, not {other:?}")),
                 };
+            }
+            "--effort" => {
+                let effort = value()?;
+                if !EFFORTS.contains(&effort.as_str()) {
+                    return Err(format!(
+                        "--effort is one of {}, not {effort:?}",
+                        EFFORTS.join(", ")
+                    ));
+                }
+                options.effort = Some(effort);
             }
             "--python" => options.python = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown option {other}\n{USAGE}")),
@@ -415,6 +439,7 @@ mod tests {
         assert_eq!(options.repeat, 1);
         assert_eq!(options.max_cost, Nanos::new(2_000_000_000));
         assert!(options.plans, "as glave runs");
+        assert_eq!(options.effort, None, "each model's own level");
     }
 
     #[test]
@@ -444,6 +469,8 @@ mod tests {
             "--subagents",
             "--memory",
             "on",
+            "--effort",
+            "high",
             "--python",
             "venv",
         ])
@@ -462,6 +489,7 @@ mod tests {
                 plans: false,
                 subagents: true,
                 memory: Some(true),
+                effort: Some("high".into()),
                 python: Some("venv".into()),
             }
         );
@@ -520,6 +548,14 @@ mod tests {
         assert!(parse(&["--tier", "medium"]).is_err());
         assert!(parse(&["--model"]).is_err());
         assert!(parse(&["--colour"]).is_err());
+        assert!(parse(&["--effort", "hgih"]).is_err());
+        assert!(parse(&["--effort"]).is_err());
+        for level in EFFORTS {
+            assert_eq!(
+                parse(&["--effort", level]).unwrap().effort.as_deref(),
+                Some(level)
+            );
+        }
         assert!(parse(&["--max-cost", "-1"]).is_err());
         assert!(parse(&["--max-cost", "-0.5"]).is_err());
         assert!(parse(&["--max-cost", "1.x"]).is_err());

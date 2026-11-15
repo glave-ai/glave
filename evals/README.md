@@ -26,6 +26,14 @@ the failed ones too, over the attempts that passed, with the tokens beside it. A
 route reports no cost, or only $0 as a free route does, shows "no cost reported" (and a dash for
 its cost), is named as left out, and is never taken for the cheapest.
 
+`--effort <level>` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`) asks every
+model for one reasoning level, as a person chooses it for a thread; without it each model reasons
+at its own. The report says the level asked (`effort` in `report.json`, `null` for each model's
+own), and per model the level its calls were sent at (a gateway's record where one served them,
+else the level asked, which the eval sends straight to the provider), naming any model some of
+whose calls went at another; then the reasoning tokens its calls reported in all, per call, and
+the share of calls that reported none, so a run shows the model reasoned.
+
 Attempts run side by side, `--concurrency` at once, but a task's own attempts take turns: models
 write scratch files at fixed paths in the shared `/tmp`, so two attempts of one task at once would
 overwrite each other's. Each attempt also has a temp folder of its own (`TMPDIR`) for its setup
