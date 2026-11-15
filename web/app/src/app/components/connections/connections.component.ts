@@ -167,13 +167,17 @@ export class ConnectionsComponent {
   private readonly disconnecting = signal<Row | null>(null);
   protected readonly confirming = signal(false);
 
-  protected readonly problem = this.service.problem;
+  /** Why the services could not be listed, where the person may connect them here. */
+  protected readonly problem = computed(() => (this.connections() ? this.service.problem() : null));
   /** Whether the services are still being listed for the first time. */
   protected readonly loading = computed(
     () => this.connections() && this.service.connections() === null && this.problem() === null,
   );
+  /** The services listed, where the person may connect them here. */
   private readonly rows = computed(() =>
-    (this.service.connections() ?? []).map((connection) => this.row(connection)),
+    this.connections()
+      ? (this.service.connections() ?? []).map((connection) => this.row(connection))
+      : [],
   );
   /** The cards with services in them: those ready to use first, then those to connect. */
   protected readonly sections = computed(() => {
