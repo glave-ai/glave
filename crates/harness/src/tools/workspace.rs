@@ -140,10 +140,16 @@ impl Workspace {
     }
 
     /// The same binding for someone other than the person whose computer this is, or not
-    /// (`walled`): there no command may ask to leave the sandbox.
+    /// (`walled`): there no command may ask to leave the sandbox, and none gets that person's
+    /// git sign-ins or secrets: walled, it has none at all (`specs/sandbox.md`, "Whose
+    /// computer"), nor do the worktrees and scratch folders made from it.
     #[must_use]
     pub(crate) fn walled(mut self, walled: bool) -> Self {
         self.walled = walled;
+        if walled {
+            self.credentials = None;
+            self.hidden = KnownSecrets::default();
+        }
         self
     }
 

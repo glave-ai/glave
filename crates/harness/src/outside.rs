@@ -125,9 +125,12 @@ where
             thread.removed = false;
             return Ok(());
         }
-        let home = match thread.home {
-            Some(_) => self.home_of(thread.scope, thread.for_)?.0,
-            None => Arc::clone(&self.workspace),
+        // Made beside the one it replaces, so it keeps its sandbox and its wall: someone else's
+        // on this computer never gains the person's sign-ins or secrets by being made again.
+        let home = match (&thread.home, &thread.workspace) {
+            (Some(_), _) => self.home_of(thread.scope, thread.for_)?.0,
+            (None, Some(old)) => Arc::clone(old),
+            (None, None) => Arc::clone(&self.workspace),
         };
         let again = match sources {
             Some(Sources::Worktree { path, branch, .. }) => {
