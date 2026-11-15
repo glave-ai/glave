@@ -77,19 +77,8 @@ fn a_request_has_the_chat_completions_shape() {
 
 #[test]
 fn the_longest_answer_is_named_as_each_service_takes_it() {
-    let mut request = ModelRequest {
-        model: "m".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: Some(32_000),
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-    };
+    let mut request = empty("m");
+    request.max_output_tokens = Some(32_000);
     let field = |request: &ModelRequest, provider: &str| {
         let body = serde_json::to_value(chat_request(request, provider)).unwrap();
         let named = |name: &str| body.get(name).and_then(Value::as_u64);
