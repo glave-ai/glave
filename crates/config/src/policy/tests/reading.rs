@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use glave_event::Permissions;
+use glave_event::{Permissions, Precision};
 use glave_ports::block_on;
 use glave_ports::testing::{TempDir, any_secret};
 
@@ -555,6 +555,32 @@ fn a_router_floor_is_the_server_s_own_choice_and_names_real_countries() {
         .unwrap_err()
         .to_string();
     assert!(refused.contains("names no country"), "{refused}");
+}
+
+#[test]
+fn a_router_floor_s_precision_is_a_router_s_name_for_one() {
+    let dir = scratch("router-floor-precision");
+    let locations = Locations::here(&dir.join("home"), &dir);
+    let read = |text: &str| files::config(text, &locations.person).map(|file| file.router_floor);
+    let floor = read("[router_floor]\nprecision = \"fp8\"\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(floor.precision, Some(Precision::EightBit));
+    assert!(floor.based_in.is_empty() && !floor.keeps_nothing);
+    let floor = read("[router_floor]\nprecision = \"BF16\"\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(floor.precision, Some(Precision::Full));
+    let unasked = read("[router_floor]\nkeeps_nothing = true\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(unasked.precision, None, "off unless set");
+    for wrong in ["eight", "unknown", ""] {
+        let text = format!("[router_floor]\nprecision = {wrong:?}\n");
+        let refused = read(&text).unwrap_err().to_string();
+        assert!(refused.contains("is not a precision"), "{wrong}: {refused}");
+        assert!(refused.contains("fp8"), "it names the choices: {refused}");
+    }
 }
 
 #[test]

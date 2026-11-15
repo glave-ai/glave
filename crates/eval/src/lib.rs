@@ -11,6 +11,7 @@ mod check;
 pub mod cli;
 mod connected;
 mod error;
+mod floor;
 mod judging;
 mod memory;
 mod oracle;
@@ -27,6 +28,7 @@ mod web;
 
 pub use check::Check;
 pub use error::EvalError;
+pub use floor::Floor;
 pub use oracle::oracle;
 pub use report::Report;
 pub use run::{Attempt, Setup, attempt};

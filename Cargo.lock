@@ -2011,6 +2011,7 @@ version = "0.0.0"
 dependencies = [
  "glave-computer",
  "glave-event",
+ "glave-gateway",
  "glave-harness",
  "glave-keys",
  "glave-mcp",

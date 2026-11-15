@@ -5,8 +5,8 @@
 
 use std::sync::PoisonError;
 
-use glave_event::{Body, Hides, ThreadId};
-use glave_gateway::{Facts, hidden_by};
+use glave_event::{Body, Hides, Precision, ThreadId};
+use glave_gateway::{Facts, floor_hides, hidden_by};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
@@ -69,21 +69,25 @@ where
             return Ok(Reply::Models { models });
         }
         let filters = self.kept_filters(caller).await?;
-        for endpoint in models.iter_mut().flat_map(|model| &mut model.endpoints) {
-            // As the gateway reads a router's catalog (`glave_gateway::filtering::facts`), so
-            // what the list says hidden is what no call goes to.
-            let facts = Facts {
-                slug: &endpoint.slug,
-                home: endpoint.based_in.as_deref(),
-                datacenters: endpoint.datacenters.as_deref(),
-                precision: endpoint.precision,
-                price: endpoint.price,
-                keeps_nothing: endpoint.keeps_nothing,
-            };
-            endpoint.hidden_by = hidden_by(&facts, &filters);
-            let floor = self.inner.router_floor.as_ref();
-            if floor.is_some_and(|floor| !hidden_by(&facts, floor).is_empty()) {
-                endpoint.hidden_by.push(Hides::Server);
+        let floor = self.inner.router_floor.as_ref();
+        for model in &mut models {
+            // A closed model's providers say no precision, and a floor's precision keeps it.
+            let closed = (model.endpoints.iter()).all(|e| e.precision == Precision::Unstated);
+            for endpoint in &mut model.endpoints {
+                // As the gateway reads a router's catalog (`glave_gateway::filtering::facts`),
+                // so what the list says hidden is what no call goes to.
+                let facts = Facts {
+                    slug: &endpoint.slug,
+                    home: endpoint.based_in.as_deref(),
+                    datacenters: endpoint.datacenters.as_deref(),
+                    precision: endpoint.precision,
+                    price: endpoint.price,
+                    keeps_nothing: endpoint.keeps_nothing,
+                };
+                endpoint.hidden_by = hidden_by(&facts, &filters);
+                if floor.is_some_and(|floor| floor_hides(&facts, floor, closed)) {
+                    endpoint.hidden_by.push(Hides::Server);
+                }
             }
         }
         Ok(Reply::Models { models })

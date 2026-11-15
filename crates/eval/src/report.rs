@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::run::Attempt;
 
 mod compacted;
+mod served;
 
 /// One eval run, as saved to `report.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -25,6 +26,10 @@ pub struct Report {
     /// passed. Reports written before it lack it and still read as baselines.
     #[serde(default)]
     per_passed_task: BTreeMap<String, Option<PerPassedTask>>,
+    /// The floor among a router's providers the run held its calls to, in words; `None` when
+    /// it held none, as with `--no-floor` and in reports written before there was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    floor: Option<String>,
     pub attempts: Vec<Attempt>,
 }
 
@@ -76,7 +81,7 @@ impl Report {
         started: String,
         provider: String,
         models: Vec<String>,
-        attempts: Vec<Attempt>,
+        (attempts, floor): (Vec<Attempt>, Option<String>),
     ) -> Self {
         let per_passed_task = (models.iter())
             .map(|model| (model.clone(), PerPassedTask::of(&ran(&attempts, model))))
@@ -86,6 +91,7 @@ impl Report {
             provider,
             models,
             per_passed_task,
+            floor,
             attempts,
         }
     }
@@ -135,6 +141,7 @@ impl Report {
         }
         self.totals(&mut out);
         self.compacted(&mut out);
+        self.served(&mut out);
         self.probed(&mut out);
         let failed: Vec<&Attempt> = self.attempts.iter().filter(|a| !a.passed()).collect();
         if !failed.is_empty() {

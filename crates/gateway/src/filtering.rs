@@ -7,7 +7,9 @@
 //! takes (`only`), with the filters it checks itself; a call no provider fits, or one whose
 //! filters need what the catalog does not say, is never sent. A floor a server sets for everyone
 //! it serves (`Keeping`) narrows every call the same way, whoever's it is, and nothing a person
-//! chooses loosens it.
+//! chooses loosens it. A floor's precision holds a model whose providers say how they store its
+//! weights; a model none of whose providers says (a closed model, served only by its makers and
+//! the clouds reselling it) has no precision to hold, and a floor keeps it.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -81,6 +83,34 @@ pub fn hidden_by(facts: &Facts<'_>, filters: &Filters) -> Vec<Hides> {
     .collect()
 }
 
+/// Whether a server's `floor` rules out the provider `facts` describe of a model, `closed` when
+/// none of the model's providers says its precision: where it is based, what it keeps, or,
+/// for a model whose providers say theirs, its precision.
+pub fn floor_hides(facts: &Facts<'_>, floor: &Filters, closed: bool) -> bool {
+    let held;
+    let floor = if closed && floor.precision.is_some() {
+        held = Filters {
+            precision: None,
+            ..floor.clone()
+        };
+        &held
+    } else {
+        floor
+    };
+    !hidden_by(facts, floor).is_empty()
+}
+
+impl Router {
+    /// Whether its catalog lists the model's endpoints and none says how it stores the weights:
+    /// a closed model, which has no precision to choose by.
+    fn closed(&self) -> bool {
+        let unsaid = |endpoint: &CatalogEndpoint| {
+            Precision::of(endpoint.quantization.as_deref()) == Precision::Unstated
+        };
+        !self.endpoints.is_empty() && self.endpoints.iter().all(unsaid)
+    }
+}
+
 /// Whether a provider at `home`, with `datacenters`, is based in one of `places`, anywhere
 /// when none: its home, and each of its datacenters where they are said.
 fn based(home: Option<&str>, datacenters: Option<&[String]>, places: &[String]) -> bool {
@@ -103,11 +133,15 @@ pub(crate) struct Keeping {
     /// Whether the countries the person chose and the floor's have none in common: no provider
     /// can fit both. Without this, none in common would read as anywhere.
     pub(crate) none_fit: bool,
+    /// The floor's least precision, held apart from the person's own: it holds only a model
+    /// whose providers say how they store its weights.
+    pub(crate) least: Option<Precision>,
 }
 
 impl Keeping {
     /// `person`'s filters, if any, within `floor`, if any: countries both allow, and nothing
-    /// kept if either asks. Everything else a floor leaves to the person.
+    /// kept if either asks; the floor's precision beside them, which [`route`] holds where it
+    /// applies. Everything else a floor leaves to the person.
     pub(crate) fn within(floor: Option<&Filters>, person: Option<Filters>) -> Self {
         let own = person
             .as_ref()
@@ -141,6 +175,7 @@ impl Keeping {
             floor: true,
             own,
             none_fit,
+            least: floor.precision,
         }
     }
 }
@@ -156,27 +191,43 @@ pub(crate) enum Kept {
     NoneFits,
 }
 
-/// What `filters` ask of `target` for the model a call asked for, `model`, where `beside_one`
-/// says a router is among the call's targets. None when they ask nothing of it.
+/// What `filters`, with a floor's `least` precision, ask of `target` for the model a call asked
+/// for, `model`, where `beside_one` says a router is among the call's targets. None when they
+/// ask nothing of it.
 pub(crate) fn route(
-    filters: &Filters,
+    (filters, least): (&Filters, Option<Precision>),
     model: &str,
     target: &Target,
     beside_one: bool,
 ) -> Result<Option<Route>, Kept> {
     let names = [model, target.model.as_str()];
-    route_at(filters, names, target.router.as_deref(), beside_one)
+    let router = target.router.as_deref();
+    route_at((filters, least), names, router, beside_one)
 }
 
 /// What `filters` ask of a target, the router `router` or none, serving the model a call asked
 /// for by `names` (the call's name for it, then the target's own), where `beside_one` says a
-/// router is among the call's targets. None when they ask nothing.
+/// router is among the call's targets. A floor's `least` precision is held as the person's own
+/// would be, the higher of the two, unless the router's catalog says the model is closed.
+/// None when they ask nothing.
 fn route_at(
-    filters: &Filters,
+    (filters, least): (&Filters, Option<Precision>),
     names: [&str; 2],
     router: Option<&Router>,
     beside_one: bool,
 ) -> Result<Option<Route>, Kept> {
+    let held;
+    let least = least.filter(|_| !router.is_some_and(Router::closed));
+    let filters = match least {
+        Some(least) if filters.precision.is_none_or(|own| own < least) => {
+            held = Filters {
+                precision: Some(least),
+                ..filters.clone()
+            };
+            &held
+        }
+        _ => filters,
+    };
     // The model a thread asked for, else the router's own name for it, which stays when
     // another service's account comes to serve it first.
     let serve = names.iter().find_map(|name| filters.serves.get(*name));
