@@ -12,6 +12,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*), and only they open a terminal there (#355).
 - On Linux, commands with the network make Unix sockets, the person's daemons' hidden (#1118, *Unix sockets on Linux*); on a computer that keeps Rust's homes in the sandbox cache, a tool `cargo install` adds there runs by its name.
 - A command opens no terminal's device but its own (#1289, *Other terminals*).
+- Someone else's commands on the server's computer get none of its owner's git sign-ins or secrets (#1434, *Whose computer*).
 - The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.
 - The project's own files, `.env` among them, are no longer hidden from its commands (owner decision, 2026-11-13, #1397, *Reads*).
 
@@ -86,6 +87,7 @@ Cargo's home is left alone. It holds the person's settings, installed tools and 
 - Full access is never offered (`server/discover`'s modes) and is refused when asked for, in plain words ("Full access is only for this server's owner, since its commands could reach the server's own files"); a mode chosen before, a project's, or the server's own above Auto runs as Auto, and a thread's summary says Auto.
 - `bash` is never offered `outside_sandbox` in their threads, nor the blocked-command note to use it; only `network`, where the sandbox has none and the policy lets commands ask. A call that asks anyway is refused without asking anyone, the model told only the owner's commands may run outside the sandbox.
 - Where no sandbox runs on the server's computer at all (or Auto's cannot, with only the read-only one there), none of their commands runs: their approval would let it out. Ask first and Plan keep the read-only sandbox where it runs. `server/discover` tells them so in its own sentence (`unsandboxed`).
+- Their commands get none of the owner's git sign-ins and none of the owner's secrets: no credentials are asked for or given, and no secret is in their environment (lead's decision, 2026-11-14, #1434: deny by default). Their own git hosts are only for a computer of their own (`session.md`, "Git hosts").
 - A terminal of their own, which is a shell outside the sandbox, never opens there: their threads' summaries say none opens in them (`terminals`), and `terminal/open` is refused in plain words (#355, `session.md`, "Terminals").
 - On a computer of their own (`computers.md`), that wall is theirs, and none of this applies.
 
