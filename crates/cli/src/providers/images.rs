@@ -14,7 +14,9 @@ use std::sync::Arc;
 use glave_event::{CatalogEndpoint, CatalogModel, Nanos, TokenPrice};
 use serde_json::Value;
 
-use super::endpoints::{MOST, READING, each, kept, plain};
+use glave_provider_openai::lists::{MOST, plain};
+
+use super::endpoints::{READING, each, kept};
 use crate::model::Model;
 
 /// Reads the image models `ids` and each one's providers through `model`, within [`READING`]

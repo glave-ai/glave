@@ -3,5 +3,6 @@
 #![cfg(test)]
 
 mod attempt;
+mod floor;
 mod lifeline;
 mod oracle;
