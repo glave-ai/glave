@@ -95,6 +95,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::testing::any_key;
 
     fn org(n: u128) -> OrgId {
         OrgId::from_uuid(Uuid::from_u128(n))
@@ -106,18 +107,19 @@ mod tests {
 
     #[test]
     fn an_id_is_the_same_for_one_person_and_differs_for_anyone_else() {
-        let ids = EndUsers::new(&[7; 32]);
+        let (key, another) = (any_key(), any_key());
+        let ids = EndUsers::new(&key);
         let id = ids.id(org(1), person(2));
         assert_eq!(id, ids.id(org(1), person(2)));
-        assert_eq!(id, EndUsers::new(&[7; 32]).id(org(1), person(2)));
+        assert_eq!(id, EndUsers::new(&key).id(org(1), person(2)));
         assert_ne!(id, ids.id(org(1), person(3)), "another person");
         assert_ne!(id, ids.id(org(4), person(2)), "another organization");
         assert_ne!(
             id,
-            EndUsers::new(&[8; 32]).id(org(1), person(2)),
+            EndUsers::new(&another).id(org(1), person(2)),
             "another secret"
         );
-        let mut plain = Hmac::<Sha256>::new_from_slice(&[7; 32]).unwrap();
+        let mut plain = Hmac::<Sha256>::new_from_slice(&key).unwrap();
         plain.update(org(1).as_uuid().as_bytes());
         plain.update(person(2).as_uuid().as_bytes());
         let hex =
@@ -136,7 +138,7 @@ mod tests {
 
     #[test]
     fn an_id_holds_nothing_but_its_prefix_and_hex() {
-        let ids = EndUsers::new(&[7; 32]);
+        let ids = EndUsers::new(&any_key());
         let (org, person) = (org(0x1234), person(0x56));
         let id = ids.id(org, person);
         let hex = id.as_str().strip_prefix("g_").unwrap();
@@ -151,7 +153,7 @@ mod tests {
 
     #[test]
     fn an_id_is_found_among_the_people_it_could_be() {
-        let ids = EndUsers::new(&[7; 32]);
+        let ids = EndUsers::new(&any_key());
         let people = [
             (org(1), person(2)),
             (org(1), person(3)),
@@ -163,7 +165,7 @@ mod tests {
             assert_eq!(ids.find(&format!(" {id}\n"), people), Some(one));
         }
         assert_eq!(ids.find("g_00000000000000000000000000000000", people), None);
-        let other = EndUsers::new(&[8; 32]).id(org(1), person(2));
+        let other = EndUsers::new(&any_key()).id(org(1), person(2));
         assert_eq!(ids.find(other.as_str(), people), None);
     }
 }

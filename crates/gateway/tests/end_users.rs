@@ -19,7 +19,7 @@ fn org() -> OrgId {
 fn a_call_for_a_person_names_them_by_their_id_and_one_for_no_one_names_no_one() {
     let provider = Fake::new("openrouter");
     let routes = Routes::new(vec![provider.target("big")]).unwrap();
-    let ids = EndUsers::new(&[7; 32]);
+    let ids = EndUsers::new(&glave_ports::testing::any_key());
     let gateway = Gateway::new(routes).with_end_users(Some(ids.clone()));
     let org = org();
     let calls = [

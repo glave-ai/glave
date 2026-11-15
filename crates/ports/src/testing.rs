@@ -42,7 +42,7 @@ pub use outbox::Outbox;
 pub use output::Captured;
 pub use process::{HUNG, Running, new_script, read_program};
 pub use scripted::{ScriptedHttp, Written};
-pub use secret::{any_secret, fake_secret};
+pub use secret::{any_key, any_secret, fake_secret};
 pub use socket::SocketPath;
 pub use temp::TempDir;
 
@@ -51,7 +51,7 @@ pub use temp::TempDir;
 pub fn an_end_user() -> Result<EndUser, glave_event::InvalidValue> {
     let person = glave_event::PrincipalId::new(Timestamp::UNIX_EPOCH, [1; 10])?;
     let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
-    Ok(EndUsers::new(&[7; 32]).id(org, person))
+    Ok(EndUsers::new(&any_key()).id(org, person))
 }
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.
