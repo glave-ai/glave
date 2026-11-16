@@ -18,7 +18,7 @@ use glave_ports::testing::{CountingEntropy, ManualClock, TempDir, any_secret};
 use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, Update};
 use glave_session::signin::{Browsers, person};
-use glave_session::{Answering, TurnItem, TurnStream};
+use glave_session::{Answering, Sent, TurnItem, TurnStream};
 use serde_json::{Value, json};
 
 use super::table::Kind;
@@ -158,10 +158,15 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     );
     let browsers = Arc::new(browsers.await.unwrap());
     // A task for each person it serves (the first serves the third organization's two too),
-    // then two held turns in the first organization: one asks to run a command, one asks a
-    // question.
-    let tasks = if n == 1 { 4 } else { 2 };
-    let mut answers: Vec<_> = (0..tasks).map(|_| answer(Some("Done."), None)).collect();
+    // a picture each draws in their Chats, then two held turns in the first organization: one
+    // asks to run a command, one asks a question.
+    let people = if n == 1 { 4 } else { 2 };
+    let mut answers: Vec<_> = (0..people).map(|_| answer(Some("Done."), None)).collect();
+    for _ in 0..people {
+        let draw = json!({"prompt": "a fox"});
+        answers.push(answer(None, Some(("image_generate", draw))));
+        answers.push(answer(Some("Here it is."), None));
+    }
     if n == 1 {
         answers.push(answer(
             None,
@@ -170,7 +175,8 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         let asks = json!({"questions": [{"question": "Which?"}]});
         answers.push(answer(None, Some(("question", asks))));
     }
-    let mut setup = Setup::asking(answers, Answering::Clients);
+    let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+    setup.model = Some(drawing(answers));
     setup.home = scope;
     setup.seed = u64::try_from(n).unwrap();
     setup.settings.person = Some(local);
@@ -298,6 +304,33 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     }
 }
 
+/// A picture `person` has glave draw in their Chats, its call approved as they would, kept in
+/// their Library.
+async fn draw<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
+    let chat = person.ids[&Kind::Thread][1].clone();
+    let drawn = request(
+        "turn/start",
+        json!({"thread": chat, "prompt": "draw a fox"}),
+    );
+    let Ok(Sent::Started(mut stream)) = org.server.start_streaming(&person.caller, drawn).await
+    else {
+        panic!("{} draws in a turn of its own", person.name);
+    };
+    let approval = waiting(&mut stream).await;
+    let allow = json!({"thread": chat, "approval": approval, "decision": "allow_once"});
+    let decided = ask(org, &person.caller, request("approval/decide", allow)).await;
+    assert!(decided.get("error").is_none(), "{decided}");
+    stream.finish().await.unwrap();
+    let listed = ask(org, &person.caller, request("library/list", json!({}))).await;
+    let asset = listed["result"]["items"][0]["asset"].clone();
+    assert!(
+        asset.is_string(),
+        "{} drew a picture: {listed}",
+        person.name
+    );
+    person.keep(Kind::Asset, asset);
+}
+
 impl<L: EventLog + Clone + 'static> World<L> {
     /// Two organizations on `parts`, in folders under `name`, each person's things made.
     pub(super) async fn build(name: &str, parts: &Parts<L>) -> Self {
@@ -322,13 +355,16 @@ impl<L: EventLog + Clone + 'static> World<L> {
             let local = person.caller.auth.is_none();
             make(&orgs[person.server], person, local).await;
         }
-        let world = Self {
+        let mut world = Self {
             orgs,
             people,
             held: Vec::new(),
             _folders: folders,
         };
         world.tasks_ended().await;
+        for person in &mut world.people {
+            draw(&world.orgs[person.server], person).await;
+        }
         world
     }
 

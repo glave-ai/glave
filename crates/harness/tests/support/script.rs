@@ -428,6 +428,8 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::PushSubscribed(_) => "push.subscribed",
             Body::PushUnsubscribed(_) => "push.unsubscribed",
             Body::PushClaimed(_) => "push.claimed",
+            Body::LibraryKept(_) => "library.kept",
+            Body::LibraryRemoved(_) => "library.removed",
             Body::PersonJoined(_) => "person.joined",
             Body::RoleSet(_) => "role.set",
             Body::OrganizationMade(_) => "organization.made",

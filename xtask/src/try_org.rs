@@ -9,7 +9,8 @@
 //! service, glave's MCP test server, whose tool the stand-in calls when told to "ask me
 //! something", to try what a service asks the person; told to "draw me" something, with an
 //! OpenRouter account connected, it makes an image through glave's image tool, the stand-in's
-//! picture coming back as OpenRouter's image API would send it; told to "look up" something,
+//! picture coming back as OpenRouter's image API would send it, kept in the person's Library
+//! too; told to "look up" something,
 //! it searches the web through glave's own search, at a stand-in search service of its own; with
 //! `--credits`,
 //! it is the server's own OpenRouter, as on Glave Cloud, with no account to connect, and

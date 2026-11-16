@@ -250,6 +250,7 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
             "search/get",
             "memory/list",
             "push/get",
+            "library/list",
         ] {
             call(method, json!({})).await;
         }
