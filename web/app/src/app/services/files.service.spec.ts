@@ -31,6 +31,22 @@ function inPieces(bytes: string) {
   };
 }
 
+/** A session whose `file/read`s each wait for the test to answer them, in `answers`, in order. */
+function answeredByTheTest(): {
+  readonly fake: FakeSession;
+  readonly answers: readonly ((answer: object) => void)[];
+} {
+  const answers: ((answer: object) => void)[] = [];
+  const fake = new FakeSession().answer(
+    'file/read',
+    () =>
+      new Promise<object>((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  return { fake, answers };
+}
+
 /** The `n`th of many files' hashes. */
 function nth(n: number): string {
   return n.toString(16).padStart(64, '0');
@@ -67,14 +83,7 @@ describe('FilesService', () => {
 
   it('reads four files at once, the next as one ends', async () => {
     objectUrls();
-    const answers: ((answer: object) => void)[] = [];
-    const fake = new FakeSession().answer(
-      'file/read',
-      () =>
-        new Promise<object>((resolve) => {
-          answers.push(resolve);
-        }),
-    );
+    const { fake, answers } = answeredByTheTest();
     const files = setUp(fake);
     const held = [0, 1, 2, 3, 4, 5].map((n) => files.hold('t1', nth(n), 'image/png'));
     expect(fake.paramsOf('file/read')).toHaveLength(4);
@@ -86,14 +95,7 @@ describe('FilesService', () => {
 
   it('does not read a file nothing holds any more once its turn comes, and reads it if held again', async () => {
     objectUrls();
-    const answers: ((answer: object) => void)[] = [];
-    const fake = new FakeSession().answer(
-      'file/read',
-      () =>
-        new Promise<object>((resolve) => {
-          answers.push(resolve);
-        }),
-    );
+    const { fake, answers } = answeredByTheTest();
     const files = setUp(fake);
     const held = [0, 1, 2, 3, 4].map((n) => files.hold('t1', nth(n), 'image/png'));
     expect(fake.paramsOf('file/read')).toHaveLength(4);
