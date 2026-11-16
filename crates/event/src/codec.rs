@@ -13,20 +13,20 @@ use crate::payload::{
     CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
     ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
     CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet, GroupingSet, HookRan, InstructionsRead,
-    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MailAsked, MemoryEdited,
-    MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded,
-    ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
-    PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet,
-    ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade, PushSubscribed,
-    PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SearchSet, SecretAdded,
-    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
-    credits, filters, fork, grouping, hook, instructions, language, memory, message, model,
-    passkey, people, plan, project, provider, push, remembering, search, secrets, service, signup,
-    standing, task, thread, tool, trust, turn, workspace,
+    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, LibraryKept, LibraryRemoved,
+    MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied,
+    MessageAdded, ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved,
+    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
+    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
+    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SearchSet,
+    SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
+    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    connector, credential, credits, filters, fork, grouping, hook, instructions, language, library,
+    memory, message, model, passkey, people, plan, project, provider, push, remembering, search,
+    secrets, service, signup, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -131,6 +131,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (push::SUBSCRIBED, 1),
     (push::UNSUBSCRIBED, 1),
     (push::CLAIMED, 1),
+    (library::KEPT, 1),
+    (library::REMOVED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -215,6 +217,8 @@ pub enum Body {
     PushSubscribed(PushSubscribed),
     PushUnsubscribed(PushUnsubscribed),
     PushClaimed(PushClaimed),
+    LibraryKept(LibraryKept),
+    LibraryRemoved(LibraryRemoved),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
     OrganizationMade(OrganizationMade),
@@ -432,6 +436,8 @@ impl Event {
             Body::PushSubscribed(payload) => encode(header, payload),
             Body::PushUnsubscribed(payload) => encode(header, payload),
             Body::PushClaimed(payload) => encode(header, payload),
+            Body::LibraryKept(payload) => encode(header, payload),
+            Body::LibraryRemoved(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
             Body::OrganizationMade(payload) => encode(header, payload),
@@ -566,12 +572,25 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         filters::SET => filters::decode_set(version, data).map(|r| r.map(Body::FiltersSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => [people::decode, signup::decode, credits::decode]
-            .into_iter()
-            .chain([appearance::decode, secrets::decode, push::decode])
+        _ => LEDGERS
+            .iter()
             .find_map(|decode| decode(kind, version, data)),
     }
 }
+
+/// Decodes one kind of event at one version; `None` for one it does not know.
+type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
+
+/// The decoders of the ledgers whose events are not named one by one above.
+const LEDGERS: [Decoder; 7] = [
+    people::decode,
+    signup::decode,
+    credits::decode,
+    appearance::decode,
+    secrets::decode,
+    push::decode,
+    library::decode,
+];
 
 /// Parses a payload's bytes as one specific version of one type.
 pub(crate) fn parse<T: DeserializeOwned>(data: &RawValue) -> serde_json::Result<T> {

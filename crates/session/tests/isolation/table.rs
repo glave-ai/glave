@@ -49,10 +49,12 @@ pub(super) enum Kind {
     InviteCode,
     /// A browser that takes a person's notifications.
     Device,
+    /// An item of a person's Library.
+    Asset,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 20] = [
+    pub(super) const ALL: [Self; 21] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -73,6 +75,7 @@ impl Kind {
         Self::Invite,
         Self::InviteCode,
         Self::Device,
+        Self::Asset,
     ];
 
     /// How a template writes it.
@@ -98,6 +101,7 @@ impl Kind {
             Self::Invite => "@invite",
             Self::InviteCode => "@invite_code",
             Self::Device => "@device",
+            Self::Asset => "@asset",
         }
     }
 
@@ -121,6 +125,7 @@ impl Kind {
             Self::Provider => Some("ProviderId"),
             Self::Credential => Some("CredentialId"),
             Self::Device => Some("DeviceId"),
+            Self::Asset => Some("AssetId"),
             Self::Computer => Some("ComputerId"),
             Self::Person => Some("PrincipalId"),
             Self::Invite => Some("InviteId"),
@@ -159,6 +164,7 @@ impl Kind {
             Self::Invite => uuid(0xdead_000b),
             Self::InviteCode => "1".repeat(64),
             Self::Device => uuid(0xdead_000d),
+            Self::Asset => uuid(0xdead_000e),
             Self::Files => String::new(),
         })
     }
@@ -411,6 +417,18 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "file/read",
             vec![json!({"thread": "@thread", "sha256": "e".repeat(64), "offset": 0})],
+        ),
+        ("library/list", vec![json!({})]),
+        (
+            "library/read",
+            vec![
+                json!({"project": "@project", "asset": "@asset"}),
+                json!({"project": "@project", "asset": "@asset", "offset": 0}),
+            ],
+        ),
+        (
+            "library/remove",
+            vec![json!({"project": "@project", "asset": "@asset"})],
         ),
         ("thread/compact", on_thread()),
         (

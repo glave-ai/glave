@@ -35,7 +35,7 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
+    AssetId, At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
     PrincipalId, ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
@@ -46,9 +46,6 @@ pub use exports::*;
 
 use methods::methods;
 use params::{given, is_false};
-
-/// The protocol version this server speaks.
-pub const PROTOCOL: &str = "2026-10";
 
 methods! {
     /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
@@ -473,6 +470,9 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<u64>,
     } -> [FilePiece],
+    "library/list" => LibraryList {} -> [Library],
+    "library/read" => LibraryRead { project: ProjectId, asset: AssetId, #[serde(default)] offset: Option<u64> } -> [FilePiece],
+    "library/remove" => LibraryRemove { project: ProjectId, asset: AssetId } -> [Done],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,

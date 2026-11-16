@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_computer::LocalComputers;
 use glave_event::{
@@ -37,9 +38,17 @@ use super::script::{ScriptedModel, Seen};
 /// A test server on the log `L`.
 pub(crate) type Tested<L = InMemoryLog> = Server<ScriptedModel, L, SharedBlobs>;
 
-/// A test server's blobs, in memory, on its clock, which the test holds too, so it can sweep them.
+/// A test server's blobs, in memory, on its clock, which the test holds too, so it can sweep them,
+/// and fail the next release when told, as a store that blips does.
 #[derive(Clone)]
-pub(crate) struct SharedBlobs(Arc<InMemoryBlobs>);
+pub(crate) struct SharedBlobs(Arc<InMemoryBlobs>, Arc<AtomicBool>);
+
+impl SharedBlobs {
+    /// Fails the next release, letting go of nothing.
+    pub(crate) fn fail_release(&self) {
+        self.1.store(true, Ordering::SeqCst);
+    }
+}
 
 #[deny(clippy::missing_trait_methods)]
 impl BlobStore for SharedBlobs {
@@ -76,7 +85,14 @@ impl BlobStore for SharedBlobs {
         scope: &Scope,
         thread: ThreadId,
     ) -> impl Future<Output = Result<(), BlobError>> + Send {
-        self.0.release(scope, thread)
+        let fail = self.1.swap(false, Ordering::SeqCst);
+        let released = self.0.release(scope, thread);
+        async move {
+            if fail {
+                return Err(BlobError::Storage("the store blipped".into()));
+            }
+            released.await
+        }
     }
 
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
@@ -215,7 +231,10 @@ impl Setup {
     pub(crate) fn new(answers: Vec<Completion>) -> Self {
         let clock = ManualClock::ticking(1_791_001_000_000);
         Self {
-            blobs: SharedBlobs(Arc::new(InMemoryBlobs::with_clock(Arc::new(clock.clone())))),
+            blobs: SharedBlobs(
+                Arc::new(InMemoryBlobs::with_clock(Arc::new(clock.clone()))),
+                Arc::default(),
+            ),
             answers,
             gate: None,
             answering: Answering::Clients,
