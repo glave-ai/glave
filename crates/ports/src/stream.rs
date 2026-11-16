@@ -77,11 +77,14 @@ pub enum Reserved {
     /// (`push.key.made`); in a person's personal project, the browsers that take theirs
     /// (`push.subscribed`, `push.unsubscribed`).
     Push,
+    /// `…000f`: what glave made for a person and keeps beyond any chat, in the project it was
+    /// made in (`library.kept`, `library.removed`).
+    Library,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -97,6 +100,7 @@ impl Reserved {
         Self::Credits,
         Self::Brand,
         Self::Push,
+        Self::Library,
     ];
 
     /// The ledger's id, the same in every project.
@@ -117,6 +121,7 @@ impl Reserved {
             Self::Credits => 12,
             Self::Brand => 13,
             Self::Push => 14,
+            Self::Library => 15,
         };
         ThreadId::reserved(number)
     }

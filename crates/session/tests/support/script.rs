@@ -85,3 +85,18 @@ pub(crate) fn costing(
     });
     completion
 }
+
+/// A one-pixel PNG, as an image tool's provider would send it, in base64.
+pub(crate) const PIXEL: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/// A model answering `answers` in turn that draws [`PIXEL`] for every image tool's call.
+pub(crate) fn drawing(answers: Vec<Completion>) -> ScriptedModel {
+    let made = glave_ports::Made {
+        files: vec![glave_ports::MadeFile {
+            media_type: Some("image/png".into()),
+            data: PIXEL.into(),
+        }],
+        completion: answer(None, None),
+    };
+    ScriptedModel::new(answers).making(Ok(made))
+}

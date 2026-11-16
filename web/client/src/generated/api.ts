@@ -44,6 +44,15 @@ export type ApiError = {
 };
 
 /**
+ * Identifies one item of a person's Library (`library.kept`), in every client and in a
+ * media tool's result (`asset`).
+ */
+export type AssetId = string;
+
+/** What kind of thing a Library item is, which a client filters by. */
+export type AssetKind = "picture";
+
+/**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
  * ordered by [`Seq`]. Always written with three fractional digits, such as
  * `2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.
@@ -632,6 +641,36 @@ export type InviteInfo = {
 
 /** How the one who holds an invite joins the organization it is to. */
 export type JoinWay = "passkey" | "company" | "accept" | "member";
+
+/** The chat a Library item was made in. */
+export type LibraryChat = {
+  readonly thread: ThreadId;
+  /** Its title, once it has one. */
+  readonly title?: string | null;
+};
+
+/** Something glave made for the person, kept in their Library. */
+export type LibraryItem = {
+  /**
+   * What `library/read` and `library/remove` name it by, and a media tool's result calls
+   * `asset`.
+   */
+  readonly asset: AssetId;
+  /** Its file's size. */
+  readonly bytes: number;
+  /** The chat it was made in, while that chat is there: absent once it was deleted. */
+  readonly chat?: LibraryChat | null;
+  /** The name its file is saved as. */
+  readonly file_name: string;
+  readonly kind: AssetKind;
+  readonly made_at: At;
+  /** Its media type, such as `image/png`. */
+  readonly media_type: string;
+  /** What it is called: the start of what it was made from, in the person's words. */
+  readonly name: string;
+  /** The project it was made in, the person's Chats among them. */
+  readonly project: ProjectId;
+};
 
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
@@ -2203,6 +2242,29 @@ export type LanguageSetResult = {
   readonly language?: string | null;
 };
 
+export type LibraryListParams = Readonly<Record<string, never>>;
+
+/** What glave made for the person, newest first. */
+export type LibraryListResult = {
+  readonly items: readonly (LibraryItem)[];
+};
+
+export type LibraryReadParams = {
+  readonly asset: AssetId;
+  readonly offset?: number | null;
+};
+
+/** A piece of a file a thread holds. */
+export type LibraryReadResult = {
+  readonly piece: FilePiece;
+};
+
+export type LibraryRemoveParams = {
+  readonly asset: AssetId;
+};
+
+export type LibraryRemoveResult = Readonly<Record<string, never>>;
+
 export type MemoryEditParams = {
   readonly memory: MemoryId;
   /** The project whose memory, beside the person's own: the caller's Chats when absent. */
@@ -2355,10 +2417,7 @@ export type PasskeyAddOptionsResult = {
 export type PasskeyCreateParams = {
   /** The request, as `passkey/create_options` named it. */
   readonly ceremony: string;
-  /**
-   * The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
-   * base64url.
-   */
+  /** The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in base64url. */
   readonly credential: unknown;
   /** What to call the passkey; when it was added, if nothing. */
   readonly name?: string | null;
@@ -3240,6 +3299,9 @@ export interface Methods {
   readonly "invite/show": { readonly params: InviteShowParams; readonly result: InviteShowResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
+  readonly "library/list": { readonly params: LibraryListParams; readonly result: LibraryListResult };
+  readonly "library/read": { readonly params: LibraryReadParams; readonly result: LibraryReadResult };
+  readonly "library/remove": { readonly params: LibraryRemoveParams; readonly result: LibraryRemoveResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
   readonly "memory/forget": { readonly params: MemoryForgetParams; readonly result: MemoryForgetResult };
   readonly "memory/get": { readonly params: MemoryGetParams; readonly result: MemoryGetResult };

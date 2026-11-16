@@ -9,6 +9,7 @@
 
 mod arguments;
 mod inputs;
+mod library;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -99,6 +100,7 @@ where
         cancel: &Cancel,
     ) -> Result<ToolOutput, HarnessError> {
         let named = stem(&asked.prompt);
+        let prompt = asked.prompt.clone();
         let mut parts = vec![Part::Text { text: asked.prompt }];
         parts.extend(inputs.parts);
         let request = ModelRequest {
@@ -141,11 +143,17 @@ where
             let said = file.media_type.as_deref();
             match self.keep_made(thread, said, &file.data, &named).await {
                 Ok(part) => {
-                    if let Part::File { blob, .. } = &part {
-                        files.push(json!({
+                    if let Part::File { blob, name, .. } = &part {
+                        let file_name = name.clone().unwrap_or_else(|| named.clone());
+                        let mut entry = json!({
                             "file": format!("blob:{}", blob.sha256.as_str()),
                             "media_type": blob.media_type,
-                        }));
+                        });
+                        match self.keep_in_library(thread, blob, &prompt, file_name).await {
+                            Ok(asset) => entry["asset"] = json!(asset),
+                            Err(error) => tracing::warn!(%error, "could not keep in the Library"),
+                        }
+                        files.push(entry);
                     }
                     shown.push(part);
                 }

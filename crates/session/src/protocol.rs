@@ -13,6 +13,7 @@ mod credits;
 mod error;
 mod exports;
 mod files;
+mod library;
 mod live;
 mod meta;
 mod methods;
@@ -35,7 +36,7 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
+    AssetId, At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
     PrincipalId, ProviderId, ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
@@ -152,8 +153,7 @@ methods! {
     "passkey/create" => PasskeyCreate {
         /// The request, as `passkey/create_options` named it.
         ceremony: String,
-        /// The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
-        /// base64url.
+        /// The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in base64url.
         credential: serde_json::Value,
         /// What to call the passkey; when it was added, if nothing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,8 +174,7 @@ methods! {
     } -> [Passkey],
     /// Begins signing a browser in with a passkey. Over HTTP it needs no sign-in.
     "passkey/get_options" => PasskeyGetOptions {} -> [PasskeyOptions],
-    /// Signs a browser in with the passkey that answers the request. Over HTTP it needs no
-    /// sign-in.
+    /// Signs a browser in with the passkey that answers the request. Over HTTP it needs no sign-in.
     "passkey/get" => PasskeyGet {
         ceremony: String,
         credential: serde_json::Value,
@@ -191,10 +190,8 @@ methods! {
     /// roles, in id order after `after` (someone listed before), at most `limit` (100 unless
     /// said, at most 1,000). Only for its Admins and Owners.
     "people/list" => PeopleList {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        after: Option<PrincipalId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] after: Option<PrincipalId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] limit: Option<usize>,
     } -> [People],
     /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
     /// only an Owner makes an Owner or changes one's role.
@@ -276,8 +273,7 @@ methods! {
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
         /// The project the thread is in: by default the caller's personal project, their Chats.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        project: Option<ProjectId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] project: Option<ProjectId>,
         /// Whether the thread works in a worktree of its own rather than in the folder itself;
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,8 +358,7 @@ methods! {
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
     /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
-    /// between them, its calls and what they did in a line, and which message is each turn's
-    /// reply.
+    /// between them, its calls and what they did in a line, and which message is each turn's reply.
     "thread/steps" => ThreadSteps { thread: ThreadId } -> [Steps],
     /// The thread's plan, read from its log: its steps, each with its status, and whether it
     /// waits for the person's approval; `null` when it has none.
@@ -473,6 +468,12 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<u64>,
     } -> [FilePiece],
+    /// What glave made for the caller, kept beyond any chat: every project's, newest first.
+    "library/list" => LibraryList {} -> [Library],
+    /// A piece of a Library item's file, read as `file/read` reads one.
+    "library/read" => LibraryRead { asset: AssetId, #[serde(default)] offset: Option<u64> } -> [FilePiece],
+    /// Takes an item out of the caller's Library; the chat it was made in keeps its copy.
+    "library/remove" => LibraryRemove { asset: AssetId } -> [Done],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,
@@ -542,8 +543,7 @@ methods! {
     "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
     /// Closes one of a thread's terminals, ending its shell.
     "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
-    /// Runs a prompt as a task at set times, each run in a new thread
-    /// working on a copy of its own.
+    /// Runs a prompt as a task at set times, each run in a new thread working on a copy of its own.
     "schedule/create" => ScheduleCreate {
         /// The project its runs are in, by default as `thread/start` picks one.
         #[serde(default, skip_serializing_if = "Option::is_none")]

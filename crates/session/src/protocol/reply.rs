@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
     ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, FilePiece, GoneFolder,
-    Grouping, InviteInfo, Logo, ModelInfo, OrganizationInfo, OrganizationLook, PasskeySummary,
-    Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo, ReplySources,
-    ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay, SpaceCredits,
-    TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
+    PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo,
+    ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay,
+    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 mod listening;
@@ -340,6 +340,9 @@ pub enum Reply {
     Task { task: TaskInfo },
     #[schemars(title = "Tasks")]
     Tasks { tasks: Vec<TaskInfo> },
+    /// What glave made for the person, newest first.
+    #[schemars(title = "Library")]
+    Library { items: Vec<LibraryItem> },
     #[schemars(title = "Schedule")]
     Schedule { schedule: ScheduleInfo },
     #[schemars(title = "Schedules")]

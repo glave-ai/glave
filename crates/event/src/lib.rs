@@ -21,7 +21,7 @@ pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
-    CallId, CredentialId, DeviceId, EventId, InviteId, MemoryId, PrincipalId, ProviderId,
+    AssetId, CallId, CredentialId, DeviceId, EventId, InviteId, MemoryId, PrincipalId, ProviderId,
     ScheduleId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money, Nanos};
@@ -47,6 +47,7 @@ pub use payload::{
     ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
     Usage, Verdict, WebPage,
 };
+pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,

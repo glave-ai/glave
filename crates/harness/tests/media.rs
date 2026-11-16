@@ -11,6 +11,7 @@ use glave_event::{
     Body, Cost, Currency, ModelRef, Money, Nanos, Part, StopReason, TokenCounts, Usage,
 };
 use glave_harness::{AllowAll, Cancel};
+use glave_ports::stream::Reserved;
 use glave_ports::{
     BlobStore as _, Completion, InMemoryLog, Made, MadeFile, Message, Pieces, Purpose, digest,
 };
@@ -118,12 +119,39 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
         };
         assert!(!is_error, "{output:?}");
         let sha = digest(&image);
-        let said = json!({"files": [{"file": format!("blob:{}", sha.as_str()), "media_type": "image/png"}]});
+        let Part::Text { text } = &output[0] else {
+            panic!("the result comes first: {output:?}");
+        };
+        let said: serde_json::Value = serde_json::from_str(text).unwrap();
+        let entry = &said["files"][0];
+        assert_eq!(entry["file"], format!("blob:{}", sha.as_str()));
+        assert_eq!(entry["media_type"], "image/png");
+        let library: Vec<Body> = events(harness.log(), Reserved::Library.id())
+            .await
+            .into_iter()
+            .map(|event| event.body)
+            .collect();
+        let [Body::LibraryKept(kept)] = library.as_slice() else {
+            panic!("one item kept in the Library: {library:?}");
+        };
         assert_eq!(
-            output[0],
-            Part::Text {
-                text: said.to_string()
-            }
+            entry["asset"],
+            json!(kept.asset),
+            "the item answers to `asset`"
+        );
+        assert_eq!(kept.blob.sha256, sha, "the image, whole");
+        assert_eq!(kept.thread, thread.id);
+        assert_eq!(kept.name, "A fox at dawn");
+        assert_eq!(kept.file_name, "a-fox-at-dawn.png");
+        assert_ne!(
+            kept.holder, thread.id,
+            "held apart from the chat, so it outlives it"
+        );
+        harness.blobs().release(&scope(), thread.id).await.unwrap();
+        harness.blobs().sweep(scope().org()).await.unwrap();
+        assert!(
+            harness.blobs().get(&scope(), &sha).await.unwrap().is_some(),
+            "the Library still holds it once the chat lets go"
         );
         let Part::File { blob, resized, .. } = &output[1] else {
             panic!("the image follows as a file: {output:?}");
