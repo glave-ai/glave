@@ -9,12 +9,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use glave_computer::{Largest, LocalComputers, Peek, Wake, Waking};
 use glave_event::PrincipalId;
 use glave_harness::Homes;
-use glave_ports::OrgId;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, DiskSpace, Home, Sandbox, Sources, WorkspaceId,
     WorkspaceInfo,
 };
 use glave_ports::testing::ManualClock;
+use glave_ports::{Clock, OrgId};
 
 /// People's computers on this machine: each person's a folder of their own with its scratch
 /// folders, planned until a call needs it, then woken; every wake is counted.
@@ -177,12 +177,15 @@ impl Here {
             temp: None,
             at: None,
         };
-        let scratch = self.scratch(person);
-        // A clock that stands still: a call that went through keeps the computer taken as
-        // awake however long a test takes on this machine.
-        let still = Arc::new(ManualClock::at_second(1_791_001_000));
-        Waking::home((wake, peek), None, home, &scratch.to_string_lossy(), still)
+        let scratch = self.scratch(person).to_string_lossy().into_owned();
+        Waking::home((wake, peek), None, home, &scratch, still())
     }
+}
+
+/// A clock that stands still: a call that went through keeps a computer taken as awake however
+/// long a test takes on this machine.
+fn still() -> Arc<dyn Clock> {
+    Arc::new(ManualClock::at_second(1_791_001_000))
 }
 
 /// `computers`, its terminals' shells started by `helper` where there is one.
