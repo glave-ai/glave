@@ -572,17 +572,25 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         filters::SET => filters::decode_set(version, data).map(|r| r.map(Body::FiltersSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => [people::decode, signup::decode, credits::decode]
-            .into_iter()
-            .chain([
-                appearance::decode,
-                secrets::decode,
-                push::decode,
-                library::decode,
-            ])
+        _ => LEDGERS
+            .iter()
             .find_map(|decode| decode(kind, version, data)),
     }
 }
+
+/// Decodes one kind of event at one version; `None` for one it does not know.
+type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
+
+/// The decoders of the ledgers whose events are not named one by one above.
+const LEDGERS: [Decoder; 7] = [
+    people::decode,
+    signup::decode,
+    credits::decode,
+    appearance::decode,
+    secrets::decode,
+    push::decode,
+    library::decode,
+];
 
 /// Parses a payload's bytes as one specific version of one type.
 pub(crate) fn parse<T: DeserializeOwned>(data: &RawValue) -> serde_json::Result<T> {
