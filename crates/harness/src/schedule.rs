@@ -126,8 +126,8 @@ enum Called {
 pub(crate) fn spec() -> ToolSpec {
     ToolSpec {
         name: SCHEDULE.to_owned(),
-        description: "Set up work that repeats on its own, list what repeats, or remove one, \
-                      only when the person asks for it (\"do this every weekday at 8\", \"stop the \
+        description: "Set up work that repeats on its own, list what repeats in this project, \
+                      or remove one of those, only when the person asks for it (\"do this every weekday at 8\", \"stop the \
                       morning summary\"). Setting one up shows the person a card to confirm; once \
                       they do, it gets a chat of its own, and each run is a new turn there that \
                       starts with your prompt. Write the prompt as the person's request, complete \

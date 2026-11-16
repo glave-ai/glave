@@ -255,38 +255,45 @@ fn schedules_are_not_offered_where_none_fires_them() {
 }
 
 #[test]
-fn the_agent_lists_the_person_s_schedules_and_removing_one_asks_as_a_change_does() {
+fn the_agent_lists_and_removes_only_the_schedules_of_its_chat_s_project_removing_asking_as_a_change_does()
+ {
     block_on!(async {
-        let made = |name: &str| Request::ScheduleCreate {
-            project: Some(scope().project()),
+        let made = |name: &str, project: Option<glave_ports::ProjectId>| Request::ScheduleCreate {
+            project,
             name: Some(name.into()),
             when: glave_event::When::Cron("0 19 * * *".into()),
             zone: Some("Europe/Lisbon".into()),
             prompt: "tidy the notes".into(),
             budget: 1_000,
         };
-        let calls = |schedule: String| {
+        let calls = |(here, elsewhere): (String, String)| {
             vec![
                 json!({"action": "list"}),
-                json!({"action": "remove", "schedule": "0192f5c1-0000-7000-8000-00000000dead"}),
-                json!({"action": "remove", "schedule": schedule}),
+                json!({"action": "remove", "schedule": elsewhere}),
+                json!({"action": "remove", "schedule": here}),
             ]
         };
-        // Its id is known only once it is made: a server set up the same way, with the same
-        // clock and randomness, makes the same one.
+        // Their ids are known only once they are made: a server set up the same way, with the
+        // same clock and randomness, makes the same ones. One in this project, one in Chats.
         let made_by = async |name: &str, calls| {
             let built = setup(Permissions::Ask, calls)
                 .build_in_repository(name, InMemoryLog::new())
                 .await;
-            let Reply::Schedule { schedule } = built.0.request(made("Evening tidy")).await.unwrap()
-            else {
-                panic!("a schedule");
-            };
-            (built, schedule.schedule.to_string())
+            let mut ids = Vec::new();
+            for (name, project) in [("Evening tidy", Some(scope().project())), ("Inbox", None)] {
+                let Reply::Schedule { schedule } =
+                    built.0.request(made(name, project)).await.unwrap()
+                else {
+                    panic!("a schedule");
+                };
+                ids.push(schedule.schedule.to_string());
+            }
+            (built, (ids[0].clone(), ids[1].clone()))
         };
-        let (_probe, id) = made_by("tool-list-probe", Vec::new()).await;
-        let ((server, seen, _, _dir), again) = made_by("tool-list", calls(id.clone())).await;
-        assert_eq!(again, id, "the same schedule");
+        let (_probe, ids) = made_by("tool-list-probe", Vec::new()).await;
+        let ((server, seen, _, _dir), again) = made_by("tool-list", calls(ids.clone())).await;
+        assert_eq!(again, ids, "the same schedules");
+        let (here, elsewhere) = ids;
         let thread = start(&server, false).await;
         let _turn = stream_turn(&server, thread, "stop the evening tidy", None)
             .await
@@ -299,13 +306,21 @@ fn the_agent_lists_the_person_s_schedules_and_removing_one_asks_as_a_change_does
             "{}",
             told[1]
         );
-        assert!(told[1].contains(&id), "{}", told[1]);
-        assert!(told[2].contains("no schedule"), "{}", told[2]);
+        assert!(told[1].contains(&here), "{}", told[1]);
+        assert!(!told[1].contains("Inbox"), "another project's: {}", told[1]);
+        assert!(
+            told[2].contains("no schedule"),
+            "another project's: {}",
+            told[2]
+        );
         let asked = asked(&server, thread).await.unwrap();
         assert_eq!(asked.ask, "Stop repeating Evening tidy?");
-        assert_eq!(schedules(&server).await.len(), 1, "not before the yes");
+        assert_eq!(schedules(&server).await.len(), 2, "not before the yes");
         decide(&server, thread, Answer::AllowOnce).await;
-        assert_eq!(schedules(&server).await, Vec::new());
+        let left: Vec<String> = (schedules(&server).await.into_iter())
+            .map(|it| it.schedule.to_string())
+            .collect();
+        assert_eq!(left, vec![elsewhere], "only the one asked for");
     });
 }
 

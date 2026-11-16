@@ -15,6 +15,7 @@ use crate::cron::Cron;
 use crate::protocol::{ApiError, ScheduleInfo, code};
 use crate::repeats::repeats_in;
 use crate::server::{Inner, Server};
+use crate::tasks::acting_for;
 use crate::words::{Language, Sentence};
 use crate::zone::time_zone;
 
@@ -81,7 +82,7 @@ where
         Box::pin(async move {
             let server = self.server()?;
             let caller = server.caller_of(from);
-            let found = server.named(&caller, schedule).await;
+            let found = server.named(&caller, from, schedule).await;
             let found = found.map_err(|error| error.message.to_string())?;
             let name = found.name.clone();
             Ok(Confirm {
@@ -111,13 +112,25 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Who asks through `from`: the person the chat is for, in its organization.
+    /// Who asks through `from`: the person the chat is for, in its organization, as glave acts
+    /// for them on its own, never as the person on this computer unless they are.
     fn caller_of(&self, from: &Asker) -> Caller {
-        Caller {
-            person: self.someone_else(from.person).and_then(|by| by.id),
-            org: Some(from.scope.org()),
-            ..Caller::default()
-        }
+        let person = self.someone_else(from.person).and_then(|by| by.id);
+        acting_for(person, from.scope.org())
+    }
+
+    /// `caller`'s schedules in the project `from` is in, the only ones its chat's tool reaches.
+    async fn in_project(
+        &self,
+        caller: &Caller,
+        from: &Asker,
+    ) -> Result<Vec<ScheduleInfo>, ApiError> {
+        let listed = self.list_schedules(caller).await?;
+        let project = from.scope.project();
+        Ok(listed
+            .into_iter()
+            .filter(|it| it.project == project)
+            .collect())
     }
 
     /// What setting up `repeat` would ask `caller`, refused for whatever setting it up would
@@ -202,9 +215,9 @@ where
                 })
             }
             Asked::List => {
-                let listed = self.list_schedules(&caller).await?;
+                let listed = self.in_project(&caller, from).await?;
                 let said = if listed.is_empty() {
-                    "The person has no schedules.".to_owned()
+                    "Nothing repeats in this project.".to_owned()
                 } else {
                     let lines: Vec<String> = listed.iter().map(line).collect();
                     lines.join("\n")
@@ -212,7 +225,7 @@ where
                 Ok(Done { said, about: None })
             }
             Asked::Remove(text) => {
-                let found = self.named(&caller, &text).await?;
+                let found = self.named(&caller, from, &text).await?;
                 self.delete_schedule(&caller, found.schedule).await?;
                 let said = format!(
                     "Removed \"{}\": it starts no more runs. Its chat stays, with its past runs.",
@@ -227,8 +240,13 @@ where
         }
     }
 
-    /// The schedule of `caller`'s that `text` names by its id.
-    async fn named(&self, caller: &Caller, text: &str) -> Result<ScheduleInfo, ApiError> {
+    /// The schedule of `caller`'s, in the project `from` is in, that `text` names by its id.
+    async fn named(
+        &self,
+        caller: &Caller,
+        from: &Asker,
+        text: &str,
+    ) -> Result<ScheduleInfo, ApiError> {
         let missing = || {
             ApiError::new(
                 code::NO_SCHEDULE,
@@ -239,7 +257,7 @@ where
         };
         let uuid = text.trim().parse::<uuid::Uuid>().map_err(|_| missing())?;
         let schedule = ScheduleId::try_from(uuid).map_err(|_| missing())?;
-        let listed = self.list_schedules(caller).await?;
+        let listed = self.in_project(caller, from).await?;
         listed
             .into_iter()
             .find(|it| it.schedule == schedule)
