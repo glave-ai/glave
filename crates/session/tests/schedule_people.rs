@@ -1,18 +1,19 @@
 //! Everyone's schedules, whoever made them: a run acts as its maker, with what they may do and
-//! spend; a server started since fires them though their maker asked it nothing, from the
-//! store's index of where schedules are; a maker removed from the organization meanwhile has
-//! their run refused; and schedules are offered only where a server fires them.
+//! spend, never as the person on the server's computer; a server started since fires them though
+//! their maker asked it nothing, from the store's index of where schedules are, each
+//! organization's in its own scope; a maker removed from the organization meanwhile has their run
+//! refused; and schedules are offered only where a server fires them.
 
 use glave_event::{
-    At, Body, EventId, Header, PersonRemoved, Principal, ScheduleId, Seq, Skipped, ThreadId, When,
-    decode, encode,
+    At, AuthMethod, Body, EventId, Header, PersonRemoved, Principal, ScheduleId, Seq, Skipped,
+    ThreadId, When, decode, encode,
 };
 use glave_ports::stream::Reserved;
 use glave_ports::testing::ManualClock;
 use std::sync::Arc;
 
 use glave_ports::{
-    Caller, EventLog as _, InMemoryLog, InMemoryProjects, ProjectId, Projects, Scope,
+    Caller, EventLog as _, InMemoryLog, InMemoryProjects, OrgId, ProjectId, Projects, Scope,
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
@@ -119,6 +120,74 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
             runs_in(&log, mine.project).await,
             vec![(None, mine.schedule)],
             "as the person on this computer"
+        );
+        // Her run is signed in by no one, never in the form of the person on this computer, so
+        // nothing only they may do is hers.
+        let hers = theirs.thread.unwrap();
+        let chat = Scope::glaves_own(scope().org(), theirs.project);
+        let auth = (log
+            .read(&chat, hers, None, usize::MAX)
+            .await
+            .unwrap()
+            .into_iter())
+        .find_map(|raw| match decode(raw).unwrap().body {
+            Body::TurnStarted(started) => Some(started.auth),
+            _ => None,
+        })
+        .flatten()
+        .unwrap();
+        assert_eq!(auth.method, AuthMethod::OnBehalf);
+        let run = Caller {
+            person: grace.person,
+            auth: Some(auth),
+            org: Some(scope().org()),
+            ..Caller::default()
+        };
+        let only_here = [
+            Request::FolderList { path: None },
+            Request::SearchSet { on: false },
+        ];
+        for asked in only_here {
+            let refused = restarted.request_as(&run, asked.clone()).await;
+            assert_eq!(
+                refused.map_err(|error| error.code).err(),
+                Some(code::NOT_ALLOWED),
+                "{asked:?}"
+            );
+        }
+    });
+}
+
+#[test]
+fn where_schedules_are_is_kept_in_each_organization_s_own_scope() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, _, _, _dir) = setup()
+            .build_in_repository("people-index", log.clone())
+            .await;
+        let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
+        let grace = Caller {
+            org: Some(third),
+            ..elsewhere()
+        };
+        let hers = daily(&server, &grace).await.unwrap();
+        let log = &log;
+        let index = |org| async move {
+            let scope = Scope::of_organization(org);
+            let read = log.read(&scope, Reserved::Scheduled.id(), None, usize::MAX);
+            (read.await.unwrap().into_iter())
+                .map(|raw| decode(raw).unwrap().body)
+                .collect::<Vec<Body>>()
+        };
+        let own = index(scope().org()).await;
+        assert!(
+            matches!(own.as_slice(), [Body::ScheduleOrganization(listed)] if listed.org == third.as_uuid()),
+            "the server's own lists the organization alone: {own:?}"
+        );
+        let theirs = index(third).await;
+        assert!(
+            matches!(theirs.as_slice(), [Body::SchedulePlaced(placed)] if placed.project == hers.project.as_uuid()),
+            "her project, in her organization's own: {theirs:?}"
         );
     });
 }

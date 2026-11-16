@@ -80,9 +80,10 @@ pub enum Reserved {
     /// `…000f`: what glave made for a person and keeps beyond any chat, in the project it was
     /// made in (`library.kept`, `library.removed`).
     Library,
-    /// `…0010`: the projects on the store where someone made a schedule (`schedule.placed`), in
-    /// the server's own organization's scope ([`Scope::of_organization`]), which every server
-    /// that fires schedules reads to find them.
+    /// `…0010`: where schedules are, which every server that fires schedules reads to find
+    /// them: in an organization's own scope ([`Scope::of_organization`]), its projects where
+    /// someone made one (`schedule.placed`); in the server's own organization's, the
+    /// organizations where someone did (`schedule.organization`), naming no project.
     Scheduled,
 }
 

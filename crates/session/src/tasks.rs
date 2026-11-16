@@ -13,10 +13,11 @@ mod adopted;
 use std::collections::HashMap;
 
 use glave_event::{
-    At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
-    PrincipalKind, TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Auth, AuthMethod, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal,
+    PrincipalId, PrincipalKind, TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound,
+    decode,
 };
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId, Scope, title_from};
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
@@ -67,6 +68,24 @@ pub(crate) fn in_place() -> ApiError {
 /// Refused: no copy of the project's folder could be made for a task to work on.
 pub(crate) fn no_copy() -> ApiError {
     ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
+}
+
+/// Who glave acts as for `person` on its own, in `org`, as a schedule's run does: the person on
+/// this computer as they call, for none; anyone else unmistakably as themselves, signed in by no
+/// one (`on_behalf`), so nothing that only the person on this computer may do is theirs.
+pub(crate) fn acting_for(person: Option<PrincipalId>, org: OrgId) -> Caller {
+    let auth = person.map(|_| Auth {
+        method: AuthMethod::OnBehalf,
+        issuer: None,
+        subject: None,
+        session: None,
+    });
+    Caller {
+        person,
+        auth,
+        org: Some(org),
+        ..Caller::default()
+    }
 }
 
 /// The person `by` names, as a task's or a schedule's events record them: none for the server's

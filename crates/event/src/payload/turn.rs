@@ -102,6 +102,9 @@ open_kind! {
         Account => "account",
         /// SAML.
         Saml => "saml",
+        /// No one signed in: glave acts for the person on its own, as a schedule's run does,
+        /// never as the person on its computer.
+        OnBehalf => "on_behalf",
     }
 }
 
