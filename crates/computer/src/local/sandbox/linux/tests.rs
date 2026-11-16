@@ -191,18 +191,35 @@ if __name__ == '__main__':
         print('pooled', sum(pool.map(abs, [-1, -2])))
 ";
 
-/// A Unix socket listening where tmux's servers do (`/tmp/tmux-<uid>`), removed when dropped,
-/// with the folder if this made it.
-struct Tmux {
+/// A Unix socket listening in a folder where a daemon's does (tmux's servers', in
+/// `/tmp/tmux-<uid>`; GNU screen's sessions, in `/tmp/uscreens` among other places; an ssh
+/// agent forwarded here, in `/tmp/ssh-…`), removed when dropped, with the folder if this made
+/// it.
+struct Daemon {
     socket: PathBuf,
     made: Option<PathBuf>,
     _listener: std::os::unix::net::UnixListener,
 }
 
-impl Tmux {
-    fn listen() -> Self {
+impl Daemon {
+    /// Where tmux's servers listen.
+    fn tmux() -> Self {
+        Self::listen(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()))
+    }
+
+    /// One of the places GNU screen keeps its sessions.
+    fn screen() -> Self {
+        Self::listen("/tmp/uscreens".to_owned())
+    }
+
+    /// Where sshd keeps an agent forwarded to this machine.
+    fn forwarded_agent() -> Self {
+        Self::listen(format!("/tmp/ssh-glave{}", std::process::id()))
+    }
+
+    fn listen(folder: String) -> Self {
         use std::os::unix::fs::DirBuilderExt as _;
-        let folder = PathBuf::from(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()));
+        let folder = PathBuf::from(folder);
         let made = (!folder.exists()).then(|| folder.clone());
         if made.is_some() {
             std::fs::DirBuilder::new()
@@ -220,7 +237,7 @@ impl Tmux {
     }
 }
 
-impl Drop for Tmux {
+impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket);
         if let Some(folder) = &self.made {
@@ -248,7 +265,8 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     let dir = scratch("seccomp");
     let socket = glave_ports::testing::SocketPath::new(&dir, "outside.sock").unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let tmux = Tmux::listen();
+    let (tmux, agent) = (Daemon::tmux(), Daemon::forwarded_agent());
+    let screen = Daemon::screen();
     std::fs::write(dir.join("project/pool.py"), POOL).unwrap();
     let sandboxed = |network: bool, script: &str| {
         run(&dir, Some((SandboxLevel::Project, network)), None, script)
@@ -259,6 +277,11 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(open.contains("connected"), "{open}");
     let (_, open) = run(&dir, None, None, &connect(&tmux.socket)).unwrap();
     assert!(open.contains("connected"), "control, tmux's: {open}");
+    let (_, open) = run(&dir, None, None, &connect(&agent.socket)).unwrap();
+    assert!(
+        open.contains("connected"),
+        "control, a forwarded agent's: {open}"
+    );
 
     let offline = sandboxed(false, &connect(&socket));
     assert!(!offline.contains("connected"), "{offline}");
@@ -266,6 +289,11 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(online.contains("connected"), "{online}");
     let daemon = sandboxed(true, &connect(&tmux.socket));
     assert!(!daemon.contains("connected"), "tmux's: {daemon}");
+    let session = sandboxed(true, &connect(&screen.socket));
+    assert!(!session.contains("connected"), "screen's: {session}");
+    // No `SSH_AUTH_SOCK` names it: an agent forwarded to another session of the person's.
+    let forwarded = sandboxed(true, &connect(&agent.socket));
+    assert!(!forwarded.contains("connected"), "an agent's: {forwarded}");
     let pool = sandboxed(true, "python3 pool.py");
     assert_eq!(pool.trim(), "pooled 3");
 
@@ -273,6 +301,24 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
         "python3 -c \"import ctypes; print('ptrace', ctypes.CDLL(None).ptrace(0, 0, 0, 0))\"";
     let said = sandboxed(true, ptrace);
     assert!(said.contains("ptrace -1"), "{said}");
+}
+
+/// GNU screen's sessions are hidden with tmux's, wherever a system keeps them: a command that
+/// reached one would type into a shell outside the sandbox.
+#[test]
+fn screen_s_and_tmux_s_sessions_are_among_the_daemons_hidden() {
+    let hidden = super::mounts::daemons(None, 1000, None);
+    for place in [
+        "/run/screen",
+        "/tmp/screens",
+        "/tmp/uscreens",
+        "/tmp/tmux-1000",
+    ] {
+        assert!(
+            hidden.contains(&PathBuf::from(place)),
+            "{place}: {hidden:?}"
+        );
+    }
 }
 
 #[test]

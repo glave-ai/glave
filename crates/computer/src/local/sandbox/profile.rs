@@ -29,6 +29,19 @@ const MACOS_HOME_SECRETS: &[&str] = &[
     "Library/Application Support/Arc",
     "Library/Application Support/Firefox",
     "Library/Application Support/ngrok",
+    // Where tools that keep to macOS's own folders hold what the common list names.
+    "Library/Application Support/pip/pip.conf",
+    "Library/Application Support/pypoetry/auth.toml",
+    "Library/Application Support/com.vercel.cli",
+    "Library/Application Support/Bitwarden CLI",
+    "Library/Application Support/io.datasette.llm/keys.json",
+    "Library/Preferences/.wrangler",
+    "Library/Preferences/helm/registry/config.json",
+    "Library/Application Support/doctl",
+    "Library/Application Support/tea",
+    "Library/Application Support/dart/pub-credentials.json",
+    "Library/Application Support/Claude/claude_desktop_config.json",
+    "Library/Jupyter/runtime",
 ];
 
 /// The home folder's credential stores, as paths: hidden whether they exist yet or not.

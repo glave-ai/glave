@@ -18,15 +18,24 @@ use glave_ports::computer::{PROTECTED, SandboxLevel};
 use super::super::secrets::HOME_SECRETS;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
-/// Under the home folder, on Linux besides the common list: keyrings and browser profiles
-/// (cookies are credentials).
+/// Under the home folder, on Linux besides the common list: keyrings, GNU screen's sessions
+/// where they are kept there, and browser profiles (cookies are credentials), a snap's and a
+/// Flatpak's among them, as Ubuntu's own Firefox is.
 const LINUX_HOME_SECRETS: &[&str] = &[
     ".local/share/keyrings",
+    ".local/share/kwalletd",
+    ".screen",
     ".mozilla",
     ".config/google-chrome",
     ".config/chromium",
     ".config/BraveSoftware",
     ".config/microsoft-edge",
+    "snap/firefox/common/.mozilla",
+    "snap/chromium/common/chromium",
+    ".var/app/org.mozilla.firefox/.mozilla",
+    ".var/app/com.google.Chrome/config/google-chrome",
+    ".var/app/org.chromium.Chromium/config/chromium",
+    ".var/app/com.brave.Browser/config/BraveSoftware",
 ];
 
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
@@ -34,11 +43,15 @@ const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
 
 /// Where the system's daemons and the person's X server listen: `docker.sock` is root on the
 /// machine, Podman's socket the same for its user, and the system bus asks only that its caller
-/// be the person at the computer.
+/// be the person at the computer. And GNU screen's sessions, wherever a system keeps them: a
+/// command that reached one would type into a shell outside the sandbox.
 const DAEMONS: &[&str] = &[
     "/run/docker.sock",
     "/run/podman",
     "/run/dbus",
+    "/run/screen",
+    "/tmp/screens",
+    "/tmp/uscreens",
     "/tmp/.X11-unix",
 ];
 
@@ -306,8 +319,27 @@ fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
     layout
         .daemons
         .iter()
+        .cloned()
+        .chain(forwarded_agents(Path::new("/tmp")))
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .filter(|real| !used.iter().any(|used| used.starts_with(real)))
+        .collect()
+}
+
+/// The folders in `tmp` where sshd keeps the sockets of agents forwarded to this machine
+/// (`ssh-XXXXXXXXXX/agent.<pid>`), each hidden whole. `$SSH_AUTH_SOCK` names the one of the
+/// session glave was started in, when it was started in one: a glave started as a service has
+/// none, while the agents of the person's own sessions still listen, and sign with their keys
+/// for whoever connects. Looked for at each command, so one forwarded since is hidden too.
+fn forwarded_agents(tmp: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(tmp) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("ssh-"))
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
         .collect()
 }
 
