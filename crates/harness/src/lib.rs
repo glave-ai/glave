@@ -45,6 +45,7 @@ mod resume;
 mod retry;
 mod room;
 mod sandbox;
+mod schedule;
 mod service;
 mod skills;
 mod standing;
@@ -84,6 +85,7 @@ pub use prompt::{listed, system_prompt};
 pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;
+pub use schedule::{Asked, Asker, Repeat, Schedules};
 pub use skills::{
     Found, MAX_LISTED, SKILL, Skill, SkillSource, Skills, find_skills, skill_folders,
 };

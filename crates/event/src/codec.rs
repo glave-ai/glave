@@ -60,6 +60,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (chosen::EFFORT, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
+    (approval::REQUESTED, 2),
     (approval::DECIDED, 1),
     (service::ASKED, 1),
     (service::ANSWERED, 1),

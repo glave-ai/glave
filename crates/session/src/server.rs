@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU8;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, Weak};
 
 use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
 use glave_gateway::Credits;
@@ -40,6 +40,7 @@ use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::providers::Providers;
 use crate::push::Pushing;
 use crate::reread::Rereads;
+use crate::schedule::Asking;
 use crate::secrets::Secrets;
 use crate::standing::Worktrees;
 use crate::tasks::{TaskLimits, Tasks};
@@ -368,10 +369,12 @@ where
             .with_homes(wiring.homes.clone())
             .with_credentials_of(wiring.git_hosts.clone().map(credentials_of));
         harness.set_without_images(crate::models::without_images(&catalog));
+        let person = harness.settings().person;
+        // Its chats' `schedule` tool reaches its schedules, held weakly: the harness is its own.
         Self {
-            inner: Arc::new(Inner {
-                person: harness.settings().person,
-                harness,
+            inner: Arc::new_cyclic(|server| Inner {
+                harness: harness.with_schedules(Some(Arc::new(Asking(Weak::clone(server))))),
+                person,
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,

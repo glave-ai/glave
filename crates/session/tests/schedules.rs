@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use glave_event::{At, CallId, Opened, Outcome, ScheduleId, ThreadId, When};
+use glave_event::{At, Opened, Outcome, ScheduleId, ThreadId, When};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
     Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, Leased, Leases, OrgId, ProjectId,
@@ -508,23 +508,6 @@ fn a_schedule_has_a_chat_of_its_own_named_for_it_and_each_run_is_a_turn_there() 
             "kept"
         );
     });
-}
-
-/// The `approval.requested` `thread` waits at, once its turn has asked.
-async fn asked_in<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> CallId {
-    for _ in 0..100_000 {
-        let asked = events(server, thread).await.into_iter().find_map(|raw| {
-            match glave_event::decode(raw).ok()?.body {
-                glave_event::Body::ApprovalRequested(asked) => Some(asked.call_id),
-                _ => None,
-            }
-        });
-        if let Some(call) = asked {
-            return call;
-        }
-        tokio::task::yield_now().await;
-    }
-    panic!("the run never asked");
 }
 
 #[test]

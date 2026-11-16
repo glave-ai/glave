@@ -14,7 +14,8 @@ pub(crate) const DECIDED: &str = "approval.decided";
 
 crate::worded! {
     /// What an approval asks the person, by what would run: a command, an edit, a write, a
-    /// read, a page, a service's tool by what it does and the service, or any other tool.
+    /// read, a page, a service's tool by what it does and the service, work that would repeat
+    /// (added in version 2), or any other tool.
     Ask {
         Command = "ask-command" "Run this command?",
         Edit = "ask-edit" "Edit this file?",
@@ -22,6 +23,7 @@ crate::worded! {
         Read = "ask-read" "Read this file?",
         Page = "ask-page" "Open this page?",
         With { act, service } = "ask-with" "{ $act } with { $service }?",
+        Repeat { when } = "ask-repeat" "Repeat this { $when }?",
         Allow = "ask-allow" "Allow this?",
     }
 }
@@ -127,7 +129,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ApprovalDecided {
@@ -140,7 +142,8 @@ pub(crate) fn decode_requested(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        1 => Some(parse(data)),
+        // Version 2 only adds what an approval may ask (`Ask::Repeat`): version 1 reads as it is.
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }
