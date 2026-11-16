@@ -154,6 +154,12 @@ fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
         pod["spec"]["securityContext"],
         json!({"fsGroup": 65532, "fsGroupChangePolicy": "OnRootMismatch"})
     );
+    assert_eq!(pod["spec"]["dnsPolicy"], json!("None"));
+    assert_eq!(
+        pod["spec"]["dnsConfig"],
+        json!({"nameservers": ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888"]}),
+        "names from the internet's resolvers, never the cluster's"
+    );
     let policy = computer.network_policy();
     let out = &policy["spec"]["egress"][0]["to"];
     let refused = |at: usize| out[at]["ipBlock"]["except"].as_array().unwrap().clone();
@@ -231,9 +237,9 @@ fn a_persons_computer_with_the_network_reaches_the_internet_and_nothing_inside()
         ])
     );
     assert_eq!(
-        open["spec"]["egress"][1],
-        json!({"ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}),
-        "DNS on port 53 is still let out"
+        open["spec"]["egress"].as_array().map(Vec::len),
+        Some(1),
+        "no port is let out to every address, DNS's neither: {open}"
     );
 }
 

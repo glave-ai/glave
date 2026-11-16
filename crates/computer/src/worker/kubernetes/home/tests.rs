@@ -3,8 +3,9 @@
 //! `images/computer`, built with that glave in it), as CI's `kind` job runs it: a file written
 //! before it sleeps is there after it wakes, it serves with its image's glave under the runtime
 //! class set, it runs as `nonroot` and writes nowhere but its home and `/tmp`, its tools are
-//! there, it reaches the internet but nothing in the cluster (the API, CoreDNS by name and
-//! another Pod by its address), a bridge into it that drops ends only that bridge and the next
+//! there, it reaches the internet, by name too, but nothing in the cluster (the API, CoreDNS by
+//! name, another Pod by its address, nor its DNS: no internal name resolves, and CoreDNS's
+//! Pod refuses it on port 53), a bridge into it that drops ends only that bridge and the next
 //! is signed in with a fresh token, the wake is timed, and destroying it leaves nothing behind.
 //! Given another glave than its image's, glave is copied in.
 
@@ -36,7 +37,7 @@ const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(i
     2>/dev/null && echo dns=yes || echo dns=no; \
     echo \"api=$(reach kubernetes.default.svc.cluster.local 443)\"; \
     echo \"pods=$(reach kube-dns.kube-system.svc.cluster.local 9153)\"; \
-    echo \"internet=$(reach 1.1.1.1 443)\"";
+    echo \"internet=$(reach 1.1.1.1 443)\"; echo \"named=$(reach example.com 443)\"";
 
 /// The SHA-256 of the computer's token, never the token: which one it holds now.
 const TOKEN_HELD: &str = "sha256sum /opt/glave/secret/token | cut -c1-64";
@@ -160,7 +161,8 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         let pod = another_pod(&cluster)
             .await
             .unwrap_or_else(|| "no-pod-found".into());
-        let fenced = format!("{FENCED}; echo \"pod=$(reach {pod} 9153)\"");
+        let fenced =
+            format!("{FENCED}; echo \"pod=$(reach {pod} 9153)\"; echo \"dns53=$(reach {pod} 53)\"");
 
         let named = (&cluster, key.as_str());
         let wrote = awake(&computers, named, &environment, &[&fenced]).await;
@@ -196,10 +198,11 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         assert_eq!(
             last(&wrote).unwrap().trim(),
             "home=/home/glave\nuser=65532\nglave=/usr/libexec/glave/glave\n\
-             name=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=yes\n\
-             api=refused\npods=refused\ninternet=reached\npod=refused",
+             name=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=no\n\
+             api=refused\npods=refused\ninternet=reached\nnamed=reached\npod=refused\n\
+             dns53=refused",
             "its own home, glave's image's glave and tools, never root, nothing written \
-             outside it but /tmp, and the internet but nothing in the cluster"
+             outside it but /tmp, and the internet but nothing in the cluster, its DNS neither"
         );
         assert_eq!(
             wrote.as_ref().unwrap().class,

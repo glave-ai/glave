@@ -99,7 +99,7 @@ pub const CLOUD_METADATA: [Network; 9] = [
     Network::v4(Ipv4Addr::new(100, 100, 100, 200), 32),
     // Azure's WireServer, the VM agent's channel, through which anyone on the machine could
     // read VM extensions' protected settings (Mandiant's "WireServing", 2024); also Azure's
-    // DNS, which workers reach on port 53 anyway.
+    // DNS, which a person's computer never asks (it asks the internet's resolvers).
     // learn.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16
     Network::v4(Ipv4Addr::new(168, 63, 129, 16), 32),
     // IPv6 link-local.
