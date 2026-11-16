@@ -1,4 +1,4 @@
-//! `task.started`, `task.ended`, `schedule.created` and `schedule.deleted`: a project's tasks
+//! `task.started`, `task.ended`, `schedule.created`, `.skipped` and `.deleted`: a project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
 //! in a conversation.
@@ -18,6 +18,7 @@ pub(crate) const STARTED: &str = "task.started";
 pub(crate) const ENDED: &str = "task.ended";
 pub(crate) const CREATED: &str = "schedule.created";
 pub(crate) const DELETED: &str = "schedule.deleted";
+pub(crate) const SKIPPED: &str = "schedule.skipped";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,11 +77,14 @@ pub enum When {
     Cron(String),
 }
 
-/// A schedule was made.
+/// A schedule was made, with a chat of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduleCreated {
     pub schedule: ScheduleId,
+    /// What the person calls it, which its chat is named: "Morning email summary". Empty in a
+    /// schedule made before schedules had chats.
+    pub name: String,
     pub when: When,
     /// The time zone its cron expression is read in, by its IANA name (`Europe/Lisbon`): the
     /// person's when it was made.
@@ -90,35 +94,69 @@ pub struct ScheduleCreated {
     /// Tokens, in and out, each run may use, subagents' included. Required: no schedule runs
     /// unbounded.
     pub budget: u64,
+    /// Its own chat, which each run adds a turn to. Absent only in a schedule made before
+    /// schedules had chats (versions 1 and 2), which runs no more: it is set up again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread: Option<ThreadId>,
+    /// The chat it was set up from, when it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<ThreadId>,
     /// Who made it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
 
-/// `schedule.created` as version 1 wrote it, in UTC with no zone of its own.
+/// `schedule.created` as versions 1 and 2 wrote it, with no chat: 1 in UTC with no zone of its
+/// own, 2 with one.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ScheduleCreatedV1 {
+struct ScheduleCreatedBefore {
     schedule: ScheduleId,
     when: When,
+    #[serde(default)]
+    zone: Option<String>,
     prompt: String,
     budget: u64,
     #[serde(default)]
     by: Option<Principal>,
 }
 
-impl From<ScheduleCreatedV1> for ScheduleCreated {
-    /// In UTC, as it ran.
-    fn from(old: ScheduleCreatedV1) -> Self {
+impl From<ScheduleCreatedBefore> for ScheduleCreated {
+    /// With no name or chat of its own, so it runs no more; in UTC where it had no zone.
+    fn from(old: ScheduleCreatedBefore) -> Self {
         Self {
             schedule: old.schedule,
+            name: String::new(),
             when: old.when,
-            zone: "UTC".to_owned(),
+            zone: old.zone.unwrap_or_else(|| "UTC".to_owned()),
             prompt: old.prompt,
             budget: old.budget,
+            thread: None,
+            from: None,
             by: old.by,
         }
     }
+}
+
+/// A schedule's run that was due did not start: its run before was still going in its chat, or
+/// someone's turn was, or the run was refused. The next starts at its own time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleSkipped {
+    pub schedule: ScheduleId,
+    /// When the run was due.
+    pub due: At,
+    pub why: Skipped,
+}
+
+/// Why a schedule's run did not start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Skipped {
+    /// The run before was still going in its chat, or someone's turn was.
+    Going,
+    /// It was refused, with why, in the server's words as it recorded them.
+    Refused { why: String },
 }
 
 /// A schedule was deleted: it starts no more runs.
@@ -143,7 +181,12 @@ impl Payload for TaskEnded {
 
 impl Payload for ScheduleCreated {
     const TYPE: &'static str = CREATED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
+}
+
+impl Payload for ScheduleSkipped {
+    const TYPE: &'static str = SKIPPED;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for ScheduleDeleted {
@@ -167,10 +210,17 @@ pub(crate) fn decode_created(
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleCreated>> {
     match version {
-        1 => Some(parse::<ScheduleCreatedV1>(data).map(ScheduleCreated::from)),
-        2 => Some(parse(data)),
+        1 | 2 => Some(parse::<ScheduleCreatedBefore>(data).map(ScheduleCreated::from)),
+        3 => Some(parse(data)),
         _ => None,
     }
+}
+
+pub(crate) fn decode_skipped(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ScheduleSkipped>> {
+    (version == 1).then(|| parse(data))
 }
 
 pub(crate) fn decode_deleted(
@@ -191,5 +241,10 @@ mod tests {
         let read = decode_created(1, &raw).unwrap().unwrap();
         assert_eq!(read.zone, "UTC");
         assert_eq!(read.when, When::Cron("0 9 * * *".into()));
+        assert_eq!(
+            (read.thread, read.name.as_str()),
+            (None, ""),
+            "no chat: it runs no more"
+        );
     }
 }

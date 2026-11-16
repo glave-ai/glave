@@ -1,46 +1,35 @@
-//! Schedules: a prompt that runs as a task at set times, once (`at`) or whenever a cron
-//! expression matches on the clocks of its time zone. Schedules live in their project's ledger.
-//! The server that runs tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls
-//! it when the next run is due): each due schedule, in every project whose tasks it runs, starts one task in
-//! a new thread, on a copy of its own. A schedule that missed runs while no server ran it runs
-//! once, as soon as one does, never once per missed time (systemd's `Persistent=true`); a run
-//! that cannot start is skipped until the schedule's next time. Every run has a token budget.
+//! Schedules: a prompt that runs at set times, once (`at`) or whenever a cron expression matches
+//! on the clocks of the schedule's time zone, each run a new turn in the schedule's own chat.
+//! Schedules live in their project's ledger. Making one makes its chat, named for it, where a
+//! chat in its project works: on a copy of the project's folder where the folder is a
+//! repository, so its runs never change files under the person, and otherwise where any chat
+//! there works. Deleting its chat deletes it; deleting it keeps its chat, with its past runs.
+//! Firing them is `fire.rs`; how one reads in lists, `info.rs`.
 
-use std::collections::BTreeSet;
-use std::future::Future;
-use std::time::Duration;
+mod fire;
+mod info;
 
-use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
-use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId, ProjectId};
-use jiff::Timestamp;
+use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from};
 
 use crate::choice::Choice;
 use crate::cron::Cron;
-use crate::ledger::{Scheduled, own_scope};
-use crate::protocol::{ApiError, Reply, ScheduleInfo, Told, code};
+use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
-use crate::tasks::Work;
 use crate::words::Sentence;
 use crate::zone::time_zone;
-
-/// The longest the scheduler sleeps before looking again: schedules made by another process
-/// are found within this.
-const LOOK_AGAIN: Duration = Duration::from_secs(60);
-/// How long the organization's scheduler lease lasts unless renewed: past the longest wait
-/// between ticks, so the server firing its schedules keeps it from tick to tick, and another
-/// takes over this long after one stops without letting go.
-const SCHEDULING: Duration = Duration::from_secs(180);
-/// Occurrences of a cron expression walked to find the latest one missed.
-const MOST_MISSED: usize = 100_000;
 
 /// What `schedule/create` asks for.
 pub(crate) struct NewSchedule {
     pub(crate) project: Option<ProjectId>,
+    pub(crate) name: Option<String>,
     pub(crate) when: When,
     /// Its time zone; the caller's when none is given.
     pub(crate) zone: Option<String>,
     pub(crate) prompt: String,
     pub(crate) budget: u64,
+    /// The chat it is set up from, if it is.
+    pub(crate) from: Option<ThreadId>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -49,11 +38,12 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    /// Makes the schedule `new` asks for, and its chat, for `caller`.
     pub(crate) async fn create_schedule(
         &self,
         caller: &Caller,
         new: NewSchedule,
-    ) -> Result<Reply, ApiError> {
+    ) -> Result<ScheduleInfo, ApiError> {
         if let When::Cron(text) = &new.when {
             Cron::parse(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
@@ -63,103 +53,167 @@ where
                 Sentence::ScheduleNoBudget,
             ));
         }
-        if new.prompt.trim().is_empty() {
+        // Each run starts with the prompt: a name alone runs nothing.
+        let Some(first) = title_from(&new.prompt) else {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 Sentence::ScheduleNoPrompt,
             ));
-        }
+        };
+        let name = new.name.as_deref().and_then(title_from).unwrap_or(first);
         let zone = match new.zone {
             Some(zone) => zone.trim().to_owned(),
             None => self.zone_of(caller).await?,
         };
         time_zone(&zone)?;
-        let project = self.project_for(caller, new.project).await?.1.located();
-        if let Some(max) = self.inner.limits.max_schedules {
-            let projects = self.read_ledgers_of(caller).await?;
-            let now = self.inner.harness.clock().now();
-            let kept = self
-                .ledgers()
-                .iter()
-                .filter(|(id, _)| projects.contains(id))
-                .flat_map(|(_, ledger)| ledger.schedules.values())
-                .filter(|scheduled| next_run(scheduled, now).is_some())
-                .count();
-            if kept >= max {
-                return Err(ApiError::new(
-                    code::LIMIT,
-                    Sentence::TooManySchedules { kept, most: max },
-                ));
-            }
-        }
+        let (_, scope) = self.project_for(caller, new.project).await?;
+        self.room_for_one_more(caller).await?;
+        let thread = self.schedule_chat(caller, scope).await?;
+        self.rename(caller, thread, name.clone()).await?;
         let now = self.inner.harness.clock().now();
         let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes()?)?;
         let created = ScheduleCreated {
             schedule,
+            name,
             when: new.when,
             zone,
             prompt: new.prompt,
             budget: new.budget,
-            by: caller
-                .person
-                .filter(|person| Some(*person) != self.inner.person)
-                .map(glave_event::Principal::person),
+            thread: Some(thread),
+            from: new.from,
+            by: self.someone_else(caller.person),
         };
+        let project = scope.located();
         self.record_in_ledger(project, &created).await?;
-        let info = self
+        self.schedule_info(project, schedule)
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))
+    }
+
+    /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
+    /// folder is a repository, else where any new chat there works.
+    async fn schedule_chat(&self, caller: &Caller, scope: Scope) -> Result<ThreadId, ApiError> {
+        let choice = Choice::default();
+        match self.new_thread(caller, scope, None, true, &choice).await {
+            Err(refused) if refused.code == code::WORKSPACE => {
+                self.new_thread(caller, scope, None, false, &choice).await
+            }
+            made => made,
+        }
+    }
+
+    /// Refused once `caller` keeps as many schedules as policy allows that will still run.
+    async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
+        let Some(most) = self.inner.limits.max_schedules else {
+            return Ok(());
+        };
+        let projects = self.read_ledgers_of(caller).await?;
+        let now = self.inner.harness.clock().now();
+        let kept = self
             .ledgers()
-            .get(&project)
-            .and_then(|ledger| ledger.schedules.get(&schedule))
-            .map(|scheduled| info(scheduled, self.inner.harness.clock().now()))
-            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))?;
-        Ok(Reply::Schedule { schedule: info })
+            .iter()
+            .filter(|(id, _)| projects.contains(id))
+            .flat_map(|(_, ledger)| ledger.schedules.values())
+            .filter(|scheduled| info::next_run(scheduled, now).is_some())
+            .count();
+        if kept >= most {
+            return Err(ApiError::new(
+                code::LIMIT,
+                Sentence::TooManySchedules { kept, most },
+            ));
+        }
+        Ok(())
     }
 
     /// The schedules of every project `caller` works in, oldest first.
-    pub(crate) async fn list_schedules(&self, caller: &Caller) -> Result<Reply, ApiError> {
+    pub(crate) async fn list_schedules(
+        &self,
+        caller: &Caller,
+    ) -> Result<Vec<ScheduleInfo>, ApiError> {
         let projects = self.read_ledgers_of(caller).await?;
         let now = self.inner.harness.clock().now();
         let mut schedules: Vec<ScheduleInfo> = self
             .ledgers()
             .iter()
             .filter(|(project, _)| projects.contains(project))
-            .flat_map(|(_, ledger)| ledger.schedules.values())
-            .map(|scheduled| info(scheduled, now))
+            .flat_map(|(project, ledger)| {
+                (ledger.schedules.values())
+                    .map(|scheduled| info::info(*project, scheduled, ledger, now))
+            })
             .collect();
         schedules.sort_by_key(|schedule| schedule.schedule);
-        Ok(Reply::Schedules { schedules })
+        Ok(schedules)
     }
 
+    /// Removes `schedule` for `caller`: it starts no more runs, and its chat stays.
     pub(crate) async fn delete_schedule(
         &self,
         caller: &Caller,
         schedule: ScheduleId,
     ) -> Result<Reply, ApiError> {
+        let project = self.project_of_schedule(caller, schedule).await?;
+        let deleted = ScheduleDeleted {
+            schedule,
+            by: self.someone_else(caller.person),
+        };
+        self.record_in_ledger(project, &deleted).await?;
+        Ok(Reply::Done {})
+    }
+
+    /// Deletes the schedule whose chat is `thread`, if one is, for `caller`, as its chat is
+    /// deleted: a schedule runs only into its own chat.
+    pub(crate) async fn chat_deleted(
+        &self,
+        caller: &Caller,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> Result<(), ApiError> {
+        let project = scope.located();
+        self.catch_up(project).await?;
+        let theirs = (self.ledgers().get(&project)).and_then(|ledger| {
+            (ledger.schedules.values())
+                .find(|scheduled| scheduled.created.thread == Some(thread))
+                .map(|scheduled| scheduled.created.schedule)
+        });
+        if let Some(schedule) = theirs {
+            let deleted = ScheduleDeleted {
+                schedule,
+                by: self.someone_else(caller.person),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+        }
+        Ok(())
+    }
+
+    /// The project of `caller`'s that keeps `schedule`, its ledger read up to now.
+    async fn project_of_schedule(
+        &self,
+        caller: &Caller,
+        schedule: ScheduleId,
+    ) -> Result<Located, ApiError> {
         let projects = self.read_ledgers_of(caller).await?;
-        let project = self
-            .ledgers()
+        self.ledgers()
             .iter()
             .find(|(project, ledger)| {
                 projects.contains(project) && ledger.schedules.contains_key(&schedule)
             })
-            .map(|(project, _)| *project);
-        let Some(project) = project else {
-            return Err(ApiError::new(
-                code::NO_SCHEDULE,
-                Sentence::NoSchedule {
-                    schedule: schedule.to_string(),
-                },
-            ));
-        };
-        let deleted = ScheduleDeleted {
-            schedule,
-            by: caller
-                .person
-                .filter(|person| Some(*person) != self.inner.person)
-                .map(glave_event::Principal::person),
-        };
-        self.record_in_ledger(project, &deleted).await?;
-        Ok(Reply::Done {})
+            .map(|(project, _)| *project)
+            .ok_or_else(|| {
+                ApiError::new(
+                    code::NO_SCHEDULE,
+                    Sentence::NoSchedule {
+                        schedule: schedule.to_string(),
+                    },
+                )
+            })
+    }
+
+    /// `schedule` of `project`, as lists show it, as this server last read its ledger.
+    fn schedule_info(&self, project: Located, schedule: ScheduleId) -> Option<ScheduleInfo> {
+        let now = self.inner.harness.clock().now();
+        let ledgers = self.ledgers();
+        let ledger = ledgers.get(&project)?;
+        let scheduled = ledger.schedules.get(&schedule)?;
+        Some(info::info(project, scheduled, ledger, now))
     }
 
     /// The projects `caller` works in, each one's ledger read up to now.
@@ -169,222 +223,5 @@ where
             self.catch_up(*project).await?;
         }
         Ok(projects)
-    }
-
-    /// Starts a task for every schedule due by the clock's now, in every project whose tasks
-    /// this server runs, at most one each, and answers with their threads, first letting go
-    /// of threads idle too long. A run the task
-    /// limit holds back starts on a later tick; one that cannot start is skipped until the
-    /// schedule's next time.
-    pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
-        // Threads idle for 30 minutes are let go even when nothing else happens.
-        self.let_go_stale().await;
-        // One server fires each organization's schedules: the holder of its lease.
-        let projects = self.task_projects().await?;
-        let mut firing = BTreeSet::new();
-        for org in projects.iter().map(|at| at.org).collect::<BTreeSet<_>>() {
-            if self.fires(org).await? {
-                firing.insert(org);
-            }
-        }
-        for project in projects.iter().filter(|at| firing.contains(&at.org)) {
-            // A ledger that cannot be read now is read again on the next tick.
-            if let Err(error) = self.catch_up(*project).await {
-                let project = project.project;
-                tracing::warn!(%error, %project, "could not read the project's schedules");
-            }
-        }
-        let now = self.inner.harness.clock().now();
-        let mut due: Vec<(Located, ScheduleCreated, Timestamp)> = self
-            .ledgers()
-            .iter()
-            .filter(|(at, _)| firing.contains(&at.org))
-            .flat_map(|(project, ledger)| {
-                // Only the person on this computer's run, as a run is theirs; one made by
-                // someone signed in from elsewhere waits for #410, leaving no thread behind.
-                let theirs = ledger
-                    .schedules
-                    .values()
-                    .filter(|it| it.created.by.is_none());
-                theirs.filter_map(move |scheduled| {
-                    due(scheduled, now).map(|at| (*project, scheduled.created.clone(), at))
-                })
-            })
-            .collect();
-        due.sort_by_key(|(_, schedule, at)| (*at, schedule.schedule));
-        let mut started = Vec::new();
-        for (project, schedule, at) in due {
-            if self
-                .inner
-                .limits
-                .max_running
-                .is_some_and(|max| self.tasks().len() >= max)
-            {
-                break;
-            }
-            match self.fire(project, &schedule, at).await {
-                Ok(thread) => started.push(thread),
-                Err(error) => {
-                    tracing::warn!(%error, schedule = %schedule.schedule, "a run could not start");
-                    self.skip(project, schedule.schedule, at);
-                }
-            }
-        }
-        Ok(started)
-    }
-
-    /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
-    /// [`SCHEDULING`]; none while another server holds it.
-    async fn fires(&self, org: OrgId) -> Result<bool, ApiError> {
-        let holder = self.holder()?;
-        let taken = self
-            .inner
-            .leases
-            .acquire(org, Leased::Scheduler, holder, SCHEDULING)
-            .await
-            .map_err(|error| ApiError::internal(&error))?;
-        let mut scheduling = self.scheduling();
-        if let Some(lease) = taken {
-            scheduling.insert(org, lease);
-            Ok(true)
-        } else {
-            scheduling.remove(&org);
-            Ok(false)
-        }
-    }
-
-    /// Holds back `schedule`'s run that was due at `at` and could not start, until the
-    /// schedule's next time: in memory only, so a server started later tries it once more.
-    fn skip(&self, project: Located, schedule: ScheduleId, at: Timestamp) {
-        if let Some(scheduled) = self
-            .ledgers()
-            .get_mut(&project)
-            .and_then(|ledger| ledger.schedules.get_mut(&schedule))
-        {
-            scheduled.last = scheduled.last.max(Some(At::from(at)));
-        }
-    }
-
-    /// Runs the schedules until `stop` finishes: a tick whenever the next run is due, and at
-    /// least every minute, for schedules other processes made.
-    pub async fn run_scheduler(&self, stop: impl Future<Output = ()>) {
-        let mut stop = std::pin::pin!(stop);
-        loop {
-            // A failing tick is tried again on the next one.
-            let _ = self.tick().await;
-            let now = self.inner.harness.clock().now();
-            let wait = self
-                .next_due()
-                .and_then(|next| {
-                    let millis = next.as_millisecond().saturating_sub(now.as_millisecond());
-                    u64::try_from(millis).ok()
-                })
-                .map_or(LOOK_AGAIN, |millis| {
-                    Duration::from_millis(millis).min(LOOK_AGAIN)
-                });
-            tokio::select! {
-                () = &mut stop => return,
-                () = tokio::time::sleep(wait) => {}
-            }
-        }
-    }
-
-    /// When the next schedule is due, if any is, of those this server has read.
-    pub fn next_due(&self) -> Option<Timestamp> {
-        let now = self.inner.harness.clock().now();
-        self.ledgers()
-            .values()
-            .flat_map(|ledger| ledger.schedules.values())
-            .filter_map(|scheduled| next_run(scheduled, now))
-            .min()
-    }
-
-    /// Starts `schedule`'s run that was due at `at`, in a thread of its own in `project`, which
-    /// works on a copy of the project's folder.
-    async fn fire(
-        &self,
-        project: Located,
-        schedule: &ScheduleCreated,
-        at: Timestamp,
-    ) -> Result<ThreadId, ApiError> {
-        // As the person on this computer, whose run it is, in its project's organization.
-        let caller = Caller {
-            org: Some(project.org),
-            ..Caller::default()
-        };
-        let thread = self
-            .new_thread(
-                &caller,
-                // Glave's own: a schedule's run, in its project.
-                own_scope(project),
-                None,
-                true,
-                &Choice::default(),
-            )
-            .await?;
-        let work = Work(schedule.prompt.clone(), Choice::default());
-        let fired = Fired {
-            schedule: schedule.schedule,
-            due: At::from(at),
-        };
-        self.start_task(&caller, thread, work, Some(schedule.budget), Some(fired))
-            .await?;
-        Ok(thread)
-    }
-}
-
-/// The time a run of `scheduled` is due by `now`, if one is: for a cron schedule that missed
-/// several, the latest of them.
-fn due(scheduled: &Scheduled, now: Timestamp) -> Option<Timestamp> {
-    match &scheduled.created.when {
-        When::At(at) => (scheduled.last.is_none() && at.timestamp() <= now).then(|| at.timestamp()),
-        When::Cron(text) => {
-            let cron = Cron::parse(text).ok()?;
-            let zone = time_zone(&scheduled.created.zone).ok()?;
-            let mut at = cron.next_after(since(scheduled), &zone)?;
-            if at > now {
-                return None;
-            }
-            for _ in 0..MOST_MISSED {
-                match cron.next_after(at, &zone) {
-                    Some(later) if later <= now => at = later,
-                    _ => return Some(at),
-                }
-            }
-            Some(now)
-        }
-    }
-}
-
-/// When `scheduled` runs next after `now`, or is due now; `None` once a one-off has run.
-fn next_run(scheduled: &Scheduled, now: Timestamp) -> Option<Timestamp> {
-    match &scheduled.created.when {
-        When::At(at) => scheduled.last.is_none().then(|| at.timestamp()),
-        When::Cron(text) => {
-            let cron = Cron::parse(text).ok()?;
-            let zone = time_zone(&scheduled.created.zone).ok()?;
-            let next = cron.next_after(since(scheduled), &zone)?;
-            Some(if next <= now { now } else { next })
-        }
-    }
-}
-
-/// Runs are counted from the latest one, or from when the schedule was made.
-fn since(scheduled: &Scheduled) -> Timestamp {
-    scheduled.last.unwrap_or(scheduled.at).timestamp()
-}
-
-fn info(scheduled: &Scheduled, now: Timestamp) -> ScheduleInfo {
-    let created = &scheduled.created;
-    ScheduleInfo {
-        schedule: created.schedule,
-        when: created.when.clone(),
-        zone: created.zone.clone(),
-        repeats: Told::repeats(created.when.clone(), true),
-        prompt: created.prompt.clone(),
-        budget: created.budget,
-        created_at: scheduled.at,
-        last: scheduled.last,
-        next: next_run(scheduled, now).map(At::from),
     }
 }

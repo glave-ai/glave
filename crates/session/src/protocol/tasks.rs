@@ -59,6 +59,17 @@ pub struct TaskInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ScheduleInfo {
     pub schedule: ScheduleId,
+    /// What it is called, as its chat is.
+    pub name: String,
+    /// The project its chat is in.
+    pub project: ProjectId,
+    /// Its own chat, which each run adds a turn to; absent for one made before schedules had
+    /// chats, which runs no more (`note` says so).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread: Option<ThreadId>,
+    /// The chat it was set up from, if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<ThreadId>,
     pub when: When,
     /// The time zone `when` is read in, by its IANA name.
     pub zone: String,
@@ -67,10 +78,42 @@ pub struct ScheduleInfo {
     pub prompt: String,
     pub budget: u64,
     pub created_at: At,
-    /// When it last ran: the time that run was due.
+    /// Its latest run, once one was due.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last: Option<At>,
-    /// When it runs next; absent once a one-off has run.
+    pub last: Option<LastRun>,
+    /// When it runs next; absent once a one-off has run, and when it runs no more.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<At>,
+    /// What the person should know of it beyond that, in the server's words, such as that it
+    /// runs no more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<Told>,
+}
+
+/// A schedule's latest run: when it was due, what came of it, and that in the server's words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LastRun {
+    pub due: At,
+    pub status: RunStatus,
+    /// How it ended, once it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
+    /// What came of it, in a few words: "Done", "Skipped: the run before was still going".
+    pub said: Told,
+}
+
+/// What came of a schedule's run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// Running now, or waiting for the person.
+    Running,
+    /// Ended, as `outcome` says.
+    Ended,
+    /// Not started: the run before was still going in its chat, or someone's turn was.
+    Skipped,
+    /// Not started: it was refused, as `said` says.
+    Refused,
+    /// Started; how it ended is no longer kept here.
+    Started,
 }

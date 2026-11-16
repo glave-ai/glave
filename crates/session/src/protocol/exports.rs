@@ -33,7 +33,7 @@ pub use super::secrets::SecretInfo;
 pub use super::settings::Setting;
 pub use super::sources::ReplySources;
 pub use super::steps::{CallRun, ThreadSteps};
-pub use super::tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
+pub use super::tasks::{LastRun, RunStatus, ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use super::told::Told;
 pub use super::trust::{TrustAsk, TrustChoice, TrustItem};
 pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, Sha256, TurnResult};
