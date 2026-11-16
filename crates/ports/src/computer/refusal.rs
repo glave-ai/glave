@@ -220,6 +220,7 @@ mod tests {
             "the environment asks for <asked> CPUs, and policy allows at most <most> ([workers] cpu)",
             "the environment asks for <asked> GB of memory, and policy allows at most <most> ([workers] memory_gb)",
             "<name> is named like a secret; a computer's variables are never secrets",
+            "your computer couldn't start safely; it will try again",
         ];
         let every = Refusal::every();
         assert_eq!(every.len(), before.len());
