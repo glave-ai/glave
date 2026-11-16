@@ -17,7 +17,7 @@ pub(crate) use self::sentence::Sentence;
 use self::events::{asks, event_in};
 use crate::protocol::{
     ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, ListedCommand, PushInfo,
-    Reply, SearchInfo, ThreadSummary, Told, Usage,
+    Reply, SearchInfo, ThreadSummary, Told, TurnFiles, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -125,11 +125,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
-        Ok(Reply::Files { made }) => {
-            for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
-                file.kept.translate(language);
-            }
-        }
+        Ok(Reply::Files { made }) => files_in(made, language),
         Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
             notice: Some(notice),
@@ -154,6 +150,13 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(_) => {}
+    }
+}
+
+/// Writes where each file the turns `made` is kept in `language`.
+fn files_in(made: &mut [TurnFiles], language: Language) {
+    for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
+        file.kept.translate(language);
     }
 }
 

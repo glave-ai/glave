@@ -32,9 +32,11 @@ pub fn preview(bytes: &[u8], media_type: &str) -> Result<String, OfficeError> {
         return Ok(cut(rows).join("\n"));
     }
     match office(bytes) {
-        Some((mut package, main, Kind::Word)) => body(&document::read(&mut package, &main, NAME)?),
+        Some((mut package, main, Kind::Word)) => {
+            Ok(body(&document::read(&mut package, &main, NAME)?))
+        }
         Some((mut package, main, Kind::PowerPoint)) => {
-            body(&presentation::read(&mut package, &main, NAME)?)
+            Ok(body(&presentation::read(&mut package, &main, NAME)?))
         }
         _ => sheets(bytes),
     }
@@ -42,12 +44,11 @@ pub fn preview(bytes: &[u8], media_type: &str) -> Result<String, OfficeError> {
 
 /// What `glave doc read` says of a document or a deck, without its first line, which names the
 /// file for a model.
-fn body(read: &str) -> Result<String, OfficeError> {
-    Ok(read
-        .split_once('\n')
+fn body(read: &str) -> String {
+    read.split_once('\n')
         .map_or("", |(_, rest)| rest)
         .trim()
-        .to_owned())
+        .to_owned()
 }
 
 /// A workbook's worksheets, each a heading and a table of what its cells show; a formula with

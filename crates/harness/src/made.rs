@@ -46,12 +46,11 @@ fn words(command: &str) -> Vec<String> {
     for c in command.chars() {
         match quote {
             Some(open) if c == open => quote = None,
-            Some(_) => word.push(c),
             None if c == '\'' || c == '"' => quote = Some(c),
             None if c.is_whitespace() || ";|&<>()=`".contains(c) => {
                 words.push(std::mem::take(&mut word));
             }
-            None => word.push(c),
+            Some(_) | None => word.push(c),
         }
     }
     words.push(word);
@@ -175,7 +174,7 @@ mod tests {
             ["all.pdf", "a.pdf", "b.pdf"],
             "each is stat'd before and after; only what changed counts"
         );
-        assert!(bash("cargo test && cat notes.md").is_empty());
+        assert_eq!(bash("cargo test && cat notes.md"), Vec::<String>::new());
     }
 
     #[test]
@@ -188,14 +187,14 @@ mod tests {
             )
         };
         assert_eq!(write("table.csv"), ["table.csv"]);
-        assert!(write("src/main.rs").is_empty());
+        assert_eq!(write("src/main.rs"), Vec::<String>::new());
         let read = Arguments::Json(
             serde_json::json!({ "path": "a.pdf" })
                 .as_object()
                 .cloned()
                 .unwrap_or_default(),
         );
-        assert!(named(Tool::Read, &read).is_empty());
+        assert_eq!(named(Tool::Read, &read), Vec::<String>::new());
     }
 
     #[test]

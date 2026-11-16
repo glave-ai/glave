@@ -179,6 +179,6 @@ mod tests {
         assert_eq!(structured["answers"], serde_json::json!([]));
         assert_eq!(FileMade::read(&structured), vec![made]);
         assert_eq!(FileMade::structured(None, &[]), None);
-        assert!(FileMade::read(&serde_json::json!({"made": "no"})).is_empty());
+        assert_eq!(FileMade::read(&serde_json::json!({"made": "no"})), []);
     }
 }

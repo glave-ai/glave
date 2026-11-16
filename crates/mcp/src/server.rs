@@ -598,7 +598,7 @@ impl McpServer {
                         Called::Done(output)
                     }
                     Ok(asks) => asks,
-                    Err(glaves) => Called::Done(glaves),
+                    Err(glaves) => Called::Done(*glaves),
                 }
             }
             Some(Err(err)) => Called::Done(ToolOutput::text(true, err.to_string())),

@@ -123,12 +123,11 @@ fn kept(files: &mut Vec<MadeFile>, paths: &mut Vec<String>, seq: Seq, file: File
         kept: Sentence::KeptWithChat.into(),
     };
     let before = paths.iter().position(|path| *path == file.path);
-    match before.and_then(|at| files.get_mut(at)) {
-        Some(before) => *before = made,
-        None => {
-            paths.push(file.path);
-            files.push(made);
-        }
+    if let Some(before) = before.and_then(|at| files.get_mut(at)) {
+        *before = made;
+    } else {
+        paths.push(file.path);
+        files.push(made);
     }
 }
 
