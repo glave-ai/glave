@@ -5,8 +5,11 @@
 //! exactly as it does for an id nobody has, so not even whether something exists leaks. Runs
 //! on SQLite, and on Postgres when `GLAVE_TEST_POSTGRES_URL` names a database. The methods come
 //! from the protocol's one table, through the schema made from it: a method this suite has no
-//! entry for fails it.
+//! entry for fails it, and so does a way in over HTTP beside the methods that `doors` does not
+//! list. Beside ids, no answer may hold the words only someone else's things hold, and what
+//! each person chooses for themselves stays theirs when everyone has chosen.
 
+mod doors;
 mod ended;
 mod sweep;
 mod table;
@@ -77,6 +80,7 @@ fn every_method_and_every_id_it_takes_is_in_the_table() {
 async fn isolated<L: EventLog + Clone + 'static>(name: &str, parts: Parts<L>) {
     let mut world = World::build(name, &parts).await;
     let mut found = sweep::own_calls(&world).await;
+    found.extend(sweep::own_settings(&world).await);
     world.sign_in_and_hold().await;
     for (kind, why) in NOT_HELD {
         assert!(
@@ -98,6 +102,18 @@ async fn isolated<L: EventLog + Clone + 'static>(name: &str, parts: Parts<L>) {
     // Reading a thread may first close what it left open, so the first look is not compared.
     sweep::snapshot(&world).await;
     let before = sweep::snapshot(&world).await;
+    // The sweep looks for each person's own words in everyone else's answers, which proves
+    // nothing of words that show nowhere: each must show in what its person sees of their own.
+    for (person, own) in world.people.iter().zip(&before) {
+        let (seen, keeps_secrets) = (own.to_string(), person.ids.contains_key(&Kind::Provider));
+        for word in world::words_of(person.name) {
+            assert!(
+                seen.contains(&word) || (word.ends_with("S_KEY") && !keeps_secrets),
+                "{}'s {word:?} shows nowhere of their own: the sweep never looks for it",
+                person.name
+            );
+        }
+    }
     found.extend(sweep::sweep(&world).await);
     let after = sweep::snapshot(&world).await;
     for ((person, before), after) in world.people.iter().zip(&before).zip(&after) {

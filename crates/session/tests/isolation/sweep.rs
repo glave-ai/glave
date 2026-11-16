@@ -11,7 +11,7 @@ use glave_session::protocol::Request;
 use serde_json::{Map, Value, json};
 
 use super::table::{Kind, placeholders, table};
-use super::world::{World, ask, request};
+use super::world::{World, ask, request, words_of};
 
 /// What one call found: which method, who called with whose ids, and what each answer was.
 pub(super) type Finding = String;
@@ -39,15 +39,84 @@ pub(super) async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -
     found
 }
 
+/// What each person chooses for themselves alone, read back.
+const CHOICES: [&str; 4] = [
+    "grouping/get",
+    "language/get",
+    "appearance/get",
+    "filters/get",
+];
+
+/// Each person chooses their own settings, no two alike: how their threads are grouped, their
+/// language, their accent and their filters among providers. Once everyone has chosen, each
+/// must still read back their own: no one's choice is kept where another's is read.
+pub(super) async fn own_settings<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
+    let chosen_by = async |person: &super::world::Person| {
+        let mut read = Vec::new();
+        for method in CHOICES {
+            let org = &world.orgs[person.server];
+            read.push(ask(org, &person.caller, request(method, json!({}))).await);
+        }
+        Value::Array(read).to_string()
+    };
+    let mut chosen = Vec::new();
+    for (index, person) in world.people.iter().enumerate() {
+        let odd = index % 2 == 1;
+        let color = format!("#{:02x}3344", 0x10 + index * 0x20);
+        let country = ["US", "DE", "FR", "GB", "JP", "CA"][index % 6];
+        let sets = [
+            (
+                "grouping/set",
+                json!({"grouping": if odd { "project" } else { "status" }}),
+            ),
+            (
+                "language/set",
+                json!({"language": if odd { "en" } else { "en-XA" }}),
+            ),
+            (
+                "appearance/set",
+                json!({"accent": {"color": {"color": color, "adjust": false}}}),
+            ),
+            ("filters/set", json!({"filters": {"based_in": [country]}})),
+        ];
+        for (method, params) in sets {
+            ask(
+                &world.orgs[person.server],
+                &person.caller,
+                request(method, params),
+            )
+            .await;
+        }
+        chosen.push(chosen_by(person).await);
+    }
+    let mut found = Vec::new();
+    if chosen.iter().collect::<BTreeSet<_>>().len() != chosen.len() {
+        found.push(format!(
+            "two people chose alike, so the check proves nothing: {chosen:?}"
+        ));
+    }
+    for (person, chose) in world.people.iter().zip(&chosen) {
+        let now = chosen_by(person).await;
+        if now != *chose {
+            found.push(format!(
+                "what {} chose for themselves changed once others chose:\n  chose: {chose}\n  now: {now}",
+                person.name
+            ));
+        }
+    }
+    found
+}
+
 /// Every id but those of `person`, and the people of their own organization, whom its admins
-/// see.
+/// see; and the words only someone else's things hold, which an answer that names no id of
+/// theirs could still show.
 fn ids_of_others<L: EventLog + 'static>(world: &World<L>, person: usize) -> BTreeSet<String> {
     let org = world.people.get(person).map(|it| it.org);
-    world
-        .people
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| *index != person)
+    let others = || {
+        let people = world.people.iter().enumerate();
+        people.filter(move |(index, _)| *index != person)
+    };
+    let ids = others()
         .flat_map(|(_, other)| {
             other
                 .ids
@@ -57,7 +126,8 @@ fn ids_of_others<L: EventLog + 'static>(world: &World<L>, person: usize) -> BTre
                 })
                 .flat_map(|(_, ids)| ids)
         })
-        .filter_map(|id| id.as_str().map(str::to_owned))
+        .filter_map(|id| id.as_str().map(str::to_owned));
+    ids.chain(others().flat_map(|(_, other)| words_of(other.name)))
         .collect()
 }
 
