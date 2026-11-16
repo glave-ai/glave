@@ -3,6 +3,7 @@
 //! is "on a repeating schedule", never the expression itself, which the person did not type.
 
 use glave_event::When;
+use glave_harness::listed;
 
 use crate::cron::{Cron, has};
 use crate::words::Sentence;
@@ -104,15 +105,6 @@ fn clock(hour: u8, minute: u8) -> String {
         _ => (hour.saturating_sub(12), "pm"),
     };
     format!("{shown}:{minute:02} {half}")
-}
-
-/// `items` as a list in a sentence: `a`, `a and b`, `a, b and c`.
-fn listed(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
 }
 
 #[cfg(test)]

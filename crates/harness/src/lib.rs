@@ -80,7 +80,7 @@ pub use memory::MemoryVerb;
 pub use own_tools::{OwnTools, Placed};
 pub use plan::{MAX_STEP, MAX_STEPS, Plan};
 pub use project_folders::{Brought, ProjectFolders, Settled};
-pub use prompt::system_prompt;
+pub use prompt::{listed, system_prompt};
 pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;

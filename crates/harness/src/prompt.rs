@@ -64,7 +64,7 @@ fn bare(host: &CredentialHost) -> Option<String> {
 }
 
 /// `items` as a sentence lists them: `a`, `a and b`, `a, b and c`.
-fn listed(items: &[String]) -> String {
+pub fn listed(items: &[String]) -> String {
     match items {
         [] => String::new(),
         [one] => one.clone(),
