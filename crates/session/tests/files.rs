@@ -18,9 +18,6 @@ use serde_json::json;
 
 use crate::support::*;
 
-/// A one-pixel PNG, as a screenshot would come.
-const PIXEL: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-
 /// A stand-in for a photo: 2400 by 1800, with grain, as a JPEG.
 fn photo() -> Vec<u8> {
     let mut seed: u32 = 0x9e37_79b9;
