@@ -401,6 +401,7 @@ where
                     },
                     queue: true,
                     unattended,
+                    scheduled: None,
                 };
                 let sent = boxed(|| self.start_turn_with(traced, thread, message, key)).await;
                 return match sent {

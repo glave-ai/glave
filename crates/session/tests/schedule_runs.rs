@@ -259,3 +259,45 @@ fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
         assert_eq!(run.outcome, Some(Outcome::LimitReached), "{run:?}");
     });
 }
+
+#[test]
+fn a_clean_copy_catches_up_with_the_project_before_a_run_and_one_with_changes_is_left_and_said() {
+    block_on!(async {
+        let answers = (0..3).map(|_| answer(Some("Done."), None)).collect();
+        let mut setup = Setup::asking(answers, Answering::Clients);
+        setup.clock =
+            ManualClock::at_millis(at("2026-10-10T10:03:00Z").timestamp().as_millisecond());
+        let now = setup.clock.clone();
+        let (server, seen, repo, _dir) = setup
+            .build_in_repository("runs-copy", InMemoryLog::new())
+            .await;
+        let chat = schedule(&server, "Build check", "0 11 * * *", 10_000)
+            .await
+            .thread
+            .unwrap();
+        let commit = |file: &str| {
+            let script = format!(
+                "echo new > {file} && git add . && \
+                 git -c user.name=t -c user.email=t@example.com commit -q -m {file}"
+            );
+            sh(&repo, &script);
+        };
+        // The project moves on after the chat's copy was made.
+        commit("news.md");
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        let (_, root) = opened(&server, chat).await;
+        let root = std::path::PathBuf::from(root);
+        assert!(root.join("news.md").exists(), "brought up to date");
+        // A copy with changes of its own is left as it is, and the run is told.
+        std::fs::write(root.join("mine.md"), "mine").unwrap();
+        commit("more.md");
+        set(&now, "2026-10-11T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        assert!(!root.join("more.md").exists(), "left as it was");
+        let sent = json(&seen);
+        assert!(sent.last().unwrap().contains("has changes of its own"));
+    });
+}

@@ -465,6 +465,8 @@ sentences! {
     RunSkipped = "run-skipped" "Skipped: the run before was still going",
     RunRefused { why: String } = "run-refused" "Couldn't start: { $why }",
     RunStarted = "run-started" "Started",
+    RunKept = "run-kept"
+        "(This chat's copy of the project has changes of its own, so glave left it as it was rather than bringing it up to the project's latest version.)",
     NoZone { zone: String } = "no-zone"
         "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
 
