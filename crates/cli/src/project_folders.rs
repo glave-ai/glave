@@ -20,7 +20,7 @@ use std::time::Duration;
 use glave_config::policy::{Choices, Loaded, Locations, memory_settings};
 use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_event::PrincipalId;
-use glave_harness::{AGENTS_MD, Brought, Settled, agents_md};
+use glave_harness::{AGENTS_MD, Brought, Settled, agents_md, agents_md_alone};
 use glave_memory::{GlaveMemory, Personal};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Hooks;
@@ -460,7 +460,14 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         Box::pin(async move {
             // The person's own instructions open their own threads alone, never anyone else's.
             let personal = trusting.then(|| self.home.join(AGENTS_MD));
-            let agents = match agents_md(root, personal.as_deref()).await {
+            // A scratch folder is in glave's own folder: what is above it is never the chat's,
+            // so a repository there (a home kept in git) lends it nothing, the person's own
+            // file least of all.
+            let read = match project {
+                Some(_) => agents_md(root, personal.as_deref()).await,
+                None => agents_md_alone(root, personal.as_deref()).await,
+            };
+            let agents = match read {
                 Ok(read) => read.map(|read| read.text),
                 Err(error) => {
                     tracing::warn!(%error, "a thread's AGENTS.md could not be read");

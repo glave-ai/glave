@@ -195,6 +195,14 @@ fn someone_invited_gets_none_of_the_owner_s_own_instructions_skills_or_commands(
     // a skill and a command.
     std::fs::write(place.home.join("AGENTS.md"), "Bank with Zebra Savings.\n").unwrap();
     std::fs::write(place.project.join("AGENTS.md"), "Deploy by the heron.\n").unwrap();
+    // glave's folder is kept in git, as a home folder's dotfiles are: a chat's scratch folder
+    // is inside it, and what is above a chat's folder is never read as the chat's.
+    let kept = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&place.home)
+        .status()
+        .unwrap();
+    assert!(kept.success());
     let skill = place.home.join("skills/ledger");
     std::fs::create_dir_all(&skill).unwrap();
     let ledger =
