@@ -52,10 +52,15 @@ pub(crate) async fn invited(owner: &Remote, url: &str, origin: &str) -> Remote {
 /// Runs a turn in a new thread of `caller`, started with `params`, to its end, answering each
 /// place glave asks about with the person's own folder: how many times it asked.
 async fn turn(caller: &Remote, params: Value) -> usize {
+    saying(caller, params, "add these").await
+}
+
+/// [`turn`], the person saying `prompt`.
+async fn saying(caller: &Remote, params: Value, prompt: &str) -> usize {
     let started = request("thread/start", params);
     let started = serde_json::to_value(caller.request(&started).await.unwrap()).unwrap();
     let thread: ThreadId = serde_json::from_value(started["thread"]["id"].clone()).unwrap();
-    let prompt = json!({"thread": thread, "prompt": "add these"});
+    let prompt = json!({"thread": thread, "prompt": prompt});
     let Ok(Sent::Started(mut running)) = caller.start(&request("turn/start", prompt)).await else {
         panic!("a turn of their own");
     };
@@ -176,5 +181,69 @@ fn someone_invited_never_leaves_the_sandbox_on_the_server_s_computer_and_the_own
         assert_eq!(turn(&owner, full).await, 0);
         let read = model.received()[4].body.to_string().contains(token);
         assert!(read, "the owner reads their own token");
+    });
+}
+
+#[test]
+fn someone_invited_gets_none_of_the_owner_s_own_instructions_skills_or_commands() {
+    let place = place("invited-own");
+    // The owner's own, in glave's folder and the folder the server started in: instructions,
+    // a skill and a command.
+    std::fs::write(place.home.join("AGENTS.md"), "Bank with Zebra Savings.\n").unwrap();
+    std::fs::write(place.project.join("AGENTS.md"), "Deploy by the heron.\n").unwrap();
+    let skill = place.home.join("skills/ledger");
+    std::fs::create_dir_all(&skill).unwrap();
+    let ledger =
+        "---\nname: ledger\ndescription: Keeps the walrus accounts.\n---\nAsk the marmot.\n";
+    std::fs::write(skill.join("SKILL.md"), ledger).unwrap();
+    let commands = place.home.join("commands");
+    std::fs::create_dir_all(&commands).unwrap();
+    std::fs::write(
+        commands.join("payroll.md"),
+        "Pay from the ocelot account.\n",
+    )
+    .unwrap();
+    let load = json!({"name": "ledger"});
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "skill", &load),
+        Reply::text("There is none."),
+        Reply::tool_call("call_2", "skill", &load),
+        Reply::text("Loaded."),
+    ])
+    .unwrap();
+    choose(&place, "serve", "{ origin = \"http://localhost\" }");
+    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &[]);
+    let (_, port) = url.rsplit_once(':').unwrap();
+    let origin = format!("http://localhost:{port}");
+    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    let owners = ["Zebra Savings", "walrus", "marmot", "ocelot"];
+    block_on!(async {
+        let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
+        let theirs = invited(&owner, &url, &origin).await;
+        saying(&theirs, json!({}), "/payroll").await;
+        let told: Vec<String> = model.received()[..2]
+            .iter()
+            .map(|received| received.body.to_string())
+            .collect();
+        for word in owners.iter().chain(&["heron"]) {
+            let read = told.iter().any(|body| body.contains(word));
+            assert!(!read, "they were sent the owner's {word}: {told:?}");
+        }
+        assert!(
+            told[0].contains("/payroll"),
+            "as they wrote it: {}",
+            told[0]
+        );
+        assert!(
+            told[0].contains("glave:"),
+            "glave's own skills: {}",
+            told[0]
+        );
+
+        saying(&owner, json!({}), "/payroll").await;
+        let told = model.received()[3].body.to_string();
+        for word in owners {
+            assert!(told.contains(word), "the owner's own {word}: {told}");
+        }
     });
 }

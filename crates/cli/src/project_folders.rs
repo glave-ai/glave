@@ -458,8 +458,9 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         trusting: bool,
     ) -> BoxFuture<'a, Option<String>> {
         Box::pin(async move {
-            let personal = self.home.join(AGENTS_MD);
-            let agents = match agents_md(root, Some(&personal)).await {
+            // The person's own instructions open their own threads alone, never anyone else's.
+            let personal = trusting.then(|| self.home.join(AGENTS_MD));
+            let agents = match agents_md(root, personal.as_deref()).await {
                 Ok(read) => read.map(|read| read.text),
                 Err(error) => {
                     tracing::warn!(%error, "a thread's AGENTS.md could not be read");
