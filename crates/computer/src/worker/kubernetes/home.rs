@@ -1,10 +1,10 @@
 //! A person's computer on Kubernetes (`specs/computers.md`, "A person's computer in the
 //! cloud"): a PersistentVolumeClaim that is their disk and, while awake, one Pod mounting it as
-//! their home, with a NetworkPolicy beside it. Sleeping removes the Pod and its policy and
-//! keeps the claim; waking makes them again on the same claim, with a fresh token copied in,
-//! and glave too unless its image carries the very glave the server chose. Nothing here is
-//! owned by the Pod glave runs in: a person's computer outlives any one glave, and is labelled
-//! `glave.computer` with its key.
+//! their home, with a ServiceAccount and a NetworkPolicy beside it. Sleeping removes the Pod,
+//! its policy and its account, and keeps the claim; waking makes them again on the same claim,
+//! with a fresh token copied in, and glave too unless its image carries the very glave the
+//! server chose. Nothing here is owned by the Pod glave runs in: a person's computer outlives
+//! any one glave, and is labelled `glave.computer` with its key.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -94,7 +94,7 @@ impl PersonComputer {
         }
     }
 
-    /// The Pod's name, and its policy's.
+    /// The Pod's name, and its policy's and account's.
     fn name(&self) -> String {
         format!("glave-computer-{}", self.key)
     }
@@ -201,15 +201,22 @@ impl PersonComputer {
         self.cluster.bridge(&self.name()).await
     }
 
-    /// Puts the computer to sleep: its Pod and policy removed, and gone, so the disk is free to
-    /// mount again; the disk kept. Asleep already is not an error.
+    /// Puts the computer to sleep: its Pod, policy and account removed, and gone, so the disk is
+    /// free to mount again; the disk kept. Asleep already is not an error.
     pub(crate) async fn sleep(&self) -> Result<(), ComputerError> {
         let name = self.name();
         // Within its grace period, not at once: the Pod's object goes only once its containers
         // have stopped and its volumes are let go of, so nothing still writes to the disk when
-        // it mounts again. Its policy goes after it, so it never runs unpoliced.
+        // it mounts again. Its policy goes after it, so it never runs unpoliced, and its
+        // account last.
         removed(&self.cluster.pods(), &name, "computer").await?;
-        removed(&self.cluster.policies(), &name, "computer's network policy").await
+        removed(&self.cluster.policies(), &name, "computer's network policy").await?;
+        removed(
+            &self.cluster.accounts(),
+            &name,
+            "computer's service account",
+        )
+        .await
     }
 
     /// Whether the computer is awake as the API server says: its Pod there, not being removed,

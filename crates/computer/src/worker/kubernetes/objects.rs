@@ -1,6 +1,6 @@
 //! The objects a person's computer is on Kubernetes while awake, as the API server takes them:
-//! a Pod that waits for glave and then serves with it on a Unix socket, and a NetworkPolicy
-//! that keeps its network as policy decided. And the files the harness copies in, or the glave
+//! a Pod that waits for glave and then serves with it on a Unix socket, the ServiceAccount of its
+//! own it runs as, and a NetworkPolicy that keeps its network as policy decided. And the files the harness copies in, or the glave
 //! its image carries, and how far a starting Pod has got.
 
 use std::collections::BTreeMap;
@@ -118,8 +118,8 @@ impl Shape<'_> {
     }
 
     /// The Pod: the image running the wait, then glave serving on [`SOCKET`], the person's disk
-    /// as its home. Limits as requests too, so the computer gets what it is allowed; no
-    /// service account token; no privilege; every capability dropped; the runtime's seccomp
+    /// as its home. Limits as requests too, so the computer gets what it is allowed; its own
+    /// service account ([`Shape::service_account`]), with no token; no privilege; every capability dropped; the runtime's seccomp
     /// profile; never root; a read-only root filesystem; names from the internet's resolvers,
     /// never the cluster's; and a runtime class when one is set.
     pub(crate) fn pod(&self) -> Value {
@@ -179,6 +179,7 @@ impl Shape<'_> {
                 "containers": [container],
                 "volumes": volumes,
                 "restartPolicy": "Never",
+                "serviceAccountName": self.name,
                 "automountServiceAccountToken": false,
                 "enableServiceLinks": false,
                 // The Pod's pause process is its first, and reaps what glave's commands leave.
@@ -235,6 +236,19 @@ impl Shape<'_> {
             amounts.insert("memory".into(), json!(memory(mib)));
         }
         amounts
+    }
+
+    /// The computer's ServiceAccount, which its Pod runs as: its own, bound to nothing, its
+    /// token never mounted. Not the namespace's `default`, which glave's own Pod may run as, so
+    /// nothing bound to that (a role, a cloud identity a webhook mounts by its name) reaches the
+    /// computer (#1505).
+    pub(crate) fn service_account(&self) -> Value {
+        json!({
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": self.metadata(),
+            "automountServiceAccountToken": false,
+        })
     }
 
     /// The computer's NetworkPolicy: nothing comes in (the harness arrives through an exec

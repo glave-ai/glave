@@ -534,7 +534,7 @@ jobs:
       - name: Nothing the Kubernetes tests made is left behind
         if: always()
         run: |
-          left="$(kubectl get pods,networkpolicies,persistentvolumeclaims,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods,persistentvolumeclaims -A -l glave.computer -o name)"
+          left="$(kubectl get pods,networkpolicies,serviceaccounts,persistentvolumeclaims,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods,persistentvolumeclaims -A -l glave.computer -o name)"
           if [ -n "$left" ]; then
             echo "left behind: $left"
             exit 1
