@@ -3215,6 +3215,11 @@
           "const": "started",
           "description": "Started; how it ended is no longer kept here.",
           "type": "string"
+        },
+        {
+          "const": "missed",
+          "description": "A one-off whose time came while it was paused: it runs no more.",
+          "type": "string"
         }
       ]
     },
@@ -3269,7 +3274,7 @@
               "type": "null"
             }
           ],
-          "description": "When it runs next; absent once a one-off has run, and when it runs no more."
+          "description": "When it runs next; absent while it is paused, once a one-off has run, and when it runs\nno more."
         },
         "note": {
           "description": "What the person should know of it beyond that, in the server's words, such as that it\nruns no more.",
@@ -3277,6 +3282,10 @@
             "string",
             "null"
           ]
+        },
+        "paused": {
+          "description": "Whether it is paused: no runs start until it is resumed.",
+          "type": "boolean"
         },
         "project": {
           "$ref": "#/$defs/ProjectId",
@@ -3320,7 +3329,8 @@
         "repeats",
         "prompt",
         "budget",
-        "created_at"
+        "created_at",
+        "paused"
       ],
       "type": "object"
     },
@@ -8057,6 +8067,35 @@
         },
         "required": [
           "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/pause": {
+      "params": {
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "$ref": "#/$defs/ScheduleId"
+          }
+        },
+        "required": [
+          "schedule",
+          "paused"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleInfo"
+          }
+        },
+        "required": [
+          "schedule"
         ],
         "type": "object"
       },

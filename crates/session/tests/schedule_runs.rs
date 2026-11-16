@@ -169,13 +169,11 @@ fn now_of(now: &ManualClock) -> Timestamp {
 #[test]
 fn a_run_refused_for_another_reason_is_recorded_with_why() {
     block_on!(async {
-        let (server, now, _, _dir) = asking("runs-refused", Vec::new(), Shared::default()).await;
-        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
-        let chat = made.thread.unwrap();
-        server
-            .request(Request::ThreadArchive { thread: chat })
-            .await
-            .unwrap();
+        let (server, now, repo, dir) = asking("runs-refused", Vec::new(), Shared::default()).await;
+        schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        // The project's folder, and the chat's copy of it, are gone.
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(dir.join("worktrees")).unwrap();
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
         let last = listed(&server).await[0].last.clone().unwrap();
@@ -299,5 +297,92 @@ fn a_clean_copy_catches_up_with_the_project_before_a_run_and_one_with_changes_is
         assert!(!root.join("more.md").exists(), "left as it was");
         let sent = json(&seen);
         assert!(sent.last().unwrap().contains("has changes of its own"));
+    });
+}
+
+/// `schedule/pause` of `schedule`, pausing it (`paused`) or resuming it, answered.
+async fn pause<L: EventLog + 'static>(
+    server: &Tested<L>,
+    schedule: glave_event::ScheduleId,
+    paused: bool,
+) -> ScheduleInfo {
+    let request = Request::SchedulePause { schedule, paused };
+    match server.request(request).await.unwrap() {
+        Reply::Schedule { schedule } => schedule,
+        other => panic!("the schedule, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_paused_schedule_starts_no_runs_and_resumed_counts_from_then() {
+    block_on!(async {
+        let answers = (0..2).map(|_| answer(Some("Done."), None)).collect();
+        let (server, now, _, _dir) = asking("runs-pause", answers, Shared::default()).await;
+        let made = schedule(&server, "Hourly", "0 * * * *", 10_000).await;
+        let paused = pause(&server, made.schedule, true).await;
+        assert!(paused.paused);
+        assert_eq!((paused.next, server.next_due()), (None, None));
+        assert!(pause(&server, made.schedule, true).await.paused, "as it is");
+        set(&now, "2026-10-10T13:30:00Z");
+        assert_eq!(
+            server.tick().await.unwrap(),
+            Vec::new(),
+            "paused through three runs"
+        );
+        let resumed = pause(&server, made.schedule, false).await;
+        assert!(!resumed.paused);
+        assert_eq!(resumed.next, Some(at("2026-10-10T14:00:00Z")));
+        assert_eq!(
+            server.tick().await.unwrap(),
+            Vec::new(),
+            "none for the paused time"
+        );
+        set(&now, "2026-10-10T14:00:00Z");
+        assert_eq!(server.tick().await.unwrap().len(), 1);
+    });
+}
+
+#[test]
+fn a_one_off_whose_time_passed_while_paused_says_it_was_missed() {
+    block_on!(async {
+        let (server, now, _, _dir) = asking("runs-missed", Vec::new(), Shared::default()).await;
+        let request = Request::ScheduleCreate {
+            project: Some(scope().project()),
+            name: Some("Once".into()),
+            when: When::At(at("2026-10-10T11:00:00Z")),
+            zone: None,
+            prompt: "check the build".into(),
+            budget: 10_000,
+        };
+        let Reply::Schedule { schedule } = server.request(request).await.unwrap() else {
+            panic!("a schedule");
+        };
+        pause(&server, schedule.schedule, true).await;
+        set(&now, "2026-10-10T11:30:00Z");
+        let resumed = pause(&server, schedule.schedule, false).await;
+        assert_eq!(resumed.next, None, "it runs no more");
+        let last = resumed.last.unwrap();
+        assert_eq!(
+            (last.status, last.due),
+            (RunStatus::Missed, at("2026-10-10T11:00:00Z"))
+        );
+        assert_eq!(last.said, "Missed: it was paused at its time");
+        assert_eq!(server.tick().await.unwrap(), Vec::new());
+    });
+}
+
+#[test]
+fn archiving_a_schedule_s_chat_pauses_the_schedule() {
+    block_on!(async {
+        let (server, _, _, _dir) = asking("runs-archived", Vec::new(), Shared::default()).await;
+        let chat = schedule(&server, "Daily", "0 11 * * *", 10_000)
+            .await
+            .thread
+            .unwrap();
+        server
+            .request(Request::ThreadArchive { thread: chat })
+            .await
+            .unwrap();
+        assert!(listed(&server).await[0].paused);
     });
 }

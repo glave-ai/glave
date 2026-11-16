@@ -36,11 +36,17 @@ pub(super) fn due(scheduled: &Scheduled, now: Timestamp) -> Option<Timestamp> {
 }
 
 /// The first time after the runs counted so far that `scheduled` fires, overdue or not: `None`
-/// once a one-off has run or was held back, and for one with no chat of its own.
+/// while it is paused, once a one-off has run, was held back or was missed while paused, and
+/// for one with no chat of its own.
 pub(super) fn next_fire(scheduled: &Scheduled) -> Option<Timestamp> {
-    scheduled.created.thread?;
+    if is_paused(scheduled) {
+        return None;
+    }
     match &scheduled.created.when {
-        When::At(at) => (scheduled.last.or(scheduled.held).is_none()).then(|| at.timestamp()),
+        When::At(at) => {
+            let waits = scheduled.last.or(scheduled.held).is_none() && missed(scheduled).is_none();
+            waits.then(|| at.timestamp())
+        }
         When::Cron(text) => {
             let zone = time_zone(&scheduled.created.zone).ok()?;
             Cron::parse(text).ok()?.next_after(since(scheduled), &zone)
@@ -53,10 +59,24 @@ pub(super) fn next_run(scheduled: &Scheduled, now: Timestamp) -> Option<Timestam
     next_fire(scheduled).map(|next| next.max(now))
 }
 
+/// Whether `scheduled` starts no runs: paused, or made before schedules had chats.
+fn is_paused(scheduled: &Scheduled) -> bool {
+    scheduled.paused || scheduled.created.thread.is_none()
+}
+
+/// When a one-off's time came while it was paused, so it runs no more.
+fn missed(scheduled: &Scheduled) -> Option<At> {
+    let When::At(at) = &scheduled.created.when else {
+        return None;
+    };
+    let resumed = scheduled.resumed?;
+    (scheduled.last.is_none() && *at < resumed).then_some(*at)
+}
+
 /// Runs are counted from the latest one, or the latest held back, or from when the schedule
-/// was made.
+/// was resumed or made.
 fn since(scheduled: &Scheduled) -> Timestamp {
-    (scheduled.last.max(scheduled.held))
+    (scheduled.last.max(scheduled.held).max(scheduled.resumed))
         .unwrap_or(scheduled.at)
         .timestamp()
 }
@@ -90,6 +110,7 @@ pub(super) fn info(
         prompt: created.prompt.clone(),
         budget: created.budget,
         created_at: scheduled.at,
+        paused: is_paused(scheduled),
         last: last_run(scheduled, ledger),
         next: next_run(scheduled, now).map(At::from),
         note,
@@ -98,6 +119,16 @@ pub(super) fn info(
 
 /// What came of `scheduled`'s latest run, as `ledger` has it.
 fn last_run(scheduled: &Scheduled, ledger: &Ledger) -> Option<LastRun> {
+    if let Some(due) = missed(scheduled) {
+        let said = Sentence::RunMissed.into();
+        let (status, outcome) = (RunStatus::Missed, None);
+        return Some(LastRun {
+            due,
+            status,
+            outcome,
+            said,
+        });
+    }
     let due = scheduled.last?;
     let schedule = scheduled.created.schedule;
     let (status, outcome, said) = match &scheduled.skipped {

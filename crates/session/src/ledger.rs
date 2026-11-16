@@ -1,6 +1,6 @@
 //! Each project's task ledger: glave's own stream in the event log, under a reserved thread id,
 //! holding the project's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
-//! `.skipped`, `.deleted`). It is never a conversation: lists and reads of threads leave it out.
+//! `.paused`, `.skipped`, `.deleted`). It is never a conversation: lists and reads of threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
 
@@ -34,6 +34,9 @@ pub(crate) struct Scheduled {
     /// before still goes, which is recorded once, or one whose skip could not be recorded. In
     /// memory only, so a server started later tries it once more.
     pub(crate) held: Option<At>,
+    pub(crate) paused: bool,
+    /// When it was last resumed: its runs count from then, none for the time it was paused.
+    pub(crate) resumed: Option<At>,
 }
 
 impl Scheduled {
@@ -84,11 +87,21 @@ impl Ledger {
                     last: None,
                     skipped: None,
                     held: None,
+                    paused: false,
+                    resumed: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
             }
             Body::ScheduleDeleted(deleted) => {
                 self.schedules.remove(&deleted.schedule);
+            }
+            Body::SchedulePaused(paused) => {
+                if let Some(scheduled) = self.schedules.get_mut(&paused.schedule) {
+                    scheduled.paused = paused.paused;
+                    if !paused.paused {
+                        scheduled.resumed = Some(at);
+                    }
+                }
             }
             Body::ScheduleSkipped(skipped) => {
                 if let Some(scheduled) = self.schedules.get_mut(&skipped.schedule) {

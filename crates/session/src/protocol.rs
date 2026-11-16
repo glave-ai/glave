@@ -564,6 +564,9 @@ methods! {
     } -> [Schedule],
     /// The schedules of every project the caller owns.
     "schedule/list" => ScheduleList {} -> [Schedules],
+    /// Pauses a schedule (`paused`), so it starts no runs, or resumes it, its runs counting from
+    /// then, none for the time it was paused.
+    "schedule/pause" => SchedulePause { schedule: ScheduleId, paused: bool } -> [Schedule],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The projects the caller owns.
     "project/list" => ProjectList {

@@ -3,13 +3,14 @@
 //! Schedules live in their project's ledger. Making one makes its chat, named for it, where a
 //! chat in its project works: on a copy of the project's folder where the folder is a
 //! repository, so its runs never change files under the person, and otherwise where any chat
-//! there works. Deleting its chat deletes it; deleting it keeps its chat, with its past runs.
+//! there works. Pausing one stops its runs until it is resumed; deleting or archiving its chat
+//! deletes or pauses it; deleting it keeps its chat, with its past runs.
 //! Firing them is `fire.rs`; how one reads in lists, `info.rs`.
 
 mod fire;
 mod info;
 
-use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
+use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
 use glave_ports::{
     BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from,
 };
@@ -146,6 +147,45 @@ where
         Ok(schedules)
     }
 
+    /// Pauses `schedule` for `caller` (`paused`), or resumes it; one already so answers as it
+    /// is.
+    pub(crate) async fn pause_schedule(
+        &self,
+        caller: &Caller,
+        schedule: ScheduleId,
+        paused: bool,
+    ) -> Result<Reply, ApiError> {
+        let project = self.project_of_schedule(caller, schedule).await?;
+        self.set_paused(caller, project, schedule, paused).await?;
+        let schedule = (self.schedule_info(project, schedule))
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))?;
+        Ok(Reply::Schedule { schedule })
+    }
+
+    /// Records `schedule` of `project` paused (`paused`) or resumed for `caller`, unless it is
+    /// so already.
+    async fn set_paused(
+        &self,
+        caller: &Caller,
+        project: Located,
+        schedule: ScheduleId,
+        paused: bool,
+    ) -> Result<(), ApiError> {
+        let already = (self.ledgers().get(&project))
+            .and_then(|ledger| ledger.schedules.get(&schedule))
+            .is_some_and(|scheduled| scheduled.paused == paused);
+        if !already {
+            let by = self.someone_else(caller.person);
+            let changed = SchedulePaused {
+                schedule,
+                paused,
+                by,
+            };
+            self.record_in_ledger(project, &changed).await?;
+        }
+        Ok(())
+    }
+
     /// Removes `schedule` for `caller`: it starts no more runs, and its chat stays.
     pub(crate) async fn delete_schedule(
         &self,
@@ -161,13 +201,15 @@ where
         Ok(Reply::Done {})
     }
 
-    /// Deletes the schedule whose chat is `thread`, if one is, for `caller`, as its chat is
-    /// deleted: a schedule runs only into its own chat.
-    pub(crate) async fn chat_deleted(
+    /// Follows `thread`'s change to the schedule whose chat it is, if one is, for `caller`: a
+    /// schedule runs only into its own chat, so deleting the chat deletes it, and archiving the
+    /// chat pauses it.
+    pub(crate) async fn chat_put_away(
         &self,
         caller: &Caller,
         scope: &Scope,
         thread: ThreadId,
+        deleted: bool,
     ) -> Result<(), ApiError> {
         let project = scope.located();
         self.catch_up(project).await?;
@@ -176,14 +218,17 @@ where
                 .find(|scheduled| scheduled.created.thread == Some(thread))
                 .map(|scheduled| scheduled.created.schedule)
         });
-        if let Some(schedule) = theirs {
-            let deleted = ScheduleDeleted {
-                schedule,
-                by: self.someone_else(caller.person),
-            };
-            self.record_in_ledger(project, &deleted).await?;
+        let Some(schedule) = theirs else {
+            return Ok(());
+        };
+        if !deleted {
+            return self.set_paused(caller, project, schedule, true).await;
         }
-        Ok(())
+        let deleted = ScheduleDeleted {
+            schedule,
+            by: self.someone_else(caller.person),
+        };
+        self.record_in_ledger(project, &deleted).await
     }
 
     /// The project of `caller`'s that keeps `schedule`, its ledger read up to now.

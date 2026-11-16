@@ -489,6 +489,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         ("schedule/list", vec![json!({})]),
+        (
+            "schedule/pause",
+            vec![json!({"schedule": "@schedule", "paused": true})],
+        ),
         ("schedule/delete", vec![json!({"schedule": "@schedule"})]),
         ("project/list", vec![json!({})]),
         ("project/get", vec![json!({"project": "@project"})]),
