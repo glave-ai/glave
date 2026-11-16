@@ -35,13 +35,12 @@ const IMAGE: &str =
 const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncase \"$2\" in bridge) exec cat ;; esac\n\
 ls -l /opt/glave/secret/token\nexec sleep 300\n";
 
-/// A stub that never serves, as glave stops when its fence never holds: serving, it says why
-/// and goes on; as a bridge, it waits (up to ten seconds) until that is said, then ends without
-/// a word, as a bridge to a glave that never served does.
-const NEVER_SERVES: &[u8] = b"#!/bin/sh\ncase \"$2\" in bridge) i=0; \
-until [ -e /tmp/said ] || [ \"$i\" -gt 100 ]; do i=$((i+1)); sleep 0.1; done; exit 1 ;; esac\n\
-echo 'glave: this computer still reaches 10.0.0.1:10250 inside the cluster'\n\
-: > /tmp/said\nexec sleep 300\n";
+/// A stub that never serves, as glave ends when its fence never holds: serving, it says why in
+/// the computer's log, with an address inside, and ends with glave's code for it (3,
+/// `UNFENCED`); as a bridge, it ends without a word, as a bridge to a glave that never served
+/// does.
+const NEVER_SERVES: &[u8] = b"#!/bin/sh\ncase \"$2\" in bridge) exit 1 ;; esac\n\
+echo 'glave: this computer still reaches 10.0.0.1:10250 inside the cluster'\nexit 3\n";
 
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
@@ -335,10 +334,11 @@ fn served_and_reached(seen: &Seen) {
     assert_eq!(seen.bridges, (echoed.clone(), echoed));
 }
 
-/// A computer that wakes but never serves, as one whose fence never holds stops, says why in
-/// its wake's error, read from its log before it is put to sleep again, which takes the log.
+/// A computer that wakes but never serves, as one whose fence never holds ends, tells the person
+/// plainly that it couldn't start safely, and nothing of the cluster: its node's address and
+/// its plugin's ways stay in the server's log.
 #[test]
-fn a_computer_that_never_serves_says_why_in_its_wake_s_error() {
+fn a_computer_whose_fence_never_holds_says_so_plainly() {
     let Ok(image) = std::env::var("GLAVE_TEST_COMPUTER_IMAGE") else {
         eprintln!("skipped: set GLAVE_TEST_COMPUTER_IMAGE to wake a person's computer");
         return;
@@ -369,10 +369,11 @@ fn a_computer_that_never_serves_says_why_in_its_wake_s_error() {
             .await;
         let left = left_behind(&cluster).await;
         let message = woke.map(|_| ()).unwrap_err().message().to_owned();
-        assert!(
-            message.contains("still reaches 10.0.0.1:10250 inside the cluster"),
-            "{message}"
+        assert_eq!(
+            message, "your computer couldn't start safely; it will try again",
+            "one plain sentence, no address or policy"
         );
+        assert_eq!(super::objects::UNFENCED, 3, "the stub ends as glave does");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });

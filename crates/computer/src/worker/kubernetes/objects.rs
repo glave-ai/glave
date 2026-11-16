@@ -53,6 +53,10 @@ pub(crate) const COPY_IN: [&str; 3] = [
     "-c",
     concat!(system_path!(), "; exec tar -x -f - -C /"),
 ];
+/// How glave in a person's computer ends when its fence never holds (`computer serve
+/// --fence`): the server, finding it ended so, tells the person their computer couldn't start
+/// safely, and keeps why for its own log.
+pub const UNFENCED: u8 = 3;
 /// The label a person's computer's objects carry, its key as the value.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
@@ -413,6 +417,20 @@ pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
     } else {
         Resized::Pending
     }
+}
+
+/// Whether the computer's container in `pod` (as the API server returns it) ended, and with
+/// [`UNFENCED`]: `None` while it hasn't ended.
+pub(crate) fn unfenced(pod: &Value) -> Option<bool> {
+    let ended = pod
+        .pointer("/status/containerStatuses")
+        .and_then(Value::as_array)
+        .and_then(|all| {
+            all.iter()
+                .find(|c| c.get("name") == Some(&json!(CONTAINER)))
+        })
+        .and_then(|status| status.pointer("/state/terminated"))?;
+    Some(ended.get("exitCode").and_then(Value::as_i64) == Some(i64::from(UNFENCED)))
 }
 
 /// How far a starting Pod has got.

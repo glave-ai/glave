@@ -78,6 +78,8 @@ worded! {
             "the environment asks for { $asked } GB of memory, and policy allows at most { $most } ([workers] memory_gb)",
         SecretNamed { name } = "computer-secret-named"
             "{ $name } is named like a secret; a computer's variables are never secrets",
+        Unfenced = "computer-unfenced"
+            "your computer couldn't start safely; it will try again",
     }
 }
 

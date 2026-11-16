@@ -213,7 +213,13 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
+            // A fence that never held ends glave with a code of its own, which the server reads
+            // to tell the person in plain words, keeping why for its log.
+            if error.downcast_ref::<fence::Unfenced>().is_some() {
+                ExitCode::from(glave_computer::UNFENCED)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -300,10 +306,17 @@ async fn on_socket<C: Computers + 'static>(
     let token = tokens(folder).await?;
     if let Some(inside) = person.fence {
         let fencing = tokio::time::Instant::now();
-        let knocks = fence::held(inside, fence::HOLD_WITHIN).await?;
-        // How long the cluster's plugin took, in the computer's log, so each cluster's is known.
+        let held = fence::held(inside, fence::HOLD_WITHIN).await?;
+        // How long the cluster's plugin took, and the slowest answer before it, in the computer's
+        // log, so each cluster's is known and the knock's wait can be checked against it.
+        let slowest = held.slowest.map_or_else(
+            || "none".to_owned(),
+            |took| format!("{} ms", took.as_millis()),
+        );
         eprintln!(
-            "glave: fenced: {inside} unanswered after {knocks} knocks, {} ms",
+            "glave: fenced: {inside} unanswered after {} knocks, {} ms; slowest answer before: \
+             {slowest}",
+            held.knocks,
             fencing.elapsed().as_millis()
         );
     }

@@ -32,6 +32,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use crate::token::Token;
 pub(crate) use home::PersonComputer;
+pub use objects::UNFENCED;
 use objects::{Home, Progress, Resized, Shape};
 pub use people::{Holding, Leasing, People, person_sandbox};
 use sizing::Size;
