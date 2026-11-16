@@ -196,6 +196,33 @@ describe('TurnComponent', () => {
     await expectAccessible(root);
   });
 
+  it('opened at it from its end’s notification, shows the line above its reply, in view', async () => {
+    const seen = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const fixture = await mount(RESULTS);
+    fixture.componentRef.setInput('away', 'Finished while you were away · 2:14 AM');
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(blocks(root).slice(0, 4)).toEqual([
+      'thread-message',
+      'thread-run',
+      'turn-away',
+      'thread-message',
+    ]);
+    const away = root.querySelector('[data-testid="turn-away"]');
+    expect(away?.textContent.trim()).toBe('Finished while you were away · 2:14 AM');
+    expect(seen.mock.contexts).toContain(away);
+    await expectAccessible(root);
+    seen.mockRestore();
+  });
+
+  it('shows the line after its work when it has no reply', async () => {
+    const fixture = await mount({ ...WORKING, working: null, parts: RESULTS.parts.slice(0, 1) });
+    fixture.componentRef.setInput('away', 'Finished while you were away · 2:14 AM');
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(blocks(root)).toEqual(['thread-message', 'thread-run', 'turn-away']);
+  });
+
   it('names a message said along the way an update, and the reply a reply', async () => {
     const root = await render({
       ...RESULTS,

@@ -9,6 +9,11 @@ describe('tapped', () => {
     expect(tapped({ glave: 'open', page, org: ORG })).toEqual({ page, org: ORG });
     expect(tapped({ glave: 'open', page: '/', org: null })).toEqual({ page: '/', org: null });
     expect(tapped({ glave: 'open', page, org: 'not an id' })).toEqual({ page, org: null });
+    const finished = `${page}?finished=42`;
+    expect(tapped({ glave: 'open', page: finished, org: ORG })).toEqual({
+      page: finished,
+      org: ORG,
+    });
   });
 
   it('is nothing for any other message, or a page that is no thread’s', () => {
@@ -19,6 +24,8 @@ describe('tapped', () => {
       { glave: 'open', page: '/settings' },
       { glave: 'open', page: 'https://example.com/' },
       { glave: 'open', page: `/t/${THREAD}/../../admin` },
+      { glave: 'open', page: `/t/${THREAD}?finished=0` },
+      { glave: 'open', page: `/t/${THREAD}?finished=1&next=/admin` },
     ]) {
       expect(tapped(message)).toBeNull();
     }
