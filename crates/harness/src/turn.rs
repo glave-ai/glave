@@ -176,8 +176,6 @@ where
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
-        // A new turn tells what it made from its own first call that changes files.
-        thread.seen = None;
         let step = Step {
             toolset,
             repeats: Repeats::default(),
@@ -377,10 +375,9 @@ where
     /// Records `turn.ended`, with what the turn did and cost, its `result`, and the files it made
     /// (`made.rs`).
     async fn end(&self, thread: &mut Thread, result: &mut TurnResult) -> Result<(), HarnessError> {
-        let seen = thread.seen.take();
-        result.made = self.made_since(thread, seen).await;
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
+        (result.made, result.made_left) = self.made_by_turn(thread, &mut events).await?;
         self.stage(thread, &mut events, result)?;
         self.commit(thread, events).await?;
         staged.recorded(thread);

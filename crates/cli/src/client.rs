@@ -208,7 +208,7 @@ impl Client<'_> {
         let code = match ended {
             Some(Ok(turn)) => {
                 printer.receipt(&turn);
-                if !turn.made.is_empty() {
+                if !turn.made.is_empty() || turn.made_left.is_some() {
                     self.show_made(printer).await;
                 }
                 match turn.outcome {
@@ -418,10 +418,10 @@ impl Client<'_> {
         Ok(())
     }
 
-    /// Asks the server to cancel the turn; true once asked, so it is asked only once.
     /// Shows the files the turn that just ended made, a line each in the server's words ("Made a
-    /// spreadsheet: Trip budget (2 sheets)"), then where it keeps them. Nothing when it can't
-    /// say: the turn's receipt stands without them.
+    /// spreadsheet: Trip budget (2 sheets)"), then where it keeps them and why it can't show one
+    /// it couldn't read, and what they leave out. Nothing when it can't say: the turn's receipt
+    /// stands without them.
     async fn show_made(&self, printer: &mut Printer) {
         let listed = self.server.request(Request::ThreadFiles {
             thread: self.thread,
@@ -429,15 +429,22 @@ impl Client<'_> {
         let Ok(Reply::Files { made }) = listed.await else {
             return;
         };
-        for file in made
-            .last()
-            .map(|turn| turn.files.as_slice())
-            .unwrap_or_default()
-        {
-            printer.status(&format!("{} · {}", &*file.sentence, &*file.kept));
+        let Some(turn) = made.last() else {
+            return;
+        };
+        for file in &turn.files {
+            let mut line = format!("{} · {}", &*file.sentence, &*file.kept);
+            if let Some(unread) = &file.unread {
+                line = format!("{line} · {}", &**unread);
+            }
+            printer.status(&line);
+        }
+        if let Some(note) = &turn.note {
+            printer.status(note);
         }
     }
 
+    /// Asks the server to cancel the turn; true once asked, so it is asked only once.
     async fn cancel(&self) -> bool {
         // The turn may have just ended on its own, which is fine.
         let _ = self

@@ -8,11 +8,9 @@
 use std::io::Read as _;
 use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
-use glave_ports::computer::{
-    ComputerError, Glob, Globbed, Match, Search, Searched, Stamp, looks_binary,
-};
+use glave_ports::computer::{ComputerError, Glob, Globbed, Match, Search, Searched, looks_binary};
 use glave_ports::secrets::is_secret_file;
 use regex::{Regex, RegexBuilder};
 use rustix::fs::Stat;
@@ -25,6 +23,9 @@ use super::walk::{self, Pattern};
 /// Largest file searched; bigger files are usually data or build output.
 const MAX_SEARCHED_BYTES: u64 = 2 * 1024 * 1024;
 
+/// The longest a look with a limit on what it looks at looks ([`Glob::most_looked_at`]).
+const LOOKING_FOR: Duration = Duration::from_secs(2);
+
 pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerError> {
     let pattern =
         Pattern::new(&glob.pattern).map_err(|refused| ComputerError::Refused(refused.into()))?;
@@ -33,37 +34,40 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
         let root = Root::open(&root)?;
         let found = resolve(&root, &glob.path)?;
         let top = root.path.join(found.names.iter().collect::<PathBuf>());
-        let mut files: Vec<(SystemTime, String, u64)> = walk::files(&top)
-            .filter(|path| pattern.matches(path.strip_prefix(&top).unwrap_or(path)))
-            .filter_map(|path| {
-                let (_, _, stat) = plain(&root, &path)?;
-                Some((
-                    modified(&stat),
-                    relative(root.path, &path),
-                    count(stat.st_size),
-                ))
-            })
-            .collect();
+        let since = glob
+            .changed_since_ns
+            .map(|nanos| SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos));
+        let started = Instant::now();
+        let mut stopped = false;
+        let mut files: Vec<(SystemTime, String)> = Vec::new();
+        for (looked_at, (path, file)) in walk::everything(&top, glob.visible).enumerate() {
+            if glob
+                .most_looked_at
+                .is_some_and(|most| looked_at >= most || started.elapsed() > LOOKING_FOR)
+            {
+                stopped = true;
+                break;
+            }
+            if !file || !pattern.matches(path.strip_prefix(&top).unwrap_or(&path)) {
+                continue;
+            }
+            let Some((_, _, stat)) = plain(&root, &path) else {
+                continue;
+            };
+            let when = modified(&stat);
+            if since.is_none_or(|since| when >= since) {
+                files.push((when, relative(root.path, &path)));
+            }
+        }
         // Newest first: what changed recently is what a task is usually about.
         files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         let total = u64::try_from(files.len()).unwrap_or(u64::MAX);
         files.truncate(glob.limit);
-        let stamps = files
-            .iter()
-            .map(|(when, _, size)| Stamp {
-                size: *size,
-                modified_ns: when
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .map_or(0, |since| {
-                        u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
-                    }),
-            })
-            .collect();
         Ok(Globbed {
             path: shown(&found.names),
-            files: files.into_iter().map(|(_, path, _)| path).collect(),
+            files: files.into_iter().map(|(_, path)| path).collect(),
             total,
-            stamps,
+            stopped,
         })
     })
     .await

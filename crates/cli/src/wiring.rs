@@ -195,6 +195,7 @@ pub(crate) async fn wire(
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
         worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
+        reader: crate::reading::reader(&processes),
         homes,
         credits,
         router_floor: crate::gateway::router_floor(floor),

@@ -106,6 +106,11 @@ where
                 missing: offer.missing.clone(),
             },
         )?;
+        let started = events.last().map(|event| crate::made::TurnOpen {
+            turn: event.seq,
+            at: event.at,
+            works: false,
+        });
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
@@ -129,6 +134,7 @@ where
         crate::prefix::heard(thread, offer);
         thread.commands.told(&told);
         thread.turns = thread.turns.saturating_add(1);
+        thread.turn_open = started;
         thread.messages.push(Message::User { parts });
         if by_glave {
             return Ok(());

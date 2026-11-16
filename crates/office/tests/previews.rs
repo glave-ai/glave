@@ -5,8 +5,10 @@
 
 use std::io::{Cursor, Read as _, Write as _};
 
-use glave_office::{Described, MOST_MARKDOWN, Parts, describe, preview};
+use glave_event::Parts;
+use glave_office::{Described, MOST_MARKDOWN, describe, preview};
 use glave_ports::testing::TempDir;
+use lopdf::dictionary;
 
 use crate::pdfs::paged;
 use crate::workbooks::doc;
@@ -93,6 +95,26 @@ fn a_file_is_described_by_its_title_and_its_parts() {
         }
     );
     assert!(!describe(b"{\\rtf1 a}", "application/rtf").previews);
+}
+
+#[test]
+fn a_pdf_is_described_by_the_title_its_information_gives_unless_a_program_gives_it_to_all() {
+    let titled = |title: &str| {
+        let mut document = paged(&["one"]);
+        let info = document.add_object(dictionary! {
+            "Title" => lopdf::text_string(title),
+        });
+        document.trailer.set("Info", lopdf::Object::Reference(info));
+        let mut pdf = Vec::new();
+        document.save_to(&mut pdf).unwrap();
+        describe(&pdf, "application/pdf").title
+    };
+    assert_eq!(
+        titled("Lisbon plan · día 1").as_deref(),
+        Some("Lisbon plan · día 1")
+    );
+    assert_eq!(titled("untitled"), None);
+    assert_eq!(titled("Microsoft Word - plan.docx"), None);
 }
 
 /// The Word document in `docx` with `count` more paragraphs after its body's last.

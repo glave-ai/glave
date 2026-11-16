@@ -44,14 +44,22 @@ enum Use {
     Change,
 }
 
-/// How many pages the PDF in `bytes` has, when it can be read.
-pub(crate) fn pages(bytes: &[u8]) -> Option<u64> {
+/// How many pages the PDF in `bytes` has, and the title its information gives it, when it can
+/// be read.
+pub(crate) fn described(bytes: &[u8]) -> Option<(u64, Option<String>)> {
     let given = Given {
         name: "the file".to_owned(),
         bytes: bytes.to_vec(),
     };
     let document = open(&given, Use::Read).ok()?;
-    Some(document.get_pages().len() as u64)
+    let title = document
+        .trailer
+        .get_deref(b"Info", &document)
+        .and_then(Object::as_dict)
+        .and_then(|info| info.get_deref(b"Title", &document))
+        .and_then(lopdf::decode_text_string)
+        .ok();
+    Some((document.get_pages().len() as u64, title))
 }
 
 /// The PDF `given`, unless it is not one, can't be read, has no pages, or is encrypted in a

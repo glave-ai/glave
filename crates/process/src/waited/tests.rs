@@ -29,7 +29,7 @@ fn a_program_that_ends_in_time_gives_what_it_printed() {
             .output(Program::new("printf").arg("done"), AMPLE)
             .await;
         let echoed = processes
-            .output_with(Program::new("cat").stdout(Stdio::piped()), b"given", AMPLE)
+            .output_with(&mut Program::new("cat"), b"given", AMPLE, 100)
             .await;
         (printed, echoed)
     });
@@ -67,7 +67,7 @@ fn one_still_running_at_its_limit_is_stopped_saying_how_long_it_had() {
             .output(Program::new("sleep").arg("300"), limit)
             .await;
         let fed = processes
-            .output_with(Program::new("sleep").arg("300"), b"unread", limit)
+            .output_with(Program::new("sleep").arg("300"), b"unread", limit, 100)
             .await;
         (waited, fed)
     });

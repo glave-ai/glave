@@ -342,6 +342,43 @@ fn a_file_the_turn_made_prints_as_one_line() {
     );
 }
 
+/// A file glave can't read without more memory than reading should take (a workbook whose
+/// strings claim a quadrillion entries) ends the reader that reads it, never the server: the turn
+/// ends, the file is kept and only downloads, and a file beside it reads as it should.
+#[test]
+fn a_file_that_would_take_too_much_to_read_ends_its_reader_never_the_server() {
+    let place = place("tr");
+    choose(&place, "model", "\"m\"");
+    choose(&place, "permissions", "\"full-access\"");
+    choose(&place, "titles", "false");
+    let files = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/files");
+    for name in ["strings-past-memory.xlsx", "budget.xlsx"] {
+        let hidden = place.project.join(format!(".{name}"));
+        std::fs::copy(format!("{files}/{name}"), hidden).unwrap();
+    }
+    let copy =
+        json!({"command": "cp .strings-past-memory.xlsx huge.xlsx && cp .budget.xlsx budget.xlsx"});
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "bash", &copy),
+        Reply::text("Made them."),
+    ])
+    .unwrap();
+    let said = glave(&place, &model, &["make the workbooks"], "");
+    let shown = text(&said);
+    assert!(said.status.success(), "{shown}");
+    assert!(
+        shown.contains("Made a spreadsheet: budget (1 sheet) · Kept with this chat"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains(
+            "Made a spreadsheet: huge · Kept with this chat · glave couldn't read this file to \
+             show it: download it to open it"
+        ),
+        "{shown}"
+    );
+}
+
 #[test]
 fn glave_alone_opens_the_folder_s_project_asking_once_else_the_person_s_chats() {
     let place = asking("ta");

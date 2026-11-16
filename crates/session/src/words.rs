@@ -159,11 +159,16 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
 fn made_in(reply: &mut Reply, language: Language) {
     match reply {
         Reply::Files { made } => {
-            for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
-                file.kept.translate(language);
-                file.sentence.translate(language);
-                if let Some(parts) = &mut file.parts {
-                    parts.translate(language);
+            for turn in made.iter_mut() {
+                if let Some(note) = &mut turn.note {
+                    note.translate(language);
+                }
+                for file in &mut turn.files {
+                    file.kept.translate(language);
+                    file.sentence.translate(language);
+                    for told in [&mut file.parts, &mut file.unread].into_iter().flatten() {
+                        told.translate(language);
+                    }
                 }
             }
         }

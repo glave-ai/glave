@@ -1522,7 +1522,7 @@
     },
     "FileMade": {
       "additionalProperties": false,
-      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, and its\ncontent kept for the thread, or why it was not. The model never sees it; the person opens\nand downloads it.",
+      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, its content\nkept for the thread or why it was not, and what glave read of it. The model never sees it;\nthe person opens and downloads it.",
       "properties": {
         "bytes": {
           "description": "Its size on the computer.",
@@ -1536,6 +1536,17 @@
         "path": {
           "description": "Where it was made, relative to the thread's folder.",
           "type": "string"
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileRead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What glave read of it apart from itself, once kept; absent when it couldn't be read."
         }
       },
       "required": [
@@ -1603,6 +1614,42 @@
       "required": [
         "markdown"
       ],
+      "type": "object"
+    },
+    "FileRead": {
+      "additionalProperties": false,
+      "description": "What glave read of a file a turn made, in a process of its own.",
+      "properties": {
+        "parts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Parts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How many pages, sheets or slides it has, when that is known."
+        },
+        "preview": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadePreview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its preview, when glave previews a file of its kind."
+        },
+        "title": {
+          "description": "The title its own properties give it, when they give one that names it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "Filters": {
@@ -1893,6 +1940,11 @@
           "const": "secret",
           "description": "Left on the computer: it holds the value of one of the person's secrets.",
           "type": "string"
+        },
+        {
+          "const": "unchecked",
+          "description": "Left on the computer: its parts inflate past what is looked through for secrets.",
+          "type": "string"
         }
       ]
     },
@@ -2114,7 +2166,7 @@
           ]
         },
         "previews": {
-          "description": "Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck\nglave reads), or a client draws it (a PDF); false for any other, which only downloads.",
+          "description": "Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck\nglave read), or a client draws it (a PDF glave read); false for any other, which only\ndownloads.",
           "type": "boolean"
         },
         "sentence": {
@@ -2123,6 +2175,13 @@
         },
         "sha256": {
           "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it\nwas not kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unread": {
+          "description": "Why it can't be shown, only downloaded, when glave kept it but couldn't read it.",
           "type": [
             "string",
             "null"
@@ -2138,6 +2197,76 @@
         "previews",
         "kept",
         "sentence"
+      ],
+      "type": "object"
+    },
+    "MadeLeft": {
+      "description": "What the files a turn made leave out.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "More were made than a turn keeps: these many more stayed on the computer, unnamed.",
+          "properties": {
+            "files": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "more",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The folder held too many files to look over in time, so none are named.",
+          "properties": {
+            "kind": {
+              "const": "too_many",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A command the thread started in the background still ran as the turn ended: the folder\nis looked over once it ends, and a `turn.made` names what it found.",
+          "properties": {
+            "kind": {
+              "const": "waits",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "MadePreview": {
+      "additionalProperties": false,
+      "description": "A file's preview: Markdown, kept for the thread as the file is.",
+      "properties": {
+        "blob": {
+          "$ref": "#/$defs/BlobRef"
+        },
+        "cut": {
+          "description": "Whether it leaves out some of the file.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "blob"
       ],
       "type": "object"
     },
@@ -2593,6 +2722,53 @@
         "limit_reached"
       ],
       "type": "string"
+    },
+    "Parts": {
+      "description": "How many of its parts a file has: a document's pages, a workbook's sheets, a deck's slides.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "pages": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pages"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "sheets": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sheets"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "slides": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "slides"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "PasskeySummary": {
       "description": "A passkey that signs the person in.",
@@ -4474,6 +4650,13 @@
           },
           "type": "array"
         },
+        "note": {
+          "description": "What `files` leave out, in a sentence, when they leave something out: more than a turn\nkeeps, a folder too large to look over, or what a command still running may make.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "turn": {
           "$ref": "#/$defs/Seq"
         }
@@ -4512,11 +4695,22 @@
           "type": "boolean"
         },
         "made": {
-          "description": "The files it made for the person: each document, spreadsheet, deck or PDF new or changed\nin the thread's folder between its start and its end, in path order, kept for the thread\nor said why not (`session.md`, \"Files it made\"). Absent when it made none.",
+          "description": "The files it made for the person: each document, spreadsheet, deck or PDF in no hidden\nfolder of the thread's, changed since it started, in path order, kept for the thread or\nsaid why not (`session.md`, \"Files it made\"). Absent when it made none.",
           "items": {
             "$ref": "#/$defs/FileMade"
           },
           "type": "array"
+        },
+        "made_left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadeLeft"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What `made` leaves out, when it leaves something out: more files than a turn keeps, a\nfolder too large to look over, or a command still running in the background, which a\n`turn.made` follows up."
         },
         "model_calls": {
           "default": 0,

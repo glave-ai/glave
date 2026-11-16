@@ -28,10 +28,14 @@ pub struct MadeFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parts: Option<Told>,
     /// Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck
-    /// glave reads), or a client draws it (a PDF); false for any other, which only downloads.
+    /// glave read), or a client draws it (a PDF glave read); false for any other, which only
+    /// downloads.
     pub previews: bool,
     /// Where it is kept, or why it was not, in a sentence: "Kept with this chat".
     pub kept: Told,
+    /// Why it can't be shown, only downloaded, when glave kept it but couldn't read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unread: Option<Told>,
     /// What was made, in one line: "Made a spreadsheet: Trip budget (2 sheets)".
     pub sentence: Told,
 }
@@ -41,6 +45,10 @@ pub struct MadeFile {
 pub struct TurnFiles {
     pub turn: Seq,
     pub files: Vec<MadeFile>,
+    /// What `files` leave out, in a sentence, when they leave something out: more than a turn
+    /// keeps, a folder too large to look over, or what a command still running may make.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<Told>,
 }
 
 /// A file a thread made, as a person previews it.

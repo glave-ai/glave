@@ -2202,6 +2202,7 @@ name = "glave-office"
 version = "0.0.0"
 dependencies = [
  "calamine",
+ "glave-event",
  "glave-ports",
  "lopdf",
  "proptest",
@@ -2308,7 +2309,6 @@ dependencies = [
  "glave-keys",
  "glave-mcp",
  "glave-memory",
- "glave-office",
  "glave-ports",
  "glave-push",
  "glave-store-postgres",

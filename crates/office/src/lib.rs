@@ -39,7 +39,7 @@ mod write;
 mod xml;
 
 pub use command::{Answer, USAGE, run};
-pub use describe::{Described, Parts, describe};
+pub use describe::{Described, describe};
 pub use error::OfficeError;
 pub use preview::{MOST_MARKDOWN, Preview, preview};
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use super::approval::Lifted;
-use super::made::FileMade;
+use super::made::{FileMade, MadeLeft};
 use super::model::{ModelRef, ModelResponded, TokenCounts};
 use super::tool::ToolError;
 use crate::blob::BlobRef;
@@ -155,11 +155,16 @@ pub struct TurnResult {
     /// room before it has read them. Absent when it changed none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<String>,
-    /// The files it made for the person: each document, spreadsheet, deck or PDF new or changed
-    /// in the thread's folder between its start and its end, in path order, kept for the thread
-    /// or said why not (`session.md`, "Files it made"). Absent when it made none.
+    /// The files it made for the person: each document, spreadsheet, deck or PDF in no hidden
+    /// folder of the thread's, changed since it started, in path order, kept for the thread or
+    /// said why not (`session.md`, "Files it made"). Absent when it made none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub made: Vec<FileMade>,
+    /// What `made` leaves out, when it leaves something out: more files than a turn keeps, a
+    /// folder too large to look over, or a command still running in the background, which a
+    /// `turn.made` follows up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_left: Option<MadeLeft>,
 }
 
 impl TurnResult {
@@ -180,6 +185,7 @@ impl TurnResult {
             via: Vec::new(),
             changed: Vec::new(),
             made: Vec::new(),
+            made_left: None,
         }
     }
 

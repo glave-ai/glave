@@ -43,6 +43,7 @@ mod project_folders;
 mod projects;
 mod providers;
 mod reach;
+mod reading;
 mod remote;
 mod reread;
 mod sandboxing;
