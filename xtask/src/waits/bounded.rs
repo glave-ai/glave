@@ -278,7 +278,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/access.rs",
-        "access.heard = access.sign_ins.changed().await.is_ok();",
+        "changed = access.sign_ins.changed() => changed.is_ok(),",
         1,
         "a watch's caller's sign-in, heard beside what it follows until it is dropped",
     ),

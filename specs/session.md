@@ -546,7 +546,7 @@ What changes when a client is on another machine: who is calling, how a server t
   - **SAML,** for organizations that use it: a browser signs in through the identity provider, and glave issues its own short-lived session token, signed by the organization's key.
   - **glave session tokens,** the same signed tokens, so any server of the organization can verify a caller without shared memory.
 - **Who the caller is:** the token's `iss` and `sub` map to a person through the identity source (SCIM provisions the mapping in an organization). The verified person is the caller for every request on that connection or HTTP request, and is stamped as "Who is calling" describes. A token never enters the log: `turn.started.auth` records the method, issuer, subject and session only.
-- **Expiry:** a stream outlives its token only until the token expires; the client reconnects with a fresh one and reads on with `thread/events` from its last `seq`.
+- **Expiry:** a stream outlives its token only until the token expires; the client reconnects with a fresh one and reads on with `thread/events` from its last `seq`. The transport hands on with the caller when their token stops being taken, its `exp` and the minute of clock skew forgiven, the moment a request with it is refused; a thread's watch, a turn's stream and a list's watch begun with it end then, on the server's clock, with `-32013` and nothing sent after, looked at before anything is sent and woken for when idle (#1504). The turn itself goes on. A browser session and the local token carry none: glave ends those itself.
 
 ### Turns that outlive a server
 

@@ -221,6 +221,7 @@ fn another_person_may_not_change_the_persons_own_memory() {
             profile: None,
             org: None,
             from: None,
+            until: None,
         };
         let refused = server
             .request_as(

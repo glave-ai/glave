@@ -4,6 +4,7 @@
 use std::net::IpAddr;
 
 use glave_event::{Auth, PrincipalId, Profile, TraceId};
+use jiff::Timestamp;
 
 use crate::OrgId;
 
@@ -31,4 +32,9 @@ pub struct Caller {
     /// (`specs/session.md`, "Who is calling"). `None` in process and over stdio, from this
     /// computer.
     pub from: Option<IpAddr>,
+    /// When the sign-in that proved them stops being taken, which ends what they follow
+    /// (`specs/session.md`, "Expiry"): a company login's token, refused from then on. `None`
+    /// for a sign-in nothing here times: the local person's, and a browser session's, which
+    /// glave ends itself.
+    pub until: Option<Timestamp>,
 }
