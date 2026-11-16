@@ -16,6 +16,7 @@ path = "tests/main.rs"
 
 [dependencies]
 calamine.workspace = true
+glave-event.workspace = true
 lopdf.workspace = true
 quick-xml.workspace = true
 # `glave doc sql`: files loaded into an in-memory SQLite, the one glave's store builds, with
