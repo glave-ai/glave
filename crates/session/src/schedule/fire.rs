@@ -1,7 +1,8 @@
 //! Firing schedules. The server that runs tasks calls [`Server::tick`] (or
 //! [`Server::run_scheduler`], which calls it when the next run is due): each due schedule, in
-//! every project whose tasks it runs, adds one turn to its chat, run as a task with its budget
-//! that waits for the person where it needs them, as a chat does. A run due while the one
+//! every project whose tasks it runs, everyone's, adds one turn to its chat, run as a task with
+//! its budget, as whoever made it, that waits for them where it needs them, as a chat does. A
+//! run due while the one
 //! before is still going in the chat, or while someone's turn is, is skipped and recorded so
 //! once (`schedule.skipped`); a run refused for any other reason is recorded with why. A
 //! schedule that missed runs while no server ran it runs once, as soon as one does, never once
@@ -11,16 +12,16 @@ use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
-use glave_event::{At, Fired, ScheduleCreated, ScheduleSkipped, Skipped, ThreadId};
+use glave_event::{At, Fired, PrincipalId, ScheduleCreated, ScheduleSkipped, Skipped, ThreadId};
 use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
 
 use super::info::{due, next_fire};
 use crate::choice::Choice;
-use crate::ledger::Scheduled;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
-use crate::tasks::Work;
+use crate::tasks::{Work, whose};
+use crate::words::Sentence;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
@@ -49,7 +50,7 @@ where
 {
     /// Starts a run of every schedule due by the clock's now, in every project whose tasks
     /// this server runs, at most one each, and answers with their chats, first letting go of
-    /// threads idle too long. A run the task limit holds back starts on a later tick.
+    /// threads idle too long. A run its person's task limit holds back starts on a later tick.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale().await;
@@ -74,18 +75,16 @@ where
             .iter()
             .filter(|(at, _)| firing.contains(&at.org))
             .flat_map(|(project, ledger)| {
-                (ledger.schedules.values())
-                    .filter(|it| fires_here(it))
-                    .filter_map(move |scheduled| {
-                        due(scheduled, now).map(|at| (*project, scheduled.created.clone(), at))
-                    })
+                (ledger.schedules.values()).filter_map(move |scheduled| {
+                    due(scheduled, now).map(|at| (*project, scheduled.created.clone(), at))
+                })
             })
             .collect();
         due.sort_by_key(|(_, schedule, at)| (*at, schedule.schedule));
         let mut started = Vec::new();
         for (project, schedule, at) in due {
-            if self.at_task_limit() {
-                break;
+            if self.at_task_limit(whose(schedule.by.as_ref())) {
+                continue;
             }
             if let Ran::Started(chat) = self.fire(project, &schedule, at).await {
                 started.push(chat);
@@ -94,9 +93,9 @@ where
         Ok(started)
     }
 
-    /// Whether this server runs as many tasks as policy allows.
-    fn at_task_limit(&self) -> bool {
-        (self.inner.limits.max_running).is_some_and(|max| self.tasks().len() >= max)
+    /// Whether this server runs as many tasks of `person`'s as policy allows.
+    fn at_task_limit(&self, person: Option<PrincipalId>) -> bool {
+        (self.inner.limits.max_running).is_some_and(|max| self.running_for(person) >= max)
     }
 
     /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
@@ -150,18 +149,25 @@ where
     }
 
     /// When the next tick would start a run, of the schedules this server fires: never sooner
-    /// than a second from now, so a run due now that a tick would not start (held back by the
-    /// task limit) is not looked at again at once.
+    /// than a second from now, so a run due now that a tick would not start is not looked at
+    /// again at once. One its maker's task limit holds back is left to the tick at least every
+    /// minute, which finds it once a task of theirs ends.
     pub fn next_due(&self) -> Option<Timestamp> {
         let now = self.inner.harness.clock().now();
         let firing: BTreeSet<OrgId> = self.scheduling().keys().copied().collect();
-        let next = self
+        let times: Vec<(Option<PrincipalId>, Timestamp)> = self
             .ledgers()
             .iter()
             .filter(|(at, _)| firing.contains(&at.org))
             .flat_map(|(_, ledger)| ledger.schedules.values())
-            .filter(|scheduled| fires_here(scheduled))
-            .filter_map(next_fire)
+            .filter_map(|scheduled| {
+                let maker = whose(scheduled.created.by.as_ref());
+                next_fire(scheduled).map(|next| (maker, next))
+            })
+            .collect();
+        let next = (times.into_iter())
+            .filter(|(maker, next)| *next > now || !self.at_task_limit(*maker))
+            .map(|(_, next)| next)
             .min()?;
         let soonest = now
             .checked_add(SignedDuration::try_from(SOONEST).ok()?)
@@ -169,14 +175,17 @@ where
         Some(next.max(soonest))
     }
 
-    /// Starts `schedule`'s run that was due at `at`: a new turn in its chat in `project`, unless
-    /// the run before is still going there, on this server or another, or someone's turn is.
+    /// Starts `schedule`'s run that was due at `at`: a new turn in its chat in `project`, as
+    /// whoever made it, unless the run before is still going there, on this server or another,
+    /// or someone's turn is, or they are no longer in its organization.
     async fn fire(&self, project: Located, schedule: &ScheduleCreated, at: Timestamp) -> Ran {
         let Some(chat) = schedule.thread else {
             return Ran::NotStarted;
         };
-        // As the person on this computer, whose run it is, in its project's organization.
+        // As whoever made it, with what they may do, spend and work on, in its project's
+        // organization; a sign-in of theirs ending changes nothing, being removed does.
         let caller = Caller {
+            person: whose(schedule.by.as_ref()),
             org: Some(project.org),
             ..Caller::default()
         };
@@ -189,6 +198,8 @@ where
             (self.ledgers().get(&project)).is_some_and(|ledger| ledger.open.contains_key(&chat));
         let started = if going {
             Err(crate::held::busy(chat))
+        } else if self.maker_removed(&caller).await {
+            Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerRemoved))
         } else {
             let work = Work(schedule.prompt.clone(), Choice::default());
             let budget = Some(schedule.budget);
@@ -218,16 +229,23 @@ where
         Ran::NotStarted
     }
 
+    /// Whether `caller`, a schedule's maker, was removed from its organization: never the
+    /// server's own person. One whose organization's people cannot be read now is taken as
+    /// still there; what they run is ended once a read finds them removed.
+    async fn maker_removed(&self, caller: &Caller) -> bool {
+        let (Some(person), Some(org)) = (caller.person, caller.org) else {
+            return false;
+        };
+        if let Err(error) = self.catch_up_people(org).await {
+            tracing::warn!(%error, %org, "could not read the organization's people");
+        }
+        self.people(org, |people| people.removed(person))
+    }
+
     /// Whether `schedule`'s latest run was skipped as the one before still went.
     fn skipped_going(&self, project: Located, schedule: &ScheduleCreated) -> bool {
         (self.ledgers().get(&project))
             .and_then(|ledger| ledger.schedules.get(&schedule.schedule))
             .is_some_and(|scheduled| scheduled.skipped == Some(Skipped::Going))
     }
-}
-
-/// Whether `scheduled`'s runs start on this server: those of the person on this computer, as
-/// a run is theirs; one made by someone signed in from elsewhere waits for #410.
-fn fires_here(scheduled: &Scheduled) -> bool {
-    scheduled.created.by.is_none()
 }

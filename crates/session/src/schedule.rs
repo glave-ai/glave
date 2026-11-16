@@ -9,6 +9,9 @@
 
 mod fire;
 mod info;
+mod placed;
+
+pub(crate) use placed::Placed;
 
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
 use glave_ports::{
@@ -41,12 +44,25 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Makes the schedule `new` asks for, and its chat, for `caller`.
+    /// Whether schedules run here: a server on the store fires them, and policy lets a person
+    /// keep one.
+    pub(crate) fn schedules_run(&self) -> bool {
+        self.inner.schedules && self.inner.limits.max_schedules != Some(0)
+    }
+
+    /// Makes the schedule `new` asks for, and its chat, for `caller`: refused where no server
+    /// fires schedules.
     pub(crate) async fn create_schedule(
         &self,
         caller: &Caller,
         new: NewSchedule,
     ) -> Result<ScheduleInfo, ApiError> {
+        if !self.inner.schedules {
+            return Err(ApiError::new(
+                code::NOT_AVAILABLE,
+                Sentence::SchedulesNotHere,
+            ));
+        }
         if let When::Cron(text) = &new.when {
             Cron::parse(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
@@ -87,6 +103,8 @@ where
             by: self.someone_else(caller.person),
         };
         let project = scope.located();
+        // Listed first, so every server that fires schedules finds it once it is recorded.
+        self.place_schedules(project).await?;
         self.record_in_ledger(project, &created).await?;
         self.schedule_info(project, schedule)
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))

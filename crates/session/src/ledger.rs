@@ -4,7 +4,7 @@
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped,
@@ -213,18 +213,18 @@ where
     }
 
     /// The projects whose tasks and schedules this server runs: every project its person works
-    /// in, and any other whose ledger it has read for a caller.
+    /// in, every one the store's index lists with schedules, whoever's they are, and any other
+    /// whose ledger it has read for a caller.
     pub(crate) async fn task_projects(&self) -> Result<Vec<Located>, ApiError> {
         let mut projects = match self.inner.harness.person() {
             Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
+        projects.extend(self.placed().await?);
         let known: Vec<Located> = self.ledgers().keys().copied().collect();
-        for project in known {
-            if !projects.contains(&project) {
-                projects.push(project);
-            }
-        }
+        projects.extend(known);
+        let mut seen = HashSet::new();
+        projects.retain(|project| seen.insert(*project));
         Ok(projects)
     }
 

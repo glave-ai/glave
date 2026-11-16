@@ -80,11 +80,15 @@ pub enum Reserved {
     /// `…000f`: what glave made for a person and keeps beyond any chat, in the project it was
     /// made in (`library.kept`, `library.removed`).
     Library,
+    /// `…0010`: the projects on the store where someone made a schedule (`schedule.placed`), in
+    /// the server's own organization's scope ([`Scope::of_organization`]), which every server
+    /// that fires schedules reads to find them.
+    Scheduled,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -101,6 +105,7 @@ impl Reserved {
         Self::Brand,
         Self::Push,
         Self::Library,
+        Self::Scheduled,
     ];
 
     /// The ledger's id, the same in every project.
@@ -122,6 +127,7 @@ impl Reserved {
             Self::Brand => 13,
             Self::Push => 14,
             Self::Library => 15,
+            Self::Scheduled => 16,
         };
         ThreadId::reserved(number)
     }

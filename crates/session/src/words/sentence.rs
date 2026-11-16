@@ -454,6 +454,10 @@ sentences! {
     TooManySchedules { kept: usize, most: usize } = "too-many-schedules"
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
+    SchedulesNotHere = "schedules-not-here"
+        "schedules don't run here: nothing on this server starts work at set times",
+    MakerRemoved = "maker-removed"
+        "whoever made it is no longer in this organization",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",

@@ -130,15 +130,8 @@ pub(crate) async fn run(
     let stopping = Cancel::new();
     let stop = stopping.clone();
     let mut http = pin!(http.serve(server.clone(), async move { stop.cancelled().await }));
-    // Each runs until the loop below ends, and is dropped then. Schedules never fire where
-    // people sign in from elsewhere, whose sign-in may end while their schedules last.
-    let fires = args.issuers.is_empty();
-    let mut scheduler = Box::pin(async move {
-        if fires {
-            server.run_scheduler(std::future::pending()).await;
-        }
-        std::future::pending::<()>().await;
-    });
+    // Each runs until the loop below ends, and is dropped then.
+    let mut scheduler = Box::pin(server.run_scheduler(std::future::pending()));
     let mut removals = Box::pin(server.follow_removals());
     let mut notifications = Box::pin(server.push_notifications());
     let mut daily = Box::pin(daily.run());

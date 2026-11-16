@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use glave_event::{
     At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
-    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    PrincipalKind, TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
 
@@ -67,6 +67,13 @@ pub(crate) fn in_place() -> ApiError {
 /// Refused: no copy of the project's folder could be made for a task to work on.
 pub(crate) fn no_copy() -> ApiError {
     ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
+}
+
+/// The person `by` names, as a task's or a schedule's events record them: none for the server's
+/// own person, whom they leave implied.
+pub(crate) fn whose(by: Option<&Principal>) -> Option<PrincipalId> {
+    by.filter(|by| by.kind == PrincipalKind::Person)
+        .and_then(|by| by.id)
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -456,7 +463,8 @@ where
             .map(Principal::person)
     }
 
-    fn running_for(&self, person: Option<PrincipalId>) -> usize {
+    /// How many tasks of `person`'s this server runs: none for the server's own person.
+    pub(crate) fn running_for(&self, person: Option<PrincipalId>) -> usize {
         self.tasks()
             .values()
             .filter(|task| task.by == person)

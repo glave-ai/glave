@@ -384,8 +384,7 @@ fn schedules_fire_from_one_server_at_a_time() {
 
 /// One server looks after the schedules of every organization its callers work in, each under
 /// that organization's own scheduler lease, and a run lands in its schedule's organization:
-/// someone in another organization sees nothing of it. A run for someone signed in from
-/// elsewhere does not start yet (#410), in any organization.
+/// someone in another organization sees nothing of it.
 #[test]
 fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
     block_on!(async {
@@ -414,13 +413,11 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             budget: 5_000,
         };
         let made = server.request_as(&grace, theirs).await;
-        assert!(made.is_ok(), "{made:?}");
+        let Ok(Reply::Schedule { schedule: hers }) = made else {
+            panic!("her schedule, not {made:?}");
+        };
         set(&now, "2026-10-10T10:05:00Z");
-        assert_eq!(
-            tick(&server).await,
-            1,
-            "the run of the person on this computer"
-        );
+        assert_eq!(tick(&server).await, 2, "everyone's run");
         let runs = async |caller: &Caller| {
             let listed = Request::TasksList { limit: None };
             match server.request_as(caller, listed).await.unwrap() {
@@ -435,7 +432,7 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             vec![scope().project()],
             "in its organization"
         );
-        assert_eq!(runs(&grace).await, Vec::new(), "and in no other");
+        assert_eq!(runs(&grace).await, vec![hers.project], "and hers in hers");
         // The server holds each organization's scheduler lease apart.
         let entropy = CountingEntropy::starting_at(0x7e);
         let other = Holder::new(&now, &entropy).unwrap();

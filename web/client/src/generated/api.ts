@@ -1335,6 +1335,11 @@ export type ServerInfo = {
    */
   readonly role?: OrgRole | null;
   /**
+   * Whether schedules run here (`schedule/*`), so a client offers them only where they do:
+   * a server on its store fires them, and policy lets the caller keep one.
+   */
+  readonly schedules?: boolean;
+  /**
    * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
    * public origin always, a setup link making the first; on this computer once one is made.
    */

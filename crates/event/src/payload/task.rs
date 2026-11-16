@@ -2,10 +2,11 @@
 //! project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
-//! in a conversation.
+//! in a conversation. `schedule.placed`: a project with schedules, in the store's index of them.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::codec::{Payload, parse};
 use crate::envelope::At;
@@ -21,6 +22,7 @@ pub(crate) const CREATED: &str = "schedule.created";
 pub(crate) const DELETED: &str = "schedule.deleted";
 pub(crate) const SKIPPED: &str = "schedule.skipped";
 pub(crate) const PAUSED: &str = "schedule.paused";
+pub(crate) const PLACED: &str = "schedule.placed";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +186,18 @@ pub struct ScheduleDeleted {
     pub by: Option<Principal>,
 }
 
+/// Someone made a schedule in a project, which the store's index of schedules now lists, in the
+/// server's own organization: every server that fires schedules reads the task ledger of each
+/// project it lists, so a schedule runs though no one asked that server for anything since it
+/// started. Recorded once for each project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchedulePlaced {
+    /// The project's organization.
+    pub org: Uuid,
+    pub project: Uuid,
+}
+
 impl Payload for TaskStarted {
     const TYPE: &'static str = STARTED;
     const VERSION: u32 = 1;
@@ -211,6 +225,11 @@ impl Payload for ScheduleSkipped {
 
 impl Payload for ScheduleDeleted {
     const TYPE: &'static str = DELETED;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for SchedulePlaced {
+    const TYPE: &'static str = PLACED;
     const VERSION: u32 = 1;
 }
 
@@ -254,6 +273,13 @@ pub(crate) fn decode_deleted(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleDeleted>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_placed(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<SchedulePlaced>> {
     (version == 1).then(|| parse(data))
 }
 

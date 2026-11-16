@@ -191,6 +191,8 @@ pub(crate) struct Setup {
     pub variables: Vec<(String, PathBuf)>,
     /// Whether people sign in through an identity provider; with none, it works for one person.
     pub identity_provider: bool,
+    /// Whether a server on its store fires schedules: on unless a test turns it off.
+    pub schedules: bool,
     /// Each person's own computer; with none, every thread works here.
     pub homes: Option<Arc<dyn Homes>>,
     /// What a gateway asks for each person's filters; with none, nothing does.
@@ -269,6 +271,7 @@ impl Setup {
             skills: None,
             variables: Vec::new(),
             identity_provider: false,
+            schedules: true,
             homes: None,
             filters: None,
             secrets: None,
@@ -413,6 +416,7 @@ impl Setup {
             awake: self.awake,
             worktrees: self.release,
             identity_provider: self.identity_provider,
+            schedules: self.schedules,
             homes: self.homes,
             secrets,
             credits,

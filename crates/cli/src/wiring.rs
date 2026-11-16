@@ -182,6 +182,8 @@ pub(crate) async fn wire(
         hooks: Hooks::new(setup.hooks.clone())?,
         identity_provider: !args.issuers.is_empty(),
         tasks: task_limits(constraints),
+        // The person's server fires them, or a server of the cluster.
+        schedules: true,
         memory: memory.as_ref().map(crate::memory::Running::handle),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),

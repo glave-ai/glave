@@ -206,8 +206,12 @@ fn the_scheduler_never_wakes_at_once_for_a_run_it_would_not_start() {
             Vec::new(),
             "held back by the limit"
         );
-        let next = server.next_due().unwrap();
-        assert!(next > now_of(&now), "{next} is not after now");
+        // Left to the look every minute, or later than now.
+        let next = server.next_due();
+        assert!(
+            next.is_none_or(|next| next > now_of(&now)),
+            "{next:?} is not after now"
+        );
     });
 }
 

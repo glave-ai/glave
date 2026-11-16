@@ -3,8 +3,8 @@
 //! the person answers and it goes on, and its end is recorded as any task's is.
 
 use glave_event::{
-    At, Body, Currency, Money, Nanos, Payload as _, PrincipalKind, ThreadId, TokenCounts,
-    TurnResult, TurnStarted, decode,
+    At, Body, Currency, Money, Nanos, Payload as _, ThreadId, TokenCounts, TurnResult, TurnStarted,
+    decode,
 };
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
 use tokio::sync::{broadcast, watch};
@@ -38,11 +38,8 @@ where
             return Ok(false);
         };
         // As whoever's run it is.
-        let person = (recorded.started.by.as_ref())
-            .filter(|by| by.kind == PrincipalKind::Person)
-            .and_then(|by| by.id);
         let caller = Caller {
-            person,
+            person: super::whose(recorded.started.by.as_ref()),
             org: Some(project.org),
             ..Caller::default()
         };
@@ -65,7 +62,7 @@ where
             project,
             started: recorded.started,
             at: recorded.at,
-            by: person,
+            by: caller.person,
             tokens,
             cost,
             stopped: false,

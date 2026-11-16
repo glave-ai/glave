@@ -3560,6 +3560,10 @@
           ],
           "description": "The caller's role in the organization, when there is one and they signed in: so a\nclient shows admin screens only to its Admins and Owners. Absent on a server with no\norganization, where the one person may do everything."
         },
+        "schedules": {
+          "description": "Whether schedules run here (`schedule/*`), so a client offers them only where they do:\na server on its store fires them, and policy lets the caller keep one.",
+          "type": "boolean"
+        },
         "signin": {
           "description": "How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a\npublic origin always, a setup link making the first; on this computer once one is made.",
           "items": {
