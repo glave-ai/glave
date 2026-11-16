@@ -221,11 +221,13 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         glave: home.clone(),
         largest: largest.clone(),
     };
-    // The token a computer on a socket serves with is its own, and no command's to read; nor is
-    // the socket, which a sandboxed command with the network may otherwise reach.
+    // The token a computer serves with, and its TLS key, are its own and no command's to read:
+    // with the token, a sandboxed command with the network could connect and open a terminal
+    // outside every sandbox (#1502). Nor is the socket, which such a command may otherwise reach.
     let hidden: Vec<PathBuf> = match &transport {
         Transport::Socket(path, folder, _) => vec![folder.clone(), path.clone()],
-        Transport::Stdio | Transport::Tls(..) => Vec::new(),
+        Transport::Tls(_, folder, _) => vec![folder.clone()],
+        Transport::Stdio => Vec::new(),
     };
     let computers = crate::helpers::with_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())

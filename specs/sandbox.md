@@ -15,6 +15,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - Someone else's commands on the server's computer get none of its owner's git sign-ins or secrets (#1434, *Whose computer*).
 - The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.
 - The project's own files, `.env` among them, are no longer hidden from its commands (owner decision, 2026-11-13, #1397, *Reads*).
+- A computer served across the network hides the folder of its token and key from its commands, with `--tls` as on a socket (#1502, *Reads*).
 
 ## Why on by default
 
@@ -153,6 +154,7 @@ Secrets are hidden by **location** in the home folder, the same list on macOS an
   - keychains and browser profiles (cookies are credentials): on macOS `~/Library/Keychains`, Safari, Chrome, Brave, Edge, Arc and Firefox; on Linux `~/.local/share/keyrings` and the same browsers' folders.
   A link among them is hidden where it leads too.
 - glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log; except the workspace itself, when it is a thread's worktree there, the sandbox cache folder (*Package caches*), and glave's folder on commands' `PATH` (`bin`, read, never written, `computers.md` rule 9). Hidden whole for the command's whole life: what glave writes there after the command starts (a sign-in link's page, a server's local token) is as hidden as what was there. On macOS a command may see that `~/.glave` is a folder, nothing in it; on Linux it sees an empty folder holding only the way to the workspace and the cache.
+- A computer's own, where `glave computer serve` names them: the folder of the token it opens connections with and, with `--tls`, its TLS key; with `--socket`, the socket too (#1502). With the token, a command with the network could connect to its computer and open a terminal outside every sandbox; with the key, pass as the computer.
 
 **Other terminals** (#1289; `invariants.md`, 34). Each terminal on the computer, the person's Terminal tab, a terminal window's or an ssh session's, has a device (`/dev/ttys*` on macOS, `/dev/pts/*` on Linux) its shell reads what is typed from, a password at a `sudo` prompt among it. A command that opened another's could read that too, racing the shell, so a sandboxed command opens no terminal's device but its own. On macOS the read rule leaves out every terminal device but `/dev/tty` (`/dev/tty…`, `/dev/pty…`), and Seatbelt lets a command open a pseudo-terminal only once it made it itself (`com.apple.sandbox.pty`, in Codex's base profile); on Linux bubblewrap's `/dev` is the sandbox's own, holding only the terminals the command makes, and Landlock grants none (below). What a command does with terminals of its own still works: `/dev/tty`, its controlling terminal if it has one (glave's commands run with pipes for their standard streams, so `tty` says "not a tty"), and one it makes (`script`, `expect`, a test runner's), except under Landlock, where it never could make one.
 
