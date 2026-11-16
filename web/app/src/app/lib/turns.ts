@@ -270,3 +270,19 @@ export function askedTurns(
   }
   return [...keyed, startingTurn(prompt, waiting === null ? 'turn-starting' : askedKey(waiting))];
 }
+
+/**
+ * The turn of `turns` that ended at the `seq` a tapped notification of a chat's end names
+ * (`?finished=`), by key, and when it ended in milliseconds; `null` for any other.
+ */
+export function finishedTurn(
+  turns: readonly Turn[],
+  finished: string | undefined,
+): { readonly key: string; readonly at: number } | null {
+  const seq = Number(finished);
+  const turn = turns.find((each) => each.ended?.seq === seq);
+  if (turn === undefined || turn.ended === null) {
+    return null;
+  }
+  return { key: turn.key, at: Date.parse(turn.ended.at) };
+}

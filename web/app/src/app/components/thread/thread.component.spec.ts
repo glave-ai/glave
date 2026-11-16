@@ -58,19 +58,6 @@ describe('ThreadComponent', () => {
     document.body.click();
   });
 
-  it('opened from a chat’s end’s notification, says above that turn’s reply it finished while away', async () => {
-    const { root, fixture } = await open(session(EDITED, README));
-    const away = (): string | undefined =>
-      root.querySelector('[data-testid="turn-away"]')?.textContent.trim();
-    expect(away()).toBeUndefined();
-    fixture.componentRef.setInput('finished', '5');
-    await settle(fixture);
-    expect(away()).toBeUndefined();
-    fixture.componentRef.setInput('finished', '6');
-    await settle(fixture);
-    expect(away()).toMatch(/^Finished while you were away · \d{1,2}:\d{2}/u);
-  });
-
   it('shows a globe in the composer while web search is on', async () => {
     const off = await open(session(ANSWERED));
     expect(off.root.querySelector('[data-testid="thread-searching"]')).toBeNull();

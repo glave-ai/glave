@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { askedTurns, threadTurns, turnRuns } from './turns';
+import { askedTurns, finishedTurn, threadTurns, turnRuns } from './turns';
 
 function at(seq: number, type: string, data: Record<string, unknown>, time: string): RawEvent {
   return { ...event(seq, type, data), at: time };
@@ -192,5 +192,19 @@ describe('turns', () => {
     expect(turnRuns([...started, event(4, 'turn.ended', {}), event(5, 'thread.renamed', {})])).toBe(
       false,
     );
+  });
+
+  it('finds the turn a tapped notification of a chat’s end opens it at, by where it ended', () => {
+    const turns = threadTurns([
+      ASK(1, 'Plan the trip'),
+      SAY(2, 'Done.'),
+      at(3, 'turn.ended', { outcome: 'completed' }, '2026-11-17T02:14:00.000Z'),
+      ASK(4, 'Thanks'),
+    ]);
+    const first = turns[0]?.key;
+    expect(finishedTurn(turns, '3')).toEqual({ key: first, at: Date.UTC(2026, 10, 17, 2, 14) });
+    for (const other of ['2', '4', 'x', undefined]) {
+      expect(finishedTurn(turns, other)).toBeNull();
+    }
   });
 });

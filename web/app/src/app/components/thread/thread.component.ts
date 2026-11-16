@@ -30,7 +30,7 @@ import { Globe } from 'lucide';
 import { type TurnFacts, type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import { chatPlan } from '../../lib/plans';
-import { askedTurns } from '../../lib/turns';
+import { askedTurns, finishedTurn } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { onChange } from '../../services/changes.service';
 import { effortToSend } from '../../lib/effort';
@@ -264,13 +264,11 @@ export class ThreadComponent {
    * that turn's end, from the server's push), by key, with its line saying when it finished.
    */
   private readonly away = computed(() => {
-    const seq = Number(this.finished());
-    const ended = this.asked().find((turn) => turn.ended?.seq === seq);
-    if (ended?.ended == null) {
+    const ended = finishedTurn(this.asked(), this.finished());
+    if (ended === null) {
       return null;
     }
-    const at = Date.parse(ended.ended.at);
-    const time = new Intl.DateTimeFormat(this.locale, { timeStyle: 'short' }).format(at);
+    const time = new Intl.DateTimeFormat(this.locale, { timeStyle: 'short' }).format(ended.at);
     return {
       key: ended.key,
       line: $localize`:@@thread.away:Finished while you were away · ${time}:TIME:`,

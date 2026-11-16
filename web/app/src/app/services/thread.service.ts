@@ -184,17 +184,13 @@ export class ThreadService {
   });
 
   constructor() {
-    // A hidden tab lets go of its watch, and of the streams of its turns once they have begun,
-    // so tabs in the background hold no connection and the server, seeing no one follow the
-    // thread, tells the person's devices when a turn ends; it comes back from where it was once
-    // shown.
+    // A hidden tab lets go of its watch and its begun turns' streams, so it holds no connection
+    // and the server pushes a turn's end; shown, it comes back from where it was.
     const shown = (): void => {
       const thread = this.id();
       if (this.document.visibilityState === 'hidden') {
         this.stopWatching();
-        for (const controller of this.begun) {
-          controller.abort();
-        }
+        for (const controller of this.begun) controller.abort();
       } else if (thread !== null && this.watching === null && this.streaming() === 0) {
         void this.watch(thread);
       }
@@ -408,11 +404,8 @@ export class ThreadService {
         this.stopWatching();
         // The turn had ended meanwhile, so the message started one of its own.
         this.waiting.update((waiting) => waiting.filter((message) => message.key !== queued));
-        // Begun in the server, it is let go of while the tab is hidden, as the watch is.
         this.begun.add(controller);
-        if (this.document.visibilityState === 'hidden') {
-          controller.abort();
-        }
+        if (this.document.visibilityState === 'hidden') controller.abort();
       }
       while (!next.done) {
         this.take(thread, next.value, 'turn');
