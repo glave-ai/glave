@@ -148,8 +148,11 @@ describe('SideNavComponent', () => {
     expect(newChat?.getAttribute('href')).toBe('/');
     expect(newChat?.getAttribute('aria-label')).toBe('New chat');
     expect(root.querySelector('app-person')).not.toBeNull();
-    // Nothing about tasks until one is going or scheduled.
+    // Nothing about tasks until one is going or scheduled; Library always.
     expect(root.querySelector('[data-testid="nav-tasks"]')).toBeNull();
+    const library = root.querySelector('[data-testid="nav-library"]');
+    expect(library?.getAttribute('href')).toBe('/library');
+    expect(library?.textContent.trim()).toBe('Library');
     await expectAccessible(root);
 
     const search = root.querySelector<HTMLInputElement>('[data-testid="nav-search"]');
@@ -198,16 +201,19 @@ describe('SideNavComponent', () => {
       read: false,
       blocks: DeferBlockBehavior.Manual,
     });
-    // Tasks at the foot of the column the threads fill, the person under it, outside it.
-    const tasks = root.querySelector('[data-testid="nav-tasks"]');
-    expect(tasks?.parentElement?.classList.contains('above')).toBe(true);
-    expect(tasks?.nextElementSibling).toBeNull();
+    // Tasks and Library at the foot of the column the threads fill, the person under it,
+    // outside it.
+    const foot = root.querySelector('[data-testid="nav-tasks"]')?.parentElement;
+    expect(foot?.classList.contains('foot')).toBe(true);
+    expect(foot?.parentElement?.classList.contains('above')).toBe(true);
+    expect(foot?.nextElementSibling).toBeNull();
+    expect(foot?.lastElementChild?.getAttribute('data-testid')).toBe('nav-library');
     expect(root.querySelector('.above app-person')).toBeNull();
     // No threads until they are read, then all at once, above Tasks.
     expect(root.querySelector('app-projects-nav')).toBeNull();
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
-    expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(tasks);
+    expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(foot);
     // Read before the switch's code is in, the switch's room is kept above them, decided with
     // them, and the switch fills it once its code is in: no swap of the block can move them.
     const room = root.querySelector('app-projects-nav')?.previousElementSibling;

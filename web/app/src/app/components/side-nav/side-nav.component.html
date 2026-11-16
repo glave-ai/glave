@@ -1,6 +1,6 @@
 <!-- All but the person, who stays at the pane's foot. What comes in after the first paint takes
      the room it needs from the threads, which grow to fill this, so nothing already drawn moves:
-     the threads once read, and Tasks under them once the tasks are. -->
+     the threads once read, and Tasks under them, over Library, once the tasks are. -->
 <div class="above">
   <div class="top">
     <!-- Here from the first paint, so what is beside it never moves as it is filled. -->
@@ -78,24 +78,35 @@
       (navigated)="followed()"
     />
   }
-  @if (tasksLive()) {
+  <div class="foot">
+    @if (tasksLive()) {
+      <a
+        glzNavItem
+        data-testid="nav-tasks"
+        [routerLink]="tasksLink"
+        [current]="tasksCurrent()"
+        [icon]="icons.tasks"
+        (click)="followed()"
+      >
+        {{ copy.tasks }}
+        @if (tasksGoing(); as going) {
+          <span glzNavItemEnd class="going"
+            ><span aria-hidden="true">{{ going.count }}</span
+            ><span class="glz-visually-hidden">{{ going.words }}</span></span
+          >
+        }
+      </a>
+    }
     <a
       glzNavItem
-      class="tasks"
-      data-testid="nav-tasks"
-      [routerLink]="tasksLink"
-      [current]="tasksCurrent()"
-      [icon]="icons.tasks"
+      data-testid="nav-library"
+      [routerLink]="libraryLink"
+      [current]="libraryCurrent()"
+      [icon]="icons.library"
       (click)="followed()"
     >
-      {{ copy.tasks }}
-      @if (tasksGoing(); as going) {
-        <span glzNavItemEnd class="going"
-          ><span aria-hidden="true">{{ going.count }}</span
-          ><span class="glz-visually-hidden">{{ going.words }}</span></span
-        >
-      }
+      {{ copy.library }}
     </a>
-  }
+  </div>
 </div>
 <app-person (navigated)="followed()" />
