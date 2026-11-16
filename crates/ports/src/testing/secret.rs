@@ -25,6 +25,17 @@ pub fn any_secret() -> String {
     "fake-secret-".to_owned() + &body
 }
 
+/// A key of 32 random bytes for tests that need one, new at each call, so no key is written
+/// in the source for a scanner to take as hard-coded. Where a test needs the same one twice, it
+/// binds it once. A source that fails leaves the rest zero: a test's key, never a real one.
+pub fn any_key() -> [u8; 32] {
+    let mut bytes = std::iter::repeat_with(|| OsEntropy.bytes())
+        .map_while(Result::ok)
+        .flatten();
+    // Each byte taken from the source as the key is made, so no written value flows into it.
+    std::array::from_fn(|_| bytes.next().unwrap_or_default())
+}
+
 /// A fake secret in a provider's shape: `prefix` (`sk-ant-`, `ghp_`, `AKIA`) and 40 random
 /// letters and digits, new at each call. Where a test needs the same one twice, it binds it once.
 pub fn fake_secret(prefix: &str) -> String {
@@ -82,6 +93,11 @@ mod tests {
     #[test]
     fn the_plain_marker_looks_like_no_credential() {
         assert_eq!(looks_like_credential(&any_secret()), None);
+    }
+
+    #[test]
+    fn a_key_is_new_each_time() {
+        assert_ne!(any_key(), any_key());
     }
 
     #[test]

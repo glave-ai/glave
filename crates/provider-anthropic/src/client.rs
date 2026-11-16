@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use glave_ports::auth::{Auth, ERROR_BODY_BYTES, KeyHeader, Outgoing};
-use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, spoken};
+use glave_ports::{Completion, Delta, EndUser, ModelProvider, ModelRequest, ProviderError, spoken};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::api::Api;
@@ -88,13 +88,25 @@ impl Anthropic {
     }
 }
 
+impl Anthropic {
+    /// Whether it calls Anthropic's own API, the one of those it speaks to that documents an
+    /// end user's id: Bedrock's and Vertex AI's routes list no `metadata` among what they take.
+    fn own_api(&self) -> bool {
+        let base = self.base_url.trim_end_matches('/');
+        base.strip_suffix("/v1").unwrap_or(base) == DEFAULT_BASE_URL
+    }
+}
+
 impl ModelProvider for Anthropic {
     async fn complete(
         &self,
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
-        let body = serde_json::to_vec(&messages_request(request, &self.provider, self.api))
+        let end_user = request.end_user.as_ref().filter(|_| self.own_api());
+        let body = messages_request(request, &self.provider, self.api)
+            .for_end_user(end_user.map(EndUser::as_str));
+        let body = serde_json::to_vec(&body)
             .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
         let url = self.api.url(&self.base_url, &request.model)?;
         let version = self.api.version_header();
@@ -278,5 +290,23 @@ mod tests {
             panic!("a newline in a key must be refused");
         };
         assert!(!error.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn only_anthropic_s_own_api_is_sent_whose_call_it_is() {
+        let at = |base_url: &str, api| {
+            let config = Config {
+                base_url: base_url.into(),
+                api,
+                ..Config::new(None)
+            };
+            Anthropic::new(config).unwrap().own_api()
+        };
+        assert!(at(DEFAULT_BASE_URL, Api::Messages));
+        assert!(at("https://api.anthropic.com/v1/", Api::Messages));
+        let bedrock = "https://bedrock-runtime.us-east-1.amazonaws.com/anthropic";
+        assert!(!at(bedrock, Api::Messages));
+        let vertex = "https://aiplatform.googleapis.com/v1/projects/p/locations/global";
+        assert!(!at(vertex, Api::Vertex));
     }
 }

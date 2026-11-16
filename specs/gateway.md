@@ -37,6 +37,7 @@ Each piece built has one line, which the pull requests that change it edit.
 - **A model's default level** (#703): sent from its target's own catalog on every call, said by `model/list` and recorded by `model.responded` ("Reasoning effort", below).
 - **Claude's effort** (#708): Anthropic's Messages API, at Anthropic and Bedrock and as Vertex AI's rawPredict, is sent the level as `output_config.effort` with `thinking: {"type": "adaptive"}`; the levels are those Anthropic's model list marks supported, or with no list (a cloud contract, a key set in the settings) the five it documents ("Reasoning effort", below).
 - **OpenRouter's preferences** on every request: `provider.data_collection: "deny"`, so no provider that keeps or trains on prompts serves glave, and `provider.require_parameters: true`, so none that would drop a parameter, tools above all, does.
+- **Whose call it is** (#1445): each call that works for a person sends its provider that person's anonymous id, where the provider documents a field for it (OpenAI, Anthropic; not OpenRouter), and `glave people lookup` maps an id back ("Whose call it is", below).
 - **A conversation stays with its provider** (#1443): `session_id`, the thread's id, on every OpenRouter call that sends a thread's conversation ("Fallback", below).
 - **Whose work a call is** (#1062): every call the harness makes for a thread names the thread's organization and the person it works for, and memory's tidy-up its organization and the person whose memory it tidies (`ModelRequest.payer`), never sent to a provider, for the credits to charge (#1054).
 - **One entry per model** (#289): accounts' models matched across services, tried in route order, described in `model/list` from the catalogs ("One entry per model", below).
@@ -184,6 +185,17 @@ Decided by the owner, 2026-10-31: a person on Glave Cloud uses the Cloud's own O
   3. *Glave Cloud, personal:* set on the cell, for every organization on it. A gap: a model on the Cloud's own machines, such as Hope, and people's own accounts once they are allowed here aren't routers, so a floor refuses them until each says where it is.
   4. *Glave Cloud, enterprise:* the same floor; an organization's own filters within it are a gap, not built.
   5. *Enterprise, self-hosted:* set it only if they reach providers through OpenRouter: a floor refuses a service that isn't a router, so an organization on its own contracts leaves it off.
+
+## Whose call it is
+
+Decided by the owner, 2026-11-15: a model's maker that finds its policy broken should be able to act on the one person who broke it, not suspend the account everyone's calls go through, as their best practice asks. So each call that works for a person tells its provider who, by an id that says nothing of them.
+
+- **The id:** `g_` and 32 hex digits, the first 128 bits of an HMAC-SHA-256 of the organization's id and the person's under a secret the server's root derives (`crates/keys`, `Root::derive`): never a name, an email or a raw id, the same for a person in an organization for as long as the root lasts (a fresh store keeps it), different in another organization, and no one without the root can tell whose it is. No rotation yet.
+- **Only with a person:** a call whose payer names one (a turn, a subagent, a compaction, a title, memory's tidy-up of their memory) carries it; a call for no one (the server's own work) carries none, and no organization's id stands in, since it would put every person of an organization under one name, the very thing this avoids.
+- **Where the provider documents it, nowhere else:** OpenAI's `safety_identifier` (<https://developers.openai.com/api/docs/guides/safety-best-practices>); Anthropic's own API `metadata.user_id` ("Anthropic may use this id to help detect abuse", <https://platform.claude.com/docs/en/api/messages>). Other compatible servers, Bedrock and Vertex AI are sent nothing, as none documents a field and an unknown one may be refused.
+- **OpenRouter gets none:** it documents `user` ("Per-end-user identifier for abuse isolation", <https://openrouter.ai/docs/api-reference/chat-completion>), but every request to it sends `provider.require_parameters: true` ("OpenRouter's preferences", above), and its docs don't say whether `user` counts as a parameter a provider must support; if it does, it could filter out providers that serve the model today. Until a real call shows it doesn't, OpenRouter is sent no id, and a person's misuse there still falls on the account.
+- **Beside the prompt, never in it:** a request parameter, so a thread's prefix and its cache stay the same (`invariants.md`, 27).
+- **Back to a person:** `glave people lookup <id>`, on the server's computer, reads the store and the root itself, makes the id of every person in every organization there, removed ones included, and prints the organization and the person that match. Only whoever holds the store and its root can, so it needs no role of its own.
 
 ## Metering
 

@@ -202,6 +202,7 @@ where
             files: Vec::new(),
             payer: Some(thread.payer()),
             route: None,
+            end_user: None,
             session: None,
         };
         let output = match cancel.run(self.provider.search(&request, &ask)).await {

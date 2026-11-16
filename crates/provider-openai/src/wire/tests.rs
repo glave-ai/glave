@@ -49,6 +49,7 @@ fn a_request_has_the_chat_completions_shape() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
         session: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -77,20 +78,8 @@ fn a_request_has_the_chat_completions_shape() {
 
 #[test]
 fn the_longest_answer_is_named_as_each_service_takes_it() {
-    let mut request = ModelRequest {
-        model: "m".into(),
-        system: String::new(),
-        messages: Vec::new(),
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: Some(32_000),
-        purpose: glave_ports::Purpose::Main,
-        effort: None,
-        files: Vec::new(),
-        payer: None,
-        route: None,
-        session: None,
-    };
+    let mut request = ask("m");
+    request.max_output_tokens = Some(32_000);
     let field = |request: &ModelRequest, provider: &str| {
         let body = serde_json::to_value(chat_request(request, provider)).unwrap();
         let named = |name: &str| body.get(name).and_then(Value::as_u64);
@@ -138,6 +127,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
         session: None,
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -373,6 +363,7 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         files,
         payer: None,
         route: None,
+        end_user: None,
         session: None,
     }
 }
@@ -706,4 +697,36 @@ fn the_most_a_provider_may_cost_is_sent_exact_to_the_last_place() {
     };
     let sent = serde_json::to_string(&Preferences::of(Some(&route)).max_price).unwrap();
     assert_eq!(sent, r#"{"prompt":0.000000001}"#);
+}
+
+#[test]
+fn the_person_goes_anonymously_to_openai_alone_and_the_prompt_stays_the_same() {
+    let mut request = ask("openai/gpt-6-luna");
+    request.system = "Be brief.".into();
+    request.messages = vec![user("hello")];
+    request.tools = vec![ToolSpec {
+        name: "bash".into(),
+        description: "Run a command.".into(),
+        parameters: json!({"type": "object"}),
+    }];
+    let services = ["openrouter", "openai", "ollama", "example.com"];
+    let without = services.map(|service| serde_json::to_value(chat_request(&request, service)));
+    let id = glave_ports::testing::an_end_user().unwrap();
+    request.end_user = Some(id.clone());
+    for (service, without) in services.into_iter().zip(without) {
+        let mut with = serde_json::to_value(chat_request(&request, service)).unwrap();
+        let object = with.as_object_mut().unwrap();
+        let user = object.remove("user");
+        let safety = object.remove("safety_identifier");
+        let sent = json!(id.as_str());
+        match service {
+            "openai" => assert_eq!((user, safety), (None, Some(sent))),
+            _ => assert_eq!((user, safety), (None, None), "{service}"),
+        }
+        assert_eq!(
+            with,
+            without.unwrap(),
+            "the id changes nothing else for {service}"
+        );
+    }
 }

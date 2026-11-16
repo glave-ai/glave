@@ -13,8 +13,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 use glave_event::{Currency, Filters, Nanos};
 use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target, WebSearch};
 use glave_ports::{
-    Completion, Delta, Failure, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError,
-    Purpose, SearchAsk, SearchResults,
+    Completion, Delta, EndUsers, Failure, Made, MediaAsk, ModelProvider, ModelRequest,
+    ProviderError, Purpose, SearchAsk, SearchResults,
 };
 
 use crate::config::Endpoint;
@@ -195,13 +195,15 @@ pub(crate) struct GatewaySwitch {
     /// Each person's filters among a router's providers, which the session server answers
     /// once it is made.
     filters: Arc<PersonFilters>,
+    /// What tells each call's provider, anonymously, which person it works for.
+    end_users: Option<EndUsers>,
 }
 
 impl GatewaySwitch {
     pub(crate) fn new(
         gateway: Option<Gateway>,
         credits: Option<Arc<Credits<DataLog>>>,
-        (floor, search): (Option<Filters>, Option<WebSearch>),
+        (floor, search, end_users): (Option<Filters>, Option<WebSearch>, Option<EndUsers>),
     ) -> Self {
         let switch = Self {
             current: Arc::default(),
@@ -209,6 +211,7 @@ impl GatewaySwitch {
             floor,
             search,
             filters: Arc::default(),
+            end_users,
         };
         switch.set(gateway);
         switch
@@ -220,7 +223,8 @@ impl GatewaySwitch {
             let gateway = gateway
                 .with_filters(Arc::clone(&self.filters) as Arc<dyn Filtering>)
                 .with_floor(self.floor.clone())
-                .with_search(self.search.clone());
+                .with_search(self.search.clone())
+                .with_end_users(self.end_users.clone());
             match &self.credits {
                 Some(credits) => gateway.with_credits(Arc::clone(credits)),
                 None => gateway,

@@ -1,11 +1,13 @@
 //! The root that wraps this computer's keys, so the database is sealed at rest, and what it
-//! derives that must outlive the database: the person's passkey handle.
+//! derives that must outlive the database: the person's passkey handle, and the secret each
+//! person's anonymous id for model providers is made under.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_keys::{KeyFileRoot, KeySettings, KeychainRoot, Root};
+use glave_ports::EndUsers;
 use uuid::Uuid;
 
 use crate::data::Data;
@@ -18,6 +20,9 @@ const KEY_FILE: &str = "root.key";
 
 /// What the root derives the local person's passkey handle for.
 const PASSKEY_HANDLE: &str = "passkey user handle";
+
+/// What the root derives the secret of people's anonymous ids for model providers for.
+const END_USERS: &str = "model provider end user ids";
 
 /// The passkey handle of the local person, whose root this is, which every passkey made for
 /// them keeps (WebAuthn's user handle): derived from the root, so it is random, says nothing of
@@ -32,6 +37,14 @@ pub(crate) async fn local_passkey_handle(store: &Data) -> anyhow::Result<Uuid> {
         .copied()
         .context("the root derived too few bytes for a passkey handle")?;
     Ok(uuid::Builder::from_custom_bytes(bytes).into_uuid())
+}
+
+/// What makes each person's anonymous id for model providers (`specs/gateway.md`, "Whose call
+/// it is"): under a secret the root derives, so only this server can make or recognise one, and
+/// an id stays the same through a fresh start of the store.
+pub(crate) async fn end_users(store: &Data) -> anyhow::Result<EndUsers> {
+    let derived = store.derived(END_USERS).await?;
+    Ok(EndUsers::new(derived.bytes()))
 }
 
 /// Keys for the database in `home`, glave's folder. The root lives in the OS keychain for the

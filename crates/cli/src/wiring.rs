@@ -510,7 +510,12 @@ async fn line_up(
         Err(error) => return Err(error),
     };
     let floor = crate::gateway::router_floor(floor);
-    let switch = GatewaySwitch::new(built.gateway.take(), credits.cloned(), (floor, search));
+    let end_users = crate::keys::end_users(store).await?;
+    let switch = GatewaySwitch::new(
+        built.gateway.take(),
+        credits.cloned(),
+        (floor, search, Some(end_users)),
+    );
     let model_accounts = ledgers.map(|(accounts, catalogs)| {
         Arc::new(ModelAccounts::new(
             accounts,

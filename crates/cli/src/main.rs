@@ -38,6 +38,7 @@ mod keys;
 mod mcp;
 mod memory;
 mod model;
+mod people;
 mod project_folders;
 mod projects;
 mod providers;

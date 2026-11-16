@@ -23,6 +23,7 @@ fn request() -> ModelRequest {
         files: Vec::new(),
         payer: None,
         route: None,
+        end_user: None,
         session: None,
     }
 }

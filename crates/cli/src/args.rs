@@ -91,6 +91,8 @@ Usage:
   glave signup link             a sign-up link to give one person, made by whoever runs
                                 this glave: their own personal space while it takes no
                                 sign-ups (glave signup --help)
+  glave people lookup <id>      whom an id a model provider reports is, for whoever runs
+                                this glave
   glave doc <command>           read, make and edit spreadsheets, documents and decks,
                                 merge, split, turn and fill in PDFs, and query data with
                                 SQL, with nothing else installed (glave doc --help)

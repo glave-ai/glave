@@ -113,6 +113,7 @@ where
             files: inputs.files,
             payer: Some(thread.payer()),
             route: None,
+            end_user: None,
             session: None,
         };
         let Some(made) = cancel.run(self.provider.make(&request, &asked.ask)).await else {

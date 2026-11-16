@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use glave_event::{CostKind, Currency, Money};
 use glave_ports::{
-    Completion, Delta, EventLog, Failure, Made, MediaAsk, ModelProvider, ModelRequest,
-    ProviderError, Purpose, Route, SearchAsk, SearchResults, Served, Unpaid,
+    Completion, Delta, EndUser, EndUsers, EventLog, Failure, Made, MediaAsk, ModelProvider,
+    ModelRequest, ProviderError, Purpose, Route, SearchAsk, SearchResults, Served, Unpaid,
 };
 use tracing::Instrument as _;
 
@@ -47,6 +47,9 @@ pub struct Gateway {
     floor: Option<Filters>,
     /// The service the web is searched through; none where the server has none.
     search: Option<WebSearch>,
+    /// What tells each call's provider, anonymously, which person it works for; none where
+    /// the server holds no secret to make the ids with, which sends none.
+    end_users: Option<EndUsers>,
 }
 
 impl Gateway {
@@ -58,7 +61,16 @@ impl Gateway {
             filters: None,
             floor: None,
             search: None,
+            end_users: None,
         }
+    }
+
+    /// Tells each call's provider which person it works for, by the id `end_users` makes them
+    /// (`specs/gateway.md`, "Whose call it is").
+    #[must_use]
+    pub fn with_end_users(mut self, end_users: Option<EndUsers>) -> Self {
+        self.end_users = end_users;
+        self
     }
 
     /// Searches the web through `search`, paid at its price where credits are kept.
@@ -120,6 +132,12 @@ impl Gateway {
             _ => None,
         };
         let keeping = Keeping::within(self.floor.as_ref(), filters);
+        // Only a call that works for a person says whose it is: a server's own work is no
+        // one's.
+        let end_user = match (&self.end_users, request.payer) {
+            (Some(end_users), Some(payer)) => payer.person.map(|p| end_users.id(payer.org, p)),
+            _ => None,
+        };
         let targets = candidates(targets, request, &keeping, &needs)?;
         let mut failed: Option<ProviderError> = None;
         let mut unpaid: Option<ProviderError> = None;
@@ -135,7 +153,7 @@ impl Gateway {
                     continue;
                 }
             };
-            let sent = (request, route.as_ref());
+            let sent = (request, (route.as_ref(), end_user.as_ref()));
             let sent = Self::send_to(target, sent, &needs, paying.as_ref(), &mut call).await;
             match sent {
                 Ok(made) => {
@@ -169,17 +187,18 @@ impl Gateway {
 }
 
 impl Gateway {
-    /// Sends `request` to `target`, as its route's purpose and the target take it and with what
-    /// `route` asks of a router, noting what comes for `paying`, and says who served it; its
-    /// cost is its target's price when its provider reports none.
+    /// Sends `request` to `target`, as its route's purpose and the target take it, with what
+    /// `sent_with`'s route asks of a router and the person it names, noting what comes for
+    /// `paying`, and says who served it; its cost is its target's price when its provider
+    /// reports none.
     async fn send_to(
         target: &Target,
-        (request, route): (&ModelRequest, Option<&Route>),
+        (request, sent_with): (&ModelRequest, (Option<&Route>, Option<&EndUser>)),
         needs: &Needs<'_>,
         paying: Option<&Paying<'_>>,
         call: &mut Call<'_>,
     ) -> Result<Made, ProviderError> {
-        let (sent, stripped) = prepare(request, route, target, needs);
+        let (sent, stripped) = prepare(request, sent_with, target, needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
         let sent = match call {

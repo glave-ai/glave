@@ -48,6 +48,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         effort: None,
         payer: None,
         route: None,
+        end_user: None,
         session: None,
     }
 }
@@ -391,4 +392,21 @@ fn a_tool_result_holds_the_image_or_pdf_it_hands_the_model() {
             {"type": "tool_result", "tool_use_id": "call_2", "is_error": false, "content": "plain"}
         ])
     );
+}
+
+#[test]
+fn the_person_goes_anonymously_as_metadata_and_the_prompt_stays_the_same() {
+    let mut request = request(vec![user("hello")]);
+    request.system = "Be brief.".into();
+    request.tools = vec![bash()];
+    let id = glave_ports::testing::an_end_user().unwrap();
+    let without = body(&request);
+    assert!(without.get("metadata").is_none());
+    let mut with = serde_json::to_value(
+        messages_request(&request, "anthropic", Api::Messages).for_end_user(Some(id.as_str())),
+    )
+    .unwrap();
+    let metadata = with.as_object_mut().unwrap().remove("metadata");
+    assert_eq!(metadata, Some(json!({"user_id": id.as_str()})));
+    assert_eq!(with, without, "only the id is added");
 }

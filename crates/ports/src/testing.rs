@@ -4,7 +4,8 @@
 //! OAuth authorization server, a mailer that keeps what it sends, a command's output kept, fake secrets, a scripted model, an
 //! event log that fails when told, programs they start, stopped when they end, scripts they
 //! write, whose first run no limit counts, folders of their own, removed when they are done,
-//! and their sockets' paths, short enough for one.
+//! and their sockets' paths, short enough for one, and a person's anonymous id for a model
+//! call to send.
 //! Behind the `conformance` feature, so no production build carries them.
 
 mod asking;
@@ -26,7 +27,9 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
 use jiff::Timestamp;
 
+use crate::end_users::{EndUser, EndUsers};
 use crate::env::{Clock, Entropy, EntropyError};
+use crate::scope::OrgId;
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use asking::{ASKING_TOOL, AskingTool};
@@ -39,9 +42,17 @@ pub use outbox::Outbox;
 pub use output::Captured;
 pub use process::{HUNG, Running, new_script, read_program};
 pub use scripted::{ScriptedHttp, Written};
-pub use secret::{any_secret, fake_secret};
+pub use secret::{any_key, any_secret, fake_secret};
 pub use socket::SocketPath;
 pub use temp::TempDir;
+
+/// One person's anonymous id in one organization, under a secret of the tests' own, for a
+/// model call to send.
+pub fn an_end_user() -> Result<EndUser, glave_event::InvalidValue> {
+    let person = glave_event::PrincipalId::new(Timestamp::UNIX_EPOCH, [1; 10])?;
+    let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
+    Ok(EndUsers::new(&any_key()).id(org, person))
+}
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.
 ///

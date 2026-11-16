@@ -59,7 +59,7 @@ bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/tur
 bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs
 c12ac87a932d4b74 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 c17d7fe4cb135254 15 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-1a7ee56dc3ad8a2c 18 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+ee8c2a91fc842113 19 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 caeb06a87c9deb1f 7 crates/acme/src/https/tests.rs crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 cc0e2ab47194c099 8 crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 ce0906a0f5b574b1 8 crates/computer/tests/remote.rs crates/harness/tests/faults.rs
@@ -70,7 +70,7 @@ e666c1db0c11e33b 7 crates/session/tests/listing.rs crates/session/tests/standing
 eeb1d8f93c66e218 10 crates/session/src/rpc.rs crates/session/src/rpc.rs
 f528a25a3824c4f8 8 crates/cli/src/credentials/renewing/tests.rs crates/cli/src/credentials/renewing/tests.rs
 f672fb39f19cbce9 8 crates/computer/src/local/sandbox/tests.rs crates/harness/src/sandbox/tests.rs
-bd1ac853c03c2257 13 crates/aws/tests/anthropic.rs crates/google/src/adc/tests/gemini.rs
+4919de85d8935ab0 14 crates/aws/tests/anthropic.rs crates/google/src/adc/tests/gemini.rs
 f8d3c4df3a63b49f 7 web/app/src/app/components/thread/thread.component.spec.ts web/app/src/app/components/thread/thread.component.spec.ts
 fd08606c160200d8 7 crates/session/tests/watching.rs crates/session/tests/watching.rs crates/session/tests/watching.rs
 fe1888a81f25f0cd 8 crates/store-postgres/src/schema.rs crates/store-sqlite/src/schema.rs
