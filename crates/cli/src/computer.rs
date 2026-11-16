@@ -299,7 +299,13 @@ async fn on_socket<C: Computers + 'static>(
 ) -> anyhow::Result<()> {
     let token = tokens(folder).await?;
     if let Some(inside) = person.fence {
-        fence::held(inside, fence::HOLD_WITHIN).await?;
+        let fencing = tokio::time::Instant::now();
+        let knocks = fence::held(inside, fence::HOLD_WITHIN).await?;
+        // How long the cluster's plugin took, in the computer's log, so each cluster's is known.
+        eprintln!(
+            "glave: fenced: {inside} unanswered after {knocks} knocks, {} ms",
+            fencing.elapsed().as_millis()
+        );
     }
     let listener =
         listen_socket(path).with_context(|| format!("could not listen on {}", path.display()))?;

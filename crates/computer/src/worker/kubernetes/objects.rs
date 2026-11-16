@@ -25,14 +25,34 @@ const SECRET: &str = "/opt/glave/secret";
 pub(crate) const TOKEN: &str = "opt/glave/secret/token";
 /// What the harness copies in last, so the computer knows everything else has arrived.
 const READY: &str = "opt/glave/ready";
+/// Where every program the server runs in a person's computer is found: the image's own
+/// folders, never the person's. The image's `PATH` puts their `~/.local/bin` and
+/// `~/.cargo/bin` first, on their disk, which a command let out of the sandbox, or their own
+/// Terminal, can fill; a `tar` planted there would run at the next wake, before glave and its
+/// fence (`specs/computers.md`, *The Pod*). Each script below sets it first.
+macro_rules! system_path {
+    () => {
+        "PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+    };
+}
 /// Run by `/bin/sh -c` in a person's computer, with the SHA-256 of the glave the server chose as
 /// `$0` and the token, as a tar archive, on standard input: puts the token in, then, only when
 /// the glave glave's computer image carries (`images/computer`, with its SHA-256 beside it) is
 /// that very glave, names it as the computer's and says everything has arrived. Fails
-/// otherwise, and the server copies glave in instead.
-const FROM_IMAGE: &str = "tar -x -f - -C / && \
+/// otherwise, and the server copies glave in instead. Its programs on `system_path!`.
+const FROM_IMAGE: &str = concat!(
+    system_path!(),
+    "; tar -x -f - -C / && \
 [ \"$(cat /usr/libexec/glave/glave.sha256 2>/dev/null)\" = \"$0\" ] && \
-ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready";
+ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready"
+);
+/// Extracts the tar archive on standard input at `/`, its `tar` on `system_path!`: how the
+/// server copies glave and the token into a person's computer.
+pub(crate) const COPY_IN: [&str; 3] = [
+    "/bin/sh",
+    "-c",
+    concat!(system_path!(), "; exec tar -x -f - -C /"),
+];
 /// The label a person's computer's objects carry, its key as the value.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
@@ -58,10 +78,15 @@ const FENCE: &str = "$(GLAVE_NODE):10250";
 const OUTSIDE_THE_DISK: &str = "4Gi";
 
 /// Waits (up to ten minutes) for the harness to copy glave in, then becomes it. Run by
-/// `/bin/sh -c`, with glave's command line as its arguments.
-const WAIT: &str = "i=0; until [ -e /opt/glave/ready ]; do i=$((i+1)); \
+/// `/bin/sh -c`, with glave's command line as its arguments: its `sleep` on `system_path!`,
+/// and the image's `PATH` given back to glave, for the person's commands.
+const WAIT: &str = concat!(
+    "p=$PATH; ",
+    system_path!(),
+    "; i=0; until [ -e /opt/glave/ready ]; do i=$((i+1)); \
 if [ \"$i\" -gt 3000 ]; then echo 'glave never arrived in the computer' >&2; exit 1; fi; \
-sleep 0.2; done; exec \"$@\"";
+sleep 0.2; done; PATH=$p; exec \"$@\""
+);
 
 /// Where waiting containers are stuck for good: an image that cannot be had, or a container
 /// that cannot be made.

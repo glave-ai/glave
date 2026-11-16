@@ -189,6 +189,13 @@ impl PersonComputer {
         }
     }
 
+    /// `error`, with the last lines the computer printed: why one that woke never served
+    /// says so (its fence, `specs/computers.md`, *The Pod*), read before it is put to sleep
+    /// again, which takes its log.
+    pub(crate) async fn saying_why(&self, error: ComputerError) -> ComputerError {
+        saying(error, &self.cluster.logs(&self.name()).await)
+    }
+
     /// Gives the computer awake a fresh `token`, replacing the one it woke with, so a connection
     /// that died can be opened again after the first token has expired.
     pub(crate) async fn renew(&self, token: &Token) -> Result<(), ComputerError> {

@@ -114,11 +114,15 @@ impl WorkerComputers {
             self.held()?.computers.insert(info.id, Arc::new(connection));
             Ok(info)
         };
-        let reached = reached.await;
-        if reached.is_err() {
-            let _ = self.computer.sleep().await;
+        match reached.await {
+            Err(error) => {
+                // Why it never served, from its log, before sleep takes the log with it.
+                let error = self.computer.saying_why(error).await;
+                let _ = self.computer.sleep().await;
+                Err(error)
+            }
+            reached => reached,
         }
-        reached
     }
 
     /// Reaches the computer the Pod `pod` is, awake and served, which another server, or this

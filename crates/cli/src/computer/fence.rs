@@ -1,10 +1,11 @@
 //! A person's computer serves only once its network policy holds (`specs/computers.md`, *The
-//! network*). A cluster's network plugin takes a new Pod's policy in a moment after the Pod
+//! network*). A cluster's network plugin takes a new Pod into its policy a moment after the Pod
 //! starts, and some let it out meanwhile (kind's kindnet, measured: a computer's first command
 //! reached the Kubernetes API, CoreDNS and another Pod); one that ignores policies never takes
-//! it in at all. So before glave serves there, it tries its node's kubelet, inside every
-//! cluster and answering anyone the policy lets through, until it is no longer reached.
+//! it in at all. So before glave serves there, it knocks at its node's kubelet, inside every
+//! cluster and answering anyone the policy lets through, until the knocks go unanswered.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -12,33 +13,73 @@ use anyhow::bail;
 use tokio::net::TcpStream;
 use tokio::time::{Instant, sleep, timeout};
 
-/// How long one try waits for an answer: the kubelet, inside the cluster, answers within
-/// milliseconds, so silence this long is the policy dropping the connection.
-const TRY: Duration = Duration::from_millis(500);
+/// How long one knock waits for an answer. The node's own kernel answers a connection within
+/// milliseconds, a loaded node's and one behind a quarter of a CPU's limit well within this.
+const KNOCK: Duration = Duration::from_millis(500);
+/// How many knocks in a row must go unanswered before the policy counts as holding: one could
+/// be a lost packet or an answer slower than [`KNOCK`]; several in a row, from a node that
+/// would answer, are neither.
+const SILENT_KNOCKS: u32 = 3;
 /// How long a policy has to take hold: seconds where the plugin enforces it, never where it
 /// doesn't; within the 30 seconds a bridge waits for glave to serve.
 pub(super) const HOLD_WITHIN: Duration = Duration::from_secs(20);
-/// Between one try that got through and the next.
+/// Between a knock that was answered and the next.
 const AGAIN: Duration = Duration::from_millis(200);
 
-/// Returns once a connection to `inside` is no longer made, or fails, saying so, if one still
-/// is after `within`.
-pub(super) async fn held(inside: SocketAddr, within: Duration) -> anyhow::Result<()> {
+/// What one knock came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Knocked {
+    /// Nothing came back within [`KNOCK`]: a policy drops what it refuses, as every plugin
+    /// that enforces one does.
+    Silence,
+    /// Something came back: a connection, a refusal or an unreachable. Each means the knock
+    /// got somewhere, so none counts as the policy holding, and a node that answers oddly keeps
+    /// the computer from serving rather than letting it serve unfenced.
+    Answer,
+}
+
+/// Returns once [`SILENT_KNOCKS`] knocks in a row at `inside` go unanswered, saying how many it
+/// took; fails, saying so, if they still don't after `within`.
+pub(super) async fn held(inside: SocketAddr, within: Duration) -> anyhow::Result<u32> {
+    held_by(|| knock(inside), inside, within).await
+}
+
+/// One knock at `inside`: a connection tried, closed as soon as it is made.
+async fn knock(inside: SocketAddr) -> Knocked {
+    match timeout(KNOCK, TcpStream::connect(inside)).await {
+        Err(_) => Knocked::Silence,
+        Ok(_) => Knocked::Answer,
+    }
+}
+
+/// [`held`], with each knock made by `knock`.
+async fn held_by<K, F>(mut knock: K, inside: SocketAddr, within: Duration) -> anyhow::Result<u32>
+where
+    K: FnMut() -> F,
+    F: Future<Output = Knocked>,
+{
     let started = Instant::now();
+    let (mut knocks, mut silent) = (0, 0);
     loop {
-        let reached = matches!(timeout(TRY, TcpStream::connect(inside)).await, Ok(Ok(_)));
-        if !reached {
-            return Ok(());
+        knocks += 1;
+        match knock().await {
+            Knocked::Silence => silent += 1,
+            Knocked::Answer => silent = 0,
+        }
+        if silent >= SILENT_KNOCKS {
+            return Ok(knocks);
         }
         if started.elapsed() >= within {
             bail!(
                 "this computer still reaches {inside} inside the cluster after {}, so the \
-                 cluster's network plugin isn't enforcing its network policy; it will not \
-                 serve until it does",
+                 cluster's network plugin isn't enforcing its network policy; it stops rather \
+                 than serve unfenced, and its next wake tries again",
                 glave_ports::spoken(within)
             );
         }
-        sleep(AGAIN).await;
+        if silent == 0 {
+            sleep(AGAIN).await;
+        }
     }
 }
 
@@ -54,54 +95,4 @@ pub(super) fn address(text: &str) -> Result<SocketAddr, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::net::Ipv4Addr;
-
-    use glave_ports::block_on;
-    use tokio::net::TcpListener;
-
-    use super::{address, held};
-
-    #[test]
-    fn an_address_no_longer_reached_is_held_at_once() {
-        block_on!(async {
-            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-            let closed = listener.local_addr().unwrap();
-            drop(listener);
-            held(closed, super::HOLD_WITHIN).await.unwrap();
-        });
-    }
-
-    #[test]
-    fn an_address_still_reached_is_never_held_and_says_where() {
-        block_on!(async {
-            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-            let open = listener.local_addr().unwrap();
-            let said = held(open, std::time::Duration::from_millis(300))
-                .await
-                .unwrap_err()
-                .to_string();
-            assert!(said.contains(&open.to_string()), "{said}");
-            assert!(said.contains("network policy"), "{said}");
-        });
-    }
-
-    #[test]
-    fn a_node_s_address_is_read_with_its_port() {
-        assert_eq!(
-            address("10.0.0.7:10250").unwrap().to_string(),
-            "10.0.0.7:10250"
-        );
-        assert_eq!(
-            address("fd00::7:10250").unwrap().to_string(),
-            "[fd00::7]:10250"
-        );
-        assert_eq!(
-            address("[fd00::7]:10250").unwrap().to_string(),
-            "[fd00::7]:10250"
-        );
-        for wrong in ["", "10.0.0.7", "node:10250", "10.0.0.7:port", ":10250"] {
-            assert!(address(wrong).is_err(), "{wrong}");
-        }
-    }
-}
+mod tests;

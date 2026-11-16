@@ -375,9 +375,7 @@ impl Kubernetes {
     /// Copies `files` (a tar archive of `what`) into the running computer through the API
     /// server.
     async fn copy_in(&self, name: &str, files: &[u8], what: &str) -> Result<(), ComputerError> {
-        let (ended, said) = self
-            .fed(name, &["tar", "-x", "-f", "-", "-C", "/"], files, what)
-            .await?;
+        let (ended, said) = self.fed(name, &objects::COPY_IN, files, what).await?;
         match ended {
             // A cluster too old to close standard input on its own says nothing; the wait in
             // the computer then tells whether everything arrived.
