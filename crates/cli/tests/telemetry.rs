@@ -134,13 +134,19 @@ fn a_log_level_that_is_not_one_is_refused() {
 fn a_collector_without_the_feature_is_refused_naming_it() {
     let place = place("no-otlp");
     std::fs::create_dir_all(&place.home).unwrap();
+    // A token in its address, which the refusal never says.
+    let token = glave_ports::testing::any_secret();
     std::fs::write(
         place.home.join("config.toml"),
-        "[telemetry]\notlp = \"http://127.0.0.1:9\"\n",
+        format!("[telemetry]\notlp = \"http://127.0.0.1:9/?token={token}\"\n"),
     )
     .unwrap();
     let server = FakeServer::start(vec![Reply::text("hi")]).unwrap();
     let output = glave(&place, &server, &["--model", "fake-model", "hi"], "");
+    assert!(
+        !text(&output).contains(&token),
+        "the collector's token said"
+    );
     assert!(!output.status.success());
     assert!(
         text(&output).contains("--features otlp"),

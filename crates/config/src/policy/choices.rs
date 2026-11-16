@@ -80,7 +80,7 @@ pub struct Choices {
     /// The OpenTelemetry collector spans and metrics go to, if any: its OTLP/HTTP URL.
     pub telemetry: Option<Chosen<String>>,
     /// The Postgres database that is the data store, if any; the local SQLite file if not.
-    /// The URL may hold a password: show it only [`redacted`](crate::policy::redacted).
+    /// The URL may hold a password: show it only [`shown`](glave_ports::host::shown).
     pub store: Option<Chosen<String>>,
     /// The S3-compatible bucket blobs' bytes are kept in, if any; a folder in glave's folder
     /// if not.

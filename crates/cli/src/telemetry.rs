@@ -92,7 +92,7 @@ pub(crate) fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Te
     }
     #[cfg(not(feature = "otlp"))]
     {
-        if let Some(url) = otlp {
+        if let Some(url) = otlp.map(glave_ports::host::shown) {
             anyhow::bail!(
                 "[telemetry] otlp = {url:?}: this glave was built without OpenTelemetry export \
                  (build it with --features otlp)"
@@ -142,6 +142,7 @@ fn filter(level: LevelFilter) -> anyhow::Result<EnvFilter> {
 #[cfg(feature = "otlp")]
 mod otlp {
     use anyhow::Context as _;
+    use glave_ports::host::shown;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::{MetricExporter, Protocol, SpanExporter, WithExportConfig as _};
     use opentelemetry_sdk::Resource;
@@ -167,13 +168,13 @@ mod otlp {
                 .with_protocol(Protocol::HttpBinary)
                 .with_endpoint(format!("{base}/v1/traces"))
                 .build()
-                .with_context(|| format!("could not export spans to {base}"))?;
+                .with_context(|| format!("could not export spans to {}", shown(base)))?;
             let metrics = MetricExporter::builder()
                 .with_http()
                 .with_protocol(Protocol::HttpBinary)
                 .with_endpoint(format!("{base}/v1/metrics"))
                 .build()
-                .with_context(|| format!("could not export metrics to {base}"))?;
+                .with_context(|| format!("could not export metrics to {}", shown(base)))?;
             Ok(Self {
                 spans: SdkTracerProvider::builder()
                     .with_batch_exporter(spans)

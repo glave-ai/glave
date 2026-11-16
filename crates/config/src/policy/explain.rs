@@ -3,6 +3,8 @@
 
 use std::fmt::Write as _;
 
+use glave_ports::host::shown;
+
 use crate::policy::Loaded;
 use crate::policy::choices::{Choices, Chosen, Source};
 use crate::policy::effective::check_model;
@@ -136,27 +138,27 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.project_memory.from,
         ),
     ];
+    // Each URL as it may be shown: where it points, never what it carries.
     if let Some(server) = &choices.server {
-        rows.push(row("server", server.value.clone(), &server.from));
+        rows.push(row("server", shown(&server.value), &server.from));
     }
     if let Some(origin) = &choices.origin {
         rows.push(row("origin", origin.value.to_string(), &origin.from));
     }
     if let Some(acme) = &choices.acme {
-        rows.push(row("acme", acme.value.clone(), &acme.from));
+        rows.push(row("acme", shown(&acme.value), &acme.from));
     }
     if let Some(provider) = &choices.provider {
         rows.push(row("provider", provider.value.describe(), &provider.from));
     }
     if let Some(store) = &choices.store {
-        let shown = crate::policy::redacted(&store.value);
-        rows.push(row("store", shown, &store.from));
+        rows.push(row("store", shown(&store.value), &store.from));
     }
     if let Some(bucket) = &choices.bucket {
-        rows.push(row("bucket", bucket.value.clone(), &bucket.from));
+        rows.push(row("bucket", shown(&bucket.value), &bucket.from));
     }
     if let Some(telemetry) = &choices.telemetry {
-        rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
+        rows.push(row("telemetry", shown(&telemetry.value), &telemetry.from));
     }
     rows
 }
