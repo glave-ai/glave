@@ -233,15 +233,17 @@ pub(super) fn request(method: &str, params: Value) -> Request {
         .unwrap_or_else(|e| panic!("{method} {shown}: {e}"))
 }
 
-/// What `method` with `params` answers `caller`, who may call it.
+/// What `method` with `params` answers `caller`, who may call it. A refusal is said by its
+/// method and code alone: the params may hold a secret, and an answer may repeat one.
 async fn called<L: EventLog + 'static>(
     org: &Org<L>,
     caller: &Caller,
     method: &str,
     params: Value,
 ) -> Value {
-    let answer = ask(org, caller, request(method, params.clone())).await;
-    assert!(answer.get("error").is_none(), "{method} {params}: {answer}");
+    let answer = ask(org, caller, request(method, params)).await;
+    let refused = &answer["error"]["code"];
+    assert!(refused.is_null(), "{method} was refused: {refused}");
     answer["result"].clone()
 }
 
