@@ -260,9 +260,7 @@ where
                 }
                 Err(error) => {
                     step.summary.outcome = Outcome::Failed;
-                    let seen = thread.seen.take();
-                    step.summary.made = self.made_since(thread, seen).await;
-                    self.end(thread, &step.summary).await?;
+                    self.end(thread, &mut step.summary).await?;
                     return Err(error);
                 }
             };
@@ -300,14 +298,12 @@ where
         cancel: &Cancel,
     ) -> Result<TurnResult, HarnessError> {
         let mut summary = step.summary;
-        let seen = thread.seen.take();
-        summary.made = self.made_since(thread, seen).await;
         // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
         let stopped = cancel.is_cancelled() && summary.outcome == cancel.outcome();
         if stopped && summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
-        self.end(thread, &summary).await?;
+        self.end(thread, &mut summary).await?;
         if !thread.delegated() && !stopped {
             self.on_stop(thread, summary.outcome, cancel).await?;
         }
@@ -378,8 +374,11 @@ where
         }
     }
 
-    /// Records `turn.ended`, with what the turn did and cost: its `result`.
-    async fn end(&self, thread: &mut Thread, result: &TurnResult) -> Result<(), HarnessError> {
+    /// Records `turn.ended`, with what the turn did and cost, its `result`, and the files it made
+    /// (`made.rs`).
+    async fn end(&self, thread: &mut Thread, result: &mut TurnResult) -> Result<(), HarnessError> {
+        let seen = thread.seen.take();
+        result.made = self.made_since(thread, seen).await;
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, result)?;
