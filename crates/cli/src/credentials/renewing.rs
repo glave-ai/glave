@@ -198,6 +198,8 @@ impl<R: Renew> Renewing<R> {
     /// the sign-in it renews is still kept.
     async fn run(self) -> Ended<R::Kept> {
         let url = self.job.url().to_owned();
+        // A renewal made already is one an earlier run could not keep.
+        let again = self.fresh.is_some();
         let fresh = match self.fresh {
             Some(fresh) => fresh,
             None => match self.job.renewed().await {
@@ -207,7 +209,12 @@ impl<R: Renew> Renewing<R> {
         };
         for attempt in 1..=KEEPS {
             match self.job.keep(&fresh).await {
-                Ok(true) => return Ended::Done(Instant::now()),
+                Ok(true) => {
+                    if again {
+                        tracing::info!(%url, "kept a renewed sign-in at last");
+                    }
+                    return Ended::Done(Instant::now());
+                }
                 Ok(false) => {
                     tracing::info!(
                         "the sign-in to {url} was removed or replaced while it was renewed: \
@@ -220,8 +227,16 @@ impl<R: Renew> Renewing<R> {
                     tracing::warn!(%url, %error, "could not keep a renewed sign-in yet");
                     tokio::time::sleep(KEEP_PAUSE).await;
                 }
-                // The store failing at the last try: the renewed token is lost, and the sign-in
-                // stops working when the old one runs out, unless someone acts.
+                // The store failing at the last try. The renewal is held in memory and served
+                // from there, and each request for the sign-in tries keeping it again; but the
+                // refresh token that made it is spent, so a restart before one keeps it loses
+                // the sign-in once its old token runs out, unless someone acts. An error the
+                // first time, a warning each time after, so an outage is one error, not one a
+                // request.
+                Err(error) if again => {
+                    let error = format!("{error:#}");
+                    tracing::warn!(%url, %error, "still could not keep a renewed sign-in");
+                }
                 Err(error) => {
                     let error = format!("{error:#}");
                     tracing::error!(%url, %error, "could not keep a renewed sign-in");

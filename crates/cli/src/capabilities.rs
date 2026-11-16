@@ -26,9 +26,8 @@ pub(crate) fn keep_to_itself() -> Option<String> {
 
 /// Warns, as `said`, that the capabilities could not be kept, for `error`.
 pub(crate) fn warn(said: Said, error: &str) {
-    const MAY_INHERIT: &str = "the programs glave starts may inherit its capabilities";
-    match said {
-        Said::Plainly => eprintln!("glave: warning: {MAY_INHERIT}: {error}"),
-        Said::Logged => tracing::warn!(%error, "{MAY_INHERIT}"),
-    }
+    said.warned(
+        "the programs glave starts may inherit its capabilities",
+        &error,
+    );
 }
