@@ -120,6 +120,8 @@ fn schedules_are_added_listed_and_removed_in_the_person_s_server() {
     let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
     only_the_server_answers(&place);
     made_a_project(&place);
+    // A schedule's chat works on a copy of the folder.
+    committed(&place);
     let added = glave(
         &place,
         &model,
@@ -137,7 +139,10 @@ fn schedules_are_added_listed_and_removed_in_the_person_s_server() {
     );
     let shown = text(&added);
     assert!(added.status.success(), "{shown}");
-    assert!(shown.contains("cron \"0 9 * * 1-5\" (UTC)"), "{shown}");
+    assert!(
+        shown.contains("check the build  Every weekday at 9:00 am (cron \"0 9 * * 1-5\", "),
+        "{shown}"
+    );
     assert!(shown.contains("budget 5.0k"), "{shown}");
     let listed = text(&glave(&place, &model, &["schedule", "list"], ""));
     assert!(listed.contains("check the build"), "{listed}");
@@ -176,6 +181,7 @@ fn with_no_server_and_no_one_at_the_terminal_a_schedule_is_kept_by_glave_here() 
     // A turn a script runs in the folder has chosen it, and makes it one.
     let turn = glave(&place, &model, &["--model", "m", "hello"], "");
     assert!(turn.status.success(), "{}", text(&turn));
+    committed(&place);
     let added = glave(&place, &model, &args, "");
     assert!(added.status.success(), "{}", text(&added));
     let listed = text(&glave(&place, &model, &["schedule", "list"], ""));

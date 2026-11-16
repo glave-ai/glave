@@ -115,9 +115,11 @@ fn a_task_a_schedule_or_glave_alone_in_a_new_folder_asks_first_and_none_is_made_
     typed(&mut made_one, "y\n");
     let said = made_one.wait_with_output().unwrap();
     let shown = text(&said);
-    assert!(said.status.success(), "{shown}");
     assert!(shown.contains("a glave project? [y/N]"), "{shown}");
-    assert!(shown.contains("check the build"), "{shown}");
     assert_eq!(made(&place), 1);
+    // The project is made, and the schedule's chat, which works on a copy of its folder, has
+    // none to give in a folder that is no repository: refused at once, rather than every run.
+    assert!(!said.status.success(), "{shown}");
+    assert!(shown.contains("not a git repository"), "{shown}");
     assert!(model.received().is_empty(), "nothing ran");
 }
