@@ -1,6 +1,7 @@
 //! Each project's task ledger: glave's own stream in the event log, under a reserved thread id,
 //! holding the project's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
-//! `schedule.deleted`). It is never a conversation: lists and reads of threads leave it out.
+//! `.paused`, `.resumed`, `.skipped`, `.deleted`). It is never a conversation: lists and reads of
+//! threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
 
@@ -26,8 +27,26 @@ const LEDGERS: usize = 1_024;
 pub(crate) struct Scheduled {
     pub(crate) created: ScheduleCreated,
     pub(crate) at: At,
-    /// When the latest run started by it was due.
+    /// When the latest run started by it, or skipped, was due.
     pub(crate) last: Option<At>,
+    /// Whether that latest run was skipped, its run before still going.
+    pub(crate) skipped: bool,
+    pub(crate) paused: bool,
+    /// When it was last resumed: its runs count from then, none for the time it was paused.
+    pub(crate) resumed: Option<At>,
+    /// When the latest run this server could not start was due: held back until the
+    /// schedule's next time, in memory only, so a server started later tries it once more.
+    pub(crate) held: Option<At>,
+}
+
+impl Scheduled {
+    /// Takes in a run that was due at `due`, started (`skipped` false) or skipped.
+    fn ran(&mut self, due: At, skipped: bool) {
+        if self.last.is_none_or(|last| due >= last) {
+            self.last = Some(due);
+            self.skipped = skipped;
+        }
+    }
 }
 
 /// A task as the ledger has it: when it started, and how it ended once it has.
@@ -66,17 +85,37 @@ impl Ledger {
                     created,
                     at,
                     last: None,
+                    skipped: false,
+                    paused: false,
+                    resumed: None,
+                    held: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
             }
             Body::ScheduleDeleted(deleted) => {
                 self.schedules.remove(&deleted.schedule);
             }
+            Body::SchedulePaused(paused) => {
+                if let Some(scheduled) = self.schedules.get_mut(&paused.schedule) {
+                    scheduled.paused = true;
+                }
+            }
+            Body::ScheduleResumed(resumed) => {
+                if let Some(scheduled) = self.schedules.get_mut(&resumed.schedule) {
+                    scheduled.paused = false;
+                    scheduled.resumed = Some(at);
+                }
+            }
+            Body::ScheduleSkipped(skipped) => {
+                if let Some(scheduled) = self.schedules.get_mut(&skipped.schedule) {
+                    scheduled.ran(skipped.due, true);
+                }
+            }
             Body::TaskStarted(started) => {
                 if let Some(fired) = started.schedule
                     && let Some(scheduled) = self.schedules.get_mut(&fired.schedule)
                 {
-                    scheduled.last = scheduled.last.max(Some(fired.due));
+                    scheduled.ran(fired.due, false);
                 }
                 let recorded = Recorded {
                     started,

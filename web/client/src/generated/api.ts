@@ -633,6 +633,22 @@ export type InviteInfo = {
 /** How the one who holds an invite joins the organization it is to. */
 export type JoinWay = "passkey" | "company" | "accept" | "member";
 
+/** A schedule's latest run: when it was due, and what came of it. */
+export type LastRun = {
+  readonly due: At;
+  readonly status: "running";
+} | {
+  readonly due: At;
+  readonly status: "skipped";
+} | {
+  readonly due: At;
+  readonly outcome: Outcome;
+  readonly status: "ended";
+} | {
+  readonly due: At;
+  readonly status: "started";
+};
+
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
 
@@ -1119,13 +1135,30 @@ export type ScheduleId = string;
 export type ScheduleInfo = {
   readonly budget: number;
   readonly created_at: At;
-  /** When it last ran: the time that run was due. */
-  readonly last?: At | null;
-  /** When it runs next; absent once a one-off has run. */
+  /** The chat it was set up from, if it was. */
+  readonly from?: ThreadId | null;
+  /** Its latest run, once one was due. */
+  readonly last?: LastRun | null;
+  /** What it is called, as its chat is. */
+  readonly name: string;
+  /** When it runs next; absent once a one-off has run, and while it is paused. */
   readonly next?: At | null;
+  /** Whether it is paused: no runs start until it is resumed. */
+  readonly paused: boolean;
+  /** The project its chat is in. */
+  readonly project: ProjectId;
   readonly prompt: string;
+  /** When it repeats, in the server's words: "Every weekday at 8:00 am". */
+  readonly repeats: string;
   readonly schedule: ScheduleId;
+  /**
+   * Its own chat, which each run adds a turn to; absent for one made before schedules had
+   * one, each of whose runs is a thread of its own.
+   */
+  readonly thread?: ThreadId | null;
   readonly when: When;
+  /** The time zone `when` is read in, by its IANA name. */
+  readonly zone: string;
 };
 
 /**
@@ -2693,10 +2726,17 @@ export type RoleSetResult = {
 export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
   readonly budget: number;
-  /** The project its runs are in, by default as `thread/start` picks one. */
+  /** What it is called, and so its chat; by default, its prompt's first line. */
+  readonly name?: string | null;
+  /** The project its chat is in, by default as `thread/start` picks one. */
   readonly project?: ProjectId | null;
   readonly prompt: string;
   readonly when: When;
+  /**
+   * The time zone a cron expression is read in, by its IANA name; by default the
+   * caller's (`zone/set`), else UTC.
+   */
+  readonly zone?: string | null;
 };
 
 export type ScheduleCreateResult = {
@@ -2713,6 +2753,22 @@ export type ScheduleListParams = Readonly<Record<string, never>>;
 
 export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
+};
+
+export type SchedulePauseParams = {
+  readonly schedule: ScheduleId;
+};
+
+export type SchedulePauseResult = {
+  readonly schedule: ScheduleInfo;
+};
+
+export type ScheduleResumeParams = {
+  readonly schedule: ScheduleId;
+};
+
+export type ScheduleResumeResult = {
+  readonly schedule: ScheduleInfo;
 };
 
 export type SearchGetParams = {
@@ -3194,6 +3250,12 @@ export type TurnStartResult = {
   readonly queued: QueuedMessage;
 };
 
+export type ZoneSetParams = {
+  readonly zone: string;
+};
+
+export type ZoneSetResult = Readonly<Record<string, never>>;
+
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "appearance/get": { readonly params: AppearanceGetParams; readonly result: AppearanceGetResult };
@@ -3284,6 +3346,8 @@ export interface Methods {
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
+  readonly "schedule/pause": { readonly params: SchedulePauseParams; readonly result: SchedulePauseResult };
+  readonly "schedule/resume": { readonly params: ScheduleResumeParams; readonly result: ScheduleResumeResult };
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "secret/add": { readonly params: SecretAddParams; readonly result: SecretAddResult };
@@ -3329,6 +3393,7 @@ export interface Methods {
   readonly "trust/answer": { readonly params: TrustAnswerParams; readonly result: TrustAnswerResult };
   readonly "turn/cancel": { readonly params: TurnCancelParams; readonly result: TurnCancelResult };
   readonly "turn/start": { readonly params: TurnStartParams; readonly result: TurnStartResult };
+  readonly "zone/set": { readonly params: ZoneSetParams; readonly result: ZoneSetResult };
 }
 
 export type Method = keyof Methods;

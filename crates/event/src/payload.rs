@@ -43,6 +43,7 @@ pub(crate) mod tool;
 pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
+pub(crate) mod zone;
 
 pub use appearance::{Accent, AppearanceSet, BrandSet, Color, HeldLogo};
 pub use approval::{ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Verdict};
@@ -92,7 +93,10 @@ pub use service::{
 };
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
-pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
+pub use task::{
+    Fired, ScheduleCreated, ScheduleDeleted, SchedulePaused, ScheduleResumed, ScheduleSkipped,
+    TaskEnded, TaskStarted, When,
+};
 pub use thread::{Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{
     Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolError, ToolKind, WebPage,
@@ -102,3 +106,4 @@ pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{
     ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
 };
+pub use zone::ZoneSet;

@@ -1,7 +1,7 @@
 //! How tasks and schedules read in the terminal.
 
 use glave_event::{Outcome, When};
-use glave_session::protocol::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
+use glave_session::protocol::{LastRun, ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// One task: status, kind, elapsed time, tokens, cost, model, thread and title.
 pub(super) fn task_line(task: &TaskInfo) -> String {
@@ -31,20 +31,32 @@ pub(super) fn task_line(task: &TaskInfo) -> String {
     )
 }
 
-/// One schedule: when it runs, what it runs, and when it runs next.
+/// One schedule: its id and name, when it repeats, when it runs next and how its last run went,
+/// and its budget.
 pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     let when = match &schedule.when {
-        When::Cron(cron) => format!("cron {cron:?} (UTC)"),
+        When::Cron(cron) => format!("{} (cron {cron:?}, {})", schedule.repeats, schedule.zone),
         When::At(at) => format!("once at {at}"),
     };
-    let next = schedule
-        .next
-        .map_or_else(|| "has run".to_owned(), |next| format!("next {next}"));
+    let next = match (schedule.paused, schedule.next) {
+        (true, _) => "paused".to_owned(),
+        (false, Some(next)) => format!("next {next}"),
+        (false, None) => "has run".to_owned(),
+    };
+    let last = schedule.last.map(|last| match last {
+        LastRun::Running { due } => format!("  last {due}, running"),
+        LastRun::Skipped { due } => {
+            format!("  last {due}, skipped: the one before was still going")
+        }
+        LastRun::Ended { due, outcome } => format!("  last {due}, {}", outcome_name(outcome)),
+        LastRun::Started { due } => format!("  last {due}"),
+    });
     format!(
-        "{}  {when}  {next}  budget {}  {}",
+        "{}  {}  {when}  {next}{}  budget {}",
         schedule.schedule,
+        schedule.name,
+        last.unwrap_or_default(),
         short(schedule.budget),
-        schedule.prompt
     )
 }
 

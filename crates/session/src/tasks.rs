@@ -2,7 +2,7 @@
 //! always on a copy of the project's folder (a worktree or a scratch folder), never in the
 //! folder itself. The server starts the work as it would for a client,
 //! answers its approvals "no one there" (in auto mode the judge still clears what the person
-//! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
+//! asked for) but for a schedule's run, which waits for the person as their chat does, keeps a running tally of its tokens and cost from the `model.responded` events
 //! it records, stops a turn at its budget, and records the task's start and end in its project's
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
@@ -122,14 +122,19 @@ where
         let project = self.may_start_task(caller, thread).await?.located();
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
-        self.inner.approvals.unattend(thread);
+        // A schedule's run waits for the person where it needs them, as their chat does; no one
+        // answers any other task.
+        let attended = schedule.is_some();
+        if !attended {
+            self.inner.approvals.unattend(thread);
+        }
         // A task's own turn never queues: one running in the thread refuses it.
         let message = Message {
             files: &[],
             prompt: &prompt,
             choice,
             queue: false,
-            // Its thread is unattended for the whole task already.
+            // Its thread is unattended for the whole task already, where it is.
             unattended: false,
         };
         let stream = self

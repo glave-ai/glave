@@ -1760,6 +1760,83 @@
         }
       ]
     },
+    "LastRun": {
+      "description": "A schedule's latest run: when it was due, and what came of it.",
+      "oneOf": [
+        {
+          "description": "Running now, or waiting for the person.",
+          "properties": {
+            "due": {
+              "$ref": "#/$defs/At"
+            },
+            "status": {
+              "const": "running",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "due"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Not started: the run before was still going in its chat, or someone's turn was.",
+          "properties": {
+            "due": {
+              "$ref": "#/$defs/At"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "due"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Ended, as its task's turn did.",
+          "properties": {
+            "due": {
+              "$ref": "#/$defs/At"
+            },
+            "outcome": {
+              "$ref": "#/$defs/Outcome"
+            },
+            "status": {
+              "const": "ended",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "due",
+            "outcome"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Started by a server whose ledger this one has no more of.",
+          "properties": {
+            "due": {
+              "$ref": "#/$defs/At"
+            },
+            "status": {
+              "const": "started",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "due"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "LineKind": {
       "description": "Whether a line was kept, taken out or put in.",
       "enum": [
@@ -3079,16 +3156,31 @@
         "created_at": {
           "$ref": "#/$defs/At"
         },
-        "last": {
+        "from": {
           "anyOf": [
             {
-              "$ref": "#/$defs/At"
+              "$ref": "#/$defs/ThreadId"
             },
             {
               "type": "null"
             }
           ],
-          "description": "When it last ran: the time that run was due."
+          "description": "The chat it was set up from, if it was."
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LastRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its latest run, once one was due."
+        },
+        "name": {
+          "description": "What it is called, as its chat is.",
+          "type": "string"
         },
         "next": {
           "anyOf": [
@@ -3099,24 +3191,56 @@
               "type": "null"
             }
           ],
-          "description": "When it runs next; absent once a one-off has run."
+          "description": "When it runs next; absent once a one-off has run, and while it is paused."
+        },
+        "paused": {
+          "description": "Whether it is paused: no runs start until it is resumed.",
+          "type": "boolean"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "The project its chat is in."
         },
         "prompt": {
+          "type": "string"
+        },
+        "repeats": {
+          "description": "When it repeats, in the server's words: \"Every weekday at 8:00 am\".",
           "type": "string"
         },
         "schedule": {
           "$ref": "#/$defs/ScheduleId"
         },
+        "thread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThreadId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its own chat, which each run adds a turn to; absent for one made before schedules had\none, each of whose runs is a thread of its own."
+        },
         "when": {
           "$ref": "#/$defs/When"
+        },
+        "zone": {
+          "description": "The time zone `when` is read in, by its IANA name.",
+          "type": "string"
         }
       },
       "required": [
         "schedule",
+        "name",
+        "project",
         "when",
+        "zone",
+        "repeats",
         "prompt",
         "budget",
-        "created_at"
+        "created_at",
+        "paused"
       ],
       "type": "object"
     },
@@ -4718,7 +4842,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Whenever this five-field cron expression matches, in UTC.",
+          "description": "Whenever this five-field cron expression matches, in the schedule's time zone.",
           "properties": {
             "cron": {
               "type": "string"
@@ -7688,6 +7812,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "name": {
+            "description": "What it is called, and so its chat; by default, its prompt's first line.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "anyOf": [
               {
@@ -7697,13 +7828,20 @@
                 "type": "null"
               }
             ],
-            "description": "The project its runs are in, by default as `thread/start` picks one."
+            "description": "The project its chat is in, by default as `thread/start` picks one."
           },
           "prompt": {
             "type": "string"
           },
           "when": {
             "$ref": "#/$defs/When"
+          },
+          "zone": {
+            "description": "The time zone a cron expression is read in, by its IANA name; by default the\ncaller's (`zone/set`), else UTC.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -7758,6 +7896,56 @@
         },
         "required": [
           "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/pause": {
+      "params": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleId"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleInfo"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/resume": {
+      "params": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleId"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleInfo"
+          }
+        },
+        "required": [
+          "schedule"
         ],
         "type": "object"
       },
@@ -9152,6 +9340,23 @@
         ]
       },
       "streams": true
+    },
+    "zone/set": {
+      "params": {
+        "properties": {
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
     }
   },
   "notifications": {

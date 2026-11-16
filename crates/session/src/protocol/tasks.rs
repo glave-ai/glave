@@ -5,6 +5,8 @@ use glave_event::{At, Money, Outcome, ScheduleId, ThreadId, TokenCounts, When};
 use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
+use super::Told;
+
 /// What kind of work a task is. Background commands the model starts arrive later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -57,14 +59,45 @@ pub struct TaskInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ScheduleInfo {
     pub schedule: ScheduleId,
+    /// What it is called, as its chat is.
+    pub name: String,
+    /// The project its chat is in.
+    pub project: ProjectId,
+    /// Its own chat, which each run adds a turn to; absent for one made before schedules had
+    /// one, each of whose runs is a thread of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread: Option<ThreadId>,
+    /// The chat it was set up from, if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<ThreadId>,
     pub when: When,
+    /// The time zone `when` is read in, by its IANA name.
+    pub zone: String,
+    /// When it repeats, in the server's words: "Every weekday at 8:00 am".
+    pub repeats: Told,
     pub prompt: String,
     pub budget: u64,
     pub created_at: At,
-    /// When it last ran: the time that run was due.
+    /// Whether it is paused: no runs start until it is resumed.
+    pub paused: bool,
+    /// Its latest run, once one was due.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last: Option<At>,
-    /// When it runs next; absent once a one-off has run.
+    pub last: Option<LastRun>,
+    /// When it runs next; absent once a one-off has run, and while it is paused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<At>,
+}
+
+/// A schedule's latest run: when it was due, and what came of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LastRun {
+    /// Running now, or waiting for the person.
+    Running { due: At },
+    /// Not started: the run before was still going in its chat, or someone's turn was.
+    Skipped { due: At },
+    /// Ended, as its task's turn did.
+    Ended { due: At, outcome: Outcome },
+    /// Started by a server whose ledger this one has no more of.
+    Started { due: At },
 }

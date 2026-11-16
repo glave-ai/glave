@@ -452,6 +452,26 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    NoZone { zone: String } = "no-zone"
+        "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
+
+    // When a schedule repeats, as a line opens (`start` is `yes`) or within one (`no`).
+    RepeatsOnce { start: String } = "repeats-once"
+        "{ $start ->\n    [yes] Once\n   *[no] once\n }",
+    RepeatsEveryMinutes { start: String, minutes: u64 } = "repeats-every-minutes"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } { $minutes ->\n    [1] minute\n   *[other] { $minutes } minutes\n }",
+    RepeatsHourly { start: String, past: u64 } = "repeats-hourly"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } hour{ $past ->\n    [0] {\"\"}\n   *[other] , at { $past } minutes past\n }",
+    RepeatsDaily { start: String, time: String } = "repeats-daily"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } day at { $time }",
+    RepeatsWeekdays { start: String, time: String } = "repeats-weekdays"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } weekday at { $time }",
+    RepeatsWeekly { start: String, days: String, time: String } = "repeats-weekly"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } { $days } at { $time }",
+    RepeatsMonthly { start: String, day: u64, time: String } = "repeats-monthly"
+        "{ $start ->\n    [yes] On\n   *[no] on\n } day { $day } of every month at { $time }",
+    RepeatsOther { start: String } = "repeats-other"
+        "{ $start ->\n    [yes] On\n   *[no] on\n } a repeating schedule",
 
     // What replies drew on.
     Sources { pages: u64 } = "sources"
