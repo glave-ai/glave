@@ -100,6 +100,7 @@ const RESULTS: TurnResults = {
       outsideSandbox: false,
       withNetwork: false,
       modelReason: '',
+      repeat: false,
       decision: null,
     },
   ],

@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  flex: none;
+}
+
+// A quiet strip under the chat's bar, ruled off from the conversation, its buttons small.
+.repeats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  padding: var(--glz-inset-strip);
+  border-bottom: var(--glz-border-width) solid var(--glz-color-border);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.when {
+  min-width: 0;
+}

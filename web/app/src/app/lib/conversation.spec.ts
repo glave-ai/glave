@@ -284,7 +284,22 @@ describe('conversation', () => {
       detail: '',
       outsideSandbox: false,
       modelReason: '',
+      repeat: false,
     });
+  });
+
+  it('reads a request to repeat work by what the server says it asks', () => {
+    const items = threadItems([
+      event('approval.requested', {
+        call_id: 'c1',
+        tool: 'schedule',
+        summary: 'schedule: Summarize my email',
+        ask: 'Repeat this every weekday at 8:00 am?',
+        asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
+        detail: 'Summarize my email',
+      }),
+    ]);
+    expect(items[0]).toMatchObject({ repeat: true, detail: 'Summarize my email' });
   });
 
   it('reads a request to run outside the sandbox, with the model’s reason apart', () => {
@@ -307,6 +322,7 @@ describe('conversation', () => {
       caution: 'It runs outside the sandbox.',
       outsideSandbox: true,
       modelReason: 'cargo add writes to ~/.cargo/registry.',
+      repeat: false,
     });
     expect(items[1]).toMatchObject({ outsideSandbox: true, withNetwork: false, modelReason: '' });
   });
@@ -325,6 +341,7 @@ describe('conversation', () => {
       outsideSandbox: true,
       withNetwork: true,
       modelReason: 'npm install downloads packages.',
+      repeat: false,
     });
   });
 

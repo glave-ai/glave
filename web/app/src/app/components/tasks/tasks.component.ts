@@ -3,12 +3,13 @@ import { GlzButtonComponent } from '@glave/glaze';
 
 import { TasksService } from '../../services/tasks.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
+import { RepeatingListComponent } from '../repeating-list/repeating-list.component';
 import { TaskListComponent } from '../task-list/task-list.component';
 
 /** The Tasks page: the background tasks. */
 @Component({
   selector: 'app-tasks',
-  imports: [GlzButtonComponent, PageHeaderComponent, TaskListComponent],
+  imports: [GlzButtonComponent, PageHeaderComponent, RepeatingListComponent, TaskListComponent],
   templateUrl: './tasks.component.html',
   styleUrl: './tasks.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -16,7 +17,7 @@ import { TaskListComponent } from '../task-list/task-list.component';
 export class TasksComponent {
   protected readonly copy = {
     heading: $localize`:@@tasks.heading:Tasks`,
-    intro: $localize`:@@tasks.intro:Work running with no one attached: started in the background, or by a schedule.`,
+    intro: $localize`:@@tasks.intro:Work that repeats on its own, and work running with no one attached.`,
     refresh: $localize`:@@tasks.refresh:Refresh`,
   } as const;
   private readonly service = inject(TasksService);

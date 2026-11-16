@@ -96,6 +96,8 @@ export interface ApprovalItem extends Placed {
   readonly withNetwork: boolean;
   /** The model's own words for why it must run outside the sandbox; empty when it gave none. */
   readonly modelReason: string;
+  /** Whether it asks to repeat work on its own, as the server says (`ask-repeat`). */
+  readonly repeat: boolean;
   readonly decision: GlzDecision | null;
 }
 
@@ -439,6 +441,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
       case 'approval.requested': {
         const approval = text(data['call_id']);
         const outside = data['outside_sandbox'];
+        const asking = data['asking'];
         put({
           kind: 'approval',
           key: `approval-${approval}`,
@@ -452,6 +455,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           outsideSandbox: isRecord(outside),
           withNetwork: isRecord(outside) && outside['lifted'] === 'network',
           modelReason: isRecord(outside) ? text(outside['reason']) : '',
+          repeat: isRecord(asking) && asking['says'] === 'ask-repeat',
           decision: null,
         });
         break;

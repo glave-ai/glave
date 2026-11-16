@@ -150,6 +150,7 @@ describe('ThreadItemComponent', () => {
       outsideSandbox: false,
       withNetwork: false,
       modelReason: '',
+      repeat: false,
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
@@ -163,6 +164,42 @@ describe('ThreadItemComponent', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'c1', decision: 'allow_for_thread' },
+    ]);
+  });
+
+  it('asks to repeat work in the server’s sentence, answered Repeat it or Not now', async () => {
+    const { root, fake } = await render({
+      kind: 'approval',
+      key: 'a',
+      seq: 1,
+      approval: 'c2',
+      tool: 'schedule',
+      summary: 'schedule: Summarize my email',
+      ask: 'Repeat this every weekday at 8:00 am?',
+      detail: 'Summarize my email',
+      caution: '',
+      outsideSandbox: false,
+      withNetwork: false,
+      modelReason: '',
+      repeat: true,
+      decision: null,
+    });
+    const card = root.querySelector('[data-testid="thread-repeat"]');
+    expect(card?.querySelector('.summary')?.textContent).toContain(
+      'Repeat this every weekday at 8:00 am?',
+    );
+    expect(card?.querySelector('[data-testid="thread-repeat-allow-thread"]')).toBeNull();
+    const allow = card?.querySelector<HTMLButtonElement>(
+      '[data-testid="thread-repeat-allow-once"]',
+    );
+    expect(allow?.textContent.trim()).toBe('Repeat it');
+    const deny = card?.querySelector<HTMLButtonElement>('[data-testid="thread-repeat-deny"]');
+    expect(deny?.textContent.trim()).toBe('Not now');
+    await expectAccessible(root);
+    allow?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('approval/decide')).toEqual([
+      { thread: 'thread-1', approval: 'c2', decision: 'allow_once' },
     ]);
   });
 
@@ -180,6 +217,7 @@ describe('ThreadItemComponent', () => {
       outsideSandbox: false,
       withNetwork: false,
       modelReason: '',
+      repeat: false,
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
@@ -202,6 +240,7 @@ describe('ThreadItemComponent', () => {
       outsideSandbox: false,
       withNetwork: false,
       modelReason: '',
+      repeat: false,
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
@@ -228,6 +267,7 @@ describe('ThreadItemComponent', () => {
       outsideSandbox: true,
       withNetwork: false,
       modelReason: 'cargo add writes to ~/.cargo/registry, which the sandbox blocks.',
+      repeat: false,
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');

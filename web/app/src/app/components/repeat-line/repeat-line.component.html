@@ -1,0 +1,30 @@
+@if (line(); as line) {
+  <p class="repeats" data-testid="thread-repeats">
+    <span class="when">{{ line }}</span>
+    <button
+      glzButton
+      size="sm"
+      variant="ghost"
+      data-testid="thread-repeats-pause"
+      (click)="toggle()"
+    >
+      @if (paused()) {
+        {{ copy.resume }}
+      } @else {
+        {{ copy.pause }}
+      }
+    </button>
+    <button glzButton size="sm" variant="ghost" data-testid="thread-repeats-remove" (click)="ask()">
+      {{ copy.remove }}
+    </button>
+  </p>
+  <glz-confirm-dialog
+    testId="thread-repeats-confirm"
+    danger
+    [heading]="copy.removeHeading"
+    [message]="copy.removeText"
+    [confirmLabel]="copy.remove"
+    [(open)]="confirming"
+    (decided)="decided($event)"
+  />
+}

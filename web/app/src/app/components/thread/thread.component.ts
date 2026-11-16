@@ -52,6 +52,7 @@ import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PermissionsComponent } from '../permissions/permissions.component';
 import { PushBannerComponent } from '../push-banner/push-banner.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
+import { RepeatLineComponent } from '../repeat-line/repeat-line.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 import { ThreadPanelComponent } from '../thread-panel/thread-panel.component';
@@ -90,6 +91,7 @@ import { TurnComponent } from '../turn/turn.component';
     PermissionsComponent,
     PushBannerComponent,
     RenameDialogComponent,
+    RepeatLineComponent,
     ThreadFilesComponent,
     ThreadHeaderComponent,
     ThreadPanelComponent,

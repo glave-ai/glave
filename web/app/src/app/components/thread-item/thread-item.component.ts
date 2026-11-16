@@ -11,6 +11,7 @@ import {
   GlzAttachmentComponent,
   GlzCopyButtonComponent,
   type GlzDecision,
+  type GlzDecisionLabels,
   type GlzIconData,
   GlzMessageComponent,
   GlzQuestionCardComponent,
@@ -131,7 +132,17 @@ export class ThreadItemComponent {
   protected readonly sending = this.thread.sending;
   private readonly locale = inject(LOCALE_ID);
   protected readonly shown = computed(() => shown(this.item(), this.locale, this.interim()));
-  protected readonly copy = { read: $localize`:@@threadItem.read:Read while working` } as const;
+  protected readonly copy = {
+    read: $localize`:@@threadItem.read:Read while working`,
+    repeatIt: $localize`:@@threadItem.repeatIt:Repeat it`,
+    notNow: $localize`:@@threadItem.notNow:Not now`,
+  } as const;
+  /** What a card asking to repeat work says once answered. */
+  protected readonly repeated: GlzDecisionLabels = {
+    allow_once: $localize`:@@threadItem.repeats:Repeats`,
+    allow_for_thread: $localize`:@@threadItem.repeatsToo:Repeats`,
+    deny: $localize`:@@threadItem.notRepeated:Not repeated`,
+  };
 
   protected decide(approval: string, decision: GlzDecision): void {
     void this.thread.decide(approval, decision);

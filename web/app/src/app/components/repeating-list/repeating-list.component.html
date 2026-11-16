@@ -1,0 +1,61 @@
+@if (any()) {
+  <section class="glz-stack glz-gap-3" data-testid="repeating">
+    <h2 class="heading">{{ copy.heading }}</h2>
+    @for (row of rows(); track row.schedule) {
+      <glz-card data-testid="repeating-schedule">
+        <div glzCardHeader>
+          @if (row.link; as link) {
+            <a class="name" dir="auto" data-testid="repeating-name" [routerLink]="link">{{
+              row.name
+            }}</a>
+          } @else {
+            <span class="name" dir="auto" data-testid="repeating-name">{{ row.name }}</span>
+          }
+        </div>
+        <p class="line" data-testid="repeating-line">{{ row.line }}</p>
+        <div glzCardFooter class="glz-row glz-gap-2">
+          @if (row.paused) {
+            <button
+              glzButton
+              size="sm"
+              data-testid="repeating-resume"
+              [attr.aria-label]="row.resumeLabel"
+              (click)="resume(row.schedule)"
+            >
+              {{ copy.resume }}
+            </button>
+          } @else {
+            <button
+              glzButton
+              size="sm"
+              data-testid="repeating-pause"
+              [attr.aria-label]="row.pauseLabel"
+              (click)="pause(row.schedule)"
+            >
+              {{ copy.pause }}
+            </button>
+          }
+          <button
+            glzButton
+            size="sm"
+            variant="danger"
+            data-testid="repeating-remove"
+            [attr.aria-label]="row.removeLabel"
+            (click)="ask(row.schedule)"
+          >
+            {{ copy.remove }}
+          </button>
+        </div>
+      </glz-card>
+    }
+    <glz-confirm-dialog
+      testId="repeating-confirm"
+      danger
+      [heading]="copy.removeHeading"
+      [message]="copy.removeText"
+      [confirmLabel]="copy.remove"
+      [(open)]="confirming"
+      (decided)="decided($event)"
+    />
+  </section>
+}

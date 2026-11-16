@@ -67,6 +67,7 @@ function approval(seq: number, decided: boolean): ApprovalItem {
     outsideSandbox: false,
     withNetwork: false,
     modelReason: '',
+    repeat: false,
     decision: decided ? 'allow_once' : null,
   };
 }

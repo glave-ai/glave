@@ -30,18 +30,34 @@
     </glz-receipt>
   }
   @case ('approval') {
-    <glz-approval-card
-      testId="thread-approval"
-      [class.glz-rise]="rises()"
-      [summary]="item.ask"
-      [detail]="item.detail"
-      [caution]="item.caution"
-      [reason]="item.modelReason"
-      [onlyOnce]="item.outsideSandbox"
-      [decision]="item.decision"
-      [busy]="sending()"
-      (decide)="decide(item.approval, $event)"
-    />
+    @if (item.repeat) {
+      <glz-approval-card
+        testId="thread-repeat"
+        onlyOnce
+        [class.glz-rise]="rises()"
+        [summary]="item.ask"
+        [detail]="item.detail"
+        [allowOnceLabel]="copy.repeatIt"
+        [denyLabel]="copy.notNow"
+        [decidedLabels]="repeated"
+        [decision]="item.decision"
+        [busy]="sending()"
+        (decide)="decide(item.approval, $event)"
+      />
+    } @else {
+      <glz-approval-card
+        testId="thread-approval"
+        [class.glz-rise]="rises()"
+        [summary]="item.ask"
+        [detail]="item.detail"
+        [caution]="item.caution"
+        [reason]="item.modelReason"
+        [onlyOnce]="item.outsideSandbox"
+        [decision]="item.decision"
+        [busy]="sending()"
+        (decide)="decide(item.approval, $event)"
+      />
+    }
   }
   @case ('question') {
     <glz-question-card

@@ -1,0 +1,18 @@
+:host {
+  display: block;
+}
+
+.heading {
+  font-size: var(--glz-text-md);
+}
+
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--glz-weight-bold);
+}
+
+.line {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
