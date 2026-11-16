@@ -133,9 +133,10 @@ impl Prepared {
     ) -> Result<Self, ComputerError> {
         // A sandbox kept apart shares no cache with the computer's person's commands: what
         // one left there the other would run. Its folder stays hidden in glave's own.
-        let cache = match sandbox.apart {
-            true => None,
-            false => cache_home(sandbox.glave_home.as_deref()).await,
+        let cache = if sandbox.apart {
+            None
+        } else {
+            cache_home(sandbox.glave_home.as_deref()).await
         };
         let reached = Reached {
             cache: cache.as_deref(),
