@@ -109,7 +109,7 @@ fn a_picture_is_kept_beyond_its_chat_until_it_is_removed() {
             server.request(remove(item)).await,
             Ok(Reply::Done {})
         ));
-        assert!(items(&server).await.is_empty());
+        assert_eq!(items(&server).await, []);
         assert_eq!(read(&server, item).await.unwrap_err().code, code::NO_FILE);
         assert_eq!(
             server.request(remove(item)).await.unwrap_err().code,
@@ -198,7 +198,7 @@ fn a_removal_cut_short_is_finished_by_removing_again() {
             server.request(remove(item)).await,
             Ok(Reply::Done {})
         ));
-        assert!(items(&server).await.is_empty());
+        assert_eq!(items(&server).await, []);
         clock.advance_millis(2 * UNREFERENCED_FOR_MS);
         blobs.sweep(scope().org()).await.unwrap();
         let pixel = STANDARD.decode(PIXEL).unwrap();

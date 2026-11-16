@@ -100,13 +100,12 @@ where
         let mut chats: HashMap<ThreadId, Option<LibraryChat>> = HashMap::new();
         let mut items = Vec::with_capacity(found.len());
         for (scope, made_at, kept) in found {
-            let chat = match chats.get(&kept.thread) {
-                Some(chat) => chat.clone(),
-                None => {
-                    let chat = self.chat(&scope, &kept).await?;
-                    chats.insert(kept.thread, chat.clone());
-                    chat
-                }
+            let chat = if let Some(chat) = chats.get(&kept.thread) {
+                chat.clone()
+            } else {
+                let chat = self.chat(&scope, &kept).await?;
+                chats.insert(kept.thread, chat.clone());
+                chat
             };
             items.push(LibraryItem {
                 asset: kept.asset,
