@@ -640,6 +640,8 @@ const ANSWERS: Answers<Known> = {
   'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
   'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
   'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
+  // No thread here made a file for the person; `made.e2e.ts` answers for one that did.
+  'thread/files': () => ({ made: [] }),
   'thread/start': (params, { started }) => {
     const inProject = params.project === PERSONAL.id ? PERSONAL : PROJECT;
     const fresh = thread(NEW_THREAD, '', 'idle', inProject);
