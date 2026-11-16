@@ -3,6 +3,7 @@ use std::io::Write as _;
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use glave_event::{RawEvent, decode};
+use glave_ports::testing::any_secret;
 use serde_json::{Value, json};
 
 use super::scan::{Scanned, scanned};
@@ -29,14 +30,15 @@ fn zipped(name: &str, content: &[u8]) -> Vec<u8> {
 
 #[test]
 fn a_secret_is_found_as_written_inside_a_deflated_part_and_as_xml_writes_it() {
-    let value = b"sk-test-&-4f2a".to_vec();
+    let secret = any_secret();
+    let value = format!("{secret}&x").into_bytes();
     let values = [value.clone()];
     let mut written = b"%PDF-1.7 ".to_vec();
     written.extend_from_slice(&value);
     assert_eq!(scanned(&written, &values), Scanned::Holds);
-    let xml = b"<w:t>sk-test-&amp;-4f2a</w:t>";
+    let xml = format!("<w:t>{secret}&amp;x</w:t>");
     assert_eq!(
-        scanned(&zipped("word/document.xml", xml), &values),
+        scanned(&zipped("word/document.xml", xml.as_bytes()), &values),
         Scanned::Holds
     );
     // Across the edge of two pieces it is inflated in.
@@ -59,7 +61,8 @@ fn a_secret_is_found_as_written_inside_a_deflated_part_and_as_xml_writes_it() {
 fn a_part_that_inflates_past_what_is_looked_through_can_t_be_told() {
     let bomb = zipped("xl/sharedStrings.xml", &vec![0; 65 * 1024 * 1024]);
     assert!(bomb.len() < 1024 * 1024, "{}", bomb.len());
-    assert_eq!(scanned(&bomb, &[b"sk-test".to_vec()]), Scanned::Unchecked);
+    let values = [any_secret().into_bytes()];
+    assert_eq!(scanned(&bomb, &values), Scanned::Unchecked);
     assert_eq!(
         scanned(&bomb, &[]),
         Scanned::Clean,
