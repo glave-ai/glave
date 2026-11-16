@@ -151,6 +151,12 @@ where
     }
 }
 
+/// Refused: a file that is no longer here, whether it never was, was let go of, or is someone
+/// else's, each answered alike: what `file/read` and the Library's reads and removals say.
+pub(crate) fn not_here() -> ApiError {
+    ApiError::new(code::NO_FILE, Sentence::FileNotHere)
+}
+
 /// A file a message names that is not kept: never uploaded here, or swept a day after.
 fn gone(name: &str) -> ApiError {
     ApiError::new(

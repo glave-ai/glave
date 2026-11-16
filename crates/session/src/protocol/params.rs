@@ -1,4 +1,4 @@
-//! What the requests of the table of methods (`protocol.rs`) are made of beside the types of
+//! What the requests of the table of methods (`request.rs`) are made of beside the types of
 //! other modules: the choices of their params, and how serde reads and writes their fields.
 
 use serde::{Deserialize, Serialize};

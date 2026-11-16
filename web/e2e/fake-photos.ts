@@ -60,11 +60,30 @@ export const PHOTOS_HISTORY = [
   event(10, 'turn.ended', { outcome: 'completed' }, PHOTOS, '2026-10-11T10:00:05.000Z'),
 ];
 
+/** The cat, kept in the person's Library from the chat, in their Chats (fake-api.ts's PERSONAL). */
+const KEPT = {
+  asset: '01900000-0000-7000-8000-000000000171',
+  kind: 'picture',
+  name: 'A cat on the windowsill',
+  file_name: 'cat.png',
+  media_type: CAT.media_type,
+  bytes: CAT.bytes,
+  project: '01900000-0000-7000-8000-000000000002',
+  made_at: '2026-10-11T10:00:04.000Z',
+  chat: { thread: PHOTOS, title: 'What are these?' },
+} as const;
+
 /**
- * Its photos, as `file/read` gives them back. No list holds the chat, and `thread/get` tells it
+ * Its photos, as `file/read` gives them back, and the first, kept in the person's Library, as
+ * `library/list` and `library/read` give it. No list holds the chat, and `thread/get` tells it
  * as any thread the fake does not name.
  */
 export const ABOUT_PHOTOS: Answers<null> = {
+  'library/list': () => ({ items: [KEPT] }),
+  'library/read': (params) =>
+    params.asset === KEPT.asset
+      ? { piece: { media_type: CAT.media_type, bytes: CAT.bytes, offset: 0, data: PIXEL } }
+      : new Refusal(-32030, 'this file is no longer here'),
   'file/read': (params) => {
     if (params.thread !== PHOTOS) {
       return undefined;
