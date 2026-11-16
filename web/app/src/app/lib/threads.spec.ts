@@ -10,6 +10,7 @@ describe('threads', () => {
   it('reads the page from a URL', () => {
     expect(pageFromUrl('/tasks')).toBe('tasks');
     expect(pageFromUrl('/memory?x=1')).toBe('memory');
+    expect(pageFromUrl('/library')).toBe('library');
     expect(pageFromUrl('/settings#a')).toBe('settings');
     expect(pageFromUrl('/tasksforce')).toBeNull();
     expect(pageFromUrl('/t/abc')).toBeNull();
