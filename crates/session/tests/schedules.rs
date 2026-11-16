@@ -613,17 +613,13 @@ fn a_schedule_repeats_on_the_clocks_of_the_person_s_time_zone() {
     });
 }
 
-/// `schedule/pause` (`paused`) or `schedule/resume` of `schedule`, answered.
+/// `schedule/pause` of `schedule`, pausing it (`paused`) or resuming it, answered.
 async fn pause<L: EventLog + 'static>(
     server: &Tested<L>,
     schedule: ScheduleId,
     paused: bool,
 ) -> ScheduleInfo {
-    let request = if paused {
-        Request::SchedulePause { schedule }
-    } else {
-        Request::ScheduleResume { schedule }
-    };
+    let request = Request::SchedulePause { schedule, paused };
     match server.request(request).await.unwrap() {
         Reply::Schedule { schedule } => schedule,
         other => panic!("the schedule, not {other:?}"),

@@ -78,8 +78,7 @@ methods! {
         #[serde(default)]
         language: Option<String>,
     } -> [Language],
-    /// Gives the caller's time zone, by its IANA name (`Europe/Lisbon`), as their browser says
-    /// it: a schedule they set up repeats on its clocks. Refused for a zone glave doesn't know.
+    /// Gives the caller's time zone by its IANA name (`Europe/Lisbon`): their schedules' clock.
     "zone/set" => ZoneSet { zone: String } -> [Done],
     /// How the caller's clients group their threads: by project until they choose.
     "grouping/get" => GroupingGet {} -> [Grouping],
@@ -194,10 +193,8 @@ methods! {
     /// roles, in id order after `after` (someone listed before), at most `limit` (100 unless
     /// said, at most 1,000). Only for its Admins and Owners.
     "people/list" => PeopleList {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        after: Option<PrincipalId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] after: Option<PrincipalId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] limit: Option<usize>,
     } -> [People],
     /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
     /// only an Owner makes an Owner or changes one's role.
@@ -522,8 +519,7 @@ methods! {
     /// Tasks running and recently finished in every project the caller owns, running first,
     /// then newest first.
     "tasks/list" => TasksList {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] limit: Option<usize>,
     } -> [Tasks],
     /// Stops the task running in a thread.
     "tasks/stop" => TasksStop { thread: ThreadId } -> [Done],
@@ -545,36 +541,25 @@ methods! {
     "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
     /// Closes one of a thread's terminals, ending its shell.
     "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
-    /// Runs a prompt as a task at set times, each run a new turn in the schedule's own chat,
-    /// made now, which works on a copy of its own.
+    /// Runs a prompt at set times, each run a turn in the schedule's own chat, named `name` (else
+    /// its prompt's first line), on the clock of `zone` (else the caller's `zone/set`, else UTC).
     "schedule/create" => ScheduleCreate {
         /// The project its chat is in, by default as `thread/start` picks one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        project: Option<ProjectId>,
-        /// What it is called, and so its chat; by default, its prompt's first line.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
-        when: When,
-        /// The time zone a cron expression is read in, by its IANA name; by default the
-        /// caller's (`zone/set`), else UTC.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        zone: Option<String>,
-        prompt: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")] project: Option<ProjectId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] zone: Option<String>,
+        when: When, prompt: String,
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
     } -> [Schedule],
     /// The schedules of every project the caller owns.
     "schedule/list" => ScheduleList {} -> [Schedules],
-    /// Pauses a schedule: no runs start until it is resumed.
-    "schedule/pause" => SchedulePause { schedule: ScheduleId } -> [Schedule],
-    /// Resumes a paused schedule; its runs count from now.
-    "schedule/resume" => ScheduleResume { schedule: ScheduleId } -> [Schedule],
-    /// Removes a schedule; its chat stays, with its past runs.
+    /// Pauses a schedule (`paused`), so no runs start, or resumes it, its runs counting from now.
+    "schedule/pause" => SchedulePause { schedule: ScheduleId, paused: bool } -> [Schedule],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The projects the caller owns.
     "project/list" => ProjectList {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")] limit: Option<usize>,
     } -> [Projects],
     "project/get" => ProjectGet { project: ProjectId } -> [Project],
     /// The project the folder at `path` on this computer leads to, as glave run there opens

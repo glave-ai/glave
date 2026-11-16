@@ -2726,16 +2726,11 @@ export type RoleSetResult = {
 export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
   readonly budget: number;
-  /** What it is called, and so its chat; by default, its prompt's first line. */
   readonly name?: string | null;
   /** The project its chat is in, by default as `thread/start` picks one. */
   readonly project?: ProjectId | null;
   readonly prompt: string;
   readonly when: When;
-  /**
-   * The time zone a cron expression is read in, by its IANA name; by default the
-   * caller's (`zone/set`), else UTC.
-   */
   readonly zone?: string | null;
 };
 
@@ -2756,18 +2751,11 @@ export type ScheduleListResult = {
 };
 
 export type SchedulePauseParams = {
+  readonly paused: boolean;
   readonly schedule: ScheduleId;
 };
 
 export type SchedulePauseResult = {
-  readonly schedule: ScheduleInfo;
-};
-
-export type ScheduleResumeParams = {
-  readonly schedule: ScheduleId;
-};
-
-export type ScheduleResumeResult = {
   readonly schedule: ScheduleInfo;
 };
 
@@ -3347,7 +3335,6 @@ export interface Methods {
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
   readonly "schedule/pause": { readonly params: SchedulePauseParams; readonly result: SchedulePauseResult };
-  readonly "schedule/resume": { readonly params: ScheduleResumeParams; readonly result: ScheduleResumeResult };
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "secret/add": { readonly params: SecretAddParams; readonly result: SecretAddResult };

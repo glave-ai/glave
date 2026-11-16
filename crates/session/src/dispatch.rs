@@ -527,11 +527,8 @@ where
                 let listed = boxed(|| self.list_schedules(caller)).await;
                 listed.map(|schedules| Reply::Schedules { schedules })
             }
-            Request::SchedulePause { schedule } => {
-                boxed(|| self.pause_schedule(caller, schedule, true)).await
-            }
-            Request::ScheduleResume { schedule } => {
-                boxed(|| self.pause_schedule(caller, schedule, false)).await
+            Request::SchedulePause { schedule, paused } => {
+                boxed(|| self.pause_schedule(caller, schedule, paused)).await
             }
             Request::ScheduleDelete { schedule } => {
                 boxed(|| self.delete_schedule(caller, schedule)).await

@@ -7813,7 +7813,6 @@
             "type": "integer"
           },
           "name": {
-            "description": "What it is called, and so its chat; by default, its prompt's first line.",
             "type": [
               "string",
               "null"
@@ -7837,7 +7836,6 @@
             "$ref": "#/$defs/When"
           },
           "zone": {
-            "description": "The time zone a cron expression is read in, by its IANA name; by default the\ncaller's (`zone/set`), else UTC.",
             "type": [
               "string",
               "null"
@@ -7904,37 +7902,16 @@
     "schedule/pause": {
       "params": {
         "properties": {
+          "paused": {
+            "type": "boolean"
+          },
           "schedule": {
             "$ref": "#/$defs/ScheduleId"
           }
         },
         "required": [
-          "schedule"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "properties": {
-          "schedule": {
-            "$ref": "#/$defs/ScheduleInfo"
-          }
-        },
-        "required": [
-          "schedule"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "schedule/resume": {
-      "params": {
-        "properties": {
-          "schedule": {
-            "$ref": "#/$defs/ScheduleId"
-          }
-        },
-        "required": [
-          "schedule"
+          "schedule",
+          "paused"
         ],
         "type": "object"
       },

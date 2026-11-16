@@ -254,11 +254,7 @@ async fn pause_schedule(
     schedule: ScheduleId,
     paused: bool,
 ) -> anyhow::Result<()> {
-    let request = if paused {
-        Request::SchedulePause { schedule }
-    } else {
-        Request::ScheduleResume { schedule }
-    };
+    let request = Request::SchedulePause { schedule, paused };
     let Reply::Schedule { schedule } = server.request(request).await? else {
         bail!("glave answered with something other than the schedule");
     };
