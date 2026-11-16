@@ -1,6 +1,5 @@
 import type {
   ChangedFile,
-  LibraryItem,
   ModelInfo,
   RawEvent,
   ListedCommand,
@@ -30,21 +29,6 @@ export function record(id: string, name: string, kind: Project['kind'] = 'projec
     owner: { kind: 'person', id: 'person-1' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:00:00.000Z',
-  };
-}
-
-/** A picture of the person's Library, made in `project`, from the chat `chat` when there is one. */
-export function picture(asset: string, project: string, chat: string | null = null): LibraryItem {
-  return {
-    asset,
-    kind: 'picture',
-    name: asset,
-    file_name: `${asset}.png`,
-    media_type: 'image/png',
-    bytes: 4,
-    project,
-    made_at: '2026-11-16T09:12:00Z',
-    ...(chat === null ? {} : { chat: { thread: chat, title: `About ${asset}` } }),
   };
 }
 

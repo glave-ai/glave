@@ -1,8 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 import { GlzFigureComponent } from '@glave/glaze';
 
 import type { HeldImage } from '../../lib/conversation';
-import { FilesService, drawn } from '../../services/files.service';
+import { FilesService } from '../../services/files.service';
 import { ThreadService } from '../../services/thread.service';
 
 /**
@@ -23,13 +31,40 @@ export class ThreadImageComponent {
 
   private readonly files = inject(FilesService);
   private readonly threads = inject(ThreadService);
-  private readonly file = drawn(() => {
-    const thread = this.threads.thread();
-    const image = this.image();
-    return thread === null ? null : this.files.hold(thread, image.sha256, image.mediaType);
-  });
   /** Its address once read; `null` while it comes. */
-  protected readonly url = this.file.url;
+  protected readonly url = signal<string | null>(null);
   /** Why it can't be shown; `null` when nothing went wrong. */
-  protected readonly failed = this.file.failed;
+  protected readonly failed = signal<string | null>(null);
+
+  constructor() {
+    effect((onCleanup) => {
+      const thread = this.threads.thread();
+      const image = this.image();
+      untracked(() => {
+        this.url.set(null);
+        this.failed.set(null);
+      });
+      if (thread === null) {
+        return;
+      }
+      const held = this.files.hold(thread, image.sha256, image.mediaType);
+      let live = true;
+      onCleanup(() => {
+        live = false;
+        held.release();
+      });
+      held.url.then(
+        (url) => {
+          if (live) {
+            this.url.set(url);
+          }
+        },
+        (error: unknown) => {
+          if (live) {
+            this.failed.set(error instanceof Error ? error.message : String(error));
+          }
+        },
+      );
+    });
+  }
 }

@@ -14,7 +14,6 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GlzIconButtonComponent, GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
-import Image from 'lucide/dist/esm/icons/image.mjs';
 import ListChecks from 'lucide/dist/esm/icons/list-checks.mjs';
 import PenLine from 'lucide/dist/esm/icons/pen-line.mjs';
 import Search from 'lucide/dist/esm/icons/search.mjs';
@@ -36,8 +35,8 @@ import { UnloadedComponent } from '../unloaded/unloaded.component';
  * The side nav: glave's name with New chat beside it, and the search; the person's threads,
  * grouped as they choose, by project (their projects, then their chats) or by what each is
  * doing, the switch above them while they have a project beside their Chats; and at its foot
- * Tasks (only while tasks are going or a schedule will start one), Library, and the person
- * signed in, with their pages.
+ * Tasks (only while tasks are going or a schedule will start one) and the person signed in,
+ * with their pages.
  */
 @Component({
   selector: 'app-side-nav',
@@ -59,7 +58,7 @@ import { UnloadedComponent } from '../unloaded/unloaded.component';
 export class SideNavComponent {
   /** The thread shown now, to mark it current. */
   readonly current = input<string | null>(null);
-  /** The page shown now (`tasks`, `library`, `memory`, `settings`), to mark its row current. */
+  /** The page shown now (`tasks`, `memory`, `settings`), to mark Tasks current on its own. */
   readonly page = input<string | null>(null);
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
@@ -70,16 +69,9 @@ export class SideNavComponent {
     search: $localize`:@@sideNav.search:Search chats`,
     searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
     tasks: $localize`:@@sideNav.tasks:Tasks`,
-    library: $localize`:@@sideNav.library:Library`,
   } as const;
-  protected readonly icons = {
-    newChat: PenLine,
-    search: Search,
-    tasks: ListChecks,
-    library: Image,
-  };
+  protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
-  protected readonly libraryLink = '/library';
   /** What the person searches the thread titles for. */
   protected readonly query = signal('');
   private readonly tasks = inject(TasksService);
@@ -119,7 +111,6 @@ export class SideNavComponent {
     return going === 0 ? null : { count, words: $localize`:@@sideNav.going:${count}:COUNT: going` };
   });
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
-  protected readonly libraryCurrent = computed(() => this.page() === 'library');
 
   constructor() {
     effect(() => {

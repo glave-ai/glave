@@ -26,9 +26,9 @@ const THREAD = 't/:thread';
 const CROSSFADE = 'glz-crossfade';
 
 /**
- * The app's pages: the workspace (chat, a project, a thread, tasks, the Library, memory,
- * settings and the pages reached from it, `settings.routes.ts`) for a signed-in person with a
- * model set up, the page that adds one, the sign-in page, and the page that says a page could not open. Each
+ * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings and the
+ * pages reached from it, `settings.routes.ts`) for a signed-in person with a model set up, the
+ * page that adds one, the sign-in page, and the page that says a page could not open. Each
  * title is read when its page opens, in the app's language.
  */
 export const routes: Routes = [
@@ -62,12 +62,6 @@ export const routes: Routes = [
         title: () => $localize`:@@routes.tasks:Tasks · glave`,
         loadComponent: () =>
           import('./components/tasks/tasks.component').then((m) => m.TasksComponent),
-      },
-      {
-        path: 'library',
-        title: () => $localize`:@@routes.library:Library · glave`,
-        loadComponent: () =>
-          import('./components/library/library.component').then((m) => m.LibraryComponent),
       },
       {
         path: 'memory',

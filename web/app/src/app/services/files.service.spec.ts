@@ -14,7 +14,7 @@ function setUp(fake: FakeSession): FilesService {
 
 /** A file of `bytes` read back in pieces of two bytes, as `file/read` answers each. */
 function inPieces(bytes: string) {
-  return (params: Pick<FileReadParams, 'offset'>) => {
+  return (params: FileReadParams) => {
     const offset = params.offset ?? 0;
     const end = Math.min(offset + 2, bytes.length);
     return {
@@ -48,16 +48,6 @@ describe('FilesService', () => {
     ]);
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(url);
     expect(fake.paramsOf('file/read')).toHaveLength(3);
-  });
-
-  it("reads a Library item's file the same way, by the item", async () => {
-    const urls = objectUrls();
-    const fake = new FakeSession().answer('library/read', inPieces('PNG!'));
-    const files = setUp(fake);
-    expect(await files.holdAsset('fox', 'image/png').url).toBe(urls.made[0]);
-    expect(fake.paramsOf('library/read')).toEqual([{ asset: 'fox' }, { asset: 'fox', offset: 2 }]);
-    expect(await files.holdAsset('fox', 'image/png').url).toBe(urls.made[0]);
-    expect(fake.paramsOf('library/read')).toHaveLength(2);
   });
 
   it('reads one that could not be read again when next asked for', async () => {
