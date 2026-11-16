@@ -15,6 +15,7 @@ use glave_office::{Described, Parts};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all, spoken};
 use tokio::sync::Semaphore;
 
+use crate::files::not_here;
 use crate::protocol::{ApiError, FilePreview, MadeFile, Reply, Told, TurnFiles, code};
 use crate::server::Server;
 use crate::words::Sentence;
@@ -190,7 +191,7 @@ where
         let _permit = self.inner.reading.permits.acquire().await;
         let found = self.inner.harness.blobs().get(scope, sha256).await;
         let found = found.map_err(|error| ApiError::internal(&error))?;
-        let mut found = found.ok_or_else(|| ApiError::new(code::NO_FILE, Sentence::FileNotHere))?;
+        let mut found = found.ok_or_else(not_here)?;
         let bytes = read_all(found.bytes.as_mut(), MAX_FILE).await;
         let bytes = bytes.map_err(|error| ApiError::internal(&error))?;
         let media_type = found.reference.media_type;

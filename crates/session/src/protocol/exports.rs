@@ -1,5 +1,5 @@
-//! What the protocol's modules export, named once for the crate, so `protocol.rs` is left with
-//! its one table of methods.
+//! What the protocol's modules export, named once for the crate, so `protocol.rs` is left a
+//! table of contents.
 
 pub use super::appearance::{Logo, OrganizationLook, Shades};
 pub use super::changes::{
@@ -13,10 +13,11 @@ pub use super::connectors::{
 pub use super::credentials::{Ability, CredentialInfo, DeviceCode};
 pub use super::credits::{CreditsAccount, CreditsInfo, PersonSpent, SpaceCredits};
 pub use super::error::{ApiError, ErrorData};
-pub use super::files::{AttachedFile, FileInfo, FilePiece, LibraryChat, LibraryItem};
+pub use super::files::{AttachedFile, FileInfo, FilePiece};
+pub use super::library::{LibraryChat, LibraryItem};
 pub use super::live::Update;
 pub use super::made::{FilePreview, MadeFile, TurnFiles};
-pub use super::meta::{IdempotencyKey, Meta, PROTOCOL};
+pub use super::meta::{IdempotencyKey, Meta};
 pub use super::models::{EndpointInfo, ModelInfo};
 pub use super::notification::{Notification, WatchEnd};
 pub use super::params::{Answer, Show};
