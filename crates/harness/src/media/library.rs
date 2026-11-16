@@ -6,6 +6,7 @@
 use glave_event::{AssetId, AssetKind, BlobRef, LibraryKept, LibraryRemoved, Payload as _, Seq};
 use glave_ports::stream::{Reserved, append_retrying};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
+use serde_json::{Value, json};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -20,9 +21,33 @@ where
     B: BlobStore,
     A: Approver,
 {
+    /// The result's entry for `blob`, which `thread` holds, made from `prompt` and saved as
+    /// `file_name`: the file, its media type, and the Library item that keeps it, `asset:<id>`,
+    /// once it is kept there (`specs/gateway.md`, "Media tools").
+    pub(crate) async fn entry(
+        &self,
+        thread: &Thread,
+        blob: &BlobRef,
+        prompt: &str,
+        file_name: String,
+    ) -> Value {
+        let file = format!("blob:{}", blob.sha256.as_str());
+        match self.keep_in_library(thread, blob, prompt, file_name).await {
+            Ok(asset) => json!({
+                "file": file,
+                "media_type": blob.media_type,
+                "asset": format!("asset:{asset}"),
+            }),
+            Err(error) => {
+                tracing::warn!(%error, "could not keep an image in the Library");
+                json!({"file": file, "media_type": blob.media_type})
+            }
+        }
+    }
+
     /// Keeps `blob`, which `thread` holds, in its project's Library as a picture made from
     /// `prompt`, saved as `file_name`: the item's id.
-    pub(crate) async fn keep_in_library(
+    async fn keep_in_library(
         &self,
         thread: &Thread,
         blob: &BlobRef,

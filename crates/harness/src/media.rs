@@ -145,15 +145,7 @@ where
                 Ok(part) => {
                     if let Part::File { blob, name, .. } = &part {
                         let file_name = name.clone().unwrap_or_else(|| named.clone());
-                        let mut entry = json!({
-                            "file": format!("blob:{}", blob.sha256.as_str()),
-                            "media_type": blob.media_type,
-                        });
-                        match self.keep_in_library(thread, blob, &prompt, file_name).await {
-                            Ok(asset) => entry["asset"] = json!(format!("asset:{asset}")),
-                            Err(error) => tracing::warn!(%error, "could not keep in the Library"),
-                        }
-                        files.push(entry);
+                        files.push(self.entry(thread, blob, &prompt, file_name).await);
                     }
                     shown.push(part);
                 }

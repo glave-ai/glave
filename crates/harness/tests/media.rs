@@ -126,33 +126,6 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
         let entry = &said["files"][0];
         assert_eq!(entry["file"], format!("blob:{}", sha.as_str()));
         assert_eq!(entry["media_type"], "image/png");
-        let library: Vec<Body> = events(harness.log(), Reserved::Library.id())
-            .await
-            .into_iter()
-            .map(|event| event.body)
-            .collect();
-        let [Body::LibraryKept(kept)] = library.as_slice() else {
-            panic!("one item kept in the Library: {library:?}");
-        };
-        assert_eq!(
-            entry["asset"],
-            format!("asset:{}", kept.asset),
-            "the item answers to `asset`, as `file` answers to `blob:`"
-        );
-        assert_eq!(kept.blob.sha256, sha, "the image, whole");
-        assert_eq!(kept.thread, thread.id);
-        assert_eq!(kept.name, "A fox at dawn");
-        assert_eq!(kept.file_name, "a-fox-at-dawn.png");
-        assert_ne!(
-            kept.holder, thread.id,
-            "held apart from the chat, so it outlives it"
-        );
-        harness.blobs().release(&scope(), thread.id).await.unwrap();
-        harness.blobs().sweep(scope().org()).await.unwrap();
-        assert!(
-            harness.blobs().get(&scope(), &sha).await.unwrap().is_some(),
-            "the Library still holds it once the chat lets go"
-        );
         let Part::File { blob, resized, .. } = &output[1] else {
             panic!("the image follows as a file: {output:?}");
         };
@@ -184,6 +157,64 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
             .filter(|event| matches!(&event.body, Body::ModelResponded(r) if r.model.name == "image-model"))
             .count();
         assert_eq!(responded, 1, "recorded as a model call");
+    });
+}
+
+#[test]
+fn a_made_image_is_kept_in_the_library_beyond_its_chat() {
+    let dir = folder("media-library");
+    block_on!(async {
+        let image = png(64, 32);
+        let arguments = json!({"prompt": "a fox at dawn"});
+        let script =
+            ScriptedModel::new(calls("image_generate", arguments)).making(Ok(made(&image)));
+        let (harness, seen) = scripted(
+            workspace(&dir).await,
+            script,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "draw me a fox").await;
+        let requests = seen.lock().unwrap().clone();
+        let Some(Message::Tool { output, .. }) = requests[1].messages.last() else {
+            panic!("the result is sent back");
+        };
+        let Part::Text { text } = &output[0] else {
+            panic!("the result comes first: {output:?}");
+        };
+        let said: serde_json::Value = serde_json::from_str(text).unwrap();
+        let entry = &said["files"][0];
+        let sha = digest(&image);
+        let library: Vec<Body> = events(harness.log(), Reserved::Library.id())
+            .await
+            .into_iter()
+            .map(|event| event.body)
+            .collect();
+        let [Body::LibraryKept(kept)] = library.as_slice() else {
+            panic!("one item kept in the Library: {library:?}");
+        };
+        assert_eq!(
+            entry["asset"],
+            format!("asset:{}", kept.asset),
+            "the item answers to `asset`, as `file` answers to `blob:`"
+        );
+        assert_eq!(kept.blob.sha256, sha, "the image, whole");
+        assert_eq!(kept.thread, thread.id);
+        assert_eq!(kept.name, "A fox at dawn");
+        assert_eq!(kept.file_name, "a-fox-at-dawn.png");
+        assert_ne!(
+            kept.holder, thread.id,
+            "held apart from the chat, so it outlives it"
+        );
+        harness.blobs().release(&scope(), thread.id).await.unwrap();
+        harness.blobs().sweep(scope().org()).await.unwrap();
+        assert!(
+            harness.blobs().get(&scope(), &sha).await.unwrap().is_some(),
+            "the Library still holds it once the chat lets go"
+        );
     });
 }
 
