@@ -1,0 +1,36 @@
+@if (shown()) {
+  <section class="glz-stack glz-gap-3" data-testid="repeating" aria-labelledby="repeating-heading">
+    <h2 #heading id="repeating-heading" tabindex="-1">{{ copy.heading }}</h2>
+    @if (empty()) {
+      <p class="none" data-testid="repeating-none">{{ copy.none }}</p>
+    } @else {
+      <ul class="rows">
+        @for (row of rows(); track row.id) {
+          <li class="row" data-testid="repeating-schedule" [class.paused]="row.paused">
+            <div class="about">
+              @if (row.link; as link) {
+                <a class="name" dir="auto" data-testid="repeating-name" [routerLink]="link">{{
+                  row.name
+                }}</a>
+              } @else {
+                <span class="name" dir="auto" data-testid="repeating-name">{{ row.name }}</span>
+              }
+              <p class="line" data-testid="repeating-line">{{ row.line }}</p>
+            </div>
+            <app-schedule-actions
+              class="actions"
+              testId="repeating"
+              [schedule]="row.schedule"
+              [error]="row.error"
+              (errorChange)="failed(row.id, $event)"
+              (removed)="removed()"
+            />
+            @if (row.error; as error) {
+              <p class="error" role="alert" data-testid="repeating-error">{{ error }}</p>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+}

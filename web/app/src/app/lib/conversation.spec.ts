@@ -311,6 +311,47 @@ describe('conversation', () => {
     expect(items[1]).toMatchObject({ outsideSandbox: true, withNetwork: false, modelReason: '' });
   });
 
+  it('reads a card asking to repeat work, its lines, and the chat the call made', () => {
+    const asked = event('approval.requested', {
+      call_id: 'c1',
+      tool: 'schedule',
+      summary: 'schedule: First run: Tuesday.',
+      ask: 'Repeat this every weekday at 8:00 am?',
+      asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
+      detail:
+        'First run: Tuesday 17 November at 8:00 am, your time.\nEach run is added to its own chat, “Morning check”.',
+      caution: 'It runs only while glave runs on this computer.',
+    });
+    const [before] = threadItems([asked]);
+    expect(before).toMatchObject({
+      ask: 'Repeat this every weekday at 8:00 am?',
+      caution: 'It runs only while glave runs on this computer.',
+      repeat: {
+        when: 'every weekday at 8:00 am',
+        lines: [
+          'First run: Tuesday 17 November at 8:00 am, your time.',
+          'Each run is added to its own chat, “Morning check”.',
+        ],
+        chat: null,
+      },
+    });
+    const [after] = threadItems([
+      asked,
+      event('approval.decided', { call_id: 'c1', decision: 'allow_once' }),
+      event('tool.call.completed', {
+        call_id: 'c1',
+        output: [{ type: 'text', text: 'Made it.' }],
+        structured: { schedule: 's1', chat: 'chat-1' },
+      }),
+    ]);
+    expect(after).toMatchObject({ decision: 'allow_once', repeat: { chat: 'chat-1' } });
+    // Any other approval asks nothing to repeat.
+    const [other] = threadItems([
+      event('approval.requested', { call_id: 'c2', tool: 'bash', summary: 'bash: ls' }),
+    ]);
+    expect(other).not.toHaveProperty('repeat');
+  });
+
   it('reads a request to run with the network, in the sandbox otherwise', () => {
     const items = threadItems([
       event('approval.requested', {

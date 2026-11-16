@@ -11,7 +11,8 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
     <glz-approval-card
       testId="approval"
       summary="Run this command?"
-      detail="rm -rf build/"
+      [detail]="detail()"
+      [lines]="lines()"
       [caution]="caution()"
       [reason]="reason()"
       [onlyOnce]="onlyOnce()"
@@ -22,6 +23,8 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
   `,
 })
 class HostComponent {
+  readonly detail = signal('rm -rf build/');
+  readonly lines = signal<readonly string[]>([]);
   readonly caution = signal('');
   readonly reason = signal('');
   readonly onlyOnce = signal(false);
@@ -98,6 +101,24 @@ describe('GlzApprovalCardComponent', () => {
     expect(root.querySelector('.summary')?.contains(caution)).toBe(false);
     const card = root.querySelector('glz-approval-card');
     expect(card?.getAttribute('aria-describedby')).toBe(caution?.id);
+    await expectAccessible(root);
+  });
+
+  it('says more of what it asks in plain lines, never as code', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.detail.set('');
+    fixture.componentInstance.lines.set([
+      'First run: Tuesday 17 November at 8:00 am, your time.',
+      'Each run is added to its own chat, “Morning check”.',
+    ]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const lines = root.querySelector('[data-testid="approval-lines"]');
+    expect(Array.from(lines?.querySelectorAll('li') ?? []).map((each) => each.textContent)).toEqual(
+      fixture.componentInstance.lines(),
+    );
+    expect(root.querySelector('code')).toBeNull();
+    expect(root.querySelector('.summary')?.contains(lines ?? null)).toBe(false);
     await expectAccessible(root);
   });
 

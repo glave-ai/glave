@@ -11,6 +11,7 @@ import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
 import { StepsService } from '../../services/steps.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
+import { READER_ZONE } from '../../services/zone.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnComponent } from './turn.component';
@@ -44,6 +45,7 @@ const REPLY: MessageItem = {
 
 const RESULTS: TurnResults = {
   key: 't',
+  scheduled: null,
   prompt: {
     kind: 'message',
     files: [],
@@ -117,7 +119,12 @@ const WORKING: TurnResults = {
 
 async function mount(results: TurnResults): Promise<ComponentFixture<TurnComponent>> {
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ...THREAD_VIEW],
+    providers: [
+      provideRouter([]),
+      ...provideFakeSession(new FakeSession()),
+      ...THREAD_VIEW,
+      { provide: READER_ZONE, useValue: 'Europe/Lisbon' },
+    ],
   });
   const fixture = TestBed.createComponent(TurnComponent);
   fixture.componentRef.setInput('turn', results);
@@ -213,6 +220,19 @@ describe('TurnComponent', () => {
     expect(seen.mock.contexts).toContain(away);
     await expectAccessible(root);
     seen.mockRestore();
+  });
+
+  it('heads a schedule’s run with when it was due, on the schedule’s clocks', async () => {
+    const root = await render({ ...RESULTS, scheduled: '2026-11-12T08:00:00.000Z' });
+    expect(blocks(root).slice(0, 2)).toEqual(['turn-ran', 'thread-message']);
+    const ran = root.querySelector('[data-testid="turn-ran"]');
+    expect(ran?.tagName).toBe('H2');
+    expect(ran?.textContent.trim()).toBe('Thursday, November 12 · 8:00 AM');
+    expect(ran?.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-12T08:00:00.000Z');
+    await expectAccessible(root);
+    // Any other turn has no heading.
+    TestBed.resetTestingModule();
+    expect((await render(RESULTS)).querySelector('[data-testid="turn-ran"]')).toBeNull();
   });
 
   it('shows the line after its work when it has no reply', async () => {

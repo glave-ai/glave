@@ -1,8 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import type { GlzDecision } from '@glave/glaze';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { NO_THOUGHT, type ServiceItem, type ThreadItem } from '../../lib/conversation';
+import {
+  type ApprovalItem,
+  NO_THOUGHT,
+  type ServiceItem,
+  type ThreadItem,
+} from '../../lib/conversation';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ThreadItemComponent } from './thread-item.component';
@@ -19,6 +25,32 @@ async function render(
   fixture.componentRef.setInput('item', item);
   await fixture.whenStable();
   return { root: fixture.nativeElement as HTMLElement, fake };
+}
+
+/** The lines of a card asking to repeat work, as the server writes them. */
+const LINES = [
+  'First run: Tuesday 17 November at 8:00 am, your time.',
+  'Each run is added to its own chat, “Morning check”.',
+];
+
+/** A card asking to repeat work, answered `decision`, its call having made `chat`. */
+function repeating(decision: GlzDecision | null, chat: string | null): ApprovalItem {
+  return {
+    kind: 'approval',
+    key: 'a',
+    seq: 1,
+    approval: 'c2',
+    tool: 'schedule',
+    summary: 'schedule: First run',
+    ask: 'Repeat this every weekday at 8:00 am?',
+    detail: LINES.join('\n'),
+    caution: 'It runs only while glave runs on this computer.',
+    outsideSandbox: false,
+    withNetwork: false,
+    modelReason: '',
+    repeat: { when: 'every weekday at 8:00 am', lines: LINES, chat },
+    decision,
+  };
 }
 
 describe('ThreadItemComponent', () => {
@@ -164,6 +196,50 @@ describe('ThreadItemComponent', () => {
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'c1', decision: 'allow_for_thread' },
     ]);
+  });
+
+  it('asks to repeat work in the server’s words, answered Repeat it or Not now', async () => {
+    const { root, fake } = await render(repeating(null, null));
+    const card = root.querySelector('[data-testid="thread-repeat"]');
+    expect(card?.querySelector('.summary')?.textContent.trim()).toBe(
+      'Repeat this every weekday at 8:00 am?',
+    );
+    expect(
+      [...(card?.querySelectorAll('[data-testid="thread-repeat-lines"] li') ?? [])].map(
+        (line) => line.textContent,
+      ),
+    ).toEqual(LINES);
+    expect(card?.querySelector('code')).toBeNull();
+    expect(card?.querySelector('[data-testid="thread-repeat-caution"]')?.textContent).toBe(
+      'It runs only while glave runs on this computer.',
+    );
+    expect(
+      [...(card?.querySelectorAll('button') ?? [])].map((each) => each.textContent.trim()),
+    ).toEqual(['Repeat it', 'Not now']);
+    await expectAccessible(root);
+    card?.querySelector<HTMLButtonElement>('[data-testid="thread-repeat-allow-once"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('approval/decide')).toEqual([
+      { thread: 'thread-1', approval: 'c2', decision: 'allow_once' },
+    ]);
+  });
+
+  it('folds a repeat once set up to a line that opens its chat, and away once declined', async () => {
+    const { root } = await render(repeating('allow_once', 'chat-1'));
+    expect(root.querySelector('[data-testid="thread-repeat"]')).toBeNull();
+    const link = root.querySelector('[data-testid="thread-repeat-chat"]');
+    expect(link?.textContent).toBe('Repeats every weekday at 8:00 am');
+    expect(link?.getAttribute('href')).toBe('/t/chat-1');
+    await expectAccessible(root);
+    TestBed.resetTestingModule();
+    const unnamed = await render(repeating('allow_once', null));
+    expect(
+      unnamed.root.querySelector('[data-testid="thread-repeat-made"]')?.textContent.trim(),
+    ).toBe('Repeats every weekday at 8:00 am');
+    expect(unnamed.root.querySelector('a')).toBeNull();
+    TestBed.resetTestingModule();
+    const declined = await render(repeating('deny', null));
+    expect(declined.root.textContent.trim()).toBe('');
   });
 
   it('asks in the server’s sentence and shows what would run as it gives it', async () => {

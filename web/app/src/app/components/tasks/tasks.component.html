@@ -7,5 +7,9 @@
     </button>
   </div>
   <p class="intro">{{ copy.intro }}</p>
-  <app-task-list />
+  <app-repeating-list />
+  <section class="glz-stack glz-gap-3" aria-labelledby="tasks-running">
+    <h2 id="tasks-running">{{ copy.running }}</h2>
+    <app-task-list />
+  </section>
 </div>

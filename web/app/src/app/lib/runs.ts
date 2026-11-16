@@ -1,6 +1,6 @@
 import type { ReplySources, ThreadSteps } from '@glave/client';
 
-import type { MessageItem, ThreadItem } from './conversation';
+import type { ApprovalItem, MessageItem, ThreadItem } from './conversation';
 import type { Turn } from './turns';
 
 /** A run of tool calls as the server tells it: its key and its line. */
@@ -74,6 +74,14 @@ function callOf(item: ThreadItem): string | null {
   return item.kind === 'approval' ? item.approval : null;
 }
 
+/**
+ * Whether `item` is a card asking to repeat work, answered: once allowed it folds to its own line
+ * after the run that made it, and declined it folds away; never inside a run.
+ */
+function repeatAnswered(item: ThreadItem): item is ApprovalItem {
+  return item.kind === 'approval' && item.repeat !== undefined && item.decision !== null;
+}
+
 /** Whether `item` is the model thinking with nothing said: its reasoning alone. */
 function thinking(item: ThreadItem): item is MessageItem {
   return item.kind === 'message' && item.from === 'model' && item.text.trim() === '';
@@ -108,7 +116,8 @@ function ownRuns(items: readonly ThreadItem[]): ReadonlyMap<string, string> {
  * kept until the server has told it), its calls and the approvals answered for them inside it,
  * with the model's reasoning between them; everything else in its own place; each message
  * of the model's before the reply the server names marked as said along the way, and a reply
- * with what it drew on, by its `seq` in `sourced`.
+ * with what it drew on, by its `seq` in `sourced`. A card asking to repeat work, once allowed,
+ * shows in its own place just after the run that holds its call, and once declined not at all.
  */
 export function turnParts(
   items: readonly ThreadItem[],
@@ -121,13 +130,27 @@ export function turnParts(
   const answered = items.some((item) => steps.replies.has(item.seq));
   // Reasoning alone after a run: inside it when the run goes on, else in its own place.
   let thought: MessageItem[] = [];
+  // Repeats allowed while a run goes on, shown once it has ended.
+  let repeats: ThreadItem[] = [];
   const alone = (item: ThreadItem): void => {
     const interim =
       answered && item.kind === 'message' && item.from === 'model' && !steps.replies.has(item.seq);
     const sources = sourced.get(item.seq) ?? null;
     parts.push({ kind: 'item', key: item.key, item, interim, sources });
   };
+  const runEnds = (): void => {
+    repeats.forEach(alone);
+    repeats = [];
+    thought.forEach(alone);
+    thought = [];
+  };
   for (const item of items) {
+    if (repeatAnswered(item)) {
+      if (item.decision !== 'deny') {
+        repeats.push(item);
+      }
+      continue;
+    }
     if (thinking(item) && parts.at(-1)?.kind === 'run') {
       thought.push(item);
       continue;
@@ -142,14 +165,13 @@ export function turnParts(
       thought = [];
       continue;
     }
-    thought.forEach(alone);
-    thought = [];
+    runEnds();
     if (run === undefined) {
       alone(item);
     } else {
       parts.push({ kind: 'run', key: run.key, sentence: run.sentence, items: [item] });
     }
   }
-  thought.forEach(alone);
+  runEnds();
   return parts;
 }

@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { ApiError, ErrorCode } from '@glave/client';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { schedule, task } from '../testing/fixtures';
@@ -64,5 +65,56 @@ describe('TasksService', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('pauses and removes schedules, keeping each as the server answers', async () => {
+    const fake = new FakeSession()
+      .answer('tasks/list', { tasks: [] })
+      .answer('schedule/list', { schedules: [schedule('s1', null), schedule('s2', null)] })
+      .answer('schedule/pause', (params) => {
+        const { paused } = params as { readonly paused: boolean };
+        return { schedule: { ...schedule('s1', null), paused } };
+      });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const tasks = TestBed.inject(TasksService);
+    await tasks.refresh();
+    const paused = await tasks.pause('s1', true);
+    expect(paused.paused).toBe(true);
+    expect(tasks.schedules().map((each) => [each.schedule, each.paused])).toEqual([
+      ['s1', true],
+      ['s2', false],
+    ]);
+    await tasks.remove('s2');
+    expect(fake.paramsOf('schedule/delete')).toEqual([{ schedule: 's2' }]);
+    expect(tasks.schedules().map((each) => each.schedule)).toEqual(['s1']);
+    // Refused, it says what the server said, and keeps what it had.
+    fake.answer('schedule/delete', new ApiError({ code: ErrorCode.NO_SCHEDULE, message: 'gone' }));
+    await expect(tasks.remove('s1')).rejects.toThrow('gone');
+    expect(tasks.schedules()).toHaveLength(1);
+  });
+
+  it('never lets a read a change overtook, or an older read, undo what is newer', async () => {
+    const fake = new FakeSession()
+      .answer('tasks/list', { tasks: [] })
+      .answer('schedule/pause', { schedule: { ...schedule('s1', null), paused: true } });
+    const listed = fake.held('schedule/list');
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const tasks = TestBed.inject(TasksService);
+    // A read asked before the pause, answered after it with the schedule as it was.
+    const slow = tasks.refresh();
+    await tasks.pause('s1', true);
+    listed({ schedules: [schedule('s1', null)] });
+    await slow;
+    expect(tasks.schedules()).toEqual([]);
+    // Of two reads, the latest is kept, whichever answers first.
+    const older = tasks.refresh();
+    const giveOlder = listed;
+    const newer = fake.held('schedule/list');
+    const latest = tasks.refresh();
+    newer({ schedules: [{ ...schedule('s1', null), paused: true }] });
+    await latest;
+    giveOlder({ schedules: [schedule('s1', null)] });
+    await older;
+    expect(tasks.schedules().map((each) => each.paused)).toEqual([true]);
   });
 });

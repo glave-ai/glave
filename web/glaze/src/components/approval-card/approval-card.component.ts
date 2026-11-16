@@ -14,6 +14,7 @@ import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
+  lines: 'lines',
   caution: 'caution',
   reason: 'reason',
   decided: 'decided',
@@ -35,7 +36,8 @@ export interface GlzDecisionLabels {
 /**
  * An action waiting for the person's yes, as a card that needs them: a small label with a dot
  * ("Needs you"), one plain sentence (`summary`) with what would run after it in monospace
- * (`detail`: the command, the file, the address), why it asks when more than the mode does
+ * (`detail`: the command, the file, the address), or plain lines saying more of it in the card's
+ * own words (`lines`: when it would first run, where it goes), why it asks when more than the mode does
  * (`caution`, its own sentences in the warning tone, never inside the detail), the agent's own
  * words for why it wants this when it gave them (`reason`, quoted after `reasonLabel`, so they
  * never read as the app's), and the answers, the primary first. `onlyOnce` leaves out "for this
@@ -85,6 +87,8 @@ export class GlzApprovalCardComponent {
   readonly summary = input.required<string>();
   /** What would run, shown in monospace: the command, the file, the address. */
   readonly detail = input('');
+  /** More of what it asks, in plain lines under its sentence, never code: when, where it goes. */
+  readonly lines = input<readonly string[]>([]);
   /** Why it asks whatever the mode, in plain sentences, shown apart from what would run. */
   readonly caution = input('');
   /** The agent's own words for why it wants this, quoted as its words. */
@@ -117,6 +121,7 @@ export class GlzApprovalCardComponent {
   });
   protected readonly decided = computed(() => this.decision() !== null);
   protected readonly hasDetail = computed(() => this.detail() !== '');
+  protected readonly hasLines = computed(() => this.lines().length > 0);
   protected readonly hasCaution = computed(() => this.caution() !== '');
   protected readonly hasReason = computed(() => this.reason() !== '');
   protected readonly offersThread = computed(() => !this.onlyOnce());

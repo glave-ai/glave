@@ -1,3 +1,8 @@
+@if (ran(); as ran) {
+  <h2 class="ran" data-testid="turn-ran">
+    <time [attr.datetime]="ran.at">{{ ran.text }}</time>
+  </h2>
+}
 @if (turn().prompt; as prompt) {
   <app-thread-item [item]="prompt" />
 }

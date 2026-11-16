@@ -27,3 +27,19 @@
     background: var(--glz-color-border);
   }
 }
+
+// A schedule's run, headed with when it was due: a quiet line, its rule to the end.
+.ran {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+
+  &::after {
+    flex: 1;
+    block-size: var(--glz-border-width);
+    content: '';
+    background: var(--glz-color-border);
+  }
+}

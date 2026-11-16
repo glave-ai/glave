@@ -19,9 +19,11 @@ import {
 } from '@glave/glaze';
 
 import { trimBlankLines } from '../../lib/conversation';
+import { runDate } from '../../lib/repeating';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
+import { READER_ZONE } from '../../services/zone.service';
 import { ThreadService } from '../../services/thread.service';
 import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
@@ -29,7 +31,8 @@ import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 import { TurnPartComponent } from '../turn-part/turn-part.component';
 
 /**
- * One turn: the person's message; then, in order, what the model said at each step, each run of
+ * One turn, headed, for a schedule's run, with when the run was due on the schedule's clocks;
+ * the person's message; then, in order, what the model said at each step, each run of
  * calls between as the server's line, which opens to its calls, and the questions and approvals
  * already answered, with the pages the reply drew on from the web under it; what the model
  * writes now, as markdown; what changed, its room kept as the thread opens until it is read; the
@@ -70,6 +73,19 @@ export class TurnComponent {
    */
   readonly away = input<string | null>(null);
   private readonly locale = inject(LOCALE_ID);
+  private readonly zone = inject(READER_ZONE);
+  private readonly thread = inject(ThreadService);
+  /**
+   * For a schedule's run, its heading: when it was due, on the clocks of the chat's schedule (the
+   * reader's own once the schedule is gone); `null` for any other turn.
+   */
+  protected readonly ran = computed(() => {
+    const at = this.turn().scheduled;
+    const zone = this.thread.summary()?.schedule?.zone ?? this.zone;
+    const text =
+      at === null ? null : runDate(at, zone, { locale: this.locale, timeZone: this.zone });
+    return at === null || text === null ? null : { at, text };
+  });
   /** Where the reply is among its parts: the last of the model's words that are no aside. */
   private readonly reply = computed(() =>
     this.turn().parts.reduce(
@@ -138,7 +154,7 @@ export class TurnComponent {
     return room.length > 0 ? room : null;
   });
   /** Whether the thread is being opened, its history read: what shows meanwhile was there. */
-  private readonly opening = inject(ThreadService).opening;
+  private readonly opening = this.thread.opening;
   /**
    * What waits for the person that appeared as the person watched, by key: never what the turn
    * showed with as it first showed, nor what the thread's history brought as it opened.

@@ -1,4 +1,4 @@
-import { listFormat, numberFormat, pluralRules } from './intl';
+import { dateTimeFormat, listFormat, numberFormat, pluralRules, relativeTimeFormat } from './intl';
 
 describe('intl', () => {
   it('makes each formatter once for its locale and options', () => {
@@ -13,6 +13,17 @@ describe('intl', () => {
     expect(listFormat('en', { type: 'unit' }).format(['4m', '02s'])).toBe('4m, 02s');
     expect(pluralRules('ar')).toBe(pluralRules('ar'));
     expect(pluralRules('ar').select(3)).toBe('few');
+    const lisbon = { timeZone: 'Europe/Lisbon', hour: 'numeric' } as const;
+    expect(dateTimeFormat('en-US', lisbon)).toBe(dateTimeFormat('en-US', lisbon));
+    expect(dateTimeFormat('en-US', lisbon).format(Date.parse('2026-11-16T08:00:00Z'))).toBe('8 AM');
+    expect(relativeTimeFormat('en', { numeric: 'auto' })).toBe(
+      relativeTimeFormat('en', { numeric: 'auto' }),
+    );
+    expect(relativeTimeFormat('en', { numeric: 'auto' }).format(1, 'day')).toBe('tomorrow');
+  });
+
+  it('refuses a time zone the platform does not know, as Intl does', () => {
+    expect(() => dateTimeFormat('en', { timeZone: 'Mars/Olympus' })).toThrow(RangeError);
   });
 
   it('keeps a few, the oldest going first', () => {

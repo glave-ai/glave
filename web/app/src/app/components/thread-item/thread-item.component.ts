@@ -6,17 +6,20 @@ import {
   inject,
   input,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import {
   GlzApprovalCardComponent,
   GlzAttachmentComponent,
   GlzCopyButtonComponent,
   type GlzDecision,
+  GlzIconComponent,
   type GlzIconData,
   GlzMessageComponent,
   GlzQuestionCardComponent,
   GlzReceiptComponent,
   GlzServiceCardComponent,
 } from '@glave/glaze';
+import { Repeat } from 'lucide';
 
 import { sizeOf } from '../../lib/attachments';
 import type {
@@ -24,6 +27,7 @@ import type {
   CallItem,
   MessageItem,
   QuestionItem,
+  RepeatAsk,
   ServiceItem,
   ThreadItem,
 } from '../../lib/conversation';
@@ -56,7 +60,42 @@ interface ShownService extends ServiceItem {
   readonly sendLabel: string;
 }
 
-type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService;
+/**
+ * A card asking to repeat work, as the thread shows it: the server's question, its lines and
+ * caution while it waits; once allowed, a line saying it repeats, which opens the schedule's
+ * chat once the call names it; once declined, nothing.
+ */
+interface ShownRepeat {
+  readonly kind: 'repeat';
+  readonly approval: string;
+  readonly ask: string;
+  readonly lines: readonly string[];
+  readonly caution: string;
+  readonly waiting: boolean;
+  /** Once allowed, its line: "Repeats every weekday at 8:00 am"; else `null`. */
+  readonly made: string | null;
+  /** Where its line leads: the schedule's own chat, once the call names it. */
+  readonly link: readonly string[] | null;
+}
+
+type ShownItem =
+  ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService | ShownRepeat;
+
+/** `item`, a card asking to repeat work, as the thread shows it. */
+function shownRepeat(item: ApprovalItem, repeat: RepeatAsk): ShownRepeat {
+  const allowed = item.decision === 'allow_once' || item.decision === 'allow_for_thread';
+  const when = repeat.when;
+  return {
+    kind: 'repeat',
+    approval: item.approval,
+    ask: item.ask,
+    lines: repeat.lines,
+    caution: item.caution,
+    waiting: item.decision === null,
+    made: allowed ? $localize`:@@threadItem.repeats:Repeats ${when}:WHEN:` : null,
+    link: repeat.chat === null ? null : ['/t', repeat.chat],
+  };
+}
 
 /**
  * `item` as the thread shows it, its sizes written for `locale`: a message of the model's said
@@ -84,6 +123,7 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
     case 'call':
       return { ...item, icon: toolIcon(item.tool) };
     case 'approval':
+      return item.repeat === undefined ? item : shownRepeat(item, item.repeat);
     case 'question':
       return item;
     case 'service':
@@ -99,14 +139,17 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
  * it, each with a copy button; its reasoning in a line, which opens to it in full), a tool call
  * as a quiet line, an approval, questions or what a service asks as a card that needs the person,
- * answered in place, which rises into place when it `rises`.
+ * answered in place, which rises into place when it `rises`; a card asking to repeat work,
+ * answered Repeat it or Not now, folds to a line that opens the schedule's chat, or away.
  */
 @Component({
   selector: 'app-thread-item',
   imports: [
+    RouterLink,
     GlzApprovalCardComponent,
     GlzAttachmentComponent,
     GlzCopyButtonComponent,
+    GlzIconComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,
     GlzReceiptComponent,
@@ -131,7 +174,12 @@ export class ThreadItemComponent {
   protected readonly sending = this.thread.sending;
   private readonly locale = inject(LOCALE_ID);
   protected readonly shown = computed(() => shown(this.item(), this.locale, this.interim()));
-  protected readonly copy = { read: $localize`:@@threadItem.read:Read while working` } as const;
+  protected readonly copy = {
+    read: $localize`:@@threadItem.read:Read while working`,
+    repeatIt: $localize`:@@threadItem.repeatIt:Repeat it`,
+    notNow: $localize`:@@threadItem.notNow:Not now`,
+  } as const;
+  protected readonly repeat = Repeat;
 
   protected decide(approval: string, decision: GlzDecision): void {
     void this.thread.decide(approval, decision);

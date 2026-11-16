@@ -39,6 +39,8 @@ import { ModelsService } from '../../services/models.service';
 import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
+import { ServerService } from '../../services/server.service';
+import { ZoneService } from '../../services/zone.service';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { SourcesService } from '../../services/sources.service';
 import { StepsService } from '../../services/steps.service';
@@ -58,7 +60,8 @@ import { ThreadPanelComponent } from '../thread-panel/thread-panel.component';
 import { TurnComponent } from '../turn/turn.component';
 
 /**
- * One thread: its bar across the top (title, project, the panel's button); its
+ * One thread: its bar across the top (title, project, a schedule's chat's repeat line, the
+ * panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), its latest turns as it
  * opens and those before them read in above, nothing moving, as the person goes back to them
@@ -153,6 +156,7 @@ export class ThreadComponent {
   /** The files added to the message being written, kept in the thread's project. */
   protected readonly attachments = inject(AttachmentsService);
   private readonly projects = inject(ProjectsService);
+  private readonly server = inject(ServerService);
   private readonly locale = inject(LOCALE_ID);
   /** What went wrong last, in the server's words. */
   protected readonly problem = computed(() => {
@@ -295,6 +299,13 @@ export class ThreadComponent {
     const project = id === null ? undefined : this.projects.project(id);
     return project?.kind === 'project' ? project.name : null;
   });
+  /**
+   * For a schedule's own chat, its schedule, as the thread's summary says and the server sends
+   * it anew as it changes; where schedules don't run, none.
+   */
+  protected readonly schedule = computed(() =>
+    this.server.schedules() ? (this.service.summary()?.schedule ?? null) : null,
+  );
   /** When the thread's project folder isn't there anymore: the project, and what the server says. */
   protected readonly gone = computed(() => {
     const project = this.projectId();
@@ -328,6 +339,8 @@ export class ThreadComponent {
   });
 
   constructor() {
+    // A schedule the model sets up here repeats on the person's clocks.
+    void inject(ZoneService).give();
     // The server writes its own words in the thread (what an approval asks, what replies drew
     // on, the plan) in the person's language: when they choose another, it is read again.
     onChange('language', () => void this.service.open(this.thread()));

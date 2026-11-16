@@ -7,6 +7,13 @@
     <code class="detail">{{ detail() }}</code>
   }
 </p>
+@if (hasLines()) {
+  <ul class="lines" [attr.data-testid]="ids().lines">
+    @for (line of lines(); track $index) {
+      <li>{{ line }}</li>
+    }
+  </ul>
+}
 @if (hasCaution()) {
   <p class="caution" [id]="cautionId" [attr.data-testid]="ids().caution">{{ caution() }}</p>
 }

@@ -118,6 +118,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     took: null,
     started: null,
     model: null,
+    scheduled: null,
     result: null,
     ended: null,
     ...more,
@@ -340,6 +341,34 @@ describe('results', () => {
     expect(shown.waiting).toEqual([waiting]);
     expect(shown.receipt?.status).toBe('waiting');
     expect(shown.receipt?.facts).toEqual([]);
+  });
+
+  it('folds a card asking to repeat work to its own line after its run, or away once declined', () => {
+    const repeat = (seq: number, decision: ApprovalItem['decision']): ApprovalItem => ({
+      ...approval(seq, false),
+      tool: 'schedule',
+      repeat: { when: 'every weekday at 8:00 am', lines: [], chat: null },
+      decision,
+    });
+    const asked = turnResults(turn([ask, call(2), repeat(2, null)]), null, null, true, 'en-US');
+    expect(asked.waiting).toEqual([repeat(2, null)]);
+    // Allowed, its line shows once the run that made it ends, never inside it.
+    const facts = told([['Ran 2 steps', ['c2', 'c3']]]);
+    const items = [ask, call(2), repeat(2, 'allow_once'), say(3, '', 'hm'), call(3)];
+    const allowed = turnResults(
+      turn([...items, say(4, 'Done')]),
+      null,
+      null,
+      false,
+      'en-US',
+      facts,
+    );
+    expect(drawn(allowed.parts)).toEqual(['Ran 2 steps: c2 m3 c3', 'a2', 'm4']);
+    const declined = [ask, call(2), repeat(2, 'deny'), say(3, 'Fine')];
+    expect(drawn(turnResults(turn(declined), null, null, false, 'en-US').parts)).toEqual([
+      'untold: c2',
+      'm3',
+    ]);
   });
 
   it('shows a turn that did no work as what it said, with no receipt', () => {

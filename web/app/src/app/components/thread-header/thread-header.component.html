@@ -13,7 +13,7 @@
     </button>
   }
   <div class="heading">
-    <h1 class="title" data-testid="thread-title">
+    <h1 #heading class="title" data-testid="thread-title" tabindex="-1">
       <button
         type="button"
         class="rename"
@@ -24,13 +24,42 @@
         <span dir="auto">{{ title() }}</span>
       </button>
     </h1>
-    @if (project(); as project) {
-      <p class="meta" data-testid="thread-meta">
-        <glz-icon class="folder" [icon]="icons.folder" />
-        <span class="where">{{ project }}</span>
-      </p>
+    @if (meta()) {
+      <div class="meta" data-testid="thread-meta">
+        @if (project(); as project) {
+          <span class="part">
+            <glz-icon class="folder" [icon]="icons.folder" />
+            <span class="words">{{ project }}</span>
+          </span>
+        }
+        @if (line(); as line) {
+          <span class="part" data-testid="thread-repeats">
+            <glz-icon [icon]="icons.repeat" />
+            <span class="words">{{ line }}</span>
+          </span>
+        }
+        @if (buttons(); as schedule) {
+          <app-schedule-actions
+            testId="thread-repeats"
+            [schedule]="schedule"
+            [(error)]="error"
+            (changed)="changed($event)"
+            (removed)="removed()"
+          />
+        }
+      </div>
     }
   </div>
+  @if (menu(); as schedule) {
+    <app-schedule-actions
+      menu
+      testId="thread-repeats"
+      [schedule]="schedule"
+      [(error)]="error"
+      (changed)="changed($event)"
+      (removed)="removed()"
+    />
+  }
   @if (panel()) {
     <button
       glzIconButton
@@ -46,3 +75,6 @@
     </button>
   }
 </header>
+@if (error(); as error) {
+  <p class="error" role="alert" data-testid="thread-repeats-error">{{ error }}</p>
+}

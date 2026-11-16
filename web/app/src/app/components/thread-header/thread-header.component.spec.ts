@@ -1,16 +1,26 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
+import { ApiError, ErrorCode, type ScheduleInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { NavService } from '../../services/nav.service';
 import { PanelService } from '../../services/panel.service';
+import { READER_ZONE } from '../../services/zone.service';
+import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { schedule } from '../../testing/fixtures';
 import { ThreadHeaderComponent } from './thread-header.component';
 
 interface Options {
   readonly narrow?: boolean;
   readonly project?: string | null;
   readonly panel?: boolean;
+  readonly schedule?: ScheduleInfo;
+  readonly fake?: FakeSession;
 }
+
+/** A schedule's chat's schedule, which runs again in years to come. */
+const REPEATS = schedule('s1', '2030-11-18T02:00:00.000Z');
 
 async function render(options: Options = {}): Promise<{
   readonly root: HTMLElement;
@@ -19,9 +29,17 @@ async function render(options: Options = {}): Promise<{
 }> {
   localStorage.clear();
   fakeMedia(options.narrow ?? false);
+  TestBed.configureTestingModule({
+    providers: [
+      ...provideFakeSession(options.fake ?? new FakeSession()),
+      { provide: READER_ZONE, useValue: 'Europe/Lisbon' },
+      { provide: LiveAnnouncer, useValue: { announce: () => Promise.resolve() } },
+    ],
+  });
   const fixture = TestBed.createComponent(ThreadHeaderComponent);
   fixture.componentRef.setInput('title', 'Fix the flaky test');
   fixture.componentRef.setInput('project', 'project' in options ? options.project : 'glave');
+  fixture.componentRef.setInput('schedule', options.schedule ?? null);
   fixture.componentRef.setInput('panel', options.panel ?? true);
   let renames = 0;
   fixture.componentInstance.rename.subscribe(() => (renames += 1));
@@ -91,5 +109,67 @@ describe('ThreadHeaderComponent', () => {
     await fixture.whenStable();
     expect(TestBed.inject(PanelService).showing()).toBe(true);
     expect(button?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('says when a schedule’s chat repeats and runs next, and pauses it, in its line', async () => {
+    const fake = new FakeSession().answer('schedule/pause', {
+      schedule: { ...REPEATS, paused: true },
+    });
+    const { root, fixture } = await render({ project: null, schedule: REPEATS, fake });
+    const meta = find(root, 'thread-meta');
+    expect(find(root, 'thread-repeats')?.textContent.trim()).toMatch(
+      /^Every day at 2:00 am · Next: .*2:00 AM$/u,
+    );
+    // Its actions sit in the line, beside a wide page.
+    expect(meta?.contains(find(root, 'thread-repeats-pause'))).toBe(true);
+    expect(find(root, 'thread-repeats-menu-trigger')).toBeNull();
+    await expectAccessible(root);
+    find(root, 'thread-repeats-pause')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(fake.paramsOf('schedule/pause')).toEqual([{ schedule: 's1', paused: true }]);
+    // The answer shows at once; the summary the server sends next is what stays.
+    expect(find(root, 'thread-repeats')?.textContent.trim()).toBe('Every day at 2:00 am · Paused');
+    fixture.componentRef.setInput('schedule', { ...REPEATS });
+    await fixture.whenStable();
+    expect(find(root, 'thread-repeats')?.textContent).toContain('Next:');
+  });
+
+  it('says in the server’s words what it refused a change with, under the bar', async () => {
+    const fake = new FakeSession().answer(
+      'schedule/pause',
+      new ApiError({ code: ErrorCode.NO_SCHEDULE, message: 'no such schedule' }),
+    );
+    const { root, fixture } = await render({ schedule: REPEATS, fake });
+    find(root, 'thread-repeats-pause')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const error = find(root, 'thread-repeats-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toBe('no such schedule');
+    expect(root.querySelector('header')?.contains(error)).toBe(false);
+    await expectAccessible(root);
+  });
+
+  it('takes the line away once the schedule is removed, the keyboard on the title', async () => {
+    const { root, fixture } = await render({ schedule: REPEATS });
+    find(root, 'thread-repeats-remove')?.click();
+    await fixture.whenStable();
+    root.querySelector<HTMLElement>('[data-testid="thread-repeats-confirm-ok"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(find(root, 'thread-repeats')).toBeNull();
+    expect(find(root, 'thread-meta')?.textContent.trim()).toBe('glave');
+    expect(document.activeElement).toBe(find(root, 'thread-title'));
+  });
+
+  it('on a phone, keeps the bar to one row: the actions under a ⋯ at its end', async () => {
+    const { root } = await render({ narrow: true, schedule: REPEATS });
+    expect(find(root, 'thread-repeats')).not.toBeNull();
+    expect(find(root, 'thread-repeats-pause')).toBeNull();
+    const trigger = find(root, 'thread-repeats-menu-trigger');
+    expect(find(root, 'thread-meta')?.contains(trigger)).toBe(false);
+    expect(trigger?.getAttribute('aria-label')).toBe('Options for Audit the dependencies');
+    await expectAccessible(root);
   });
 });

@@ -10,6 +10,17 @@
   white-space: pre-wrap;
 }
 
+// More of what it asks, a plain line each, in the secondary tone: when, and where it goes.
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+  padding: 0;
+  color: var(--glz-color-text-secondary);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
 // Why it asks, in its own words under what would run: the warning tone while it waits, muted
 // once answered, as the card rests.
 .caution {
