@@ -33,6 +33,7 @@ use web_push_native::{Auth, decrypt};
 
 use crate::support::*;
 
+mod restarts;
 mod sessions;
 
 /// How long a test waits for a push to reach the push service on this computer.
@@ -148,7 +149,12 @@ async fn forgotten(server: &Pushed, caller: &Caller, left: &[&str]) {
 }
 
 /// Subscribes `browser` at `endpoint` as `caller`'s `device`.
-async fn subscribe(server: &Pushed, caller: &Caller, browser: &Browser, endpoint: &str) {
+async fn subscribe<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    browser: &Browser,
+    endpoint: &str,
+) {
     let subscribe = browser.subscribe(endpoint, "Safari on iPhone");
     offered(server.request_as(caller, subscribe).await.unwrap());
 }
@@ -519,7 +525,7 @@ fn asks() -> Vec<Completion> {
 }
 
 /// Runs `body` while `server` pushes what needs people, from before `body` begins.
-async fn pushing(server: &Pushed, body: impl Future<Output = ()>) {
+async fn pushing<L: EventLog + 'static>(server: &Tested<L>, body: impl Future<Output = ()>) {
     tokio::select! {
         biased;
         () = server.push_notifications() => unreachable!("it pushes until dropped"),

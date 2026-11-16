@@ -274,6 +274,8 @@ export class ThreadComponent {
       line: $localize`:@@thread.away:Finished while you were away · ${time}:TIME:`,
     };
   });
+  /** The key of the turn opened at, which changes only when another is. */
+  private readonly awayAt = computed(() => this.away()?.key ?? null);
   /** Each turn shown, with the line it shows above its reply when it is the one opened at. */
   protected readonly shownTurns = computed(() => {
     const away = this.away();
@@ -329,6 +331,13 @@ export class ThreadComponent {
     // The server writes its own words in the thread (what an approval asks, what replies drew
     // on, the plan) in the person's language: when they choose another, it is read again.
     onChange('language', () => void this.service.open(this.thread()));
+    // Opened at a turn's end, the conversation lets go of its own end before the line is
+    // drawn, so the line comes into view and stays there.
+    effect(() => {
+      if (this.awayAt() !== null) {
+        this.atBottom.set(false);
+      }
+    });
   }
 
   protected send(text: string): void {

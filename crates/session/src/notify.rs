@@ -217,6 +217,11 @@ where
             Scope::glaves_own(located.org, located.project)
         };
         let summary = self.summary(scope, thread).await?;
+        // A subagent's end is its parent's to tell, though this server, started since, no
+        // longer knows the parent (a crash's turns closed as it starts).
+        if need.is_turns_end() && summary.parent.is_some() {
+            return Ok(());
+        }
         let Some((sentence, urgency)) = need.told(summary.title) else {
             return Ok(());
         };
