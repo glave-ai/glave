@@ -51,7 +51,14 @@ async fn made_by(workspace: Workspace, commands: &[&str]) -> Vec<FileMade> {
         })
         .collect();
     answers.push(answer(Some("Done."), vec![], StopReason::EndTurn));
-    let (harness, _) = harness_with(workspace, answers, AllowAll, InMemoryLog::new(), 1, settings());
+    let (harness, _) = harness_with(
+        workspace,
+        answers,
+        AllowAll,
+        InMemoryLog::new(),
+        1,
+        settings(),
+    );
     let mut thread = harness.start_thread(scope()).await.unwrap();
     turn(&harness, &mut thread, "make the files").await;
     let made = made(&events(harness.log(), thread.id).await);
@@ -59,7 +66,11 @@ async fn made_by(workspace: Workspace, commands: &[&str]) -> Vec<FileMade> {
     for file in &made {
         if let Kept::Blob(blob) = &file.kept {
             let found = harness.blobs().get(&scope(), &blob.sha256).await.unwrap();
-            assert!(found.is_some(), "{} kept apart from the computer", file.path);
+            assert!(
+                found.is_some(),
+                "{} kept apart from the computer",
+                file.path
+            );
         }
     }
     made
@@ -78,7 +89,11 @@ fn what_a_turn_made_in_its_folder_is_kept_however_it_was_made() {
     write(&dir, "changed.pdf", "%PDF-1.7 changed");
     write(&dir, "out/keep", "");
     write(&dir, ".cache/keep", "");
-    write(&dir, "make.sh", "printf 'PK made by a script' > report.docx\n");
+    write(
+        &dir,
+        "make.sh",
+        "printf 'PK made by a script' > report.docx\n",
+    );
     block_on!(async {
         let commands = [
             "sh make.sh",
@@ -113,7 +128,10 @@ fn a_turn_keeps_eight_files_and_none_holding_a_secret() {
     let dir = folder("made-many");
     let value = any_secret();
     let known = KnownSecrets::default();
-    known.set(vec![Known::new("API_KEY".into(), Secret::new(value.clone()))]);
+    known.set(vec![Known::new(
+        "API_KEY".into(),
+        Secret::new(value.clone()),
+    )]);
     block_on!(async {
         let commands = [
             "for i in 1 2 3 4 5 6 7 8 9; do printf 'n,%s' \"$i\" > \"f$i.csv\"; done",

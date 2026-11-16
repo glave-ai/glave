@@ -320,6 +320,28 @@ fn with_no_one_at_the_terminal_a_turn_runs_here_declines_what_asks_and_leaves_no
     );
 }
 
+/// Every file a turn made prints as one line, in the server's words, after its receipt.
+#[test]
+fn a_file_the_turn_made_prints_as_one_line() {
+    let place = place("tm");
+    choose(&place, "model", "\"m\"");
+    choose(&place, "permissions", "\"auto\"");
+    choose(&place, "titles", "false");
+    let budget = json!({"path": "budget.csv", "content": "Item,Total\nFlights,780\n"});
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "write", &budget),
+        Reply::text("Made a budget."),
+    ])
+    .unwrap();
+    let said = glave(&place, &model, &["make a budget"], "");
+    let shown = text(&said);
+    assert!(said.status.success(), "{shown}");
+    assert!(
+        shown.contains("Made a spreadsheet: budget · Kept with this chat"),
+        "{shown}"
+    );
+}
+
 #[test]
 fn glave_alone_opens_the_folder_s_project_asking_once_else_the_person_s_chats() {
     let place = asking("ta");

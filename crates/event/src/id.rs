@@ -209,6 +209,13 @@ v7_id!(
     "device id"
 );
 
+v7_id!(
+    /// Identifies one item of a person's Library (`library.kept`), in every client and in a
+    /// media tool's result (`asset`).
+    AssetId,
+    "asset id"
+);
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,

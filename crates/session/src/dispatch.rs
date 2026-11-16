@@ -475,6 +475,15 @@ where
                 answer,
             } => boxed(|| self.answer_trust(caller, thread, &ask, answer)).await,
             Request::TasksList { limit } => boxed(|| self.list_tasks(caller, limit)).await,
+            Request::LibraryList {} => boxed(|| self.list_library(caller)).await,
+            Request::LibraryRead {
+                project,
+                asset,
+                offset,
+            } => boxed(|| self.read_library(caller, (project, asset), offset.unwrap_or(0))).await,
+            Request::LibraryRemove { project, asset } => {
+                boxed(|| self.remove_from_library(caller, project, asset)).await
+            }
             Request::TasksStop { thread } => boxed(|| self.stop_task(caller, thread)).await,
             Request::TerminalOpen { thread, size } => {
                 boxed(|| self.open_terminal(caller, thread, size)).await

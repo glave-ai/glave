@@ -13,9 +13,10 @@ pub use super::connectors::{
 pub use super::credentials::{Ability, CredentialInfo, DeviceCode};
 pub use super::credits::{CreditsAccount, CreditsInfo, PersonSpent, SpaceCredits};
 pub use super::error::{ApiError, ErrorData};
-pub use super::files::{AttachedFile, FileInfo, FilePiece, MadeFile, TurnFiles};
+pub use super::files::{AttachedFile, FileInfo, FilePiece, LibraryChat, LibraryItem};
 pub use super::live::Update;
-pub use super::meta::{IdempotencyKey, Meta};
+pub use super::made::{FilePreview, MadeFile, TurnFiles};
+pub use super::meta::{IdempotencyKey, Meta, PROTOCOL};
 pub use super::models::{EndpointInfo, ModelInfo};
 pub use super::notification::{Notification, WatchEnd};
 pub use super::params::{Answer, Show};
@@ -37,4 +38,4 @@ pub use super::tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use super::told::Told;
 pub use super::trust::{TrustAsk, TrustChoice, TrustItem};
 pub use glave_event::{Accent, Color, Filters, Grouping, Hides, Permissions, Sha256, TurnResult};
-pub use glave_event::{Forge, ProviderKind};
+pub use glave_event::{AssetKind, Forge, ProviderKind};

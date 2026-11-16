@@ -205,7 +205,8 @@ mod tests {
         let cut = bounded(long, false);
         assert!(cut.cut && cut.markdown.len() <= MOST_MARKDOWN);
         assert!(cut.markdown.ends_with("a line of text"));
-        let rows: String = (0..300).map(|n| format!("{n}\n")).collect();
+        let rows: Vec<String> = (0..300).map(|n| n.to_string()).collect();
+        let rows = rows.join("\n");
         let csv = preview(rows.as_bytes(), "text/csv").unwrap();
         assert!(
             csv.cut && csv.markdown.lines().count() == 201,

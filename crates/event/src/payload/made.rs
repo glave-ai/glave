@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::blob::BlobRef;
+use crate::payload::library::AssetKind;
 
 /// A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
 /// content kept for the thread, or why it was not. The model never sees it; the person opens
@@ -31,64 +32,53 @@ pub enum Kept {
     Secret,
 }
 
-/// What kind of file a made file is, for the person: what a card names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FileKind {
-    Document,
-    Spreadsheet,
-    Deck,
-    Pdf,
-    Other,
-}
-
 /// The files counted as made, by the end of their name: each one's media type and kind.
-const MADE: [(&str, &str, FileKind); 14] = [
+const MADE: [(&str, &str, AssetKind); 14] = [
     (
         "docx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        FileKind::Document,
+        AssetKind::Document,
     ),
-    ("doc", "application/msword", FileKind::Document),
+    ("doc", "application/msword", AssetKind::Document),
     (
         "odt",
         "application/vnd.oasis.opendocument.text",
-        FileKind::Document,
+        AssetKind::Document,
     ),
-    ("rtf", "application/rtf", FileKind::Document),
+    ("rtf", "application/rtf", AssetKind::Document),
     (
         "xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        FileKind::Spreadsheet,
+        AssetKind::Spreadsheet,
     ),
     (
         "xlsm",
         "application/vnd.ms-excel.sheet.macroEnabled.12",
-        FileKind::Spreadsheet,
+        AssetKind::Spreadsheet,
     ),
-    ("xls", "application/vnd.ms-excel", FileKind::Spreadsheet),
+    ("xls", "application/vnd.ms-excel", AssetKind::Spreadsheet),
     (
         "ods",
         "application/vnd.oasis.opendocument.spreadsheet",
-        FileKind::Spreadsheet,
+        AssetKind::Spreadsheet,
     ),
-    ("csv", "text/csv", FileKind::Spreadsheet),
+    ("csv", "text/csv", AssetKind::Spreadsheet),
     (
         "pptx",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        FileKind::Deck,
+        AssetKind::Deck,
     ),
-    ("ppt", "application/vnd.ms-powerpoint", FileKind::Deck),
+    ("ppt", "application/vnd.ms-powerpoint", AssetKind::Deck),
     (
         "odp",
         "application/vnd.oasis.opendocument.presentation",
-        FileKind::Deck,
+        AssetKind::Deck,
     ),
-    ("pdf", "application/pdf", FileKind::Pdf),
-    ("epub", "application/epub+zip", FileKind::Other),
+    ("pdf", "application/pdf", AssetKind::Pdf),
+    ("epub", "application/epub+zip", AssetKind::Other),
 ];
 
-impl FileKind {
+impl AssetKind {
     /// The media type a file named `path` is kept as when it counts as made: a document,
     /// spreadsheet, deck, PDF or e-book, by the end of its name, whatever its case. `None` for
     /// any other file.
@@ -128,26 +118,33 @@ mod tests {
 
     #[test]
     fn a_file_counts_as_made_by_the_end_of_its_name() {
-        let sheet = FileKind::made_as("out/Trip Budget.XLSX");
-        assert_eq!(sheet.map(FileKind::of), Some(FileKind::Spreadsheet));
+        let sheet = AssetKind::made_as("out/Trip Budget.XLSX");
+        assert_eq!(sheet.map(AssetKind::of), Some(AssetKind::Spreadsheet));
         assert_eq!(
-            FileKind::made_as("plan.docx").map(FileKind::of),
-            Some(FileKind::Document)
+            AssetKind::made_as("plan.docx").map(AssetKind::of),
+            Some(AssetKind::Document)
         );
         assert_eq!(
-            FileKind::made_as("pitch.pptx").map(FileKind::of),
-            Some(FileKind::Deck)
+            AssetKind::made_as("pitch.pptx").map(AssetKind::of),
+            Some(AssetKind::Deck)
         );
-        assert_eq!(FileKind::made_as("a.pdf"), Some("application/pdf"));
+        assert_eq!(AssetKind::made_as("a.pdf"), Some("application/pdf"));
         assert_eq!(
-            FileKind::made_as("book.epub").map(FileKind::of),
-            Some(FileKind::Other)
+            AssetKind::made_as("book.epub").map(AssetKind::of),
+            Some(AssetKind::Other)
         );
-        for not in ["main.rs", "notes.md", "pdf", ".pdf", "image.png", "dir.docx/"] {
-            assert_eq!(FileKind::made_as(not), None, "{not}");
+        for not in [
+            "main.rs",
+            "notes.md",
+            "pdf",
+            ".pdf",
+            "image.png",
+            "dir.docx/",
+        ] {
+            assert_eq!(AssetKind::made_as(not), None, "{not}");
         }
-        assert_eq!(FileKind::of("application/zip"), FileKind::Other);
-        let pattern = FileKind::made_pattern();
+        assert_eq!(AssetKind::of("application/zip"), AssetKind::Other);
+        let pattern = AssetKind::made_pattern();
         assert!(pattern.starts_with("*.{docx,DOCX,doc,DOC,") && pattern.ends_with("epub,EPUB}"));
     }
 

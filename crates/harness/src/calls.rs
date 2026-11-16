@@ -68,9 +68,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
-        // Nothing changes the folder before the turn's first call: what it holds then is what
-        // the files the turn made are told from as it ends (`made.rs`).
-        if step.seen.is_none() {
+        // Nothing changes the folder before the turn's first call that works in it: what it
+        // holds then is what the files the turn made are told from as it ends (`made.rs`).
+        if step.seen.is_none() && crate::made::works_there(thread, calls, &step.toolset) {
             step.seen = Some(self.seen(thread).await);
         }
         let mut rest = calls;

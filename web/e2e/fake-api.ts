@@ -636,10 +636,10 @@ const ANSWERS: Answers<Known> = {
   },
   'thread/sources': (params) => sourcesOf(params),
   'thread/events': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
-  'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }), // short: all of it
+  // Each of these threads is short: its latest turns are all of it.
+  'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
   'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
   'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
-  'thread/files': () => ({ made: [] }), // none made a file here; made.e2e.ts answers for one
   'thread/start': (params, { started }) => {
     const inProject = params.project === PERSONAL.id ? PERSONAL : PROJECT;
     const fresh = thread(NEW_THREAD, '', 'idle', inProject);

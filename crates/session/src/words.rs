@@ -17,7 +17,7 @@ pub(crate) use self::sentence::Sentence;
 use self::events::{asks, event_in};
 use crate::protocol::{
     ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, ListedCommand, PushInfo,
-    Reply, SearchInfo, ThreadSummary, Told, TurnFiles, Usage,
+    Reply, SearchInfo, ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -30,7 +30,12 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
         Ok(Reply::Connections { connections }) => connections.iter().any(|it| used(&it.usage)),
         Ok(Reply::Connection { connection }) => used(&connection.usage),
-        Ok(Reply::Connectors { .. } | Reply::Connector { .. }) => true,
+        Ok(
+            Reply::Connectors { .. }
+            | Reply::Connector { .. }
+            | Reply::Files { .. }
+            | Reply::FilePreview { .. },
+        ) => true,
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
@@ -47,10 +52,6 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
-        Ok(Reply::Files { made }) => made
-            .iter()
-            .flat_map(|turn| &turn.files)
-            .any(|file| file.kept.translatable()),
         Ok(Reply::Commands { commands, .. }) => commands
             .iter()
             .flat_map(listening_told)
@@ -125,7 +126,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
-        Ok(Reply::Files { made }) => files_in(made, language),
+        Ok(reply @ (Reply::Files { .. } | Reply::FilePreview { .. })) => made_in(reply, language),
         Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
             notice: Some(notice),
@@ -153,10 +154,25 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
     }
 }
 
-/// Writes where each file the turns `made` is kept in `language`.
-fn files_in(made: &mut [TurnFiles], language: Language) {
-    for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
-        file.kept.translate(language);
+/// Writes the sentences of the files threads made in `language`: where each is kept, its parts and
+/// what was made, and what a preview left out.
+fn made_in(reply: &mut Reply, language: Language) {
+    match reply {
+        Reply::Files { made } => {
+            for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
+                file.kept.translate(language);
+                file.sentence.translate(language);
+                if let Some(parts) = &mut file.parts {
+                    parts.translate(language);
+                }
+            }
+        }
+        Reply::FilePreview { preview } => {
+            if let Some(cut) = &mut preview.cut {
+                cut.translate(language);
+            }
+        }
+        _ => {}
     }
 }
 

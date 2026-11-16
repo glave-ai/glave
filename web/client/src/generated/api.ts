@@ -44,6 +44,15 @@ export type ApiError = {
 };
 
 /**
+ * Identifies one item of a person's Library (`library.kept`), in every client and in a
+ * media tool's result (`asset`).
+ */
+export type AssetId = string;
+
+/** What kind of thing a Library item is, which a client filters by. */
+export type AssetKind = "pdf" | "picture" | "document" | "spreadsheet" | "deck" | "other";
+
+/**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
  * ordered by [`Seq`]. Always written with three fractional digits, such as
  * `2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.
@@ -69,6 +78,13 @@ export type AwakeInfo = {
 } | {
   readonly kind: "cannot";
   readonly reason: string;
+};
+
+/** Points to content held in the blob store instead of inside an event. */
+export type BlobRef = {
+  readonly bytes: number;
+  readonly media_type: string;
+  readonly sha256: string;
 };
 
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
@@ -528,8 +544,18 @@ export type FileInfo = {
   readonly sha256: string;
 };
 
-/** What kind of file a made file is, for the person: what a card names it. */
-export type FileKind = "document" | "spreadsheet" | "deck" | "pdf" | "other";
+/**
+ * A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
+ * content kept for the thread, or why it was not. The model never sees it; the person opens
+ * and downloads it.
+ */
+export type FileMade = {
+  /** Its size on the computer. */
+  readonly bytes: number;
+  readonly kept: Kept;
+  /** Where it was made, relative to the thread's folder. */
+  readonly path: string;
+};
 
 /**
  * A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
@@ -546,6 +572,13 @@ export type FilePiece = {
   readonly next?: number | null;
   /** Where in the file this piece starts. */
   readonly offset: number;
+};
+
+/** A file a thread made, as a person previews it. */
+export type FilePreview = {
+  /** What was left out, in the server's sentence, when the preview is not the whole file. */
+  readonly cut?: string | null;
+  readonly markdown: string;
 };
 
 /**
@@ -636,6 +669,41 @@ export type InviteInfo = {
 /** How the one who holds an invite joins the organization it is to. */
 export type JoinWay = "passkey" | "company" | "accept" | "member";
 
+/** Whether a file a turn made was kept for the thread. */
+export type Kept = {
+  readonly blob: BlobRef;
+} | "too_large" | "secret";
+
+/** The chat a Library item was made in. */
+export type LibraryChat = {
+  readonly thread: ThreadId;
+  /** Its title, once it has one. */
+  readonly title?: string | null;
+};
+
+/** Something glave made for the person, kept in their Library. */
+export type LibraryItem = {
+  /**
+   * What `library/read` and `library/remove` name it by, with its `project`; a media tool's
+   * result calls it `asset:<id>`.
+   */
+  readonly asset: AssetId;
+  /** Its file's size. */
+  readonly bytes: number;
+  /** The chat it was made in, while that chat is there: absent once it was deleted. */
+  readonly chat?: LibraryChat | null;
+  /** The name its file is saved as. */
+  readonly file_name: string;
+  readonly kind: AssetKind;
+  readonly made_at: At;
+  /** Its media type, such as `image/png`. */
+  readonly media_type: string;
+  /** What it is called: the start of what it was made from, in the person's words. */
+  readonly name: string;
+  /** The project it was made in, the person's Chats among them. */
+  readonly project: ProjectId;
+};
+
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
 
@@ -670,25 +738,35 @@ export type Logo = {
 };
 
 /**
- * A file a call made for the person, as `thread/files` gives it: kept with the thread, so it
- * opens and downloads after the computer that made it is gone.
+ * A file a turn made for the person: kept with the thread, so it opens and downloads after the
+ * computer that made it is gone, or left there, said why.
  */
 export type MadeFile = {
   /** Its size. */
   readonly bytes: number;
-  /** Where it is kept, in a sentence: "Kept with this chat". */
+  /** The name its file is saved as. */
+  readonly file_name: string;
+  /** Where it is kept, or why it was not, in a sentence: "Kept with this chat". */
   readonly kept: string;
-  readonly kind: FileKind;
+  readonly kind: AssetKind;
   /** Its media type, such as `application/pdf`. */
   readonly media_type: string;
-  /** Its name as it was made, which it is saved under. */
+  /** What it is called: the title it gives itself, else its file's name without its end. */
   readonly name: string;
-  /** The `seq` of the `tool.call.completed` that made it, as last made in its turn. */
-  readonly seq: Seq;
-  /** Its content's SHA-256, which `file/read` and `file/preview` read it by. */
-  readonly sha256: string;
-  /** What a card calls it: its name without the end that says its kind. */
-  readonly title: string;
+  /** How many pages, sheets or slides it has, in a phrase ("2 sheets"), when that is known. */
+  readonly parts?: string | null;
+  /**
+   * Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck
+   * glave reads), or a client draws it (a PDF); false for any other, which only downloads.
+   */
+  readonly previews: boolean;
+  /** What was made, in one line: "Made a spreadsheet: Trip budget (2 sheets)". */
+  readonly sentence: string;
+  /**
+   * Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it
+   * was not kept.
+   */
+  readonly sha256?: string | null;
 };
 
 /** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
@@ -1575,9 +1653,8 @@ export type TurnChanges = {
   readonly turn: Seq;
 };
 
-/** The files one turn made, by the `seq` of its `turn.started`. */
+/** The files one turn made, in path order, by the `seq` of its `turn.started`. */
 export type TurnFiles = {
-  /** Each file once, by where it was made, in the order first made, as last made. */
   readonly files: readonly (MadeFile)[];
   readonly turn: Seq;
 };
@@ -1604,6 +1681,12 @@ export type TurnResult = {
    * reported it.
    */
   readonly estimated?: boolean;
+  /**
+   * The files it made for the person: each document, spreadsheet, deck or PDF new or changed
+   * in the thread's folder between its start and its end, in path order, kept for the thread
+   * or said why not (`session.md`, "Files it made"). Absent when it made none.
+   */
+  readonly made?: readonly (FileMade)[];
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
@@ -2087,9 +2170,9 @@ export type FilePreviewParams = {
   readonly thread: ThreadId;
 };
 
-/** A file a thread made, as a person previews it: Markdown. */
+/** A file a thread made, as a person previews it. */
 export type FilePreviewResult = {
-  readonly markdown: string;
+  readonly preview: FilePreview;
 };
 
 export type FileReadParams = {
@@ -2244,6 +2327,31 @@ export type LanguageSetParams = {
 export type LanguageSetResult = {
   readonly language?: string | null;
 };
+
+export type LibraryListParams = Readonly<Record<string, never>>;
+
+/** What glave made for the person, newest first. */
+export type LibraryListResult = {
+  readonly items: readonly (LibraryItem)[];
+};
+
+export type LibraryReadParams = {
+  readonly asset: AssetId;
+  readonly offset?: number | null;
+  readonly project: ProjectId;
+};
+
+/** A piece of a file a thread holds. */
+export type LibraryReadResult = {
+  readonly piece: FilePiece;
+};
+
+export type LibraryRemoveParams = {
+  readonly asset: AssetId;
+  readonly project: ProjectId;
+};
+
+export type LibraryRemoveResult = Readonly<Record<string, never>>;
 
 export type MemoryEditParams = {
   readonly memory: MemoryId;
@@ -3292,6 +3400,9 @@ export interface Methods {
   readonly "invite/show": { readonly params: InviteShowParams; readonly result: InviteShowResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
+  readonly "library/list": { readonly params: LibraryListParams; readonly result: LibraryListResult };
+  readonly "library/read": { readonly params: LibraryReadParams; readonly result: LibraryReadResult };
+  readonly "library/remove": { readonly params: LibraryRemoveParams; readonly result: LibraryRemoveResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
   readonly "memory/forget": { readonly params: MemoryForgetParams; readonly result: MemoryForgetResult };
   readonly "memory/get": { readonly params: MemoryGetParams; readonly result: MemoryGetResult };

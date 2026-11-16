@@ -1,4 +1,4 @@
-import { DOCUMENT, DestroyRef, Service, inject } from '@angular/core';
+import { DestroyRef, Service, inject } from '@angular/core';
 import type { FileReadResult } from '@glave/client';
 
 import { fromBase64url } from '../lib/passkeys';
@@ -35,7 +35,6 @@ interface Kept {
 @Service()
 export class FilesService {
   private readonly session = inject(SessionService);
-  private readonly document = inject(DOCUMENT);
   /** Each file's address, by its thread and hash, the one held or let go of longest ago first. */
   private readonly kept = new Map<string, Kept>();
 
@@ -72,22 +71,6 @@ export class FilesService {
         }
       },
     };
-  }
-
-  /**
-   * Saves the file `sha256` that `thread` holds, of `mediaType`, to the person's drive under
-   * `name`, as the browser saves a download; rejects, saying why, when it can't be read.
-   */
-  async save(thread: string, sha256: string, mediaType: string, name: string): Promise<void> {
-    const held = this.hold(thread, sha256, mediaType);
-    try {
-      const link = this.document.createElement('a');
-      link.href = await held.url;
-      link.download = name;
-      link.click();
-    } finally {
-      held.release();
-    }
   }
 
   /** One holder of `url`, kept as `key`, lets go of it; past `MOST_UNUSED` unheld, one goes. */

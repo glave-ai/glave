@@ -23,7 +23,6 @@ import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
 import { ThreadService } from '../../services/thread.service';
-import { MadeFileComponent } from '../made-file/made-file.component';
 import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
@@ -54,7 +53,6 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
     GlzMessageComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
-    MadeFileComponent,
     ThoughtComponent,
     ThreadItemComponent,
     TurnChangesComponent,

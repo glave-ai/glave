@@ -324,7 +324,7 @@ where
 
     /// `thread`'s event at `seq`, when there is one: the one a summary reads its title, or where
     /// it works, from.
-    async fn event_at(
+    pub(crate) async fn event_at(
         &self,
         scope: &Scope,
         thread: ThreadId,

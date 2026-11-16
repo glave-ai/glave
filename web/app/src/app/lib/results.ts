@@ -1,4 +1,4 @@
-import type { ChangedFile, MadeFile, Outcome, ReplySources, TurnResult } from '@glave/client';
+import type { ChangedFile, Outcome, ReplySources, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type {
@@ -74,8 +74,6 @@ export interface TurnResults {
    * room is kept; else none.
    */
   readonly room: readonly ChangedFile[];
-  /** The files it made for the person, as the server says. */
-  readonly made: readonly MadeFile[];
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -192,8 +190,6 @@ export interface TurnFacts {
    * as the thread opens.
    */
   readonly changed: ReadonlyMap<number, readonly ChangedFile[]> | null;
-  /** The files each turn made for the person, by the `seq` of its start. */
-  readonly made: ReadonlyMap<number, readonly MadeFile[]>;
   /** Each run of calls in a line, and each turn's reply. */
   readonly steps: Steps;
   /** Each model's name as the server gives it, by the id a turn records. */
@@ -203,7 +199,6 @@ export interface TurnFacts {
 const NO_FACTS: TurnFacts = {
   sourced: new Map(),
   changed: new Map(),
-  made: new Map(),
   steps: NO_STEPS,
   models: new Map(),
 };
@@ -261,7 +256,6 @@ export function turnResults(
     working,
     files: filesOf(turn, told.changed),
     room: told.changed === null ? roomFor(result?.changed ?? []) : [],
-    made: turn.startSeq === null ? [] : (told.made.get(turn.startSeq) ?? []),
     receipt:
       calls > 0
         ? {

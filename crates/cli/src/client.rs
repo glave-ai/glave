@@ -208,6 +208,9 @@ impl Client<'_> {
         let code = match ended {
             Some(Ok(turn)) => {
                 printer.receipt(&turn);
+                if !turn.made.is_empty() {
+                    self.show_made(printer).await;
+                }
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,
                     // As shells report a program stopped by Ctrl-C.
@@ -416,6 +419,25 @@ impl Client<'_> {
     }
 
     /// Asks the server to cancel the turn; true once asked, so it is asked only once.
+    /// Shows the files the turn that just ended made, a line each in the server's words ("Made a
+    /// spreadsheet: Trip budget (2 sheets)"), then where it keeps them. Nothing when it can't
+    /// say: the turn's receipt stands without them.
+    async fn show_made(&self, printer: &mut Printer) {
+        let listed = self.server.request(Request::ThreadFiles {
+            thread: self.thread,
+        });
+        let Ok(Reply::Files { made }) = listed.await else {
+            return;
+        };
+        for file in made
+            .last()
+            .map(|turn| turn.files.as_slice())
+            .unwrap_or_default()
+        {
+            printer.status(&format!("{} · {}", &*file.sentence, &*file.kept));
+        }
+    }
+
     async fn cancel(&self) -> bool {
         // The turn may have just ended on its own, which is fine.
         let _ = self

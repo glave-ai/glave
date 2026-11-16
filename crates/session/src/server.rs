@@ -252,6 +252,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) rereads: Option<Arc<dyn Rereads>>,
     /// Held while model accounts or the host's settings change and the models follow.
     pub(crate) changing_models: tokio::sync::Mutex<()>,
+    /// Reading the files threads made, to describe or preview them (`made.rs`).
+    pub(crate) reading: crate::made::Reading,
     /// Where each person's git hosts are kept, where people may connect them.
     pub(crate) git_hosts: Option<Arc<dyn PeoplesGitHosts>>,
     /// Where sign-ins to connections are kept, when the person here may sign in.
@@ -377,6 +379,7 @@ where
                 providers: wiring.providers,
                 rereads: wiring.rereads,
                 changing_models: tokio::sync::Mutex::new(()),
+                reading: crate::made::Reading::default(),
                 git_hosts: wiring.git_hosts,
                 connections: wiring.connections,
                 reached: OnceLock::new(),

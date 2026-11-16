@@ -42,6 +42,7 @@ mod keyed;
 mod language;
 mod leased;
 mod ledger;
+mod library;
 mod lists;
 mod made;
 mod mailing;

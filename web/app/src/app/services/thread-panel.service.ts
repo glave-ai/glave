@@ -2,7 +2,6 @@ import { Service, computed, effect, inject, linkedSignal, signal, untracked } fr
 import {
   ApiError,
   type ChangedFile,
-  type MadeFile,
   type ProjectId,
   type ThreadId,
   type WorkspaceBound,
@@ -43,7 +42,7 @@ interface Compacting {
  * changed, its commands running in the background, and how many of the apps its project's
  * threads use need signing in again (`connector/list`, read as its project is known and again
  * as the person's connections change), and the previews of what those commands serve, the one
- * shown the person's choice; the file it made that the person opened last. Whether it shows anything at all, so a plain chat has no
+ * shown the person's choice. Whether it shows anything at all, so a plain chat has no
  * panel, and whether it shows now; a panel left with nothing closes its sheet. Compacting its
  * context on request (`thread/compact`), a refusal in the server's words. And a turn's changes
  * shown in full, one file's or all of them. Each thread view provides its own.
@@ -100,15 +99,6 @@ export class ThreadPanelService {
   /** How many times a preview was asked to be shown in its tab: each ask shows the tab. */
   private readonly previewAsks = signal(0);
   readonly previewAsked = this.previewAsks.asReadonly();
-  /** The file the thread made that the person opened last, in a tab of its own; none at first. */
-  private readonly opened = linkedSignal<ThreadId | null, MadeFile | null>({
-    source: this.thread.thread,
-    computation: () => null,
-  });
-  readonly file = this.opened.asReadonly();
-  /** How many times a file was opened: each opening shows its tab. */
-  private readonly fileAsks = signal(0);
-  readonly fileAsked = this.fileAsks.asReadonly();
   /**
    * How many of the apps its project's threads use need signing in again: none until listed,
    * or when they could not be.
@@ -131,8 +121,7 @@ export class ThreadPanelService {
       this.plan() !== null ||
       this.files().length > 0 ||
       this.room().length > 0 ||
-      this.running() > 0 ||
-      this.file() !== null,
+      this.running() > 0,
   );
   /**
    * Whether the panel shows now: the thread has one, and it is open, beside the page or, on a
@@ -261,16 +250,6 @@ export class ThreadPanelService {
   showPreview(preview: Preview): void {
     this.choice.set(previewKey(preview));
     this.previewAsks.update((asks) => asks + 1);
-  }
-
-  /**
-   * Opens `file`, which the thread made, in a tab of the panel, and shows the panel: beside the
-   * page, or, on a narrow screen, as a sheet over it, which fills a phone's screen.
-   */
-  openFile(file: MadeFile): void {
-    this.opened.set(file);
-    this.fileAsks.update((asks) => asks + 1);
-    this.panel.setShowing(true);
   }
 
   /** Starts another thread afresh: no changes in full, its sheet closed. */

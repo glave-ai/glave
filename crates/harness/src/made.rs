@@ -8,13 +8,15 @@
 
 use std::collections::BTreeMap;
 
-use glave_event::{FileKind, FileMade, Kept};
+use glave_event::{AssetKind, FileMade, Kept};
 use glave_ports::computer::{EntryKind, Glob, Stamp};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Pieces, digest};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Pieces, ToolCall, digest};
 
 use crate::approval::Approver;
 use crate::files::MAX_FILE;
 use crate::harness::{Harness, Thread};
+use crate::tools::Tool;
+use crate::toolset::ToolSet;
 
 /// The most files one turn keeps: past them, the rest stay on the computer, unnamed.
 pub(crate) const MOST: usize = 8;
@@ -41,14 +43,18 @@ where
             return Seen(None);
         }
         let glob = Glob {
-            pattern: FileKind::made_pattern(),
+            pattern: AssetKind::made_pattern(),
             path: ".".to_owned(),
             limit: MOST_SEEN,
         };
         let Ok(found) = self.workspace_for(thread).glob(&glob).await else {
             return Seen(None);
         };
-        let stamps = found.stamps.into_iter().map(Some).chain(std::iter::repeat(None));
+        let stamps = found
+            .stamps
+            .into_iter()
+            .map(Some)
+            .chain(std::iter::repeat(None));
         Seen(Some(found.files.into_iter().zip(stamps).collect()))
     }
 
@@ -82,7 +88,7 @@ where
     async fn keep_made_file(&self, thread: &Thread, path: &str) -> Option<FileMade> {
         let workspace = self.workspace_for(thread);
         let stat = workspace.stat(path).await.ok()?;
-        let media_type = FileKind::made_as(&stat.path)?;
+        let media_type = AssetKind::made_as(&stat.path)?;
         if stat.kind != Some(EntryKind::File) {
             return None;
         }
@@ -113,6 +119,19 @@ where
             }
         }
     }
+}
+
+/// Whether any of `calls` can change files in `thread`'s folder, so looking it over first wakes
+/// nothing that the calls won't: glave's own `write`, `edit` or `bash`, or a worker on a
+/// computer that never sleeps. A worker on a person's own computer, which may sleep, is left to
+/// wake it with its own tools.
+pub(crate) fn works_there(thread: &Thread, calls: &[ToolCall], toolset: &ToolSet) -> bool {
+    calls.iter().any(|call| {
+        matches!(
+            Tool::named(&call.tool),
+            Some(Tool::Write | Tool::Edit | Tool::Bash)
+        ) || (thread.home.is_none() && toolset.is_agent(&call.tool))
+    })
 }
 
 /// Whether `path`, relative to the thread's folder, is in a hidden folder or is hidden itself:

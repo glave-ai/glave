@@ -37,7 +37,11 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
             .filter(|path| pattern.matches(path.strip_prefix(&top).unwrap_or(path)))
             .filter_map(|path| {
                 let (_, _, stat) = plain(&root, &path)?;
-                Some((modified(&stat), relative(root.path, &path), count(stat.st_size)))
+                Some((
+                    modified(&stat),
+                    relative(root.path, &path),
+                    count(stat.st_size),
+                ))
             })
             .collect();
         // Newest first: what changed recently is what a task is usually about.
@@ -50,7 +54,9 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
                 size: *size,
                 modified_ns: when
                     .duration_since(SystemTime::UNIX_EPOCH)
-                    .map_or(0, |since| u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)),
+                    .map_or(0, |since| {
+                        u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
+                    }),
             })
             .collect();
         Ok(Globbed {

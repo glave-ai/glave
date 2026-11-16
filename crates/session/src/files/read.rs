@@ -1,19 +1,17 @@
 //! A file a thread holds, read back through the server (`file/read`): a piece at a time, so a
 //! client draws an image the agent made, or saves any file, over every transport. Only a file
-//! one of the thread's own messages or tool results names is given: never what glave keeps
-//! beside them (a turn's configuration, what a service keeps while it asks), nor another
-//! thread's.
-
-use std::collections::HashSet;
+//! one of the thread's own messages or tool results names, or one of its turns made, is given:
+//! never what glave keeps beside them (a turn's configuration, what a service keeps while it
+//! asks), nor another thread's.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{
-    Body, CallId, FileMade, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId,
-    ToolCallCompleted, ToolCallRequested, decode,
+    Body, Kept, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId, ToolCallCompleted,
+    TurnResult, decode,
 };
 use glave_ports::stream::Reserved;
-use glave_ports::{Blob, BlobStore, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
 use crate::protocol::{ApiError, FilePiece, Reply, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
@@ -23,12 +21,12 @@ use crate::words::Sentence;
 /// may be on every transport.
 const PIECE: usize = 8 * 1024 * 1024;
 
-/// The events that name the files a thread holds: its messages and its tools' results, and the
-/// calls that say which tool a result is of, since only glave's own make files.
+/// The events that name the files a thread holds: its messages, its tools' results, and its
+/// turns' ends, which name the files they made.
 const NAMING: [&str; 3] = [
     MessageAdded::TYPE,
     ToolCallCompleted::TYPE,
-    ToolCallRequested::TYPE,
+    TurnResult::TYPE,
 ];
 
 impl<P, L, B> Server<P, L, B>
@@ -46,7 +44,36 @@ where
         sha256: &Sha256,
         offset: u64,
     ) -> Result<Reply, ApiError> {
-        let mut found = self.held_file(thread, sha256).await?;
+        let scope = self.holding(thread, sha256).await?;
+        self.read_piece(&scope, sha256, offset).await
+    }
+
+    /// The project `thread` is in, when it holds the file `sha256`: one its messages or tool
+    /// results name, or one of its turns made. Any other is "no longer here", as one never kept.
+    pub(crate) async fn holding(
+        &self,
+        thread: ThreadId,
+        sha256: &Sha256,
+    ) -> Result<Scope, ApiError> {
+        let scope = self.scope_of(thread)?;
+        if !self.names_file(&scope, thread, sha256).await? {
+            return Err(ApiError::new(code::NO_FILE, Sentence::FileNotHere));
+        }
+        Ok(scope)
+    }
+
+    /// The piece of the file `sha256` names in `scope` that starts at `offset`; "no longer here"
+    /// when it is not kept.
+    pub(crate) async fn read_piece(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        offset: u64,
+    ) -> Result<Reply, ApiError> {
+        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
+        let found = self.inner.harness.blobs().get(scope, sha256).await;
+        let found = found.map_err(|error| ApiError::internal(&error))?;
+        let mut found = found.ok_or_else(not_here)?;
         let total = found.reference.bytes;
         let mut skip = offset;
         let mut piece = Vec::new();
@@ -75,29 +102,10 @@ where
         })
     }
 
-    /// The file `sha256` that `thread` holds, to read, after the request was let through for the
-    /// thread's project: one its messages or tool results name, or one of its calls made. Any
-    /// other is "no longer here", as one never kept.
-    pub(crate) async fn held_file(
-        &self,
-        thread: ThreadId,
-        sha256: &Sha256,
-    ) -> Result<Blob, ApiError> {
-        let scope = self.scope_of(thread)?;
-        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
-        if !self.names_file(&scope, thread, sha256).await? {
-            return Err(not_here());
-        }
-        let found = self.inner.harness.blobs().get(&scope, sha256).await;
-        let found = found.map_err(|error| ApiError::internal(&error))?;
-        found.ok_or_else(not_here)
-    }
-
     /// Whether a `file` part of `thread`'s messages or tool results names `sha256`, as the file
-    /// or the copy of an image the model is sent, or a call of glave's own `write` or `bash`
-    /// made it for the person (`glave_event::FileMade`): read back from the thread's end, where
-    /// the files a client draws are, a page at a time until it is found. A deleted thread is no
-    /// such thread.
+    /// or the copy of an image the model is sent, or one of its turns made it and kept it: read
+    /// back from the thread's end, where the files a client draws are, a page at a time until it
+    /// is found. A deleted thread is no such thread.
     async fn names_file(
         &self,
         scope: &Scope,
@@ -110,18 +118,13 @@ where
         self.ensure_not_deleted(thread).await?;
         let log = self.inner.harness.log();
         let mut before = None;
-        // The calls whose results say they made it, read before the calls themselves.
-        let mut made = HashSet::new();
         loop {
             let events = log
                 .read_back(scope, thread, Some(&NAMING), before, MAX_PAGE)
                 .await?;
             let more = events.len() == MAX_PAGE;
             before = events.last().map(|event| event.seq);
-            if events
-                .into_iter()
-                .any(|event| names(event, sha256, &mut made))
-            {
+            if events.into_iter().any(|event| names(event, sha256)) {
                 return Ok(true);
             }
             if !more || before.is_none() {
@@ -131,22 +134,17 @@ where
     }
 }
 
-/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`, or is the
-/// call of glave's own `write` or `bash` whose result, among `made`, says it made it.
-fn names(event: RawEvent, sha256: &Sha256, made: &mut HashSet<CallId>) -> bool {
+/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`, or it is a
+/// turn's end that made it and kept it.
+fn names(event: RawEvent, sha256: &Sha256) -> bool {
     let parts = match decode(event).map(|event| event.body) {
         Ok(Body::MessageAdded(message)) => message.parts,
-        Ok(Body::ToolCallCompleted(done)) => {
-            let structured = done.structured.as_ref().map(FileMade::read);
-            if structured.is_some_and(|files| files.iter().any(|file| file.blob.sha256 == *sha256))
-            {
-                made.insert(done.call_id);
-            }
-            done.output
-        }
-        Ok(Body::ToolCallRequested(requested)) => {
-            return made.contains(&requested.call_id)
-                && FileMade::TOOLS.contains(&requested.tool.as_str());
+        Ok(Body::ToolCallCompleted(done)) => done.output,
+        Ok(Body::TurnEnded(ended)) => {
+            return ended
+                .made
+                .iter()
+                .any(|file| matches!(&file.kept, Kept::Blob(blob) if blob.sha256 == *sha256));
         }
         _ => return false,
     };

@@ -123,6 +123,47 @@
       ],
       "type": "object"
     },
+    "AssetId": {
+      "description": "Identifies one item of a person's Library (`library.kept`), in every client and in a\nmedia tool's result (`asset`).",
+      "format": "uuid",
+      "type": "string"
+    },
+    "AssetKind": {
+      "description": "What kind of thing a Library item is, which a client filters by.",
+      "oneOf": [
+        {
+          "enum": [
+            "pdf"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "picture",
+          "description": "An image glave made (`image_generate`, `image_edit`).",
+          "type": "string"
+        },
+        {
+          "const": "document",
+          "description": "A file a turn made (`made.rs`): a Word or OpenDocument text, or RTF.",
+          "type": "string"
+        },
+        {
+          "const": "spreadsheet",
+          "description": "A workbook or a CSV file.",
+          "type": "string"
+        },
+        {
+          "const": "deck",
+          "description": "A slide deck.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "Any other file glave keeps, such as an e-book.",
+          "type": "string"
+        }
+      ]
+    },
     "At": {
       "description": "When an event was recorded, in UTC at millisecond precision. For people only: events are\nordered by [`Seq`]. Always written with three fractional digits, such as\n`2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.",
       "type": "string"
@@ -195,6 +236,29 @@
           "type": "object"
         }
       ]
+    },
+    "BlobRef": {
+      "additionalProperties": false,
+      "description": "Points to content held in the blob store instead of inside an event.",
+      "properties": {
+        "bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "bytes",
+        "media_type"
+      ],
+      "type": "object"
     },
     "CallId": {
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
@@ -1456,16 +1520,30 @@
       ],
       "type": "object"
     },
-    "FileKind": {
-      "description": "What kind of file a made file is, for the person: what a card names it.",
-      "enum": [
-        "document",
-        "spreadsheet",
-        "deck",
-        "pdf",
-        "other"
+    "FileMade": {
+      "additionalProperties": false,
+      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, and its\ncontent kept for the thread, or why it was not. The model never sees it; the person opens\nand downloads it.",
+      "properties": {
+        "bytes": {
+          "description": "Its size on the computer.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kept": {
+          "$ref": "#/$defs/Kept"
+        },
+        "path": {
+          "description": "Where it was made, relative to the thread's folder.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "bytes",
+        "kept"
       ],
-      "type": "string"
+      "type": "object"
     },
     "FilePiece": {
       "description": "A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a\nfile of any size comes within the 16 MiB a message may be on every transport.",
@@ -1505,6 +1583,25 @@
         "bytes",
         "offset",
         "data"
+      ],
+      "type": "object"
+    },
+    "FilePreview": {
+      "description": "A file a thread made, as a person previews it.",
+      "properties": {
+        "cut": {
+          "description": "What was left out, in the server's sentence, when the preview is not the whole file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown"
       ],
       "type": "object"
     },
@@ -1771,6 +1868,112 @@
         }
       ]
     },
+    "Kept": {
+      "description": "Whether a file a turn made was kept for the thread.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Kept, sealed, in the blob store, the thread holding it.",
+          "properties": {
+            "blob": {
+              "$ref": "#/$defs/BlobRef"
+            }
+          },
+          "required": [
+            "blob"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "too_large",
+          "description": "Left on the computer: larger than a thread keeps.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Left on the computer: it holds the value of one of the person's secrets.",
+          "type": "string"
+        }
+      ]
+    },
+    "LibraryChat": {
+      "description": "The chat a Library item was made in.",
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "description": "Its title, once it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "thread"
+      ],
+      "type": "object"
+    },
+    "LibraryItem": {
+      "description": "Something glave made for the person, kept in their Library.",
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/AssetId",
+          "description": "What `library/read` and `library/remove` name it by, with its `project`; a media tool's\nresult calls it `asset:<id>`."
+        },
+        "bytes": {
+          "description": "Its file's size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LibraryChat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The chat it was made in, while that chat is there: absent once it was deleted."
+        },
+        "file_name": {
+          "description": "The name its file is saved as.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AssetKind"
+        },
+        "made_at": {
+          "$ref": "#/$defs/At"
+        },
+        "media_type": {
+          "description": "Its media type, such as `image/png`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What it is called: the start of what it was made from, in the person's words.",
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "The project it was made in, the person's Chats among them."
+        }
+      },
+      "required": [
+        "asset",
+        "kind",
+        "name",
+        "file_name",
+        "media_type",
+        "bytes",
+        "project",
+        "made_at"
+      ],
+      "type": "object"
+    },
     "LineKind": {
       "description": "Whether a line was kept, taken out or put in.",
       "enum": [
@@ -1876,7 +2079,7 @@
       "type": "object"
     },
     "MadeFile": {
-      "description": "A file a call made for the person, as `thread/files` gives it: kept with the thread, so it\nopens and downloads after the computer that made it is gone.",
+      "description": "A file a turn made for the person: kept with the thread, so it opens and downloads after the\ncomputer that made it is gone, or left there, said why.",
       "properties": {
         "bytes": {
           "description": "Its size.",
@@ -1884,43 +2087,57 @@
           "minimum": 0,
           "type": "integer"
         },
+        "file_name": {
+          "description": "The name its file is saved as.",
+          "type": "string"
+        },
         "kept": {
-          "description": "Where it is kept, in a sentence: \"Kept with this chat\".",
+          "description": "Where it is kept, or why it was not, in a sentence: \"Kept with this chat\".",
           "type": "string"
         },
         "kind": {
-          "$ref": "#/$defs/FileKind"
+          "$ref": "#/$defs/AssetKind"
         },
         "media_type": {
           "description": "Its media type, such as `application/pdf`.",
           "type": "string"
         },
         "name": {
-          "description": "Its name as it was made, which it is saved under.",
+          "description": "What it is called: the title it gives itself, else its file's name without its end.",
           "type": "string"
         },
-        "seq": {
-          "$ref": "#/$defs/Seq",
-          "description": "The `seq` of the `tool.call.completed` that made it, as last made in its turn."
+        "parts": {
+          "description": "How many pages, sheets or slides it has, in a phrase (\"2 sheets\"), when that is known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previews": {
+          "description": "Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck\nglave reads), or a client draws it (a PDF); false for any other, which only downloads.",
+          "type": "boolean"
+        },
+        "sentence": {
+          "description": "What was made, in one line: \"Made a spreadsheet: Trip budget (2 sheets)\".",
+          "type": "string"
         },
         "sha256": {
-          "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by.",
-          "type": "string"
-        },
-        "title": {
-          "description": "What a card calls it: its name without the end that says its kind.",
-          "type": "string"
+          "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it\nwas not kept.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
-        "seq",
-        "sha256",
-        "name",
-        "title",
         "kind",
+        "name",
+        "file_name",
         "media_type",
         "bytes",
-        "kept"
+        "previews",
+        "kept",
+        "sentence"
       ],
       "type": "object"
     },
@@ -4249,10 +4466,9 @@
       "type": "object"
     },
     "TurnFiles": {
-      "description": "The files one turn made, by the `seq` of its `turn.started`.",
+      "description": "The files one turn made, in path order, by the `seq` of its `turn.started`.",
       "properties": {
         "files": {
-          "description": "Each file once, by where it was made, in the order first made, as last made.",
           "items": {
             "$ref": "#/$defs/MadeFile"
           },
@@ -4294,6 +4510,13 @@
           "default": false,
           "description": "True when a usage count was estimated, because a stream ended before the provider\nreported it.",
           "type": "boolean"
+        },
+        "made": {
+          "description": "The files it made for the person: each document, spreadsheet, deck or PDF new or changed\nin the thread's folder between its start and its end, in path order, kept for the thread\nor said why not (`session.md`, \"Files it made\"). Absent when it made none.",
+          "items": {
+            "$ref": "#/$defs/FileMade"
+          },
+          "type": "array"
         },
         "model_calls": {
           "default": 0,
@@ -6005,14 +6228,14 @@
         "type": "object"
       },
       "result": {
-        "description": "A file a thread made, as a person previews it: Markdown.",
+        "description": "A file a thread made, as a person previews it.",
         "properties": {
-          "markdown": {
-            "type": "string"
+          "preview": {
+            "$ref": "#/$defs/FilePreview"
           }
         },
         "required": [
-          "markdown"
+          "preview"
         ],
         "type": "object"
       },
@@ -6422,6 +6645,87 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "library/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "What glave made for the person, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/$defs/LibraryItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "library/read": {
+      "params": {
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/AssetId"
+          },
+          "offset": {
+            "default": null,
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project",
+          "asset"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A piece of a file a thread holds.",
+        "properties": {
+          "piece": {
+            "$ref": "#/$defs/FilePiece"
+          }
+        },
+        "required": [
+          "piece"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "library/remove": {
+      "params": {
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/AssetId"
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project",
+          "asset"
+        ],
+        "type": "object"
+      },
+      "result": {
         "type": "object"
       },
       "streams": false
