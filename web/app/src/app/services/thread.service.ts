@@ -88,6 +88,8 @@ export class ThreadService {
   /** The thread's summary as the server last answered it here: on opening, coming back, renamed. */
   private readonly own = signal<ThreadSummary | null>(null);
   private readonly controllers = new Set<AbortController>();
+  /** Those of `controllers` whose turn has begun in the server, so letting go loses nothing. */
+  private readonly begun = new Set<AbortController>();
   /** The watch of the thread, while one runs. */
   private watching: AbortController | null = null;
 
@@ -182,12 +184,17 @@ export class ThreadService {
   });
 
   constructor() {
-    // A hidden tab lets go of its watch, so tabs in the background hold no connection, and
-    // comes back from where it was once shown.
+    // A hidden tab lets go of its watch, and of the streams of its turns once they have begun,
+    // so tabs in the background hold no connection and the server, seeing no one follow the
+    // thread, tells the person's devices when a turn ends; it comes back from where it was once
+    // shown.
     const shown = (): void => {
       const thread = this.id();
       if (this.document.visibilityState === 'hidden') {
         this.stopWatching();
+        for (const controller of this.begun) {
+          controller.abort();
+        }
       } else if (thread !== null && this.watching === null && this.streaming() === 0) {
         void this.watch(thread);
       }
@@ -401,6 +408,11 @@ export class ThreadService {
         this.stopWatching();
         // The turn had ended meanwhile, so the message started one of its own.
         this.waiting.update((waiting) => waiting.filter((message) => message.key !== queued));
+        // Begun in the server, it is let go of while the tab is hidden, as the watch is.
+        this.begun.add(controller);
+        if (this.document.visibilityState === 'hidden') {
+          controller.abort();
+        }
       }
       while (!next.done) {
         this.take(thread, next.value, 'turn');
@@ -427,6 +439,7 @@ export class ThreadService {
         this.giveBackStart(queued);
       }
     } finally {
+      this.begun.delete(controller);
       // Not when it was let go of, on leaving the thread.
       if (this.controllers.delete(controller)) {
         if (queued === null) {
@@ -691,6 +704,7 @@ export class ThreadService {
       controller.abort();
     }
     this.controllers.clear();
+    this.begun.clear();
     this.following.set(0);
     this.streaming.set(0);
   }

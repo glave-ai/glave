@@ -1,15 +1,16 @@
 //! Telling a person's devices what needs them (`specs/session.md`, "Push notifications"): an
-//! approval, a question or a service's ask that waits in a thread of theirs, or a task of theirs
-//! that finished or failed, pushed to each browser that takes their notifications. A push says
-//! one sentence of the server's own, with the thread's title, and which thread it is about;
-//! nothing the thread says. Needs are pushed [`AT_ONCE`] at a time and each person's browsers all
+//! approval, a question or a service's ask that waits in a thread of theirs, a task of theirs
+//! that finished or failed, or a chat of theirs whose turn ended while no one watched it,
+//! pushed to each browser that takes their notifications. A push says one sentence of the
+//! server's own, with the thread's title, and which thread it is about; nothing the thread
+//! says. Needs are pushed [`AT_ONCE`] at a time and each person's browsers all
 //! at once, each push within glave-push's own limit, so no one's slow push service holds up
 //! anyone else's. A browser its push service says is gone, or that keeps failing, is forgotten.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::{Outcome, Payload as _, ServiceAsked, ThreadId};
+use glave_event::{Body, Outcome, Payload as _, Seq, ServiceAsked, ThreadId, TurnResult, decode};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 use glave_push::{Message, Sent, Urgency};
 use tokio::sync::broadcast::error::RecvError;
@@ -40,6 +41,13 @@ pub(crate) enum Need {
         thread: ThreadId,
         outcome: Option<Outcome>,
     },
+    /// A turn ended there, as `outcome` says, at its event `ended`: told only of a chat its
+    /// person started that no one watches (`Hub::publish`).
+    Finished {
+        thread: ThreadId,
+        ended: Seq,
+        outcome: Option<Outcome>,
+    },
 }
 
 impl Need {
@@ -57,6 +65,17 @@ impl Need {
                 thread: *thread,
                 outcome: task.outcome,
             }),
+            Notification::Event { thread, event } if event.kind.as_str() == TurnResult::TYPE => {
+                let outcome = match decode(event.clone()).map(|decoded| decoded.body) {
+                    Ok(Body::TurnEnded(result)) => Some(result.outcome),
+                    _ => None,
+                };
+                Some(Self::Finished {
+                    thread: *thread,
+                    ended: event.seq,
+                    outcome,
+                })
+            }
             _ => None,
         }
     }
@@ -67,57 +86,69 @@ impl Need {
         match self {
             Self::Waiting { .. } => Self::Waiting { thread },
             Self::Ended { outcome, .. } => Self::Ended { thread, outcome },
+            Self::Finished { ended, outcome, .. } => Self::Finished {
+                thread,
+                ended,
+                outcome,
+            },
         }
     }
 
+    /// Whether it is a turn's end, told only of a chat its person started that no one watches.
+    pub(crate) fn is_turns_end(self) -> bool {
+        matches!(self, Self::Finished { .. })
+    }
+
     /// What the worker is told it is: what waits, which replaces the thread's last
-    /// notification, or a task's end, which always alerts.
+    /// notification, or a task's or a chat's end, which always alerts.
     fn kind(self) -> &'static str {
         match self {
             Self::Waiting { .. } => "waiting",
             Self::Ended { .. } => "ended",
+            Self::Finished { .. } => "finished",
         }
     }
 
     fn thread(self) -> ThreadId {
         match self {
-            Self::Waiting { thread } | Self::Ended { thread, .. } => thread,
+            Self::Waiting { thread }
+            | Self::Ended { thread, .. }
+            | Self::Finished { thread, .. } => thread,
         }
     }
 
-    /// What a notification of it says and how soon it should arrive: none for a task the
-    /// person stopped themselves.
+    /// The `seq` of the event a chat's turn ended at, where a tap opens the chat.
+    fn ended(self) -> Option<Seq> {
+        match self {
+            Self::Finished { ended, .. } => Some(ended),
+            Self::Waiting { .. } | Self::Ended { .. } => None,
+        }
+    }
+
+    /// What a notification of it says and how soon it should arrive: none for a task or a
+    /// turn the person stopped themselves.
     fn told(self, title: Option<String>) -> Option<(Sentence, Urgency)> {
         let title = title.map(|title| shortened(&title));
-        Some(match (self, title) {
-            (Self::Waiting { .. }, Some(title)) => (Sentence::PushWaiting { title }, Urgency::High),
-            (Self::Waiting { .. }, None) => (Sentence::PushWaitingUntitled, Urgency::High),
-            (
-                Self::Ended {
-                    outcome: Some(Outcome::Cancelled),
-                    ..
-                },
-                _,
-            ) => return None,
-            (
-                Self::Ended {
-                    outcome: Some(Outcome::Completed),
-                    ..
-                },
-                title,
-            ) => (
-                title.map_or(Sentence::PushDoneUntitled, |title| Sentence::PushDone {
-                    title,
-                }),
-                Urgency::Normal,
-            ),
-            (Self::Ended { .. }, title) => (
-                title.map_or(Sentence::PushNotDoneUntitled, |title| {
-                    Sentence::PushNotDone { title }
-                }),
-                Urgency::Normal,
-            ),
-        })
+        let outcome = match self {
+            Self::Waiting { .. } => {
+                return Some(match title {
+                    Some(title) => (Sentence::PushWaiting { title }, Urgency::High),
+                    None => (Sentence::PushWaitingUntitled, Urgency::High),
+                });
+            }
+            Self::Ended { outcome, .. } | Self::Finished { outcome, .. } => outcome,
+        };
+        let chat = matches!(self, Self::Finished { .. });
+        let sentence = match (outcome, title) {
+            (Some(Outcome::Cancelled), _) => return None,
+            (Some(Outcome::Completed), Some(title)) => Sentence::PushDone { title },
+            (Some(Outcome::Completed), None) if chat => Sentence::PushChatDoneUntitled,
+            (Some(Outcome::Completed), None) => Sentence::PushDoneUntitled,
+            (_, Some(title)) => Sentence::PushNotDone { title },
+            (_, None) if chat => Sentence::PushChatNotDoneUntitled,
+            (_, None) => Sentence::PushNotDoneUntitled,
+        };
+        Some((sentence, Urgency::Normal))
     }
 }
 
@@ -204,12 +235,15 @@ where
             .chosen_language(&caller)
             .await?
             .map_or(Language::English, |(_, language)| language);
-        let text = serde_json::json!({
+        let mut text = serde_json::json!({
             "text": say(language, &sentence),
             "thread": thread,
             "org": scope.org(),
             "kind": need.kind(),
         });
+        if let (Some(ended), Some(said)) = (need.ended(), text.as_object_mut()) {
+            said.insert("ended".to_owned(), serde_json::json!(ended));
+        }
         let text: Arc<str> = Arc::from(text.to_string());
         let now = self.inner.harness.clock().now();
         let mut sends = JoinSet::new();
@@ -286,6 +320,26 @@ mod tests {
             None,
             "a task the person stopped tells no one"
         );
+        let finished = |outcome| Need::Finished {
+            thread: thread(),
+            ended: Seq::FIRST,
+            outcome: Some(outcome),
+        };
+        let (said, urgency) = finished(Outcome::Completed).told(title()).unwrap();
+        assert_eq!(
+            (said, urgency),
+            (
+                Sentence::PushDone {
+                    title: "fix-login".into()
+                },
+                Urgency::Normal
+            )
+        );
+        let (said, _) = finished(Outcome::Completed).told(None).unwrap();
+        assert_eq!(said, Sentence::PushChatDoneUntitled);
+        let (said, _) = finished(Outcome::Failed).told(None).unwrap();
+        assert_eq!(said, Sentence::PushChatNotDoneUntitled);
+        assert_eq!(finished(Outcome::Cancelled).told(title()), None);
     }
 
     #[test]

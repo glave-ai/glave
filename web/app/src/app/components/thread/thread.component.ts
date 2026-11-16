@@ -61,7 +61,8 @@ import { TurnComponent } from '../turn/turn.component';
  * One thread: its bar across the top (title, project, the panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), its latest turns as it
- * opens and those before them read in above, nothing moving, as the person goes back to them,
+ * opens and those before them read in above, nothing moving, as the person goes back to them
+ * (opened from the notification of a turn's end, at that turn, below a line saying so),
  * and after them what its project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
  * model reads it; the composer pinned below it, usable while a turn runs, with what the agent
@@ -121,6 +122,8 @@ import { TurnComponent } from '../turn/turn.component';
 export class ThreadComponent {
   /** The thread's id, from the route. */
   readonly thread = input.required<string>();
+  /** The `seq` of the turn's end a tapped notification opens the chat at, from the route. */
+  readonly finished = input<string>();
 
   protected readonly copy = {
     latest: $localize`:@@thread.latest:Jump to latest`,
@@ -256,6 +259,28 @@ export class ThreadComponent {
   protected readonly turns = computed<readonly TurnResults[]>(() =>
     this.drawn() ? [...this.settled(), ...this.latest()] : [],
   );
+  /**
+   * The turn a tapped notification of the chat's end opened it at (`?finished=`, the `seq` of
+   * that turn's end, from the server's push), by key, with its line saying when it finished.
+   */
+  private readonly away = computed(() => {
+    const seq = Number(this.finished());
+    const ended = this.asked().find((turn) => turn.ended?.seq === seq);
+    if (ended?.ended == null) {
+      return null;
+    }
+    const at = Date.parse(ended.ended.at);
+    const time = new Intl.DateTimeFormat(this.locale, { timeStyle: 'short' }).format(at);
+    return {
+      key: ended.key,
+      line: $localize`:@@thread.away:Finished while you were away · ${time}:TIME:`,
+    };
+  });
+  /** Each turn shown, with the line it shows above its reply when it is the one opened at. */
+  protected readonly shownTurns = computed(() => {
+    const away = this.away();
+    return this.turns().map((turn) => ({ turn, away: turn.key === away?.key ? away.line : null }));
+  });
   protected readonly title = computed(() => {
     const summary = this.service.summary();
     return summary === null ? '' : threadTitle(summary);

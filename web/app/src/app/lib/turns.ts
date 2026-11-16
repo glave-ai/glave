@@ -34,6 +34,8 @@ export interface Turn {
    * it has ended.
    */
   readonly result: TurnResult | null;
+  /** Its `turn.ended`: the `seq` and when the server recorded it; `null` until it has ended. */
+  readonly ended: { readonly seq: number; readonly at: string } | null;
 }
 
 type Data = Readonly<Record<string, unknown>>;
@@ -139,6 +141,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     started: started?.at ?? null,
     model: modelOf(started?.data['model']),
     result: ended === undefined ? null : resultOf(ended.data),
+    ended: ended === undefined ? null : { seq: ended.seq, at: ended.at },
   };
 }
 
@@ -196,6 +199,7 @@ function startingTurn(prompt: string, key: string): Turn {
     started: null,
     model: null,
     result: null,
+    ended: null,
   };
 }
 

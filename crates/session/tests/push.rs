@@ -1,7 +1,8 @@
 //! Push notifications (`specs/session.md`, "Push notifications"): the browsers that take a
 //! person's notifications are kept on the server as theirs, sealed, listed, and erased when
-//! forgotten; one browser is only ever one person's; what waits for a person, and a task of
-//! theirs ending, is pushed to each of their browsers, and no one else's, encrypted to its keys;
+//! forgotten; one browser is only ever one person's; what waits for a person, a task of theirs
+//! ending, and a chat of theirs ending with nothing following it, is pushed to each of their
+//! browsers, and no one else's, encrypted to its keys;
 //! a browser its push service says is gone is forgotten; and a server that pushes nothing says
 //! so.
 
@@ -376,6 +377,56 @@ fn a_task_s_end_is_pushed() {
             assert_eq!(said["thread"], task.to_string());
             assert_eq!(said["kind"], "ended", "a task's end always alerts");
             settle(&server).await;
+        }))
+        .await;
+        assert!(heard.try_recv().is_err(), "nothing else was pushed");
+        server.shutdown().await;
+    });
+}
+
+#[test]
+fn a_chat_s_end_is_pushed_only_when_nothing_follows_it() {
+    let dir = folder("push-chat-done");
+    block_on!(async {
+        let (service, mut heard) = push_service();
+        let mut script = asks();
+        script.push(answer(Some("Again."), None));
+        let setup = Setup::asking(script, Answering::Clients);
+        let (server, _store) = pushing_server(setup, &dir).await;
+        let me = Caller::default();
+        let phone = Browser::new(11);
+        subscribe(&server, &me, &phone, &format!("{}/taken", service.url)).await;
+        let thread = start(&server, false).await;
+
+        Box::pin(pushing(&server, async {
+            let (stream, approval) = waiting(&server, &me, thread).await;
+            assert_eq!(phone.read(pushed(&mut heard).await.1)["kind"], "waiting");
+            // The window that followed the turn lets go of it, as a hidden tab does.
+            drop(stream);
+            allow(&server, &me, thread, approval).await;
+            let said = phone.read(pushed(&mut heard).await.1);
+            assert_eq!(
+                said["text"], "Done: fix the login",
+                "the title, nothing it said"
+            );
+            assert_eq!(said["thread"], thread.to_string());
+            assert_eq!(said["kind"], "finished");
+            let recorded = events(&server, thread).await;
+            let ended = recorded
+                .iter()
+                .rfind(|event| event.kind.as_str() == "turn.ended");
+            assert_eq!(
+                said["ended"],
+                ended.unwrap().seq.get(),
+                "where a tap opens it"
+            );
+            assert_eq!(said.as_object().unwrap().len(), 5, "nothing more: {said}");
+            // A turn followed to its end, as a window showing it does, tells no one.
+            let started = server.start_streaming(&me, turn_start(thread, "again", None));
+            let Sent::Started(mut stream) = started.await.unwrap() else {
+                panic!("a turn of its own");
+            };
+            stream.finish().await.unwrap();
         }))
         .await;
         assert!(heard.try_recv().is_err(), "nothing else was pushed");

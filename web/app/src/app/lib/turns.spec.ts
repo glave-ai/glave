@@ -52,12 +52,15 @@ describe('turns', () => {
     });
     // Each by the seq of its start, as the server names it in what it says of the turn.
     expect(first?.startSeq).toBe(2);
+    // Where it ended and when, which a tapped notification opens it at.
+    expect(first?.ended).toEqual({ seq: 8, at: '2026-10-11T10:04:02.000Z' });
     // Still going: no end, its time so far, no result yet.
     expect(second).toMatchObject({
       startSeq: 9,
       took: 12_000,
       started: '2026-10-11T10:05:00.000Z',
       result: null,
+      ended: null,
     });
   });
 
