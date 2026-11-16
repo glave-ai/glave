@@ -8,8 +8,6 @@
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
 
-mod adopted;
-
 use std::collections::HashMap;
 
 use glave_event::{
@@ -147,7 +145,6 @@ where
             queue: false,
             // Its thread is unattended for the whole task already, where it is.
             unattended: false,
-            scheduled: schedule.map(|fired| fired.due),
         };
         let stream = self
             .start_turn_with(caller, thread, message, None)
@@ -202,31 +199,15 @@ where
 
     /// Follows a task's work to its end, then records how it ended and says so.
     async fn follow_task(&self, thread: ThreadId, mut stream: TurnStream) {
-        let mut ended = loop {
+        let ended = loop {
             match stream.next().await {
-                Some(TurnItem::Note(note)) => {
-                    self.count(thread, &note);
-                    // Its turn's own end, whoever went on with it after a wait.
-                    if let Some(result) = turn_ended(thread, &note) {
-                        break Ok(result);
-                    }
-                }
+                Some(TurnItem::Note(note)) => self.count(thread, &note),
                 // A watcher this far behind is rare; the turn's own totals settle it at the end.
                 Some(TurnItem::Missed(_)) => {}
                 Some(TurnItem::Ended(ended)) => break ended,
                 None => break Err(ApiError::new(code::INTERNAL, Sentence::TaskStopped)),
             }
         };
-        // A turn waiting for the person whose follower was let go: as this server stops, it
-        // stays open in the ledger for the next server to adopt; else it is followed by what
-        // its thread records, to its end.
-        if matches!(&ended, Err(refused) if refused.code == code::NOT_AVAILABLE) {
-            if self.is_stopping() {
-                self.tasks().remove(&thread);
-                return;
-            }
-            ended = self.follow_by_notes(thread).await;
-        }
         self.inner.approvals.attend(thread);
         let Some(running) = self.tasks().remove(&thread) else {
             return;
@@ -403,12 +384,6 @@ where
                     recovered.held = recovered.held.saturating_add(1);
                     continue;
                 };
-                // A schedule's run that waits for the person goes on, under its budget, once
-                // they answer.
-                if self.adopt_waiting(project, thread).await? {
-                    self.let_go(&lease).await;
-                    continue;
-                }
                 let ended = self.interrupt(project, thread).await;
                 self.let_go(&lease).await;
                 if ended? {
@@ -520,24 +495,6 @@ where
             .as_millisecond()
             .saturating_sub(from.timestamp().as_millisecond());
         u64::try_from(millis).unwrap_or(0)
-    }
-}
-
-/// How `thread`'s turn ended, when `note` is its `turn.ended`.
-fn turn_ended(thread: ThreadId, note: &Notification) -> Option<TurnResult> {
-    let Notification::Event {
-        thread: from,
-        event,
-    } = note
-    else {
-        return None;
-    };
-    if *from != thread || event.kind.as_str() != TurnResult::TYPE {
-        return None;
-    }
-    match decode(event.clone()).ok()?.body {
-        Body::TurnEnded(result) => Some(result),
-        _ => None,
     }
 }
 
