@@ -21,8 +21,7 @@ use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
 use glave_provider_openai::Config;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
-use glave_web::pages::Pages;
-use glave_web::{Limits, Web, WebSettings};
+use glave_web::{Limits, Web, WebSettings, pages::Pages};
 use serde::{Deserialize, Serialize};
 
 use crate::calendar::Calendar;
