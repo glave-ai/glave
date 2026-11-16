@@ -49,6 +49,7 @@ fn editing(route: Option<Route>) -> ModelRequest {
         payer: None,
         route,
         end_user: None,
+        session: None,
     }
 }
 

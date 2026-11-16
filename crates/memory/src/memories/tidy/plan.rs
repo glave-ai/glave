@@ -122,6 +122,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool, payer: Payer) -> Mo
         payer: Some(payer),
         route: None,
         end_user: None,
+        session: None,
     }
 }
 

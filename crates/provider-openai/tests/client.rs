@@ -40,6 +40,7 @@ mod over_http {
             payer: None,
             route: None,
             end_user: None,
+            session: None,
         }
     }
 

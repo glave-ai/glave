@@ -239,6 +239,7 @@ fn request() -> Result<ModelRequest> {
         payer: None,
         route: None,
         end_user: None,
+        session: None,
     })
 }
 

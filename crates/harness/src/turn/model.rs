@@ -82,6 +82,7 @@ where
             payer: Some(thread.payer()),
             route: None,
             end_user: None,
+            session: Some(thread.id),
         };
         let retries = self.settings.retries;
         let mut retry = 0;

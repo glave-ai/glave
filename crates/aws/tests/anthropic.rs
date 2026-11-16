@@ -39,6 +39,7 @@ mod over_http {
             payer: None,
             route: None,
             end_user: None,
+            session: None,
         };
         let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
         match completion.parts.as_slice() {

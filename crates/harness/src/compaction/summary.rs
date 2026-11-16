@@ -188,6 +188,7 @@ where
             payer: Some(thread.payer()),
             route: None,
             end_user: None,
+            session: Some(thread.id),
         };
         (request, words)
     }

@@ -24,6 +24,7 @@ fn request() -> ModelRequest {
         payer: None,
         route: None,
         end_user: None,
+        session: None,
     }
 }
 

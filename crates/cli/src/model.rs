@@ -319,6 +319,7 @@ mod tests {
                 payer: None,
                 route: None,
                 end_user: None,
+                session: None,
             };
             let completion = tokio::runtime::Builder::new_current_thread()
                 .enable_all()

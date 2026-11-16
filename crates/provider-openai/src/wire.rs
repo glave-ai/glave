@@ -52,16 +52,17 @@ pub(crate) struct ChatRequest<'a> {
     /// person's filters among its providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Preferences<'a>>,
-    /// The person the call works for, anonymously, to OpenRouter, which names it `user`:
-    /// "Per-end-user identifier for abuse isolation"
-    /// (<https://openrouter.ai/docs/api-reference/chat-completion>, read 2026-11-15).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user: Option<&'a str>,
-    /// The same to OpenAI, whose field for it is `safety_identifier`
-    /// (<https://developers.openai.com/api/docs/guides/safety-best-practices>, read
-    /// 2026-11-15). Other servers are sent neither, as none documents one.
+    /// The person the call works for, anonymously, to OpenAI, whose field for it is
+    /// `safety_identifier` (<https://developers.openai.com/api/docs/guides/safety-best-practices>,
+    /// read 2026-11-15). Other servers, OpenRouter among them, are sent none
+    /// (`specs/gateway.md`, "Whose call it is").
     #[serde(skip_serializing_if = "Option::is_none")]
     safety_identifier: Option<&'a str>,
+    /// For OpenRouter: the thread the conversation is, so it keeps the conversation with one
+    /// provider from its first answer on, whose prompt cache holds it ("provider sticky
+    /// routing", OpenRouter's prompt caching docs). An order of providers would turn it off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -402,8 +403,11 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .map(|effort| Effort { effort }),
         reasoning_effort: effort.filter(|_| !openrouter),
         provider: openrouter.then(|| Preferences::of(request.route.as_ref())),
-        user: end_user.filter(|_| openrouter),
         safety_identifier: end_user.filter(|_| provider == "openai"),
+        session_id: request
+            .session
+            .filter(|_| openrouter)
+            .map(|thread| thread.to_string()),
     }
 }
 

@@ -114,6 +114,7 @@ where
             payer: Some(thread.payer()),
             route: None,
             end_user: None,
+            session: None,
         };
         let Some(made) = cancel.run(self.provider.make(&request, &asked.ask)).await else {
             let said = format!("Stopped once it may have been sent. {MAY_BE_BILLED}");

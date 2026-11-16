@@ -49,6 +49,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         payer: None,
         route: None,
         end_user: None,
+        session: None,
     }
 }
 
