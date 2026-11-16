@@ -513,6 +513,7 @@ fn someone_removed_has_their_schedules_deleted() {
         let ada = signed_in("ada");
         let schedule = Request::ScheduleCreate {
             project: None,
+            name: None,
             when: When::Cron("0 9 * * *".into()),
             zone: None,
             prompt: "check the build".into(),

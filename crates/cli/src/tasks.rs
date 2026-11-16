@@ -38,16 +38,18 @@ pub(crate) const SCHEDULE_USAGE: &str = "\
 glave schedule: run a prompt as a task at set times
 
 Usage:
-  glave schedule add \"<cron>\" <prompt> [--budget <tokens>]
+  glave schedule add \"<cron>\" <prompt> [--budget <tokens>] [--name <name>]
                               whenever the five-field cron expression (minute hour day
                               month weekday) matches, on this computer's clock
   glave schedule add --at <time> <prompt> [...]
                               once, at an RFC 3339 time such as 2026-10-11T09:00:00Z
   glave schedule list         the schedules, with when each runs next
-  glave schedule rm <id>      delete a schedule; no more runs start
+  glave schedule rm <id>      remove a schedule; no more runs start, its chat stays
 
-Every run has a token budget: --budget, or 1000000. Each run is a new thread in this
-folder's project, on a worktree of its own. Runs happen while glave runs for you in the
+Every run has a token budget: --budget, or 1000000. A schedule has a chat of its own in
+this folder's project, named for it (--name, or its prompt's first line), on a worktree of its
+own where the folder is a git repository; each run is a new turn there, and one due while the
+last is still going is skipped. Runs happen while glave runs for you in the
 background, which these commands start from a terminal; runs missed while it was not
 running run once, as soon as it is, never once for each.";
 
@@ -242,7 +244,7 @@ async fn list_schedules(server: &mut Reached) -> anyhow::Result<()> {
 
 async fn remove_schedule(server: &mut Reached, schedule: ScheduleId) -> anyhow::Result<()> {
     server.request(Request::ScheduleDelete { schedule }).await?;
-    println!("deleted schedule {schedule}");
+    println!("removed schedule {schedule}; its chat stays");
     Ok(())
 }
 
@@ -253,10 +255,12 @@ const SCHEDULE_BUDGET: u64 = 1_000_000;
 fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Result<Request> {
     let mut when = None;
     let mut budget = SCHEDULE_BUDGET;
+    let mut name = None;
     let mut prompt = Vec::new();
     let mut rest = words.iter();
     while let Some(word) = rest.next() {
         match word.as_str() {
+            "--name" => name = Some(rest.next().context("--name needs a name")?.clone()),
             "--at" => {
                 let at = rest
                     .next()
@@ -286,6 +290,7 @@ fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Res
     }
     Ok(Request::ScheduleCreate {
         project,
+        name,
         when,
         // On this computer's clock, where it has a zone of the world's list.
         zone: jiff::tz::TimeZone::system().iana_name().map(str::to_owned),

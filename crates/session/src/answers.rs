@@ -42,6 +42,14 @@ impl Followed {
         }
     }
 
+    /// Lets go of every turn's followers, as the server stops.
+    pub(crate) fn clear(&self) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+    }
+
     /// Where `thread`'s turn sends how it ends, now that it goes on: the one kept for whoever
     /// follows it, else a new one.
     fn take(&self, thread: ThreadId) -> Finish<TurnResult> {

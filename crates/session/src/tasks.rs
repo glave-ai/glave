@@ -1,11 +1,14 @@
 //! Tasks: a turn run in a thread with no one attached, in any project its caller works in,
 //! always on a copy of the project's folder (a worktree or a scratch folder), never in the
-//! folder itself. The server starts the work as it would for a client,
-//! answers its approvals "no one there" (in auto mode the judge still clears what the person
-//! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
+//! folder itself, but for a schedule's run, which works where its chat does. The server starts
+//! the work as it would for a client, answers its approvals "no one there" (in auto mode the
+//! judge still clears what the person asked for) but for a schedule's run, which waits for the
+//! person as their chat does, keeps a running tally of its tokens and cost from the `model.responded` events
 //! it records, stops a turn at its budget, and records the task's start and end in its project's
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
+
+mod adopted;
 
 use std::collections::HashMap;
 
@@ -74,9 +77,15 @@ where
 {
     /// The scope of `thread`, refused for a task for `caller` where the thread works in its
     /// project's folder itself, beyond the policy's limit, or while a turn runs there.
-    async fn may_start_task(&self, caller: &Caller, thread: ThreadId) -> Result<Scope, ApiError> {
+    async fn may_start_task(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        run: bool,
+    ) -> Result<Scope, ApiError> {
         let scope = self.authorize(caller, thread).await?;
-        if self.in_its_folder(&scope, thread).await? {
+        // A schedule's run works where its chat was made to.
+        if !run && self.in_its_folder(&scope, thread).await? {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 Sentence::TaskThreadInFolder,
@@ -119,18 +128,26 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = self.may_start_task(caller, thread).await?.located();
+        let project = (self
+            .may_start_task(caller, thread, schedule.is_some())
+            .await?)
+            .located();
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
-        self.inner.approvals.unattend(thread);
+        // A schedule's run waits for the person where it needs them, as their chat does; no one
+        // answers any other task.
+        if schedule.is_none() {
+            self.inner.approvals.unattend(thread);
+        }
         // A task's own turn never queues: one running in the thread refuses it.
         let message = Message {
             files: &[],
             prompt: &prompt,
             choice,
             queue: false,
-            // Its thread is unattended for the whole task already.
+            // Its thread is unattended for the whole task already, where it is.
             unattended: false,
+            scheduled: schedule.map(|fired| fired.due),
         };
         let stream = self
             .start_turn_with(caller, thread, message, None)
@@ -154,7 +171,7 @@ where
             model: stream.model.clone(),
             budget,
             schedule,
-            by: self.other_than_person(caller.person),
+            by: self.someone_else(caller.person),
         };
         let running = Running {
             project,
@@ -185,15 +202,31 @@ where
 
     /// Follows a task's work to its end, then records how it ended and says so.
     async fn follow_task(&self, thread: ThreadId, mut stream: TurnStream) {
-        let ended = loop {
+        let mut ended = loop {
             match stream.next().await {
-                Some(TurnItem::Note(note)) => self.count(thread, &note),
+                Some(TurnItem::Note(note)) => {
+                    self.count(thread, &note);
+                    // Its turn's own end, whoever went on with it after a wait.
+                    if let Some(result) = turn_ended(thread, &note) {
+                        break Ok(result);
+                    }
+                }
                 // A watcher this far behind is rare; the turn's own totals settle it at the end.
                 Some(TurnItem::Missed(_)) => {}
                 Some(TurnItem::Ended(ended)) => break ended,
                 None => break Err(ApiError::new(code::INTERNAL, Sentence::TaskStopped)),
             }
         };
+        // A turn waiting for the person whose follower was let go: as this server stops, it
+        // stays open in the ledger for the next server to adopt; else it is followed by what
+        // its thread records, to its end.
+        if matches!(&ended, Err(refused) if refused.code == code::NOT_AVAILABLE) {
+            if self.is_stopping() {
+                self.tasks().remove(&thread);
+                return;
+            }
+            ended = self.follow_by_notes(thread).await;
+        }
         self.inner.approvals.attend(thread);
         let Some(running) = self.tasks().remove(&thread) else {
             return;
@@ -370,6 +403,12 @@ where
                     recovered.held = recovered.held.saturating_add(1);
                     continue;
                 };
+                // A schedule's run that waits for the person goes on, under its budget, once
+                // they answer.
+                if self.adopt_waiting(project, thread).await? {
+                    self.let_go(&lease).await;
+                    continue;
+                }
                 let ended = self.interrupt(project, thread).await;
                 self.let_go(&lease).await;
                 if ended? {
@@ -409,8 +448,9 @@ where
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// `person` as a task records them: absent for the project's own person.
-    fn other_than_person(&self, person: Option<PrincipalId>) -> Option<Principal> {
+    /// `person` as a task's or a schedule's events record them: absent for the server's own
+    /// person.
+    pub(crate) fn someone_else(&self, person: Option<PrincipalId>) -> Option<Principal> {
         person
             .filter(|person| Some(*person) != self.inner.person)
             .map(Principal::person)
@@ -480,6 +520,24 @@ where
             .as_millisecond()
             .saturating_sub(from.timestamp().as_millisecond());
         u64::try_from(millis).unwrap_or(0)
+    }
+}
+
+/// How `thread`'s turn ended, when `note` is its `turn.ended`.
+fn turn_ended(thread: ThreadId, note: &Notification) -> Option<TurnResult> {
+    let Notification::Event {
+        thread: from,
+        event,
+    } = note
+    else {
+        return None;
+    };
+    if *from != thread || event.kind.as_str() != TurnResult::TYPE {
+        return None;
+    }
+    match decode(event.clone()).ok()?.body {
+        Body::TurnEnded(result) => Some(result),
+        _ => None,
     }
 }
 

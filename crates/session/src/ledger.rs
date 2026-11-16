@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use glave_event::{
-    At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped, TaskEnded,
-    TaskStarted, ThreadId, encode,
+    At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped,
+    TaskEnded, TaskStarted, ThreadId, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};

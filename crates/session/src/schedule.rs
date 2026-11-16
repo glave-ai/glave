@@ -10,7 +10,9 @@ mod fire;
 mod info;
 
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from};
+use glave_ports::{
+    BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from,
+};
 
 use crate::choice::Choice;
 use crate::cron::Cron;

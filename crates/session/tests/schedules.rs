@@ -1,18 +1,20 @@
 //! Schedules through the session API, on a clock the test moves: one-off and cron schedules
-//! fire at the right times and once each, each run in a new thread on a worktree of its own;
-//! schedules in two projects both fire, and one in a folder that is no repository is skipped;
-//! missed runs fire once, never a burst, including in a fresh server; deleting a schedule
-//! stops its runs; every run has a budget; and policy limits how many schedules are kept.
+//! fire at the right times and once each, each run a turn in the schedule's own chat, on a
+//! worktree of its own where the project is a repository and in the folder itself where it is
+//! not; schedules in many projects all fire; missed runs fire once, never a burst, including in
+//! a fresh server; deleting a schedule stops its runs and keeps its chat; times are read in the
+//! person's time zone; every run has a budget; and policy limits how many schedules are kept.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use glave_event::Outcome;
 use glave_event::{At, Opened, ScheduleId, When};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
     Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, Leased, Leases, OrgId, ProjectId,
 };
-use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
+use glave_session::protocol::{Reply, Request, RunStatus, ScheduleInfo, code};
 use jiff::Timestamp;
 
 use crate::support::*;
@@ -69,6 +71,7 @@ async fn create_zoned<L: EventLog + 'static>(
 ) -> Result<ScheduleInfo, i64> {
     let request = Request::ScheduleCreate {
         project,
+        name: None,
         when,
         zone: zone.map(str::to_owned),
         prompt: "check the build".into(),
@@ -120,10 +123,13 @@ fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
         assert_eq!(tick(&server).await, 1);
         assert_eq!(tick(&server).await, 0);
         let listed = list(&server).await;
+        let last = listed[0].last.clone().unwrap();
+        assert_eq!(last.due.to_string(), "2026-10-10T10:50:00.000Z");
         assert_eq!(
-            listed[0].last.map(|a| a.to_string()).as_deref(),
-            Some("2026-10-10T10:50:00.000Z")
+            (last.status, last.outcome),
+            (RunStatus::Ended, Some(Outcome::Completed))
         );
+        assert_eq!(last.said, "Done");
         assert_eq!(
             listed[0].next.map(|a| a.to_string()).as_deref(),
             Some("2026-10-10T11:00:00.000Z")
@@ -132,6 +138,11 @@ fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
         assert_eq!(ran.len(), 2);
         assert!(ran.iter().all(|task| task.schedule == Some(made.schedule)));
         assert!(ran.iter().all(|task| task.budget == Some(10_000)));
+        let chat = made.thread.unwrap();
+        assert!(
+            ran.iter().all(|task| task.thread == chat),
+            "each run a turn in its chat"
+        );
         // Deleted: no more runs.
         server
             .request(Request::ScheduleDelete {
@@ -142,6 +153,8 @@ fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
         set(&now, "2026-10-10T12:00:00Z");
         assert_eq!(tick(&server).await, 0);
         assert_eq!(list(&server).await, Vec::new());
+        let kept = server.request(Request::ThreadGet { thread: chat }).await;
+        assert!(kept.is_ok(), "its chat stays, with its past runs: {kept:?}");
         let again = server
             .request(Request::ScheduleDelete {
                 schedule: made.schedule,
@@ -173,7 +186,7 @@ fn a_one_off_schedule_fires_once_at_its_time() {
 }
 
 #[test]
-fn schedules_in_two_projects_fire_on_worktrees_and_one_with_no_copy_to_work_on_is_skipped() {
+fn schedules_in_many_projects_fire_on_worktrees_or_where_a_chat_there_works() {
     block_on!(async {
         let (server, now, repo, _dir) = on_repository("schedule-projects").await;
         let others = repo.with_extension("others");
@@ -200,20 +213,21 @@ fn schedules_in_two_projects_fire_on_worktrees_and_one_with_no_copy_to_work_on_i
             else {
                 panic!("a thread");
             };
-            ran_in.push(summary.project);
             let (opened, _) = opened(&server, *thread).await;
-            assert!(matches!(opened, Opened::Worktree { .. }), "{opened:?}");
+            // A copy where the folder is a repository; else the folder, as a chat there.
+            let copy = matches!(opened, Opened::Worktree { .. });
+            assert_eq!(copy, summary.project != none, "{opened:?}");
+            ran_in.push(summary.project);
         }
         ran_in.sort();
-        let mut want = vec![one, two];
+        let mut want = vec![one, two, none];
         want.sort();
-        assert_eq!(ran_in, want, "the folder that is no repository has no copy");
+        assert_eq!(ran_in, want);
         let ran = tasks(&server).await;
-        assert_eq!(ran.len(), 2);
-        // The skipped run waits for the schedule's next time, as the others do.
+        assert_eq!(ran.len(), 3);
         assert_eq!(tick(&server).await, 0);
         set(&now, "2026-10-11T11:00:00Z");
-        assert_eq!(tick(&server).await, 2);
+        assert_eq!(tick(&server).await, 3);
     });
 }
 
@@ -259,6 +273,17 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
             create(&server, cron("every day"), 10).await.unwrap_err(),
             code::INVALID_PARAMS
         );
+        // A name is no prompt: each run starts with the prompt.
+        let named = Request::ScheduleCreate {
+            project: None,
+            name: Some("Morning check".into()),
+            when: cron("0 9 * * *"),
+            zone: None,
+            prompt: "  ".into(),
+            budget: 10,
+        };
+        let blank = server.request(named).await.unwrap_err();
+        assert_eq!(blank.code, code::INVALID_PARAMS);
         let project = Some(scope().project());
         let nowhere = create_zoned(
             &server,
@@ -287,7 +312,7 @@ fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
     let dir = folder("schedule-ledger");
     block_on!(async {
         let (server, _) = setup().build(&dir).await;
-        create(&server, cron("0 9 * * *"), 10).await.unwrap();
+        let made = create(&server, cron("0 9 * * *"), 10).await.unwrap();
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
                 project: Some(scope().project()),
@@ -300,7 +325,8 @@ fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
         else {
             panic!("threads");
         };
-        assert_eq!(threads, Vec::new());
+        let listed: Vec<_> = threads.iter().map(|thread| Some(thread.id)).collect();
+        assert_eq!(listed, vec![made.thread], "the schedule's chat alone");
         let ledger = glave_event::ThreadId::new(Timestamp::UNIX_EPOCH, [0; 10]).unwrap();
         let read = server
             .request(Request::ThreadEvents {
@@ -381,6 +407,7 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             .unwrap();
         let theirs = Request::ScheduleCreate {
             project: None,
+            name: None,
             when: at_time("2026-10-10T10:05:00Z"),
             zone: None,
             prompt: "check the build".into(),
@@ -394,25 +421,21 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             1,
             "the run of the person on this computer"
         );
-        let runs = async |caller: &Caller, project: Option<ProjectId>| {
-            let listed = Request::ThreadList {
-                project,
-                limit: None,
-                show: None,
-                cursor: None,
-            };
+        let runs = async |caller: &Caller| {
+            let listed = Request::TasksList { limit: None };
             match server.request_as(caller, listed).await.unwrap() {
-                Reply::Threads { threads, .. } => threads.len(),
-                other => panic!("threads, not {other:?}"),
+                Reply::Tasks { tasks } => (tasks.iter())
+                    .map(|task| task.project)
+                    .collect::<Vec<ProjectId>>(),
+                other => panic!("tasks, not {other:?}"),
             }
         };
-        let project = Some(scope().project());
         assert_eq!(
-            runs(&Caller::default(), project).await,
-            1,
+            runs(&Caller::default()).await,
+            vec![scope().project()],
             "in its organization"
         );
-        assert_eq!(runs(&grace, None).await, 0, "and in no other");
+        assert_eq!(runs(&grace).await, Vec::new(), "and in no other");
         // The server holds each organization's scheduler lease apart.
         let entropy = CountingEntropy::starting_at(0x7e);
         let other = Holder::new(&now, &entropy).unwrap();

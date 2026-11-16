@@ -3,8 +3,7 @@
 //! clean copy moves, and only forward: one with changes of its own, uncommitted or committed, is
 //! left as it is, and the run is told so.
 
-use glave_event::Opened;
-use glave_ports::computer::OnTimeout;
+use glave_ports::computer::{OnTimeout, Sources};
 use glave_ports::{BlobStore, EventLog, ModelProvider, NeverCancelled};
 
 use crate::approval::Approver;
@@ -41,12 +40,12 @@ where
     /// Brings `thread`'s copy of its project up to the project's current commit, when it works
     /// on one and it is clean.
     pub async fn catch_up_copy(&self, thread: &mut Thread) -> Result<CaughtUp, HarnessError> {
-        if !matches!(thread.opened, Some(Opened::Worktree { .. })) {
+        self.come_home(thread).await?;
+        let workspace = self.workspace_for(thread);
+        if !matches!(workspace.info().sources, Sources::Worktree { .. }) {
             return Ok(CaughtUp::NoCopy);
         }
-        self.come_home(thread).await?;
         let output = Collected::default();
-        let workspace = self.workspace_for(thread);
         let limit = (SECONDS, OnTimeout::Stop);
         workspace
             .run(CATCH_UP.to_owned(), limit, &output, &NeverCancelled)
