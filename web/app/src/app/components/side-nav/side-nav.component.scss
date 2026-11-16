@@ -1,21 +1,16 @@
 @use '../nav';
 
-// One column, the room between its parts the pane's own gap: the name and New chat, the search,
-// how the threads are grouped, the threads (which scroll), Tasks, and the person at the foot,
-// closer to Tasks than the rest are to each other. Every part spans the same width, so the name,
-// New chat and the search share the pane's edges.
+// One column: the name and New chat, the search, how the threads are grouped and the threads
+// (which scroll), the pane's own gap apart; then Tasks, Library and the person at the foot, as
+// close as rows are. Every part spans the same width, so the name, New chat and the search share
+// the pane's edges.
 :host {
   display: flex;
   flex-direction: column;
-  gap: var(--glz-space-5);
+  gap: var(--glz-space-1);
   height: 100%;
   min-height: 0;
   padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
-}
-
-// With Tasks above it, the person sits as close under it as rows of the foot do.
-:host:has(> .above > .tasks) {
-  gap: var(--glz-space-1);
 }
 
 // All but the person, filling what the person leaves, so the person stays at the foot.
@@ -23,8 +18,19 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: var(--glz-space-1);
+  min-height: 0;
+}
+
+// Everything above Tasks and Library, filling what they leave: Tasks, coming in, takes its room
+// from the threads, so nothing already drawn moves.
+.head {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: var(--glz-space-5);
   min-height: 0;
+  padding-block-end: var(--glz-space-4);
 }
 
 .top {
@@ -124,9 +130,10 @@
   overflow-y: auto;
 }
 
-// Tasks at the foot, over the person, whether or not the threads have come in above it yet.
-.tasks {
-  margin-block-start: auto;
+// Tasks and Library at the foot, over the person, whether or not the threads have come in above
+// them yet.
+.foot {
+  flex: none;
 }
 
 // How many tasks are going, quiet at the end of Tasks.
