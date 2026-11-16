@@ -239,6 +239,11 @@ pub struct ThreadSummary {
     /// once it is put away (`specs/session.md`, "Terminals").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub terminals: bool,
+    /// For a schedule's own chat, its schedule, as `schedule/list` shows it: what a client
+    /// draws the chat's repeat line from (`specs/session.md`, "Schedules"). Absent for any
+    /// other thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<Box<ScheduleInfo>>,
 }
 
 /// A person's computer short of room, more than 90% of its disk used and nothing more glave can

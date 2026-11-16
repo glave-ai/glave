@@ -49,6 +49,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (standing::DELETED, 1),
     (standing::RENAMED, 1),
     (turn::STARTED, 1),
+    (turn::STARTED, 2),
     (message::TYPE, 1),
     (tool::REQUESTED, 1),
     (tool::STARTED, 1),

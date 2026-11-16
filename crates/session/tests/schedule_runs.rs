@@ -2,13 +2,16 @@
 //! each run is a turn there; a run that needs the person waits for them, as a chat does; a run
 //! due meanwhile is skipped and recorded so once; a run refused otherwise is recorded with why;
 //! a run waiting across a restart keeps its budget; the scheduler never wakes for a run it
-//! would not start; and deleting the chat deletes the schedule.
+//! would not start; and deleting the chat deletes the schedule. The chat says its schedule in
+//! its own facts, a list's watch hearing it change, and each run's turn says when it was due.
 
 use glave_event::{At, Outcome, ThreadId, When};
+use glave_ports::Caller;
 use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{EventLog, InMemoryLog};
-use glave_session::Answering;
+use glave_session::protocol::Notification;
 use glave_session::protocol::{Answer, Reply, Request, RunStatus, ScheduleInfo};
+use glave_session::{Answering, Watched};
 use jiff::Timestamp;
 use serde_json::json;
 
@@ -388,5 +391,62 @@ fn archiving_a_schedule_s_chat_pauses_the_schedule() {
             .await
             .unwrap();
         assert!(listed(&server).await[0].paused);
+    });
+}
+
+#[test]
+fn a_schedule_s_chat_says_its_schedule_and_a_list_hears_it_change() {
+    block_on!(async {
+        let (server, _, _, _dir) = asking("runs-facts", Vec::new(), Shared::default()).await;
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        let chat = made.thread.unwrap();
+        let Reply::Thread { thread } = server
+            .request(Request::ThreadGet { thread: chat })
+            .await
+            .unwrap()
+        else {
+            panic!("the chat");
+        };
+        let said = thread.schedule.unwrap();
+        assert_eq!(said.schedule, made.schedule);
+        assert_eq!(said.repeats, "Every day at 11:00 am");
+        assert_eq!(said.next, Some(at("2026-10-10T11:00:00Z")));
+        assert!(!said.paused);
+        let mut watch = server
+            .watch_list(&Caller::default(), None, None, false)
+            .await
+            .unwrap();
+        pause(&server, made.schedule, true).await;
+        loop {
+            let Some(Watched::Note(note)) = watch.next().await else {
+                panic!("the watch ended");
+            };
+            if let Notification::Changed { summary, .. } = note.as_ref()
+                && summary.id == chat
+                && summary.schedule.as_ref().is_some_and(|said| said.paused)
+            {
+                break;
+            }
+        }
+    });
+}
+
+#[test]
+fn each_run_s_turn_says_when_it_was_due() {
+    block_on!(async {
+        let answers = vec![answer(Some("Done."), None)];
+        let (server, now, _, _dir) = asking("runs-due", answers, Shared::default()).await;
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        let chat = made.thread.unwrap();
+        set(&now, "2026-10-10T11:00:30Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        let due: Vec<Option<At>> = (events(&server, chat).await.into_iter())
+            .filter_map(|raw| match glave_event::decode(raw).unwrap().body {
+                glave_event::Body::TurnStarted(started) => Some(started.scheduled),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(due, vec![Some(at("2026-10-10T11:00:00Z"))]);
     });
 }

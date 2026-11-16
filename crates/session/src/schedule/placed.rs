@@ -53,6 +53,13 @@ where
         Ok(self.held_placed(|held| held.projects.clone()))
     }
 
+    /// Whether the index lists the project `at`, read up to now: whether anyone made a
+    /// schedule there.
+    pub(crate) async fn has_schedules(&self, at: Located) -> Result<bool, ApiError> {
+        self.catch_up_placed().await?;
+        Ok(self.held_placed(|held| held.listed.contains(&at)))
+    }
+
     /// Lists the project `at` in the index, unless it is listed already.
     pub(crate) async fn place_schedules(&self, at: Located) -> Result<(), ApiError> {
         // Glave's own: the store's index, in the server's own organization.

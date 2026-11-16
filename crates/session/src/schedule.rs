@@ -122,6 +122,26 @@ where
         }
     }
 
+    /// Reads the task ledger of the project `at` where anyone made a schedule, so the
+    /// summaries of its chats say their schedules.
+    pub(crate) async fn read_schedules_in(&self, at: Located) -> Result<(), ApiError> {
+        if self.has_schedules(at).await? {
+            self.catch_up(at).await?;
+        }
+        Ok(())
+    }
+
+    /// The schedule `chat` is the chat of, in the project `at`, as lists show it: as far as
+    /// this server has read the project's ledger.
+    pub(crate) fn schedule_of_chat(&self, at: Located, chat: ThreadId) -> Option<ScheduleInfo> {
+        let now = self.inner.harness.clock().now();
+        let ledgers = self.ledgers();
+        let ledger = ledgers.get(&at)?;
+        let scheduled =
+            (ledger.schedules.values()).find(|scheduled| scheduled.created.thread == Some(chat))?;
+        Some(info::info(at, scheduled, ledger, now))
+    }
+
     /// Refused once `caller` keeps as many schedules as policy allows that will still run.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
         let Some(most) = self.inner.limits.max_schedules else {

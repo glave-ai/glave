@@ -94,7 +94,7 @@ where
             text: prompt.to_owned(),
         });
         parts.extend_from_slice(files);
-        let mut events = Vec::new();
+        let (mut events, scheduled) = (Vec::new(), thread.due.take());
         self.stage(
             thread,
             &mut events,
@@ -104,6 +104,7 @@ where
                 trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
                 missing: offer.missing.clone(),
+                scheduled,
             },
         )?;
         let message = MessageAdded {

@@ -6,7 +6,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use glave_event::ThreadId;
+use glave_event::{At, ThreadId};
 use glave_harness::{Cancel, CaughtUp, HarnessError, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::watch;
@@ -247,7 +247,7 @@ where
                 files: &files,
                 key: key.map(IdempotencyKey::as_str),
             };
-            let asked = (caller, &choice, unattended, scheduled.is_some());
+            let asked = (caller, &choice, unattended, scheduled);
             let work = turn(thread, said, asked, finish.clone());
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
@@ -313,7 +313,7 @@ type TurnWork<P, L, B> = Box<
 fn turn<P, L, B>(
     thread: ThreadId,
     said: Said<'_>,
-    (caller, choice, unattended, run): (&Caller, &Choice, bool, bool),
+    (caller, choice, unattended, scheduled): (&Caller, &Choice, bool, Option<At>),
     finish: Finish<TurnResult>,
 ) -> TurnWork<P, L, B>
 where
@@ -336,11 +336,12 @@ where
             let harness = &inner.harness;
             // A schedule's run works on its project as it is now, where its copy can be brought
             // up to date, and says so where it can't.
-            let prompt = if run {
+            let prompt = if scheduled.is_some() {
                 caught_up(harness, &mut held, prompt).await
             } else {
                 prompt
             };
+            held.run_due(scheduled);
             let ran = harness
                 .run_turn_with_files(
                     &mut held,

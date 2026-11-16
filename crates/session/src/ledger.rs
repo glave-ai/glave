@@ -74,13 +74,14 @@ impl Ledger {
         self.next.max(1)
     }
 
-    /// Takes in the event at the next `seq`; any other is already in, or not yet.
-    fn apply(&mut self, raw: RawEvent) {
-        let Some((at, body)) = in_order(&mut self.next, raw) else {
-            return;
-        };
+    /// Takes in the event at the next `seq`; any other is already in, or not yet. Answers the
+    /// chat of the schedule it changed, if it did: its next run, its last, or whether it is
+    /// paused, which the chat's summary says.
+    fn apply(&mut self, raw: RawEvent) -> Option<ThreadId> {
+        let (at, body) = in_order(&mut self.next, raw)?;
         match body {
             Body::ScheduleCreated(created) => {
+                let chat = created.thread;
                 let scheduled = Scheduled {
                     created,
                     at,
@@ -91,22 +92,24 @@ impl Ledger {
                     resumed: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
+                chat
             }
             Body::ScheduleDeleted(deleted) => {
-                self.schedules.remove(&deleted.schedule);
+                let gone = self.schedules.remove(&deleted.schedule)?;
+                gone.created.thread
             }
             Body::SchedulePaused(paused) => {
-                if let Some(scheduled) = self.schedules.get_mut(&paused.schedule) {
-                    scheduled.paused = paused.paused;
-                    if !paused.paused {
-                        scheduled.resumed = Some(at);
-                    }
+                let scheduled = self.schedules.get_mut(&paused.schedule)?;
+                scheduled.paused = paused.paused;
+                if !paused.paused {
+                    scheduled.resumed = Some(at);
                 }
+                scheduled.created.thread
             }
             Body::ScheduleSkipped(skipped) => {
-                if let Some(scheduled) = self.schedules.get_mut(&skipped.schedule) {
-                    scheduled.ran(skipped.due, Some(skipped.why));
-                }
+                let scheduled = self.schedules.get_mut(&skipped.schedule)?;
+                scheduled.ran(skipped.due, Some(skipped.why));
+                scheduled.created.thread
             }
             Body::TaskStarted(started) => {
                 if let Some(fired) = started.schedule
@@ -114,23 +117,27 @@ impl Ledger {
                 {
                     scheduled.ran(fired.due, None);
                 }
+                // A schedule's run is a turn in its chat.
+                let chat = started.schedule.map(|_| started.thread);
                 let recorded = Recorded {
                     started,
                     at,
                     ended: None,
                 };
                 self.open.insert(recorded.started.thread, recorded);
+                chat
             }
             Body::TaskEnded(ended) => {
-                if let Some(mut recorded) = self.open.remove(&ended.thread) {
-                    recorded.ended = Some((ended, at));
-                    if self.finished.len() >= FINISHED {
-                        self.finished.pop_front();
-                    }
-                    self.finished.push_back(recorded);
+                let mut recorded = self.open.remove(&ended.thread)?;
+                let chat = recorded.started.schedule.map(|_| ended.thread);
+                recorded.ended = Some((ended, at));
+                if self.finished.len() >= FINISHED {
+                    self.finished.pop_front();
                 }
+                self.finished.push_back(recorded);
+                chat
             }
-            _ => {}
+            _ => None,
         }
     }
 }
@@ -167,15 +174,23 @@ where
         let next = self.ledgers().get(&at).map_or(1, Ledger::next_seq);
         let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
+        let mut changed = Vec::new();
         catch_up(log, &scope, Reserved::Tasks.id(), after, |page| {
             let mut held = self.ledgers();
             let read = kept(&mut held, at);
-            for raw in page {
-                read.apply(raw);
-            }
+            changed.extend(page.into_iter().filter_map(|raw| read.apply(raw)));
         })
         .await?;
+        self.schedules_changed(at, changed);
         Ok(())
+    }
+
+    /// Tells the lists watching them that the chats of schedules in `at` that `changed` say
+    /// something new of their schedules.
+    fn schedules_changed(&self, at: Located, changed: Vec<ThreadId>) {
+        for chat in changed {
+            self.inner.hub.changed(at.project, chat);
+        }
     }
 
     /// Appends `payload` to the ledger of the project `at`, after anything others wrote
@@ -204,11 +219,14 @@ where
             Ok::<_, ApiError>(Some((vec![raw], ())))
         })
         .await?;
-        let mut held = self.ledgers();
-        let read = kept(&mut held, at);
-        for raw in appended.into_iter().flat_map(|(events, ())| events) {
-            read.apply(raw);
-        }
+        let changed: Vec<ThreadId> = {
+            let mut held = self.ledgers();
+            let read = kept(&mut held, at);
+            (appended.into_iter().flat_map(|(events, ())| events))
+                .filter_map(|raw| read.apply(raw))
+                .collect()
+        };
+        self.schedules_changed(at, changed);
         Ok(())
     }
 

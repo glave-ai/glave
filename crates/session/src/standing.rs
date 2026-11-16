@@ -217,6 +217,7 @@ where
             })
             .flatten();
         let protections = self.project_settled(scope.located()).await.protections;
+        self.read_schedules_in(scope.located()).await?;
         let ask = self
             .trust_on_page(
                 caller,
@@ -251,6 +252,7 @@ where
                 .ok_or_else(|| no_thread(thread))?,
         };
         let protections = self.project_settled(scope.located()).await.protections;
+        self.read_schedules_in(scope.located()).await?;
         self.summarize(scope, view, protections).await
     }
 
@@ -303,6 +305,7 @@ where
                 })
             });
         let terminals = self.opens_terminals(view.standing, workspace.as_deref(), theirs);
+        let schedule = self.schedule_of_chat(scope.located(), view.thread);
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -327,6 +330,7 @@ where
             context,
             disk,
             terminals,
+            schedule: schedule.map(Box::new),
         })
     }
 
