@@ -15,19 +15,13 @@ use glave_ports::{
     BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, title_of,
 };
 
+use crate::files::not_here;
 use crate::projects::MOST_PROJECTS;
-use crate::protocol::{ApiError, LibraryChat, LibraryItem, Reply, code};
+use crate::protocol::{ApiError, LibraryChat, LibraryItem, Reply};
 use crate::server::Server;
-use crate::words::Sentence;
 
 /// The most items `library/list` answers with, newest first.
 const MOST_ITEMS: usize = 1_000;
-
-/// Refused: the item is not in the caller's Library, whether it never was, was removed, or is
-/// someone else's.
-fn not_here() -> ApiError {
-    ApiError::new(code::NO_FILE, Sentence::FileNotHere)
-}
 
 impl<P, L, B> Server<P, L, B>
 where

@@ -1,0 +1,779 @@
+//! The session API's requests: its one table of methods, each with its params and the replies
+//! it answers with (`methods.rs` makes `Request` from it).
+
+use glave_event::{
+    AssetId, At, CallId, CredentialId, DeviceId, InviteId, MemoryId, MemoryScope, Money, OrgRole,
+    PrincipalId, ProviderId, ScheduleId, Secret, Seq, Sha256, ThreadId, When,
+};
+use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
+use glave_ports::{OrgId, ProjectId};
+use serde::{Deserialize, Serialize};
+
+use super::methods::methods;
+use super::params::{given, is_false};
+use super::{
+    Accent, Answer, AttachedFile, Color, ConnectorCategoryId, ConnectorTagId, Filters, Grouping,
+    LinkKind, Meta, NewFolder, Permissions, ProviderKind, PushSubscription, Show, TrustChoice,
+};
+
+methods! {
+    /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
+    /// reached before it presents a session.
+    "server/discover" => Discover {} -> [Server],
+    /// Whether this server keeps its computer awake while it works: on a person's own computer,
+    /// as they choose.
+    "awake/get" => AwakeGet {} -> [Awake],
+    /// Chooses whether the person's own computer is kept awake while glave works, from the
+    /// next work on. Only the person on this computer, and only where it is theirs to choose.
+    "awake/set" => AwakeSet { on: bool } -> [Awake],
+    /// Whether the server tells the caller's browsers when glave needs them (Web Push): the key
+    /// to subscribe with and their browsers, `endpoint`'s marked current.
+    "push/get" => PushGet { #[serde(default)] endpoint: Option<String> } -> [Push],
+    /// Keeps a browser's push subscription, made with `push/get`'s key: from now on it is told
+    /// what needs the caller. One endpoint is kept once, under its latest name, and as one
+    /// person's: subscribing it moves it from anyone else's.
+    "push/subscribe" => PushSubscribe { #[serde(flatten)] browser: PushSubscription } -> [Push],
+    /// Forgets one of the caller's browsers; one forgotten already answers as it is.
+    "push/remove" => PushRemove { device: DeviceId } -> [Push],
+    /// The language the caller chose to read glave's own sentences in, if they chose one.
+    "language/get" => LanguageGet {} -> [Language],
+    /// Chooses the language glave's own sentences are written in for the caller, as a BCP 47
+    /// tag (`en`, `en-GB`); with none, their client's (`Accept-Language`) again. Refused for a
+    /// language glave does not write in.
+    "language/set" => LanguageSet {
+        #[serde(default)]
+        language: Option<String>,
+    } -> [Language],
+    /// How the caller's clients group their threads: by project until they choose.
+    "grouping/get" => GroupingGet {} -> [Grouping],
+    /// Chooses how the caller's clients group their threads: by project or by status. The
+    /// server keeps the choice; a client groups by what each thread is doing, as it says.
+    "grouping/set" => GroupingSet { grouping: Grouping } -> [Grouping],
+    /// The caller's filters among the providers a router (OpenRouter) passes their calls on
+    /// to, which every call of their work keeps to, and what "Europe" means among them.
+    "filters/get" => FiltersGet {} -> [Filters],
+    /// Chooses the caller's filters among a router's providers, for every call of their work
+    /// from now on. Refused for a place that is not a country's two-letter code.
+    "filters/set" => FiltersSet { filters: Filters } -> [Filters],
+    /// The caller's accent: what they chose, the light and dark values it is drawn as, and what
+    /// their organization says of it, where it is shown.
+    "appearance/get" => AppearanceGet {} -> [Appearance],
+    /// Chooses the caller's accent; none, their organization's. Refused where their organization
+    /// has everyone use its own.
+    "appearance/set" => AppearanceSet {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accent: Option<Accent>,
+    } -> [Appearance],
+    /// The light and dark values a color would be drawn as, for showing it before it is kept.
+    "appearance/preview" => AppearancePreview { color: Color, adjust: bool } -> [Shades],
+    /// The organization's name, logo and accent. An admin method.
+    "brand/get" => BrandGet {} -> [Brand],
+    /// Keeps the organization's name, logo and accent, and whether everyone uses that accent.
+    /// `logo` names one `brand/logo/upload` kept, or the one it has. An admin method.
+    "brand/set" => BrandSet {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(with = "Option<String>")]
+        logo: Option<Sha256>,
+        accent: Accent,
+        locked: bool,
+    } -> [Brand],
+    /// Keeps a logo for `brand/set` to name, a day unless it does: PNG, JPEG or WebP, up to
+    /// 256 KB. An admin method.
+    "brand/logo/upload" => BrandLogoUpload {
+        /// Its content, in base64.
+        data: String,
+    } -> [LogoKept],
+    /// The organization's logo, for everyone in it; none until it has one.
+    "brand/logo/get" => BrandLogoGet {} -> [BrandLogo],
+    /// A one-time code for a link that signs a browser on this computer in: good once, for
+    /// five minutes. Only glave on this computer: a local transport, or the local token.
+    "signin/link" => SigninLink {} -> [Link],
+    /// Trades a link's code for a browser session with this server, from this computer: a
+    /// bearer token, good for 30 days from its last use. Over HTTP it needs no sign-in.
+    "signin/redeem" => SigninRedeem {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [Browser],
+    /// Ends this browser's session: signing out.
+    "signin/end" => SigninEnd {} -> [Done],
+    /// Ends every browser session but this one's: signing other browsers out.
+    "signin/end_others" => SigninEndOthers {} -> [Done],
+    /// A one-time code for a link that makes a passkey on a device elsewhere, at the server's
+    /// public origin: good once, for ten minutes. Only glave on this computer: a local
+    /// transport, or the local token.
+    "signin/setup" => SigninSetup {} -> [Link],
+    /// Begins making a passkey with a setup link's code, or an invite's or a sign-up's: the
+    /// first passkey of a new glave account. Over HTTP it needs no sign-in.
+    "passkey/create_options" => PasskeyCreateOptions {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+        /// Which link `code` is: a setup link's unless said.
+        #[serde(default, skip_serializing_if = "LinkKind::is_setup")]
+        link: LinkKind,
+    } -> [PasskeyOptions],
+    /// Makes the passkey that answers a setup link's request, spends the code, and signs the
+    /// browser in. Over HTTP it needs no sign-in.
+    "passkey/create" => PasskeyCreate {
+        /// The request, as `passkey/create_options` named it.
+        ceremony: String,
+        /// The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
+        /// base64url.
+        credential: serde_json::Value,
+        /// What to call the passkey; when it was added, if nothing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// What to call the person, whose first passkey an invite's or a sign-up's link makes;
+        /// any other passkey's person has one, or their sign-in names them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        person_name: Option<String>,
+    } -> [Browser],
+    /// Begins adding a passkey on this device, for the person signed in.
+    "passkey/add_options" => PasskeyAddOptions {} -> [PasskeyOptions],
+    /// Adds the passkey that answers the person's request.
+    "passkey/add" => PasskeyAdd {
+        ceremony: String,
+        credential: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    } -> [Passkey],
+    /// Begins signing a browser in with a passkey. Over HTTP it needs no sign-in.
+    "passkey/get_options" => PasskeyGetOptions {} -> [PasskeyOptions],
+    /// Signs a browser in with the passkey that answers the request. Over HTTP it needs no
+    /// sign-in.
+    "passkey/get" => PasskeyGet {
+        ceremony: String,
+        credential: serde_json::Value,
+    } -> [Browser],
+    /// Changes the name the caller goes by in every organization they are in: someone with a
+    /// glave account, whom a company login does not name.
+    "person/name" => PersonName { name: String } -> [Done],
+    /// The person's passkeys, oldest first.
+    "passkey/list" => PasskeyList {} -> [Passkeys],
+    /// Removes a passkey, and ends the browser sessions it began.
+    "passkey/remove" => PasskeyRemove { passkey: String } -> [Done],
+    /// The organization's people who signed in through its identity provider, with their
+    /// roles, in id order after `after` (someone listed before), at most `limit` (100 unless
+    /// said, at most 1,000). Only for its Admins and Owners.
+    "people/list" => PeopleList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<PrincipalId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    } -> [People],
+    /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
+    /// only an Owner makes an Owner or changes one's role.
+    "role/set" => RoleSet { person: PrincipalId, role: OrgRole } -> [Person],
+    /// Takes someone out of the organization: their sessions and watches in it end at once, and
+    /// they come back only by an invite. Only for the organization's Admins and Owners; only an
+    /// Owner removes an Owner, and never the last.
+    "person/remove" => PersonRemove { person: PrincipalId } -> [Done],
+    /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
+    /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
+    /// role permits inviting, and only an Owner invites an Owner.
+    "invite/create" => InviteCreate {
+        role: OrgRole,
+        /// Whom to email its link to, where the server sends email; else it is the caller's to
+        /// share. The address is not kept.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+    } -> [Invited],
+    /// The invites waiting to be opened, oldest first, never their codes.
+    "invite/list" => InviteList {} -> [Invites],
+    /// Revokes an invite waiting to be opened.
+    "invite/revoke" => InviteRevoke { invite: InviteId } -> [Done],
+    /// Signs up with `email`, where the server takes sign-ups: a link sent there makes the
+    /// person's account and an organization of their own. Answered the same whether or not an
+    /// account has that email. Over HTTP it needs no sign-in.
+    "signup/start" => SignupStart { email: String } -> [Done],
+    /// Makes a sign-up link to hand to one person, good once and for 7 days, though the server
+    /// takes no sign-ups: it makes their account and their own personal space. Answered
+    /// with the link, this once, its space starting with `credits` where given. Only whoever
+    /// runs the server, where it keeps glave accounts.
+    "signup/link" => SignupLink {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credits: Option<Money>,
+    } -> [SignupLinked],
+    /// Asks for a link to get back into the glave account `email` has, where the server sends
+    /// one: opened, it makes a new passkey for that account. Answered the same whether or not
+    /// an account has that email. Over HTTP it needs no sign-in.
+    "recovery/start" => RecoveryStart { email: String } -> [Done],
+    /// What an invite's link opens, before anyone signs in: the organization it is to, the role
+    /// it gives, who made it, and how someone joins with it. Over HTTP it needs no sign-in.
+    "invite/show" => InviteShow {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [InviteShown],
+    /// Opens an invite with its link's `code`, as the person signed in through the
+    /// organization's identity provider, or with a glave account, who joins the organization
+    /// it is to: their role is raised to the invite's, and the invite is spent.
+    "invite/accept" => InviteAccept {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [Person],
+    /// The organizations the caller belongs to, their own first, each as it is to them: what
+    /// a client switches between, naming one in `Glave-Organization`.
+    "organization/list" => OrganizationList {} -> [Organizations],
+    /// Creates an organization named `name` (trimmed, at most 80 characters), the caller its
+    /// Owner, to invite people to: answered with it, to work in by naming it. Only someone
+    /// signed in with a glave account, sign-up open or not, and at most 10 each.
+    "organization/create" => OrganizationCreate { name: String } -> [Organization],
+    /// The organization's credits, where the server keeps them: its balance, the month's limit
+    /// and spending, and each person's, to its Owners and Admins; to anyone else, their own
+    /// spending this month.
+    "credits/get" => CreditsGet {} -> [Credits],
+    /// Adds `amount`, in US dollars, to an organization's credits, paid by the payment
+    /// `reference` names, which adds once however often it is sent: the caller's
+    /// organization unless `organization` names another. Only whoever runs the server.
+    "credits/add" => CreditsAdd {
+        amount: Money,
+        reference: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(with = "Option<String>")]
+        organization: Option<OrgId>,
+    } -> [Credits],
+    /// The personal spaces sign-ups made, newest first, names and balances: whoever runs it only.
+    "credits/list" => CreditsList {} -> [CreditsSpaces],
+    /// Sets the most the caller's organization may spend in a month, in US dollars. Only its
+    /// Owners.
+    "credits/limit" => CreditsLimit { limit: Money } -> [Credits],
+    /// The models this server can run: the default first.
+    "model/list" => ModelList {} -> [Models],
+    "thread/start" => ThreadStart {
+        /// The project the thread is in: by default the caller's personal project, their Chats.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        /// Whether the thread works in a worktree of its own rather than in the folder itself;
+        /// the server's default (`worktree` in `config.toml`) when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree: Option<bool>,
+        /// For a thread that runs as a task: in a project with a folder it works on a copy
+        /// of its own, a worktree, never in the folder itself, so `worktree: false` is refused.
+        #[serde(default, skip_serializing_if = "is_false")]
+        background: bool,
+        /// A running computer to work on, such as the person's own laptop dialled in to this
+        /// server. Not available yet: refused with `-32022`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        computer: Option<ComputerId>,
+        /// The model the thread's turns go to, one `model/list` names; the server's default
+        /// when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// What the agent may do in the thread's turns, one of the server's `modes`; its
+        /// project's, else the server's own, when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permissions: Option<Permissions>,
+        /// How much the model reasons in the thread's turns: one of the levels `model/list`
+        /// gives for its model, such as `high`. The model's own default when absent or `null`.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
+    } -> [Thread],
+    "thread/list" => ThreadList {
+        /// The project whose threads to list, by default as `thread/start` picks one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+        /// Which threads: the active ones by default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        show: Option<Show>,
+        /// Where the page starts: the `next` of the page before.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
+    } -> [Threads],
+    /// Makes a new thread in the same project whose history is `thread`'s up to and including
+    /// `at`, a point between its turns, to try again from there: `at` is the `seq` of a
+    /// `turn.ended`, or of an event between two turns, or before the first; the latest such
+    /// point when absent. To send an earlier message again changed, fork at the event just
+    /// before its turn's `turn.started`, then send it. The fork has the same model, settings
+    /// and prefix; nothing of `thread` changes, and files are not rewound.
+    "thread/fork" => ThreadFork {
+        thread: ThreadId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Seq>,
+    } -> [Thread],
+    /// Gives a thread a title of the person's own.
+    "thread/rename" => ThreadRename { thread: ThreadId, title: String } -> [Thread],
+    /// Hides a thread from lists, keeping it in the log.
+    "thread/archive" => ThreadArchive { thread: ThreadId } -> [Done],
+    /// Brings an archived thread back.
+    "thread/unarchive" => ThreadUnarchive { thread: ThreadId } -> [Done],
+    /// Hides a thread for good and marks it for erasure.
+    "thread/delete" => ThreadDelete { thread: ThreadId } -> [Done],
+    "thread/get" => ThreadGet { thread: ThreadId } -> [Thread],
+    "thread/events" => ThreadEvents {
+        thread: ThreadId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<Seq>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    } -> [Events],
+    /// Reads a thread back from its end, turn by turn, as a client opens it: its latest 20
+    /// turns, whole, before `before` (up to its end when absent), at most 5,000 events, in
+    /// order. `earlier`, when there is more before them, is the `before` that reads it. Read up
+    /// to its end with more before, the thread's latest choice of model and of effort come
+    /// first, each when it was made before these turns, since they still hold.
+    "thread/turns" => ThreadTurns {
+        thread: ThreadId,
+        /// Where the page ends, before this `seq`: the `earlier` of the page after it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        before: Option<Seq>,
+    } -> [Events],
+    /// What a thread's replies drew on from the web, read from its log: for each reply whose
+    /// turn read pages with `web_fetch` before it, those pages, in order.
+    "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
+    /// What a thread changed in files with glave's own `write` and `edit`, its subagents'
+    /// changes with its own, read from the logs: each file with the lines added and taken out
+    /// and each change, for the thread and for each turn that changed any.
+    "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
+    /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
+    /// between them, its calls and what they did in a line, and which message is each turn's
+    /// reply.
+    "thread/steps" => ThreadSteps { thread: ThreadId } -> [Steps],
+    /// The thread's plan, read from its log: its steps, each with its status, and whether it
+    /// waits for the person's approval; `null` when it has none.
+    "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
+    /// Follows a thread: its events after `after` from the log, then its events as they are
+    /// recorded and its live updates, its subagents' with them, each event once and in order.
+    /// Streams as `turn/start` does, until the client ends the watch (`thread/unwatch`, or
+    /// closing the stream), or the thread is deleted. A connection of lines watches each thread
+    /// once, at most 64 at a time.
+    "thread/watch" => ThreadWatch {
+        thread: ThreadId,
+        /// The last `seq` the client has: only the events after it are sent. Every event when
+        /// absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<Seq>,
+    } -> [Watched],
+    /// Ends this connection's watch of a thread, which then answers its request. Over HTTP,
+    /// where each watch is a request of its own, closing its stream ends it.
+    "thread/unwatch" => ThreadUnwatch { thread: ThreadId } -> [Done],
+    /// Follows the caller's threads as `thread/list` shows them: each one's summary
+    /// (`thread/changed`) whenever it changes, whatever its standing, until the client ends the
+    /// watch. Streams as `thread/watch` does; a connection of lines watches each list once,
+    /// within its 64 watches.
+    "thread/list/watch" => ThreadListWatch {
+        /// The project whose threads to follow: every project the caller owns when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        /// The latest `updated_at` the client has: the threads updated since are sent first,
+        /// read from the threads view, oldest first. Only what changes from now when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<At>,
+        /// Whether the client was away (hidden, or cut off) since it read its settings: each is
+        /// told first (`settings/changed`), as any may have changed, and it reads them again.
+        #[serde(default, skip_serializing_if = "is_false")]
+        away: bool,
+    } -> [Watched],
+    /// Ends this connection's watch of a list, which then answers its request. Over HTTP,
+    /// closing its stream ends it.
+    "thread/list/unwatch" => ThreadListUnwatch {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Done],
+    /// Sends the person's message: it starts a turn, or while one runs it is queued to it, and
+    /// the model reads it at its next call.
+    "turn/start" => TurnStart {
+        thread: ThreadId,
+        prompt: String,
+        /// Files the person added to the message, each one `file/upload` kept in the thread's
+        /// project: the thread refers to them from now on, and the model is sent them as it can
+        /// read them. Not with `background`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<AttachedFile>,
+        /// Runs the turn as a task, with no one attached: answered at once with the task.
+        #[serde(default, skip_serializing_if = "is_false")]
+        background: bool,
+        /// With `background`, tokens the turn may use, subagents' included.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        budget: Option<u64>,
+        /// The model this turn, and the thread's turns after it, go to: one `model/list`
+        /// names. The thread's latest choice when absent, else the server's default. Not while
+        /// a turn runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// How much the model reasons in this turn, and the thread's turns after it: one of
+        /// the levels `model/list` gives for the model the turn goes to, or `null` for Default,
+        /// the model's own default again, as in a thread that never chose. The thread's latest
+        /// choice when absent, else the model's own default. Not while a turn runs.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
+        /// What the agent may do in this turn, and the thread's turns after it: one of the
+        /// server's `modes`. The thread's latest choice when absent, else its project's, else
+        /// the server's. Not while a turn runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permissions: Option<Permissions>,
+        /// No one answers the turn it starts: what would ask is declined at once and
+        /// `question` is not offered, as in a task, for its subagents too, while it still
+        /// streams to whoever follows it. For a client with no one at it, such as a script.
+        #[serde(default, skip_serializing_if = "is_false")]
+        unattended: bool,
+        #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
+        meta: Meta,
+    } -> [Turn, Task, Queued],
+    "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
+    /// Keeps a file the person added to a message they are writing, in `project` (their Chats
+    /// when absent), for `turn/start` to name: kept a day unless a message is sent with it.
+    /// Images (PNG, JPEG, GIF, WebP), PDFs and text, each up to 10 MB, kept as what they hold
+    /// says they are; anything else is refused, videos with a sentence of their own.
+    "file/upload" => FileUpload {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        /// Its name, as the person's computer called it.
+        name: String,
+        /// Its media type, such as `image/png`; `application/octet-stream` when unknown. What
+        /// it holds decides whether it is an image or a PDF; this names a text file's kind.
+        media_type: String,
+        /// Its content, in base64.
+        data: String,
+    } -> [File],
+    /// A piece of a file `thread` holds, by its content's SHA-256: one its own messages or tool
+    /// results name, such as an image the agent made, and nothing else its project keeps. Read
+    /// from `offset` (the start when absent) a piece at a time, each answer saying where the
+    /// next starts.
+    "file/read" => FileRead {
+        thread: ThreadId,
+        #[schemars(with = "String")]
+        sha256: Sha256,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<u64>,
+    } -> [FilePiece],
+    /// What glave made for the caller and keeps beyond any chat: every project's, newest first.
+    "library/list" => LibraryList {} -> [Library],
+    /// A piece of a Library item's file, read as `file/read` reads one. The item is named with
+    /// the project it was made in, which the caller must own.
+    "library/read" => LibraryRead {
+        project: ProjectId,
+        asset: AssetId,
+        #[serde(default)]
+        offset: Option<u64>,
+    } -> [FilePiece],
+    /// Takes an item out of the caller's Library, letting go of its file first; the chat it was
+    /// made in keeps its own copy.
+    "library/remove" => LibraryRemove { project: ProjectId, asset: AssetId } -> [Done],
+    "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
+    "approval/decide" => ApprovalDecide {
+        thread: ThreadId,
+        approval: CallId,
+        decision: Answer,
+    } -> [Done],
+    /// Answers the model's questions: one answer for each, in order.
+    "question/answer" => QuestionAnswer {
+        thread: ThreadId,
+        question: CallId,
+        answers: Vec<String>,
+    } -> [Done],
+    /// Answers what a connected service asks the person in the middle of a call: the turn goes
+    /// on with the call. What they answer goes to the service alone.
+    "service/answer" => ServiceAnswer {
+        thread: ThreadId,
+        /// The call that waits.
+        call: CallId,
+        /// What it waits at: the `seq` of its `service.asked`, since a call may ask more than once.
+        asked: Seq,
+        answer: glave_event::ServiceAnswer,
+    } -> [Done],
+    /// Answers what a thread's project asks to be trusted (its summary's `trust`): `trust`
+    /// turns on what it listed from the thread's next turn and keeps the answer; `not_now`
+    /// keeps it off and stops asking in this thread. Only the person on this computer.
+    "trust/answer" => TrustAnswer {
+        thread: ThreadId,
+        /// The ask answered: its `ask`.
+        ask: String,
+        answer: TrustChoice,
+    } -> [Thread],
+    /// Replaces the steps of the thread's proposed plan with the person's, each to do, and
+    /// answers with the plan: the model is told at its next turn, and builds from them. Only
+    /// while a plan waits for approval, and not while a turn runs.
+    "plan/edit" => PlanEdit {
+        thread: ThreadId,
+        /// The steps, in order: 1 to 64, each a line of up to 1,000 characters.
+        steps: Vec<String>,
+    } -> [Plan],
+    /// Builds the thread's proposed plan: records the approval, runs the thread in Auto from
+    /// now on (or the highest mode the policy leaves, if lower), and starts the turn that
+    /// builds it from the plan as it is, streamed as `turn/start` streams one.
+    "plan/build" => PlanBuild { thread: ThreadId } -> [Turn],
+    /// Tasks running and recently finished in every project the caller owns, running first,
+    /// then newest first.
+    "tasks/list" => TasksList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    } -> [Tasks],
+    /// Stops the task running in a thread.
+    "tasks/stop" => TasksStop { thread: ThreadId } -> [Done],
+    /// The commands a thread keeps running in the background, oldest first.
+    "command/list" => CommandList { thread: ThreadId } -> [Commands],
+    /// Stops one of a thread's commands in the background, and everything it started.
+    "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
+    /// Opens a terminal of the caller's own in a thread's folder, on their own computer.
+    "terminal/open" => TerminalOpen { thread: ThreadId, size: TerminalSize } -> [Terminal],
+    /// The terminals open in a thread, oldest first.
+    "terminal/list" => TerminalList { thread: ThreadId } -> [Terminals],
+    /// Types `input` into one of a thread's terminals.
+    "terminal/write" => TerminalWrite { thread: ThreadId, terminal: TerminalId,
+        #[schemars(with = "String")] input: Bytes } -> [Done],
+    /// What one printed from `from`, waiting up to `wait_ms` (at most 25 s) for something.
+    "terminal/read" => TerminalRead { thread: ThreadId, terminal: TerminalId, from: u64,
+        #[serde(default)] wait_ms: u64 } -> [Screen],
+    /// Gives one of a thread's terminals another size.
+    "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
+    /// Closes one of a thread's terminals, ending its shell.
+    "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
+    /// Runs a prompt as a task at set times, each run in a new thread
+    /// working on a copy of its own.
+    "schedule/create" => ScheduleCreate {
+        /// The project its runs are in, by default as `thread/start` picks one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        when: When,
+        prompt: String,
+        /// Tokens each run may use. Required: no schedule runs unbounded.
+        budget: u64,
+    } -> [Schedule],
+    /// The schedules of every project the caller owns.
+    "schedule/list" => ScheduleList {} -> [Schedules],
+    "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
+    /// The projects the caller owns.
+    "project/list" => ProjectList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    } -> [Projects],
+    "project/get" => ProjectGet { project: ProjectId } -> [Project],
+    /// The project the folder at `path` on this computer leads to, as glave run there opens
+    /// it: by the folder, else by its repository's `origin`. None, and nothing made, when it
+    /// leads to none, or to one the caller does not work in. Only the person on this computer.
+    "project/find" => ProjectFind {
+        /// The folder's full path.
+        path: String,
+    } -> [Projects],
+    /// A new project, owned by the caller, and its folder, if it has one: its threads work
+    /// there. A folder that already leads to a project answers that project, its name as it
+    /// was. Only the person on this computer gives a folder.
+    "project/create" => ProjectCreate {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder: Option<NewFolder>,
+    } -> [Project],
+    /// Renames a project.
+    "project/rename" => ProjectRename { project: ProjectId, name: String } -> [Project],
+    /// Gives a project the folder already on this computer at `path`, as its folder's new
+    /// place: its threads work there from now on. Only the person on this computer.
+    "project/folder/set" => ProjectFolderSet {
+        project: ProjectId,
+        /// The folder's full path.
+        path: String,
+    } -> [Project],
+    /// Removes a project: its threads go to the archive, their history kept, and it is listed
+    /// no more until it is given a folder again. Only the person on this computer.
+    "project/remove" => ProjectRemove { project: ProjectId } -> [Done],
+    /// The folders inside a folder on this computer, by name, to choose a project's folder
+    /// from: the home folder when `path` is absent. Only the person on this computer.
+    "folder/list" => FolderList {
+        /// A folder's full path.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    } -> [Folders],
+    /// Whether glave remembers for the caller: theirs to turn on or off, unless their
+    /// organization turned memory off or it is not theirs to choose here.
+    "memory/get" => MemoryGet {} -> [Remembering],
+    /// Turns memory on or off for the caller from their threads' next turn: their own choice,
+    /// kept by the server. What they saved stays, theirs to see and change.
+    "memory/set" => MemorySet { on: bool } -> [Remembering],
+    /// The memories here: the person's and the project's, or one `scope`.
+    "memory/list" => MemoryList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<MemoryScope>,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    "memory/save" => MemorySave {
+        text: String,
+        scope: MemoryScope,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    "memory/edit" => MemoryEdit {
+        memory: MemoryId,
+        text: String,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    /// Saved in the new scope, forgotten in the old.
+    "memory/move" => MemoryMove {
+        memory: MemoryId,
+        scope: MemoryScope,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    /// Forgets one memory, or with `all`, every memory of `scope`. Chats keep what was said in
+    /// them: the one a memory was saved in goes only by `thread/delete`.
+    "memory/forget" => MemoryForget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        memory: Option<MemoryId>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        all: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<MemoryScope>,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    /// Undoes glave's latest change to a memory, within 30 days.
+    "memory/restore" => MemoryRestore {
+        memory: MemoryId,
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Memories],
+    /// Connects a model account: the key is checked with the service, then kept sealed, and
+    /// the account's models join `model/list`. Connecting the same service (and URL) again
+    /// replaces its account. Only the person on this computer.
+    "provider/connect" => ProviderConnect {
+        kind: ProviderKind,
+        /// The account's key, sent once and never answered back.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        key: Secret,
+        /// The server's API, for a `compatible` account: `https`, or `http` on this computer.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+    } -> [Provider],
+    /// The model accounts connected here.
+    "provider/list" => ProviderList {} -> [Providers],
+    /// Lists every account's models again with its service, now, and answers with the
+    /// accounts. Their catalogs are also refreshed daily on their own.
+    "provider/refresh" => ProviderRefresh {} -> [Providers],
+    /// Removes a model account, destroying the key it was kept with.
+    "provider/remove" => ProviderRemove { provider: ProviderId } -> [Done],
+    /// Connects a git host: the token is checked with the host where it has a way to, then
+    /// kept sealed, and git and the host's own tool sign in with it, asking at each use.
+    /// Connecting the same host again replaces it. Only the person on this computer.
+    "credential/connect" => CredentialConnect {
+        /// Where the host is, such as `https://github.com`: `https`, or `http` on this computer.
+        url: String,
+        /// The token, sent once and never answered back.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        token: Secret,
+        /// The user name git sends with the token, for a host that needs one; else whom the
+        /// host says the token is for.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        username: Option<String>,
+    } -> [Credential],
+    /// The git hosts connected here, and what signing in to GitHub in the browser offers.
+    "credential/list" => CredentialList {} -> [Credentials],
+    /// Removes a git host, destroying its token.
+    "credential/remove" => CredentialRemove { credential: CredentialId } -> [Done],
+    /// Starts signing in to GitHub in the browser: the code to enter, and where.
+    "credential/device/start" => CredentialDeviceStart {} -> [Device],
+    /// Waits a little for the sign-in `flow`: the host, connected, once the person approved
+    /// it on GitHub; else the flow again, to ask again.
+    "credential/device/poll" => CredentialDevicePoll { flow: String } -> [Credential, Waiting],
+    /// Adds a secret, such as an API key, kept sealed and never answered back. A name kept
+    /// already is refused (`secret/replace`). Only the person on this computer; no tool can.
+    "secret/add" => SecretAdd {
+        /// A variable's name: `STRIPE_KEY`.
+        name: String,
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        value: Secret,
+    } -> [Secret],
+    /// The secrets kept here: their names, never a value.
+    "secret/list" => SecretList {} -> [Secrets],
+    /// Gives the secret `name` a new value, destroying the old one.
+    "secret/replace" => SecretReplace {
+        name: String,
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        value: Secret,
+    } -> [Secret],
+    "secret/remove" => SecretRemove { name: String } -> [Done],
+    /// Starts signing in to a connection, a remote MCP server of the person's settings, as
+    /// MCP's authorization says: the page the person opens in the browser, which comes back to this
+    /// server. Only the person on this computer.
+    "connection/start" => ConnectionStart {
+        /// What the person's `mcp.json` calls the server, or its address.
+        server: String,
+    } -> [SignIn],
+    /// Waits a little for the sign-in `flow`: the connection, signed in to, once the person approved
+    /// glave in the browser; else the flow again, to ask again.
+    "connection/poll" => ConnectionPoll { flow: String } -> [Connection, Waiting],
+    /// The connections signed in to here, then the person's remote servers that ask them to
+    /// sign in and are not signed in to: each with how much it was used this month, once it
+    /// is in the person's settings. Web search is not among them (`search/get`).
+    "connection/list" => ConnectionList {} -> [Connections],
+    /// Removes a connection's sign-in, destroying its tokens.
+    "connection/remove" => ConnectionRemove {
+        /// What the person's `mcp.json` calls the server, or its address.
+        server: String,
+    } -> [Done],
+    /// glave's connectors the caller may connect here, in order, with the companies, categories
+    /// and tags they have. Given a company, a category or a tag, only those that have it, and
+    /// only those that have all that are given.
+    "connector/list" => ConnectorList {
+        #[serde(default)]
+        company: Option<String>,
+        #[serde(default)]
+        category: Option<ConnectorCategoryId>,
+        #[serde(default)]
+        tag: Option<ConnectorTagId>,
+        /// Only those connected that the threads of this project use, the person's Chats
+        /// among them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        used_in: Option<ProjectId>,
+    } -> [Connectors],
+    /// Connects an account of a connector: at once, or the sign-in page, then
+    /// `connection/poll`. Its threads use it everywhere, or only in `only`, a project of the
+    /// caller's or their Chats. An `account` the service has already is connected again; a
+    /// second account takes a name of its own, and a place no other account of it is used in.
+    "connector/connect" => ConnectorConnect {
+        connector: String,
+        /// The person's name for the account: `Acme`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        only: Option<ProjectId>,
+        /// Another account of a service connected already, which with no `account` is named at
+        /// its sign-in: as who it is signed in as, where the service says, else the service's
+        /// name and a number (`Notion 2`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        another: bool,
+    } -> [Connector, SignIn],
+    /// Uses an account of a connected connector everywhere from now on, or only in `only`, a
+    /// project of the caller's or their Chats: threads elsewhere are refused its tools at once.
+    "connector/place" => ConnectorPlace {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        only: Option<ProjectId>,
+    } -> [Connector],
+    /// Disconnects an account of a connector, destroying its sign-in.
+    "connector/disconnect" => ConnectorDisconnect {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+    } -> [Done],
+    /// Calls an account of a connector `name` from now on, unique among the service's accounts;
+    /// none leaves it unnamed, as a service's first account is until it is named.
+    "connector/rename" => ConnectorRename {
+        connector: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    } -> [Connector],
+    /// Whether the person's agent may search the web, and, never theirs to choose, why.
+    "search/get" => SearchGet {
+        /// Also how much it searched this month, which reads the month's threads: for
+        /// Settings, not for a client that only shows whether it is on.
+        #[serde(default)]
+        usage: bool,
+    } -> [Search],
+    /// Turns web search on or off for the person: on, its server joins their own settings,
+    /// `mcp.json` in glave's folder, and their threads may search from the next turn; off, it
+    /// leaves them, unless they set it up there themselves. Only the person on this computer.
+    "search/set" => SearchSet { on: bool } -> [Search],
+}
