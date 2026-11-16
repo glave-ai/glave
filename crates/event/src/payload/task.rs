@@ -2,7 +2,8 @@
 //! project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
-//! in a conversation. `schedule.placed`: a project with schedules, in the store's index of them.
+//! in a conversation. `schedule.placed`: a project with schedules, in its organization's index of
+//! them; `schedule.organization`: an organization with schedules, in the store's list of them.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -23,6 +24,7 @@ pub(crate) const DELETED: &str = "schedule.deleted";
 pub(crate) const SKIPPED: &str = "schedule.skipped";
 pub(crate) const PAUSED: &str = "schedule.paused";
 pub(crate) const PLACED: &str = "schedule.placed";
+pub(crate) const ORGANIZATION: &str = "schedule.organization";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,16 +188,23 @@ pub struct ScheduleDeleted {
     pub by: Option<Principal>,
 }
 
-/// Someone made a schedule in a project, which the store's index of schedules now lists, in the
-/// server's own organization: every server that fires schedules reads the task ledger of each
-/// project it lists, so a schedule runs though no one asked that server for anything since it
-/// started. Recorded once for each project.
+/// Someone made a schedule in a project, which its organization's index of schedules now lists,
+/// in that organization's own scope: every server that fires schedules reads the task ledger of
+/// each project it lists, so a schedule runs though no one asked that server for anything since
+/// it started. Recorded once for each project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchedulePlaced {
-    /// The project's organization.
-    pub org: Uuid,
     pub project: Uuid,
+}
+
+/// Someone made a schedule in an organization, which the store's list of them now holds, in the
+/// server's own organization: every server that fires schedules reads each listed
+/// organization's own index. It names no project. Recorded once for each organization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleOrganization {
+    pub org: Uuid,
 }
 
 impl Payload for TaskStarted {
@@ -230,6 +239,11 @@ impl Payload for ScheduleDeleted {
 
 impl Payload for SchedulePlaced {
     const TYPE: &'static str = PLACED;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for ScheduleOrganization {
+    const TYPE: &'static str = ORGANIZATION;
     const VERSION: u32 = 1;
 }
 
@@ -280,6 +294,13 @@ pub(crate) fn decode_placed(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<SchedulePlaced>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_organization(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ScheduleOrganization>> {
     (version == 1).then(|| parse(data))
 }
 

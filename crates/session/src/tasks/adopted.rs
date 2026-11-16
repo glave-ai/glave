@@ -6,7 +6,7 @@ use glave_event::{
     At, Body, Currency, Money, Nanos, Payload as _, ThreadId, TokenCounts, TurnResult, TurnStarted,
     decode,
 };
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
+use glave_ports::{BlobStore, EventLog, Located, ModelProvider, Scope};
 use tokio::sync::{broadcast, watch};
 
 use super::Running;
@@ -38,11 +38,7 @@ where
             return Ok(false);
         };
         // As whoever's run it is.
-        let caller = Caller {
-            person: super::whose(recorded.started.by.as_ref()),
-            org: Some(project.org),
-            ..Caller::default()
-        };
+        let caller = super::acting_for(super::whose(recorded.started.by.as_ref()), project.org);
         let scope = self.authorize(&caller, thread).await?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let Some(view) = view else {

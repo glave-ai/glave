@@ -20,7 +20,7 @@ use super::info::{due, next_fire};
 use crate::choice::Choice;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
-use crate::tasks::{Work, whose};
+use crate::tasks::{Work, acting_for, whose};
 use crate::words::Sentence;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
@@ -184,11 +184,7 @@ where
         };
         // As whoever made it, with what they may do, spend and work on, in its project's
         // organization; a sign-in of theirs ending changes nothing, being removed does.
-        let caller = Caller {
-            person: whose(schedule.by.as_ref()),
-            org: Some(project.org),
-            ..Caller::default()
-        };
+        let caller = acting_for(whose(schedule.by.as_ref()), project.org);
         let fired = Fired {
             schedule: schedule.schedule,
             due: At::from(at),
