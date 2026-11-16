@@ -22,8 +22,8 @@ describe('LibraryService', () => {
     await library.refresh();
     expect(library.loaded()).toBe(true);
     expect(library.items()).toEqual([fox, hare]);
-    await library.remove('fox');
-    expect(fake.paramsOf('library/remove')).toEqual([{ asset: 'fox' }]);
+    await library.remove(fox);
+    expect(fake.paramsOf('library/remove')).toEqual([{ project: 'p1', asset: 'fox' }]);
     expect(library.items()).toEqual([hare]);
     expect(library.error()).toBeNull();
   });
@@ -35,7 +35,7 @@ describe('LibraryService', () => {
       .answer('library/remove', () => gone);
     const library = setUp(fake);
     await library.refresh();
-    await library.remove('fox');
+    await library.remove(picture('fox', 'p1'));
     expect(library.error()).toBe('this file is no longer here');
     expect(library.items()).toHaveLength(1);
   });

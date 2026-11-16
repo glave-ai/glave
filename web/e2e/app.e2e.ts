@@ -269,13 +269,20 @@ test('New chat starts its thread in Chats, not in the project listed first', asy
   await expect(project.getByTestId('nav-thread')).toHaveCount(4);
 });
 
-test('tasks, settings and memory open from the side nav', async ({ page }) => {
+test('tasks, the Library, settings and memory open from the side nav', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   // A task is going, so Tasks shows, with how many.
   await expect(byTestId(page, 'nav-tasks')).toHaveAccessibleName('Tasks 1 going');
   await byTestId(page, 'nav-tasks').click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
+  await expectAccessible(page);
+  // The Library, under Tasks, with nothing in it yet.
+  await byTestId(page, 'nav-library').click();
+  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
+  await expect(byTestId(page, 'library-empty')).toContainText(
+    'Pictures glave makes for you will appear here.',
+  );
   await expectAccessible(page);
   // Settings is the person's: their row opens it, beside Sign out.
   await byTestId(page, 'person').click();

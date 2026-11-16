@@ -633,7 +633,8 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Where commands listen** (#356): `command/list`'s `ports`, for the person on this computer, and the web app's row.
 - **Previews** (#356): `command/list`'s `previewed` and each port's `url`, `framed` and `unframed`, the dev server's own address where glave's pages are at `localhost`, the policy's `frame-src` there and `'none'` elsewhere, and the web app's Preview tab and Open preview. Not yet: previews at a name of their own for a server reached from elsewhere and for commands on other computers (#356, #1259); a frame of a server on IPv6's loopback alone.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, and WebSocket.
-- **Library** (owner decision, 2026-11-16): each picture an image tool makes kept as an item of the person's Library, `asset` in the tool's result, `library/list`, `library/read` and `library/remove`. Not yet: the web app's Library page.
+- **Library** (owner decision, 2026-11-16): each picture an image tool makes kept as an item of the person's Library, `asset` in the tool's result, `library/list`, `library/read` and `library/remove`.
+- **The Library page** (owner decision, 2026-11-16): Library in the web app's side nav, its grid, newest first, reading each picture only as it comes into view and four at a time, one opened large with Download, Delete and Go to chat, filtered by kind and, beside the Chats, by project.
 - **Model accounts offered only where taken** (#1427): `server/discover`'s `model_accounts`, and the web app's Settings showing its Models card only then.
 
 ## Later

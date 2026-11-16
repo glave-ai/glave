@@ -10,6 +10,9 @@ const MOST_UNUSED = 48;
 /** The most of a file read back, in bytes: more than any file glave keeps (10 MB). */
 const MOST_BYTES = 32 * 1024 * 1024;
 
+/** The most files read at once: past it, a read waits for one to end, the first asked first. */
+const MOST_READING = 4;
+
 /** A file held as an address while something draws it. */
 export interface HeldFile {
   /** Its address, once read. */
@@ -77,7 +80,8 @@ interface Kept {
  * Files a thread holds (`file/read`), and items of the person's Library (`library/read`), read
  * back through the server a piece at a time, and kept as addresses the page made (`blob:`,
  * which the app's Content Security Policy allows for images): an image the agent made is drawn,
- * and saved, from one read. An address is kept
+ * and saved, from one read. At most `MOST_READING` are read at once, so a page of many pictures
+ * reads them a few at a time. An address is kept
  * while anything holds it; of those nothing holds, at most `MOST_UNUSED` are kept for when
  * they are drawn again, the one let go of first going first. One that could not be read is
  * read again when next asked for.
@@ -90,6 +94,10 @@ export class FilesService {
    * longest ago first.
    */
   private readonly kept = new Map<string, Kept>();
+  /** How many files are being read now. */
+  private reading = 0;
+  /** The reads waiting their turn, the first asked for first. */
+  private readonly waiting: (() => void)[] = [];
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -107,17 +115,20 @@ export class FilesService {
     );
   }
 
-  /** The file of the Library item `asset`, of `mediaType`, held as an address until released. */
-  holdAsset(asset: string, mediaType: string): HeldFile {
-    return this.holdAs(`library/${asset}`, mediaType, (offset) =>
-      this.session.call('library/read', { asset, ...(offset === 0 ? {} : { offset }) }),
+  /**
+   * The file of the Library item `asset`, in `project`, of `mediaType`, held as an address until
+   * released.
+   */
+  holdAsset(project: string, asset: string, mediaType: string): HeldFile {
+    return this.holdAs(`library/${project}/${asset}`, mediaType, (offset) =>
+      this.session.call('library/read', { project, asset, ...(offset === 0 ? {} : { offset }) }),
     );
   }
 
   /** The file kept as `key`, read with `readPiece` the first time, held until released. */
   private holdAs(key: string, mediaType: string, readPiece: ReadPiece): HeldFile {
     const found = this.kept.get(key);
-    const url = found?.url ?? read(readPiece, mediaType);
+    const url = found?.url ?? this.inTurn(() => read(readPiece, mediaType));
     this.kept.delete(key);
     this.kept.set(key, { url, users: (found?.users ?? 0) + 1 });
     if (found === undefined) {
@@ -137,6 +148,27 @@ export class FilesService {
         }
       },
     };
+  }
+
+  /** `work`, once fewer than `MOST_READING` reads run; its turn passes on when it ends. */
+  private async inTurn<T>(work: () => Promise<T>): Promise<T> {
+    if (this.reading < MOST_READING) {
+      this.reading += 1;
+    } else {
+      await new Promise<void>((go) => {
+        this.waiting.push(go);
+      });
+    }
+    try {
+      return await work();
+    } finally {
+      const next = this.waiting.shift();
+      if (next === undefined) {
+        this.reading -= 1;
+      } else {
+        next();
+      }
+    }
   }
 
   /** One holder of `url`, kept as `key`, lets go of it; past `MOST_UNUSED` unheld, one goes. */

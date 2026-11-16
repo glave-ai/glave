@@ -101,7 +101,7 @@ describe('LibraryComponent', () => {
     expect(fake.paramsOf('library/remove')).toEqual([]);
     root.querySelector<HTMLElement>('[data-testid="library-delete-confirm-ok"]')?.click();
     await settle(fixture);
-    expect(fake.paramsOf('library/remove')).toEqual([{ asset: 'fox' }]);
+    expect(fake.paramsOf('library/remove')).toEqual([{ project: 'chats', asset: 'fox' }]);
     expect(names(root)).toEqual([]);
   });
 });

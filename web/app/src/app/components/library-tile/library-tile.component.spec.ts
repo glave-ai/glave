@@ -19,6 +19,7 @@ async function render(chat: string | null): Promise<{
   readonly root: HTMLElement;
   readonly fake: FakeSession;
   readonly opened: () => number;
+  readonly fixture: ReturnType<typeof TestBed.createComponent<LibraryTileComponent>>;
 }> {
   const fake = new FakeSession().answer('library/read', PIECE);
   TestBed.configureTestingModule({
@@ -29,14 +30,18 @@ async function render(chat: string | null): Promise<{
   let count = 0;
   fixture.componentInstance.opened.subscribe(() => (count += 1));
   await settle(fixture);
-  return { root: fixture.nativeElement as HTMLElement, fake, opened: () => count };
+  return { root: fixture.nativeElement as HTMLElement, fake, opened: () => count, fixture };
 }
 
 describe('LibraryTileComponent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('draws its picture, read through the server, its name, when, and its chat', async () => {
     const urls = objectUrls();
     const { root, fake, opened } = await render('t1');
-    expect(fake.paramsOf('library/read')).toEqual([{ asset: 'fox' }]);
+    expect(fake.paramsOf('library/read')).toEqual([{ project: 'p1', asset: 'fox' }]);
     expect(root.querySelector('img')?.getAttribute('src')).toBe(urls.made[0]);
     expect(root.querySelector('[data-testid="library-name"]')?.textContent).toBe('fox');
     expect(root.querySelector('[data-testid="library-when"]')?.textContent).toBe('Today, 9:12 AM');
@@ -48,6 +53,37 @@ describe('LibraryTileComponent', () => {
     await expectAccessible(root);
     open?.click();
     expect(opened()).toBe(1);
+  });
+
+  it('reads its picture only while it is in view or near it', async () => {
+    const urls = objectUrls();
+    const seen: ((near: boolean) => void)[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(tell: (entries: readonly { isIntersecting: boolean }[]) => void) {
+          seen.push((near) => {
+            tell([{ isIntersecting: near }]);
+          });
+        }
+        observe(): void {
+          return undefined;
+        }
+        disconnect(): void {
+          return undefined;
+        }
+      },
+    );
+    const { root, fake, fixture } = await render('t1');
+    expect(fake.paramsOf('library/read')).toEqual([]);
+    expect(root.querySelector('img')).toBeNull();
+    seen[0]?.(true);
+    await settle(fixture);
+    expect(fake.paramsOf('library/read')).toHaveLength(1);
+    expect(root.querySelector('img')?.getAttribute('src')).toBe(urls.made[0]);
+    seen[0]?.(false);
+    await settle(fixture);
+    expect(root.querySelector('img')).toBeNull();
   });
 
   it('links to no chat once its chat is gone', async () => {

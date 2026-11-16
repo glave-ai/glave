@@ -201,19 +201,21 @@ describe('SideNavComponent', () => {
       read: false,
       blocks: DeferBlockBehavior.Manual,
     });
-    // Tasks and Library at the foot of the column the threads fill, the person under it,
-    // outside it.
-    const foot = root.querySelector('[data-testid="nav-tasks"]')?.parentElement;
-    expect(foot?.classList.contains('foot')).toBe(true);
-    expect(foot?.parentElement?.classList.contains('above')).toBe(true);
-    expect(foot?.nextElementSibling).toBeNull();
-    expect(foot?.lastElementChild?.getAttribute('data-testid')).toBe('nav-library');
+    // Tasks, then Library, at the foot of the column, under what the threads fill, so Tasks
+    // coming in takes its room from them; the person under it, outside it.
+    const tasks = root.querySelector('[data-testid="nav-tasks"]');
+    const head = tasks?.previousElementSibling;
+    expect(head?.classList.contains('head')).toBe(true);
+    expect(tasks?.parentElement?.classList.contains('above')).toBe(true);
+    expect(tasks?.nextElementSibling?.getAttribute('data-testid')).toBe('nav-library');
+    expect(tasks?.nextElementSibling?.nextElementSibling).toBeNull();
     expect(root.querySelector('.above app-person')).toBeNull();
-    // No threads until they are read, then all at once, above Tasks.
+    // No threads until they are read, then all at once, last of what fills the column.
     expect(root.querySelector('app-projects-nav')).toBeNull();
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
-    expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(foot);
+    expect(root.querySelector('app-projects-nav')?.parentElement).toBe(head);
+    expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBeNull();
     // Read before the switch's code is in, the switch's room is kept above them, decided with
     // them, and the switch fills it once its code is in: no swap of the block can move them.
     const room = root.querySelector('app-projects-nav')?.previousElementSibling;

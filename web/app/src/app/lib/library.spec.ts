@@ -20,7 +20,7 @@ describe('library', () => {
     expect(filtered(items, { kind: 'picture', project: 'p9' })).toEqual([]);
   });
 
-  it('offers every kind, and the projects the items are in, by name', () => {
+  it('offers every kind, and the projects the items are in, by name, the Chats as the app says', () => {
     expect(kindChoices()).toEqual([
       { value: EVERY, label: 'Everything' },
       { value: 'picture', label: 'Pictures' },
@@ -29,7 +29,8 @@ describe('library', () => {
     const projects = [
       record('p1', 'glave'),
       record('p2', 'empty'),
-      record('chats', 'Chats', 'personal'),
+      // The server's name for it, which the person never sees.
+      record('chats', 'Personal', 'personal'),
     ];
     expect(projectChoices(items, projects)).toEqual([
       { value: EVERY, label: 'Every project' },

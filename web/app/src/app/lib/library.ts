@@ -1,5 +1,6 @@
 import type { AssetKind, LibraryItem, Project } from '@glave/client';
 
+import { chatsName } from './nav';
 import { threadTitle } from './threads';
 import { calendarDay, type Reader } from './when';
 
@@ -49,7 +50,8 @@ export function kindLabel(kind: AssetKind): string {
 
 /**
  * The projects a person can filter by: the ones their items were made in, in the order the
- * person's projects come (`projects`), each by its name; one no longer listed is left out.
+ * person's projects come (`projects`), each by its name, their Chats as the app calls them; one
+ * no longer listed is left out.
  */
 export function projectChoices(
   items: readonly LibraryItem[],
@@ -60,7 +62,10 @@ export function projectChoices(
     { value: EVERY, label: $localize`:@@library.everyProject:Every project` },
     ...projects
       .filter((project) => used.has(project.id))
-      .map((project) => ({ value: project.id, label: project.name })),
+      .map((project) => ({
+        value: project.id,
+        label: project.kind === 'personal' ? chatsName() : project.name,
+      })),
   ];
 }
 

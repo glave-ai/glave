@@ -1,5 +1,5 @@
 import { Service, inject, signal } from '@angular/core';
-import type { AssetId, LibraryItem } from '@glave/client';
+import type { LibraryItem } from '@glave/client';
 
 import { SessionService } from './session.service';
 
@@ -28,11 +28,12 @@ export class LibraryService {
     });
   }
 
-  /** Takes `asset` out of the Library; the chat it came from keeps its copy. */
-  async remove(asset: AssetId): Promise<void> {
+  /** Takes `item` out of the Library; the chat it came from keeps its copy. */
+  async remove(item: LibraryItem): Promise<void> {
+    const { project, asset } = item;
     await this.run(async () => {
-      await this.session.call('library/remove', { asset });
-      this.list.update((items) => items.filter((item) => item.asset !== asset));
+      await this.session.call('library/remove', { project, asset });
+      this.list.update((items) => items.filter((each) => each.asset !== asset));
     });
   }
 

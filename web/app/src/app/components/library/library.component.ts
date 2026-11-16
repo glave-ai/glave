@@ -112,7 +112,9 @@ export class LibraryComponent {
   protected readonly deleteOpen = signal(false);
   private readonly picture = drawn(() => {
     const item = this.opened()?.item;
-    return item === undefined ? null : this.files.holdAsset(item.asset, item.media_type);
+    return item === undefined
+      ? null
+      : this.files.holdAsset(item.project, item.asset, item.media_type);
   });
   protected readonly url = this.picture.url;
   protected readonly failed = this.picture.failed;
@@ -137,6 +139,6 @@ export class LibraryComponent {
     }
     this.previewOpen.set(false);
     this.opened.set(null);
-    await this.library.remove(item.asset);
+    await this.library.remove(item);
   }
 }

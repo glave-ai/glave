@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileReadParams } from '@glave/client';
 
+import { settle } from '@glave/glaze/testing/settle';
+
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { objectUrls } from '../testing/object-urls';
 import { FilesService } from './files.service';
@@ -54,10 +56,32 @@ describe('FilesService', () => {
     const urls = objectUrls();
     const fake = new FakeSession().answer('library/read', inPieces('PNG!'));
     const files = setUp(fake);
-    expect(await files.holdAsset('fox', 'image/png').url).toBe(urls.made[0]);
-    expect(fake.paramsOf('library/read')).toEqual([{ asset: 'fox' }, { asset: 'fox', offset: 2 }]);
-    expect(await files.holdAsset('fox', 'image/png').url).toBe(urls.made[0]);
+    expect(await files.holdAsset('p1', 'fox', 'image/png').url).toBe(urls.made[0]);
+    expect(fake.paramsOf('library/read')).toEqual([
+      { project: 'p1', asset: 'fox' },
+      { project: 'p1', asset: 'fox', offset: 2 },
+    ]);
+    expect(await files.holdAsset('p1', 'fox', 'image/png').url).toBe(urls.made[0]);
     expect(fake.paramsOf('library/read')).toHaveLength(2);
+  });
+
+  it('reads four files at once, the next as one ends', async () => {
+    objectUrls();
+    const answers: ((answer: object) => void)[] = [];
+    const fake = new FakeSession().answer(
+      'file/read',
+      () =>
+        new Promise<object>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const files = setUp(fake);
+    const held = [0, 1, 2, 3, 4, 5].map((n) => files.hold('t1', nth(n), 'image/png'));
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    answers[0]?.(inPieces('ok')({}));
+    await held[0]?.url;
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(5);
   });
 
   it('reads one that could not be read again when next asked for', async () => {
