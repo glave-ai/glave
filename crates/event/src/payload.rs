@@ -98,8 +98,8 @@ pub use service::{
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{
-    Fired, ScheduleCreated, ScheduleDeleted, SchedulePaused, SchedulePlaced, ScheduleSkipped,
-    Skipped, TaskEnded, TaskStarted, When,
+    Fired, ScheduleCreated, ScheduleDeleted, ScheduleOrganization, SchedulePaused, SchedulePlaced,
+    ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When,
 };
 pub use thread::{Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{
