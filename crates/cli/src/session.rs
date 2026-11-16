@@ -62,8 +62,8 @@ pub(crate) fn main(kept: Option<&str>) -> ExitCode {
     if let Some((first, rest)) = words.split_first()
         && let Some((_, subcommand)) = SUBCOMMANDS.iter().find(|(name, _)| name == first)
     {
-        if let Some(warning) = kept {
-            Said::Plainly.warn(warning);
+        if let Some(error) = kept {
+            crate::capabilities::warn(Said::Plainly, error);
         }
         return subcommand(rest);
     }
@@ -86,7 +86,7 @@ pub(crate) fn main(kept: Option<&str>) -> ExitCode {
         _ => {}
     }
     // The log, from here to the end: the error glave stops on goes in it too.
-    let said = Said::of(args.log.as_deref());
+    let said = args.said();
     let _log = match crate::telemetry::start(args.log.as_deref(), None) {
         Ok(log) => log,
         Err(error) => {
@@ -94,8 +94,8 @@ pub(crate) fn main(kept: Option<&str>) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Some(warning) = kept {
-        said.warn(warning);
+    if let Some(error) = kept {
+        crate::capabilities::warn(said, error);
     }
     match act(args) {
         Ok(code) => code,
@@ -167,7 +167,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             holder: Holder::new(&SystemClock, &OsEntropy)?,
             memory: wired.memory.as_ref(),
             processes: wired.servers.processes(),
-            said: Said::of(args.log.as_deref()),
+            said: args.said(),
         };
         // Boxed: the server's future is large.
         Box::pin(crate::server::run(

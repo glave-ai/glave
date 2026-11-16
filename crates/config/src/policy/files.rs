@@ -13,6 +13,7 @@ use globset::Glob;
 
 use crate::policy::memory::{MemoryRules, ProjectChoice};
 use crate::policy::provider::ProviderFile;
+use crate::policy::unreadable::unreadable;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{ComputersFile, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -584,8 +585,7 @@ fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<M
 
 /// `config.toml` at `path`, from its `text`.
 pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
-    let file: ConfigFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: ConfigFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if let Some(hooks) = &file.hooks {
         Hooks::new(hooks.hooks())
             .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
@@ -647,8 +647,7 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.
 pub(super) fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
-    let file: PolicyFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: PolicyFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if file.version != POLICY_VERSION {
         invalid!(
             "{}: version = {} is not one this glave knows: use version = {POLICY_VERSION}",

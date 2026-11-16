@@ -1,10 +1,10 @@
 //! Where glave's own sentences about its run go: where it serves, what it set aside, that it is
 //! stopping, why it stopped. With the log on standard error (`--log -`), into the log, each at
 //! its level, so every line there is JSON for whatever collects it; else onto standard error as
-//! the plain `glave: ...` lines a person at a terminal reads.
+//! the plain `glave: ...` lines a person at a terminal reads. A run's is its arguments'
+//! (`Args::said`).
 
 use std::fmt::Display;
-use std::path::Path;
 
 /// Where this run's sentences go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,15 +16,6 @@ pub(crate) enum Said {
 }
 
 impl Said {
-    /// Where a run that logs to `log` says things.
-    pub(crate) fn of(log: Option<&Path>) -> Self {
-        if crate::telemetry::on_standard_error(log) {
-            Self::Logged
-        } else {
-            Self::Plainly
-        }
-    }
-
     /// `sentence`, news of the run.
     pub(crate) fn info(self, sentence: &str) {
         match self {

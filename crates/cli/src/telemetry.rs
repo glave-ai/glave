@@ -130,12 +130,18 @@ fn open(path: &Path) -> anyhow::Result<File> {
         .with_context(|| format!("could not open the log {}", path.display()))
 }
 
-/// The level GLAVE_LOG names, or the default.
+/// The level GLAVE_LOG names, or the default. Never `off`, which tracing would take: a log asked
+/// for that records nothing, not even the error glave stops on, is refused.
 fn level() -> anyhow::Result<LevelFilter> {
     match std::env::var("GLAVE_LOG") {
-        Ok(text) if !text.trim().is_empty() => text.trim().parse().map_err(|_| {
-            anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
-        }),
+        Ok(text) if !text.trim().is_empty() => text
+            .trim()
+            .parse()
+            .ok()
+            .filter(|level| *level != LevelFilter::OFF)
+            .ok_or_else(|| {
+                anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
+            }),
         _ => Ok(DEFAULT_LEVEL),
     }
 }

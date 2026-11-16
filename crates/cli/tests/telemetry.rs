@@ -7,6 +7,7 @@ use std::process::Output;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
+use glave_ports::testing::any_secret;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::{Value, json};
 
@@ -135,17 +136,29 @@ fn a_server_with_its_log_on_standard_error_writes_nothing_else_there() {
     assert!(messages.iter().any(|said| said == "stopping"), "{all}");
 }
 
-#[test]
-fn a_server_that_cannot_start_says_why_as_an_error_in_its_log() {
-    let place = place("log-fatal");
+/// `glave serve --http` with `log`'s arguments, in a place whose settings don't read: their
+/// second line, a store's URL with its password, lost its closing quote. What it printed, once
+/// it failed, which never says the password (invariant 8).
+fn served_with_broken_settings(name: &str, log: &[&str]) -> Output {
+    let place = place(name);
     let model = FakeServer::start(Vec::new()).unwrap();
+    let secret = any_secret();
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "this is not = = toml\n").unwrap();
-    let args = ["serve", "--http", "127.0.0.1:0", "--log", "-"];
+    let broken = format!("[store]\nurl = \"postgres://glave:{secret}@db/glave\n");
+    std::fs::write(place.home.join("config.toml"), broken).unwrap();
+    let args = [&["serve", "--http", "127.0.0.1:0"], log].concat();
     let output = start_with(&place, &model, &args, &[])
         .wait_with_output()
         .unwrap();
+    // First, so what the others print holds no secret.
+    assert!(!text(&output).contains(&secret), "the line itself said");
     assert!(!output.status.success(), "{}", text(&output));
+    output
+}
+
+#[test]
+fn a_server_that_cannot_start_says_why_as_an_error_in_its_log_never_the_line() {
+    let output = served_with_broken_settings("log-fatal", &["--log", "-"]);
     let shown = String::from_utf8_lossy(&output.stderr);
     let lines: Vec<Value> = shown.lines().map(|line| logged(line, &shown)).collect();
     let last = lines
@@ -154,7 +167,14 @@ fn a_server_that_cannot_start_says_why_as_an_error_in_its_log() {
     assert_eq!(last["severity"], "ERROR", "{shown}");
     assert_eq!(last["message"], "glave stopped", "{shown}");
     let error = last["error"].as_str().unwrap_or_default();
-    assert!(error.contains("config.toml"), "{shown}");
+    assert!(error.contains("config.toml, line 2, column "), "{shown}");
+}
+
+#[test]
+fn a_settings_line_that_does_not_read_is_never_said_at_the_terminal_either() {
+    let output = served_with_broken_settings("plain-fatal", &[]);
+    let shown = String::from_utf8_lossy(&output.stderr);
+    assert!(shown.contains("config.toml, line 2, column "), "{shown}");
 }
 
 /// `written` has the turn's spans and metrics, and none of its content or the key.
@@ -188,17 +208,19 @@ fn has_spans_and_metrics_and_never_content(written: &str, key: &str) {
 fn a_log_level_that_is_not_one_is_refused() {
     let place = place("log-level");
     let server = FakeServer::start(vec![Reply::text("hi")]).unwrap();
-    let log = place.home.join("glave.log");
-    let log_arg = log.to_string_lossy().into_owned();
-    let child = start_with(
-        &place,
-        &server,
-        &["--model", "fake-model", "--log", &log_arg, "hi"],
-        &[("GLAVE_LOG", "loud")],
-    );
-    let output = child.wait_with_output().unwrap();
-    assert!(!output.status.success());
-    assert!(text(&output).contains("GLAVE_LOG"), "{}", text(&output));
+    let file = place.home.join("glave.log").to_string_lossy().into_owned();
+    // `off` too: a log that records nothing would not say why glave stopped.
+    for (level, log) in [("loud", file.as_str()), ("off", "-")] {
+        let child = start_with(
+            &place,
+            &server,
+            &["--model", "fake-model", "--log", log, "hi"],
+            &[("GLAVE_LOG", level)],
+        );
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success(), "{level}");
+        assert!(text(&output).contains("GLAVE_LOG"), "{}", text(&output));
+    }
 }
 
 #[cfg(not(feature = "otlp"))]
