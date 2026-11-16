@@ -1,4 +1,4 @@
-import type { Outcome, TurnResult } from '@glave/client';
+import type { MadeFile, Outcome, TurnResult } from '@glave/client';
 
 import {
   NO_THOUGHT,
@@ -154,7 +154,14 @@ function told(
     ),
     replies: new Set(replies),
   };
-  return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
+  return {
+    sourced: new Map(),
+    changed: new Map(),
+    made: new Map(),
+    steps,
+    models: new Map(),
+    ...more,
+  };
 }
 
 /** Each part in a line: a run as its line (`untold` until told) and what it holds, else its key. */
@@ -284,6 +291,32 @@ describe('results', () => {
     const unknown = told([], [], { changed: null });
     const opening = turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', unknown);
     expect(opening.files).toBeNull();
+  });
+
+  it('keeps a card’s room for each file a turn’s end names until the server describes them', () => {
+    const made = [{ path: 'out/plan.pdf', bytes: 9, kept: 'too_large' as const }];
+    const items = [ask, call(8), say(9, 'Done')];
+    const shown = (facts: ReturnType<typeof told>): readonly [readonly string[], boolean] => {
+      const result = turn(items, { startSeq: 7, result: ended('completed', { made }) });
+      const drawn = turnResults(result, null, null, false, 'en-US', facts);
+      return [drawn.made.map((file) => file.file_name), drawn.madeRoom];
+    };
+    expect(shown(told([], [], { made: null }))).toEqual([['plan.pdf'], true]);
+    const described: MadeFile = {
+      kind: 'pdf',
+      name: 'Lisbon plan',
+      file_name: 'plan.pdf',
+      media_type: 'application/pdf',
+      bytes: 9,
+      previews: true,
+      kept: 'Kept with this chat',
+      sentence: 'Made a PDF: Lisbon plan',
+    };
+    expect(shown(told([], [], { made: new Map([[7, [described]]]) }))).toEqual([
+      ['plan.pdf'],
+      false,
+    ]);
+    expect(turnResults(turn(items), null, null, false, 'en-US', told([])).made).toEqual([]);
   });
 
   it('says how many commands ran outside the sandbox as the server counted them', () => {

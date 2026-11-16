@@ -3,7 +3,8 @@
 //! and says each answer cost a dime, as OpenRouter's `usage.cost` says what a call cost. So
 //! chats answer, and receipts show a cost, with no account, network or cost. Told to [`ASK`],
 //! it calls the service's tool that asks the person something, so a person can try that card;
-//! told to [`DRAW`], it calls glave's own tool that makes an image; told to [`LOOK_UP`], glave's
+//! told to [`DRAW`], it calls glave's own tool that makes an image; told to [`MAKE`], it makes a
+//! spreadsheet with `glave doc`, which shows as a file it made; told to [`LOOK_UP`], glave's
 //! own web search, whose search service it stands in for too, at [`SEARCH`], answering every
 //! query with one page as Brave's Search API would, so no key and no cost. Under [`OPENROUTER`] it
 //! answers as OpenRouter too (`router.rs`), for an OpenRouter account connected with any key,
@@ -26,6 +27,20 @@ pub(crate) const DRAW: &str = "draw me";
 
 /// glave's own tool that makes an image.
 const DRAWING_TOOL: &str = "image_generate";
+
+/// What, said in a message, has it make a spreadsheet with `glave doc` ([`MAKING`]).
+pub(crate) const MAKE: &str = "make me";
+
+/// The command it runs to make one: a workbook of two sheets, written by glave itself.
+const MAKING: &str = r#"glave doc write "Trip budget.xlsx" <<'EOF'
+{"sheets": [
+  {"name": "Budget", "header": true, "rows": [["Item", "Total"], ["Flights", 780], ["Hotel", 580], ["Total", "=SUM(B2:B3)"]]},
+  {"name": "Flights", "header": true, "rows": [["Leg", "Price"], ["Out", 390], ["Back", 390]]}
+]}
+EOF"#;
+
+/// glave's own tool that runs a command.
+const RUNNING_TOOL: &str = "bash";
 
 /// What, said in a message, has it call [`SEARCHING_TOOL`].
 pub(crate) const LOOK_UP: &str = "look up";
@@ -74,6 +89,10 @@ pub(crate) fn start() -> Result<FakeHttp, String> {
             None if told(request, DRAW, DRAWING_TOOL) => {
                 let drawn = json!({"prompt": "a checkerboard in two greys"}).to_string();
                 (200, calling(DRAWING_TOOL, &drawn))
+            }
+            None if told(request, MAKE, RUNNING_TOOL) => {
+                let made = json!({"command": MAKING}).to_string();
+                (200, calling(RUNNING_TOOL, &made))
             }
             None if told(request, LOOK_UP, SEARCHING_TOOL) => {
                 let asked = json!({"query": "glave release notes"}).to_string();
@@ -183,6 +202,9 @@ mod tests {
         let looking =
             json!({"messages": [look], "tools": [{"function": {"name": SEARCHING_TOOL}}]});
         assert!(told(&sent(&looking), LOOK_UP, SEARCHING_TOOL));
+        let make = json!({"role": "user", "content": "Make me a trip budget"});
+        let making = json!({"messages": [make], "tools": [{"function": {"name": RUNNING_TOOL}}]});
+        assert!(told(&sent(&making), MAKE, RUNNING_TOOL));
         assert_eq!(
             found()["web"]["results"][0]["url"],
             "https://example.com/release-notes"

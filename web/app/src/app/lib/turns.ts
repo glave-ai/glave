@@ -1,4 +1,4 @@
-import type { Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
+import type { FileMade, Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
 
 import { NO_THOUGHT, type ThreadItem, byGlave, threadItems } from './conversation';
 
@@ -78,7 +78,23 @@ function resultOf(data: Data): TurnResult | null {
     estimated: data['estimated'] === true,
     via: texts(data['via']),
     changed: texts(data['changed']),
+    made: madeOf(data['made']),
   };
+}
+
+/**
+ * The files a turn's end says it made: each its path and size, which keep its card's room until
+ * the server describes it; one that is not a file the turn made is left out.
+ */
+function madeOf(value: unknown): readonly FileMade[] {
+  const list = Array.isArray(value) ? (value as readonly unknown[]) : [];
+  return list.filter(
+    (each): each is FileMade =>
+      typeof each === 'object' &&
+      each !== null &&
+      typeof (each as Partial<FileMade>).path === 'string' &&
+      typeof (each as Partial<FileMade>).bytes === 'number',
+  );
 }
 
 /** The strings of `value`, a list of them; none when it is not one. */

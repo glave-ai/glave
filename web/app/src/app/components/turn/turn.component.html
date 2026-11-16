@@ -33,6 +33,10 @@
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>
 }
+@for (file of turn().made; track $index) {
+  <!-- Until the server describes them, each card's room, unseen. -->
+  <app-made-file [class.room]="turn().madeRoom" [file]="file" />
+}
 @if (changes(); as changes) {
   <app-turn-changes [class.glz-settle]="changes.settles" [files]="changes.files" />
 } @else if (room(); as room) {

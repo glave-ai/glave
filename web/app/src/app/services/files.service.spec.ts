@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileReadParams } from '@glave/client';
 
 import { settle } from '@glave/glaze/testing/settle';
+import { onTestFinished } from 'vitest';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { objectUrls } from '../testing/object-urls';
@@ -143,6 +144,44 @@ describe('FilesService', () => {
     // Of the 60 nothing draws, the first 12 let go of go; the one drawn all along stays.
     expect(urls.revoked).toEqual(urls.made.slice(1, 13));
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
+  });
+
+  it('keeps fewer large files nothing draws: at most 32 MB of them', async () => {
+    const urls = objectUrls();
+    const twelve = btoa('a'.repeat(12 * 1024 * 1024));
+    const whole = { media_type: 'application/pdf', bytes: 12 * 1024 * 1024, offset: 0 };
+    const files = setUp(
+      new FakeSession().answer('file/read', { piece: { ...whole, data: twelve } }),
+    );
+    const held = [1, 2, 3].map((n) => files.hold('t1', nth(n), 'application/pdf'));
+    await Promise.all(held.map(({ url }) => url));
+    await Promise.resolve();
+    for (const each of held) {
+      each.release();
+    }
+    await Promise.resolve();
+    // 36 MB nothing draws: the one let go of first goes.
+    expect(urls.revoked).toEqual(urls.made.slice(0, 1));
+  });
+
+  it('saves a file under its name, and lets go of its address once the download has started', async () => {
+    const urls = objectUrls();
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(`${this.download} ${this.href}`);
+    });
+    await files.save('t1', SHA, 'text/csv', 'budget.csv');
+    expect(clicked).toEqual([`budget.csv ${urls.made[0] ?? ''}`]);
+    expect(urls.revoked).toEqual([]);
+    vi.runAllTimers();
+    expect(urls.revoked).toEqual(urls.made);
   });
 
   it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {

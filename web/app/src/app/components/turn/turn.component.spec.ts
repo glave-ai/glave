@@ -80,6 +80,8 @@ const RESULTS: TurnResults = {
   working: null,
   files: CHANGED,
   room: [],
+  made: [],
+  madeRoom: false,
   receipt: {
     status: 'done',
     facts: ['4m 02s', 'Claude Haiku 5.5'],
