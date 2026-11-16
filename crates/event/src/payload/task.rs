@@ -71,7 +71,8 @@ pub struct TaskEnded {
 pub enum When {
     /// Once, at this time.
     At(At),
-    /// Whenever this five-field cron expression matches, in UTC.
+    /// Whenever this five-field cron expression matches, on the clocks of the schedule's time
+    /// zone.
     Cron(String),
 }
 
@@ -81,6 +82,9 @@ pub enum When {
 pub struct ScheduleCreated {
     pub schedule: ScheduleId,
     pub when: When,
+    /// The time zone its cron expression is read in, by its IANA name (`Europe/Lisbon`): the
+    /// person's when it was made.
+    pub zone: String,
     /// The prompt each run starts with.
     pub prompt: String,
     /// Tokens, in and out, each run may use, subagents' included. Required: no schedule runs
@@ -89,6 +93,32 @@ pub struct ScheduleCreated {
     /// Who made it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
+}
+
+/// `schedule.created` as version 1 wrote it, in UTC with no zone of its own.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScheduleCreatedV1 {
+    schedule: ScheduleId,
+    when: When,
+    prompt: String,
+    budget: u64,
+    #[serde(default)]
+    by: Option<Principal>,
+}
+
+impl From<ScheduleCreatedV1> for ScheduleCreated {
+    /// In UTC, as it ran.
+    fn from(old: ScheduleCreatedV1) -> Self {
+        Self {
+            schedule: old.schedule,
+            when: old.when,
+            zone: "UTC".to_owned(),
+            prompt: old.prompt,
+            budget: old.budget,
+            by: old.by,
+        }
+    }
 }
 
 /// A schedule was deleted: it starts no more runs.
@@ -113,7 +143,7 @@ impl Payload for TaskEnded {
 
 impl Payload for ScheduleCreated {
     const TYPE: &'static str = CREATED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ScheduleDeleted {
@@ -137,7 +167,8 @@ pub(crate) fn decode_created(
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleCreated>> {
     match version {
-        1 => Some(parse(data)),
+        1 => Some(parse::<ScheduleCreatedV1>(data).map(ScheduleCreated::from)),
+        2 => Some(parse(data)),
         _ => None,
     }
 }
@@ -147,4 +178,18 @@ pub(crate) fn decode_deleted(
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleDeleted>> {
     (version == 1).then(|| parse(data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_schedule_made_before_schedules_had_a_zone_reads_as_one_in_utc() {
+        let old = r#"{"schedule":"0192f5c1-0000-7000-8000-000000000002","when":{"cron":"0 9 * * *"},"prompt":"Check the release","budget":50000}"#;
+        let raw = RawValue::from_string(old.to_owned()).unwrap();
+        let read = decode_created(1, &raw).unwrap().unwrap();
+        assert_eq!(read.zone, "UTC");
+        assert_eq!(read.when, When::Cron("0 9 * * *".into()));
+    }
 }

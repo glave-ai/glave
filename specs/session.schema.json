@@ -3104,16 +3104,26 @@
         "prompt": {
           "type": "string"
         },
+        "repeats": {
+          "description": "When it repeats, in the server's words: \"Every weekday at 8:00 am\".",
+          "type": "string"
+        },
         "schedule": {
           "$ref": "#/$defs/ScheduleId"
         },
         "when": {
           "$ref": "#/$defs/When"
+        },
+        "zone": {
+          "description": "The time zone `when` is read in, by its IANA name.",
+          "type": "string"
         }
       },
       "required": [
         "schedule",
         "when",
+        "zone",
+        "repeats",
         "prompt",
         "budget",
         "created_at"
@@ -4718,7 +4728,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Whenever this five-field cron expression matches, in UTC.",
+          "description": "Whenever this five-field cron expression matches, on the clocks of the schedule's time\nzone.",
           "properties": {
             "cron": {
               "type": "string"
@@ -7704,6 +7714,13 @@
           },
           "when": {
             "$ref": "#/$defs/When"
+          },
+          "zone": {
+            "description": "The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by\ndefault the caller's (`zone/set`), else UTC.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -9152,6 +9169,23 @@
         ]
       },
       "streams": true
+    },
+    "zone/set": {
+      "params": {
+        "properties": {
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
     }
   },
   "notifications": {

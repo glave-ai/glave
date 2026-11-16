@@ -5,6 +5,8 @@ use glave_event::{At, Money, Outcome, ScheduleId, ThreadId, TokenCounts, When};
 use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
+use super::Told;
+
 /// What kind of work a task is. Background commands the model starts arrive later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -58,6 +60,10 @@ pub struct TaskInfo {
 pub struct ScheduleInfo {
     pub schedule: ScheduleId,
     pub when: When,
+    /// The time zone `when` is read in, by its IANA name.
+    pub zone: String,
+    /// When it repeats, in the server's words: "Every weekday at 8:00 am".
+    pub repeats: Told,
     pub prompt: String,
     pub budget: u64,
     pub created_at: At,

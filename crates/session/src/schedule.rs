@@ -1,7 +1,7 @@
-//! Schedules: a prompt that runs as a task at set times, once (`at`) or whenever a
-//! cron expression matches (in UTC). Schedules live in their project's ledger. The server that
-//! runs tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls it when the
-//! next run is due): each due schedule, in every project whose tasks it runs, starts one task in
+//! Schedules: a prompt that runs as a task at set times, once (`at`) or whenever a cron
+//! expression matches on the clocks of its time zone. Schedules live in their project's ledger.
+//! The server that runs tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls
+//! it when the next run is due): each due schedule, in every project whose tasks it runs, starts one task in
 //! a new thread, on a copy of its own. A schedule that missed runs while no server ran it runs
 //! once, as soon as one does, never once per missed time (systemd's `Persistent=true`); a run
 //! that cannot start is skipped until the schedule's next time. Every run has a token budget.
@@ -17,10 +17,11 @@ use jiff::Timestamp;
 use crate::choice::Choice;
 use crate::cron::Cron;
 use crate::ledger::{Scheduled, own_scope};
-use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
+use crate::protocol::{ApiError, Reply, ScheduleInfo, Told, code};
 use crate::server::Server;
 use crate::tasks::Work;
 use crate::words::Sentence;
+use crate::zone::time_zone;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
@@ -36,6 +37,8 @@ const MOST_MISSED: usize = 100_000;
 pub(crate) struct NewSchedule {
     pub(crate) project: Option<ProjectId>,
     pub(crate) when: When,
+    /// Its time zone; the caller's when none is given.
+    pub(crate) zone: Option<String>,
     pub(crate) prompt: String,
     pub(crate) budget: u64,
 }
@@ -66,6 +69,11 @@ where
                 Sentence::ScheduleNoPrompt,
             ));
         }
+        let zone = match new.zone {
+            Some(zone) => zone.trim().to_owned(),
+            None => self.zone_of(caller).await?,
+        };
+        time_zone(&zone)?;
         let project = self.project_for(caller, new.project).await?.1.located();
         if let Some(max) = self.inner.limits.max_schedules {
             let projects = self.read_ledgers_of(caller).await?;
@@ -89,6 +97,7 @@ where
         let created = ScheduleCreated {
             schedule,
             when: new.when,
+            zone,
             prompt: new.prompt,
             budget: new.budget,
             by: caller
@@ -331,12 +340,13 @@ fn due(scheduled: &Scheduled, now: Timestamp) -> Option<Timestamp> {
         When::At(at) => (scheduled.last.is_none() && at.timestamp() <= now).then(|| at.timestamp()),
         When::Cron(text) => {
             let cron = Cron::parse(text).ok()?;
-            let mut at = cron.next_after(since(scheduled))?;
+            let zone = time_zone(&scheduled.created.zone).ok()?;
+            let mut at = cron.next_after(since(scheduled), &zone)?;
             if at > now {
                 return None;
             }
             for _ in 0..MOST_MISSED {
-                match cron.next_after(at) {
+                match cron.next_after(at, &zone) {
                     Some(later) if later <= now => at = later,
                     _ => return Some(at),
                 }
@@ -352,7 +362,8 @@ fn next_run(scheduled: &Scheduled, now: Timestamp) -> Option<Timestamp> {
         When::At(at) => scheduled.last.is_none().then(|| at.timestamp()),
         When::Cron(text) => {
             let cron = Cron::parse(text).ok()?;
-            let next = cron.next_after(since(scheduled))?;
+            let zone = time_zone(&scheduled.created.zone).ok()?;
+            let next = cron.next_after(since(scheduled), &zone)?;
             Some(if next <= now { now } else { next })
         }
     }
@@ -368,6 +379,8 @@ fn info(scheduled: &Scheduled, now: Timestamp) -> ScheduleInfo {
     ScheduleInfo {
         schedule: created.schedule,
         when: created.when.clone(),
+        zone: created.zone.clone(),
+        repeats: Told::repeats(created.when.clone(), true),
         prompt: created.prompt.clone(),
         budget: created.budget,
         created_at: scheduled.at,

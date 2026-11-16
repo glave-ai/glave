@@ -417,6 +417,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::AwakeSet(_) => "awake.set",
             Body::SearchSet(_) => "search.set",
             Body::LanguageSet(_) => "language.set",
+            Body::ZoneSet(_) => "zone.set",
             Body::GroupingSet(_) => "grouping.set",
             Body::FiltersSet(_) => "filters.set",
             Body::AppearanceSet(_) => "appearance.set",

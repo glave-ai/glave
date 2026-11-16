@@ -34,7 +34,7 @@ pub(super) fn task_line(task: &TaskInfo) -> String {
 /// One schedule: when it runs, what it runs, and when it runs next.
 pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     let when = match &schedule.when {
-        When::Cron(cron) => format!("cron {cron:?} (UTC)"),
+        When::Cron(cron) => format!("{} (cron {cron:?}, {})", schedule.repeats, schedule.zone),
         When::At(at) => format!("once at {at}"),
     };
     let next = schedule

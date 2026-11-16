@@ -17,7 +17,7 @@ pub(crate) use self::sentence::Sentence;
 use self::events::{asks, event_in};
 use crate::protocol::{
     ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, ListedCommand, PushInfo,
-    Reply, SearchInfo, ThreadSummary, Told, Usage,
+    Reply, ScheduleInfo, SearchInfo, ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -30,7 +30,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
         Ok(Reply::Connections { connections }) => connections.iter().any(|it| used(&it.usage)),
         Ok(Reply::Connection { connection }) => used(&connection.usage),
-        Ok(Reply::Connectors { .. } | Reply::Connector { .. }) => true,
+        Ok(Reply::Connectors { .. } | Reply::Connector { .. } | Reply::Schedule { .. }) => true,
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
@@ -60,6 +60,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         }
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
+        Ok(Reply::Schedules { schedules }) => !schedules.is_empty(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
         Ok(Reply::Thread { thread }) => in_its_own_words(thread),
         Ok(Reply::Threads { threads, .. }) => threads.iter().any(in_its_own_words),
@@ -137,6 +138,8 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
+        Ok(Reply::Schedule { schedule }) => schedule.repeats.translate(language),
+        Ok(Reply::Schedules { schedules }) => schedules_in(schedules, language),
         Ok(Reply::Events { events, .. }) => events_in(events, language),
         Ok(Reply::Thread { thread }) => summary_in(thread, language),
         Ok(Reply::Threads { threads, .. }) => {
@@ -145,6 +148,13 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(_) => {}
+    }
+}
+
+/// Writes when each of `schedules` repeats in `language`.
+fn schedules_in(schedules: &mut [ScheduleInfo], language: Language) {
+    for schedule in schedules {
+        schedule.repeats.translate(language);
     }
 }
 

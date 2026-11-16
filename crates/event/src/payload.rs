@@ -43,6 +43,7 @@ pub(crate) mod tool;
 pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
+pub(crate) mod zone;
 
 pub use appearance::{Accent, AppearanceSet, BrandSet, Color, HeldLogo};
 pub use approval::{ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Verdict};
@@ -102,3 +103,4 @@ pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{
     ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
 };
+pub use zone::ZoneSet;

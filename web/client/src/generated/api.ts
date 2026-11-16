@@ -1124,8 +1124,12 @@ export type ScheduleInfo = {
   /** When it runs next; absent once a one-off has run. */
   readonly next?: At | null;
   readonly prompt: string;
+  /** When it repeats, in the server's words: "Every weekday at 8:00 am". */
+  readonly repeats: string;
   readonly schedule: ScheduleId;
   readonly when: When;
+  /** The time zone `when` is read in, by its IANA name. */
+  readonly zone: string;
 };
 
 /**
@@ -2697,6 +2701,11 @@ export type ScheduleCreateParams = {
   readonly project?: ProjectId | null;
   readonly prompt: string;
   readonly when: When;
+  /**
+   * The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by
+   * default the caller's (`zone/set`), else UTC.
+   */
+  readonly zone?: string | null;
 };
 
 export type ScheduleCreateResult = {
@@ -3194,6 +3203,12 @@ export type TurnStartResult = {
   readonly queued: QueuedMessage;
 };
 
+export type ZoneSetParams = {
+  readonly zone: string;
+};
+
+export type ZoneSetResult = Readonly<Record<string, never>>;
+
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "appearance/get": { readonly params: AppearanceGetParams; readonly result: AppearanceGetResult };
@@ -3329,6 +3344,7 @@ export interface Methods {
   readonly "trust/answer": { readonly params: TrustAnswerParams; readonly result: TrustAnswerResult };
   readonly "turn/cancel": { readonly params: TurnCancelParams; readonly result: TurnCancelResult };
   readonly "turn/start": { readonly params: TurnStartParams; readonly result: TurnStartResult };
+  readonly "zone/set": { readonly params: ZoneSetParams; readonly result: ZoneSetResult };
 }
 
 export type Method = keyof Methods;

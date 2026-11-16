@@ -78,6 +78,9 @@ methods! {
         #[serde(default)]
         language: Option<String>,
     } -> [Language],
+    /// Gives the caller's time zone, by its IANA name (`Europe/Lisbon`), as their browser says
+    /// it: their schedules repeat on its clocks. Refused for a zone glave doesn't know.
+    "zone/set" => ZoneSet { zone: String } -> [Done],
     /// How the caller's clients group their threads: by project until they choose.
     "grouping/get" => GroupingGet {} -> [Grouping],
     /// Chooses how the caller's clients group their threads: by project or by status. The
@@ -549,6 +552,10 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
         when: When,
+        /// The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by
+        /// default the caller's (`zone/set`), else UTC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zone: Option<String>,
         prompt: String,
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,

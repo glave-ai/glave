@@ -219,6 +219,7 @@ where
             Request::LanguageSet { language } => {
                 boxed(|| self.set_language(caller, language)).await
             }
+            Request::ZoneSet { zone } => boxed(|| self.set_zone(caller, zone)).await,
             Request::GroupingGet {} => boxed(|| self.grouping(caller)).await,
             Request::GroupingSet { grouping } => {
                 boxed(|| self.set_grouping(caller, grouping)).await
@@ -505,12 +506,14 @@ where
             Request::ScheduleCreate {
                 project,
                 when,
+                zone,
                 prompt,
                 budget,
             } => {
                 let new = NewSchedule {
                     project,
                     when,
+                    zone,
                     prompt,
                     budget,
                 };
