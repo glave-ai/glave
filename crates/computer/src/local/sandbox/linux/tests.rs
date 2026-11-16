@@ -303,16 +303,24 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(said.contains("ptrace -1"), "{said}");
 }
 
-/// GNU screen's sessions are hidden with tmux's, wherever a system keeps them: a command that
-/// reached one would type into a shell outside the sandbox.
+/// The places a test cannot make, or need not: GNU screen's sessions wherever a system keeps
+/// them, tmux's, Zellij's and Emacs's (a command that reached one would run what it likes
+/// outside the sandbox), and the daemons that are root for whoever is in their group.
 #[test]
-fn screen_s_and_tmux_s_sessions_are_among_the_daemons_hidden() {
+fn sessions_and_the_daemons_that_are_root_are_among_the_places_hidden() {
     let hidden = super::mounts::daemons(None, 1000, None);
     for place in [
         "/run/screen",
         "/tmp/screens",
         "/tmp/uscreens",
         "/tmp/tmux-1000",
+        "/tmp/zellij-1000",
+        "/tmp/emacs1000",
+        "/run/libvirt",
+        "/run/incus",
+        "/var/lib/incus",
+        "/var/lib/lxd",
+        "/var/snap/lxd/common/lxd",
     ] {
         assert!(
             hidden.contains(&PathBuf::from(place)),

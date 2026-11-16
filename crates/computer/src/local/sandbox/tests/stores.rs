@@ -6,11 +6,8 @@ use super::super::secrets::HOME_SECRETS;
 use super::*;
 
 /// What a command prints of `stores` in a home folder, each holding a canary: outside the
-/// sandbox, then inside it. `None` where no sandbox is enforced.
-fn read(name: &str, stores: &[PathBuf]) -> Option<(String, String)> {
-    if !enforced() {
-        return None;
-    }
+/// sandbox, then inside it.
+fn read(name: &str, stores: &[PathBuf]) -> (String, String) {
     let dir = scratch(name);
     let (computers, sandbox) = computers(&dir);
     let home = sandbox.home.clone().unwrap();
@@ -21,7 +18,7 @@ fn read(name: &str, stores: &[PathBuf]) -> Option<(String, String)> {
         std::fs::write(&file, format!("canary-{index}\n")).unwrap();
         let _ = writeln!(read, "cat '{}' 2>/dev/null", file.display());
     }
-    Some(block_on!(async {
+    block_on!(async {
         let workspace = open_app(&computers, &dir).await;
         let outside = Collect::default();
         computers
@@ -36,11 +33,14 @@ fn read(name: &str, stores: &[PathBuf]) -> Option<(String, String)> {
         let outside = outside.0.lock().unwrap().clone();
         let (_, inside) = run(&computers, workspace, &sandbox, &read).await;
         (outside, inside)
-    }))
+    })
 }
 
 #[test]
 fn every_credential_store_in_the_home_folder_is_hidden_from_a_sandboxed_command() {
+    if !enforced() {
+        return;
+    }
     // Each store as the file it is, or as a file of the folder it is.
     let stores: Vec<PathBuf> = HOME_SECRETS
         .iter()
@@ -50,9 +50,7 @@ fn every_credential_store_in_the_home_folder_is_hidden_from_a_sandboxed_command(
             _ => Path::new(store).join("kept"),
         })
         .collect();
-    let Some((outside, inside)) = read("stores", &stores) else {
-        return;
-    };
+    let (outside, inside) = read("stores", &stores);
     assert_eq!(
         outside.matches("canary-").count(),
         stores.len(),
@@ -69,6 +67,9 @@ fn every_credential_store_in_the_home_folder_is_hidden_from_a_sandboxed_command(
 /// first.
 #[test]
 fn stores_once_missed_are_hidden_from_a_sandboxed_command() {
+    if !enforced() {
+        return;
+    }
     let stores = [
         ".config/git/credentials",
         ".cache/git/credential/socket",
@@ -81,9 +82,7 @@ fn stores_once_missed_are_hidden_from_a_sandboxed_command() {
         ".claude.json",
     ]
     .map(PathBuf::from);
-    let Some((outside, inside)) = read("missed", &stores) else {
-        return;
-    };
+    let (outside, inside) = read("missed", &stores);
     assert_eq!(
         outside.matches("canary-").count(),
         stores.len(),

@@ -19,12 +19,13 @@ use super::super::secrets::HOME_SECRETS;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
 /// Under the home folder, on Linux besides the common list: keyrings, GNU screen's sessions
-/// where they are kept there, and browser profiles (cookies are credentials), a snap's and a
+/// where they are kept there, Docker Desktop's socket, and browser profiles (cookies are credentials), a snap's and a
 /// Flatpak's among them, as Ubuntu's own Firefox is.
 const LINUX_HOME_SECRETS: &[&str] = &[
     ".local/share/keyrings",
     ".local/share/kwalletd",
     ".screen",
+    ".docker/desktop",
     ".mozilla",
     ".config/google-chrome",
     ".config/chromium",
@@ -43,12 +44,18 @@ const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
 
 /// Where the system's daemons and the person's X server listen: `docker.sock` is root on the
 /// machine, Podman's socket the same for its user, and the system bus asks only that its caller
-/// be the person at the computer. And GNU screen's sessions, wherever a system keeps them: a
-/// command that reached one would type into a shell outside the sandbox.
+/// be the person at the computer; LXD's, Incus's and libvirt's are root for whoever is in their
+/// group, as Ubuntu's first user is in LXD's. And GNU screen's sessions, wherever a system
+/// keeps them: a command that reached one would type into a shell outside the sandbox.
 const DAEMONS: &[&str] = &[
     "/run/docker.sock",
     "/run/podman",
     "/run/dbus",
+    "/run/libvirt",
+    "/run/incus",
+    "/var/lib/incus",
+    "/var/lib/lxd",
+    "/var/snap/lxd/common/lxd",
     "/run/screen",
     "/tmp/screens",
     "/tmp/uscreens",
@@ -291,7 +298,8 @@ impl Protect<'_> {
 
 /// Where the person's daemons listen, which a command that may make Unix sockets, as one with
 /// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], tmux's
-/// servers (`/tmp/tmux-<uid>`), the ssh agent `agent` names, and the user's runtime folder
+/// servers (`/tmp/tmux-<uid>`), Zellij's sessions and Emacs's server where they are kept in
+/// `/tmp` (each runs what it is sent outside the sandbox), the ssh agent `agent` names, and the user's runtime folder
 /// whole, which holds the session bus (through which systemd starts anything outside the
 /// sandbox), the keyring's and gpg's agents, rootless Docker's and Podman's sockets and
 /// editors' servers. Hidden whether the network is on or not: one view of the machine.
@@ -299,7 +307,11 @@ pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) ->
     DAEMONS
         .iter()
         .map(PathBuf::from)
-        .chain([PathBuf::from(format!("/tmp/tmux-{uid}"))])
+        .chain([
+            PathBuf::from(format!("/tmp/tmux-{uid}")),
+            PathBuf::from(format!("/tmp/zellij-{uid}")),
+            PathBuf::from(format!("/tmp/emacs{uid}")),
+        ])
         .chain(agent.map(Path::to_path_buf))
         .chain(runtime.map(Path::to_path_buf))
         .collect()
