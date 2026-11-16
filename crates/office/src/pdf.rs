@@ -44,6 +44,16 @@ enum Use {
     Change,
 }
 
+/// How many pages the PDF in `bytes` has, when it can be read.
+pub(crate) fn pages(bytes: &[u8]) -> Option<u64> {
+    let given = Given {
+        name: "the file".to_owned(),
+        bytes: bytes.to_vec(),
+    };
+    let document = open(&given, Use::Read).ok()?;
+    Some(document.get_pages().len() as u64)
+}
+
 /// The PDF `given`, unless it is not one, can't be read, has no pages, or is encrypted in a
 /// way `using` it can't get past.
 fn open(given: &Given, using: Use) -> Result<Document, OfficeError> {

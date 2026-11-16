@@ -382,7 +382,7 @@ impl Connection {
         answerer: Answerer,
         cancel: &dyn Cancellation,
         waits: Waits,
-    ) -> Result<Called, Box<ToolOutput>> {
+    ) -> Result<Called, ToolOutput> {
         let Some(Named {
             tool, open_world, ..
         }) = self
@@ -392,16 +392,13 @@ impl Connection {
             .get(name)
             .cloned()
         else {
-            return Err(Box::new(ToolOutput::text(
+            return Err(ToolOutput::text(
                 true,
                 format!("There is no tool named {name:?}."),
-            )));
+            ));
         };
         let Arguments::Json(arguments) = arguments else {
-            return Err(Box::new(ToolOutput::text(
-                true,
-                "The arguments were not valid JSON.",
-            )));
+            return Err(ToolOutput::text(true, "The arguments were not valid JSON."));
         };
         let params = CallToolRequestParams::new(tool).with_arguments(arguments.clone());
         let called = call(
@@ -416,9 +413,8 @@ impl Connection {
         let mut output = match called.await {
             Ok(Ran::Done(result, asking)) => asking.told(&self.name, output(&result)),
             Ok(Ran::Asks(form, asking)) => {
-                let state = serde_json::to_value(&asking).map_err(|err| {
-                    Box::new(ToolOutput::text(true, format!("{}: {err}", self.name)))
-                })?;
+                let state = serde_json::to_value(&asking)
+                    .map_err(|err| ToolOutput::text(true, format!("{}: {err}", self.name)))?;
                 return Ok(Called::Asks(ServiceAsks {
                     service: self.name.clone(),
                     message: form.message,
@@ -428,8 +424,8 @@ impl Connection {
                 }));
             }
             Err(Unanswered::Refused(why)) => ToolOutput::text(true, why),
-            Err(Unanswered::Failed(why)) => return Err(Box::new(ToolOutput::text(true, why))),
-            Err(Unanswered::Cancelled) => return Err(Box::new(ToolOutput::text(true, CANCELLED))),
+            Err(Unanswered::Failed(why)) => return Err(ToolOutput::text(true, why)),
+            Err(Unanswered::Cancelled) => return Err(ToolOutput::text(true, CANCELLED)),
         };
         output.untrusted |= open_world;
         Ok(Called::Done(output))

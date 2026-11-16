@@ -94,6 +94,7 @@ where
                     round: open.round,
                     proposed: false,
                     compact: Asked::No,
+                    seen: None,
                 };
                 let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());
                 let began = std::time::Instant::now();

@@ -67,7 +67,7 @@ pub use grouping::{Grouping, GroupingSet};
 pub use hook::{HookPoint, HookRan, HookResult};
 pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
-pub use made::{FileKind, FileMade};
+pub use made::{FileKind, FileMade, Kept};
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,

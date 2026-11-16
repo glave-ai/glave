@@ -1,49 +1,34 @@
-//! Files a call made for the person (`specs/session.md`, "Files it made"): a document, a
-//! spreadsheet, a deck or a PDF a tool wrote on the thread's computer, kept for the thread so it
-//! outlives the computer, and named in the call's `tool.call.completed`, in `structured`.
+//! Files a turn made for the person (`specs/session.md`, "Files it made"): a document, a
+//! spreadsheet, a deck or a PDF new or changed in the thread's folder over the turn, kept for
+//! the thread so it outlives the computer, and named in its `turn.ended`, under `made`.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::blob::BlobRef;
 
-/// A file a call made, as its `tool.call.completed` records it in `structured`, under `made`:
-/// where it was made and its content, kept in the blob store for the thread. The model never
-/// sees it; the person opens and downloads it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
+/// content kept for the thread, or why it was not. The model never sees it; the person opens
+/// and downloads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FileMade {
-    /// Where it was made, as the computer resolved it, relative to the thread's folder.
+    /// Where it was made, relative to the thread's folder.
     pub path: String,
-    /// Its content, kept for the thread.
-    pub blob: BlobRef,
+    /// Its size on the computer.
+    pub bytes: u64,
+    pub kept: Kept,
 }
 
-impl FileMade {
-    /// The tools whose calls make files: glave's own `write` and `bash`. Another tool's result
-    /// is never taken for one that made a file, whatever it records.
-    pub const TOOLS: [&'static str; 2] = ["write", "bash"];
-
-    /// The `structured` result of a call that made `made`, kept beside what `structured`
-    /// already holds; `structured` itself when it made none.
-    pub fn structured(structured: Option<Value>, made: &[Self]) -> Option<Value> {
-        if made.is_empty() {
-            return structured;
-        }
-        let mut object = match structured {
-            Some(Value::Object(object)) => object,
-            _ => serde_json::Map::new(),
-        };
-        object.insert("made".to_owned(), serde_json::json!(made));
-        Some(Value::Object(object))
-    }
-
-    /// The files a call's `structured` result says it made, in order; none when it says none.
-    pub fn read(structured: &Value) -> Vec<Self> {
-        structured
-            .get("made")
-            .and_then(|made| Vec::<Self>::deserialize(made).ok())
-            .unwrap_or_default()
-    }
+/// Whether a file a turn made was kept for the thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Kept {
+    /// Kept, sealed, in the blob store, the thread holding it.
+    Blob(BlobRef),
+    /// Left on the computer: larger than a thread keeps.
+    TooLarge,
+    /// Left on the computer: it holds the value of one of the person's secrets.
+    Secret,
 }
 
 /// What kind of file a made file is, for the person: what a card names it.
@@ -106,7 +91,7 @@ const MADE: [(&str, &str, FileKind); 14] = [
 impl FileKind {
     /// The media type a file named `path` is kept as when it counts as made: a document,
     /// spreadsheet, deck, PDF or e-book, by the end of its name, whatever its case. `None` for
-    /// any other file, which a call may write without making anything for the person.
+    /// any other file.
     pub fn made_as(path: &str) -> Option<&'static str> {
         let name = path.rsplit('/').next().unwrap_or(path);
         let (stem, extension) = name.rsplit_once('.')?;
@@ -116,6 +101,16 @@ impl FileKind {
         MADE.iter()
             .find(|(end, _, _)| end.eq_ignore_ascii_case(extension))
             .map(|(_, media_type, _)| *media_type)
+    }
+
+    /// The file pattern (`files/glob`) of every file that would count as made, in lower and
+    /// upper case: `*.{docx,DOCX,…}`.
+    pub fn made_pattern() -> String {
+        let ends: Vec<String> = MADE
+            .iter()
+            .flat_map(|(end, _, _)| [(*end).to_owned(), end.to_ascii_uppercase()])
+            .collect();
+        format!("*.{{{}}}", ends.join(","))
     }
 
     /// The kind of a made file kept as `media_type`; [`Self::Other`] for one glave doesn't name.
@@ -148,37 +143,31 @@ mod tests {
             FileKind::made_as("book.epub").map(FileKind::of),
             Some(FileKind::Other)
         );
-        for not in [
-            "main.rs",
-            "notes.md",
-            "pdf",
-            ".pdf",
-            "image.png",
-            "dir.docx/",
-        ] {
+        for not in ["main.rs", "notes.md", "pdf", ".pdf", "image.png", "dir.docx/"] {
             assert_eq!(FileKind::made_as(not), None, "{not}");
         }
         assert_eq!(FileKind::of("application/zip"), FileKind::Other);
+        let pattern = FileKind::made_pattern();
+        assert!(pattern.starts_with("*.{docx,DOCX,doc,DOC,") && pattern.ends_with("epub,EPUB}"));
     }
 
     #[test]
-    fn made_files_are_kept_beside_what_a_result_records() {
-        let made = FileMade {
-            path: "out/budget.xlsx".into(),
-            blob: BlobRef {
+    fn a_made_file_says_whether_it_was_kept() {
+        let kept = FileMade {
+            path: "out/plan.pdf".into(),
+            bytes: 3,
+            kept: Kept::Blob(BlobRef {
                 sha256: Sha256::new("a".repeat(64)).unwrap(),
                 bytes: 3,
-                media_type: "text/csv".into(),
-            },
+                media_type: "application/pdf".into(),
+            }),
         };
-        let structured = FileMade::structured(
-            Some(serde_json::json!({"answers": []})),
-            std::slice::from_ref(&made),
-        );
-        let structured = structured.unwrap_or_default();
-        assert_eq!(structured["answers"], serde_json::json!([]));
-        assert_eq!(FileMade::read(&structured), vec![made]);
-        assert_eq!(FileMade::structured(None, &[]), None);
-        assert_eq!(FileMade::read(&serde_json::json!({"made": "no"})), []);
+        let json = serde_json::to_value(&kept).unwrap();
+        assert_eq!(json["kept"]["blob"]["bytes"], 3);
+        let left = FileMade {
+            kept: Kept::TooLarge,
+            ..kept
+        };
+        assert_eq!(serde_json::to_value(&left).unwrap()["kept"], "too_large");
     }
 }

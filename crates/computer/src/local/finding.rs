@@ -10,7 +10,9 @@ use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::computer::{ComputerError, Glob, Globbed, Match, Search, Searched, looks_binary};
+use glave_ports::computer::{
+    ComputerError, Glob, Globbed, Match, Search, Searched, Stamp, looks_binary,
+};
 use glave_ports::secrets::is_secret_file;
 use regex::{Regex, RegexBuilder};
 use rustix::fs::Stat;
@@ -31,24 +33,31 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
         let root = Root::open(&root)?;
         let found = resolve(&root, &glob.path)?;
         let top = root.path.join(found.names.iter().collect::<PathBuf>());
-        let mut files: Vec<(SystemTime, String)> = walk::files(&top)
+        let mut files: Vec<(SystemTime, String, u64)> = walk::files(&top)
             .filter(|path| pattern.matches(path.strip_prefix(&top).unwrap_or(path)))
             .filter_map(|path| {
                 let (_, _, stat) = plain(&root, &path)?;
-                Some((modified(&stat), relative(root.path, &path)))
+                Some((modified(&stat), relative(root.path, &path), count(stat.st_size)))
             })
             .collect();
         // Newest first: what changed recently is what a task is usually about.
         files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         let total = u64::try_from(files.len()).unwrap_or(u64::MAX);
+        files.truncate(glob.limit);
+        let stamps = files
+            .iter()
+            .map(|(when, _, size)| Stamp {
+                size: *size,
+                modified_ns: when
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |since| u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)),
+            })
+            .collect();
         Ok(Globbed {
             path: shown(&found.names),
-            files: files
-                .into_iter()
-                .take(glob.limit)
-                .map(|(_, path)| path)
-                .collect(),
+            files: files.into_iter().map(|(_, path, _)| path).collect(),
             total,
+            stamps,
         })
     })
     .await

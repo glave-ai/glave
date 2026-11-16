@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use super::approval::Lifted;
+use super::made::FileMade;
 use super::model::{ModelRef, ModelResponded, TokenCounts};
 use super::tool::ToolError;
 use crate::blob::BlobRef;
@@ -154,6 +155,11 @@ pub struct TurnResult {
     /// room before it has read them. Absent when it changed none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<String>,
+    /// The files it made for the person: each document, spreadsheet, deck or PDF new or changed
+    /// in the thread's folder between its start and its end, in path order, kept for the thread
+    /// or said why not (`session.md`, "Files it made"). Absent when it made none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub made: Vec<FileMade>,
 }
 
 impl TurnResult {
@@ -173,6 +179,7 @@ impl TurnResult {
             estimated: false,
             via: Vec::new(),
             changed: Vec::new(),
+            made: Vec::new(),
         }
     }
 

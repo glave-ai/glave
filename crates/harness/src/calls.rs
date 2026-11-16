@@ -68,6 +68,11 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
+        // Nothing changes the folder before the turn's first call: what it holds then is what
+        // the files the turn made are told from as it ends (`made.rs`).
+        if step.seen.is_none() {
+            step.seen = Some(self.seen(thread).await);
+        }
         let mut rest = calls;
         while let Some(first) = rest.first() {
             let subagents = rest
@@ -628,7 +633,6 @@ where
         let outcome = self.gated(&thread.scope, thread.id, outcome).await;
         let outcome = fit(outcome, self.tool_room(thread));
         let outcome = self.keep_files(thread, outcome).await;
-        let outcome = self.keep_made_files(thread, outcome).await;
         // After what cuts a result to fit, and with nothing awaited before what it names is staged.
         let (outcome, told) = self.saying_what_stopped(thread, outcome).await;
         let completed = completed(call_id, outcome);

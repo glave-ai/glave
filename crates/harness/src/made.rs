@@ -1,101 +1,118 @@
-//! Files a call made for the person (`specs/session.md`, "Files it made"). A file counts as made
-//! when a `write` or a command named it, it is a document, a spreadsheet, a deck, a PDF or an
-//! e-book by the end of its name (`glave_event::FileKind::made_as`), it is in the thread's
-//! folder and in no hidden folder there, and the call left it different from what was there
-//! before. Its bytes are read through the computer port as the call ends and kept for the
-//! thread, sealed, so it outlives the computer; the model never sees them.
+//! Files a turn made for the person (`specs/session.md`, "Files it made"). The thread's folder
+//! is looked over (`files/glob`) for every document, spreadsheet, deck, PDF and e-book in it,
+//! with each one's size and when it last changed, before the turn's first tool call and again
+//! as the turn ends: what is new or changed between, in no hidden folder, counts as made,
+//! whatever made it (a `write`, a script, a command run from another folder, a worker in the same
+//! folder). Each is read through the computer port and kept for the thread, sealed, one at a
+//! time, so it outlives the computer; the model never sees it.
 
-use glave_event::{Arguments, FileKind, FileMade};
-use glave_ports::computer::{EntryKind, Stat};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Pieces, ToolFile, ToolOutput};
+use std::collections::BTreeMap;
+
+use glave_event::{FileKind, FileMade, Kept};
+use glave_ports::computer::{EntryKind, Glob, Stamp};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Pieces, digest};
 
 use crate::approval::Approver;
 use crate::files::MAX_FILE;
 use crate::harness::{Harness, Thread};
-use crate::tools::Tool;
-use crate::tools::workspace::Workspace;
 
-/// The most files one call makes for the person: past them, the rest are left on the computer.
-const MOST: usize = 8;
+/// The most files one turn keeps: past them, the rest stay on the computer, unnamed.
+pub(crate) const MOST: usize = 8;
 
-/// The paths a call of `tool` may make a file at: the one a `write` names, and each word of a
-/// command that names a file that would count as made (`glave doc write budget.xlsx`,
-/// `> table.csv`). None for any other tool.
-pub(crate) fn named(tool: Tool, arguments: &Arguments) -> Vec<String> {
-    let Arguments::Json(map) = arguments else {
-        return Vec::new();
-    };
-    let text = |key: &str| map.get(key).and_then(|value| value.as_str());
-    let mut paths: Vec<String> = match tool {
-        Tool::Write => text("path").map(str::to_owned).into_iter().collect(),
-        Tool::Bash => text("command").map(words).unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    paths.retain(|path| FileKind::made_as(path).is_some());
-    paths.dedup();
-    paths.truncate(MOST);
-    paths
-}
+/// The most files of the kinds that count looked over in a folder.
+const MOST_SEEN: usize = 10_000;
 
-/// The words of `command`, as a shell splits them, near enough: quotes keep a name with spaces
-/// whole, and an option's value after `=` is a word of its own (`--out=a.pdf`).
-fn words(command: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut quote: Option<char> = None;
-    for c in command.chars() {
-        match quote {
-            Some(open) if c == open => quote = None,
-            None if c == '\'' || c == '"' => quote = Some(c),
-            None if c.is_whitespace() || ";|&<>()=`".contains(c) => {
-                words.push(std::mem::take(&mut word));
+/// What the thread's folder held of the files that would count as made, by path: each one's
+/// stamp, when the computer says it. `None` when the folder could not be looked over.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Seen(Option<BTreeMap<String, Option<Stamp>>>);
+
+impl<P, L, B, A> Harness<P, L, B, A>
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    /// What `thread`'s folder holds now of the files that would count as made. A worker's
+    /// files are its parent's, which looks over the same folder.
+    pub(crate) async fn seen(&self, thread: &Thread) -> Seen {
+        if thread.delegated() {
+            return Seen(None);
+        }
+        let glob = Glob {
+            pattern: FileKind::made_pattern(),
+            path: ".".to_owned(),
+            limit: MOST_SEEN,
+        };
+        let Ok(found) = self.workspace_for(thread).glob(&glob).await else {
+            return Seen(None);
+        };
+        let stamps = found.stamps.into_iter().map(Some).chain(std::iter::repeat(None));
+        Seen(Some(found.files.into_iter().zip(stamps).collect()))
+    }
+
+    /// The files `thread`'s turn made since its folder held what `before` says, each kept for
+    /// the thread or said why not, in path order: at most [`MOST`].
+    pub(crate) async fn made_since(&self, thread: &Thread, before: Option<Seen>) -> Vec<FileMade> {
+        let Some(Seen(Some(before))) = before else {
+            return Vec::new();
+        };
+        let Seen(Some(now)) = self.seen(thread).await else {
+            return Vec::new();
+        };
+        let mut made = Vec::new();
+        let changed = now
+            .iter()
+            .filter(|(path, stamp)| before.get(*path) != Some(*stamp) && !hidden(path));
+        for (path, _) in changed {
+            if made.len() >= MOST {
+                break;
             }
-            Some(_) | None => word.push(c),
+            if let Some(file) = self.keep_made_file(thread, path).await {
+                made.push(file);
+            }
         }
+        made
     }
-    words.push(word);
-    words.retain(|word| !word.is_empty());
-    words
-}
 
-/// What is at each of `paths` before the call, by the path the model gave: a path the computer
-/// refuses (outside the thread's folder) is left out, since nothing made there counts.
-pub(crate) async fn before(workspace: &Workspace, paths: &[String]) -> Vec<(String, Stat)> {
-    let mut found = Vec::with_capacity(paths.len());
-    for path in paths {
-        if let Ok(stat) = workspace.stat(path).await {
-            found.push((path.clone(), stat));
+    /// The file at `path` in `thread`'s folder, kept for the thread when it is no larger than a
+    /// thread keeps and holds none of the person's secrets. `None` when it isn't a plain file
+    /// there now, or it changed while it was read: the next turn sees it again.
+    async fn keep_made_file(&self, thread: &Thread, path: &str) -> Option<FileMade> {
+        let workspace = self.workspace_for(thread);
+        let stat = workspace.stat(path).await.ok()?;
+        let media_type = FileKind::made_as(&stat.path)?;
+        if stat.kind != Some(EntryKind::File) {
+            return None;
+        }
+        let made = |kept| FileMade {
+            path: stat.path.clone(),
+            bytes: stat.size,
+            kept,
+        };
+        if stat.size > MAX_FILE {
+            return Some(made(Kept::TooLarge));
+        }
+        let bytes = workspace.read(&stat.path).await.ok()?.into_vec();
+        if Some(digest(&bytes)) != stat.digest {
+            return None;
+        }
+        if self.workspace.hidden().held_in(&bytes) {
+            return Some(made(Kept::Secret));
+        }
+        let pieces = Box::new(Pieces::from(bytes));
+        let put = self
+            .blobs
+            .put(&thread.scope, Some(thread.id), media_type, MAX_FILE, pieces);
+        match put.await {
+            Ok(blob) => Some(made(Kept::Blob(blob))),
+            Err(error) => {
+                tracing::warn!(%error, "a file the turn made could not be kept");
+                None
+            }
         }
     }
-    found
-}
-
-/// The files the call made at what was `before`: each one now a file, no larger than a thread
-/// keeps, in no hidden folder, and different from what was there, read whole.
-pub(crate) async fn made(workspace: &Workspace, before: Vec<(String, Stat)>) -> Vec<ToolFile> {
-    let mut made: Vec<ToolFile> = Vec::new();
-    for (path, was) in before {
-        let Ok(now) = workspace.stat(&path).await else {
-            continue;
-        };
-        let changed = now.kind != was.kind || now.size != was.size || now.digest != was.digest;
-        let fits = now.kind == Some(EntryKind::File) && now.size <= MAX_FILE;
-        let again = made.iter().any(|file| file.name == now.path);
-        if !changed || !fits || again || hidden(&now.path) {
-            continue;
-        }
-        let Some(media_type) = FileKind::made_as(&now.path) else {
-            continue;
-        };
-        if let Ok(bytes) = workspace.read(&now.path).await {
-            made.push(ToolFile {
-                name: now.path,
-                media_type: media_type.to_owned(),
-                bytes: bytes.into_vec(),
-            });
-        }
-    }
-    made
 }
 
 /// Whether `path`, relative to the thread's folder, is in a hidden folder or is hidden itself:
@@ -105,97 +122,9 @@ fn hidden(path: &str) -> bool {
         .any(|name| name.starts_with('.') && name != ".")
 }
 
-impl<P, L, B, A> Harness<P, L, B, A>
-where
-    P: ModelProvider,
-    L: EventLog,
-    B: BlobStore,
-    A: Approver,
-{
-    /// `output` with the files it made kept for `thread` and named in its `structured` result;
-    /// one that cannot be kept stays on the computer alone.
-    pub(crate) async fn keep_made_files(
-        &self,
-        thread: &Thread,
-        mut output: ToolOutput,
-    ) -> ToolOutput {
-        let mut kept = Vec::new();
-        for file in std::mem::take(&mut output.made) {
-            let put = self.blobs.put(
-                &thread.scope,
-                Some(thread.id),
-                &file.media_type,
-                MAX_FILE,
-                Box::new(Pieces::from(file.bytes)),
-            );
-            match put.await {
-                Ok(blob) => kept.push(FileMade {
-                    path: file.name,
-                    blob,
-                }),
-                Err(error) => tracing::warn!(%error, "a file the call made could not be kept"),
-            }
-        }
-        output.structured = FileMade::structured(output.structured.take(), &kept);
-        output
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn bash(command: &str) -> Vec<String> {
-        let arguments = Arguments::Json(
-            serde_json::json!({ "command": command })
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        );
-        named(Tool::Bash, &arguments)
-    }
-
-    #[test]
-    fn a_command_names_the_files_it_may_make() {
-        assert_eq!(
-            bash("glave doc write budget.xlsx <<'EOF'\n{}\nEOF"),
-            ["budget.xlsx"]
-        );
-        assert_eq!(
-            bash("cd out && glave doc pack work \"Trip plan.docx\" --replace"),
-            ["Trip plan.docx"]
-        );
-        assert_eq!(
-            bash("python3 make.py --out=deck.pptx>log.txt"),
-            ["deck.pptx"]
-        );
-        assert_eq!(
-            bash("glave doc merge all.pdf a.pdf b.pdf"),
-            ["all.pdf", "a.pdf", "b.pdf"],
-            "each is stat'd before and after; only what changed counts"
-        );
-        assert_eq!(bash("cargo test && cat notes.md"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn a_write_names_its_path_when_it_would_count() {
-        let write = |path: &str| {
-            let arguments = serde_json::json!({ "path": path, "content": "a,b" });
-            named(
-                Tool::Write,
-                &Arguments::Json(arguments.as_object().cloned().unwrap_or_default()),
-            )
-        };
-        assert_eq!(write("table.csv"), ["table.csv"]);
-        assert_eq!(write("src/main.rs"), Vec::<String>::new());
-        let read = Arguments::Json(
-            serde_json::json!({ "path": "a.pdf" })
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        );
-        assert_eq!(named(Tool::Read, &read), Vec::<String>::new());
-    }
 
     #[test]
     fn what_is_hidden_is_scratch() {

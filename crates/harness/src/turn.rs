@@ -10,6 +10,7 @@ use crate::cancel::Cancel;
 use crate::compaction::Asked;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::keys::SentBefore;
+use crate::made::Seen;
 use crate::repeats::Repeats;
 use crate::service::Round;
 use crate::telemetry;
@@ -50,6 +51,9 @@ pub(crate) struct Step {
     pub(crate) proposed: bool,
     /// The compaction the person asked for in this turn, if they did (`compaction/asked.rs`).
     pub(crate) compact: Asked,
+    /// What the thread's folder held of the files that count as made before the turn's first
+    /// tool call; `None` until it makes one (`made.rs`).
+    pub(crate) seen: Option<Seen>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -184,6 +188,7 @@ where
             round: None,
             proposed: false,
             compact: Asked::No,
+            seen: None,
         };
         self.steps(thread, step, &[], cancel, live).await
     }
@@ -258,6 +263,7 @@ where
                 }
                 Err(error) => {
                     step.summary.outcome = Outcome::Failed;
+                    step.summary.made = self.made_since(thread, step.seen.take()).await;
                     self.end(thread, &step.summary).await?;
                     return Err(error);
                 }
@@ -284,17 +290,19 @@ where
                 .await;
             waits_if(thread, ran)?;
         };
-        self.finish(thread, step.summary, cancel).await
+        self.finish(thread, step, cancel).await
     }
 
-    /// Records the end of a turn that ended as `summary` says, and tells the `Stop` hooks when
-    /// nothing from outside stopped it.
+    /// Records the end of a turn that ended as `step`'s summary says, with the files it made, and
+    /// tells the `Stop` hooks when nothing from outside stopped it.
     async fn finish(
         &self,
         thread: &mut Thread,
-        summary: TurnResult,
+        step: Step,
         cancel: &Cancel,
     ) -> Result<TurnResult, HarnessError> {
+        let mut summary = step.summary;
+        summary.made = self.made_since(thread, step.seen).await;
         // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
         let stopped = cancel.is_cancelled() && summary.outcome == cancel.outcome();
         if stopped && summary.outcome == Outcome::Cancelled {
