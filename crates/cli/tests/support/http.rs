@@ -72,10 +72,11 @@ pub(crate) fn serve_http_at(
     let mut url = None;
     let mut start = Vec::new();
     while let Some(line) = lines.next().map(Result::unwrap) {
-        if let Some(address) = line.strip_prefix("glave: serving the session API on ") {
+        let said = sentence(&line);
+        if let Some(address) = said.strip_prefix("serving the session API on ") {
             url = Some(address.to_owned());
         }
-        let started = line.starts_with("glave: serving you on ");
+        let started = said.starts_with("serving you on ");
         start.push(line);
         if started {
             break;
@@ -90,6 +91,18 @@ pub(crate) fn serve_http_at(
         }
     });
     (running, url.unwrap(), Said { start, later })
+}
+
+/// The sentence a server's line of standard error says: after `glave: ` in a plain line, or
+/// the message of a line of its log (`--log -`); the line itself when it is neither.
+pub(crate) fn sentence(line: &str) -> String {
+    if let Some(plain) = line.strip_prefix("glave: ") {
+        return plain.to_owned();
+    }
+    serde_json::from_str::<serde_json::Value>(line)
+        .ok()
+        .and_then(|logged| logged["message"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| line.to_owned())
 }
 
 /// Leaves `place`'s settings unreadable, so a command run there cannot answer in its own

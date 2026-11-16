@@ -17,6 +17,7 @@ use glave_config::policy::{
 use glave_config::trust::{self, Asking, Outcome, Project, Record};
 
 use crate::data::Data;
+use crate::said::Said;
 use crate::trust::Trust;
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
@@ -33,6 +34,8 @@ pub(crate) struct Setup {
     /// The most a sandbox on this computer allows, which each mode narrows, once the
     /// workspace found it (`sandboxing.rs`); none where none can run, or before it looked.
     pub sandbox: Option<Sandbox>,
+    /// Where glave's own sentences about this run go: the log, or the terminal.
+    pub said: Said,
 }
 
 impl Setup {
@@ -59,6 +62,7 @@ impl Setup {
             choices,
             hooks,
             sandbox: None,
+            said: Said::of(args.log.as_deref()),
         })
     }
 
@@ -88,6 +92,7 @@ impl Setup {
             choices,
             hooks,
             sandbox: None,
+            said: Said::of(args.log.as_deref()),
         };
         Ok((setup, aside))
     }
