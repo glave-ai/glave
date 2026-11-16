@@ -188,7 +188,14 @@ where
         sha256: &Sha256,
         reads: impl FnOnce(Vec<u8>, String) -> Option<T> + Send + 'static,
     ) -> Result<Option<T>, ApiError> {
-        let _permit = self.inner.reading.permits.acquire().await;
+        let too_slow = || {
+            let waited = spoken(WAIT);
+            ApiError::new(code::LIMIT, Sentence::PreviewTooSlow { waited })
+        };
+        let permits = &self.inner.reading.permits;
+        let _permit = tokio::time::timeout(WAIT, permits.acquire())
+            .await
+            .map_err(|_| too_slow())?;
         let found = self.inner.harness.blobs().get(scope, sha256).await;
         let found = found.map_err(|error| ApiError::internal(&error))?;
         let mut found = found.ok_or_else(not_here)?;
@@ -200,12 +207,7 @@ where
         match tokio::time::timeout(WAIT, reading).await {
             Ok(Ok(read)) => Ok(read),
             Ok(Err(_)) => Ok(None),
-            Err(_) => Err(ApiError::new(
-                code::LIMIT,
-                Sentence::PreviewTooSlow {
-                    waited: spoken(WAIT),
-                },
-            )),
+            Err(_) => Err(too_slow()),
         }
     }
 }
