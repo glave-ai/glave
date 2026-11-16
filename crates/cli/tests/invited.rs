@@ -6,6 +6,7 @@
 use glave_event::{Body, ServiceAnswer, ThreadId, decode};
 use glave_identity::testing::Authenticator;
 use glave_ports::block_on;
+use glave_ports::testing::Running;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_session::client::Remote;
 use glave_session::protocol::{Notification, Request};
@@ -87,6 +88,17 @@ async fn saying(caller: &Remote, params: Value, prompt: &str) -> usize {
     asks
 }
 
+/// `place`'s server with `model`, reached by other browsers on its computer at a `localhost`
+/// origin: the server, its address, that origin and its owner's token.
+fn shared(place: &Place, model: &FakeServer) -> (Running, String, String, String) {
+    choose(place, "serve", "{ origin = \"http://localhost\" }");
+    let (served, url, _) = serve_http_with(place, model, &["--model", "m"], &[]);
+    let (_, port) = url.rsplit_once(':').unwrap();
+    let origin = format!("http://localhost:{port}");
+    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    (served, url, origin, token.trim().to_owned())
+}
+
 #[test]
 fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_can() {
     let place = place("invited-install");
@@ -103,15 +115,11 @@ fn someone_invited_adds_nothing_to_the_owner_s_own_folder_and_the_owner_still_ca
         Reply::text("Added."),
     ])
     .unwrap();
-    choose(&place, "serve", "{ origin = \"http://localhost\" }");
-    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &[]);
-    let (_, port) = url.rsplit_once(':').unwrap();
-    let origin = format!("http://localhost:{port}");
-    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    let (_served, url, origin, token) = shared(&place, &model);
     let servers = place.home.join("mcp.json");
     let owners = std::fs::read_to_string(&servers).unwrap();
     block_on!(async {
-        let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
+        let owner = Remote::new(&url, token).unwrap();
         let theirs = invited(&owner, &url, &origin).await;
         let asks = turn(&theirs, json!({})).await;
         let now = std::fs::read_to_string(&servers).unwrap();
@@ -145,12 +153,8 @@ fn someone_invited_never_leaves_the_sandbox_on_the_server_s_computer_and_the_own
         Reply::text("Read it."),
     ])
     .unwrap();
-    choose(&place, "serve", "{ origin = \"http://localhost\" }");
-    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &[]);
-    let (_, port) = url.rsplit_once(':').unwrap();
-    let origin = format!("http://localhost:{port}");
-    let token = std::fs::read_to_string(&token_file).unwrap();
-    let token = token.trim();
+    let (_served, url, origin, token) = shared(&place, &model);
+    let token = token.as_str();
     let full = json!({"permissions": "full-access"});
     block_on!(async {
         let owner = Remote::new(&url, token.to_owned()).unwrap();
@@ -211,14 +215,10 @@ fn someone_invited_gets_none_of_the_owner_s_own_instructions_skills_or_commands(
         Reply::text("Loaded."),
     ])
     .unwrap();
-    choose(&place, "serve", "{ origin = \"http://localhost\" }");
-    let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &[]);
-    let (_, port) = url.rsplit_once(':').unwrap();
-    let origin = format!("http://localhost:{port}");
-    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    let (_served, url, origin, token) = shared(&place, &model);
     let owners = ["Zebra Savings", "walrus", "marmot", "ocelot"];
     block_on!(async {
-        let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
+        let owner = Remote::new(&url, token).unwrap();
         let theirs = invited(&owner, &url, &origin).await;
         saying(&theirs, json!({}), "/payroll").await;
         let told: Vec<String> = model.received()[..2]
