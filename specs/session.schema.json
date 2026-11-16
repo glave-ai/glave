@@ -1799,7 +1799,7 @@
       "properties": {
         "asset": {
           "$ref": "#/$defs/AssetId",
-          "description": "What `library/read` and `library/remove` name it by, and a media tool's result calls\n`asset`."
+          "description": "What `library/read` and `library/remove` name it by, with its `project`; a media tool's\nresult calls it `asset:<id>`."
         },
         "bytes": {
           "description": "Its file's size.",
@@ -6444,9 +6444,13 @@
               "integer",
               "null"
             ]
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
           }
         },
         "required": [
+          "project",
           "asset"
         ],
         "type": "object"
@@ -6470,9 +6474,13 @@
         "properties": {
           "asset": {
             "$ref": "#/$defs/AssetId"
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
           }
         },
         "required": [
+          "project",
           "asset"
         ],
         "type": "object"
@@ -6928,7 +6936,7 @@
             "type": "string"
           },
           "credential": {
-            "description": "The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in base64url."
+            "description": "The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in\nbase64url."
           },
           "name": {
             "description": "What to call the passkey; when it was added, if nothing.",

@@ -136,8 +136,8 @@ fn a_made_image_is_kept_whole_shown_to_the_model_and_counted_in_the_turn() {
         };
         assert_eq!(
             entry["asset"],
-            json!(kept.asset),
-            "the item answers to `asset`"
+            format!("asset:{}", kept.asset),
+            "the item answers to `asset`, as `file` answers to `blob:`"
         );
         assert_eq!(kept.blob.sha256, sha, "the image, whole");
         assert_eq!(kept.thread, thread.id);

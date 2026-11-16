@@ -1,8 +1,9 @@
 //! A person's Library over the session API (`specs/session.md`, "Library"): what glave made
 //! for them, kept beyond any chat or computer. Each item is in the Library ledger of the
 //! project it was made in, its file a blob of that project's, held under a holder of its own;
-//! `library/list` reads the ledgers of every project the caller owns, so no one sees another's.
-//! An item another person has, or none has, is answered alike: "no longer here".
+//! `library/list` reads the ledgers of every project the caller owns, so no one sees another's;
+//! `library/read` and `library/remove` name the item's project, which the caller must own. An
+//! item another person has, or none has, is answered alike: "no longer here".
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -10,7 +11,9 @@ use glave_event::{
     AssetId, At, Body, LibraryKept, LibraryRemoved, Payload as _, Principal, ThreadId, decode,
 };
 use glave_ports::stream::{Reserved, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing, title_of};
+use glave_ports::{
+    BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, title_of,
+};
 
 use crate::projects::MOST_PROJECTS;
 use crate::protocol::{ApiError, LibraryChat, LibraryItem, Reply, code};
@@ -69,19 +72,19 @@ where
         Ok(items.into_values().collect())
     }
 
-    /// The item `asset` of `caller`'s Library, and the scope it is in.
+    /// The item `asset` of the Library of `project`, when `caller` owns it, and its scope; a
+    /// project they don't own is "no project", as one that does not exist.
     async fn item(
         &self,
         caller: &Caller,
+        project: ProjectId,
         asset: AssetId,
     ) -> Result<(Scope, LibraryKept), ApiError> {
-        for scope in self.libraries(caller).await? {
-            let found = self.library_in(&scope).await?;
-            if let Some((_, kept)) = found.into_iter().find(|(_, kept)| kept.asset == asset) {
-                return Ok((scope, kept));
-            }
-        }
-        Err(not_here())
+        let (_, scope) = self.authorized(caller, project).await?;
+        let found = self.library_in(&scope).await?;
+        let kept = found.into_iter().find(|(_, kept)| kept.asset == asset);
+        let (_, kept) = kept.ok_or_else(not_here)?;
+        Ok((scope, kept))
     }
 
     /// Answers `library/list`: the items of every project `caller` owns, newest first, each
@@ -144,31 +147,33 @@ where
     pub(crate) async fn read_library(
         &self,
         caller: &Caller,
-        asset: AssetId,
+        (project, asset): (ProjectId, AssetId),
         offset: u64,
     ) -> Result<Reply, ApiError> {
-        let (scope, kept) = self.item(caller, asset).await?;
+        let (scope, kept) = self.item(caller, project, asset).await?;
         self.read_piece(&scope, &kept.blob.sha256, offset).await
     }
 
-    /// Answers `library/remove`: takes `asset` out of the caller's Library, then lets go of
-    /// its file; the chat it was made in keeps its own hold.
+    /// Answers `library/remove`: lets go of `asset`'s file, then takes it out of the caller's
+    /// Library; the chat it was made in keeps its own hold. Let go of first, so a failure
+    /// either way leaves the item listed, and removing it again finishes the work.
     pub(crate) async fn remove_from_library(
         &self,
         caller: &Caller,
+        project: ProjectId,
         asset: AssetId,
     ) -> Result<Reply, ApiError> {
-        let (scope, kept) = self.item(caller, asset).await?;
-        let kinds = [LibraryKept::TYPE, LibraryRemoved::TYPE];
-        let removed = LibraryRemoved { asset };
-        self.keep_latest(&scope, Reserved::Library.id(), &kinds, &removed)
-            .await?;
+        let (scope, kept) = self.item(caller, project, asset).await?;
         self.inner
             .harness
             .blobs()
             .release(&scope, kept.holder)
             .await
             .map_err(|error| ApiError::internal(&error))?;
+        let kinds = [LibraryKept::TYPE, LibraryRemoved::TYPE];
+        let removed = LibraryRemoved { asset };
+        self.keep_latest(&scope, Reserved::Library.id(), &kinds, &removed)
+            .await?;
         Ok(Reply::Done {})
     }
 }

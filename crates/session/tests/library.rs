@@ -1,12 +1,14 @@
 //! A person's Library (`specs/session.md`, "Library"): each picture an image tool makes is kept
 //! there, its item named in the tool's result as `asset`; `library/list` shows every project's,
 //! newest first, each with the chat it came from while that chat is there; deleting the chat
-//! keeps the picture, and removing it from the Library lets go of it.
+//! keeps the picture, and removing it from the Library lets go of it, a removal cut short
+//! finished by removing it again.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use glave_event::{AssetId, AssetKind, Body, Part, ThreadId, decode};
-use glave_ports::{BlobStore as _, UNREFERENCED_FOR_MS, digest};
+use glave_event::{AssetKind, Body, Part, ThreadId, decode};
+use glave_ports::testing::FaultyLog;
+use glave_ports::{BlobStore as _, EventLog, UNREFERENCED_FOR_MS, digest};
 use glave_session::protocol::{ApiError, FilePiece, LibraryItem, Reply, Request, code};
 use serde_json::json;
 
@@ -20,21 +22,30 @@ fn draws(prompt: &str) -> Vec<glave_ports::Completion> {
     ]
 }
 
-async fn items(server: &Tested) -> Vec<LibraryItem> {
+async fn items<L: EventLog + 'static>(server: &Tested<L>) -> Vec<LibraryItem> {
     match server.request(Request::LibraryList {}).await.unwrap() {
         Reply::Library { items } => items,
         other => panic!("the Library, not {other:?}"),
     }
 }
 
-async fn read(server: &Tested, asset: AssetId) -> Result<FilePiece, ApiError> {
+async fn read(server: &Tested, item: &LibraryItem) -> Result<FilePiece, ApiError> {
     let read = Request::LibraryRead {
-        asset,
+        project: item.project,
+        asset: item.asset,
         offset: None,
     };
     match server.request(read).await? {
         Reply::FilePiece { piece } => Ok(piece),
         other => panic!("a piece, not {other:?}"),
+    }
+}
+
+/// `library/remove` of `item`.
+fn remove(item: &LibraryItem) -> Request {
+    Request::LibraryRemove {
+        project: item.project,
+        asset: item.asset,
     }
 }
 
@@ -77,10 +88,10 @@ fn a_picture_is_kept_beyond_its_chat_until_it_is_removed() {
         assert_eq!(item.chat.as_ref().map(|chat| chat.thread), Some(thread));
         assert_eq!(
             result(&server, thread).await["files"][0]["asset"],
-            json!(item.asset)
+            format!("asset:{}", item.asset)
         );
         let pixel = STANDARD.decode(PIXEL).unwrap();
-        let piece = read(&server, item.asset).await.unwrap();
+        let piece = read(&server, item).await.unwrap();
         assert_eq!(STANDARD.decode(&piece.data).unwrap(), pixel);
 
         // Deleting the chat keeps the picture, however long after.
@@ -91,25 +102,27 @@ fn a_picture_is_kept_beyond_its_chat_until_it_is_removed() {
         let listed = items(&server).await;
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].chat, None, "its chat is gone");
-        assert!(
-            read(&server, item.asset).await.is_ok(),
-            "the Library holds it"
-        );
+        assert!(read(&server, item).await.is_ok(), "the Library holds it");
 
         // Removed, it is gone from the Library, and nothing holds it any more.
-        let remove = Request::LibraryRemove { asset: item.asset };
         assert!(matches!(
-            server.request(remove.clone()).await,
+            server.request(remove(item)).await,
             Ok(Reply::Done {})
         ));
         assert!(items(&server).await.is_empty());
+        assert_eq!(read(&server, item).await.unwrap_err().code, code::NO_FILE);
         assert_eq!(
-            read(&server, item.asset).await.unwrap_err().code,
+            server.request(remove(item)).await.unwrap_err().code,
             code::NO_FILE
         );
+        let elsewhere = Request::LibraryRemove {
+            project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(0xdead)),
+            asset: item.asset,
+        };
         assert_eq!(
-            server.request(remove).await.unwrap_err().code,
-            code::NO_FILE
+            server.request(elsewhere).await.unwrap_err().code,
+            code::NO_PROJECT,
+            "an item is named with the project it is in"
         );
         blobs.sweep(scope().org()).await.unwrap();
         let kept = blobs.get(&scope(), &digest(&pixel)).await.unwrap();
@@ -145,8 +158,51 @@ fn the_library_shows_every_project_newest_first() {
         let listed = items(&server).await;
         let names: Vec<&str> = listed.iter().map(|item| item.name.as_str()).collect();
         assert_eq!(names, ["A hare", "A fox"], "newest first");
+        assert!(
+            listed[0].made_at > listed[1].made_at,
+            "newest first, by when each was made"
+        );
         assert_eq!(listed[0].project, chat.project, "the person's Chats");
         assert_eq!(listed[1].project, scope().project());
         assert_ne!(listed[0].asset, listed[1].asset);
+    });
+}
+
+#[test]
+fn a_removal_cut_short_is_finished_by_removing_again() {
+    let dir = folder("library-retried");
+    block_on!(async {
+        let mut setup = Setup::new(Vec::new());
+        setup.model = Some(drawing(draws("a fox")));
+        let (blobs, clock) = (setup.blobs.clone(), setup.clock.clone());
+        let log = FaultyLog::default();
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "draw a fox").await.unwrap();
+        let listed = items(&server).await;
+        let [item] = listed.as_slice() else {
+            panic!("one picture: {listed:?}");
+        };
+        let delete = Request::ThreadDelete { thread };
+        assert!(matches!(server.request(delete).await, Ok(Reply::Done {})));
+
+        // Letting go of it fails: nothing is recorded, so it is still listed to remove again.
+        blobs.fail_release();
+        assert!(server.request(remove(item)).await.is_err());
+        assert_eq!(items(&server).await.len(), 1, "still in the Library");
+        // Let go of, then its record fails: still listed, so it can be removed again.
+        log.fail_with("library.removed");
+        assert!(server.request(remove(item)).await.is_err());
+        assert_eq!(items(&server).await.len(), 1, "still in the Library");
+        assert!(matches!(
+            server.request(remove(item)).await,
+            Ok(Reply::Done {})
+        ));
+        assert!(items(&server).await.is_empty());
+        clock.advance_millis(2 * UNREFERENCED_FOR_MS);
+        blobs.sweep(scope().org()).await.unwrap();
+        let pixel = STANDARD.decode(PIXEL).unwrap();
+        let kept = blobs.get(&scope(), &digest(&pixel)).await.unwrap();
+        assert!(kept.is_none(), "nothing holds it any more");
     });
 }

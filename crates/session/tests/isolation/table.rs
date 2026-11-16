@@ -422,11 +422,14 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "library/read",
             vec![
-                json!({"asset": "@asset"}),
-                json!({"asset": "@asset", "offset": 0}),
+                json!({"project": "@project", "asset": "@asset"}),
+                json!({"project": "@project", "asset": "@asset", "offset": 0}),
             ],
         ),
-        ("library/remove", vec![json!({"asset": "@asset"})]),
+        (
+            "library/remove",
+            vec![json!({"project": "@project", "asset": "@asset"})],
+        ),
         ("thread/compact", on_thread()),
         (
             "approval/decide",

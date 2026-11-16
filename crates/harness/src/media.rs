@@ -150,7 +150,7 @@ where
                             "media_type": blob.media_type,
                         });
                         match self.keep_in_library(thread, blob, &prompt, file_name).await {
-                            Ok(asset) => entry["asset"] = json!(asset),
+                            Ok(asset) => entry["asset"] = json!(format!("asset:{asset}")),
                             Err(error) => tracing::warn!(%error, "could not keep in the Library"),
                         }
                         files.push(entry);

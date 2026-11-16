@@ -652,8 +652,8 @@ export type LibraryChat = {
 /** Something glave made for the person, kept in their Library. */
 export type LibraryItem = {
   /**
-   * What `library/read` and `library/remove` name it by, and a media tool's result calls
-   * `asset`.
+   * What `library/read` and `library/remove` name it by, with its `project`; a media tool's
+   * result calls it `asset:<id>`.
    */
   readonly asset: AssetId;
   /** Its file's size. */
@@ -2252,6 +2252,7 @@ export type LibraryListResult = {
 export type LibraryReadParams = {
   readonly asset: AssetId;
   readonly offset?: number | null;
+  readonly project: ProjectId;
 };
 
 /** A piece of a file a thread holds. */
@@ -2261,6 +2262,7 @@ export type LibraryReadResult = {
 
 export type LibraryRemoveParams = {
   readonly asset: AssetId;
+  readonly project: ProjectId;
 };
 
 export type LibraryRemoveResult = Readonly<Record<string, never>>;
@@ -2417,7 +2419,10 @@ export type PasskeyAddOptionsResult = {
 export type PasskeyCreateParams = {
   /** The request, as `passkey/create_options` named it. */
   readonly ceremony: string;
-  /** The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in base64url. */
+  /**
+   * The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
+   * base64url.
+   */
   readonly credential: unknown;
   /** What to call the passkey; when it was added, if nothing. */
   readonly name?: string | null;
