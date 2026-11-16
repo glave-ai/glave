@@ -12,9 +12,9 @@ use glave_event::{
 use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
-use crate::protocol::{ApiError, FilePiece, Reply, code};
+use super::not_here;
+use crate::protocol::{ApiError, FilePiece, Reply};
 use crate::server::{MAX_PAGE, Server, no_thread};
-use crate::words::Sentence;
 
 /// The most of a file one answer holds, in bytes: in base64, well within the 16 MiB a message
 /// may be on every transport.
@@ -39,7 +39,6 @@ where
         offset: u64,
     ) -> Result<Reply, ApiError> {
         let scope = self.scope_of(thread)?;
-        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
         if !self.names_file(&scope, thread, sha256).await? {
             return Err(not_here());
         }
@@ -54,7 +53,6 @@ where
         sha256: &Sha256,
         offset: u64,
     ) -> Result<Reply, ApiError> {
-        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
         let found = self.inner.harness.blobs().get(scope, sha256).await;
         let found = found.map_err(|error| ApiError::internal(&error))?;
         let mut found = found.ok_or_else(not_here)?;

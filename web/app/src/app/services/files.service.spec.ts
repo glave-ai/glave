@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileReadParams } from '@glave/client';
 
+import { settle } from '@glave/glaze/testing/settle';
+
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { objectUrls } from '../testing/object-urls';
 import { FilesService } from './files.service';
@@ -14,7 +16,7 @@ function setUp(fake: FakeSession): FilesService {
 
 /** A file of `bytes` read back in pieces of two bytes, as `file/read` answers each. */
 function inPieces(bytes: string) {
-  return (params: FileReadParams) => {
+  return (params: Pick<FileReadParams, 'offset'>) => {
     const offset = params.offset ?? 0;
     const end = Math.min(offset + 2, bytes.length);
     return {
@@ -27,6 +29,22 @@ function inPieces(bytes: string) {
       },
     };
   };
+}
+
+/** A session whose `file/read`s each wait for the test to answer them, in `answers`, in order. */
+function answeredByTheTest(): {
+  readonly fake: FakeSession;
+  readonly answers: readonly ((answer: object) => void)[];
+} {
+  const answers: ((answer: object) => void)[] = [];
+  const fake = new FakeSession().answer(
+    'file/read',
+    () =>
+      new Promise<object>((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  return { fake, answers };
 }
 
 /** The `n`th of many files' hashes. */
@@ -48,6 +66,51 @@ describe('FilesService', () => {
     ]);
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(url);
     expect(fake.paramsOf('file/read')).toHaveLength(3);
+  });
+
+  it("reads a Library item's file the same way, by the item", async () => {
+    const urls = objectUrls();
+    const fake = new FakeSession().answer('library/read', inPieces('PNG!'));
+    const files = setUp(fake);
+    expect(await files.holdAsset('p1', 'fox', 'image/png').url).toBe(urls.made[0]);
+    expect(fake.paramsOf('library/read')).toEqual([
+      { project: 'p1', asset: 'fox' },
+      { project: 'p1', asset: 'fox', offset: 2 },
+    ]);
+    expect(await files.holdAsset('p1', 'fox', 'image/png').url).toBe(urls.made[0]);
+    expect(fake.paramsOf('library/read')).toHaveLength(2);
+  });
+
+  it('reads four files at once, the next as one ends', async () => {
+    objectUrls();
+    const { fake, answers } = answeredByTheTest();
+    const files = setUp(fake);
+    const held = [0, 1, 2, 3, 4, 5].map((n) => files.hold('t1', nth(n), 'image/png'));
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    answers[0]?.(inPieces('ok')({}));
+    await held[0]?.url;
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(5);
+  });
+
+  it('does not read a file nothing holds any more once its turn comes, and reads it if held again', async () => {
+    objectUrls();
+    const { fake, answers } = answeredByTheTest();
+    const files = setUp(fake);
+    const held = [0, 1, 2, 3, 4].map((n) => files.hold('t1', nth(n), 'image/png'));
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    // Scrolled past before its turn: let go of while it waits.
+    const passed = held[4];
+    passed?.release();
+    answers[0]?.(inPieces('ok')({}));
+    await held[0]?.url;
+    await expect(passed?.url).rejects.toThrow();
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    // Held again, it is read.
+    void files.hold('t1', nth(4), 'image/png').url;
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(5);
   });
 
   it('reads one that could not be read again when next asked for', async () => {

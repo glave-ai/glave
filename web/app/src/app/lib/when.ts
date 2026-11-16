@@ -108,7 +108,7 @@ export function readerTimes(now: number, reader: Reader = {}): Times {
 }
 
 /** The day a moment falls on in `timeZone`, written `2026-10-12`. */
-function calendarDay(timeZone: string | undefined): (at: number) => string {
+export function calendarDay(timeZone: string | undefined): (at: number) => string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',

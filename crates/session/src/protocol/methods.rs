@@ -1,4 +1,4 @@
-//! The macro that makes the session API's requests from its one table of methods, in `protocol.rs`.
+//! The macro that makes the session API's requests from its one table of methods, in `request.rs`.
 
 /// The one table of methods: each method's name, its request's params, and the replies it
 /// answers with, by the titles of their `Reply` variants. It makes `Request`, whose serde
