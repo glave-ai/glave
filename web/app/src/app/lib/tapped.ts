@@ -12,8 +12,12 @@ export interface Tapped {
 /** An id as the server writes an organization's. */
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
-/** The pages a notification opens: a thread's, or the app's start. */
-const PAGE = /^\/(t\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/u;
+/**
+ * The pages a notification opens: a thread's, a chat's at the turn it finished (the `seq` of its
+ * end), or the app's start.
+ */
+const PAGE =
+  /^\/(t\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\?finished=[1-9][0-9]{0,15})?)?$/u;
 
 /** What `message`, posted by glave's service worker, asks the app to open; `null` for any other. */
 export function tapped(message: unknown): Tapped | null {
