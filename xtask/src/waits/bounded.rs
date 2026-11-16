@@ -82,6 +82,14 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          the session drops the watcher when it lets the thread go or stops",
     ),
     (
+        "crates/session/src/tasks/adopted.rs",
+        "match notes.recv().await {",
+        1,
+        "a schedule's run waiting for the person, followed by what its thread records until its \
+         turn ends: their answer, then the turn's model, tools and waits for them, bound it; \
+         stopping the task or the server drops the follower",
+    ),
+    (
         "crates/session/src/held.rs",
         "if done.changed().await.is_err() {",
         1,
