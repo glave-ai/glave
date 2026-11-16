@@ -1,5 +1,5 @@
-import { DestroyRef, Service, inject } from '@angular/core';
-import type { FileReadResult } from '@glave/client';
+import { DestroyRef, Service, type Signal, effect, inject, signal, untracked } from '@angular/core';
+import type { FilePiece } from '@glave/client';
 
 import { fromBase64url } from '../lib/passkeys';
 import { SessionService } from './session.service';
@@ -18,6 +18,55 @@ export interface HeldFile {
   readonly release: () => void;
 }
 
+/** A file as something draws it: its address once read, or why it could not be. */
+export interface DrawnFile {
+  /** Its address once read; `null` while it comes. */
+  readonly url: Signal<string | null>;
+  /** Why it can't be shown; `null` when nothing went wrong. */
+  readonly failed: Signal<string | null>;
+}
+
+/**
+ * The file `hold` holds, as what draws it shows it: held again whenever what `hold` reads
+ * changes, and let go of when it does or what draws it goes; none while `hold` gives none. Call
+ * it where `inject` may be called, as a field is made.
+ */
+export function drawn(hold: () => HeldFile | null): DrawnFile {
+  const url = signal<string | null>(null);
+  const failed = signal<string | null>(null);
+  effect((onCleanup) => {
+    const held = hold();
+    untracked(() => {
+      url.set(null);
+      failed.set(null);
+    });
+    if (held === null) {
+      return;
+    }
+    let live = true;
+    onCleanup(() => {
+      live = false;
+      held.release();
+    });
+    held.url.then(
+      (made) => {
+        if (live) {
+          url.set(made);
+        }
+      },
+      (error: unknown) => {
+        if (live) {
+          failed.set(error instanceof Error ? error.message : String(error));
+        }
+      },
+    );
+  });
+  return { url: url.asReadonly(), failed: failed.asReadonly() };
+}
+
+/** The piece of a file that starts at `offset`, as the server answers it. */
+type ReadPiece = (offset: number) => Promise<{ readonly piece: FilePiece }>;
+
 /** A file kept as an address, and how many hold it. */
 interface Kept {
   readonly url: Promise<string>;
@@ -25,9 +74,10 @@ interface Kept {
 }
 
 /**
- * Files a thread holds, read back through the server (`file/read`), a piece at a time, and kept
- * as addresses the page made (`blob:`, which the app's Content Security Policy allows for
- * images): an image the agent made is drawn, and saved, from one read. An address is kept
+ * Files a thread holds (`file/read`), and items of the person's Library (`library/read`), read
+ * back through the server a piece at a time, and kept as addresses the page made (`blob:`,
+ * which the app's Content Security Policy allows for images): an image the agent made is drawn,
+ * and saved, from one read. An address is kept
  * while anything holds it; of those nothing holds, at most `MOST_UNUSED` are kept for when
  * they are drawn again, the one let go of first going first. One that could not be read is
  * read again when next asked for.
@@ -35,7 +85,10 @@ interface Kept {
 @Service()
 export class FilesService {
   private readonly session = inject(SessionService);
-  /** Each file's address, by its thread and hash, the one held or let go of longest ago first. */
+  /**
+   * Each file's address, by its thread and hash or its Library item, the one held or let go of
+   * longest ago first.
+   */
   private readonly kept = new Map<string, Kept>();
 
   constructor() {
@@ -49,9 +102,22 @@ export class FilesService {
 
   /** The file `sha256` that `thread` holds, of `mediaType`, held as an address until released. */
   hold(thread: string, sha256: string, mediaType: string): HeldFile {
-    const key = `${thread}/${sha256}`;
+    return this.holdAs(`${thread}/${sha256}`, mediaType, (offset) =>
+      this.session.call('file/read', { thread, sha256, ...(offset === 0 ? {} : { offset }) }),
+    );
+  }
+
+  /** The file of the Library item `asset`, of `mediaType`, held as an address until released. */
+  holdAsset(asset: string, mediaType: string): HeldFile {
+    return this.holdAs(`library/${asset}`, mediaType, (offset) =>
+      this.session.call('library/read', { asset, ...(offset === 0 ? {} : { offset }) }),
+    );
+  }
+
+  /** The file kept as `key`, read with `readPiece` the first time, held until released. */
+  private holdAs(key: string, mediaType: string, readPiece: ReadPiece): HeldFile {
     const found = this.kept.get(key);
-    const url = found?.url ?? this.read(thread, sha256, mediaType);
+    const url = found?.url ?? read(readPiece, mediaType);
     this.kept.delete(key);
     this.kept.set(key, { url, users: (found?.users ?? 0) + 1 });
     if (found === undefined) {
@@ -93,34 +159,30 @@ export class FilesService {
       }
     }
   }
+}
 
-  /**
-   * The file, read whole a piece at a time, as an address the page made. A piece that does not
-   * end where the next starts, or a file larger than `MOST_BYTES`, is not read on.
-   */
-  private async read(thread: string, sha256: string, mediaType: string): Promise<string> {
-    const unreadable = (): Error =>
-      new Error($localize`:@@files.unreadable:This file could not be read`);
-    const pieces: Uint8Array<ArrayBuffer>[] = [];
-    let offset: number | null = 0;
-    while (offset !== null) {
-      const { piece }: FileReadResult = await this.session.call('file/read', {
-        thread,
-        sha256,
-        ...(offset === 0 ? {} : { offset }),
-      });
-      const bytes = fromBase64url(piece.data);
-      const next: number | null = piece.next ?? null;
-      const end: number = offset + (bytes?.length ?? 0);
-      const moved = next === null || (next > offset && next === end);
-      if (bytes === null || !moved || piece.bytes > MOST_BYTES || end > MOST_BYTES) {
-        throw unreadable();
-      }
-      pieces.push(bytes);
-      offset = next;
+/**
+ * The file `readPiece` reads, read whole a piece at a time, as an address the page made. A piece
+ * that does not end where the next starts, or a file larger than `MOST_BYTES`, is not read on.
+ */
+async function read(readPiece: ReadPiece, mediaType: string): Promise<string> {
+  const unreadable = (): Error =>
+    new Error($localize`:@@files.unreadable:This file could not be read`);
+  const pieces: Uint8Array<ArrayBuffer>[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const { piece } = await readPiece(offset);
+    const bytes = fromBase64url(piece.data);
+    const next: number | null = piece.next ?? null;
+    const end: number = offset + (bytes?.length ?? 0);
+    const moved = next === null || (next > offset && next === end);
+    if (bytes === null || !moved || piece.bytes > MOST_BYTES || end > MOST_BYTES) {
+      throw unreadable();
     }
-    return URL.createObjectURL(new Blob(pieces, { type: mediaType }));
+    pieces.push(bytes);
+    offset = next;
   }
+  return URL.createObjectURL(new Blob(pieces, { type: mediaType }));
 }
 
 /** Lets go of the address `url` will be, once it is made. */

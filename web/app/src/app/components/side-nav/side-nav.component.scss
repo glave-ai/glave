@@ -13,8 +13,8 @@
   padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
 }
 
-// With Tasks above it, the person sits as close under it as rows of the foot do.
-:host:has(> .above > .tasks) {
+// Under Tasks and Library, the person sits as close as rows of the foot do.
+:host {
   gap: var(--glz-space-1);
 }
 
@@ -124,8 +124,13 @@
   overflow-y: auto;
 }
 
-// Tasks at the foot, over the person, whether or not the threads have come in above it yet.
-.tasks {
+// Tasks and Library at the foot, over the person, whether or not the threads have come in above
+// them yet.
+.foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--glz-space-1);
   margin-block-start: auto;
 }
 
