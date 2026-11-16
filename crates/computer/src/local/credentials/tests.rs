@@ -179,7 +179,16 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
         for name in [HELPER, "bin/gh"] {
             let text = std::fs::read_to_string(folder.join(name)).unwrap();
             assert!(!text.contains(&token), "the token is in {name}");
+            assert!(
+                !text.contains(&offered.password),
+                "the helper's password is in {name}"
+            );
         }
+        assert_eq!(
+            value(&offered.environment, PASSWORD),
+            Some(offered.password.as_str()),
+            "the password is the command's environment's alone"
+        );
         let path = value(&offered.environment, "PATH").unwrap();
         assert!(path.ends_with("/bin"), "the wrappers alone: {path}");
         assert!(!folder.join("bin").join(HELPER).exists());
@@ -258,6 +267,52 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
     assert!(!printed.contains(&token), "the token shows: {printed}");
 }
 
+/// A computer whose person is signed in to GitHub, glave's folder under `dir`.
+struct SignedIn {
+    computers: LocalComputers,
+    credentials: FixedGitCredentials,
+    /// What the helper answers with.
+    token: String,
+    /// glave's own folder for commands, where helpers are made.
+    on_path: PathBuf,
+    glave_home: PathBuf,
+}
+
+impl SignedIn {
+    fn new(dir: &Path) -> Self {
+        let token = fake_secret("ghp_");
+        let credentials = FixedGitCredentials::new(
+            vec![host("https://github.com", Forge::Other)],
+            GitCredential::new("x-access-token", &token).unwrap(),
+        );
+        let glave_home = dir.join(".glave");
+        let on_path = glave_home.join("bin");
+        std::fs::create_dir_all(&on_path).unwrap();
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH");
+        let computers =
+            LocalComputers::new(dir.join("copies"), environment).with_glave_on_path(&on_path);
+        Self {
+            computers,
+            credentials,
+            token,
+            on_path,
+            glave_home,
+        }
+    }
+
+    /// `script` in the sandbox that hides glave's folder, `dir` its home.
+    fn sandboxed(&self, dir: &Path, network: SandboxNetwork, script: impl Into<String>) -> Command {
+        let mut command = Command::new(script);
+        command.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network,
+            home: Some(dir.to_path_buf()),
+            glave_home: Some(self.glave_home.clone()),
+        });
+        command
+    }
+}
+
 /// A command's helper is made in glave's own folder for commands, which every sandbox keeps
 /// readable and never writable: a sandboxed command cannot change it, nor add to its folder,
 /// so no command can change another's. Runs only where the sandbox is.
@@ -267,17 +322,12 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
         return;
     }
     let dir = scratch("credentials-kept");
-    let token = fake_secret("ghp_");
-    let credentials = FixedGitCredentials::new(
-        vec![host("https://github.com", Forge::Other)],
-        GitCredential::new("x-access-token", &token).unwrap(),
+    let signed_in = SignedIn::new(&dir);
+    let (computers, credentials, on_path) = (
+        &signed_in.computers,
+        &signed_in.credentials,
+        &signed_in.on_path,
     );
-    let glave_home = dir.join(".glave");
-    let on_path = glave_home.join("bin");
-    std::fs::create_dir_all(&on_path).unwrap();
-    let environment = std::env::vars_os().filter(|(name, _)| name == "PATH");
-    let computers =
-        LocalComputers::new(dir.join("copies"), environment).with_glave_on_path(&on_path);
     let output = Collect::default();
     block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
@@ -286,25 +336,21 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
         };
         let here = computers.open(computer.id, &sources).await.unwrap();
         // The helper's path is git's setting for it, after the cleared one.
-        let mut command = Command::new(
+        let command = signed_in.sandboxed(
+            &dir,
+            SandboxNetwork::Off,
             "helper=$(printf '%s' \"$GIT_CONFIG_VALUE_1\" | sed \"s/^!'//; s/'$//\"); \
              echo \"helper=$helper\"; \
              echo changed > \"$helper\" && echo wrote-helper; \
              touch \"$(dirname \"$helper\")/added\" && echo added-file; true",
         );
-        command.sandbox = Some(Sandbox {
-            level: SandboxLevel::Project,
-            network: SandboxNetwork::Off,
-            home: Some(dir.to_path_buf()),
-            glave_home: Some(glave_home.clone()),
-        });
         let finished = computers
             .run_with_credentials(
                 here.id,
                 &command,
                 &output,
                 &CancelSwitch::default(),
-                &credentials,
+                credentials,
             )
             .await
             .unwrap();
@@ -316,9 +362,74 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
         .find_map(|line| line.strip_prefix("helper="))
         .unwrap_or_else(|| panic!("no helper in {printed}"));
     assert!(
-        Path::new(helper).starts_with(&on_path),
+        Path::new(helper).starts_with(on_path),
         "not in glave's folder: {printed}"
     );
     assert!(!printed.contains("wrote-helper"), "{printed}");
     assert!(!printed.contains("added-file"), "{printed}");
+}
+
+/// A command's helper answers that command alone. Every sandbox reads the folder helpers are
+/// made in, so another command on the computer, someone else's there, finds a running
+/// command's helper and runs it as git would: it must be given nothing. Runs only where the
+/// sandbox is.
+#[test]
+fn another_command_that_runs_a_command_s_helper_is_given_nothing() {
+    if !sandbox_available() {
+        return;
+    }
+    let dir = scratch("credentials-apart");
+    let signed_in = SignedIn::new(&dir);
+    let (computers, credentials) = (&signed_in.computers, &signed_in.credentials);
+    let sandboxed = |script: String| signed_in.sandboxed(&dir, SandboxNetwork::Direct, script);
+    // The command with credentials asks its own helper, then stays until the other has asked.
+    let ask = "printf 'protocol=https\\nhost=github.com\\n\\n'";
+    let own = sandboxed(format!(
+        "helper=$(printf '%s' \"$GIT_CONFIG_VALUE_1\" | sed \"s/^!'//; s/'$//\"); \
+         {ask} | \"$helper\" get | sed -n 's/^password=.*/own-helper-answered/p'; \
+         i=0; while [ ! -e asked ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i + 1)); done; \
+         test -e asked && echo asked-seen"
+    ));
+    // The other finds that helper in the folder every sandbox reads, and runs it itself; then
+    // looks for its password where the first command's processes hold it.
+    let other = sandboxed(format!(
+        "i=0; helper=; while [ -z \"$helper\" ] && [ $i -lt 400 ]; do \
+         helper=$(ls '{bin}'/glave-credentials-*/git-credential-glave 2>/dev/null | head -n 1); \
+         sleep 0.05; i=$((i + 1)); done; \
+         test -n \"$helper\" && echo helper-found; \
+         {ask} | bash \"$helper\" get; \
+         {{ ps eww -ax 2>/dev/null; cat /proc/[0-9]*/environ 2>/dev/null | tr '\\0' '\\n'; }} | \
+         grep -q '{PASSWORD}=[0-9a-f]' && echo environment-read; touch asked",
+        bin = signed_in.on_path.display()
+    ));
+    let (theirs, others) = (Collect::default(), Collect::default());
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: dir.to_string_lossy().into_owned(),
+        };
+        let here = computers.open(computer.id, &sources).await.unwrap();
+        let cancel = CancelSwitch::default();
+        let (owned, asked) = tokio::join!(
+            computers.run_with_credentials(here.id, &own, &theirs, &cancel, credentials),
+            computers.run(here.id, &other, &others, &cancel),
+        );
+        assert_eq!(owned.unwrap().ending, Ending::Exited { code: 0 });
+        assert_eq!(asked.unwrap().ending, Ending::Exited { code: 0 });
+    });
+    let (theirs, others) = (
+        theirs.0.lock().unwrap().clone(),
+        others.0.lock().unwrap().clone(),
+    );
+    assert!(theirs.contains("own-helper-answered"), "{theirs}");
+    assert!(theirs.contains("asked-seen"), "{theirs}");
+    assert!(others.contains("helper-found"), "{others}");
+    assert!(
+        !others.contains("environment-read"),
+        "another command read the first one's environment"
+    );
+    assert!(
+        !others.contains(&signed_in.token) && !others.contains("password="),
+        "another command was given the credential"
+    );
 }
