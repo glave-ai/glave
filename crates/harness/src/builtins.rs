@@ -13,6 +13,7 @@ use glave_shell::{Context, Kind, Verdict, judge, untrusted_output};
 
 use crate::approval::{reads_secret, summarize};
 use crate::background::Commands;
+use crate::made;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 use glave_ports::secrets::is_secret_file;
@@ -130,9 +131,12 @@ impl ToolSource for Builtins {
             match Tool::named(name) {
                 Some(tool) => {
                     let at = (&*self.workspace, &*self.commands);
+                    let named = made::named(tool, arguments);
+                    let before = made::before(&self.workspace, &named).await;
                     let outcome = tool.run(arguments, at, self.room, cancel).await;
                     let mut output = ToolOutput::text(outcome.is_error, outcome.text);
                     output.files.extend(outcome.file);
+                    output.made = made::made(&self.workspace, before).await;
                     // What a forge's tool prints is what others wrote there, as a web page is,
                     // in the foreground or the background.
                     let script = match tool {

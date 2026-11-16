@@ -367,6 +367,7 @@ sentences! {
     FileGone { name: String } = "file-gone"
         "\"{ $name }\" is no longer here: add it to the message again",
     FileNotHere = "file-not-here" "this file is no longer here",
+    NoPreview = "no-preview" "this file can't be shown here: download it to open it",
     FileKind = "file-kind"
         "glave can't read this kind of file yet: add an image (PNG, JPEG, GIF or WebP), a PDF or a text file",
     ImageUnreadable { name: String } = "image-unreadable"
@@ -456,6 +457,9 @@ sentences! {
     // What replies drew on.
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
+
+    // Where a file a thread made is kept.
+    KeptWithChat = "kept-with-chat" "Kept with this chat",
 
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"

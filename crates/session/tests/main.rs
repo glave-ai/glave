@@ -40,6 +40,7 @@ mod list_settings;
 mod list_watching;
 mod listing;
 mod local;
+mod made;
 mod mailing;
 mod many_projects;
 mod memory;

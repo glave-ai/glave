@@ -33,6 +33,7 @@ pub fn output(result: &CallToolResult) -> ToolOutput {
         // person or a policy marked.
         untrusted: false,
         files: Vec::new(),
+        made: Vec::new(),
         saved,
         structured: None,
     }

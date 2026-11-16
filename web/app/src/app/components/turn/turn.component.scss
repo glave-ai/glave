@@ -5,6 +5,13 @@
   gap: var(--glz-space-3);
 }
 
+// The files it made, a compact card each, close together.
+.made {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+}
+
 // What changed, unseen, keeping its room until it is read.
 .room {
   visibility: hidden;

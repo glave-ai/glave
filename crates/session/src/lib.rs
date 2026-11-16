@@ -43,6 +43,7 @@ mod language;
 mod leased;
 mod ledger;
 mod lists;
+mod made;
 mod mailing;
 mod memory;
 mod models;

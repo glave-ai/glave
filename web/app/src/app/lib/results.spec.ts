@@ -153,7 +153,14 @@ function told(
     ),
     replies: new Set(replies),
   };
-  return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
+  return {
+    sourced: new Map(),
+    changed: new Map(),
+    made: new Map(),
+    steps,
+    models: new Map(),
+    ...more,
+  };
 }
 
 /** Each part in a line: a run as its line (`untold` until told) and what it holds, else its key. */

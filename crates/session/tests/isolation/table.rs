@@ -353,6 +353,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("thread/fork", on_thread()),
         ("thread/sources", on_thread()),
         ("thread/changes", on_thread()),
+        ("thread/files", on_thread()),
         ("thread/steps", on_thread()),
         ("thread/plan", on_thread()),
         (
@@ -411,6 +412,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "file/read",
             vec![json!({"thread": "@thread", "sha256": "e".repeat(64), "offset": 0})],
+        ),
+        (
+            "file/preview",
+            vec![json!({"thread": "@thread", "sha256": "e".repeat(64)})],
         ),
         ("thread/compact", on_thread()),
         (

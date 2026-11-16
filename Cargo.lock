@@ -2308,6 +2308,7 @@ dependencies = [
  "glave-keys",
  "glave-mcp",
  "glave-memory",
+ "glave-office",
  "glave-ports",
  "glave-push",
  "glave-store-postgres",

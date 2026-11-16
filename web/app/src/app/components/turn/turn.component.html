@@ -27,6 +27,13 @@
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>
 }
+@if (made(); as made) {
+  <div class="made" data-testid="turn-made">
+    @for (file of made; track file.sha256) {
+      <app-made-file [file]="file" />
+    }
+  </div>
+}
 @if (changes(); as changes) {
   <app-turn-changes [class.glz-settle]="changes.settles" [files]="changes.files" />
 } @else if (room(); as room) {

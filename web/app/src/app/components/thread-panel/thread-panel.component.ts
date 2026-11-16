@@ -22,18 +22,20 @@ import { X } from 'lucide';
 import { PanelService } from '../../services/panel.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
+import { FilePreviewComponent } from '../file-preview/file-preview.component';
 import { TerminalTabComponent } from '../terminal-tab/terminal-tab.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 import { ThreadOverviewComponent } from '../thread-overview/thread-overview.component';
 import { ThreadPreviewComponent } from '../thread-preview/thread-preview.component';
 
 /** The panel's tabs, each by what it shows. */
-type Tab = 'overview' | 'terminal' | 'changes' | 'preview';
+type Tab = 'overview' | 'terminal' | 'changes' | 'preview' | 'file';
 
-/** What the tab chosen follows: the thread, and each ask to show a preview. */
+/** What the tab chosen follows: the thread, and each ask to show a preview or open a file. */
 interface Asked {
   readonly thread: ThreadId | null;
   readonly preview: number;
+  readonly file: number;
 }
 
 /** A tab as the panel shows it. */
@@ -51,7 +53,8 @@ const FIRST: Tab = 'overview';
  * the thread's summary says a terminal opens in it, the Terminal, the person's own shell in its
  * folder (`app-terminal-tab`); then the files it changed, in full; then, while one of its
  * commands serves something the person can open here, the Preview (`app-thread-preview`), which
- * an Open preview elsewhere in the panel shows. The tab chosen is this view's to remember, and
+ * an Open preview elsewhere in the panel shows; then the file the thread made that the person
+ * opened last, under its title (`app-file-preview`). The tab chosen is this view's to remember, and
  * each thread opens on Overview again.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When what had the keyboard's place goes from it, as
@@ -61,6 +64,7 @@ const FIRST: Tab = 'overview';
 @Component({
   selector: 'app-thread-panel',
   imports: [
+    FilePreviewComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzTabComponent,
@@ -112,21 +116,31 @@ export class ThreadPanelComponent {
     const preview = this.facts.previews().length > 0;
     // As the server says: only on the person's own computer, never once it is put away.
     const terminal = this.thread.summary()?.terminals ?? false;
+    const file = this.facts.file();
     return [
       { key: 'overview', label: this.copy.overview },
       ...(terminal ? [{ key: 'terminal', label: this.copy.terminal } as const] : []),
       ...(changes ? [{ key: 'changes', label: this.copy.changes } as const] : []),
       ...(preview ? [{ key: 'preview', label: this.copy.preview } as const] : []),
+      ...(file === null ? [] : [{ key: 'file', label: file.title } as const]),
     ];
   });
   /**
-   * The tab chosen, by what it shows: Overview again in each thread, and the Preview each time
-   * a preview is asked to be shown.
+   * The tab chosen, by what it shows: Overview again in each thread, the Preview each time a
+   * preview is asked to be shown, and the file's each time one is opened.
    */
   private readonly chosen = linkedSignal<Asked, Tab>({
-    source: () => ({ thread: this.thread.thread(), preview: this.facts.previewAsked() }),
+    source: () => ({
+      thread: this.thread.thread(),
+      preview: this.facts.previewAsked(),
+      file: this.facts.fileAsked(),
+    }),
     computation: (now, before) => {
       const same = before?.source.thread === now.thread;
+      // A panel first drawn as a file opens, as a plain chat's is, shows that file.
+      if (same ? before.source.file !== now.file : before === undefined && now.file > 0) {
+        return 'file';
+      }
       if (same && before.source.preview !== now.preview) {
         return 'preview';
       }

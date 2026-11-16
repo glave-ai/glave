@@ -628,6 +628,7 @@ where
         let outcome = self.gated(&thread.scope, thread.id, outcome).await;
         let outcome = fit(outcome, self.tool_room(thread));
         let outcome = self.keep_files(thread, outcome).await;
+        let outcome = self.keep_made_files(thread, outcome).await;
         // After what cuts a result to fit, and with nothing awaited before what it names is staged.
         let (outcome, told) = self.saying_what_stopped(thread, outcome).await;
         let completed = completed(call_id, outcome);

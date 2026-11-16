@@ -528,6 +528,9 @@ export type FileInfo = {
   readonly sha256: string;
 };
 
+/** What kind of file a made file is, for the person: what a card names it. */
+export type FileKind = "document" | "spreadsheet" | "deck" | "pdf" | "other";
+
 /**
  * A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
  * file of any size comes within the 16 MiB a message may be on every transport.
@@ -664,6 +667,28 @@ export type Logo = {
   readonly data: string;
   readonly media_type: string;
   readonly sha256: string;
+};
+
+/**
+ * A file a call made for the person, as `thread/files` gives it: kept with the thread, so it
+ * opens and downloads after the computer that made it is gone.
+ */
+export type MadeFile = {
+  /** Its size. */
+  readonly bytes: number;
+  /** Where it is kept, in a sentence: "Kept with this chat". */
+  readonly kept: string;
+  readonly kind: FileKind;
+  /** Its media type, such as `application/pdf`. */
+  readonly media_type: string;
+  /** Its name as it was made, which it is saved under. */
+  readonly name: string;
+  /** The `seq` of the `tool.call.completed` that made it, as last made in its turn. */
+  readonly seq: Seq;
+  /** Its content's SHA-256, which `file/read` and `file/preview` read it by. */
+  readonly sha256: string;
+  /** What a card calls it: its name without the end that says its kind. */
+  readonly title: string;
 };
 
 /** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
@@ -1550,6 +1575,13 @@ export type TurnChanges = {
   readonly turn: Seq;
 };
 
+/** The files one turn made, by the `seq` of its `turn.started`. */
+export type TurnFiles = {
+  /** Each file once, by where it was made, in the order first made, as last made. */
+  readonly files: readonly (MadeFile)[];
+  readonly turn: Seq;
+};
+
 /**
  * A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
  * It is what a client that ran the turn is answered with too, so every client reads the same.
@@ -2048,6 +2080,16 @@ export type CreditsListParams = Readonly<Record<string, never>>;
 /** The personal spaces sign-ups made, newest first, with their balances. */
 export type CreditsListResult = {
   readonly spaces: readonly (SpaceCredits)[];
+};
+
+export type FilePreviewParams = {
+  readonly sha256: string;
+  readonly thread: ThreadId;
+};
+
+/** A file a thread made, as a person previews it: Markdown. */
+export type FilePreviewResult = {
+  readonly markdown: string;
 };
 
 export type FileReadParams = {
@@ -2954,6 +2996,15 @@ export type ThreadEventsResult = {
   readonly next?: Seq | null;
 };
 
+export type ThreadFilesParams = {
+  readonly thread: ThreadId;
+};
+
+/** The files a thread's turns made for the person. */
+export type ThreadFilesResult = {
+  readonly made: readonly (TurnFiles)[];
+};
+
 export type ThreadForkParams = {
   readonly at?: Seq | null;
   readonly thread: ThreadId;
@@ -3226,6 +3277,7 @@ export interface Methods {
   readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
   readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
   readonly "credits/list": { readonly params: CreditsListParams; readonly result: CreditsListResult };
+  readonly "file/preview": { readonly params: FilePreviewParams; readonly result: FilePreviewResult };
   readonly "file/read": { readonly params: FileReadParams; readonly result: FileReadResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };
@@ -3312,6 +3364,7 @@ export interface Methods {
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
+  readonly "thread/files": { readonly params: ThreadFilesParams; readonly result: ThreadFilesResult };
   readonly "thread/fork": { readonly params: ThreadForkParams; readonly result: ThreadForkResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };

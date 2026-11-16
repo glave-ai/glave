@@ -20,6 +20,7 @@ import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
 import { ThreadService } from '../../services/thread.service';
+import { MadeFileComponent } from '../made-file/made-file.component';
 import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
@@ -49,6 +50,7 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
     GlzMessageComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
+    MadeFileComponent,
     ThoughtComponent,
     ThreadItemComponent,
     TurnChangesComponent,
@@ -101,6 +103,11 @@ export class TurnComponent {
     const settles = this.settles();
     const files = this.turn().files ?? [];
     return files.length > 0 ? { settles, files } : null;
+  });
+  /** The files it made for the person, once the server says it made any; else `null`. */
+  protected readonly made = computed(() => {
+    const made = this.turn().made;
+    return made.length > 0 ? made : null;
   });
   /** Until what changed is known, the files whose room it keeps, unseen; else `null`. */
   protected readonly room = computed(() => {

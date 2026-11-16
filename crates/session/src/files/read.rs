@@ -4,10 +4,13 @@
 //! beside them (a turn's configuration, what a service keeps while it asks), nor another
 //! thread's.
 
+use std::collections::HashSet;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{
-    Body, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId, ToolCallCompleted, decode,
+    Body, CallId, FileMade, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId,
+    ToolCallCompleted, ToolCallRequested, decode,
 };
 use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
@@ -20,8 +23,13 @@ use crate::words::Sentence;
 /// may be on every transport.
 const PIECE: usize = 8 * 1024 * 1024;
 
-/// The events whose parts name the files a thread holds: its messages and its tools' results.
-const NAMING: [&str; 2] = [MessageAdded::TYPE, ToolCallCompleted::TYPE];
+/// The events that name the files a thread holds: its messages and its tools' results, and the
+/// calls that say which tool a result is of, since only glave's own make files.
+const NAMING: [&str; 3] = [
+    MessageAdded::TYPE,
+    ToolCallCompleted::TYPE,
+    ToolCallRequested::TYPE,
+];
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -75,10 +83,11 @@ where
     }
 
     /// Whether a `file` part of `thread`'s messages or tool results names `sha256`, as the file
-    /// or the copy of an image the model is sent: read back from the thread's end, where the
-    /// images a client draws are, a page at a time until it is found. A deleted thread is no
+    /// or the copy of an image the model is sent, or a call of glave's own `write` or `bash`
+    /// made it for the person (`glave_event::FileMade`): read back from the thread's end, where
+    /// the files a client draws are, a page at a time until it is found. A deleted thread is no
     /// such thread.
-    async fn names_file(
+    pub(crate) async fn names_file(
         &self,
         scope: &Scope,
         thread: ThreadId,
@@ -90,13 +99,18 @@ where
         self.ensure_not_deleted(thread).await?;
         let log = self.inner.harness.log();
         let mut before = None;
+        // The calls whose results say they made it, read before the calls themselves.
+        let mut made = HashSet::new();
         loop {
             let events = log
                 .read_back(scope, thread, Some(&NAMING), before, MAX_PAGE)
                 .await?;
             let more = events.len() == MAX_PAGE;
             before = events.last().map(|event| event.seq);
-            if events.into_iter().any(|event| names(event, sha256)) {
+            if events
+                .into_iter()
+                .any(|event| names(event, sha256, &mut made))
+            {
                 return Ok(true);
             }
             if !more || before.is_none() {
@@ -106,11 +120,23 @@ where
     }
 }
 
-/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`.
-fn names(event: RawEvent, sha256: &Sha256) -> bool {
+/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`, or is the
+/// call of glave's own `write` or `bash` whose result, among `made`, says it made it.
+fn names(event: RawEvent, sha256: &Sha256, made: &mut HashSet<CallId>) -> bool {
     let parts = match decode(event).map(|event| event.body) {
         Ok(Body::MessageAdded(message)) => message.parts,
-        Ok(Body::ToolCallCompleted(done)) => done.output,
+        Ok(Body::ToolCallCompleted(done)) => {
+            let structured = done.structured.as_ref().map(FileMade::read);
+            if structured.is_some_and(|files| files.iter().any(|file| file.blob.sha256 == *sha256))
+            {
+                made.insert(done.call_id);
+            }
+            done.output
+        }
+        Ok(Body::ToolCallRequested(requested)) => {
+            return made.contains(&requested.call_id)
+                && FileMade::TOOLS.contains(&requested.tool.as_str());
+        }
         _ => return false,
     };
     parts.iter().any(|part| match part {

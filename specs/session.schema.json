@@ -1456,6 +1456,17 @@
       ],
       "type": "object"
     },
+    "FileKind": {
+      "description": "What kind of file a made file is, for the person: what a card names it.",
+      "enum": [
+        "document",
+        "spreadsheet",
+        "deck",
+        "pdf",
+        "other"
+      ],
+      "type": "string"
+    },
     "FilePiece": {
       "description": "A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a\nfile of any size comes within the 16 MiB a message may be on every transport.",
       "properties": {
@@ -1861,6 +1872,55 @@
         "sha256",
         "media_type",
         "data"
+      ],
+      "type": "object"
+    },
+    "MadeFile": {
+      "description": "A file a call made for the person, as `thread/files` gives it: kept with the thread, so it\nopens and downloads after the computer that made it is gone.",
+      "properties": {
+        "bytes": {
+          "description": "Its size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kept": {
+          "description": "Where it is kept, in a sentence: \"Kept with this chat\".",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileKind"
+        },
+        "media_type": {
+          "description": "Its media type, such as `application/pdf`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name as it was made, which it is saved under.",
+          "type": "string"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq",
+          "description": "The `seq` of the `tool.call.completed` that made it, as last made in its turn."
+        },
+        "sha256": {
+          "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by.",
+          "type": "string"
+        },
+        "title": {
+          "description": "What a card calls it: its name without the end that says its kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "sha256",
+        "name",
+        "title",
+        "kind",
+        "media_type",
+        "bytes",
+        "kept"
       ],
       "type": "object"
     },
@@ -4188,6 +4248,26 @@
       ],
       "type": "object"
     },
+    "TurnFiles": {
+      "description": "The files one turn made, by the `seq` of its `turn.started`.",
+      "properties": {
+        "files": {
+          "description": "Each file once, by where it was made, in the order first made, as last made.",
+          "items": {
+            "$ref": "#/$defs/MadeFile"
+          },
+          "type": "array"
+        },
+        "turn": {
+          "$ref": "#/$defs/Seq"
+        }
+      },
+      "required": [
+        "turn",
+        "files"
+      ],
+      "type": "object"
+    },
     "TurnResult": {
       "additionalProperties": false,
       "description": "A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.\nIt is what a client that ran the turn is answered with too, so every client reads the same.\nA turn recorded before it held more than `outcome` reads with nothing counted.",
@@ -5903,6 +5983,36 @@
         },
         "required": [
           "spaces"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "file/preview": {
+      "params": {
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A file a thread made, as a person previews it: Markdown.",
+        "properties": {
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown"
         ],
         "type": "object"
       },
@@ -8473,6 +8583,35 @@
         },
         "required": [
           "events"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/files": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The files a thread's turns made for the person.",
+        "properties": {
+          "made": {
+            "items": {
+              "$ref": "#/$defs/TurnFiles"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "made"
         ],
         "type": "object"
       },

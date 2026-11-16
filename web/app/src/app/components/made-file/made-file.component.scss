@@ -1,0 +1,51 @@
+:host {
+  display: block;
+}
+
+// One row across the column: the kind's mark, the title over its line, then Open and Download.
+.file {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-card-row);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-card);
+  line-height: var(--glz-leading-tight);
+}
+
+.mark {
+  flex: none;
+  color: var(--glz-color-text-muted);
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+  min-width: 0;
+}
+
+.title,
+.line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  font-weight: var(--glz-weight-bold);
+}
+
+.line {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--glz-space-1);
+}

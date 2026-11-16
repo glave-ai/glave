@@ -32,6 +32,8 @@ glave-harness.workspace = true
 glave-identity.workspace = true
 # The names MCP tools reach the model by, to count each connection's calls (usage.rs).
 glave-mcp.workspace = true
+# A file a thread made, previewed for a person (made.rs).
+glave-office.workspace = true
 glave-ports.workspace = true
 # Web Push: what needs a person, told to their browsers (push.rs, notify.rs).
 glave-push.workspace = true

@@ -51,6 +51,10 @@ pub struct ToolOutput {
     /// Files the call hands the model, such as an image it read: kept in the blob store as
     /// the result is recorded, an image made fit to send, each a `file` part after the parts.
     pub files: Vec<ToolFile>,
+    /// Files the call made for the person, such as a workbook `glave doc` wrote, each named by
+    /// its path in the thread's folder: kept in the blob store as the result is recorded and
+    /// named in its `structured` result (`glave_event::FileMade`), never sent to the model.
+    pub made: Vec<ToolFile>,
     /// Bytes the call gave that its parts name by [`crate::saved_line`]: kept in the blob store
     /// as the result is recorded, the model only ever reading the line.
     pub saved: Vec<Vec<u8>>,
@@ -59,7 +63,7 @@ pub struct ToolOutput {
     pub structured: Option<serde_json::Value>,
 }
 
-/// A file a call hands the model: an image or a PDF.
+/// A file a call hands the model (an image or a PDF), or made for the person.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ToolFile {
     /// Its name, as the model is told it.
@@ -87,6 +91,7 @@ impl ToolOutput {
             parts: vec![Part::Text { text: text.into() }],
             untrusted: false,
             files: Vec::new(),
+            made: Vec::new(),
             saved: Vec::new(),
             structured: None,
         }

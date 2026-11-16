@@ -47,6 +47,10 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
+        Ok(Reply::Files { made }) => made
+            .iter()
+            .flat_map(|turn| &turn.files)
+            .any(|file| file.kept.translatable()),
         Ok(Reply::Commands { commands, .. }) => commands
             .iter()
             .flat_map(listening_told)
@@ -121,6 +125,11 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
+        Ok(Reply::Files { made }) => {
+            for file in made.iter_mut().flat_map(|turn| &mut turn.files) {
+                file.kept.translate(language);
+            }
+        }
         Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
             notice: Some(notice),

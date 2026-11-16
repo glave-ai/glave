@@ -223,16 +223,17 @@ impl fmt::Debug for Site {
 /// come from the app, and from the person's own computer: a file they add to a message is
 /// shown from a `blob:` URL the page makes of it, never fetched from anywhere. Beside Angular's
 /// own, one Trusted Types policy, `glave-push`, names the app's one service worker, which shows
-/// its notifications (`script-src` covers the worker). The one frame it may show, where the
-/// server previews (`frames`), is a thread's preview, a dev server's own address on this
-/// computer's loopback (`previews.rs`): at `127.0.0.1`, since a policy's sources can't name
-/// IPv6's loopback (a preview there opens in a new tab). Elsewhere nothing is framed, and
-/// glave's own pages refuse every frame.
+/// its notifications (`script-src` covers the worker). It frames a PDF a thread made, from a
+/// `blob:` URL the page makes of the bytes it read back, typed as a PDF, so the browser's own
+/// viewer draws it ("Files it made"). The one other frame it may show, where the server
+/// previews (`frames`), is a thread's preview, a dev server's own address on this computer's
+/// loopback (`previews.rs`): at `127.0.0.1`, since a policy's sources can't name IPv6's
+/// loopback (a preview there opens in a new tab). glave's own pages refuse every frame.
 pub(crate) fn policy(nonce: &str, frames: bool) -> String {
     let frame_src = if frames {
-        "frame-src http://127.0.0.1:*"
+        "frame-src blob: http://127.0.0.1:*"
     } else {
-        "frame-src 'none'"
+        "frame-src blob:"
     };
     [
         "default-src 'none'",
@@ -416,9 +417,9 @@ mod tests {
         assert!(!policy.contains("unsafe-inline"));
         assert!(policy.contains(&format!("style-src 'self' 'nonce-{nonce}'")));
         assert!(policy.contains("frame-ancestors 'none'"));
-        assert!(policy.contains("frame-src 'none';"));
+        assert!(policy.contains("frame-src blob:;"));
         let previewing = super::policy(&nonce, true);
-        assert!(previewing.contains("frame-src http://127.0.0.1:*;"));
+        assert!(previewing.contains("frame-src blob: http://127.0.0.1:*;"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
         // Angular's two, and the one that names the service worker, alone.

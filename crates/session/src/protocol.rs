@@ -361,6 +361,10 @@ methods! {
     /// changes with its own, read from the logs: each file with the lines added and taken out
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
+    /// The files a thread's turns made for the person, read from its log: each document,
+    /// spreadsheet, deck or PDF a `write` or a command made, kept with the thread, with its
+    /// kind, title and size, by turn.
+    "thread/files" => ThreadFiles { thread: ThreadId } -> [Files],
     /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
     /// between them, its calls and what they did in a line, and which message is each turn's
     /// reply.
@@ -473,6 +477,15 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<u64>,
     } -> [FilePiece],
+    /// A file `thread` made for the person, as Markdown to preview it by: a spreadsheet's
+    /// sheets and a CSV file as tables, a document or a deck as its text. Refused for a file
+    /// the server doesn't preview, which a client draws itself (a PDF, an image) or offers to
+    /// download.
+    "file/preview" => FilePreview {
+        thread: ThreadId,
+        #[schemars(with = "String")]
+        sha256: Sha256,
+    } -> [FilePreview],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,

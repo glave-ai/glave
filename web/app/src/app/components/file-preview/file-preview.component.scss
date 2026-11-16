@@ -1,0 +1,47 @@
+:host {
+  display: block;
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+// The title and Download across the top, then the file, filling what is left of the tab, whose
+// panel gives it its insets.
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+  block-size: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-2);
+}
+
+.title {
+  overflow: hidden;
+  font-size: var(--glz-text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+// A PDF in the browser's own viewer, as tall as the tab leaves room for.
+.frame {
+  flex: 1;
+  min-block-size: 24rem;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-card);
+}
+
+// A sheet's table scrolls sideways within the tab, never the page.
+.page {
+  overflow-x: auto;
+}

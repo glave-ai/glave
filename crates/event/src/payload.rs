@@ -20,6 +20,7 @@ pub(crate) mod grouping;
 pub(crate) mod hook;
 pub(crate) mod instructions;
 pub(crate) mod language;
+pub(crate) mod made;
 pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
@@ -66,6 +67,7 @@ pub use grouping::{Grouping, GroupingSet};
 pub use hook::{HookPoint, HookRan, HookResult};
 pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
+pub use made::{FileKind, FileMade};
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,
