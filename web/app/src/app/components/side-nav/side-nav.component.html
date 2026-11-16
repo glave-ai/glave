@@ -1,6 +1,6 @@
 <!-- All but the person, who stays at the pane's foot. What comes in after the first paint takes
      the room it needs from the threads, which grow to fill this, so nothing already drawn moves:
-     the threads and Library under them once read, and Tasks over Library once the tasks are. -->
+     the threads and Library under them once read, and Tasks over Library once the tasks are too. -->
 <div class="above">
   <div class="head">
     <div class="top">
@@ -80,28 +80,29 @@
       />
     }
   </div>
-  @if (tasksLive()) {
-    <a
-      glzNavItem
-      class="foot"
-      data-testid="nav-tasks"
-      [routerLink]="tasksLink"
-      [current]="tasksCurrent()"
-      [icon]="icons.tasks"
-      (click)="followed()"
-    >
-      {{ copy.tasks }}
-      @if (tasksGoing(); as going) {
-        <span glzNavItemEnd class="going"
-          ><span aria-hidden="true">{{ going.count }}</span
-          ><span class="glz-visually-hidden">{{ going.words }}</span></span
-        >
-      }
-    </a>
-  }
-  <!-- Made in a block, with the threads, so it comes in bound, its name and icon in it, and
-       takes its room from the threads as Tasks does: drawn before it is bound, it would grow. -->
+  <!-- Tasks and Library come in with the threads, each bound as it is made, its name and icon
+       in it, and take their room from the threads: Library first, at the foot, and Tasks, once
+       the tasks are read, over it, so neither moves what is drawn already. -->
   @if (read()) {
+    @if (tasksLive()) {
+      <a
+        glzNavItem
+        class="foot"
+        data-testid="nav-tasks"
+        [routerLink]="tasksLink"
+        [current]="tasksCurrent()"
+        [icon]="icons.tasks"
+        (click)="followed()"
+      >
+        {{ copy.tasks }}
+        @if (tasksGoing(); as going) {
+          <span glzNavItemEnd class="going"
+            ><span aria-hidden="true">{{ going.count }}</span
+            ><span class="glz-visually-hidden">{{ going.words }}</span></span
+          >
+        }
+      </a>
+    }
     <a
       glzNavItem
       class="foot"

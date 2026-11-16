@@ -201,22 +201,22 @@ describe('SideNavComponent', () => {
       read: false,
       blocks: DeferBlockBehavior.Manual,
     });
-    // Tasks at the foot of the column, under what the threads fill, so coming in it takes its
-    // room from them; the person under it, outside it.
-    const tasks = root.querySelector('[data-testid="nav-tasks"]');
-    const head = tasks?.previousElementSibling;
-    expect(head?.classList.contains('head')).toBe(true);
-    expect(tasks?.parentElement?.classList.contains('above')).toBe(true);
+    // No threads, Tasks or Library until the threads are read: each comes in bound, its name in
+    // it, never drawn first as an empty row that then grows, nor under a row it would move.
+    const head = root.querySelector('.above > .head');
+    expect(head).not.toBeNull();
     expect(root.querySelector('.above app-person')).toBeNull();
-    // No threads, and no Library, until the threads are read: each comes in bound, its name in
-    // it, never drawn first as an empty row that then grows.
     expect(root.querySelector('app-projects-nav')).toBeNull();
+    expect(root.querySelector('[data-testid="nav-tasks"]')).toBeNull();
     expect(root.querySelector('[data-testid="nav-library"]')).toBeNull();
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
     expect(root.querySelector('app-projects-nav')?.parentElement).toBe(head);
     expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBeNull();
-    // Library under Tasks, last of the column.
+    // Under what the threads fill, so each takes its room from them: Tasks, then Library, last
+    // of the column; the person under it, outside it.
+    const tasks = root.querySelector('[data-testid="nav-tasks"]');
+    expect(tasks?.previousElementSibling).toBe(head);
     expect(tasks?.nextElementSibling?.getAttribute('data-testid')).toBe('nav-library');
     expect(tasks?.nextElementSibling?.nextElementSibling).toBeNull();
     // Read before the switch's code is in, the switch's room is kept above them, decided with
