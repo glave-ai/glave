@@ -25,6 +25,7 @@ describe('runs', () => {
       started: null,
       model: null,
       result: ended ? { outcome: 'completed' } : null,
+      ended: null,
     });
     const call = (status: CallItem['status']): CallItem => ({
       kind: 'call',

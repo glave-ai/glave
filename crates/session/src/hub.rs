@@ -105,6 +105,15 @@ impl Hub {
         (notes, published)
     }
 
+    /// Whether anything follows `thread` now: a window's watch of it, or a turn's stream there,
+    /// a client's or a task's own.
+    fn watched(&self, thread: ThreadId) -> bool {
+        self.channels()
+            .open
+            .get(&thread)
+            .is_some_and(|sender| sender.receiver_count() > 0)
+    }
+
     /// Starts hearing which threads and settings change, from now on.
     pub(crate) fn changes(&self) -> broadcast::Receiver<Change> {
         self.changes.subscribe()
@@ -157,12 +166,19 @@ impl Hub {
     }
 
     /// Sends `notification` to everyone watching `thread` or a thread it is a child of, and
-    /// what it says needs a person, at the thread the person started, to what tells them.
+    /// what it says needs a person, at the thread the person started, to what tells them. A
+    /// turn's end needs them only in a thread they started that nothing follows: no window
+    /// shows it (a hidden tab lets go of its watch and of its turn's stream), no terminal
+    /// follows its turn, and it is no task, whose own end tells them.
     pub(crate) fn publish(&self, thread: ThreadId, notification: Notification) {
         if let Some(need) = Need::of(&notification) {
-            let started = self.lineage(thread).last().copied().unwrap_or(thread);
-            // Only fails when nothing tells people, which is fine.
-            let _ = self.needs.send(need.in_thread(started));
+            let lineage = self.lineage(thread);
+            let started = lineage.last().copied().unwrap_or(thread);
+            let unseen = lineage.len() == 1 && !self.watched(thread);
+            if !need.is_turns_end() || unseen {
+                // Only fails when nothing tells people, which is fine.
+                let _ = self.needs.send(need.in_thread(started));
+            }
         }
         let notification = Arc::new(notification);
         let mut to = Some(thread);

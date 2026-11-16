@@ -34,6 +34,8 @@ export interface Turn {
    * it has ended.
    */
   readonly result: TurnResult | null;
+  /** Its `turn.ended`: the `seq` and when the server recorded it; `null` until it has ended. */
+  readonly ended: { readonly seq: number; readonly at: string } | null;
 }
 
 type Data = Readonly<Record<string, unknown>>;
@@ -139,6 +141,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     started: started?.at ?? null,
     model: modelOf(started?.data['model']),
     result: ended === undefined ? null : resultOf(ended.data),
+    ended: ended === undefined ? null : { seq: ended.seq, at: ended.at },
   };
 }
 
@@ -196,6 +199,7 @@ function startingTurn(prompt: string, key: string): Turn {
     started: null,
     model: null,
     result: null,
+    ended: null,
   };
 }
 
@@ -265,4 +269,20 @@ export function askedTurns(
     return keyed;
   }
   return [...keyed, startingTurn(prompt, waiting === null ? 'turn-starting' : askedKey(waiting))];
+}
+
+/**
+ * The turn of `turns` that ended at the `seq` a tapped notification of a chat's end names
+ * (`?finished=`), by key, and when it ended in milliseconds; `null` for any other.
+ */
+export function finishedTurn(
+  turns: readonly Turn[],
+  finished: string | undefined,
+): { readonly key: string; readonly at: number } | null {
+  const seq = Number(finished);
+  const turn = turns.find((each) => each.ended?.seq === seq);
+  if (turn === undefined || turn.ended === null) {
+    return null;
+  }
+  return { key: turn.key, at: Date.parse(turn.ended.at) };
 }
