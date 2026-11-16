@@ -148,7 +148,7 @@ describe('SideNavComponent', () => {
     expect(newChat?.getAttribute('href')).toBe('/');
     expect(newChat?.getAttribute('aria-label')).toBe('New chat');
     expect(root.querySelector('app-person')).not.toBeNull();
-    // Nothing about tasks until one is going or scheduled; Library always.
+    // Nothing about tasks until one is going or scheduled; Library once the threads are read.
     expect(root.querySelector('[data-testid="nav-tasks"]')).toBeNull();
     const library = root.querySelector('[data-testid="nav-library"]');
     expect(library?.getAttribute('href')).toBe('/library');
@@ -201,21 +201,24 @@ describe('SideNavComponent', () => {
       read: false,
       blocks: DeferBlockBehavior.Manual,
     });
-    // Tasks, then Library, at the foot of the column, under what the threads fill, so Tasks
-    // coming in takes its room from them; the person under it, outside it.
+    // Tasks at the foot of the column, under what the threads fill, so coming in it takes its
+    // room from them; the person under it, outside it.
     const tasks = root.querySelector('[data-testid="nav-tasks"]');
     const head = tasks?.previousElementSibling;
     expect(head?.classList.contains('head')).toBe(true);
     expect(tasks?.parentElement?.classList.contains('above')).toBe(true);
-    expect(tasks?.nextElementSibling?.getAttribute('data-testid')).toBe('nav-library');
-    expect(tasks?.nextElementSibling?.nextElementSibling).toBeNull();
     expect(root.querySelector('.above app-person')).toBeNull();
-    // No threads until they are read, then all at once, last of what fills the column.
+    // No threads, and no Library, until the threads are read: each comes in bound, its name in
+    // it, never drawn first as an empty row that then grows.
     expect(root.querySelector('app-projects-nav')).toBeNull();
+    expect(root.querySelector('[data-testid="nav-library"]')).toBeNull();
     await TestBed.inject(ProjectsService).refresh();
     await settle(fixture);
     expect(root.querySelector('app-projects-nav')?.parentElement).toBe(head);
     expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBeNull();
+    // Library under Tasks, last of the column.
+    expect(tasks?.nextElementSibling?.getAttribute('data-testid')).toBe('nav-library');
+    expect(tasks?.nextElementSibling?.nextElementSibling).toBeNull();
     // Read before the switch's code is in, the switch's room is kept above them, decided with
     // them, and the switch fills it once its code is in: no swap of the block can move them.
     const room = root.querySelector('app-projects-nav')?.previousElementSibling;

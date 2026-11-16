@@ -81,7 +81,8 @@ interface Kept {
  * back through the server a piece at a time, and kept as addresses the page made (`blob:`,
  * which the app's Content Security Policy allows for images): an image the agent made is drawn,
  * and saved, from one read. At most `MOST_READING` are read at once, so a page of many pictures
- * reads them a few at a time. An address is kept
+ * reads them a few at a time, and one whose turn comes once nothing holds it any more is not
+ * read at all, so pictures scrolled past never keep those in view waiting. An address is kept
  * while anything holds it; of those nothing holds, at most `MOST_UNUSED` are kept for when
  * they are drawn again, the one let go of first going first. One that could not be read is
  * read again when next asked for.
@@ -128,7 +129,12 @@ export class FilesService {
   /** The file kept as `key`, read with `readPiece` the first time, held until released. */
   private holdAs(key: string, mediaType: string, readPiece: ReadPiece): HeldFile {
     const found = this.kept.get(key);
-    const url = found?.url ?? this.inTurn(() => read(readPiece, mediaType));
+    const url: Promise<string> =
+      found?.url ??
+      this.inTurn(
+        () => this.holds(key, url),
+        () => read(readPiece, mediaType),
+      );
     this.kept.delete(key);
     this.kept.set(key, { url, users: (found?.users ?? 0) + 1 });
     if (found === undefined) {
@@ -150,24 +156,43 @@ export class FilesService {
     };
   }
 
-  /** `work`, once fewer than `MOST_READING` reads run; its turn passes on when it ends. */
-  private async inTurn<T>(work: () => Promise<T>): Promise<T> {
+  /** Whether something holds the file kept as `key`, read as `url`, now. */
+  private holds(key: string, url: Promise<string>): boolean {
+    const kept = this.kept.get(key);
+    return kept?.url === url && kept.users > 0;
+  }
+
+  /**
+   * `work`, once fewer than `MOST_READING` reads run; its turn passes on when it ends. One that
+   * had to wait is not done when its turn comes and it is no longer `wanted`: it fails, and the
+   * turn passes on at once.
+   */
+  private async inTurn<T>(wanted: () => boolean, work: () => Promise<T>): Promise<T> {
     if (this.reading < MOST_READING) {
       this.reading += 1;
     } else {
       await new Promise<void>((go) => {
         this.waiting.push(go);
       });
+      if (!wanted()) {
+        this.passTurn();
+        throw new Error('nothing holds this file any more');
+      }
     }
     try {
       return await work();
     } finally {
-      const next = this.waiting.shift();
-      if (next === undefined) {
-        this.reading -= 1;
-      } else {
-        next();
-      }
+      this.passTurn();
+    }
+  }
+
+  /** Gives a read's turn to the first waiting, or frees it. */
+  private passTurn(): void {
+    const next = this.waiting.shift();
+    if (next === undefined) {
+      this.reading -= 1;
+    } else {
+      next();
     }
   }
 

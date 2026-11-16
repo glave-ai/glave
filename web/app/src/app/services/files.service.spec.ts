@@ -84,6 +84,33 @@ describe('FilesService', () => {
     expect(fake.paramsOf('file/read')).toHaveLength(5);
   });
 
+  it('does not read a file nothing holds any more once its turn comes, and reads it if held again', async () => {
+    objectUrls();
+    const answers: ((answer: object) => void)[] = [];
+    const fake = new FakeSession().answer(
+      'file/read',
+      () =>
+        new Promise<object>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const files = setUp(fake);
+    const held = [0, 1, 2, 3, 4].map((n) => files.hold('t1', nth(n), 'image/png'));
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    // Scrolled past before its turn: let go of while it waits.
+    const passed = held[4];
+    passed?.release();
+    answers[0]?.(inPieces('ok')({}));
+    await held[0]?.url;
+    await expect(passed?.url).rejects.toThrow();
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(4);
+    // Held again, it is read.
+    void files.hold('t1', nth(4), 'image/png').url;
+    await settle();
+    expect(fake.paramsOf('file/read')).toHaveLength(5);
+  });
+
   it('reads one that could not be read again when next asked for', async () => {
     const urls = objectUrls();
     const gone = new ApiError({ code: ErrorCode.NO_FILE, message: 'this file is no longer here' });

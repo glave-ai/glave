@@ -4,6 +4,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
 import { shown } from '../../lib/library';
+import { FilesService } from '../../services/files.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { picture } from '../../testing/fixtures';
 import { objectUrls } from '../../testing/object-urls';
@@ -36,6 +37,7 @@ async function render(chat: string | null): Promise<{
 describe('LibraryTileComponent', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('draws its picture, read through the server, its name, when, and its chat', async () => {
@@ -84,6 +86,19 @@ describe('LibraryTileComponent', () => {
     seen[0]?.(false);
     await settle(fixture);
     expect(root.querySelector('img')).toBeNull();
+  });
+
+  it('keeps its picture as the Library hands it a new copy of the same item', async () => {
+    objectUrls();
+    const holds = vi.spyOn(FilesService.prototype, 'holdAsset');
+    const { root, fixture } = await render('t1');
+    expect(holds).toHaveBeenCalledTimes(1);
+    const src = root.querySelector('img')?.getAttribute('src');
+    // What the Library draws again once another item is deleted: equal, not the same object.
+    fixture.componentRef.setInput('shown', shown(picture('fox', 'p1', 't1'), NOW, READER));
+    await settle(fixture);
+    expect(holds).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('img')?.getAttribute('src')).toBe(src);
   });
 
   it('links to no chat once its chat is gone', async () => {

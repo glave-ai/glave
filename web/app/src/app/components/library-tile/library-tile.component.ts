@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  computed,
   inject,
   input,
   output,
@@ -37,12 +38,29 @@ export class LibraryTileComponent {
   private readonly files = inject(FilesService);
   /** Whether the tile is in view or near it: always, where the browser can't say. */
   private readonly near = signal(!('IntersectionObserver' in globalThis));
+  /**
+   * The file its picture is, by the item's project, id and kind of file: the same however often
+   * the Library hands it a new copy of the item, so the picture is never let go of and asked for
+   * again, as when another item is deleted.
+   */
+  private readonly picture = computed(
+    () => {
+      const { project, asset, media_type: mediaType } = this.shown().item;
+      return { project, asset, mediaType };
+    },
+    {
+      equal: (one, other) =>
+        one.project === other.project &&
+        one.asset === other.asset &&
+        one.mediaType === other.mediaType,
+    },
+  );
   private readonly file = drawn(() => {
     if (!this.near()) {
       return null;
     }
-    const { item } = this.shown();
-    return this.files.holdAsset(item.project, item.asset, item.media_type);
+    const { project, asset, mediaType } = this.picture();
+    return this.files.holdAsset(project, asset, mediaType);
   });
   protected readonly url = this.file.url;
 

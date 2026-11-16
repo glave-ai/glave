@@ -1,6 +1,6 @@
 <!-- All but the person, who stays at the pane's foot. What comes in after the first paint takes
      the room it needs from the threads, which grow to fill this, so nothing already drawn moves:
-     the threads once read, and Tasks under them, over Library, once the tasks are. -->
+     the threads and Library under them once read, and Tasks over Library once the tasks are. -->
 <div class="above">
   <div class="head">
     <div class="top">
@@ -99,16 +99,20 @@
       }
     </a>
   }
-  <a
-    glzNavItem
-    class="foot"
-    data-testid="nav-library"
-    [routerLink]="libraryLink"
-    [current]="libraryCurrent()"
-    [icon]="icons.library"
-    (click)="followed()"
-  >
-    {{ copy.library }}
-  </a>
+  <!-- Made in a block, with the threads, so it comes in bound, its name and icon in it, and
+       takes its room from the threads as Tasks does: drawn before it is bound, it would grow. -->
+  @if (read()) {
+    <a
+      glzNavItem
+      class="foot"
+      data-testid="nav-library"
+      [routerLink]="libraryLink"
+      [current]="libraryCurrent()"
+      [icon]="icons.library"
+      (click)="followed()"
+    >
+      {{ copy.library }}
+    </a>
+  }
 </div>
 <app-person (navigated)="followed()" />
