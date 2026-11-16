@@ -1,10 +1,10 @@
 //! A schedule's runs in its own chat, on a clock the test moves: the chat is named for it and
 //! each run is a turn there; a run that needs the person waits for them, as a chat does; a run
 //! due meanwhile is skipped and recorded so once; a run refused otherwise is recorded with why;
-//! the scheduler never wakes at once for a run it would not start; and deleting the chat
-//! deletes the schedule.
+//! a run waiting across a restart keeps its budget; the scheduler never wakes for a run it
+//! would not start; and deleting the chat deletes the schedule.
 
-use glave_event::{At, ThreadId, When};
+use glave_event::{At, Outcome, ThreadId, When};
 use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{EventLog, InMemoryLog};
 use glave_session::Answering;
@@ -224,5 +224,38 @@ fn deleting_a_schedule_s_chat_deletes_the_schedule() {
             .await
             .unwrap();
         assert_eq!(listed(&server).await, Vec::new());
+    });
+}
+
+#[test]
+fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, now, repo, _dir) =
+            asking("runs-restart", writes_after_asking(), log.clone()).await;
+        // 20 tokens: the first call's 15 pass, the second's go past.
+        let made = schedule(&server, "Careful", "0 11 * * *", 20).await;
+        let chat = made.thread.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        let approval = asked_in(&server, chat).await;
+        server.shutdown().await;
+        drop(server);
+        let mut later = Setup::asking(writes_after_asking().split_off(1), Answering::Clients);
+        later.clock = now.clone();
+        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+        let (restarted, _) = later.build_on(&repo, log).await;
+        let recovered = restarted.recover_tasks().await.unwrap();
+        assert_eq!(recovered.closed, 0, "adopted, not interrupted");
+        let decided = Request::ApprovalDecide {
+            thread: chat,
+            approval,
+            decision: Answer::AllowOnce,
+        };
+        assert!(restarted.request(decided).await.is_ok());
+        settle(&restarted).await;
+        let ran = tasks(&restarted).await;
+        let run = ran.iter().find(|task| task.thread == chat).unwrap();
+        assert_eq!(run.outcome, Some(Outcome::LimitReached), "{run:?}");
     });
 }
