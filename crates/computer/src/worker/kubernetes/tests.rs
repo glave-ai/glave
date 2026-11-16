@@ -308,9 +308,13 @@ fn served_and_reached(seen: &Seen) {
     assert!(
         said.contains(
             "args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret --idle \
-             120 --keep-disk"
+             120 --keep-disk --fence "
         ),
         "{said}"
+    );
+    assert!(
+        said.contains(":10250\n"),
+        "the fence is its node's kubelet, its address filled in: {said}"
     );
     assert!(
         said.contains("-rw-------"),

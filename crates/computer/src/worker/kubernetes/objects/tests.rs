@@ -105,14 +105,22 @@ fn a_persons_computer_mounts_its_disk_as_home() {
         container["env"],
         json!([
             {"name": "GREETING", "value": "hi"},
-            {"name": "HOME", "value": "/home/glave"}
+            {"name": "HOME", "value": "/home/glave"},
+            {"name": "GLAVE_NODE", "valueFrom": {"fieldRef": {"fieldPath": "status.hostIP"}}}
         ])
     );
     let command = container["command"].as_array().unwrap();
     assert_eq!(
-        command.get(command.len() - 3..).unwrap(),
-        [json!("--idle"), json!("120"), json!("--keep-disk")],
-        "it sleeps on its own once idle, and keeps its disk from filling"
+        command.get(command.len() - 5..).unwrap(),
+        [
+            json!("--idle"),
+            json!("120"),
+            json!("--keep-disk"),
+            json!("--fence"),
+            json!("$(GLAVE_NODE):10250")
+        ],
+        "it sleeps on its own once idle, keeps its disk from filling, and serves only once its \
+         node's kubelet is out of reach"
     );
     let policy = computer.network_policy();
     assert_eq!(

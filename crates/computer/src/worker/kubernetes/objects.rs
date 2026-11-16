@@ -45,6 +45,13 @@ pub(crate) const IDLE_MINUTES: u32 = 120;
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// Where glave on a person's computer makes scratch folders: its folder in their home.
 pub(crate) const PERSON_SCRATCH: &str = "/home/glave/.glave/scratch";
+/// The variable that holds the address of the node a person's computer runs on.
+const NODE: &str = "GLAVE_NODE";
+/// What a person's computer must no longer reach before glave there serves: its node's
+/// kubelet, inside every cluster and answering anyone its network policy lets through, so a
+/// computer serves only once its policy holds (`specs/computers.md`, *The network*). Written
+/// as Kubernetes expands a variable in a command.
+const FENCE: &str = "$(GLAVE_NODE):10250";
 /// What a person's computer may write outside its disk (its container's layer, `/tmp`), asked
 /// for and limited alike: room for a large install's temporary files, never its own disk, and
 /// GKE Autopilot sets the limit to what is asked for anyway (owner, 2026-11-05).
@@ -126,6 +133,11 @@ impl Shape<'_> {
             .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
         env.push(json!({"name": "HOME", "value": PERSON_HOME}));
+        // Its node's address, for the fence glave checks before it serves ([`FENCE`]).
+        env.push(json!({
+            "name": NODE,
+            "valueFrom": {"fieldRef": {"fieldPath": "status.hostIP"}}
+        }));
         let mut amounts = self.amounts();
         amounts.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
         // The root filesystem is read-only; `/tmp` is the one place outside the home a command
@@ -193,7 +205,8 @@ impl Shape<'_> {
 
     /// The container's command: the wait, then glave serving on [`SOCKET`] to the bridges
     /// that come in through the API server, each signed in with the token in [`SECRET`],
-    /// sleeping on its own once idle, servers or not (#558), and keeping its disk from filling.
+    /// sleeping on its own once idle, servers or not (#558), keeping its disk from filling, and
+    /// serving only once its network policy holds ([`FENCE`]).
     fn command(&self) -> Vec<Value> {
         let idle = self.home.idle_minutes.to_string();
         [
@@ -210,6 +223,8 @@ impl Shape<'_> {
             "--idle",
             &idle,
             "--keep-disk",
+            "--fence",
+            FENCE,
         ]
         .into_iter()
         .map(Value::from)
