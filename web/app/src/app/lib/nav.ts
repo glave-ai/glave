@@ -149,6 +149,11 @@ export function matchesQuery(title: string, days: readonly string[], query: stri
   });
 }
 
+/** What the app calls the person's own chats, their personal projects, in their language. */
+export function chatsName(): string {
+  return $localize`:@@nav.chats:Chats`;
+}
+
 /** Whether the person has a project of their own beside their Chats. */
 export function hasProjects(lists: readonly ProjectWithThreads[]): boolean {
   return lists.some(({ project }) => project.kind === 'project');
@@ -198,8 +203,7 @@ export function statusSections(
   view: ThreadsView,
 ): StatusSections {
   const times = readerTimes(view.now, view.reader);
-  // What the side nav calls the person's own chats (their personal projects' threads).
-  const chats = $localize`:@@nav.chats:Chats`;
+  const chats = chatsName();
   const dated = lists.flatMap(({ project, threads }) => {
     const line = { text: project.kind === 'project' ? project.name : chats, needsYou: false };
     return threads

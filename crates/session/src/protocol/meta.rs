@@ -1,10 +1,6 @@
-//! The protocol version a request is spoken in, and what it may carry besides its params: its
-//! `_meta`.
+//! What a request may carry besides its params: its `_meta`.
 
 use serde::{Deserialize, Serialize};
-
-/// The protocol version this server speaks.
-pub const PROTOCOL: &str = "2026-10";
 
 /// What a request may carry besides its params, in `params._meta`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
