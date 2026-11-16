@@ -325,7 +325,7 @@ fn with_no_one_at_the_terminal_a_turn_runs_here_declines_what_asks_and_leaves_no
 fn a_file_the_turn_made_prints_as_one_line() {
     let place = place("tm");
     choose(&place, "model", "\"m\"");
-    choose(&place, "permissions", "\"auto\"");
+    choose(&place, "permissions", "\"full-access\"");
     choose(&place, "titles", "false");
     let budget = json!({"path": "budget.csv", "content": "Item,Total\nFlights,780\n"});
     let model = FakeServer::start(vec![
