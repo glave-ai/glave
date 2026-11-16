@@ -135,6 +135,8 @@ export function schedule(id: string, next: string | null): ScheduleInfo {
     schedule: id,
     prompt: 'Audit the dependencies',
     when: { cron: '0 2 * * *' },
+    zone: 'Europe/Lisbon',
+    repeats: 'Every day at 2:00 am',
     budget: 100_000,
     created_at: '2026-10-11T10:00:00.000Z',
     next,
