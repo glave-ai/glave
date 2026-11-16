@@ -2,15 +2,66 @@
 //! thread's folder is kept with the thread; `thread/files` gives it by turn, each with its kind,
 //! name, parts, whether it previews and where it is kept, in the server's sentences; `file/read`
 //! reads it back and `file/preview` gives it as a table; a file the server doesn't preview is
-//! refused plainly.
+//! refused plainly. A command that waits for the person makes a file once they allow it.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::AssetKind;
-use glave_session::protocol::{Reply, Request, code};
+use glave_session::{Answering, TurnItem};
+use glave_session::protocol::{Answer, Notification, Reply, Request, Update, code};
 use serde_json::json;
 
 use crate::support::*;
+
+/// A command that waits for the person, its turn stopped in the log until they allow it, makes
+/// a file once it goes on: the turn that went on names it.
+#[test]
+fn a_file_a_command_made_after_the_person_allowed_it_is_kept() {
+    let dir = folder("made-allowed");
+    block_on!(async {
+        let make = json!({"command": "printf 'Item,Total' > allowed.csv"});
+        let script = vec![
+            answer(None, Some(("bash", make))),
+            answer(Some("Made it."), None),
+        ];
+        let mut setup = Setup::asking(script, Answering::Clients);
+        setup.settings.titles = false;
+        let (server, _) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        let mut stream = stream_turn(&server, thread, "make it", None).await.unwrap();
+        let approval = loop {
+            match stream.next().await.unwrap() {
+                TurnItem::Note(note) => {
+                    if let Notification::Live {
+                        update: Update::ApprovalPending { approval },
+                        ..
+                    } = note.as_ref()
+                    {
+                        break approval.clone();
+                    }
+                }
+                other => panic!("the turn went on without asking: {other:?}"),
+            }
+        };
+        let decide = Request::ApprovalDecide {
+            thread,
+            approval,
+            decision: Answer::AllowOnce,
+        };
+        server.request(decide).await.unwrap();
+        stream.finish().await.unwrap();
+        let listed = server.request(Request::ThreadFiles { thread }).await;
+        let Ok(Reply::Files { made }) = listed else {
+            panic!("files, not {listed:?}")
+        };
+        let names: Vec<&str> = made
+            .iter()
+            .flat_map(|turn| &turn.files)
+            .map(|file| file.file_name.as_str())
+            .collect();
+        assert_eq!(names, ["allowed.csv"]);
+    });
+}
 
 /// The budget the turn writes.
 const TABLE: &str = "Item,Total\nFlights,780\n";

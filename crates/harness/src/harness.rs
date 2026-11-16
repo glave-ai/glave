@@ -193,6 +193,9 @@ pub struct Thread {
     /// How its log, as it was read, left its turn: waiting, or left open by a glave that
     /// stopped (`waits.rs`); `None` when no turn was open.
     pub(crate) opened: Option<Opened>,
+    /// What its folder held of the files that count as made before its turn.s first call that
+    /// changes files, kept while the turn stops at a wait; `None` until then (`made.rs`).
+    pub(crate) seen: Option<crate::made::Seen>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
     /// Where it works on its person's own computer, when it does: opened there again at a
@@ -618,6 +621,7 @@ where
             inbox: Inbox::default(),
             commands: Arc::default(),
             opened: None,
+            seen: None,
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,

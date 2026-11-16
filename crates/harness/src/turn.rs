@@ -10,7 +10,6 @@ use crate::cancel::Cancel;
 use crate::compaction::Asked;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::keys::SentBefore;
-use crate::made::Seen;
 use crate::repeats::Repeats;
 use crate::service::Round;
 use crate::telemetry;
@@ -51,9 +50,6 @@ pub(crate) struct Step {
     pub(crate) proposed: bool,
     /// The compaction the person asked for in this turn, if they did (`compaction/asked.rs`).
     pub(crate) compact: Asked,
-    /// What the thread's folder held of the files that count as made before the turn's first
-    /// tool call; `None` until it makes one (`made.rs`).
-    pub(crate) seen: Option<Seen>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -180,6 +176,8 @@ where
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
+        // A new turn tells what it made from its own first call that changes files.
+        thread.seen = None;
         let step = Step {
             toolset,
             repeats: Repeats::default(),
@@ -188,7 +186,6 @@ where
             round: None,
             proposed: false,
             compact: Asked::No,
-            seen: None,
         };
         self.steps(thread, step, &[], cancel, live).await
     }
@@ -263,7 +260,8 @@ where
                 }
                 Err(error) => {
                     step.summary.outcome = Outcome::Failed;
-                    step.summary.made = self.made_since(thread, step.seen.take()).await;
+                    let seen = thread.seen.take();
+                    step.summary.made = self.made_since(thread, seen).await;
                     self.end(thread, &step.summary).await?;
                     return Err(error);
                 }
@@ -302,7 +300,8 @@ where
         cancel: &Cancel,
     ) -> Result<TurnResult, HarnessError> {
         let mut summary = step.summary;
-        summary.made = self.made_since(thread, step.seen).await;
+        let seen = thread.seen.take();
+        summary.made = self.made_since(thread, seen).await;
         // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
         let stopped = cancel.is_cancelled() && summary.outcome == cancel.outcome();
         if stopped && summary.outcome == Outcome::Cancelled {

@@ -95,6 +95,7 @@ where
             inbox: crate::inbox::Inbox::default(),
             commands: std::sync::Arc::new(commands),
             opened: self.opened(&scope, id, &events).await?,
+            seen: None,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
             prefix: crate::prefix::Prefixed::None,
