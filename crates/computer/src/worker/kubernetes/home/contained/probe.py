@@ -247,8 +247,16 @@ def kernel():
 
 
 def listen(port, then=None):
-    """Listens on `port`, says so, runs `then`, and names everyone it accepts for a while."""
+    """Listens on `port`, reaches itself at its own Pod address (the control that it listens
+    there), says so, runs `then`, and names everyone else it accepts for a while."""
     server = socket.create_server(("0.0.0.0", port))
+    own = socket.gethostbyname(socket.gethostname())
+    print(f"self={connect(own, port)}", flush=True)
+    server.settimeout(WAIT)
+    try:
+        server.accept()[0].close()
+    except OSError:
+        pass
     print("listening", flush=True)
     if then:
         then()

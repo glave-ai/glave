@@ -58,8 +58,8 @@ impl Comes {
 }
 
 /// Every address a computer tries, and what it must come to there: all of the cluster
-/// refused, the internet reached. The cluster's DNS ([`DNS`]) is apart.
-const NETWORK: [(&str, Comes); 14] = [
+/// refused, its DNS among it, the internet reached.
+const NETWORK: [(&str, Comes); 17] = [
     ("api_service", Comes::Refused),
     ("api_name", Comes::Refused),
     ("api_endpoint", Comes::Refused),
@@ -69,17 +69,15 @@ const NETWORK: [(&str, Comes); 14] = [
     ("server_name", Comes::Refused),
     ("another_computer", Comes::Refused),
     ("another_pod", Comes::Refused),
+    ("cluster_dns", Comes::Refused),
+    ("dns_pod", Comes::Refused),
+    ("internal_name", Comes::Refused),
     ("metadata", Comes::Refused),
     ("metadata_name", Comes::Refused),
     ("metadata_gke", Comes::Refused),
     ("metadata_v6", Comes::Refused),
     ("internet", Comes::Is("reached")),
 ];
-
-/// The cluster's DNS, which a computer still reaches, since its policy lets port 53 out to
-/// every address (#393): its own Service answers, CoreDNS's Pod takes a connection on port 53,
-/// and internal names resolve. Shown with the rest, not yet held to.
-const DNS: [&str; 3] = ["cluster_dns", "dns_pod", "internal_name"];
 
 /// What a command outside the sandbox finds of credentials, the node and root.
 const FOUND: [(&str, Comes); 18] = [
@@ -482,43 +480,40 @@ fn nothing_gets_out_of_a_persons_computer() {
 fn judged(tried: &Tried, class: Option<&str>, gvisor: bool) {
     let (control, outside) = (results(&tried.control), results(&tried.outside));
     let inside = tried.inside.as_deref().map(results);
-    let gaps: Vec<String> = DNS
-        .iter()
-        .map(|check| format!("{check}={:?}", outside.get(*check)))
-        .collect();
-    eprintln!(
-        "the cluster's DNS, still reached (#393): {}",
-        gaps.join(", ")
-    );
     eprintln!(
         "under {class:?}\ncontrol (a Pod with no policy):\n{}\n\na person's computer, outside \
          glave's sandbox:\n{}\n\nin glave's sandbox:\n{:?}\n\nanother person's computer \
          heard:\n{}\n\nthe stand-in for glave's server heard:\n{}",
         tried.control, tried.outside, tried.inside, tried.another_heard, tried.server_heard
     );
-    let kernel = if gvisor {
-        Comes::Is("gvisor")
+    // gVisor's kernel says so, and keeps its own filter; under runc, the runtime's seccomp
+    // profile is on the computer (mode 2, a filter).
+    let (kernel, seccomp) = if gvisor {
+        (Comes::Is("gvisor"), None)
     } else {
-        Comes::Starts("linux ")
+        (Comes::Starts("linux "), Some(Comes::Is("2")))
     };
     let mut wrong_all = wrong("control", &control, &CONTROL);
     wrong_all.extend(wrong("outside", &outside, &NETWORK));
     wrong_all.extend(wrong("outside", &outside, &FOUND));
     wrong_all.extend(wrong("outside", &outside, &[("kernel", kernel)]));
+    if let Some(seccomp) = seccomp {
+        wrong_all.extend(wrong("outside", &outside, &[("seccomp", seccomp)]));
+    }
     if let Some(inside) = &inside {
         wrong_all.extend(wrong("sandboxed", inside, &NETWORK));
     }
-    if tried.another_heard.contains("accepted") {
-        wrong_all.push(format!(
-            "another person's computer was reached: {}",
-            tried.another_heard
-        ));
-    }
-    if tried.server_heard.contains("accepted") {
-        wrong_all.push(format!(
-            "the server's stand-in was reached: {}",
-            tried.server_heard
-        ));
+    // Each listener first reached itself at its own address, so a refusal is never a dead one.
+    for (who, heard) in [
+        ("another person's computer", &tried.another_heard),
+        ("the server's stand-in", &tried.server_heard),
+    ] {
+        if !heard.contains("self=reached") {
+            wrong_all.push(format!("{who} never reached itself: {heard}"));
+        }
+        if heard.contains("accepted") {
+            wrong_all.push(format!("{who} was reached: {heard}"));
+        }
     }
     assert_eq!(
         gvisor,
