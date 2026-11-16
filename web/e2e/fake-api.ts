@@ -652,7 +652,6 @@ const ANSWERS: Answers<Known> = {
     params.project === PROJECT.id ? { project: PROJECT, copies: { by_default: false } } : undefined,
   'model/list': () => ({ models: MODELS }),
   'tasks/list': () => ({ tasks: TASKS }),
-  'library/list': () => ({ items: [] }),
   'schedule/list': () => ({ schedules: [] }),
   'memory/list': () => ({ memories: MEMORIES }),
   'provider/list': () => ({

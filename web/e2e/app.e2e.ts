@@ -277,12 +277,12 @@ test('tasks, the Library, settings and memory open from the side nav', async ({ 
   await byTestId(page, 'nav-tasks').click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
   await expectAccessible(page);
-  // The Library, under Tasks, with nothing in it yet.
+  // The Library, under Tasks: the picture a chat kept there, drawn, with its chat.
   await byTestId(page, 'nav-library').click();
   await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
-  await expect(byTestId(page, 'library-empty')).toContainText(
-    'Pictures glave makes for you will appear here.',
-  );
+  await expect(byTestId(page, 'library-name')).toHaveText('A cat on the windowsill');
+  await expect(byTestId(page, 'library-open').locator('img')).toBeVisible();
+  await expect(byTestId(page, 'library-chat')).toHaveText('What are these?');
   await expectAccessible(page);
   // Settings is the person's: their row opens it, beside Sign out.
   await byTestId(page, 'person').click();
