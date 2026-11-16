@@ -80,7 +80,33 @@ async fn keys(folder: &Path) -> (PathBuf, Vec<FolderKey>) {
 
 /// The scope of `person`'s personal project, made the first time.
 pub(crate) async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
-    let org = org(store).await?;
+    personal_in(store, org(store).await?, person).await
+}
+
+/// The most of a person's projects looked through for their personal project, which is made
+/// with their first chat and so is nearly always among their oldest.
+const LOOKED_THROUGH: usize = 1_000;
+
+/// The scope of `person`'s personal project in `org`, if they have one, making nothing.
+pub(crate) async fn find_personal_in(
+    store: &Data,
+    org: OrgId,
+    person: PrincipalId,
+) -> anyhow::Result<Option<Scope>> {
+    let owner = Principal::person(person);
+    let projects = store.projects().list(org, &owner, LOOKED_THROUGH).await?;
+    Ok(projects
+        .into_iter()
+        .find(|project| project.kind == ProjectKind::Personal)
+        .map(|project| Scope::glaves_own(org, project.id)))
+}
+
+/// The scope of `person`'s personal project in `org`, made the first time.
+pub(crate) async fn personal_in(
+    store: &Data,
+    org: OrgId,
+    person: PrincipalId,
+) -> anyhow::Result<Scope> {
     let new = new_project(
         ProjectKind::Personal,
         glave_session::PERSONAL_NAME.to_owned(),

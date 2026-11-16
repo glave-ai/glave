@@ -279,6 +279,21 @@ export type ConnectorTag = {
 export type ConnectorTagId = "ai-media" | "ai-models" | "analytics" | "api-testing" | "automation" | "ci-cd" | "code-hosting" | "company-formation" | "compliance" | "content-management" | "crm" | "customer-support" | "databases" | "design" | "documentation" | "domains" | "email" | "feature-flags" | "files" | "finance" | "forms" | "hosting" | "identity" | "issues" | "knowledge" | "marketing" | "media-library" | "meetings" | "monitoring" | "notes" | "payments" | "presentations" | "project-management" | "scheduling" | "security" | "site-search" | "to-do-lists" | "web-scraping" | "web-search" | "websites" | "whiteboards";
 
 /**
+ * What a caller may connect of their own on a server beside model accounts
+ * (`model_accounts`): each where the server keeps it and it is theirs to connect, so a client
+ * never offers what would only be refused.
+ */
+export type Connects = {
+  /**
+   * Sign-ins to remote servers and glave's connectors (`connection/start`,
+   * `connector/connect`).
+   */
+  readonly connections?: boolean;
+  /** Git hosts, GitHub's among them (`credential/connect`). */
+  readonly git_hosts?: boolean;
+};
+
+/**
  * How full a thread's context is: what its conversation last sent and got back, of the window
  * compaction aims for.
  */
@@ -1161,6 +1176,11 @@ export type Serve = {
 
 /** What the server is. */
 export type ServerInfo = {
+  /**
+   * What the caller may connect here, so a client offers only that; absent where they may
+   * connect none of it.
+   */
+  readonly connects?: Connects;
   /**
    * Whether it sends email (`[email]`) with links to its public origin, as an invite's: so
    * a client asks for an address only where one is used.

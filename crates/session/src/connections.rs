@@ -13,7 +13,9 @@ use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::accounts::KeptConnector;
-use crate::protocol::{ApiError, ConnectionInfo, ConnectorStatus, Reply, SignInLink, code};
+use crate::protocol::{
+    ApiError, ConnectionInfo, ConnectorStatus, Connects, Reply, SignInLink, code,
+};
 use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -160,6 +162,18 @@ where
         let connections = self.inner.connections.as_deref();
         let elsewhere = Sentence::ConnectionsOnItsComputer;
         theirs(caller, connections, Sentence::ConnectionsNotHere, elsewhere)
+    }
+
+    /// What `caller` may connect here (`server/discover`): each where it would not be refused;
+    /// nothing for someone not signed in over the network, whom `server/discover` answers too.
+    pub(crate) fn connects(&self, caller: &Caller) -> Connects {
+        if caller.auth.is_none() && caller.from.is_some() {
+            return Connects::default();
+        }
+        Connects {
+            git_hosts: self.connects_git_hosts(caller).is_ok(),
+            connections: self.connections_for(caller).is_ok(),
+        }
     }
 
     /// Where the browser comes back to from a sign-in: where people reach the server from

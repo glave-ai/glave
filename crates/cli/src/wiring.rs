@@ -16,7 +16,8 @@ use glave_ports::settings::Hooks;
 use glave_ports::{OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::{
-    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Secrets, Server, Wiring,
+    Answering, Connections, PeoplesGitHosts, ProjectTrust, Providers, Rereads, Secrets, Server,
+    Wiring,
 };
 
 use crate::args::Args;
@@ -24,7 +25,7 @@ use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
 use crate::connected::Connected;
-use crate::credentials::Hosts;
+use crate::credentials::{Hosts, PeoplesHosts};
 use crate::data::{Data, DataLog};
 use crate::gateway::GatewaySwitch;
 use crate::mcp::Servers;
@@ -170,7 +171,7 @@ pub(crate) async fn wire(
         rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
         models: lined.built.models.offered,
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
-        git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
+        git_hosts: hosts.map(|hosts| Arc::new(hosts) as Arc<dyn PeoplesGitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
         secrets,
         web: crate::project_folders::web_offered(&choices.web.value)?,
@@ -386,16 +387,17 @@ async fn settings_for(
     Ok(settings)
 }
 
-/// The git hosts `person` connected, when they may connect them here, and `workspace` with
-/// every thread's commands asking them for credentials at each use; and the remote servers they
-/// sign in to, likewise, with web search where they may add servers of their own.
+/// The git hosts each person connected, when people may connect them here, and `workspace` with
+/// every thread's commands asking those of `person` for credentials at each use; and the remote
+/// servers `person` signs in to, likewise, with web search where they may add servers of their
+/// own.
 async fn signed(
     args: &Args,
     store: &Data,
     person: glave_event::PrincipalId,
     setup: &Setup,
     workspace: Workspace,
-) -> anyhow::Result<(Workspace, Option<Arc<Hosts>>, Option<Arc<Connected>>)> {
+) -> anyhow::Result<(Workspace, Option<PeoplesHosts>, Option<Arc<Connected>>)> {
     let others_sign_in = !args.issuers.is_empty();
     let github = setup.choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
@@ -409,9 +411,9 @@ async fn signed(
         Some(Connected::for_person(store, person, &home, reachable, offered).await?)
     };
     Ok(match hosts {
-        Some(hosts) => {
-            let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;
-            (workspace.with_credentials(asked), Some(hosts), connected)
+        Some((own, people)) => {
+            let asked = own as Arc<dyn GitCredentials>;
+            (workspace.with_credentials(asked), Some(people), connected)
         }
         None => (workspace, None, connected),
     })

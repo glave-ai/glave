@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, Currency, Money, Nanos, PrincipalId, ThreadId};
+use glave_harness::Homes;
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir, any_secret};
 use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
@@ -22,7 +23,8 @@ use serde_json::{Value, json};
 
 use super::table::Kind;
 use crate::connections::InMemory;
-use crate::credentials::Hosts;
+use crate::credentials::People;
+use crate::homes::Here;
 use crate::providers::Accounts;
 use crate::support::*;
 
@@ -40,6 +42,8 @@ pub(super) struct Parts<L> {
 pub(super) struct Org<L: EventLog + 'static> {
     pub server: Tested<L>,
     pub browsers: Arc<Browsers>,
+    /// Whether everyone it serves has a computer of their own, and so their own git hosts.
+    pub homes: bool,
 }
 
 /// One person: their organization, the server they call, how they call, and the ids of what
@@ -179,7 +183,10 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.push = Some(Arc::new(pushing));
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
-        setup.hosts = Some(Arc::new(Hosts::default()));
+        setup.hosts = Some(Arc::new(People::default()));
+        // Everyone it serves has a computer of their own, so each connects their own git
+        // hosts, which the sweep then names to everyone else.
+        setup.homes = Some(Arc::new(Here::new(&dir.join("people"))) as Arc<dyn Homes>);
         setup.connections = Some(Arc::new(InMemory::default()));
         setup.secrets = Some(KeepSecrets::new(Arc::clone(&parts.eraser), personal, local));
     }
@@ -191,7 +198,11 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     let (server, _) = setup
         .build_with_credits(dir, parts.log.clone(), limit)
         .await;
-    Org { server, browsers }
+    Org {
+        server,
+        browsers,
+        homes: n == 1,
+    }
 }
 
 /// Answers `request` from `caller`, as JSON: the reply, or the error.
@@ -251,6 +262,13 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     let subscribed = call("push/subscribe", browser).await;
     person.keep(Kind::Device, subscribed["push"]["devices"][0]["id"].clone());
     if !local {
+        // Where people have computers of their own, each connects their own git host: refused,
+        // the sweep would never name theirs, so it must not be.
+        if org.homes {
+            let host = json!({"url": "https://github.com", "token": any_secret()});
+            let connected = call("credential/connect", host).await;
+            person.keep(Kind::Credential, connected["credential"]["id"].clone());
+        }
         return;
     }
     let invited = call("invite/create", json!({"role": "admin"})).await;

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{ComputerKind, InstructionsRead, Opened, PrincipalId, WorkspaceBound};
-use glave_ports::computer::{ComputerError, Home, Sandbox};
+use glave_ports::computer::{ComputerError, GitCredentials, Home, Sandbox};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope, ToolSource};
 
 use crate::approval::Approver;
@@ -27,6 +27,10 @@ use crate::removed::owner_label;
 use crate::skills::on_home::skills_on;
 use crate::skills::{Skill, SkillSource, Skills};
 use crate::tools::workspace::Workspace;
+
+/// Where the commands on the computer of a person (the second) in an organization (the first)
+/// ask for credentials: their own git sign-ins, never anyone else's.
+pub type CredentialsOf = Arc<dyn Fn(OrgId, PrincipalId) -> Arc<dyn GitCredentials> + Send + Sync>;
 
 /// Each person's own computer, woken by the calls that need it. The harness cannot reach a
 /// cluster itself (its crate depends on no adapter), so the host hands it this.
@@ -76,13 +80,28 @@ where
         person: PrincipalId,
     ) -> Option<Result<Workspace, HarnessError>> {
         let homes = self.homes.as_ref()?;
+        let theirs = Some(person) == self.person();
         Some(homes.home(org, person).map_err(Into::into).map(|planned| {
             let home = Workspace::new(planned.computers, planned.home).asleep_at_times();
-            // Their secrets and their masking, as on this one.
-            let home = home.hiding(self.workspace.hidden().clone());
-            // Their git sign-ins reach their computer as they reach this one: asked at each use.
-            match self.workspace.credentials() {
-                Some(credentials) => home.with_credentials(Arc::clone(credentials)),
+            // The harness's person's secrets and their masking, as on this computer; no one
+            // else's computer is given them.
+            let home = if theirs {
+                home.hiding(self.workspace.hidden().clone())
+            } else {
+                home
+            };
+            // Their own git sign-ins reach their computer, asked for at each use; where no one
+            // keeps each person's, only the harness's person's computer gets this one's.
+            let credentials = match &self.credentials_of {
+                Some(of) => Some(of(org, person)),
+                None => self
+                    .workspace
+                    .credentials()
+                    .filter(|_| theirs)
+                    .map(Arc::clone),
+            };
+            match credentials {
+                Some(credentials) => home.with_credentials(credentials),
                 None => home,
             }
         }))

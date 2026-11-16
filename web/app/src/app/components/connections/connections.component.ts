@@ -32,6 +32,7 @@ import {
 import { ConnectionsService } from '../../services/connections.service';
 import { ConnectorsService } from '../../services/connectors.service';
 import { CredentialsService } from '../../services/credentials.service';
+import { ServerService } from '../../services/server.service';
 import { AnotherServiceComponent } from '../another-service/another-service.component';
 import { ConnectorsComponent } from '../connectors/connectors.component';
 import { GithubRowComponent } from '../github-row/github-row.component';
@@ -145,6 +146,11 @@ export class ConnectionsComponent {
   private readonly service = inject(ConnectionsService);
   private readonly credentials = inject(CredentialsService);
   private readonly connectors = inject(ConnectorsService);
+  private readonly serverService = inject(ServerService);
+  /** Whether the person may sign in to services and connect apps here, as the server says. */
+  protected readonly connections = computed(
+    () => this.serverService.connects().connections ?? false,
+  );
   private readonly document = inject(DOCUMENT);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -161,13 +167,17 @@ export class ConnectionsComponent {
   private readonly disconnecting = signal<Row | null>(null);
   protected readonly confirming = signal(false);
 
-  protected readonly problem = this.service.problem;
+  /** Why the services could not be listed, where the person may connect them here. */
+  protected readonly problem = computed(() => (this.connections() ? this.service.problem() : null));
   /** Whether the services are still being listed for the first time. */
   protected readonly loading = computed(
-    () => this.service.connections() === null && this.problem() === null,
+    () => this.connections() && this.service.connections() === null && this.problem() === null,
   );
+  /** The services listed, where the person may connect them here. */
   private readonly rows = computed(() =>
-    (this.service.connections() ?? []).map((connection) => this.row(connection)),
+    this.connections()
+      ? (this.service.connections() ?? []).map((connection) => this.row(connection))
+      : [],
   );
   /** The cards with services in them: those ready to use first, then those to connect. */
   protected readonly sections = computed(() => {
@@ -197,7 +207,9 @@ export class ConnectionsComponent {
   protected readonly gitHosts = this.credentials.listed;
   /** Whether there is nothing at all here: no git hosts kept, no service and no app listed. */
   protected readonly empty = computed(
-    () => !this.gitHosts() && this.service.connections()?.length === 0 && this.noApps(),
+    () =>
+      !this.gitHosts() &&
+      (!this.connections() || (this.service.connections()?.length === 0 && this.noApps())),
   );
   /** Whether no app is listed: none offered, or the list refused; not while it loads. */
   private readonly noApps = computed(() => {
@@ -206,7 +218,12 @@ export class ConnectionsComponent {
   });
 
   constructor() {
-    void this.service.load();
+    // Services and apps only where the server says the person may connect them.
+    void this.serverService.load().then(async () => {
+      if (this.connections()) {
+        await this.service.load();
+      }
+    });
     void this.credentials.load();
     inject(DestroyRef).onDestroy(() => {
       for (const stop of this.stops.values()) {

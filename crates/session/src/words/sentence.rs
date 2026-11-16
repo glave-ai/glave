@@ -506,7 +506,7 @@ sentences! {
     AccountsNotHere = "accounts-not-here"
         "connecting accounts is set up by whoever runs this server, not from here",
     AccountsOnItsComputer = "accounts-on-its-computer"
-        "whoever runs this server connects its accounts",
+        "whoever runs this server connects the accounts used on its computer, where you have none of your own",
     SecretsNotHere = "secrets-not-here"
         "secrets are set up by whoever runs this server, not from here",
     SecretsOnItsComputer = "secrets-on-its-computer"

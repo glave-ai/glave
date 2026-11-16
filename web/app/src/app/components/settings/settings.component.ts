@@ -91,6 +91,11 @@ export class SettingsComponent {
   private readonly info = this.serverService.info;
   /** Whether the person connects model accounts here, as the server says: else no Models card. */
   protected readonly modelAccounts = this.serverService.modelAccounts;
+  /** Whether the person may connect anything that shows on the Connections page here. */
+  protected readonly connects = computed(() => {
+    const connects = this.serverService.connects();
+    return (connects.git_hosts ?? false) || (connects.connections ?? false);
+  });
   private readonly providers = inject(ProvidersService);
   private readonly models = inject(ModelsService);
   private readonly locale = inject(LOCALE_ID);

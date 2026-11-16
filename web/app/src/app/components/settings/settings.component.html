@@ -63,15 +63,17 @@
       [(open)]="confirming"
       (decided)="decided($event)"
     />
-    <glz-card>
-      <h2 glzCardHeader>{{ copy.connections }}</h2>
-      <p class="details" data-testid="settings-connected">{{ connected() }}</p>
-      <div glzCardFooter class="glz-row glz-gap-2">
-        <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
-          copy.connectionsOpen
-        }}</a>
-      </div>
-    </glz-card>
+    @if (connects()) {
+      <glz-card>
+        <h2 glzCardHeader>{{ copy.connections }}</h2>
+        <p class="details" data-testid="settings-connected">{{ connected() }}</p>
+        <div glzCardFooter class="glz-row glz-gap-2">
+          <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
+            copy.connectionsOpen
+          }}</a>
+        </div>
+      </glz-card>
+    }
     <app-web-search />
     <glz-card>
       <h2 glzCardHeader>{{ copy.memory }}</h2>

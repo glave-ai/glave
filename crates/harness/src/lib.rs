@@ -71,7 +71,7 @@ pub use files::{FileError, MAX_FILE, MAX_SIDE, kind_of};
 pub use fork::Fork;
 pub use glave_event::Permissions;
 pub use harness::{Harness, HarnessError, Invalid, Parts, Settings, Thread};
-pub use homes::{Homes, ShortOfRoom};
+pub use homes::{CredentialsOf, Homes, ShortOfRoom};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use install::{ASKED_BY_GLAVE, Own};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};

@@ -71,7 +71,9 @@
       </div>
     </section>
   }
-  <app-connectors [project]="place()" />
+  @if (connections()) {
+    <app-connectors [project]="place()" />
+  }
   @if (gitHosts()) {
     <app-another-service />
   }

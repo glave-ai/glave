@@ -197,6 +197,8 @@ export const SERVER = {
   protocols: ['2026-10'],
   permissions: 'auto',
   modes: ['auto', 'plan', 'ask', 'full-access'],
+  model_accounts: true,
+  connects: { git_hosts: true, connections: true },
 } as const;
 
 /** What a device answers when it makes a passkey, shaped as the browser's answers are. */
