@@ -16,3 +16,21 @@
 .room {
   visibility: hidden;
 }
+
+// Where a tapped notification of its end opened the chat: a quiet rule with when it finished.
+.away {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  margin: 0;
+  font-size: var(--glz-text-xs);
+  color: var(--glz-color-text-muted);
+
+  &::before,
+  &::after {
+    flex: 1;
+    block-size: var(--glz-border-width);
+    content: '';
+    background: var(--glz-color-border);
+  }
+}

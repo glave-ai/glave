@@ -591,6 +591,8 @@ sentences! {
     PushDoneUntitled = "push-done-untitled" "A task is done",
     PushNotDone { title: String } = "push-not-done" "Didn't finish: { $title }",
     PushNotDoneUntitled = "push-not-done-untitled" "A task didn't finish",
+    PushChatDoneUntitled = "push-chat-done-untitled" "A chat is done",
+    PushChatNotDoneUntitled = "push-chat-not-done-untitled" "A chat didn't finish",
 
     // Signing a browser in.
     LinkSpent = "link-spent"

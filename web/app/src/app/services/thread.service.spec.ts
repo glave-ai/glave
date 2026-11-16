@@ -689,6 +689,36 @@ describe('ThreadService', () => {
     }
   });
 
+  it('lets go of a turn it follows once begun while the tab is hidden, and catches up shown', async () => {
+    const turn = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [event(1, 'thread.started', {})] })
+      .answer('thread/get', { thread: thread('thread-1', null, { status: 'running' }) })
+      .turn(turn);
+    const service = make(fake);
+    await service.open('thread-1');
+    const shown = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      const sending = service.send('plan the trip');
+      turn.send(recorded(event(2, 'turn.started', {})), said(3, 'plan the trip'));
+      await settled();
+      // Hidden, nothing follows the thread, so the server tells the person's devices of its end.
+      shown('hidden');
+      await sending;
+      expect(service.busy()).toBe(true);
+      expect(fake.paramsOf('thread/watch')).toEqual([{ thread: 'thread-1', after: 1 }]);
+      shown('visible');
+      await settled();
+      await settled();
+      expect(fake.paramsOf('thread/watch').at(-1)).toEqual({ thread: 'thread-1', after: 3 });
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
   it('asks the server again, coming back, whether the turn it saw start still runs', async () => {
     vi.useFakeTimers();
     try {

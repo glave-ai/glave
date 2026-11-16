@@ -1,8 +1,14 @@
 @if (turn().prompt; as prompt) {
   <app-thread-item [item]="prompt" />
 }
-@for (part of turn().parts; track part.key) {
-  <app-turn-part [part]="part" />
+@for (shown of parts(); track shown.part.key) {
+  @if (shown.away; as away) {
+    <p #away class="away" data-testid="turn-away">{{ away }}</p>
+  }
+  <app-turn-part [part]="shown.part" />
+}
+@if (awayLast(); as away) {
+  <p #away class="away" data-testid="turn-away">{{ away }}</p>
 }
 @if (turn().working; as working) {
   <glz-working

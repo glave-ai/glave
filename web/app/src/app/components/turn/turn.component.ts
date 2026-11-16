@@ -1,11 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  type ElementRef,
   LOCALE_ID,
   computed,
+  effect,
   inject,
   input,
   linkedSignal,
+  viewChild,
 } from '@angular/core';
 import {
   GlzMarkdownComponent,
@@ -32,7 +35,8 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
  * already answered, with the pages the reply drew on from the web under it; what the model
  * writes now, as markdown; what changed, its room kept as the thread opens until it is read; the
  * receipt, a quiet line with how it went, how long it took, what it cost and the model, which
- * opens to where it ran; and last, what waits for the person.
+ * opens to where it ran; and last, what waits for the person. Opened at it from the notification
+ * of its end, a line above its reply says when it finished while the person was away, in view.
  *
  * While the turn works with nothing of its own to show, a line stands in the reply's place: the
  * step a tool takes, in the server's words, else a smithy's word while the model thinks, the next
@@ -62,7 +66,33 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
 })
 export class TurnComponent {
   readonly turn = input.required<TurnResults>();
+  /**
+   * The line it shows above its reply, brought into view, when a tapped notification of its end
+   * opened the chat at it: when it finished, while the person was away.
+   */
+  readonly away = input<string | null>(null);
   private readonly locale = inject(LOCALE_ID);
+  /** Where the reply is among its parts: the last of the model's words that are no aside. */
+  private readonly reply = computed(() =>
+    this.turn().parts.reduce(
+      (found, part, at) =>
+        part.kind === 'item' &&
+        !part.interim &&
+        part.item.kind === 'message' &&
+        part.item.from === 'model'
+          ? at
+          : found,
+      -1,
+    ),
+  );
+  /** Its parts, the reply with the line above it when it shows one. */
+  protected readonly parts = computed(() => {
+    const [away, reply] = [this.away(), this.reply()];
+    return this.turn().parts.map((part, at) => ({ part, away: at === reply ? away : null }));
+  });
+  /** The line after its parts, when it shows one and has no reply to show it above. */
+  protected readonly awayLast = computed(() => (this.reply() === -1 ? this.away() : null));
+  private readonly line = viewChild<ElementRef<HTMLElement>>('away');
 
   protected readonly copy = {
     reply: $localize`:@@turn.reply:Reply`,
@@ -152,4 +182,11 @@ export class TurnComponent {
     const ran = runningFor(this.since(), this.now());
     return ran === null ? null : formatDuration(ran, this.locale);
   });
+
+  constructor() {
+    // The chat opens at the line, the reply below it in view.
+    effect(() => {
+      this.line()?.nativeElement.scrollIntoView({ block: 'start' });
+    });
+  }
 }

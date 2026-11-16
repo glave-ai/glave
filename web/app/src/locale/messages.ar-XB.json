@@ -759,6 +759,7 @@
     "thought.took": "\u200f\u202eThought\u202c\u200f \u200f\u202efor\u202c\u200f {$DURATION}",
     "thread.again": "\u200f\u202eSend\u202c\u200f \u200f\u202eagain\u202c\u200f",
     "thread.attach": "\u200f\u202eAdd\u202c\u200f \u200f\u202efiles\u202c\u200f \u200f\u202eor\u202c\u200f \u200f\u202ephotos\u202c\u200f",
+    "thread.away": "\u200f\u202eFinished\u202c\u200f \u200f\u202ewhile\u202c\u200f \u200f\u202eyou\u202c\u200f \u200f\u202ewere\u202c\u200f \u200f\u202eaway\u202c\u200f \u200f\u202e·\u202c\u200f {$TIME}",
     "thread.changes": "\u200f\u202eChanges\u202c\u200f",
     "thread.conversation": "\u200f\u202eConversation\u202c\u200f",
     "thread.failed": "\u200f\u202eSomething\u202c\u200f \u200f\u202ewent\u202c\u200f \u200f\u202ewrong:\u202c\u200f {$ERROR}",
