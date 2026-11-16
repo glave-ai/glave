@@ -134,11 +134,6 @@ export class TurnComponent {
     const files = this.turn().files ?? [];
     return files.length > 0 ? { settles, files } : null;
   });
-  /** The files it made for the person, once the server says it made any; else `null`. */
-  protected readonly made = computed(() => {
-    const made = this.turn().made;
-    return made.length > 0 ? made : null;
-  });
   /** Until what changed is known, the files whose room it keeps, unseen; else `null`. */
   protected readonly room = computed(() => {
     const room = this.turn().room;
