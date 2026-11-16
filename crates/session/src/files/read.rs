@@ -13,7 +13,7 @@ use glave_event::{
     ToolCallCompleted, ToolCallRequested, decode,
 };
 use glave_ports::stream::Reserved;
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_ports::{Blob, BlobStore, EventLog, ModelProvider, Scope};
 
 use crate::protocol::{ApiError, FilePiece, Reply, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
@@ -46,14 +46,7 @@ where
         sha256: &Sha256,
         offset: u64,
     ) -> Result<Reply, ApiError> {
-        let scope = self.scope_of(thread)?;
-        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
-        if !self.names_file(&scope, thread, sha256).await? {
-            return Err(not_here());
-        }
-        let found = self.inner.harness.blobs().get(&scope, sha256).await;
-        let found = found.map_err(|error| ApiError::internal(&error))?;
-        let mut found = found.ok_or_else(not_here)?;
+        let mut found = self.held_file(thread, sha256).await?;
         let total = found.reference.bytes;
         let mut skip = offset;
         let mut piece = Vec::new();
@@ -82,12 +75,30 @@ where
         })
     }
 
+    /// The file `sha256` that `thread` holds, to read, after the request was let through for the
+    /// thread's project: one its messages or tool results name, or one of its calls made. Any
+    /// other is "no longer here", as one never kept.
+    pub(crate) async fn held_file(
+        &self,
+        thread: ThreadId,
+        sha256: &Sha256,
+    ) -> Result<Blob, ApiError> {
+        let scope = self.scope_of(thread)?;
+        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
+        if !self.names_file(&scope, thread, sha256).await? {
+            return Err(not_here());
+        }
+        let found = self.inner.harness.blobs().get(&scope, sha256).await;
+        let found = found.map_err(|error| ApiError::internal(&error))?;
+        found.ok_or_else(not_here)
+    }
+
     /// Whether a `file` part of `thread`'s messages or tool results names `sha256`, as the file
     /// or the copy of an image the model is sent, or a call of glave's own `write` or `bash`
     /// made it for the person (`glave_event::FileMade`): read back from the thread's end, where
     /// the files a client draws are, a page at a time until it is found. A deleted thread is no
     /// such thread.
-    pub(crate) async fn names_file(
+    async fn names_file(
         &self,
         scope: &Scope,
         thread: ThreadId,

@@ -35,14 +35,7 @@ where
         thread: ThreadId,
         sha256: &Sha256,
     ) -> Result<Reply, ApiError> {
-        let scope = self.scope_of(thread)?;
-        let not_here = || ApiError::new(code::NO_FILE, Sentence::FileNotHere);
-        if !self.names_file(&scope, thread, sha256).await? {
-            return Err(not_here());
-        }
-        let found = self.inner.harness.blobs().get(&scope, sha256).await;
-        let found = found.map_err(|error| ApiError::internal(&error))?;
-        let mut found = found.ok_or_else(not_here)?;
+        let mut found = self.held_file(thread, sha256).await?;
         let bytes = read_all(found.bytes.as_mut(), MAX_FILE).await;
         let bytes = bytes.map_err(|error| ApiError::internal(&error))?;
         let media_type = found.reference.media_type;
