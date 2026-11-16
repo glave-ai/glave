@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { askedTurns, threadTurns, turnRuns } from './turns';
+import { askedTurns, finishedTurn, threadTurns, turnRuns } from './turns';
 
 function at(seq: number, type: string, data: Record<string, unknown>, time: string): RawEvent {
   return { ...event(seq, type, data), at: time };
@@ -52,12 +52,15 @@ describe('turns', () => {
     });
     // Each by the seq of its start, as the server names it in what it says of the turn.
     expect(first?.startSeq).toBe(2);
+    // Where it ended and when, which a tapped notification opens it at.
+    expect(first?.ended).toEqual({ seq: 8, at: '2026-10-11T10:04:02.000Z' });
     // Still going: no end, its time so far, no result yet.
     expect(second).toMatchObject({
       startSeq: 9,
       took: 12_000,
       started: '2026-10-11T10:05:00.000Z',
       result: null,
+      ended: null,
     });
   });
 
@@ -189,5 +192,19 @@ describe('turns', () => {
     expect(turnRuns([...started, event(4, 'turn.ended', {}), event(5, 'thread.renamed', {})])).toBe(
       false,
     );
+  });
+
+  it('finds the turn a tapped notification of a chat’s end opens it at, by where it ended', () => {
+    const turns = threadTurns([
+      ASK(1, 'Plan the trip'),
+      SAY(2, 'Done.'),
+      at(3, 'turn.ended', { outcome: 'completed' }, '2026-11-17T02:14:00.000Z'),
+      ASK(4, 'Thanks'),
+    ]);
+    const first = turns[0]?.key;
+    expect(finishedTurn(turns, '3')).toEqual({ key: first, at: Date.UTC(2026, 10, 17, 2, 14) });
+    for (const other of ['2', '4', 'x', undefined]) {
+      expect(finishedTurn(turns, other)).toBeNull();
+    }
   });
 });

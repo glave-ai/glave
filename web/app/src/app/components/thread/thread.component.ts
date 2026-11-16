@@ -30,7 +30,7 @@ import { Globe } from 'lucide';
 import { type TurnFacts, type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import { chatPlan } from '../../lib/plans';
-import { askedTurns } from '../../lib/turns';
+import { askedTurns, finishedTurn } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { onChange } from '../../services/changes.service';
 import { effortToSend } from '../../lib/effort';
@@ -62,7 +62,8 @@ import { TurnComponent } from '../turn/turn.component';
  * One thread: its bar across the top (title, project, the panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), its latest turns as it
- * opens and those before them read in above, nothing moving, as the person goes back to them,
+ * opens and those before them read in above, nothing moving, as the person goes back to them
+ * (opened from the notification of a turn's end, at that turn, below a line saying so),
  * and after them what its project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
  * model reads it; the composer pinned below it, usable while a turn runs, with what the agent
@@ -123,6 +124,8 @@ import { TurnComponent } from '../turn/turn.component';
 export class ThreadComponent {
   /** The thread's id, from the route. */
   readonly thread = input.required<string>();
+  /** The `seq` of the turn's end a tapped notification opens the chat at, from the route. */
+  readonly finished = input<string>();
 
   protected readonly copy = {
     latest: $localize`:@@thread.latest:Jump to latest`,
@@ -258,6 +261,28 @@ export class ThreadComponent {
   protected readonly turns = computed<readonly TurnResults[]>(() =>
     this.drawn() ? [...this.settled(), ...this.latest()] : [],
   );
+  /**
+   * The turn a tapped notification of the chat's end opened it at (`?finished=`, the `seq` of
+   * that turn's end, from the server's push), by key, with its line saying when it finished.
+   */
+  private readonly away = computed(() => {
+    const ended = finishedTurn(this.asked(), this.finished());
+    if (ended === null) {
+      return null;
+    }
+    const time = new Intl.DateTimeFormat(this.locale, { timeStyle: 'short' }).format(ended.at);
+    return {
+      key: ended.key,
+      line: $localize`:@@thread.away:Finished while you were away · ${time}:TIME:`,
+    };
+  });
+  /** The key of the turn opened at, which changes only when another is. */
+  private readonly awayAt = computed(() => this.away()?.key ?? null);
+  /** Each turn shown, with the line it shows above its reply when it is the one opened at. */
+  protected readonly shownTurns = computed(() => {
+    const away = this.away();
+    return this.turns().map((turn) => ({ turn, away: turn.key === away?.key ? away.line : null }));
+  });
   protected readonly title = computed(() => {
     const summary = this.service.summary();
     return summary === null ? '' : threadTitle(summary);
@@ -308,6 +333,13 @@ export class ThreadComponent {
     // The server writes its own words in the thread (what an approval asks, what replies drew
     // on, the plan) in the person's language: when they choose another, it is read again.
     onChange('language', () => void this.service.open(this.thread()));
+    // Opened at a turn's end, the conversation lets go of its own end before the line is
+    // drawn, so the line comes into view and stays there.
+    effect(() => {
+      if (this.awayAt() !== null) {
+        this.atBottom.set(false);
+      }
+    });
   }
 
   protected send(text: string): void {

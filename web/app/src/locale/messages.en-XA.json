@@ -771,6 +771,7 @@
     "thought.took": "[Ţĥöûĝĥţ ƒöŕ {$DURATION} one]",
     "thread.again": "[Šéñð åĝåîñ one]",
     "thread.attach": "[Åðð ƒîļéš öŕ þĥöţöš one two]",
+    "thread.away": "[Ƒîñîšĥéð ŵĥîļé ýöû ŵéŕé åŵåý · {$TIME} one two]",
     "thread.changes": "[Çĥåñĝéš one]",
     "thread.conversation": "[Çöñṽéŕšåţîöñ one]",
     "thread.failed": "[Šöɱéţĥîñĝ ŵéñţ ŵŕöñĝ: {$ERROR} one two]",

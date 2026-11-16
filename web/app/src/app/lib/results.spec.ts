@@ -120,6 +120,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     started: null,
     model: null,
     result: null,
+    ended: null,
     ...more,
   };
 }

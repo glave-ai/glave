@@ -126,9 +126,13 @@ function push(json: unknown): Record<string, unknown> {
   };
 }
 
-/** A tap on a notification that names `thread` in `org`. */
-function tap(thread: unknown, org: unknown = ORG): Record<string, unknown> {
-  return { notification: { data: { thread, org }, close: () => undefined } };
+/** A tap on a notification that names `thread` in `org`, and where a chat's turn finished. */
+function tap(
+  thread: unknown,
+  org: unknown = ORG,
+  finished: unknown = null,
+): Record<string, unknown> {
+  return { notification: { data: { thread, org, finished }, close: () => undefined } };
 }
 
 test('what waits replaces its thread’s notification, alerting again; a task’s end alerts as one of its own', async () => {
@@ -142,13 +146,31 @@ test('what waits replaces its thread’s notification, alerting again; a task’
     options: {
       tag: THREAD,
       renotify: true,
-      data: { thread: THREAD, org: ORG },
+      data: { thread: THREAD, org: ORG, finished: null },
       icon: '/icon-192.png',
     },
   });
   expect(ended?.title).toBe('Done: fix-login');
   expect(ended?.options['tag']).toMatch(new RegExp(`^${THREAD}:\\d+$`, 'u'));
   expect(ended?.options['renotify']).toBe(false);
+});
+
+test('a chat’s end alerts as one of its own, and keeps where its turn finished', async () => {
+  const worker = started();
+  const done = { text: 'Done: fix-login', thread: THREAD, org: ORG, kind: 'finished', ended: 42 };
+  await worker.dispatch('push', push(done));
+  await worker.dispatch('push', push({ ...done, ended: 'not a seq' }));
+  const [finished, unread] = worker.shown;
+  expect(finished?.options['tag']).toMatch(new RegExp(`^${THREAD}:\\d+$`, 'u'));
+  expect(finished?.options['renotify']).toBe(false);
+  expect(finished?.options['data']).toEqual({ thread: THREAD, org: ORG, finished: 42 });
+  expect(unread?.options['data']).toEqual({ thread: THREAD, org: ORG, finished: null });
+});
+
+test('a tapped chat’s end opens the chat at the turn it finished', async () => {
+  const worker = started();
+  await worker.dispatch('notificationclick', tap(THREAD, ORG, 42));
+  expect(worker.opened).toEqual([`/t/${THREAD}?finished=42#org=${ORG}`]);
 });
 
 test('a push the worker cannot read still shows, in the words the page gave it', async () => {
@@ -158,8 +180,8 @@ test('a push the worker cannot read still shows, in the words the page gave it',
   expect(
     worker.shown.map(({ title, options }) => [title, options['tag'], options['data']]),
   ).toEqual([
-    ['Open glave', 'glave', { thread: null, org: null }],
-    ['Done', 'glave', { thread: null, org: null }],
+    ['Open glave', 'glave', { thread: null, org: null, finished: null }],
+    ['Done', 'glave', { thread: null, org: null, finished: null }],
   ]);
 });
 

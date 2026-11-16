@@ -32,8 +32,8 @@
       >
         <div class="reading">
           <app-push-banner />
-          @for (turn of turns(); track turn.key) {
-            <app-turn [turn]="turn" />
+          @for (shown of shownTurns(); track shown.turn.key) {
+            <app-turn [turn]="shown.turn" [away]="shown.away" />
           }
           @for (message of service.queued(); track message.key) {
             <glz-message from="person" data-testid="thread-queued" [author]="copy.you">

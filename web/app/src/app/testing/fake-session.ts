@@ -199,7 +199,7 @@ export class FakeSession implements SessionClient {
     }
     const next = this.turns.shift();
     if (next instanceof FakeTurn) {
-      return yield* next.run<Methods[M]['result']>();
+      return yield* next.run<Methods[M]['result']>(signal);
     }
     if (next instanceof ApiError) {
       throw next;

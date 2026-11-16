@@ -771,6 +771,7 @@
     "thought.took": "Thought for {$DURATION}",
     "thread.again": "Send again",
     "thread.attach": "Add files or photos",
+    "thread.away": "Finished while you were away · {$TIME}",
     "thread.changes": "Changes",
     "thread.conversation": "Conversation",
     "thread.failed": "Something went wrong: {$ERROR}",
