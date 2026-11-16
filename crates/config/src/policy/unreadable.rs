@@ -56,10 +56,31 @@ mod tests {
 
     #[test]
     fn a_value_of_the_wrong_kind_is_said_without_the_value() {
-        let secret = any_secret();
-        let error = said(&format!("store = \"postgres://glave:{secret}@db/glave\"\n"));
-        assert!(!error.contains(&secret), "the value said");
+        // Quotes, a backslash and a backtick in it, which a quoted value shows escaped.
+        let tail = "q\\b`t";
+        let secret = format!("{}\"{tail}", any_secret());
+        let error = said(&format!("store = {secret:?}\n"));
+        assert!(
+            !error.contains(&secret) && !error.contains(tail),
+            "the value said"
+        );
         assert!(error.contains("line 1, column 9"), "{error}");
         assert!(error.contains("in `store`"), "{error}");
+    }
+
+    #[test]
+    fn what_is_wrong_is_said_whole() {
+        let missing = said("[store]\nurl = \"postgres://db\n");
+        assert!(missing.contains("expected `\"`"), "{missing}");
+        let precision = said("[router_floor]\nprecision = \"eight\"\n");
+        assert!(
+            precision.contains("`eight` is not a precision: name one such as `fp8` ("),
+            "{precision}"
+        );
+        let country = said("[router_floor]\nbased_in = [\"Germany\"]\n");
+        assert!(
+            country.contains("`Germany` is not a country's two-letter code, such as `US`"),
+            "{country}"
+        );
     }
 }

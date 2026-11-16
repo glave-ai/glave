@@ -74,17 +74,10 @@ pub(crate) async fn settings(
     .await??;
     // Said here, not on the thread that read it, which the log is not set up on.
     if let Some(file) = no_keychain {
-        let file = file.display();
-        match said {
-            Said::Plainly => eprintln!(
-                "glave: warning: no OS keychain here, so the root key is kept in {file}, \
-                 readable only by you"
-            ),
-            Said::Logged => tracing::warn!(
-                %file,
-                "no OS keychain here, so the root key is kept in a file readable only by glave"
-            ),
-        }
+        said.warned(
+            "no OS keychain here, so the root key is kept in a file readable only by you",
+            &file.display(),
+        );
     }
     Ok(KeySettings::new(root))
 }

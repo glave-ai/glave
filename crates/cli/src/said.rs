@@ -33,6 +33,15 @@ impl Said {
         }
     }
 
+    /// A warning `what`, with `detail`: `glave: warning: <what>: <detail>`, or a warning in the
+    /// log whose message is `what` alone, `detail` beside it.
+    pub(crate) fn warned(self, what: &str, detail: &dyn Display) {
+        match self {
+            Self::Plainly => eprintln!("glave: warning: {what}: {detail}"),
+            Self::Logged => tracing::warn!(%detail, "{what}"),
+        }
+    }
+
     /// That `what` failed with `error` and someone must act: `glave: <what>: <error>`, or an
     /// error in the log whose message is `what` alone, so alike failures group, with `error`
     /// beside it.

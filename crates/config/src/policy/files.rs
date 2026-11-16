@@ -107,8 +107,9 @@ fn least_precision<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Precision>, D::Error> {
     let name = String::deserialize(reader)?;
     match Precision::of(Some(&name)) {
+        // In backticks, which a settings error keeps: what it quotes it leaves out.
         Precision::Unstated => Err(serde::de::Error::custom(format!(
-            "{name:?} is not a precision: name one such as \"fp8\" ({})",
+            "`{name}` is not a precision: name one such as `fp8` ({})",
             Precision::FourBit.at_least().join(", ")
         ))),
         precision => Ok(Some(precision)),
@@ -129,7 +130,7 @@ fn countries<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Vec<String>,
         .find(|place| place.len() != 2 || !place.bytes().all(|b| b.is_ascii_uppercase()))
     {
         Some(place) => Err(serde::de::Error::custom(format!(
-            "{place:?} is not a country's two-letter code, such as \"US\""
+            "`{place}` is not a country's two-letter code, such as `US`"
         ))),
         None => Ok(places),
     }
