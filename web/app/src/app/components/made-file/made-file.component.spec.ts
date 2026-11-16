@@ -11,21 +11,21 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { objectUrls } from '../../testing/object-urls';
 import { MadeFileComponent } from './made-file.component';
 
-const BUDGET: MadeFile = {
-  kind: 'spreadsheet',
-  name: 'Trip budget',
-  file_name: 'Trip budget.xlsx',
-  media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  bytes: 12_288,
-  sha256: 'b'.repeat(64),
-  parts: '2 sheets',
+const PACKING: MadeFile = {
+  kind: 'document',
+  name: 'Packing list',
+  file_name: 'Packing list.docx',
+  media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  bytes: 8_192,
+  sha256: 'd'.repeat(64),
+  parts: '3 pages',
   previews: true,
   kept: 'Kept with this chat',
-  sentence: 'Made a spreadsheet: Trip budget (2 sheets)',
+  sentence: 'Made a document: Packing list (3 pages)',
 };
 
 /** A file of three bytes, as `file/read` answers it whole. */
-const PIECE = { piece: { media_type: BUDGET.media_type, bytes: 3, offset: 0, data: 'UE5H' } };
+const PIECE = { piece: { media_type: PACKING.media_type, bytes: 3, offset: 0, data: 'UE5H' } };
 
 /** The chat's panel as the card sees it: the file open in it, and whether it shows. */
 interface Panel {
@@ -36,7 +36,7 @@ interface Panel {
 
 async function render(
   fake: FakeSession,
-  file: MadeFile = BUDGET,
+  file: MadeFile = PACKING,
 ): Promise<{ readonly fixture: ComponentFixture<MadeFileComponent>; readonly panel: Panel }> {
   const panel: Panel = { opened: [], file: signal(null), visible: signal(false) };
   TestBed.configureTestingModule({
@@ -73,10 +73,10 @@ describe('MadeFileComponent', () => {
   it('names the file as the server does, its kind, its parts and where it is kept', async () => {
     const { fixture } = await render(new FakeSession());
     const root = fixture.nativeElement as HTMLElement;
-    expect(part(root, 'title')?.textContent).toBe('Trip budget');
-    expect(part(root, 'line')?.textContent).toBe('Spreadsheet · 2 sheets · Kept with this chat');
-    expect(part(root, 'open')?.getAttribute('aria-label')).toBe('Open Trip budget');
-    expect(part(root, 'download')?.getAttribute('aria-label')).toBe('Download Trip budget');
+    expect(part(root, 'title')?.textContent).toBe('Packing list');
+    expect(part(root, 'line')?.textContent).toBe('Document · 3 pages · Kept with this chat');
+    expect(part(root, 'open')?.getAttribute('aria-label')).toBe('Open Packing list');
+    expect(part(root, 'download')?.getAttribute('aria-label')).toBe('Download Packing list');
     await expectAccessible(root);
   });
 
@@ -84,8 +84,8 @@ describe('MadeFileComponent', () => {
     const { fixture, panel } = await render(new FakeSession());
     const root = fixture.nativeElement as HTMLElement;
     part(root, 'open')?.click();
-    expect(panel.opened).toEqual([BUDGET]);
-    panel.file.set(BUDGET);
+    expect(panel.opened).toEqual([PACKING]);
+    panel.file.set(PACKING);
     panel.visible.set(true);
     await settle(fixture);
     expect(root.querySelector('.file')?.classList.contains('selected')).toBe(true);
@@ -95,7 +95,7 @@ describe('MadeFileComponent', () => {
     const urls = objectUrls();
     const fake = new FakeSession().answer('file/read', PIECE);
     const { fixture, panel } = await render(fake, {
-      ...BUDGET,
+      ...PACKING,
       kind: 'pdf',
       file_name: 'plan.pdf',
       media_type: 'application/pdf',
@@ -110,12 +110,12 @@ describe('MadeFileComponent', () => {
   });
 
   it('only downloads a file the server doesn’t preview, and does neither for one not kept', async () => {
-    const { fixture } = await render(new FakeSession(), { ...BUDGET, previews: false });
+    const { fixture } = await render(new FakeSession(), { ...PACKING, previews: false });
     const root = fixture.nativeElement as HTMLElement;
     expect(part(root, 'open')).toBeNull();
     expect(part(root, 'download')).not.toBeNull();
     fixture.componentRef.setInput('file', {
-      ...BUDGET,
+      ...PACKING,
       sha256: null,
       kept: 'Not kept: larger than 10 MB, so it stays on the computer',
     });
@@ -137,8 +137,8 @@ describe('MadeFileComponent', () => {
     });
     part(fixture.nativeElement as HTMLElement, 'download')?.click();
     await settle(fixture);
-    expect(fake.paramsOf('file/read')).toEqual([{ thread: 'thread-1', sha256: BUDGET.sha256 }]);
-    expect(clicked).toEqual(['Trip budget.xlsx']);
+    expect(fake.paramsOf('file/read')).toEqual([{ thread: 'thread-1', sha256: PACKING.sha256 }]);
+    expect(clicked).toEqual(['Packing list.docx']);
   });
 
   it('says why in its line when the file can’t be saved', async () => {
