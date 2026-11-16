@@ -7,8 +7,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::AssetKind;
-use glave_session::protocol::{Answer, Notification, Reply, Request, Update, code};
-use glave_session::{Answering, TurnItem};
+use glave_session::Answering;
+use glave_session::protocol::{Answer, Reply, Request, code};
 use serde_json::json;
 
 use crate::support::*;
@@ -29,20 +29,7 @@ fn a_file_a_command_made_after_the_person_allowed_it_is_kept() {
         let (server, _) = setup.build(&dir).await;
         let thread = start(&server, false).await;
         let mut stream = stream_turn(&server, thread, "make it", None).await.unwrap();
-        let approval = loop {
-            match stream.next().await.unwrap() {
-                TurnItem::Note(note) => {
-                    if let Notification::Live {
-                        update: Update::ApprovalPending { approval },
-                        ..
-                    } = note.as_ref()
-                    {
-                        break approval.clone();
-                    }
-                }
-                other => panic!("the turn went on without asking: {other:?}"),
-            }
-        };
+        let approval = approval_asked(&mut stream).await;
         let decide = Request::ApprovalDecide {
             thread,
             approval,

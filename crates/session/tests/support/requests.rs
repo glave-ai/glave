@@ -3,12 +3,13 @@
 
 use std::path::Path;
 
-use glave_event::{Body, Opened, RawEvent, ThreadId, decode};
+use glave_event::{Body, CallId, Opened, RawEvent, ThreadId, decode};
 use glave_ports::{Caller, EventLog, ProjectId};
 use glave_session::protocol::{
-    ApiError, IdempotencyKey, Meta, NewFolder, Reply, Request, TaskInfo, TaskStatus,
+    ApiError, IdempotencyKey, Meta, NewFolder, Notification, Reply, Request, TaskInfo, TaskStatus,
+    Update,
 };
-use glave_session::{Sent, TurnStream};
+use glave_session::{Sent, TurnItem, TurnStream};
 
 use super::setup::{Tested, scope};
 
@@ -278,5 +279,23 @@ pub(crate) async fn listed<L: EventLog + 'static>(
     {
         Reply::Commands { commands, .. } => commands,
         other => panic!("commands, not {other:?}"),
+    }
+}
+
+/// The approval `stream`'s turn waits for, once it is pending.
+pub(crate) async fn approval_asked(stream: &mut TurnStream) -> CallId {
+    loop {
+        match stream.next().await.unwrap() {
+            TurnItem::Note(note) => {
+                if let Notification::Live {
+                    update: Update::ApprovalPending { approval },
+                    ..
+                } = note.as_ref()
+                {
+                    return approval.clone();
+                }
+            }
+            other => panic!("the turn went on without asking: {other:?}"),
+        }
     }
 }
