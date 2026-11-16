@@ -215,11 +215,16 @@ impl<R: Renew> Renewing<R> {
                     );
                     return Ended::Done(Instant::now());
                 }
+                Err(error) if attempt < KEEPS => {
+                    let error = format!("{error:#}");
+                    tracing::warn!(%url, %error, "could not keep a renewed sign-in yet");
+                    tokio::time::sleep(KEEP_PAUSE).await;
+                }
+                // The store failing at the last try: the renewed token is lost, and the sign-in
+                // stops working when the old one runs out, unless someone acts.
                 Err(error) => {
-                    tracing::warn!("could not keep the renewed sign-in to {url}: {error:#}");
-                    if attempt < KEEPS {
-                        tokio::time::sleep(KEEP_PAUSE).await;
-                    }
+                    let error = format!("{error:#}");
+                    tracing::error!(%url, %error, "could not keep a renewed sign-in");
                 }
             }
         }
