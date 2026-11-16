@@ -7,10 +7,14 @@
 //! deletes or pauses it; deleting it keeps its chat, with its past runs.
 //! Firing them is `fire.rs`; how one reads in lists, `info.rs`.
 
+mod asked;
+mod card;
 mod fire;
 mod info;
 mod placed;
 
+pub(crate) use asked::asking;
+pub(crate) use card::{asked_in, card_in};
 pub(crate) use placed::Placed;
 
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};

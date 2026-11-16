@@ -142,6 +142,7 @@ fn a_call_plan_mode_refuses_says_why_in_the_model_s_terms() {
         secret: false,
         caution: Caution::of(caution, None),
         outside_sandbox: None,
+        repeating: None,
     };
     let changes = refused(&request(Effect::Changes, None));
     assert!(

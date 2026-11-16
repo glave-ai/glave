@@ -194,6 +194,8 @@ where
             return self.call_media(thread, call, step, cancel, live).await;
         } else if step.toolset.is_search(&call.tool) {
             return self.call_search(thread, call, step, cancel, live).await;
+        } else if step.toolset.is_schedule(&call.tool) {
+            return self.call_schedule(thread, call, step, cancel, live).await;
         }
         self.call_offered(thread, call, step, cancel, live).await
     }
@@ -275,6 +277,7 @@ where
             secret,
             caution: Caution::of(caution.or(acts), lifted),
             outside_sandbox: outside,
+            repeating: None,
         };
         let turn = &mut step.summary;
         if let Some(refused) = self.approve(thread, &request, turn, cancel, live).await? {
@@ -550,6 +553,19 @@ where
             });
             return Ok(Some(ToolOutput::text(true, crate::plan::refused(request))));
         }
+        self.put_to_person(thread, request, cancel, live).await
+    }
+
+    /// Puts `request` to the person, whatever the mode, recording the question and the answer:
+    /// `None` when the call may go ahead; otherwise the result the model is given instead. Where
+    /// the person answers in the log, the turn stops here and goes on from their answer.
+    pub(crate) async fn put_to_person(
+        &self,
+        thread: &mut Thread,
+        request: &ApprovalRequest,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<ToolOutput>, HarnessError> {
         let asked = request.asked();
         self.record(thread, &asked).await?;
         if self.approver.waits(thread.id) {

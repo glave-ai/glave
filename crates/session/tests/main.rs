@@ -63,6 +63,7 @@ mod remote;
 mod removing;
 mod schedule_people;
 mod schedule_runs;
+mod schedule_tool;
 mod schedules;
 mod search;
 mod secrets;

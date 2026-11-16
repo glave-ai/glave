@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
+use crate::envelope::At;
 use crate::id::CallId;
 use crate::payload::caution::Caution;
 use crate::payload::principal::Principal;
@@ -14,7 +15,8 @@ pub(crate) const DECIDED: &str = "approval.decided";
 
 crate::worded! {
     /// What an approval asks the person, by what would run: a command, an edit, a write, a
-    /// read, a page, a service's tool by what it does and the service, or any other tool.
+    /// read, a page, a service's tool by what it does and the service, work that would repeat
+    /// or stop repeating (version 2), or any other tool.
     Ask {
         Command = "ask-command" "Run this command?",
         Edit = "ask-edit" "Edit this file?",
@@ -22,6 +24,8 @@ crate::worded! {
         Read = "ask-read" "Read this file?",
         Page = "ask-page" "Open this page?",
         With { act, service } = "ask-with" "{ $act } with { $service }?",
+        Repeat { when } = "ask-repeat" "Repeat this { $when }?",
+        StopRepeating { name } = "ask-stop-repeating" "Stop repeating { $name }?",
         Allow = "ask-allow" "Allow this?",
     }
 }
@@ -62,6 +66,24 @@ pub struct ApprovalRequested {
     /// network, as the model asked. Such a request asks every time, and is allowed only once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outside_sandbox: Option<OutsideSandbox>,
+    /// For a schedule's card (`ask-repeat`), what it was written from, so the session writes its
+    /// question and its `detail` again in the reader's language (version 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeating: Option<Repeating>,
+}
+
+/// What a schedule's card was written from: when it repeats, on whose clocks, its chat's name,
+/// and its first run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Repeating {
+    /// A five-field cron expression, on the clocks of `zone`.
+    pub cron: String,
+    /// An IANA time zone.
+    pub zone: String,
+    /// The schedule's name, and its chat's.
+    pub name: String,
+    pub first: At,
 }
 
 /// A request to run one command outside the sandbox, or in it with the network.
@@ -127,7 +149,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ApprovalDecided {
@@ -140,7 +162,8 @@ pub(crate) fn decode_requested(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        1 => Some(parse(data)),
+        // Version 2 only adds what an approval may ask and why: version 1 reads as it is.
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

@@ -38,6 +38,16 @@ pub(crate) fn repeats_in(language: Language, when: &When, start: bool) -> String
     say(language, &said.unwrap_or(Sentence::RepeatsOther { start }))
 }
 
+/// Whether `when` repeats in a shape with plain words, as "every weekday at 8:00 am" is: a
+/// cron expression whose days and times say plainly.
+pub(crate) fn plain(when: &When) -> bool {
+    let When::Cron(text) = when else {
+        return false;
+    };
+    let start = "no".to_owned();
+    Cron::parse(text).is_ok_and(|cron| plainly(Language::English, &cron, start).is_some())
+}
+
 /// The plain words for `cron` in `language`, when its shape has them.
 fn plainly(language: Language, cron: &Cron, start: String) -> Option<Sentence> {
     if values(cron.months, 1, 12).len() != 12 {

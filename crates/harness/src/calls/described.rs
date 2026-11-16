@@ -40,6 +40,8 @@ where
             return crate::media::describe(name, arguments);
         } else if tools.is_search(name) {
             return crate::web_search::describe(arguments);
+        } else if tools.is_schedule(name) {
+            return crate::schedule::describe(arguments);
         }
         let described = tools.get(name).and_then(|(index, info)| {
             let source = self.source_for(thread, tools, index)?;
@@ -59,7 +61,7 @@ where
             return ToolKind::Web;
         }
         let own = tools.is_plan(name) || tools.is_memory(name) || tools.is_agent(name);
-        if own || tools.is_compact(name) || tools.is_media(name) {
+        if own || tools.is_compact(name) || tools.is_media(name) || tools.is_schedule(name) {
             return ToolKind::Other;
         }
         tools

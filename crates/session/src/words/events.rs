@@ -38,7 +38,15 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
     let Event { header, body } = decode(event.clone()).ok()?;
     let body = match body {
         Body::ApprovalRequested(mut asked) => {
-            let ask = asked.asking.as_ref().map(|ask| word(language, ask));
+            // A schedule's card is written again from what it was written from.
+            let repeat = (asked.repeating.as_ref())
+                .map(|repeating| crate::schedule::asked_in(language, repeating));
+            if let Some(card) = (asked.repeating.as_ref())
+                .and_then(|repeating| crate::schedule::card_in(language, repeating))
+            {
+                asked.detail = card;
+            }
+            let ask = (repeat.as_ref().or(asked.asking.as_ref())).map(|ask| word(language, ask));
             let caution = asked
                 .reason
                 .as_ref()

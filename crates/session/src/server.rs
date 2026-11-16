@@ -382,9 +382,9 @@ where
             .with_credentials_of(wiring.git_hosts.clone().map(credentials_of));
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
-            inner: Arc::new(Inner {
+            inner: Arc::new_cyclic(|server| Inner {
                 person: harness.settings().person,
-                harness,
+                harness: harness.with_schedules(crate::schedule::asking(server, wiring.schedules)),
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,

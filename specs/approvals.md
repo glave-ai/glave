@@ -34,6 +34,8 @@ Full access asks no one for approval, whether or not someone is there, as Claude
 
 These are what a person would want kept even with no limits on changes, and none of them stops a task.
 
+One question is the person's in every mode: whether to repeat work on its own (`schedule`, `session.md`, "Schedules"). Setting up a schedule is something the person confirms, not an action they guard, so Full access asks it too, the judge never clears it, and it is offered only where someone can answer. Removing one is an ordinary change.
+
 ## Plan mode
 
 Plan is the mode for a person who wants to see the plan before anything is built (owner decisions, 2026-10-25 and 2026-10-26, #92). The agent looks around and proposes a plan, and changes nothing until the person approves it. Codex's plan mode only tells the model so; glave's is enforced, and asks no one:

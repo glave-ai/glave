@@ -5,7 +5,9 @@
 //! it calls the service's tool that asks the person something, so a person can try that card;
 //! told to [`DRAW`], it calls glave's own tool that makes an image; told to [`LOOK_UP`], glave's
 //! own web search, whose search service it stands in for too, at [`SEARCH`], answering every
-//! query with one page as Brave's Search API would, so no key and no cost. Under [`OPENROUTER`] it
+//! query with one page as Brave's Search API would, so no key and no cost; told to [`REPEAT`],
+//! glave's own `schedule`, setting up "check the build" every weekday at 8, so a person can try
+//! the card that confirms it, and the schedule's chat after. Under [`OPENROUTER`] it
 //! answers as OpenRouter too (`router.rs`), for an OpenRouter account connected with any key,
 //! its image API with a picture of its own (`picture.rs`).
 
@@ -32,6 +34,12 @@ pub(crate) const LOOK_UP: &str = "look up";
 
 /// glave's own tool that searches the web.
 const SEARCHING_TOOL: &str = "web_search";
+
+/// What, said in a message, has it call [`SCHEDULING_TOOL`]: "repeat this every weekday at 8".
+pub(crate) const REPEAT: &str = "repeat this";
+
+/// glave's own tool that sets up work that repeats.
+const SCHEDULING_TOOL: &str = "schedule";
 
 /// Where under the stand-in's address it answers as Brave's web search.
 pub(crate) const SEARCH: &str = "/res/v1/web/search";
@@ -74,6 +82,11 @@ pub(crate) fn start() -> Result<FakeHttp, String> {
             None if told(request, DRAW, DRAWING_TOOL) => {
                 let drawn = json!({"prompt": "a checkerboard in two greys"}).to_string();
                 (200, calling(DRAWING_TOOL, &drawn))
+            }
+            None if told(request, REPEAT, SCHEDULING_TOOL) => {
+                let repeat = json!({"action": "create", "name": "Morning check",
+                    "prompt": "Check the build and tell me what broke", "cron": "0 8 * * 1-5"});
+                (200, calling(SCHEDULING_TOOL, &repeat.to_string()))
             }
             None if told(request, LOOK_UP, SEARCHING_TOOL) => {
                 let asked = json!({"query": "glave release notes"}).to_string();

@@ -498,6 +498,17 @@ sentences! {
     // A weekday's name, Sunday as 0.
     Weekday { day: u64 } = "weekday"
         "{ $day ->\n    [0] Sunday\n    [1] Monday\n    [2] Tuesday\n    [3] Wednesday\n    [4] Thursday\n    [5] Friday\n   *[6] Saturday\n }",
+    // A month's name, January as 1.
+    Month { month: u64 } = "month"
+        "{ $month ->\n    [1] January\n    [2] February\n    [3] March\n    [4] April\n    [5] May\n    [6] June\n    [7] July\n    [8] August\n    [9] September\n    [10] October\n    [11] November\n   *[12] December\n }",
+    // A date and its time: `Tuesday 17 November at 8:00 am`.
+    DateAt { weekday: String, day: u64, month: String, time: String } = "date-at"
+        "{ $weekday } { $day } { $month } at { $time }",
+    // What the card that confirms a schedule says below its question.
+    RunsFirst { when: String } = "runs-first" "First run: { $when }, your time.",
+    RunsNext { when: String } = "runs-next" "Next runs: { $when }, your time.",
+    RunsInChat { name: String } = "runs-in-chat"
+        "Each run is added to its own chat, \u{201c}{ $name }\u{201d}.",
     // Lists in a sentence: all but the last, joined, then the last.
     ListComma { all: String, next: String } = "list-comma" "{ $all }, { $next }",
     ListAnd { all: String, last: String } = "list-and" "{ $all } and { $last }",

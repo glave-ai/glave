@@ -10,8 +10,8 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalRequested, Arguments, Ask, CallId, Caution, Lifted, OutsideSandbox, PrincipalId, Risk,
-    Settled, ThreadId, WebPage, Worded as _,
+    ApprovalRequested, Arguments, Ask, CallId, Caution, Lifted, OutsideSandbox, PrincipalId,
+    Repeating, Risk, Settled, ThreadId, WebPage, Worded as _,
 };
 use glave_ports::{Assessment, Effect, ToolSource};
 
@@ -47,6 +47,8 @@ pub struct ApprovalRequest {
     /// asked, with its reason. Such a request asks every time: allowing it for the thread
     /// allows it once.
     pub outside_sandbox: Option<OutsideSandbox>,
+    /// For a schedule's card, what it was written from.
+    pub repeating: Option<Repeating>,
 }
 
 impl ApprovalRequest {
@@ -63,6 +65,7 @@ impl ApprovalRequest {
             caution: self.caution.as_ref().and_then(Caution::sentences),
             reason: self.caution.clone(),
             outside_sandbox: self.outside_sandbox.clone(),
+            repeating: self.repeating.clone(),
         }
     }
 
@@ -454,6 +457,7 @@ mod tests {
             secret,
             caution: None,
             outside_sandbox: None,
+            repeating: None,
         };
         assert_eq!(block_on!(AllowAll.decide(&request(true))), Decision::Deny);
         assert_eq!(

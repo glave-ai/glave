@@ -47,7 +47,9 @@ pub(crate) mod workspace;
 pub(crate) mod zone;
 
 pub use appearance::{Accent, AppearanceSet, BrandSet, Color, HeldLogo};
-pub use approval::{ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Verdict};
+pub use approval::{
+    ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Repeating, Verdict,
+};
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{
