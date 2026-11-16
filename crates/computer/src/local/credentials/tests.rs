@@ -9,7 +9,8 @@ use glave_ports::computer::{
 use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
 use super::*;
-use crate::{CancelSwitch, LocalComputers, sandbox_available};
+use crate::local::sandbox::tests::enforced;
+use crate::{CancelSwitch, LocalComputers};
 
 fn host(url: &str, forge: Forge) -> CredentialHost {
     CredentialHost {
@@ -220,7 +221,7 @@ fn scratch(name: &str) -> glave_ports::testing::TempDir {
 /// signs in. Runs only where the sandbox is (macOS, Linux with bubblewrap).
 #[test]
 fn a_sandboxed_command_signs_in_through_the_helper() {
-    if !sandbox_available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("credentials");
@@ -318,7 +319,7 @@ impl SignedIn {
 /// so no command can change another's. Runs only where the sandbox is.
 #[test]
 fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
-    if !sandbox_available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("credentials-kept");
@@ -372,10 +373,11 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
 /// A command's helper answers that command alone. Every sandbox reads the folder helpers are
 /// made in, so another command on the computer, someone else's there, finds a running
 /// command's helper and runs it as git would: it must be given nothing. Runs only where the
-/// sandbox is.
+/// sandbox is; named for it, so CI's sandbox jobs, which pick tests by that word, run it
+/// under bubblewrap too.
 #[test]
-fn another_command_that_runs_a_command_s_helper_is_given_nothing() {
-    if !sandbox_available() {
+fn another_sandboxed_command_that_runs_a_command_s_helper_is_given_nothing() {
+    if !enforced() {
         return;
     }
     let dir = scratch("credentials-apart");
