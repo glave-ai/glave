@@ -80,6 +80,7 @@ fn run(
         network: SandboxNetwork::when(network),
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
+        apart: false,
     });
     block_on!(async {
         let computer = computers.create(&Environment::host()).await?;
@@ -416,6 +417,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
         network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home),
+        apart: false,
     };
     let root = dir.join("project");
     block_on!(async {
@@ -455,6 +457,7 @@ fn landlock_keeps_glave_on_path_readable() {
         network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home.clone()),
+        apart: false,
     };
     let root = dir.join("project");
     block_on!(async {

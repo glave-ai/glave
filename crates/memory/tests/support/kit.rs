@@ -148,6 +148,7 @@ impl Kit {
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
+            apart: false,
         };
         let workspace = here(dir).await.with_sandbox(&sandbox).await.unwrap();
         Some(self.harness_in(workspace, answers, approver, memory, settings))

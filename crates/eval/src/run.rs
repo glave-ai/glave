@@ -337,6 +337,7 @@ async fn workspace(
         network: SandboxNetwork::when(task.network),
         home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
         glave_home: None,
+        apart: false,
     };
     match open().await?.with_sandbox(&sandbox).await {
         Ok(workspace) => Ok(workspace),

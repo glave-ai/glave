@@ -120,6 +120,7 @@ fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandb
         network: SandboxNetwork::Off,
         home: Some(home),
         glave_home: Some(glave_home),
+        apart: false,
     };
     (computers, sandbox)
 }
@@ -221,6 +222,7 @@ fn the_running_glave_is_first_on_every_command_s_path() {
         network: SandboxNetwork::Off,
         home: Some(home.clone()),
         glave_home: Some(glave_home.clone()),
+        apart: false,
     };
     let old_first = format!("{}:/usr/bin:/bin", dir.join("old").display());
     block_on!(async {
@@ -540,6 +542,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        apart: false,
     };
     let project = |name: &str, hooks: bool| {
         let root = dir.join(name);
@@ -716,6 +719,7 @@ fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
         network: SandboxNetwork::Direct,
         home: Some(home),
         glave_home: Some(dir.join("glave")),
+        apart: false,
     };
     let script = format!(
         "ls '{0}' >/dev/null && echo keychain-listed; cat '{1}' >/dev/null && echo keychain-read; \

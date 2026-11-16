@@ -68,6 +68,7 @@ mod tests {
             network: SandboxNetwork::Direct,
             home: None,
             glave_home: None,
+            apart: false,
         };
         let level = |protections: Protections, mode, here: Option<&Sandbox>| {
             protections

@@ -51,6 +51,7 @@ fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
                     network: SandboxNetwork::Direct,
                     home: None,
                     glave_home: None,
+                    apart: false,
                 }),
                 json!(null),
             ),

@@ -110,6 +110,7 @@ impl Sleepy {
             network: SandboxNetwork::Off,
             home: Some(home.to_owned()),
             glave_home: Some(home.join(".glave")),
+            apart: false,
         });
         sleepy
     }

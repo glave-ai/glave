@@ -38,6 +38,7 @@ fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
         network: SandboxNetwork::when(network),
         home: Some(home.to_owned()),
         glave_home: Some(home.join(".glave")),
+        apart: false,
     }
 }
 

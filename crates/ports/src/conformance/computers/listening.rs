@@ -39,6 +39,7 @@ pub(super) async fn listening<C: Computers>(computers: &C, here: WorkspaceId) ->
         network: SandboxNetwork::Direct,
         home: None,
         glave_home: None,
+        apart: false,
     };
     listed_with_its_port(computers, here, Some(sandbox)).await
 }

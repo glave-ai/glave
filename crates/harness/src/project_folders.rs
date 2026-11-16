@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::Permissions;
+use glave_ports::computer::Sandbox;
 use glave_ports::settings::{Hooks, Judge, Protections};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, Scope, ToolSource};
 
@@ -150,9 +151,13 @@ where
             } else {
                 thread.defaults.home_sandbox.as_ref()
             };
-            let wanted = protections.sandbox(mode, most);
-            let asks = thread.defaults.ask_network;
             let walled = self.walled(thread);
+            // Someone else's commands here share nothing the person's commands run from.
+            let wanted = protections.sandbox(mode, most).map(|sandbox| Sandbox {
+                apart: walled,
+                ..sandbox
+            });
+            let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref()
                 || workspace.asks_network() != asks
                 || workspace.plans() != planning

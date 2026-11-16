@@ -356,6 +356,7 @@ pub fn person_sandbox(network: bool) -> Sandbox {
         network: SandboxNetwork::when(network),
         home: Some(PERSON_HOME.into()),
         glave_home: Some(format!("{PERSON_HOME}/.glave").into()),
+        apart: false,
     }
 }
 

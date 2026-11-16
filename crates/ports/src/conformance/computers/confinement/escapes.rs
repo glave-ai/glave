@@ -227,6 +227,7 @@ fn guarded(path: &str, content: &[u8]) -> FileWrite {
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
+            apart: false,
         }),
         ..plain(path, content)
     }

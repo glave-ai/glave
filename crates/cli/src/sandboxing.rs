@@ -26,6 +26,7 @@ pub(crate) fn sandbox_at(
         network: SandboxNetwork::when(choices.network.value),
         home: std::env::var_os("HOME").map(PathBuf::from),
         glave_home: glave_home.map(Path::to_path_buf),
+        apart: false,
     }
 }
 

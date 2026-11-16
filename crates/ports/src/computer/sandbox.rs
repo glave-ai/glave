@@ -177,6 +177,12 @@ pub struct Sandbox {
     /// glave's own data folder, which commands may neither read nor write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glave_home: Option<PathBuf>,
+    /// Whether its commands are someone's other than the person whose computer it is: kept
+    /// apart from that person's, they share no package cache with them, since what one
+    /// person's command leaves there another's would run. Each command then keeps its caches
+    /// in its own temp folder, gone when it ends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub apart: bool,
 }
 
 #[cfg(test)]
@@ -215,6 +221,7 @@ mod tests {
                 network: SandboxNetwork::Off,
                 home: None,
                 glave_home: None,
+                apart: false,
             }),
             ..plain
         };

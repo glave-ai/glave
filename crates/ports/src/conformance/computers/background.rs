@@ -297,6 +297,7 @@ async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        apart: false,
     });
     let id = match computers.start(here, &command).await {
         Err(ComputerError::Unsupported(_)) => return Ok(()),

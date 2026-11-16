@@ -45,6 +45,7 @@ async fn persons_workspace(
         network: SandboxNetwork::when(false),
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
+        apart: false,
     };
     let known = KnownSecrets::default();
     known.set(vec![Known::new(
@@ -89,13 +90,15 @@ async fn removed_outside<A: glave_harness::Approver>(
         .unwrap();
 }
 
-#[test]
-fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_ins() {
-    if !glave_computer::sandbox_available() {
-        assert!(std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none());
-        return;
-    }
-    let base = TempDir::outside_temp("walled-again").unwrap();
+/// Whether the sandbox runs here, as it must where `GLAVE_REQUIRE_SANDBOX` says.
+fn sandboxed_here() -> bool {
+    let available = glave_computer::sandbox_available();
+    assert!(available || std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none());
+    available
+}
+
+/// A repository with one commit, in `base/app`.
+fn repository(base: &std::path::Path) -> std::path::PathBuf {
     let repo = base.join("app");
     std::fs::create_dir_all(&repo).unwrap();
     sh(
@@ -103,6 +106,106 @@ fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_
         "git init -q --initial-branch=main && echo hi > a.txt && git add a.txt && \
          git -c user.name=t -c user.email=t@example.com commit -q -m one",
     );
+    repo
+}
+
+/// Someone other than the person the harness works for.
+fn someone_else() -> Caller {
+    let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+    Caller {
+        person: Some(someone.unwrap()),
+        ..Caller::default()
+    }
+}
+
+/// A thread of `caller`'s in a worktree of `repo`, after a first turn.
+async fn said_hi<A: glave_harness::Approver>(
+    harness: &glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, A>,
+    caller: &Caller,
+    repo: &std::path::Path,
+    cancel: &glave_harness::Cancel,
+) -> glave_harness::Thread {
+    let place = Place::Worktree(repo.to_string_lossy().into_owned());
+    let mut thread = harness
+        .start_thread_in(scope(), caller, place)
+        .await
+        .unwrap();
+    harness
+        .run_turn_as(&mut thread, "hi", caller, cancel, &mut |_| {})
+        .await
+        .unwrap();
+    thread
+}
+
+/// Someone else's commands on the harness's computer share no package cache with its person's
+/// (`specs/sandbox.md`, "Whose computer"): they read nothing the person's commands keep there,
+/// and what theirs leave in a cache, a tool to run later, the person's never find in their
+/// own, whether left through the cache they are given or written where the person's is.
+#[test]
+fn someone_else_s_commands_share_no_cache_with_the_person_s() {
+    if !sandboxed_here() {
+        return;
+    }
+    let base = TempDir::outside_temp("walled-cache").unwrap();
+    let repo = repository(&base);
+    let worktrees = base.join("worktrees");
+    // glave's folder is there, as on any computer glave runs on: its sandbox cache is kept in it.
+    std::fs::create_dir_all(base.join(".glave")).unwrap();
+    block_on!(async {
+        let workspace = persons_workspace(&base, &repo, &worktrees).await;
+        let keep = "mkdir -p \"$XDG_CACHE_HOME\" && echo kept-private > \"$XDG_CACHE_HOME/own\"";
+        // Theirs reads the person's cache, then leaves a tool there and in the one it is given.
+        let cache = std::fs::canonicalize(base.join(".glave")).unwrap();
+        let plant = format!(
+            "find '{cache}' -type f 2>/dev/null | xargs cat 2>/dev/null; \
+             for kept in '{cache}'/*/; do \
+             echo planted > \"$kept/tool\" 2>/dev/null && echo wrote-theirs; done; \
+             mkdir -p \"$XDG_CACHE_HOME\" && echo planted > \"$XDG_CACHE_HOME/tool\" && \
+             echo own-cache-works",
+            cache = cache.join("sandbox-cache").display()
+        );
+        let look = "cat \"$XDG_CACHE_HOME/tool\" 2>/dev/null || echo nothing-there";
+        let ran = |command: &str| {
+            let call = vec![("bash", json!({"command": command}))];
+            [
+                answer(None, call, StopReason::ToolUse),
+                answer(Some("Done."), vec![], StopReason::EndTurn),
+            ]
+        };
+        let answers = [ran(keep), ran(&plant), ran(look)];
+        let answers = answers.into_iter().flatten().collect();
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        );
+        let cancel = glave_harness::Cancel::new();
+        let person = Caller::default();
+        said_hi(&harness, &person, &repo, &cancel).await;
+        let theirs = said_hi(&harness, &someone_else(), &repo, &cancel).await;
+        let said = results(theirs.messages()).join("\n");
+        assert!(said.contains("own-cache-works"), "{said}");
+        assert!(!said.contains("kept-private"), "they read it: {said}");
+        assert!(!said.contains("wrote-theirs"), "they wrote it: {said}");
+        let own = said_hi(&harness, &person, &repo, &cancel).await;
+        let said = results(own.messages()).join("\n");
+        assert!(
+            said.contains("nothing-there"),
+            "the person's command found what someone else's left: {said}"
+        );
+    });
+}
+
+#[test]
+fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_ins() {
+    if !sandboxed_here() {
+        return;
+    }
+    let base = TempDir::outside_temp("walled-again").unwrap();
+    let repo = repository(&base);
     let worktrees = base.join("worktrees");
     block_on!(async {
         let workspace = persons_workspace(&base, &repo, &worktrees).await;
@@ -126,21 +229,9 @@ fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_
             1,
             in_the_sandbox(),
         );
-        let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
-        let grace = Caller {
-            person: Some(someone.unwrap()),
-            ..Caller::default()
-        };
-        let place = Place::Worktree(repo.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &grace, place)
-            .await
-            .unwrap();
+        let grace = someone_else();
         let cancel = glave_harness::Cancel::new();
-        harness
-            .run_turn_as(&mut thread, "hi", &grace, &cancel, &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = said_hi(&harness, &grace, &repo, &cancel).await;
         let root = harness.works_in(&thread).unwrap().root().to_owned();
         assert!(root.join("a.txt").exists());
 

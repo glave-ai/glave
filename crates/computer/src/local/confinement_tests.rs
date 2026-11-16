@@ -297,6 +297,7 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
         network: glave_ports::computer::SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        apart: false,
     };
     let protected = |path: &str| FileWrite {
         protect: Some(guarded.clone()),

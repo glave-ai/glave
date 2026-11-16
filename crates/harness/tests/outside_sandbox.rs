@@ -110,6 +110,7 @@ pub(crate) async fn walled(base: &Path, network: bool) -> glave_harness::Workspa
         network: SandboxNetwork::when(network),
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
+        apart: false,
     };
     workspace(&base.join("project"))
         .await

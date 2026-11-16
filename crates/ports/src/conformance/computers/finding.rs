@@ -167,6 +167,7 @@ pub(super) async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) ->
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        apart: false,
     });
     let output = Collect::new();
     let never = Trip::default();

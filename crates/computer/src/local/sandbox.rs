@@ -131,7 +131,12 @@ impl Prepared {
         hidden: &[PathBuf],
         glave_on_path: Option<&Path>,
     ) -> Result<Self, ComputerError> {
-        let cache = cache_home(sandbox.glave_home.as_deref()).await;
+        // A sandbox kept apart shares no cache with the computer's person's commands: what
+        // one left there the other would run. Its folder stays hidden in glave's own.
+        let cache = match sandbox.apart {
+            true => None,
+            false => cache_home(sandbox.glave_home.as_deref()).await,
+        };
         let reached = Reached {
             cache: cache.as_deref(),
             glave_on_path,
@@ -149,7 +154,8 @@ impl Prepared {
     }
 
     /// Where package managers keep their caches for `launch`'s command: glave's sandbox
-    /// cache folder, kept between runs, or without glave's folder one in its temp folder.
+    /// cache folder, kept between runs; or, without glave's folder or for a sandbox kept
+    /// apart, one in its temp folder.
     pub(crate) fn caches(&self, launch: &Launch) -> PathBuf {
         self.cache
             .clone()

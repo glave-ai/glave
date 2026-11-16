@@ -192,6 +192,7 @@ fn a_sandbox_that_starts_no_command_is_given_up_in_seconds_saying_so() {
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        apart: false,
     };
     let tried = block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();

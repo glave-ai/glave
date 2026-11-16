@@ -240,6 +240,7 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
             network: SandboxNetwork::Direct,
             home: std::env::var_os("HOME").map(PathBuf::from),
             glave_home: None,
+            apart: false,
         });
         computers
             .run_with_credentials(
@@ -297,6 +298,7 @@ fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
             network: SandboxNetwork::Off,
             home: Some(dir.to_path_buf()),
             glave_home: Some(glave_home.clone()),
+            apart: false,
         });
         let finished = computers
             .run_with_credentials(

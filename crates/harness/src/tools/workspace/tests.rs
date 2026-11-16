@@ -159,6 +159,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
+            apart: false,
         });
         let started = std::time::Instant::now();
         let mut n = 0usize;
