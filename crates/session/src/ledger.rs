@@ -280,16 +280,40 @@ where
     /// in, every one the store's index lists with schedules, whoever's they are, and any other
     /// whose ledger it has read for a caller.
     pub(crate) async fn task_projects(&self) -> Result<Vec<Located>, ApiError> {
+        let mut projects = self.task_projects_here().await?;
+        projects.extend(self.placed().await);
+        let mut seen = HashSet::new();
+        projects.retain(|project| seen.insert(*project));
+        Ok(projects)
+    }
+
+    /// Of [`Server::task_projects`], those this server knows of itself: its person's, and any
+    /// whose ledger it read for a caller.
+    pub(crate) async fn task_projects_here(&self) -> Result<Vec<Located>, ApiError> {
         let mut projects = match self.inner.harness.person() {
             Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
-        projects.extend(self.placed().await);
         let known: Vec<Located> = self.ledgers().keys().copied().collect();
         projects.extend(known);
         let mut seen = HashSet::new();
         projects.retain(|project| seen.insert(*project));
         Ok(projects)
+    }
+
+    /// What the ledger of the project `at` says, read whole and apart from what this server
+    /// keeps of ledgers, which may forget one midway through a read: for what must see every
+    /// schedule there, as deleting them all does.
+    pub(crate) async fn ledger_apart(&self, at: Located) -> Result<Ledger, ApiError> {
+        let mut read = Ledger::default();
+        let log = self.inner.harness.log();
+        catch_up(log, &own_scope(at), Reserved::Tasks.id(), None, |page| {
+            for raw in page {
+                read.apply(raw);
+            }
+        })
+        .await?;
+        Ok(read)
     }
 
     pub(crate) fn ledgers(&self) -> std::sync::MutexGuard<'_, Ledgers> {

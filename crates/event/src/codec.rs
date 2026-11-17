@@ -18,16 +18,16 @@ use crate::payload::{
     MessageAdded, ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved,
     PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
     ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
-    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted,
-    ScheduleOrganization, SchedulePaused, SchedulePlaced, ScheduleSkipped, SearchSet, SecretAdded,
-    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance,
-    approval, awake, browser, catalog, certificate, chosen, command, connection, connector,
-    credential, credits, filters, fork, grouping, hook, instructions, language, library, memory,
-    message, model, passkey, people, plan, project, provider, push, remembering, search, secrets,
-    service, signup, standing, task, thread, tool, trust, turn, workspace, zone,
+    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused,
+    SchedulePlaced, ScheduleSkipped, ScheduleUnplaced, SearchSet, SecretAdded, SecretRemoved,
+    ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted,
+    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted, TrustDecided,
+    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval,
+    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
+    credits, filters, fork, grouping, hook, instructions, language, library, memory, message,
+    model, passkey, people, plan, project, provider, push, remembering, search, secrets, service,
+    signup, standing, task, thread, tool, trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -81,7 +81,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::SKIPPED, 2),
     (task::PAUSED, 1),
     (task::PLACED, 1),
-    (task::ORGANIZATION, 1),
+    (task::UNPLACED, 1),
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
@@ -190,7 +190,7 @@ pub enum Body {
     ScheduleSkipped(ScheduleSkipped),
     SchedulePaused(SchedulePaused),
     SchedulePlaced(SchedulePlaced),
-    ScheduleOrganization(ScheduleOrganization),
+    ScheduleUnplaced(ScheduleUnplaced),
     MemorySaved(MemorySaved),
     MemoryEdited(MemoryEdited),
     MemoryForgotten(MemoryForgotten),
@@ -414,7 +414,7 @@ impl Event {
             Body::ScheduleSkipped(payload) => encode(header, payload),
             Body::SchedulePaused(payload) => encode(header, payload),
             Body::SchedulePlaced(payload) => encode(header, payload),
-            Body::ScheduleOrganization(payload) => encode(header, payload),
+            Body::ScheduleUnplaced(payload) => encode(header, payload),
             Body::MemorySaved(payload) => encode(header, payload),
             Body::MemoryEdited(payload) => encode(header, payload),
             Body::MemoryForgotten(payload) => encode(header, payload),
@@ -523,8 +523,8 @@ fn decode_schedules(kind: &str, version: u32, data: &RawValue) -> Option<serde_j
         task::SKIPPED => task::decode_skipped(version, data).map(|r| r.map(Body::ScheduleSkipped)),
         task::PAUSED => task::decode_paused(version, data).map(|r| r.map(Body::SchedulePaused)),
         task::PLACED => task::decode_placed(version, data).map(|r| r.map(Body::SchedulePlaced)),
-        task::ORGANIZATION => {
-            task::decode_organization(version, data).map(|r| r.map(Body::ScheduleOrganization))
+        task::UNPLACED => {
+            task::decode_unplaced(version, data).map(|r| r.map(Body::ScheduleUnplaced))
         }
         _ => None,
     }

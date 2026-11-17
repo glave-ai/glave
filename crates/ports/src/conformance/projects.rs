@@ -90,7 +90,16 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
     names(store, org, [&ada, &grace]).await?;
-    racing::racing(store, OrgId::from_uuid(uuid_v7(1_103)), &linus).await
+    let racing = OrgId::from_uuid(uuid_v7(1_103));
+    racing::racing(store, racing, &linus).await?;
+    let listed = store.organizations().await.map_err(failed)?;
+    ensure(
+        [org, other_org, racing]
+            .iter()
+            .all(|held| listed.contains(held))
+            && listed.windows(2).all(|pair| pair.first() < pair.last()),
+        "every organization with a project is listed, once each, in id order",
+    )
 }
 
 /// One owner's projects never share a name, ignoring case: a new one takes the next free

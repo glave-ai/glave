@@ -1,16 +1,15 @@
 //! The store's index of where schedules are, so every server that fires schedules fires
 //! everyone's, though no one asked it for anything since it started. Each organization's own
-//! stream lists its projects where someone made a schedule (`schedule.placed`), so no
-//! organization's are listed under another's; one stream in the server's own organization lists
-//! the organizations where someone did (`schedule.organization`), naming no project. Each is
-//! listed once.
+//! stream lists its projects with schedules now (`schedule.placed`, `schedule.unplaced` as a
+//! project's last one goes), so no organization's are listed under another's; the store says
+//! which organizations it holds (`Projects::organizations`). Each organization's index holds at
+//! most [`MOST_PROJECTS`] projects, each listed once.
 
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 use std::sync::PoisonError;
 
 use glave_event::{
-    At, Body, EventId, Header, Payload, RawEvent, ScheduleOrganization, SchedulePlaced, Seq, encode,
+    At, Body, EventId, Header, Payload, RawEvent, SchedulePlaced, ScheduleUnplaced, Seq, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId, Scope};
@@ -19,51 +18,46 @@ use crate::protocol::{ApiError, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// The most organizations the store's list holds: past it, a schedule is refused in an
-/// organization not listed yet.
-const MOST_ORGANIZATIONS: usize = 100_000;
-/// The most projects with schedules one organization's index holds: past it, a schedule is
-/// refused in a project of theirs not listed yet. Each organization's own, so none crowds out
-/// another's.
+/// The most projects with schedules one organization's index holds at once: past it, a
+/// schedule is refused in a project of theirs not listed yet. Each organization's own, so none
+/// crowds out another's.
 pub(crate) const MOST_PROJECTS: usize = 10_000;
 
-/// One stream of the index, as far as this server has read it: what it lists, in order.
-#[derive(Debug)]
-struct Listed<T> {
+/// One organization's index, as far as this server has read it: its projects with schedules,
+/// in the order they were listed.
+#[derive(Debug, Default)]
+struct Listed {
     next: u64,
-    items: Vec<T>,
-    held: HashSet<T>,
+    items: Vec<ProjectId>,
+    held: HashSet<ProjectId>,
 }
 
-impl<T> Default for Listed<T> {
-    fn default() -> Self {
-        Self {
-            next: 0,
-            items: Vec::new(),
-            held: HashSet::new(),
-        }
-    }
-}
-
-impl<T: Copy + Eq + Hash> Listed<T> {
-    /// Takes in the event at the next `seq`, listing what `read` finds in it while there is
-    /// `room`.
-    fn apply(&mut self, raw: RawEvent, room: bool, read: impl Fn(Body) -> Option<T>) {
+impl Listed {
+    /// Takes in the event at the next `seq`.
+    fn apply(&mut self, raw: RawEvent) {
         let Some((_, body)) = in_order(&mut self.next, raw) else {
             return;
         };
-        if let Some(item) = read(body)
-            && room
-            && self.held.insert(item)
-        {
-            self.items.push(item);
+        match body {
+            Body::SchedulePlaced(placed) => {
+                let project = ProjectId::from_uuid(placed.project);
+                if self.items.len() < MOST_PROJECTS && self.held.insert(project) {
+                    self.items.push(project);
+                }
+            }
+            Body::ScheduleUnplaced(unplaced) => {
+                let project = ProjectId::from_uuid(unplaced.project);
+                if self.held.remove(&project) {
+                    self.items.retain(|item| *item != project);
+                }
+            }
+            _ => {}
         }
     }
 
-    /// The `seq` the next event takes, when `item` is not listed yet and there is `room` for
-    /// it: past the most read, nothing more is listed, since no server would read it.
-    fn absent(&self, item: T, room: bool) -> Option<u64> {
-        (room && !self.held.contains(&item)).then_some(self.next.max(1))
+    /// The `seq` the next event takes.
+    fn next_seq(&self) -> u64 {
+        self.next.max(1)
     }
 }
 
@@ -71,55 +65,9 @@ impl<T: Copy + Eq + Hash> Listed<T> {
 /// where in each organization's projects the last tick stopped.
 #[derive(Debug, Default)]
 pub(crate) struct Placed {
-    organizations: Listed<OrgId>,
-    projects: HashMap<OrgId, Listed<ProjectId>>,
+    projects: HashMap<OrgId, Listed>,
     ticks: usize,
     stopped: HashMap<OrgId, usize>,
-}
-
-impl Placed {
-    /// Whether what `stream` lists has room for one more, as read so far.
-    fn room(&self, stream: Stream) -> bool {
-        match stream {
-            Stream::Organizations => self.organizations.items.len() < MOST_ORGANIZATIONS,
-            Stream::Projects(org) => {
-                (self.projects.get(&org)).is_none_or(|listed| listed.items.len() < MOST_PROJECTS)
-            }
-        }
-    }
-
-    fn apply(&mut self, stream: Stream, raw: RawEvent) {
-        let room = self.room(stream);
-        match stream {
-            Stream::Organizations => {
-                self.organizations.apply(raw, room, |body| match body {
-                    Body::ScheduleOrganization(listed) => Some(OrgId::from_uuid(listed.org)),
-                    _ => None,
-                });
-            }
-            Stream::Projects(org) => {
-                let listed = self.projects.entry(org).or_default();
-                listed.apply(raw, room, |body| match body {
-                    Body::SchedulePlaced(placed) => Some(ProjectId::from_uuid(placed.project)),
-                    _ => None,
-                });
-            }
-        }
-    }
-
-    fn next(&self, stream: Stream) -> u64 {
-        match stream {
-            Stream::Organizations => self.organizations.next,
-            Stream::Projects(org) => self.projects.get(&org).map_or(0, |listed| listed.next),
-        }
-    }
-}
-
-/// A stream of the index: the store's list of organizations, or one organization's projects.
-#[derive(Debug, Clone, Copy)]
-enum Stream {
-    Organizations,
-    Projects(OrgId),
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -128,25 +76,58 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Every project the index lists, read up to now. What can't be read now, the list of
-    /// organizations or one organization's own index, is what was read before, and is read
-    /// again next time.
-    pub(crate) async fn placed(&self) -> Vec<Located> {
-        if let Err(error) = self.catch_up_placed(Stream::Organizations).await {
-            tracing::warn!(%error, "could not read which organizations have schedules");
-        }
-        let organizations = self.held_placed(|held| held.organizations.items.clone());
-        let mut placed = Vec::new();
-        for org in organizations {
-            if let Err(error) = self.catch_up_placed(Stream::Projects(org)).await {
-                tracing::warn!(%error, %org, "could not read where the organization's schedules are");
+    /// Every organization the store holds, and any whose index this server read: what can't be
+    /// listed now is what was read before.
+    pub(crate) async fn scheduling_organizations(&self) -> Vec<OrgId> {
+        let mut organizations = match self.inner.projects.organizations().await {
+            Ok(organizations) => organizations,
+            Err(error) => {
+                tracing::warn!(%error, "could not list the store's organizations");
+                Vec::new()
             }
-            let projects = self.held_placed(|held| {
-                (held.projects.get(&org)).map_or_else(Vec::new, |listed| listed.items.clone())
-            });
-            placed.extend(projects.into_iter().map(|project| Located { org, project }));
+        };
+        organizations
+            .extend(self.held_placed(|held| held.projects.keys().copied().collect::<Vec<_>>()));
+        organizations.sort();
+        organizations.dedup();
+        organizations
+    }
+
+    /// The projects `org`'s index lists, read up to now; what can't be read now is what was
+    /// read before, read again next time.
+    pub(crate) async fn placed_in(&self, org: OrgId) -> Vec<Located> {
+        if let Err(error) = self.catch_up_placed(org).await {
+            tracing::warn!(%error, %org, "could not read where the organization's schedules are");
+        }
+        let projects =
+            self.held_placed(|held| (held.projects.get(&org)).map(|listed| listed.items.clone()));
+        (projects.into_iter().flatten())
+            .map(|project| Located { org, project })
+            .collect()
+    }
+
+    /// Every project the index lists, in every organization the store holds, read up to now.
+    pub(crate) async fn placed(&self) -> Vec<Located> {
+        let mut placed = Vec::new();
+        for org in self.scheduling_organizations().await {
+            placed.extend(self.placed_in(org).await);
         }
         placed
+    }
+
+    /// Which organization, counting from the first, this tick of the scheduler starts from:
+    /// where the last one stopped, or one further on once it went round.
+    pub(crate) fn next_turn(&self) -> usize {
+        self.held_placed(|held| held.ticks)
+    }
+
+    /// Notes that this tick went through `reached` organizations from where it started, of
+    /// `count`: the next starts where it stopped, or, having gone round, one further on.
+    pub(crate) fn turned(&self, reached: usize, count: usize) {
+        self.held_placed(|held| {
+            let on = if reached >= count { 1 } else { reached };
+            held.ticks = held.ticks.wrapping_add(on);
+        });
     }
 
     /// Where in `org`'s `count` projects this tick of the scheduler starts: where the last one
@@ -159,52 +140,25 @@ where
     /// Notes where in `org`'s projects this tick stopped, for the next to go on from.
     pub(crate) fn stopped_at(&self, org: OrgId, at: usize) {
         self.held_placed(|held| {
-            // At most one place for each organization the index lists.
-            if held.stopped.len() < MOST_ORGANIZATIONS || held.stopped.contains_key(&org) {
-                held.stopped.insert(org, at);
-            }
+            held.stopped.insert(org, at);
         });
     }
 
-    /// Which organization, counting from the first, this tick of the scheduler starts from:
-    /// one further on each time, so none waits behind the others every time.
-    pub(crate) fn next_turn(&self) -> usize {
-        self.held_placed(|held| {
-            let turn = held.ticks;
-            held.ticks = turn.wrapping_add(1);
-            turn
-        })
-    }
-
-    /// Lists the project `at` in its organization's index, and the organization in the store's
-    /// list, unless they are listed already: the organization first, so a listed project is
-    /// always found. Refused, in plain words, where its organization has as many projects with
-    /// schedules as one may, or the store as many organizations, so every server reads the
-    /// same.
+    /// Lists the project `at` in its organization's index, unless it is listed already.
+    /// Refused, in plain words, where its organization has as many projects with schedules as
+    /// one may, so every server reads the same.
     pub(crate) async fn place_schedules(&self, at: Located) -> Result<(), ApiError> {
-        let organization = ScheduleOrganization {
-            org: at.org.as_uuid(),
-        };
-        let listed = |held: &Placed| {
-            let room = held.room(Stream::Organizations);
-            held.organizations.absent(at.org, room)
-        };
-        self.list_once(Stream::Organizations, &organization, listed)
-            .await?;
         let placed = SchedulePlaced {
             project: at.project.as_uuid(),
         };
-        let listed = |held: &Placed| {
-            let room = held.room(Stream::Projects(at.org));
-            (held.projects.get(&at.org))
-                .map_or(room.then_some(1), |listed| listed.absent(at.project, room))
+        let absent = |held: &Placed| match held.projects.get(&at.org) {
+            None => Some(1),
+            Some(listed) if listed.held.contains(&at.project) => None,
+            Some(listed) => (listed.items.len() < MOST_PROJECTS).then(|| listed.next_seq()),
         };
-        self.list_once(Stream::Projects(at.org), &placed, listed)
-            .await?;
+        self.list_once(at.org, &placed, absent).await?;
         let found = self.held_placed(|held| {
-            held.organizations.held.contains(&at.org)
-                && (held.projects.get(&at.org))
-                    .is_some_and(|listed| listed.held.contains(&at.project))
+            (held.projects.get(&at.org)).is_some_and(|listed| listed.held.contains(&at.project))
         });
         if !found {
             return Err(ApiError::new(
@@ -217,20 +171,37 @@ where
         Ok(())
     }
 
-    /// Appends `payload` to `stream`, after anything others wrote meanwhile, unless `absent`
-    /// says what it lists is there already.
+    /// Takes the project `at` out of its organization's index once its ledger, read now, holds
+    /// no schedule: what the index holds is the projects with schedules now. A schedule made
+    /// there meanwhile lists it again as it is recorded.
+    pub(crate) async fn unplace_if_none(&self, at: Located) -> Result<(), ApiError> {
+        if !self.ledger_apart(at).await?.schedules.is_empty() {
+            return Ok(());
+        }
+        let unplaced = ScheduleUnplaced {
+            project: at.project.as_uuid(),
+        };
+        let listed = |held: &Placed| {
+            let listed = held.projects.get(&at.org)?;
+            listed.held.contains(&at.project).then(|| listed.next_seq())
+        };
+        self.list_once(at.org, &unplaced, listed).await
+    }
+
+    /// Appends `payload` to `org`'s index, after anything others wrote meanwhile, at the `seq`
+    /// `due` gives of the index read up to then, or not at all when it gives none.
     async fn list_once<T: Payload>(
         &self,
-        stream: Stream,
+        org: OrgId,
         payload: &T,
-        absent: impl Fn(&Placed) -> Option<u64>,
+        due: impl Fn(&Placed) -> Option<u64>,
     ) -> Result<(), ApiError> {
-        let (scope, index) = (self.scope_of_stream(stream), Reserved::Scheduled.id());
+        let (scope, index) = (Scope::of_organization(org), Reserved::Scheduled.id());
         let log = self.inner.harness.log();
-        let absent = &absent;
+        let due = &due;
         let appended = append_retrying(log, &scope, index, || async move {
-            self.catch_up_placed(stream).await?;
-            let Some(next) = self.held_placed(|held| absent(held)) else {
+            self.catch_up_placed(org).await?;
+            let Some(next) = self.held_placed(|held| due(held)) else {
                 return Ok::<_, ApiError>(None);
             };
             let now = self.inner.harness.clock().now();
@@ -244,37 +215,31 @@ where
         })
         .await?;
         self.held_placed(|held| {
+            let listed = held.projects.entry(org).or_default();
             for raw in appended.into_iter().flat_map(|(events, ())| events) {
-                held.apply(stream, raw);
+                listed.apply(raw);
             }
         });
         Ok(())
     }
 
-    /// Reads whatever was added to `stream` since this server last looked.
-    async fn catch_up_placed(&self, stream: Stream) -> Result<(), ApiError> {
-        let scope = self.scope_of_stream(stream);
-        let next = self.held_placed(|held| held.next(stream).max(1));
+    /// Reads whatever was added to `org`'s index since this server last looked: glave's own
+    /// stream, in that organization's own scope.
+    async fn catch_up_placed(&self, org: OrgId) -> Result<(), ApiError> {
+        let scope = Scope::of_organization(org);
+        let next = self.held_placed(|held| (held.projects.get(&org)).map_or(1, Listed::next_seq));
         let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
         catch_up(log, &scope, Reserved::Scheduled.id(), after, |page| {
             self.held_placed(|held| {
+                let listed = held.projects.entry(org).or_default();
                 for raw in page {
-                    held.apply(stream, raw);
+                    listed.apply(raw);
                 }
             });
         })
         .await?;
         Ok(())
-    }
-
-    /// Where `stream` is kept, glave's own: the list in the server's own organization, each
-    /// organization's projects in its own.
-    fn scope_of_stream(&self, stream: Stream) -> Scope {
-        match stream {
-            Stream::Organizations => Scope::of_organization(self.inner.own),
-            Stream::Projects(org) => Scope::of_organization(org),
-        }
     }
 
     fn held_placed<R>(&self, look: impl FnOnce(&mut Placed) -> R) -> R {
