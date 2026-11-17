@@ -118,8 +118,17 @@ async fn isolated<L: EventLog + Clone + 'static>(name: &str, parts: Parts<L>) {
     let after = sweep::snapshot(&world).await;
     for ((person, before), after) in world.people.iter().zip(&before).zip(&after) {
         if before != after {
+            // By method alone: an answer may hold a secret.
+            let changed: Vec<&str> = before
+                .as_array()
+                .into_iter()
+                .flatten()
+                .zip(after.as_array().into_iter().flatten())
+                .filter(|(was, now)| was != now)
+                .map(|(was, _)| was["method"].as_str().unwrap_or("their browser's sign-in"))
+                .collect();
             found.push(format!(
-                "what {} sees of their own changed:\n  before: {before}\n  after: {after}",
+                "what {} sees of their own changed, in {changed:?}",
                 person.name
             ));
         }

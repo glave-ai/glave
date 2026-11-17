@@ -11,9 +11,10 @@ use glave_session::protocol::Request;
 use serde_json::{Map, Value, json};
 
 use super::table::{Kind, placeholders, table};
-use super::world::{World, ask, request, words_of};
+use super::world::{World, ask, called, request, words_of};
 
-/// What one call found: which method, who called with whose ids, and what each answer was.
+/// What one call found: which method and template, who called with whose ids, and which of
+/// another's it named. Never the params or the answers, which may hold a secret.
 pub(super) type Finding = String;
 
 /// Calls every template that names nothing of anyone's, as each person: what they answer
@@ -24,12 +25,13 @@ pub(super) async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -
         let org = &world.orgs[person.server];
         let others = ids_of_others(world, index);
         for (method, templates) in table() {
-            for template in templates.iter().filter(|t| placeholders(t).is_empty()) {
+            let own = templates.iter().enumerate();
+            for (n, template) in own.filter(|(_, t)| placeholders(t).is_empty()) {
                 let answer = ask(org, &person.caller, request(method, template.clone())).await;
                 let shown = answer.to_string();
                 if let Some(id) = others.iter().find(|id| shown.contains(id.as_str())) {
                     found.push(format!(
-                        "{method} {template} by {}: names {id} of another's: {shown}",
+                        "{method} (template {n}) by {}: names {id} of another's",
                         person.name
                     ));
                 }
@@ -55,7 +57,7 @@ pub(super) async fn own_settings<L: EventLog + Clone + 'static>(world: &World<L>
         let mut read = Vec::new();
         for method in CHOICES {
             let org = &world.orgs[person.server];
-            read.push(ask(org, &person.caller, request(method, json!({}))).await);
+            read.push(called(org, &person.caller, method, json!({})).await);
         }
         Value::Array(read).to_string()
     };
@@ -79,27 +81,21 @@ pub(super) async fn own_settings<L: EventLog + Clone + 'static>(world: &World<L>
             ),
             ("filters/set", json!({"filters": {"based_in": [country]}})),
         ];
+        // A choice refused fails here, at its method, so the check never compares refusals.
         for (method, params) in sets {
-            ask(
-                &world.orgs[person.server],
-                &person.caller,
-                request(method, params),
-            )
-            .await;
+            called(&world.orgs[person.server], &person.caller, method, params).await;
         }
         chosen.push(chosen_by(person).await);
     }
     let mut found = Vec::new();
     if chosen.iter().collect::<BTreeSet<_>>().len() != chosen.len() {
-        found.push(format!(
-            "two people chose alike, so the check proves nothing: {chosen:?}"
-        ));
+        found.push("two people chose alike, so the check proves nothing".to_owned());
     }
     for (person, chose) in world.people.iter().zip(&chosen) {
         let now = chosen_by(person).await;
         if now != *chose {
             found.push(format!(
-                "what {} chose for themselves changed once others chose:\n  chose: {chose}\n  now: {now}",
+                "what {} chose for themselves changed once others chose",
                 person.name
             ));
         }
@@ -238,7 +234,7 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
         let others = ids_of_others(world, a);
         for victim in world.people.iter().filter(|v| v.name != attacker.name) {
             for (method, templates) in table() {
-                for template in &templates {
+                for (n, template) in templates.iter().enumerate() {
                     let holes = placeholders(template);
                     let named = |kinds: &[Kind]| holes.iter().any(|(_, k)| kinds.contains(k));
                     // A link's code signs in the person on its server's computer, whoever
@@ -269,12 +265,16 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                         let expected = normalized(&nobodys, &variant.filled, true);
                         let named = others.iter().find(|id| shown.contains(id.as_str()));
                         if (shown != expected && !shown_to_holder) || named.is_some() {
+                            let how = match named {
+                                Some(id) => format!("names {id} of another's"),
+                                None => "answers otherwise than for ids nobody has".to_owned(),
+                            };
+                            // Which of their ids by its placeholder: a code is a secret.
                             found.push(format!(
-                                "{method} {template} by {} with {}'s ids {:?}:\n  \
-                                 theirs: {shown}\n  nobody's: {expected}",
+                                "{method} (template {n}) by {} with {}'s {:?}: {how}",
                                 attacker.name,
                                 victim.name,
-                                variant.filled.iter().map(|f| &f.0).collect::<Vec<_>>(),
+                                variant.filled.iter().map(|f| f.2).collect::<Vec<_>>(),
                             ));
                         }
                     }

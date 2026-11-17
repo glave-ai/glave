@@ -223,19 +223,19 @@ pub(super) async fn ask<L: EventLog + 'static>(
     }
 }
 
-/// `method` with `params`.
+/// `method` with `params`. One that does not read is said by its method alone: the params may
+/// hold a secret, and what would not read in them may be quoted.
 pub(super) fn request(method: &str, params: Value) -> Request {
-    let shown = params.to_string();
     let mut message = serde_json::Map::new();
     message.insert("method".to_owned(), Value::String(method.to_owned()));
     message.insert("params".to_owned(), params);
     serde_json::from_value(Value::Object(message))
-        .unwrap_or_else(|e| panic!("{method} {shown}: {e}"))
+        .unwrap_or_else(|_| panic!("{method}'s params do not read as its request"))
 }
 
 /// What `method` with `params` answers `caller`, who may call it. A refusal is said by its
 /// method and code alone: the params may hold a secret, and an answer may repeat one.
-async fn called<L: EventLog + 'static>(
+pub(super) async fn called<L: EventLog + 'static>(
     org: &Org<L>,
     caller: &Caller,
     method: &str,
@@ -369,16 +369,11 @@ async fn draw<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
     };
     let approval = waiting(&mut stream).await;
     let allow = json!({"thread": chat, "approval": approval, "decision": "allow_once"});
-    let decided = ask(org, &person.caller, request("approval/decide", allow)).await;
-    assert!(decided.get("error").is_none(), "{decided}");
+    called(org, &person.caller, "approval/decide", allow).await;
     stream.finish().await.unwrap();
-    let listed = ask(org, &person.caller, request("library/list", json!({}))).await;
-    let asset = listed["result"]["items"][0]["asset"].clone();
-    assert!(
-        asset.is_string(),
-        "{} drew a picture: {listed}",
-        person.name
-    );
+    let listed = called(org, &person.caller, "library/list", json!({})).await;
+    let asset = listed["items"][0]["asset"].clone();
+    assert!(asset.is_string(), "{} drew no picture", person.name);
     person.keep(Kind::Asset, asset);
 }
 
