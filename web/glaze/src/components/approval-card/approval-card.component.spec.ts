@@ -1,8 +1,14 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
+import { Clock, Repeat } from 'lucide';
+
 import { expectAccessible } from '../../testing/axe';
-import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.component';
+import {
+  type GlzCardLine,
+  type GlzDecision,
+  GlzApprovalCardComponent,
+} from './approval-card.component';
 
 @Component({
   imports: [GlzApprovalCardComponent],
@@ -11,7 +17,10 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
     <glz-approval-card
       testId="approval"
       summary="Run this command?"
-      detail="rm -rf build/"
+      [detail]="detail()"
+      [lines]="lines()"
+      [icon]="icon()"
+      [paired]="paired()"
       [caution]="caution()"
       [reason]="reason()"
       [onlyOnce]="onlyOnce()"
@@ -22,6 +31,10 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
   `,
 })
 class HostComponent {
+  readonly detail = signal('rm -rf build/');
+  readonly lines = signal<readonly GlzCardLine[]>([]);
+  readonly icon = signal<typeof Repeat | null>(null);
+  readonly paired = signal(false);
   readonly caution = signal('');
   readonly reason = signal('');
   readonly onlyOnce = signal(false);
@@ -99,6 +112,38 @@ describe('GlzApprovalCardComponent', () => {
     const card = root.querySelector('glz-approval-card');
     expect(card?.getAttribute('aria-describedby')).toBe(caution?.id);
     await expectAccessible(root);
+  });
+
+  it('says more of what it asks in plain lines, each after its icon, never as code', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.detail.set('');
+    fixture.componentInstance.icon.set(Repeat);
+    fixture.componentInstance.lines.set([
+      { text: 'Monday to Friday, 8:00 am your time.', icon: Clock },
+      { text: 'Each run is added to its own chat, “Morning check”.' },
+    ]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const lines = root.querySelector('[data-testid="approval-lines"]');
+    const items = Array.from(lines?.querySelectorAll('li') ?? []);
+    expect(items.map((each) => each.textContent.trim())).toEqual([
+      'Monday to Friday, 8:00 am your time.',
+      'Each run is added to its own chat, “Morning check”.',
+    ]);
+    expect(items.map((each) => each.querySelectorAll('glz-icon').length)).toEqual([1, 0]);
+    expect(root.querySelector('.summary glz-icon')).not.toBeNull();
+    expect(root.querySelector('code')).toBeNull();
+    expect(root.querySelector('.summary')?.contains(lines ?? null)).toBe(false);
+    await expectAccessible(root);
+  });
+
+  it('keeps its two answers side by side on a narrow card when paired', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.onlyOnce.set(true);
+    fixture.componentInstance.paired.set(true);
+    await fixture.whenStable();
+    const card = (fixture.nativeElement as HTMLElement).querySelector('glz-approval-card');
+    expect(card?.classList).toContain('glz-approval-card--paired');
   });
 
   it('waits while busy and says what was decided in place', async () => {

@@ -2,11 +2,26 @@
   <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
 }
 <p class="summary" [id]="summaryId">
+  @if (icon(); as drawing) {
+    <glz-icon class="mark" [icon]="drawing" />
+  }
   {{ summary() }}
   @if (hasDetail()) {
     <code class="detail">{{ detail() }}</code>
   }
 </p>
+@if (hasLines()) {
+  <ul class="lines" [attr.data-testid]="ids().lines">
+    @for (line of lines(); track $index) {
+      <li>
+        @if (line.icon; as drawing) {
+          <glz-icon class="mark" [icon]="drawing" />
+        }
+        <span>{{ line.text }}</span>
+      </li>
+    }
+  </ul>
+}
 @if (hasCaution()) {
   <p class="caution" [id]="cautionId" [attr.data-testid]="ids().caution">{{ caution() }}</p>
 }

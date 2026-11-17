@@ -311,6 +311,73 @@ describe('conversation', () => {
     expect(items[1]).toMatchObject({ outsideSandbox: true, withNetwork: false, modelReason: '' });
   });
 
+  it('reads a card asking to repeat work, its lines, and what the call made of the yes', () => {
+    const lines = [
+      'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
+      'Each run is added to its own chat, “Morning check”.',
+    ];
+    const asked = event('approval.requested', {
+      call_id: 'c1',
+      tool: 'schedule',
+      summary: 'schedule: Morning check',
+      ask: 'Repeat this every weekday at 8:00 am?',
+      asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
+      detail: lines.join('\n'),
+      caution: 'It runs only while glave runs on this computer.',
+      repeating: {
+        cron: '0 8 * * 1-5',
+        zone: 'Europe/Lisbon',
+        name: 'Morning check',
+        first: '2026-11-17T08:00:00.000Z',
+      },
+    });
+    const yes = event('approval.decided', { call_id: 'c1', decision: 'allow_once' });
+    const [before] = threadItems([asked]);
+    expect(before).toMatchObject({
+      ask: 'Repeat this every weekday at 8:00 am?',
+      caution: 'It runs only while glave runs on this computer.',
+      repeat: { lines, made: null, refused: null },
+    });
+    const [made] = threadItems([
+      asked,
+      yes,
+      event('tool.call.completed', {
+        call_id: 'c1',
+        is_error: false,
+        output: [{ type: 'text', text: 'Made it.' }],
+        structured: { schedule: 's1', chat: 'chat-1', repeats: 'Every weekday at 8:00 am' },
+      }),
+    ]);
+    expect(made).toMatchObject({
+      decision: 'allow_once',
+      repeat: { made: { chat: 'chat-1', repeats: 'Every weekday at 8:00 am' }, refused: null },
+    });
+    // A result that names no chat made nothing to fold to.
+    const [unnamed] = threadItems([
+      asked,
+      yes,
+      event('tool.call.completed', { call_id: 'c1', is_error: false, output: [], structured: {} }),
+    ]);
+    expect(unnamed).toMatchObject({ repeat: { made: null, refused: null } });
+    const [refused] = threadItems([
+      asked,
+      yes,
+      event('tool.call.completed', {
+        call_id: 'c1',
+        is_error: true,
+        output: [{ type: 'text', text: 'You have as many schedules as you may keep.' }],
+      }),
+    ]);
+    expect(refused).toMatchObject({
+      repeat: { made: null, refused: 'You have as many schedules as you may keep.' },
+    });
+    // Any other approval asks nothing to repeat.
+    const [other] = threadItems([
+      event('approval.requested', { call_id: 'c2', tool: 'bash', summary: 'bash: ls' }),
+    ]);
+    expect(other).not.toHaveProperty('repeat');
+  });
+
   it('reads a request to run with the network, in the sandbox otherwise', () => {
     const items = threadItems([
       event('approval.requested', {

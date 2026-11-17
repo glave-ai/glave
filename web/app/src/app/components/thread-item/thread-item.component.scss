@@ -22,3 +22,27 @@
 .files:empty {
   display: none;
 }
+
+// A repeat set up here, in one quiet line that opens its chat; or why the server made none.
+.repeats {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glz-space-2);
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
+.repeats glz-icon {
+  flex: none;
+  align-self: center;
+}
+
+.refused {
+  color: var(--glz-color-danger);
+  overflow-wrap: anywhere;
+}
+
+.repeats a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
