@@ -26,6 +26,13 @@ ignore = [
     # only through aws-smithy-http and aws-smithy-types, under aws-sigv4, and the latest of those
     # still use it. Remove when aws-smithy drops it.
     { id = "RUSTSEC-2026-0441", reason = "pin-utils archived; no fix through aws-smithy yet" },
+    # chrono and humantime were marked unmaintained on 2026-11-17: notices, not security flaws,
+    # with no safe upgrade. glave reads time with jiff and uses neither itself. chrono arrives
+    # through rmcp and its oauth2 (glave-mcp, glave-memory), through schemars' chrono04, which
+    # rmcp turns on, and through object_store (glave-bucket); humantime through object_store
+    # alone. Remove each when what brings it in moves off it.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no vulnerability; via rmcp, oauth2, schemars, object_store (#1529)" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained, no vulnerability; via object_store (#1530)" },
 ]
 
 [licenses]
