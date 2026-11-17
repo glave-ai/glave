@@ -639,6 +639,8 @@ const ANSWERS: Answers<Known> = {
   // Each of these threads is short: its latest turns are all of it.
   'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
   'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
+  // None of these threads' turns made a file for the person.
+  'thread/files': () => ({ made: [] }),
   'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
   'thread/start': (params, { started }) => {
     const inProject = params.project === PERSONAL.id ? PERSONAL : PROJECT;
