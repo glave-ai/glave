@@ -17,6 +17,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - Someone else's threads on the server's computer get none of its owner's own instructions, skills or custom commands (#1460, *Whose computer*).
 - The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.
 - The project's own files, `.env` among them, are no longer hidden from its commands (owner decision, 2026-11-13, #1397, *Reads*).
+- A sandboxed command starts only once its sandbox says it runs; one a place it hides left while it was made is made again from a fresh look, and one that never starts its command says why (#1533, *Linux*).
 
 ## Why on by default
 
@@ -217,6 +218,8 @@ The two implementations sit behind one internal interface in `glave-computer` (p
 - No capabilities (`--cap-drop ALL`): bubblewrap would otherwise keep them all for a command that is root inside, and root reads through the unreadable stand-ins.
 
 The stand-ins come from a folder per user in the system temp folder (`glave-sandbox-<uid>`, private) that every glave sandbox keeps read-only, so no command can make another's hiding show something.
+
+**A place that goes while the sandbox is made** (#1533). Each place is hidden as it was when the command's mounts were planned, and bubblewrap cannot make the sandbox when one goes before it mounts over it: an ssh session's forwarded agent ending, tmux, an editor or a test removing its own (`Can't bind mount … on /newroot/tmp/emacs1001: … No such file or directory`, or a read-only folder it cannot make the place in again). It then runs nothing, and its own errors went nowhere, so the command ended at once with no output; at glave's start, where one command checks the sandbox, that left Auto without its sandbox for the whole session (Auto runs in the project's sandbox or not at all). So the command's shell, inside, first writes a line on the sandbox's own error output, which only the sandbox and that line write to, and glave starts the command only once the line comes (within 10 seconds). A sandbox that ends first is made again from a fresh look, which no longer lists a place that is gone, up to three times in all, and one that never starts the command fails it with what the sandbox said. Nothing is run twice: the line comes before the command does. Seatbelt and glave's Landlock helper start a command the same way, and say why they could not too.
 
 bubblewrap is the system's (`/usr/bin/bwrap`), else the first `bwrap` on `PATH`, that a command could not have planted: a real file outside the temp folders, the current folder and the workspace (Codex's rule, with the system's first, since a folder earlier on `PATH` may be the person's, which a command let out of the sandbox could fill). Before using it glave checks that it starts, within 10 seconds. In a container it starts only where the container's seccomp filter allows new namespaces, its AppArmor profile allows mounts and `/proc` is not masked; the installer's Docker way turns those three defaults off for glave's container (`one-server.md`, "On a server"). On Ubuntu 23.10 and later AppArmor stops it making user namespaces until it has a profile, which applies inside containers to the same path too; this one, the one CI and the installer add, is enough:
 

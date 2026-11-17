@@ -67,3 +67,51 @@ async fn heard(output: &mut ChildStderr, said: &mut Vec<u8>) -> bool {
         said.drain(..over);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::process::Stdio;
+
+    use glave_ports::block_on;
+    use glave_process::{Processes, Program};
+
+    use super::*;
+
+    /// `script` run by `sh` as a sandbox would run a command, with `said` as `$1`, its error
+    /// output glave's.
+    async fn sandbox(script: &str, said: &str) -> Child {
+        let mut program = Program::new("sh");
+        program
+            .args(["-c", script, "sh", said])
+            .no_input()
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        Processes::unrecorded().spawn(&mut program).await.unwrap()
+    }
+
+    #[test]
+    fn a_command_whose_shell_says_so_runs_whatever_the_sandbox_said_first() {
+        block_on!(async {
+            let script = format!("echo \"$1\" >&2; {SAY_STARTED}exec sleep 30");
+            let mut child = sandbox(&script, "a warning first").await;
+            let started = wait(&mut child).await;
+            assert!(matches!(started, Started::Yes(Some(_))));
+            assert!(child.try_wait().unwrap().is_none(), "still runs");
+            child.stop().await;
+        });
+    }
+
+    #[test]
+    fn a_sandbox_that_ends_before_its_command_started_says_why() {
+        block_on!(async {
+            let said = "bwrap: Can't bind mount /oldroot/e on /newroot/tmp/gone: Unable to mount \
+                        source on destination: No such file or directory";
+            let mut child = sandbox("echo \"$1\" >&2; exit 1", said).await;
+            match wait(&mut child).await {
+                Started::Ended(ended) => assert_eq!(ended, said),
+                Started::Yes(_) | Started::Late => panic!("it started nothing"),
+            }
+            child.stop().await;
+        });
+    }
+}
