@@ -5,9 +5,7 @@
 //! refused, and their waiting run not adopted, as is one whose people can't be read to tell; and
 //! schedules are offered only where a server fires them.
 
-use glave_event::{
-    AuthMethod, Body, PersonRemoved, Principal, ScheduleId, Skipped, ThreadId, When, decode,
-};
+use glave_event::{AuthMethod, Body, PersonRemoved, Principal, Skipped, ThreadId, decode};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::{FaultyLog, ManualClock};
 use std::sync::Arc;
@@ -17,7 +15,7 @@ use glave_ports::{
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 
-use crate::schedule_firing::{append, daily, ledger_of, on_a_store, runs_in, set, setup};
+use crate::schedule_firing::{append, daily, ledger_of, made_by, on_a_store, runs_in, set, setup};
 use crate::support::*;
 
 #[test]
@@ -29,11 +27,13 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
         let grace = elsewhere();
         let theirs = daily(&server, &grace).await.unwrap();
         let mine = daily(&server, &Caller::default()).await.unwrap();
+        let own = server.person().unwrap();
         server.shutdown().await;
         drop(server);
-        // Neither has asked the new server anything.
+        // Neither has asked the new server anything; its person is the one on this computer.
         let mut later = setup();
         later.clock = now.clone();
+        later.settings.person = Some(own);
         later.projects = Some(projects);
         let (restarted, _) = later.build_on(&repo, log.clone()).await;
         set(&now, "2026-10-10T11:00:00Z");
@@ -55,8 +55,8 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
         );
         assert_eq!(
             runs_in(&log, mine.project).await,
-            vec![(None, mine.schedule)],
-            "as the person on this computer"
+            vec![(Some(Principal::person(own)), mine.schedule)],
+            "as the person on this computer, named"
         );
         // Her run is signed in by no one, never in the form of the person on this computer, so
         // nothing only they may do is hers.
@@ -96,7 +96,7 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
 }
 
 #[test]
-fn where_schedules_are_is_kept_in_each_organization_s_own_scope() {
+fn where_schedules_are_is_kept_in_each_organization_s_own_scope_while_they_are() {
     block_on!(async {
         let log = Shared::default();
         let (server, _, _, _dir) = setup()
@@ -118,13 +118,23 @@ fn where_schedules_are_is_kept_in_each_organization_s_own_scope() {
         };
         let own = index(scope().org()).await;
         assert!(
-            matches!(own.as_slice(), [Body::ScheduleOrganization(listed)] if listed.org == third.as_uuid()),
-            "the server's own lists the organization alone: {own:?}"
+            own.is_empty(),
+            "the server's own lists no one else's: {own:?}"
         );
         let theirs = index(third).await;
         assert!(
             matches!(theirs.as_slice(), [Body::SchedulePlaced(placed)] if placed.project == hers.project.as_uuid()),
             "her project, in her organization's own: {theirs:?}"
+        );
+        // Her last schedule there gone, the index lists her project no more.
+        let deleted = Request::ScheduleDelete {
+            schedule: hers.schedule,
+        };
+        server.request_as(&grace, deleted).await.unwrap();
+        let theirs = index(third).await;
+        assert!(
+            matches!(theirs.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)] if gone.project == hers.project.as_uuid()),
+            "unlisted as its last schedule went: {theirs:?}"
         );
     });
 }
@@ -147,6 +157,60 @@ fn a_run_of_someone_removed_meanwhile_is_refused() {
         assert_eq!(runs_in(&log, theirs.project).await, Vec::new());
         let refused = refusal_in(&log, theirs.project).await;
         assert_eq!(refused, "MAKER_REMOVED");
+    });
+}
+
+#[test]
+fn a_run_of_someone_removed_is_refused_though_the_server_forgets_people_ledgers_meanwhile() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first
+            .build_in_repository("people-forgotten", faulty.clone())
+            .await;
+        let grace = elsewhere();
+        let theirs = daily(&server, &grace).await.unwrap();
+        // Her organization's people ledger runs past one page of a read: 500 others leave, then
+        // she is removed, on its second.
+        let people = Scope::of_organization(scope().org());
+        let ledger = Reserved::People.id();
+        let before = log.read(&people, ledger, None, usize::MAX).await.unwrap();
+        let next = u64::try_from(before.len()).unwrap();
+        for n in 1..=500u64 {
+            let left = PersonRemoved {
+                person: id(&format!("other-{n}")),
+                by: Principal::person(id("ada")),
+            };
+            append(&log, &people, ledger, next + n, &left).await;
+        }
+        removed_elsewhere(&log, &grace).await;
+        // The tick's read of who is there is held at its second page while this server reads
+        // more organizations' people than it keeps, forgetting hers.
+        faulty.hold_read("person.removed");
+        set(&now, "2026-10-10T11:00:00Z");
+        let forgetting = async {
+            faulty.held().await;
+            for n in 1..=300u128 {
+                let org = uuid::Uuid::from_u128(0x0192_f5c4_0000_7000_8000_0000_0000_0000 + n);
+                let caller = Caller {
+                    org: Some(OrgId::from_uuid(org)),
+                    ..signed_in("ada")
+                };
+                // Refused or not, it read that organization's people.
+                let _ = server.request_as(&caller, Request::Discover {}).await;
+            }
+            faulty.release();
+        };
+        let (ticked, ()) = tokio::join!(server.tick(), forgetting);
+        assert_eq!(ticked.unwrap(), Vec::new());
+        assert_eq!(runs_in(&log, theirs.project).await, Vec::new());
+        let refused = refusal_in(&log, theirs.project).await;
+        assert_eq!(
+            refused, "MAKER_REMOVED",
+            "read whole, apart from what it forgot"
+        );
     });
 }
 
@@ -217,20 +281,7 @@ fn a_run_of_someone_the_people_ledger_does_not_list_is_held_back() {
         // A schedule of someone no person.joined names, as a ledger this server forgot meanwhile
         // reads: never taken for still there.
         let chat = start(&server, false).await;
-        let created = glave_event::ScheduleCreated {
-            schedule: ScheduleId::try_from(uuid::Uuid::from_u128(
-                0x0192_f5c1_0000_7000_8000_0000_0000_0042,
-            ))
-            .unwrap(),
-            name: "Daily check".into(),
-            when: When::Cron("0 11 * * *".into()),
-            zone: "UTC".into(),
-            prompt: "check the build".into(),
-            budget: 5_000,
-            thread: Some(chat),
-            from: None,
-            by: Some(Principal::person(id("nobody"))),
-        };
+        let created = made_by(0x42, chat, Some(Principal::person(id("nobody"))));
         append(&log, &scope(), Reserved::Tasks.id(), 1, &created).await;
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
@@ -338,5 +389,63 @@ fn schedules_are_offered_only_where_a_server_fires_them() {
             panic!("server info");
         };
         assert!(info.schedules);
+    });
+}
+
+#[test]
+fn removing_someone_deletes_every_schedule_of_theirs_though_a_tick_forgets_ledgers_meanwhile() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let (server, _, _, _dir) = setup()
+            .build_in_repository("people-remove-race", faulty.clone())
+            .await;
+        let grace = elsewhere();
+        let first = daily(&server, &grace).await.unwrap();
+        let chat = first.thread.unwrap();
+        // Her project's ledger runs past one page of a read, its last on the second.
+        let ledger = Scope::glaves_own(scope().org(), first.project);
+        for n in 2..=500u64 {
+            let created = made_by(n.into(), chat, grace.person.map(Principal::person));
+            append(&log, &ledger, Reserved::Tasks.id(), n, &created).await;
+        }
+        let paused = glave_event::SchedulePaused {
+            schedule: first.schedule,
+            paused: true,
+            by: None,
+        };
+        append(&log, &ledger, Reserved::Tasks.id(), 501, &paused).await;
+        // More projects with schedules than a server keeps ledgers of, which a tick reads.
+        let index = (
+            Scope::of_organization(scope().org()),
+            Reserved::Scheduled.id(),
+        );
+        let listed = log.read(&index.0, index.1, None, usize::MAX).await.unwrap();
+        let next = u64::try_from(listed.len()).unwrap();
+        for n in 1..=1_030u64 {
+            let project =
+                uuid::Uuid::from_u128(0x0192_f5c3_0000_7000_8000_0000_0000_0000 + u128::from(n));
+            let placed = glave_event::SchedulePlaced { project };
+            append(&log, &index.0, index.1, next + n, &placed).await;
+        }
+        // The removal's read of her ledger is held at its second page while a tick forgets
+        // every ledger this server kept.
+        faulty.hold_read("schedule.paused");
+        let removal = server.request(Request::PersonRemove {
+            person: grace.person.unwrap(),
+        });
+        let ticking = async {
+            faulty.held().await;
+            let ticked = server.tick().await;
+            faulty.release();
+            ticked
+        };
+        let (removed, ticked) = tokio::join!(removal, ticking);
+        removed.unwrap();
+        ticked.unwrap();
+        let deleted = (ledger_of(&log, first.project).await.into_iter())
+            .filter(|body| matches!(body, Body::ScheduleDeleted(_)))
+            .count();
+        assert_eq!(deleted, 500, "every schedule of hers, read whole");
     });
 }

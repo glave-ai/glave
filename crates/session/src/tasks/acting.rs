@@ -63,22 +63,21 @@ where
     }
 
     /// Where `caller`, someone glave acts for on its own, stands in their organization, as its
-    /// people ledger says now: the server's own person always a member. Refused while it can't
-    /// be read; one it doesn't list, as a ledger this server forgot meanwhile reads, is unknown,
-    /// never taken for still there.
+    /// people ledger says now, read whole and apart from what this server keeps of people
+    /// ledgers, which may forget one midway through a read: the server's own person always a
+    /// member. Refused while it can't be read; one it doesn't list is unknown, never taken for
+    /// still there.
     pub(crate) async fn membership(&self, caller: &Caller) -> Result<Membership, ApiError> {
         let (Some(person), Some(org)) = (caller.person, caller.org) else {
             return Ok(Membership::Member);
         };
-        self.catch_up_people(org).await?;
-        Ok(self.people(org, |people| {
-            if people.removed(person) {
-                Membership::Removed
-            } else if people.has(person) {
-                Membership::Member
-            } else {
-                Membership::Unknown
-            }
-        }))
+        let people = self.people_apart(org).await?;
+        Ok(if people.removed(person) {
+            Membership::Removed
+        } else if people.has(person) {
+            Membership::Member
+        } else {
+            Membership::Unknown
+        })
     }
 }

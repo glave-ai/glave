@@ -267,7 +267,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) connections: Option<Arc<dyn Connections>>,
     /// Once it listens over HTTP, where a browser on this computer reaches it.
     pub(crate) reached: OnceLock<crate::connections::Reached>,
-    /// The project's own person, whom the log leaves implied.
+    /// The server's own person, the one threads are for unless someone else starts them:
+    /// from the settings, or the one its harness made.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
     /// What each project's task ledger says, as far as this server has read it.
@@ -391,7 +392,7 @@ where
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new_cyclic(|server| Inner {
-                person: harness.settings().person,
+                person: harness.person(),
                 harness: harness.with_schedules(crate::schedule::asking(server, wiring.schedules)),
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),

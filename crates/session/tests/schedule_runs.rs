@@ -528,10 +528,12 @@ pub(crate) async fn allowed_after_a_restart(
     set(now, "2026-10-10T11:00:00Z");
     assert_eq!(server.tick().await.unwrap(), vec![chat]);
     let approval = asked_in(&server, chat).await;
+    let person = server.person();
     server.shutdown().await;
     drop(server);
     let mut later = Setup::asking(answers, Answering::Clients);
     later.clock = now.clone();
+    later.settings.person = person;
     later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
     let (restarted, seen) = later.build_on(repo, log).await;
     let recovered = restarted.recover_tasks().await.unwrap();
