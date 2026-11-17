@@ -57,7 +57,7 @@ pub use payload::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
-    ScheduleOrganization, SchedulePaused, SchedulePlaced, ScheduleSkipped, Skipped, TaskEnded,
+    SchedulePaused, SchedulePlaced, ScheduleSkipped, ScheduleUnplaced, Skipped, TaskEnded,
     TaskStarted, When, WorkspaceBound, WorkspaceRemoved, ZoneSet, sealed_under_memory,
 };
 pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};

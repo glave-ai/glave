@@ -390,4 +390,16 @@ impl Projects for SqliteProjects {
         let keys = keys.to_vec();
         Box::pin(self.with(move |connection| find_folder_now(connection, &org.to_string(), &keys)))
     }
+
+    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+        Box::pin(self.with(|connection| {
+            let ids: Vec<String> = connection
+                .prepare("SELECT DISTINCT org FROM project_records ORDER BY org")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            (ids.iter())
+                .map(|id| Ok(OrgId::from_uuid(Uuid::parse_str(id).map_err(corrupt)?)))
+                .collect()
+        }))
+    }
 }

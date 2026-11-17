@@ -4,7 +4,7 @@
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
 //! in a conversation.
 //! `schedule.placed`: a project with schedules, in its organization's index of
-//! them; `schedule.organization`: an organization with schedules, in the store's list of them.
+//! them, until `schedule.unplaced`, as its last schedule goes.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -25,7 +25,7 @@ pub(crate) const DELETED: &str = "schedule.deleted";
 pub(crate) const SKIPPED: &str = "schedule.skipped";
 pub(crate) const PAUSED: &str = "schedule.paused";
 pub(crate) const PLACED: &str = "schedule.placed";
-pub(crate) const ORGANIZATION: &str = "schedule.organization";
+pub(crate) const UNPLACED: &str = "schedule.unplaced";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,13 +244,12 @@ pub struct SchedulePlaced {
     pub project: Uuid,
 }
 
-/// Someone made a schedule in an organization, which the store's list of them now holds, in the
-/// server's own organization: every server that fires schedules reads each listed
-/// organization's own index. It names no project. Recorded once for each organization.
+/// A project's last schedule went, so its organization's index of them no longer lists it:
+/// what that index holds is the projects with schedules now, never every one that once had one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ScheduleOrganization {
-    pub org: Uuid,
+pub struct ScheduleUnplaced {
+    pub project: Uuid,
 }
 
 impl Payload for TaskStarted {
@@ -288,8 +287,8 @@ impl Payload for SchedulePlaced {
     const VERSION: u32 = 1;
 }
 
-impl Payload for ScheduleOrganization {
-    const TYPE: &'static str = ORGANIZATION;
+impl Payload for ScheduleUnplaced {
+    const TYPE: &'static str = UNPLACED;
     const VERSION: u32 = 1;
 }
 
@@ -348,10 +347,10 @@ pub(crate) fn decode_placed(
     (version == 1).then(|| parse(data))
 }
 
-pub(crate) fn decode_organization(
+pub(crate) fn decode_unplaced(
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ScheduleOrganization>> {
+) -> Option<serde_json::Result<ScheduleUnplaced>> {
     (version == 1).then(|| parse(data))
 }
 

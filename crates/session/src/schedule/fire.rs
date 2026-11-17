@@ -44,6 +44,8 @@ const SOONEST: SignedDuration = SignedDuration::from_secs(1);
 const SCHEDULING: Duration = Duration::from_secs(180);
 /// Projects' ledgers read at once.
 const READS: usize = 16;
+/// The longest a tick runs: half the scheduler's lease, which a tick renews as it begins.
+const TICK: SignedDuration = SignedDuration::from_secs(90);
 /// The longest one organization's projects take of a tick before the next organization's
 /// turn: the rest wait for the next tick, which goes on from there.
 const SHARE: SignedDuration = SignedDuration::from_secs(10);
@@ -65,6 +67,8 @@ where
     /// Starts a run of every schedule due by the clock's now, in every project whose tasks
     /// this server runs, at most one each, and answers with their chats, first letting go of
     /// threads idle too long. A run its person's task limit holds back starts on a later tick.
+    /// A tick ends within half the scheduler's lease, which it renewed as it began, so no other
+    /// server takes the lease while it fires; what it did not reach, the next goes on with.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale().await;
@@ -72,29 +76,53 @@ where
         if !self.fires().await? {
             return Ok(Vec::new());
         }
-        let projects = self.task_projects().await?;
-        let organizations: BTreeSet<OrgId> = projects.iter().map(|at| at.org).collect();
-        let mut started = Vec::new();
+        let clock = self.inner.harness.clock();
+        let until = clock.now().checked_add(TICK).ok();
+        let mine = self.task_projects_here().await?;
+        let mut organizations: BTreeSet<OrgId> = mine.iter().map(|at| at.org).collect();
+        organizations.extend(self.scheduling_organizations().await);
+        let count = organizations.len();
+        let (mut started, mut reached) = (Vec::new(), 0usize);
         for org in in_turn(organizations, self.next_turn()) {
-            let theirs = projects.iter().filter(|at| at.org == org).copied();
-            started.extend(self.fire_in(org, theirs.collect()).await);
+            if until.is_some_and(|until| clock.now() >= until) {
+                tracing::warn!(
+                    left = count.saturating_sub(reached),
+                    "the tick took its time; the rest go on at the next"
+                );
+                break;
+            }
+            let theirs = mine.iter().filter(|at| at.org == org).copied();
+            let mut projects: Vec<Located> = theirs.collect();
+            for placed in self.placed_in(org).await {
+                if !projects.contains(&placed) {
+                    projects.push(placed);
+                }
+            }
+            started.extend(self.fire_in(org, projects, until).await);
+            reached = reached.saturating_add(1);
         }
+        self.turned(reached, count);
         Ok(started)
     }
 
     /// Starts the runs due in `projects`, all `org`'s: from where the tick before stopped, a
     /// few ledgers read at once and each one's runs started right after, for at most
-    /// [`SHARE`] of the tick; answers their chats.
-    async fn fire_in(&self, org: OrgId, mut projects: Vec<Located>) -> Vec<ThreadId> {
+    /// [`SHARE`] of the tick and not past the tick's own end, `tick`; answers their chats.
+    async fn fire_in(
+        &self,
+        org: OrgId,
+        mut projects: Vec<Located>,
+        tick: Option<Timestamp>,
+    ) -> Vec<ThreadId> {
         let from = self.resume_at(org, projects.len());
         projects.rotate_left(from);
         let clock = self.inner.harness.clock();
-        let until = clock.now().checked_add(SHARE).ok();
+        let share = clock.now().checked_add(SHARE).ok();
+        let until = share.into_iter().chain(tick).min();
+        let past = || until.is_some_and(|until| clock.now() >= until);
         let (mut started, mut done) = (Vec::new(), 0usize);
-        for chunk in projects.chunks(READS) {
-            if until.is_some_and(|until| clock.now() >= until) {
-                let left = projects.len().saturating_sub(done);
-                tracing::warn!(%org, left, "the organization's schedules took their share of the tick");
+        'chunks: for chunk in projects.chunks(READS) {
+            if past() {
                 break;
             }
             let mut reads = JoinSet::new();
@@ -103,14 +131,18 @@ where
                 reads.spawn(async move { (at, server.catch_up(at).await) });
             }
             let read: Vec<(Located, Result<(), ApiError>)> = reads.join_all().await;
-            // Each project's runs right after its ledger was read, in the chunk's order.
+            // Each project's runs right after its ledger was read, in the chunk's order, while
+            // there is time.
             for at in chunk {
+                if past() {
+                    break 'chunks;
+                }
                 match read
                     .iter()
                     .find(|(read, _)| read == at)
                     .map(|(_, result)| result)
                 {
-                    Some(Ok(())) => started.extend(self.fire_due(*at).await),
+                    Some(Ok(())) => started.extend(self.recover_and_fire(*at).await),
                     // Read again on the next tick.
                     Some(Err(error)) => {
                         let project = at.project;
@@ -118,11 +150,25 @@ where
                     }
                     None => {}
                 }
+                done = done.saturating_add(1);
             }
-            done = done.saturating_add(chunk.len());
+        }
+        if done < projects.len() {
+            let left = projects.len().saturating_sub(done);
+            tracing::warn!(%org, left, "the organization's schedules took their share of the tick");
         }
         self.stopped_at(org, from.saturating_add(done));
         started
+    }
+
+    /// Recovers the runs `project`'s ledger, just read, has open that a stopped server left,
+    /// then starts its runs due.
+    async fn recover_and_fire(&self, project: Located) -> Vec<ThreadId> {
+        if let Err(error) = self.recover_in(project).await {
+            let project = project.project;
+            tracing::warn!(%error, %project, "could not recover the project's runs left open");
+        }
+        self.fire_due(project).await
     }
 
     /// Starts every run due in `project`, found in its ledger as just read rather than in what
@@ -155,8 +201,10 @@ where
         started
     }
 
-    /// Whether this server runs as many tasks of `person`'s as policy allows.
+    /// Whether this server runs as many tasks of `person`'s as policy allows: the server's own
+    /// person's are those it runs for no one named.
     fn at_task_limit(&self, person: Option<PrincipalId>) -> bool {
+        let person = self.someone_else(person).and_then(|by| by.id);
         self.running_for(person) >= self.most_running()
     }
 
@@ -285,6 +333,11 @@ where
             Ok(Some(_)) => Ran::Started(chat),
             // Another server's claim landed first.
             Ok(None) => Ran::NotStarted,
+            // A task of its maker's started since it was looked at: held back as the limit
+            // holds a run, unrecorded, so it starts on a later tick.
+            Err(Unstarted { refused, claimed }) if !claimed && refused.code == code::LIMIT => {
+                Ran::NotStarted
+            }
             Err(Unstarted { refused, claimed }) => {
                 self.not_started(project, schedule, at, &refused, claimed)
                     .await
