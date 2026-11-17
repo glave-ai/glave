@@ -1,8 +1,9 @@
 //! Schedules through the session API, on a clock the test moves: one-off and cron schedules
 //! fire at the right times and once each, each run in a new thread on a worktree of its own;
 //! schedules in two projects both fire, and one in a folder that is no repository is skipped;
-//! missed runs fire once, never a burst, including in a fresh server; deleting a schedule
-//! stops its runs; every run has a budget; and policy limits how many schedules are kept.
+//! missed runs fire once, never a burst, including in a fresh server; deleting a schedule, or
+//! removing its project, stops its runs; every run has a budget; and policy limits how many
+//! schedules are kept.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -202,6 +203,41 @@ fn schedules_in_two_projects_fire_on_worktrees_and_one_with_no_copy_to_work_on_i
         assert_eq!(tick(&server).await, 0);
         set(&now, "2026-10-11T11:00:00Z");
         assert_eq!(tick(&server).await, 2);
+    });
+}
+
+#[test]
+fn removing_a_project_deletes_its_schedules_and_starts_no_more_runs_there() {
+    block_on!(async {
+        let (server, now, repo, _dir) = on_repository("schedule-removed").await;
+        let others = repo.with_extension("others");
+        let removed = make_project(&server, "removed", &repository(&others, "removed")).await;
+        let kept = make_project(&server, "kept", &repository(&others, "kept")).await;
+        create_in(&server, Some(removed), cron("0 11 * * *"), 1_000)
+            .await
+            .unwrap();
+        let stays = create_in(&server, Some(kept), cron("0 11 * * *"), 1_000)
+            .await
+            .unwrap();
+        let done = server
+            .request(Request::ProjectRemove { project: removed })
+            .await;
+        assert!(matches!(done, Ok(Reply::Done {})), "{done:?}");
+        let listed: Vec<ScheduleId> = list(&server).await.iter().map(|s| s.schedule).collect();
+        assert_eq!(listed, [stays.schedule], "the removed project's is deleted");
+
+        set(&now, "2026-10-10T11:00:00Z");
+        let fired = server.tick().await.unwrap();
+        settle(&server).await;
+        let [thread] = fired[..] else {
+            panic!("one run, not {fired:?}");
+        };
+        let Reply::Thread { thread: summary } =
+            server.request(Request::ThreadGet { thread }).await.unwrap()
+        else {
+            panic!("a thread");
+        };
+        assert_eq!(summary.project, kept, "none in the removed project");
     });
 }
 

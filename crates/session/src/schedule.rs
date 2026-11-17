@@ -153,6 +153,29 @@ where
         Ok(Reply::Done {})
     }
 
+    /// Deletes every schedule of the project `project`, as `by` (absent: the project's person),
+    /// so none fires again, on this server or any other.
+    pub(crate) async fn delete_schedules_in(
+        &self,
+        project: Located,
+        by: Option<&glave_event::Principal>,
+    ) -> Result<(), ApiError> {
+        self.catch_up(project).await?;
+        let schedules: Vec<ScheduleId> = self
+            .ledgers()
+            .get(&project)
+            .map(|ledger| ledger.schedules.keys().copied().collect())
+            .unwrap_or_default();
+        for schedule in schedules {
+            let deleted = ScheduleDeleted {
+                schedule,
+                by: by.cloned(),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+        }
+        Ok(())
+    }
+
     /// The projects `caller` works in, each one's ledger read up to now.
     async fn read_ledgers_of(&self, caller: &Caller) -> Result<Vec<Located>, ApiError> {
         let projects = self.projects_of(caller).await?;
