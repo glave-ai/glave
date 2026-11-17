@@ -11,11 +11,13 @@ use glave_event::{Body, HookPoint, HookResult, Permissions, ThreadId, When, deco
 use glave_ports::settings::{Hook, Hooks};
 use glave_ports::{Caller, EventLog, InMemoryLog};
 use glave_session::protocol::{Answer, Reply, Request};
-use glave_session::{Answered, Answering, Sent};
+use glave_session::{Answered, Sent};
 use serde_json::json;
 use tokio::sync::Notify;
 
-use crate::schedule_runs::{asking, listed, schedule, set, writes_after_asking};
+use crate::schedule_runs::{
+    allowed_after_a_restart, asking, listed, schedule, writes_after_asking,
+};
 use crate::schedule_tool::{asked_of, create, decide, decide_as, schedules, setup};
 use crate::support::*;
 
@@ -87,29 +89,14 @@ fn a_run_that_goes_on_from_its_log_after_a_restart_still_only_lists() {
         let (server, now, repo, _dir) =
             asking("tool-run-restart", writes_after_asking(), log.clone()).await;
         let made = schedule(&server, "Careful", "0 11 * * *", 10_000).await;
-        let chat = made.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(server.tick().await.unwrap(), vec![chat]);
-        // The run waits for the person to allow its write, and glave stops meanwhile.
-        let approval = asked_in(&server, chat).await;
-        server.shutdown().await;
-        drop(server);
+        // Its run waits for the person to allow its write, glave stops meanwhile, and the run
+        // goes on from its log once they do.
         let answers = vec![
             answer(None, Some(("schedule", create()))),
             answer(Some("Done."), None),
         ];
-        let mut later = Setup::asking(answers, Answering::Clients);
-        later.clock = now.clone();
-        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
-        let (restarted, seen) = later.build_on(&repo, log).await;
-        restarted.recover_tasks().await.unwrap();
-        let decided = Request::ApprovalDecide {
-            thread: chat,
-            approval,
-            decision: Answer::AllowOnce,
-        };
-        assert!(restarted.request(decided).await.is_ok());
-        settle(&restarted).await;
+        let (restarted, seen) =
+            allowed_after_a_restart(server, (&now, &repo, log), &made, answers).await;
         let told = json(&seen);
         assert!(
             told[1].contains("Not done: this is a run of repeating work"),
