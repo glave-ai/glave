@@ -147,6 +147,15 @@ async fn insert<C: GenericClient>(
         )
         .await
         .map_err(database(ProjectError::Storage))?;
+    // Its organization is one the store holds from now on, as one with a key is: what work
+    // that runs once per organization lists (`Projects::organizations`).
+    client
+        .execute(
+            "INSERT INTO glave_orgs (org) VALUES ($1) ON CONFLICT DO NOTHING",
+            &[&org],
+        )
+        .await
+        .map_err(database(ProjectError::Storage))?;
     Ok((inserted != 0).then(|| project.clone()))
 }
 
@@ -397,6 +406,27 @@ impl Projects for PostgresProjects {
                 }
             }
             Ok(None)
+        })
+    }
+
+    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+        Box::pin(async move {
+            // Every organization's, so no one organization's connection: ids alone.
+            let client = crate::store::unscoped(&self.pool)
+                .await
+                .map_err(unavailable)?;
+            // Every organization a project was kept in is one the store holds.
+            let rows = client
+                .query("SELECT org FROM glave_orgs ORDER BY org", &[])
+                .await
+                .map_err(database(ProjectError::Storage))?;
+            (rows.iter())
+                .map(|row| {
+                    Ok(OrgId::from_uuid(
+                        row.try_get::<_, Uuid>(0).map_err(corrupt)?,
+                    ))
+                })
+                .collect()
         })
     }
 }

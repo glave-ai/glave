@@ -239,6 +239,8 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
 /// the browsers signed in there. Every place the session checks it is counted
 /// ([`LOCAL_CHECKS`]), so a new one fails the suite until its methods are listed here.
 const LOCAL_ONLY: &[&str] = &[
+    "signin/link",
+    "signin/setup",
     "passkey/list",
     "passkey/remove",
     "project/find",
@@ -265,11 +267,11 @@ const LOCAL_ONLY: &[&str] = &[
 ];
 
 /// The places the session checks that a caller is the person on its computer (`local`, and
-/// `theirs`, which asks it), each one's methods in [`LOCAL_ONLY`]: browsers 1, awake 1,
+/// `theirs` and `by_program`, which ask it), each one's methods in [`LOCAL_ONLY`]: browsers 3, awake 1,
 /// connections 1, credits 2, gone folders 2, folders 3 (one only for a project made with a
 /// folder, which no template asks for), memory 1, model accounts 1, search 1, secrets 1,
 /// sign-ups 1, trust 2 (one only says whether a folder asks).
-const LOCAL_CHECKS: usize = 17;
+const LOCAL_CHECKS: usize = 19;
 
 /// How many places in the session's sources check that a caller is the person on its computer.
 fn local_checks() -> usize {
@@ -280,7 +282,15 @@ fn local_checks() -> usize {
         .map(|path| std::fs::read_to_string(path).unwrap());
     read.map(|source| {
         let theirs = source.lines().filter(|line| line.trim() == "theirs(");
-        source.matches("local(caller, self.inner.person)").count() + theirs.count()
+        let checks = [
+            "local(caller, self.inner.person)",
+            "by_program(caller, self.inner.person)",
+        ];
+        let named: usize = checks
+            .iter()
+            .map(|check| source.matches(check).count())
+            .sum();
+        named + theirs.count()
     })
     .sum()
 }
