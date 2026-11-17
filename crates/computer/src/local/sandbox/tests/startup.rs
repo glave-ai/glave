@@ -5,15 +5,13 @@
 use std::path::Path;
 
 use glave_ports::block_on;
-use glave_ports::computer::Ending;
+use glave_ports::computer::{Ending, SandboxNetwork};
 
 use super::{computers_saying, enforced, open_app, run, scratch};
 
-/// Says what the shell was given and how it runs, so a failure shows it, appends a line to
-/// `ran.txt` in the project, and says it is done.
-const COUNTED: &str = "echo \"BASH_ENV=${BASH_ENV-} bash=$BASH_VERSION flags=$- \
-    options=$SHELLOPTS\"; ls -l \"${BASH_ENV:-/nonexistent}\" 2>&1; \
-    grep -E '^(Uid|Gid):' /proc/self/status 2>/dev/null; echo ran >> ran.txt; echo done";
+/// Says what the shell was given, so a failure shows it, appends a line to `ran.txt` in the
+/// project, and says it is done.
+const COUNTED: &str = "echo \"BASH_ENV=${BASH_ENV-} flags=$-\"; echo ran >> ran.txt; echo done";
 
 /// How many times the command ran in the project at `app`.
 fn runs(app: &Path) -> usize {
@@ -36,7 +34,10 @@ fn counted(name: &str, environment: &[(&str, &str)], bash_env: Option<&str>) -> 
         environment.push(("BASH_ENV", &file));
     }
     block_on!(async {
-        let (computers, sandbox) = computers_saying(&dir, &environment);
+        let (computers, mut sandbox) = computers_saying(&dir, &environment);
+        // With the network, as Auto runs: without it Linux refuses `getpeername`, which bash
+        // takes for a remote shell's, reading `~/.bashrc` in place of `BASH_ENV`.
+        sandbox.network = SandboxNetwork::Direct;
         let there = open_app(&computers, &dir).await;
         let (ending, said) = run(&computers, there, &sandbox, COUNTED).await;
         Counted {

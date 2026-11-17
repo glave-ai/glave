@@ -8,13 +8,14 @@
 //! So the command's shell, once inside, first writes a line on that output, with a token made
 //! for this launch alone. The output is not the sandbox's alone, though: the shell writes its
 //! own startup errors there, and a `BASH_ENV` file and the functions the environment exports
-//! run before the line, and may keep it from coming (by sending the shell's errors elsewhere,
-//! by standing in for what writes the line, or by ending the shell). So no line proves
-//! nothing: only an end where the wrapper said it could not start the command proves the
-//! command never ran, and only bubblewrap's such end is tried again. Anything else is the
-//! command's own, run once: a late line, an output that cannot be read, or an end where the
-//! wrapper said nothing of its own leaves the command to end as it does, as it did before the
-//! line.
+//! run before the line (on Linux with the network off, `~/.bashrc` in place of `BASH_ENV`:
+//! bash takes the refused `getpeername` for a remote shell's), and may keep it from coming (by
+//! sending the shell's errors elsewhere, by standing in for what writes the line, or by ending
+//! the shell). So no line proves nothing: only an end where the wrapper said it could not start
+//! the command proves the command never ran, and only bubblewrap's such end is tried again.
+//! Anything else is the command's own, run once: a late line, an output that cannot be read, or
+//! an end where the wrapper said nothing of its own leaves the command to end as it does, as it
+//! did before the line.
 
 use std::fmt::Write as _;
 use std::time::Duration;
