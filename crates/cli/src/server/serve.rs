@@ -126,7 +126,7 @@ pub(crate) async fn run(
     let path = socket_path()?;
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
-    let said = Said::of(args.log.as_deref());
+    let said = args.said();
     // What a glave before this one left running, and later what its leases still held.
     let mut left_open = recover(server, said).await;
     said.info(&format!("serving you on {}", path.display()));

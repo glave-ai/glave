@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use glave_harness::Permissions;
 
+use crate::said::Said;
+
 pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
 
@@ -257,6 +259,16 @@ pub(crate) struct Args {
 }
 
 impl Args {
+    /// Where this run says things: in its log, when `--log -` puts that on standard error, else
+    /// plainly.
+    pub(crate) fn said(&self) -> Said {
+        if crate::telemetry::on_standard_error(self.log.as_deref()) {
+            Said::Logged
+        } else {
+            Said::Plainly
+        }
+    }
+
     /// Whether people sign in here from elsewhere: it is `reached` at a public origin, or they
     /// sign in through an identity provider.
     pub(crate) fn reached_from_elsewhere(&self, reached: bool) -> bool {
