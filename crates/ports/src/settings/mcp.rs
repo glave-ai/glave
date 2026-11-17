@@ -21,9 +21,14 @@ pub struct McpSettingsError(pub String);
 
 impl From<serde_json::Error> for McpSettingsError {
     /// Where the JSON went wrong, and why, never a value it quotes: the file's headers and
-    /// environment hold secrets.
+    /// environment hold secrets. Where is kept apart, so nothing in the reason can swallow it.
     fn from(error: serde_json::Error) -> Self {
-        Self(super::unquoted(&error.to_string()))
+        let said = error.to_string();
+        let at = format!(" at line {} column {}", error.line(), error.column());
+        match said.strip_suffix(&at) {
+            Some(why) if error.line() > 0 => Self(format!("{}{at}", super::unquoted(why))),
+            _ => Self(super::unquoted(&said)),
+        }
     }
 }
 
@@ -241,6 +246,19 @@ mod tests {
         let refused = refused.unwrap_or_default();
         assert!(!refused.contains(&secret), "the value said");
         assert!(refused.contains("line 1 column"), "{refused}");
+    }
+
+    #[test]
+    fn a_name_with_a_quote_in_it_never_swallows_where_it_went_wrong() {
+        let text = r#"{"mcpServers": {"x": {"command": "y", "a`\"b": 1}}}"#;
+        let refused = parse(text, &env()).unwrap_err().to_string();
+        let column = refused
+            .rsplit_once(" at line 1 column ")
+            .map(|(_, column)| column);
+        assert!(
+            column.is_some_and(|column| column.parse::<u32>().is_ok()),
+            "{refused}"
+        );
     }
 
     #[test]

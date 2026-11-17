@@ -33,11 +33,11 @@ impl Said {
         }
     }
 
-    /// A warning `what`, with `detail`: `glave: warning: <what>: <detail>`, or a warning in the
-    /// log whose message is `what` alone, `detail` beside it.
+    /// A warning `what`, with `detail`: `glave: <what>: <detail>`, as every warning reads at a
+    /// terminal, or a warning in the log whose message is `what` alone, `detail` beside it.
     pub(crate) fn warned(self, what: &str, detail: &dyn Display) {
         match self {
-            Self::Plainly => eprintln!("glave: warning: {what}: {detail}"),
+            Self::Plainly => eprintln!("glave: {what}: {detail}"),
             Self::Logged => tracing::warn!(%detail, "{what}"),
         }
     }

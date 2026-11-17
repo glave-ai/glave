@@ -106,36 +106,53 @@ mod tests {
         assert_eq!(unquoted("a ` alone"), "a ` alone");
     }
 
+    // Each says exactly what is left: no part of the value, the rest whole.
     proptest! {
         #[test]
         fn a_string_shown_is_never_said(value in any::<String>()) {
             let said = unquoted(&format!(
                 "invalid type: string {value:?}, expected a map {WHERE}"
             ));
-            prop_assert!(said.ends_with(WHERE), "{said}");
-            let template = format!("invalid type: string \"…\", expected a map {WHERE}");
-            if value.chars().count() >= 3 && !template.contains(&value) {
-                prop_assert!(!said.contains(&value), "{said}");
-            }
+            prop_assert_eq!(said, format!("invalid type: string \"…\", expected a map {WHERE}"));
         }
 
         #[test]
         fn a_string_of_quotes_backslashes_and_backticks_is_never_said(
-            value in "[\"\\\\`a-z]{3,24}"
+            value in "[\"\\\\`a-z]{0,24}"
         ) {
             let said = unquoted(&format!(
                 "invalid value: string {value:?}, expected `a` {WHERE}"
             ));
-            prop_assert!(said.ends_with(WHERE), "{said}");
             prop_assert_eq!(said, format!("invalid value: string \"…\", expected `a` {WHERE}"));
         }
 
         #[test]
-        fn a_number_shown_is_never_said(value in 10_000_u64..) {
+        fn a_number_shown_is_never_said(value in any::<i64>()) {
             let said = unquoted(&format!(
                 "invalid type: integer `{value}`, expected a string {WHERE}"
             ));
             prop_assert_eq!(said, format!("invalid type: integer `…`, expected a string {WHERE}"));
+        }
+
+        #[test]
+        fn a_fraction_shown_is_never_said(value in any::<f64>()) {
+            let said = unquoted(&format!(
+                "invalid type: floating point `{value}`, expected a string {WHERE}"
+            ));
+            prop_assert_eq!(
+                said,
+                format!("invalid type: floating point `…`, expected a string {WHERE}")
+            );
+        }
+
+        // serde shows a character raw between backticks: any but a backtick itself, which
+        // can't end the span it opens.
+        #[test]
+        fn a_character_shown_is_never_said(value in any::<char>().prop_filter("a backtick", |c| *c != '`')) {
+            let said = unquoted(&format!(
+                "invalid type: character `{value}`, expected a string {WHERE}"
+            ));
+            prop_assert_eq!(said, format!("invalid type: character `…`, expected a string {WHERE}"));
         }
     }
 }
