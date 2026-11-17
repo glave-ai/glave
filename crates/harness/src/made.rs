@@ -9,7 +9,8 @@
 //! mark): a `turn.made`, once the last such command ends while the thread is idle, or as the
 //! next turn starts, else the next working turn's end. Each file is kept for the thread
 //! (`keep.rs`). Where it stands is read again from the log (`log.rs`). At most
-//! [`MOST_LOOKING`] look-overs run at once on a server.
+//! [`MOST_LOOKING`] look-overs run at once on a server, and [`LOOKING_PER_ORG`] for one
+//! organization.
 
 mod keep;
 mod log;
@@ -21,10 +22,10 @@ use glave_event::AssetKind;
 use glave_event::{FileMade, MadeLeft, RawEvent, TurnMade};
 use glave_ports::computer::Glob;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
-use tokio::sync::Semaphore;
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::shares::Shares;
 
 pub(crate) use log::{Mark, TurnOpen, changes_files, from_log, opened_by};
 
@@ -47,8 +48,12 @@ const MARGIN: Duration = Duration::from_secs(2);
 /// [`MOST`] files of 10 MB.
 pub(crate) const MOST_LOOKING: usize = 4;
 
-/// The longest a look-over waits for its turn among [`MOST_LOOKING`]: past it, it is owed, as
-/// when its folder can't be looked over.
+/// The most look-overs that run at once for one organization, so no one's turns ending at once
+/// hold up everyone's.
+pub(crate) const LOOKING_PER_ORG: usize = 2;
+
+/// The longest a look-over waits for its place among the server's: past it, it is owed, as when
+/// its folder can't be looked over.
 const WAITS_TO_LOOK: Duration = Duration::from_secs(60);
 
 /// What a look-over found: the files kept, what they leave out, where it stopped, and whether
@@ -62,9 +67,10 @@ pub(crate) struct Found {
     pub(crate) waits: bool,
 }
 
-/// The look-overs of one server, at most [`MOST_LOOKING`] at once.
-pub(crate) fn looking() -> Semaphore {
-    Semaphore::new(MOST_LOOKING)
+/// The places for look-overs on one server: [`MOST_LOOKING`] at once, [`LOOKING_PER_ORG`] for one
+/// organization.
+pub(crate) fn looking() -> Shares {
+    Shares::new(MOST_LOOKING, LOOKING_PER_ORG)
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -141,12 +147,11 @@ where
     /// kept or said why not, in path order: at most [`MOST`], the rest counted; and where it
     /// stopped. While a command of the thread's still runs, only those settled for [`MARGIN`],
     /// the rest owed. None, said so, when the folder holds too many files to look over in time;
-    /// `None` when it can't be looked over, or its turn among the server's look-overs doesn't
+    /// `None` when it can't be looked over, or its place among the server's look-overs doesn't
     /// come in time.
     async fn look_over(&self, thread: &Thread, since_ns: u64) -> Option<Found> {
-        let _turn = tokio::time::timeout(WAITS_TO_LOOK, self.looking.acquire())
+        let _place = tokio::time::timeout(WAITS_TO_LOOK, self.looking.share(thread.scope.org()))
             .await
-            .ok()?
             .ok()?;
         if thread.commands.any_running() {
             thread.commands.check().await;

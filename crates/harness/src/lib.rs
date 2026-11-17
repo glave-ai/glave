@@ -47,6 +47,7 @@ mod retry;
 mod room;
 mod sandbox;
 mod service;
+mod shares;
 mod skills;
 mod standing;
 mod subagent;
