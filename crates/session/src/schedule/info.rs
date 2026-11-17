@@ -44,7 +44,7 @@ pub(super) fn next_fire(scheduled: &Scheduled) -> Option<Timestamp> {
     }
     match &scheduled.created.when {
         When::At(at) => {
-            let waits = scheduled.last.or(scheduled.held).is_none() && missed(scheduled).is_none();
+            let waits = scheduled.last.or(scheduled.held).is_none() && scheduled.missed.is_none();
             waits.then(|| at.timestamp())
         }
         When::Cron(text) => {
@@ -64,13 +64,11 @@ fn is_paused(scheduled: &Scheduled) -> bool {
     scheduled.paused || scheduled.created.thread.is_none()
 }
 
-/// When a one-off's time came while it was paused, so it runs no more.
-fn missed(scheduled: &Scheduled) -> Option<At> {
-    let When::At(at) = &scheduled.created.when else {
-        return None;
-    };
-    let resumed = scheduled.resumed?;
-    (scheduled.last.is_none() && *at < resumed).then_some(*at)
+/// Whether `scheduled` counts toward the schedules a person keeps at `now`: it will still run,
+/// or will once resumed. One made before schedules had chats runs no more, and doesn't.
+pub(super) fn kept(scheduled: &Scheduled, now: Timestamp) -> bool {
+    let resumable = scheduled.paused && scheduled.created.thread.is_some();
+    resumable || next_run(scheduled, now).is_some()
 }
 
 /// Runs are counted from the latest one, or the latest held back, or from when the schedule
@@ -119,7 +117,7 @@ pub(super) fn info(
 
 /// What came of `scheduled`'s latest run, as `ledger` has it.
 fn last_run(scheduled: &Scheduled, ledger: &Ledger) -> Option<LastRun> {
-    if let Some(due) = missed(scheduled) {
+    if let Some(due) = scheduled.missed {
         let said = Sentence::RunMissed.into();
         let (status, outcome) = (RunStatus::Missed, None);
         return Some(LastRun {

@@ -13,7 +13,7 @@ mod info;
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
 use glave_harness::Change;
 use glave_ports::{
-    BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from,
+    BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, Standing, title_from,
 };
 
 use crate::choice::Choice;
@@ -125,7 +125,8 @@ where
         }
     }
 
-    /// Refused once `caller` keeps as many schedules as policy allows that will still run.
+    /// Refused once `caller` keeps as many schedules as policy allows that will still run, or
+    /// may once resumed: a paused one counts, so pausing makes no room.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
         let Some(most) = self.inner.limits.max_schedules else {
             return Ok(());
@@ -137,7 +138,7 @@ where
             .iter()
             .filter(|(id, _)| projects.contains(id))
             .flat_map(|(_, ledger)| ledger.schedules.values())
-            .filter(|scheduled| info::next_run(scheduled, now).is_some())
+            .filter(|scheduled| info::kept(scheduled, now))
             .count();
         if kept >= most {
             return Err(ApiError::new(
@@ -177,10 +178,34 @@ where
         paused: bool,
     ) -> Result<Reply, ApiError> {
         let project = self.project_of_schedule(caller, schedule).await?;
+        if !paused {
+            self.may_resume(project, schedule).await?;
+        }
         self.set_paused(caller, project, schedule, paused).await?;
         let schedule = (self.schedule_info(project, schedule))
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))?;
         Ok(Reply::Schedule { schedule })
+    }
+
+    /// Refuses resuming `schedule` of `project` while its chat is archived, and one made before
+    /// schedules had chats, which runs no more.
+    async fn may_resume(&self, project: Located, schedule: ScheduleId) -> Result<(), ApiError> {
+        let chat = (self.ledgers().get(&project))
+            .and_then(|ledger| ledger.schedules.get(&schedule))
+            .map(|scheduled| scheduled.created.thread);
+        let Some(Some(chat)) = chat else {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                Sentence::ScheduleNoChatToResume,
+            ));
+        };
+        if self.standing(chat).await? == Standing::Archived {
+            return Err(ApiError::new(
+                code::ARCHIVED,
+                Sentence::ScheduleChatArchived,
+            ));
+        }
+        Ok(())
     }
 
     /// Records `schedule` of `project` paused (`paused`) or resumed for `caller`, unless it is

@@ -455,6 +455,10 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    ScheduleNoChatToResume = "schedule-no-chat-to-resume"
+        "this schedule was made before schedules had chats of their own, so it can't run again: set it up again",
+    ScheduleChatArchived = "schedule-chat-archived"
+        "this schedule's chat is archived: unarchive the chat first, then resume the schedule",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",
     RunRunning = "run-running" "Running",
