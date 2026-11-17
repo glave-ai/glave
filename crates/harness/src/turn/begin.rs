@@ -87,9 +87,10 @@ where
             .opening_parts()
             .filter(|_| opening)
             .unwrap_or_default();
-        // What changed since the model was told, before the person's words (`prefix.rs`).
+        // What changed since the model was told, and its reminder, before the person's words.
         let (stopped, told) = self.what_stopped(thread);
-        parts.extend(crate::prefix::news(offer, stopped));
+        let reminder = thread.reminder.as_deref();
+        parts.extend(crate::prefix::news(offer, stopped, reminder));
         parts.push(Part::Text {
             text: prompt.to_owned(),
         });

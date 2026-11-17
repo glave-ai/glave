@@ -195,6 +195,8 @@ pub struct Thread {
     pub(crate) opened: Option<Opened>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
+    /// What its next turn's opening note tells the model besides what changed (`copy.rs`).
+    pub(crate) reminder: Option<String>,
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
     pub(crate) home: Option<crate::homes::AtHome>,
@@ -625,6 +627,7 @@ where
             commands: Arc::default(),
             opened: None,
             rebound: None,
+            reminder: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
             summary_failed: None,

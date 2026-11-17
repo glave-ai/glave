@@ -468,8 +468,10 @@ sentences! {
     RunRefused { reason: String } = "run-refused"
         "Couldn't start: { $reason ->\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
     RunStarted = "run-started" "Started",
-    RunKept = "run-kept"
-        "(This chat's copy of the project has changes of its own, so glave left it as it was rather than bringing it up to the project's latest version.)",
+    // Told to a schedule's run whose copy of its project was left as it was: `why` is
+    // `changed`, `diverged` or `failed`.
+    RunCopyLeft { why: String } = "run-copy-left"
+        "{ $why ->\n    [changed] This chat's copy of the project has changes of its own not yet committed, so glave left it as it was rather than bringing it up to the project's latest version.\n    [diverged] This chat's copy of the project has commits of its own, and the project has moved on since, so glave left it as it was rather than bringing it up to the project's latest version.\n   *[failed] glave couldn't bring this chat's copy of the project up to the project's latest version, so it may be behind.\n }",
     NoZone { zone: String } = "no-zone"
         "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
 
