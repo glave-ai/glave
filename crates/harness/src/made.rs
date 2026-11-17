@@ -152,7 +152,7 @@ where
     async fn look_over(&self, thread: &Thread, since_ns: u64) -> Option<Found> {
         let _place = tokio::time::timeout(WAITS_TO_LOOK, self.looking.share(thread.scope.org()))
             .await
-            .ok()?;
+            .ok()??;
         if thread.commands.any_running() {
             thread.commands.check().await;
         }
