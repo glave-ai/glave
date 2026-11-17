@@ -1,5 +1,15 @@
+import type { ScheduleInfo } from '@glave/client';
+
 import { schedule } from '../testing/fixtures';
-import { type ScheduleReader, nextOf, repeatLine, runAt, runDate } from './repeating';
+import {
+  type ScheduleReader,
+  lastOf,
+  nextOf,
+  repeatLine,
+  runAt,
+  runDate,
+  scheduleParts,
+} from './repeating';
 
 /** A reader in Lisbon, as the fixture's schedule is: its times name no zone. */
 const LISBON: ScheduleReader = { locale: 'en-US', timeZone: 'Europe/Lisbon' };
@@ -66,5 +76,42 @@ describe('repeating', () => {
     expect(repeatLine(old, LISBON, NOW)).toBe(
       'Every day at 2:00 am · Paused · It runs no more: set it up again.',
     );
+  });
+
+  it('says when it last ran, and what came of it in the server’s words, as the line runs on', () => {
+    const ran = (last: ScheduleInfo['last']): ScheduleInfo => ({ ...schedule('s1', null), last });
+    expect(lastOf(ran(null), LISBON, NOW)).toBeNull();
+    const skipped = ran({
+      due: '2026-11-16T02:00:00.000Z',
+      status: 'skipped',
+      said: 'Skipped: the run before was still going',
+    });
+    expect(lastOf(skipped, LISBON, NOW)).toBe(
+      'Last: today, 2:00 AM, skipped: the run before was still going',
+    );
+  });
+
+  it('gives the Repeating list a schedule a part each: repeats, next, last, the server’s note', () => {
+    const done: ScheduleInfo = {
+      ...schedule('s1', '2026-11-17T02:00:00.000Z'),
+      last: {
+        due: '2026-11-16T02:00:00.000Z',
+        status: 'ended',
+        outcome: 'completed',
+        said: 'Done',
+      },
+    };
+    expect(scheduleParts(done, LISBON, NOW)).toEqual([
+      'Every day at 2:00 am',
+      'Next: tomorrow, 2:00 AM',
+      'Last: today, 2:00 AM, done',
+    ]);
+    const paused = { ...done, paused: true, note: 'It runs no more: set it up again.' };
+    expect(scheduleParts(paused, LISBON, NOW)).toEqual([
+      'Every day at 2:00 am',
+      'Paused',
+      'Last: today, 2:00 AM, done',
+      'It runs no more: set it up again.',
+    ]);
   });
 });

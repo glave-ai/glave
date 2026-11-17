@@ -24,11 +24,8 @@
         </div>
       }
     </glz-card>
-  } @empty {
-    @if (service.loaded()) {
-      <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
-        copy.emptyText
-      }}</glz-empty-state>
-    }
   }
 </div>
+@if (nothing()) {
+  <p class="nothing" data-testid="task-nothing">{{ copy.nothing }}</p>
+}
