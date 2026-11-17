@@ -9,8 +9,10 @@ use glave_ports::computer::Ending;
 
 use super::{computers_saying, enforced, open_app, run, scratch};
 
-/// Appends a line to `ran.txt` in the project, and says it is done.
-const COUNTED: &str = "echo ran >> ran.txt; echo done";
+/// Says what the shell was given and how it runs, so a failure shows it, appends a line to
+/// `ran.txt` in the project, and says it is done.
+const COUNTED: &str = "echo \"BASH_ENV=${BASH_ENV-} bash=$BASH_VERSION flags=$- \
+    options=$SHELLOPTS ids=$(id -u):$(id -g)\"; echo ran >> ran.txt; echo done";
 
 /// How many times the command ran in the project at `app`.
 fn runs(app: &Path) -> usize {
