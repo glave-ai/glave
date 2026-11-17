@@ -76,7 +76,7 @@ pub(crate) async fn start_for(
 ) -> anyhow::Result<Option<Running>> {
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    start(store, &settings, (person, scope), setup.said).await
+    start(store, &settings, person, scope, setup.said).await
 }
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
@@ -85,7 +85,8 @@ pub(crate) async fn start_for(
 async fn start(
     store: &Data,
     settings: &MemorySettings,
-    (person, scope): (PrincipalId, Scope),
+    person: PrincipalId,
+    scope: Scope,
     said: Said,
 ) -> anyhow::Result<Option<Running>> {
     if !settings.on {

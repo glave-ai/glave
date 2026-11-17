@@ -58,16 +58,12 @@ pub(crate) async fn settings(
     said: Said,
 ) -> anyhow::Result<KeySettings> {
     let file = home.join(KEY_FILE);
-    let (root, warning) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+    let (root, no_keychain) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         if relocated || file.exists() {
             return Ok((key_file(&file)?, None));
         }
         if !KeychainRoot::available() {
-            let warning = format!(
-                "warning: no OS keychain here, so the root key is kept in {}, readable only by you",
-                file.display()
-            );
-            return Ok((key_file(&file)?, Some(warning)));
+            return Ok((key_file(&file)?, Some(file)));
         }
         let root: Arc<dyn Root> = Arc::new(
             KeychainRoot::open_or_create(KEYCHAIN.0, KEYCHAIN.1)
@@ -77,8 +73,11 @@ pub(crate) async fn settings(
     })
     .await??;
     // Said here, not on the thread that read it, which the log is not set up on.
-    if let Some(warning) = warning {
-        said.warn(&warning);
+    if let Some(file) = no_keychain {
+        said.warned(
+            "no OS keychain here, so the root key is kept in a file readable only by you",
+            &file.display(),
+        );
     }
     Ok(KeySettings::new(root))
 }

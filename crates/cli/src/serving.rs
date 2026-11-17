@@ -100,7 +100,7 @@ pub(crate) async fn open(args: &Args, listening: Listening, reach: &Reach) -> an
         _ => format!("http://{}", here(bound)),
     };
     keep(&folder.join(crate::app::URL_FILE), &reached)?;
-    let said = Said::of(args.log.as_deref());
+    let said = args.said();
     said.info(&format!("serving the session API on http://{bound}"));
     if let Some(origin) = reach.origin.as_ref().filter(|_| shared) {
         said.info(&format!(
