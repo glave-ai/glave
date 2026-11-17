@@ -454,6 +454,9 @@ where
                 sha256,
                 offset,
             } => boxed(|| self.read_file(thread, &sha256, offset.unwrap_or(0))).await,
+            Request::FilePreview { thread, sha256 } => {
+                boxed(|| self.preview_file(thread, &sha256)).await
+            }
             Request::ApprovalDecide {
                 thread,
                 approval,

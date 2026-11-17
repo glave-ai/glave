@@ -25,7 +25,7 @@ const BEFORE: Duration = Duration::from_secs(1_700_000_000);
 
 /// What the turns in `events` made, by turn, with what each leaves out; and what later
 /// look-overs made, as the turns they name.
-fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
+pub(crate) fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
     events
         .iter()
         .filter_map(|event| match &event.body {
@@ -37,7 +37,7 @@ fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
 }
 
 /// Each file's path and whether it was kept, left too large, or left holding a secret.
-fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
+pub(crate) fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
     made.iter()
         .map(|file| {
             let kept = match file.kept {
@@ -51,7 +51,7 @@ fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-fn bash(command: &str) -> Completion {
+pub(crate) fn bash(command: &str) -> Completion {
     answer(
         None,
         vec![("bash", json!({ "command": command }))],
@@ -59,7 +59,7 @@ fn bash(command: &str) -> Completion {
     )
 }
 
-fn done() -> Completion {
+pub(crate) fn done() -> Completion {
     answer(Some("Done."), vec![], StopReason::EndTurn)
 }
 

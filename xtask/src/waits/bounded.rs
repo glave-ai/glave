@@ -4,6 +4,13 @@
 /// that file say it, and what bounds the wait.
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
+        "crates/cli/src/reading.rs",
+        "let ended = self.ended.notified();",
+        1,
+        "a reader's share, waited for within the look-over's deadline (READING_FOR in \\
+         glave-harness's made.rs), which the harness wraps every reader in",
+    ),
+    (
         "crates/cli/src/providers/endpoints.rs",
         "let Some(done) = asked.join_next().await else {",
         1,

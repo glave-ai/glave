@@ -328,7 +328,7 @@ methods! {
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
     /// The files a thread's turns made for the person, read from its log, by turn: each with
-    /// its kind, name and size, and whether it was kept.
+    /// its kind, title and size, whether it previews, and whether it was kept.
     "thread/files" => ThreadFiles { thread: ThreadId } -> [Files],
     /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
     /// between them, its calls and what they did in a line, and which message is each turn's
@@ -442,6 +442,15 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<u64>,
     } -> [FilePiece],
+    /// A file `thread` made, as Markdown to preview it by: a spreadsheet's sheets and a CSV
+    /// file as tables of their first rows, a document or a deck as its text, at most 256 KB,
+    /// with the server's sentence when more was left out. Refused for any other file, which a
+    /// client draws itself (a PDF) or offers to download.
+    "file/preview" => FilePreview {
+        thread: ThreadId,
+        #[schemars(with = "String")]
+        sha256: Sha256,
+    } -> [FilePreview],
     /// What glave made for the caller and keeps beyond any chat: every project's, newest first.
     "library/list" => LibraryList {} -> [Library],
     /// A piece of a Library item's file, read as `file/read` reads one. The item is named with

@@ -1522,7 +1522,7 @@
     },
     "FileMade": {
       "additionalProperties": false,
-      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, and its\ncontent kept for the thread or why it was not. The model never sees it; the person downloads\nit.",
+      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, its content\nkept for the thread or why it was not, and what glave read of it. The model never sees it;\nthe person opens and downloads it.",
       "properties": {
         "bytes": {
           "description": "Its size on the computer.",
@@ -1536,6 +1536,17 @@
         "path": {
           "description": "Where it was made, relative to the thread's folder.",
           "type": "string"
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileRead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What glave read of it apart from itself, once kept; absent when it couldn't be read."
         }
       },
       "required": [
@@ -1584,6 +1595,61 @@
         "offset",
         "data"
       ],
+      "type": "object"
+    },
+    "FilePreview": {
+      "description": "A file a thread made, as a person previews it.",
+      "properties": {
+        "cut": {
+          "description": "What was left out, in the server's sentence, when the preview is not the whole file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "type": "object"
+    },
+    "FileRead": {
+      "additionalProperties": false,
+      "description": "What glave read of a file a turn made, in a process of its own.",
+      "properties": {
+        "parts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Parts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How many pages, sheets or slides it has, when that is known."
+        },
+        "preview": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadePreview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its preview, when glave previews a file of its kind."
+        },
+        "title": {
+          "description": "The title its own properties give it, when they give one that names it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "Filters": {
@@ -2065,7 +2131,7 @@
       "type": "object"
     },
     "MadeFile": {
-      "description": "A file a turn made for the person: kept with the thread, so it downloads after the computer\nthat made it is gone, or left there, said why.",
+      "description": "A file a turn made for the person: kept with the thread, so it opens and downloads after the\ncomputer that made it is gone, or left there, said why.",
       "properties": {
         "bytes": {
           "description": "Its size.",
@@ -2089,15 +2155,33 @@
           "type": "string"
         },
         "name": {
-          "description": "What it is called: its file's name without its end.",
+          "description": "What it is called: the title it gives itself, else its file's name without its end.",
           "type": "string"
         },
+        "parts": {
+          "description": "How many pages, sheets or slides it has, in a phrase (\"2 sheets\"), when that is known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previews": {
+          "description": "Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck\nglave read), or a client draws it (a PDF glave read); false for any other, which only\ndownloads.",
+          "type": "boolean"
+        },
         "sentence": {
-          "description": "What was made, in one line: \"Made a spreadsheet: Trip budget\".",
+          "description": "What was made, in one line: \"Made a spreadsheet: Trip budget (2 sheets)\".",
           "type": "string"
         },
         "sha256": {
-          "description": "Its content's SHA-256, which `file/read` reads it by; absent when it was not kept.",
+          "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it\nwas not kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unread": {
+          "description": "Why it can't be shown, only downloaded, when glave kept it but couldn't read it.",
           "type": [
             "string",
             "null"
@@ -2110,6 +2194,7 @@
         "file_name",
         "media_type",
         "bytes",
+        "previews",
         "kept",
         "sentence"
       ],
@@ -2153,6 +2238,23 @@
           "type": "object"
         }
       ]
+    },
+    "MadePreview": {
+      "additionalProperties": false,
+      "description": "A file's preview: Markdown, kept for the thread as the file is.",
+      "properties": {
+        "blob": {
+          "$ref": "#/$defs/BlobRef"
+        },
+        "cut": {
+          "description": "Whether it leaves out some of the file.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "blob"
+      ],
+      "type": "object"
     },
     "MaxPrice": {
       "additionalProperties": false,
@@ -2606,6 +2708,53 @@
         "limit_reached"
       ],
       "type": "string"
+    },
+    "Parts": {
+      "description": "How many of its parts a file has: a document's pages, a workbook's sheets, a deck's slides.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "pages": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pages"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "sheets": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sheets"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "slides": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "slides"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "PasskeySummary": {
       "description": "A passkey that signs the person in.",
@@ -6250,6 +6399,36 @@
         },
         "required": [
           "spaces"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "file/preview": {
+      "params": {
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A file a thread made, as a person previews it.",
+        "properties": {
+          "preview": {
+            "$ref": "#/$defs/FilePreview"
+          }
+        },
+        "required": [
+          "preview"
         ],
         "type": "object"
       },

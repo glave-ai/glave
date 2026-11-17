@@ -1,18 +1,45 @@
 //! Files it made (`specs/session.md`, "Files it made"): what a turn and its worker made in the
 //! thread's folder is kept with the thread; `thread/files` gives it by turn, each with its kind,
-//! name and where it is kept, in the server's sentences; `file/read` reads it back. A command
-//! that waits for the person makes a file once they allow it.
+//! name, parts, whether it previews and where it is kept, in the server's sentences, as its
+//! reader read it; `file/read` reads it back and `file/preview` gives the preview its turn kept;
+//! a file the server doesn't preview is refused plainly, and one its reader couldn't read only
+//! downloads, said why. A command that waits for the person makes a file once they allow it. A
+//! message sent while what a command made is looked over starts a turn once it is done.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use glave_event::{AssetKind, Body, decode};
+use glave_event::{AssetKind, Body, Parts, decode};
+use glave_ports::{MadeRead, ReadMade};
 use glave_session::Answering;
-use glave_session::protocol::{Answer, MadeFile, Reply, Request};
+use glave_session::protocol::{Answer, MadeFile, Reply, Request, code};
 use serde_json::json;
 
 use crate::support::*;
+
+/// A reader standing in for glave's own: a CSV file is one sheet, previewed as its text, a PDF
+/// one page; a file that says it can't be read can't.
+fn reader() -> ReadMade {
+    Arc::new(|_, bytes, media_type| {
+        Box::pin(async move {
+            let text = String::from_utf8(bytes).ok()?;
+            match media_type.as_str() {
+                _ if text.contains("unreadable") => None,
+                "text/csv" => Some(MadeRead {
+                    parts: Some(Parts::Sheets(1)),
+                    markdown: Some(text),
+                    ..MadeRead::default()
+                }),
+                _ => Some(MadeRead {
+                    parts: Some(Parts::Pages(1)),
+                    ..MadeRead::default()
+                }),
+            }
+        })
+    })
+}
 
 /// A command that waits for the person, its turn stopped in the log until they allow it, makes
 /// a file once it goes on: the turn that went on names it.
@@ -74,22 +101,26 @@ fn script() -> Vec<glave_ports::Completion> {
     ]
 }
 
-/// Each of `files` by its file's name, its kind and its line.
-fn told(files: &[MadeFile]) -> Vec<(&str, AssetKind, &str)> {
+/// Each of `files` by its file's name, its kind, its line and whether it previews.
+fn told(files: &[MadeFile]) -> Vec<(&str, AssetKind, &str, bool)> {
     files
         .iter()
-        .map(|file| (file.file_name.as_str(), file.kind, &*file.sentence))
+        .map(|file| {
+            let line = &*file.sentence;
+            (file.file_name.as_str(), file.kind, line, file.previews)
+        })
         .collect()
 }
 
 #[test]
-fn what_a_turn_and_its_worker_made_is_listed_and_read_back() {
+fn what_a_turn_and_its_worker_made_is_listed_read_back_and_previewed() {
     let dir = folder("made");
     block_on!(async {
         let table = TABLE;
         let mut setup = Setup::new(script());
         setup.settings.titles = false;
         setup.settings.subagents = true;
+        setup.reader = Some(reader());
         let (server, _) = setup.build(&dir).await;
         let thread = start(&server, false).await;
         turn(&server, thread, "make a budget").await.unwrap();
@@ -109,31 +140,59 @@ fn what_a_turn_and_its_worker_made_is_listed_and_read_back() {
                 (
                     "budget.csv",
                     AssetKind::Spreadsheet,
-                    "Made a spreadsheet: budget"
+                    "Made a spreadsheet: budget (1 sheet)",
+                    true
                 ),
-                ("odd.pdf", AssetKind::Pdf, "Made a PDF: odd"),
-                ("plan.pdf", AssetKind::Pdf, "Made a PDF: plan"),
+                ("odd.pdf", AssetKind::Pdf, "Made a PDF: odd", false),
+                (
+                    "plan.pdf",
+                    AssetKind::Pdf,
+                    "Made a PDF: plan (1 page)",
+                    true
+                ),
                 (
                     "team.csv",
                     AssetKind::Spreadsheet,
-                    "Made a spreadsheet: team"
+                    "Made a spreadsheet: team (1 sheet)",
+                    true
                 ),
             ]
         );
-        let [budget, ..] = turn.files.as_slice() else {
+        let [budget, odd, plan, _] = turn.files.as_slice() else {
             panic!("four files")
         };
+        assert_eq!(
+            odd.unread.as_deref(),
+            Some("glave couldn't read this file to show it: download it to open it"),
+            "kept, it only downloads"
+        );
+        assert!(odd.sha256.is_some() && budget.unread.is_none());
         assert_eq!((budget.bytes, &*budget.kept), (23, "Kept with this chat"));
         assert_eq!(budget.name, "budget");
+        let budget_hash = budget.sha256.clone().unwrap();
+
         let read = Request::FileRead {
             thread,
-            sha256: budget.sha256.clone().unwrap(),
+            sha256: budget_hash.clone(),
             offset: None,
         };
         let Reply::FilePiece { piece } = server.request(read).await.unwrap() else {
             panic!("a piece")
         };
         assert_eq!(STANDARD.decode(piece.data).unwrap(), table.as_bytes());
+
+        let preview = |sha256| Request::FilePreview { thread, sha256 };
+        let previewed = server.request(preview(budget_hash)).await;
+        let Ok(Reply::FilePreview { preview: shown }) = previewed else {
+            panic!("a preview, not {previewed:?}")
+        };
+        assert_eq!(shown.markdown, TABLE, "the preview its turn kept");
+        assert!(shown.cut.is_none());
+        let refused = server.request(preview(plan.sha256.clone().unwrap())).await;
+        assert!(
+            matches!(&refused, Err(error) if error.code == code::INVALID_PARAMS),
+            "a PDF is drawn by the client: {refused:?}"
+        );
     });
 }
 

@@ -367,6 +367,7 @@ sentences! {
     FileGone { name: String } = "file-gone"
         "\"{ $name }\" is no longer here: add it to the message again",
     FileNotHere = "file-not-here" "this file is no longer here",
+    NoPreview = "no-preview" "this file can't be shown here: download it to open it",
     FileKind = "file-kind"
         "glave can't read this kind of file yet: add an image (PNG, JPEG, GIF or WebP), a PDF or a text file",
     ImageUnreadable { name: String } = "image-unreadable"
@@ -457,17 +458,23 @@ sentences! {
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
 
-    // The files a thread made: where each is kept, or why not, and what was made in a line.
-    // `kind` is `document`, `spreadsheet`, `deck`, `pdf` or `other`.
+    // The files a thread made: where each is kept, or why not, how many parts it has, and what
+    // was made in a line. `kind` is `document`, `spreadsheet`, `deck`, `pdf` or `other`; `unit`
+    // is `pages`, `sheets`, `slides` or `none`.
     KeptWithChat = "kept-with-chat" "Kept with this chat",
     LeftTooLarge { megabytes: u64 } = "left-too-large"
         "Not kept: larger than { $megabytes } MB, so it stays on the computer",
     LeftSecret = "left-secret"
         "Not kept: it holds one of your secrets, so it stays on the computer",
-    MadeLine { kind: String, name: String } = "made-line"
-        "Made { $kind ->\n    [document] a document\n    [spreadsheet] a spreadsheet\n    [deck] a deck\n    [pdf] a PDF\n   *[other] a file\n }: { $name }",
+    FileParts { unit: String, count: u64 } = "file-parts"
+        "{ $unit ->\n    [pages] { $count ->\n        [1] 1 page\n       *[other] { $count } pages\n    }\n    [sheets] { $count ->\n        [1] 1 sheet\n       *[other] { $count } sheets\n    }\n   *[slides] { $count ->\n        [1] 1 slide\n       *[other] { $count } slides\n    }\n }",
+    MadeLine { kind: String, name: String, unit: String, count: u64 } = "made-line"
+        "Made { $kind ->\n    [document] a document\n    [spreadsheet] a spreadsheet\n    [deck] a deck\n    [pdf] a PDF\n   *[other] a file\n }: { $name }{ $unit ->\n    [pages] { $count ->\n        [1] {\" (1 page)\"}\n       *[other] {\" (\"}{ $count }{\" pages)\"}\n    }\n    [sheets] { $count ->\n        [1] {\" (1 sheet)\"}\n       *[other] {\" (\"}{ $count }{\" sheets)\"}\n    }\n    [slides] { $count ->\n        [1] {\" (1 slide)\"}\n       *[other] {\" (\"}{ $count }{\" slides)\"}\n    }\n   *[none] {\"\"}\n }",
+    PreviewCut = "preview-cut"
+        "This shows the start of the file: download it to see the rest.",
     LeftUnchecked = "left-unchecked"
         "Not kept: it unpacks too large to check for your secrets, so it stays on the computer",
+    MadeUnread = "made-unread" "glave couldn't read this file to show it: download it to open it",
     // What the files a turn made leave out.
     MadeMore { files: u64 } = "made-more"
         "{ $files ->\n    [1] 1 more file was made than a chat keeps: it stays on the computer\n   *[other] { $files } more files were made than a chat keeps: they stay on the computer\n }",

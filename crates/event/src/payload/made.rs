@@ -1,7 +1,8 @@
 //! Files a turn made for the person (`specs/session.md`, "Files it made"): a document, a
 //! spreadsheet, a deck or a PDF changed in the thread's folder over the turn, kept for the
-//! thread so it outlives the computer, and named in its `turn.ended`, under `made`. A turn's end
-//! says where its look-over stopped (`made_until_ns`), and whether a command the thread started
+//! thread so it outlives the computer, and named in its `turn.ended`, under `made`, with what
+//! glave read of it apart from itself: its title, its pages, sheets or slides, and its preview.
+//! A turn's end says where its look-over stopped (`made_until_ns`), and whether a command the thread started
 //! in the background still ran then (`made_waits`), so that what may still have been being
 //! written is looked over later: a `turn.made`, once the last such command ends while the thread
 //! is idle, or the next working turn's end.
@@ -25,9 +26,9 @@ pub enum Parts {
     Slides(u64),
 }
 
-/// A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
-/// content kept for the thread or why it was not. The model never sees it; the person downloads
-/// it.
+/// A file a turn made, as its `turn.ended` records it: where it was made, its size, its content
+/// kept for the thread or why it was not, and what glave read of it. The model never sees it;
+/// the person opens and downloads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileMade {
@@ -36,6 +37,34 @@ pub struct FileMade {
     /// Its size on the computer.
     pub bytes: u64,
     pub kept: Kept,
+    /// What glave read of it apart from itself, once kept; absent when it couldn't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read: Option<FileRead>,
+}
+
+/// What glave read of a file a turn made, in a process of its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FileRead {
+    /// The title its own properties give it, when they give one that names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// How many pages, sheets or slides it has, when that is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Parts>,
+    /// Its preview, when glave previews a file of its kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<MadePreview>,
+}
+
+/// A file's preview: Markdown, kept for the thread as the file is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MadePreview {
+    pub blob: BlobRef,
+    /// Whether it leaves out some of the file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
 }
 
 /// Whether a file a turn made was kept for the thread.
@@ -82,7 +111,8 @@ pub struct TurnMade {
 
 impl Payload for TurnMade {
     const TYPE: &'static str = TURN_MADE;
-    const VERSION: u32 = 1;
+    // 2 has what was read of each file (`read`); a version 1 look-over read none.
+    const VERSION: u32 = 2;
 }
 
 /// Decodes `turn.made`; `None` for any other type or version.
@@ -91,7 +121,7 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    (kind == TURN_MADE && version == 1).then(|| parse(data).map(Body::TurnMade))
+    (kind == TURN_MADE && matches!(version, 1 | 2)).then(|| parse(data).map(Body::TurnMade))
 }
 
 /// The files counted as made, by the end of their name: each one's media type and kind.
@@ -221,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn a_made_file_says_whether_it_was_kept() {
+    fn a_made_file_says_whether_it_was_kept_and_what_was_read_of_it() {
         let blob = BlobRef {
             sha256: Sha256::new("a".repeat(64)).unwrap(),
             bytes: 3,
@@ -231,15 +261,23 @@ mod tests {
             path: "out/plan.pdf".into(),
             bytes: 3,
             kept: Kept::Blob(blob),
+            read: Some(FileRead {
+                title: Some("Lisbon plan".into()),
+                parts: Some(Parts::Pages(1)),
+                preview: None,
+            }),
         };
         let json = serde_json::to_value(&kept).unwrap();
         assert_eq!(json["kept"]["blob"]["bytes"], 3);
+        assert_eq!(json["read"]["parts"]["pages"], 1);
         let left = FileMade {
             kept: Kept::Unchecked,
+            read: None,
             ..kept
         };
         let json = serde_json::to_value(&left).unwrap();
         assert_eq!(json["kept"], "unchecked");
+        assert!(json.get("read").is_none());
         let more = serde_json::to_value(MadeLeft::More { files: 3 }).unwrap();
         assert_eq!(more, serde_json::json!({"kind": "more", "files": 3}));
     }
