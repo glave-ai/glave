@@ -106,7 +106,7 @@ impl Ledger {
         self.next.max(1)
     }
 
-    /// Whether `schedule`'s run due at `due` is settled: claimed, started or skipped, or one
+    /// Whether `schedule`'s run due at `due` is settled: started (its claim) or skipped, or one
     /// due later is, or the schedule was paused or deleted meanwhile.
     pub(crate) fn settled(&self, schedule: ScheduleId, due: At) -> bool {
         (self.schedules.get(&schedule)).is_none_or(|scheduled| {
@@ -153,11 +153,6 @@ impl Ledger {
             Body::ScheduleSkipped(skipped) => {
                 let scheduled = self.schedules.get_mut(&skipped.schedule)?;
                 scheduled.ran(skipped.due, Some(skipped.why));
-                scheduled.created.thread
-            }
-            Body::ScheduleFired(fired) => {
-                let scheduled = self.schedules.get_mut(&fired.schedule)?;
-                scheduled.ran(fired.due, None);
                 scheduled.created.thread
             }
             Body::TaskStarted(started) => {
@@ -323,7 +318,7 @@ where
             Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
-        projects.extend(self.placed().await?);
+        projects.extend(self.placed().await);
         let known: Vec<Located> = self.ledgers().keys().copied().collect();
         projects.extend(known);
         let mut seen = HashSet::new();

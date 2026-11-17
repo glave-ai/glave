@@ -2,12 +2,12 @@
 //! each run is a turn there; a run that needs the person waits for them, as a chat does, holds
 //! no room under the task limit meanwhile, and stops when stopped, archived or deleted, or as
 //! the server stops; a run waiting across a restart keeps its budget; a run due meanwhile is
-//! skipped and recorded so once; a run refused otherwise is recorded with its reason; the
-//! scheduler never wakes at once for a run it would not start; deleting the chat deletes the
-//! schedule; and a schedule is made on a copy of a repository or refused, its chat gone when it
-//! is not kept. The chat says its schedule in its own facts, a list's watch hearing it change,
-//! though never of what a first read of the ledger finds, nor in another organization; and each
-//! run's turn says when it was due.
+//! skipped and recorded so once; a run refused otherwise is recorded with its reason, once for
+//! the same; the scheduler never wakes at once for a run it would not start; deleting the chat
+//! deletes the schedule; and a schedule is made on a copy of a repository or refused, its chat
+//! gone when it is not kept. The chat says its schedule in its own facts, a list's watch hearing
+//! it change, though never of what a first read of the ledger finds, nor in another
+//! organization; and each run's turn says when it was due.
 
 use glave_event::{At, Outcome, ThreadId, When};
 use glave_ports::testing::{ManualClock, TempDir};
@@ -229,7 +229,7 @@ fn a_run_refused_for_another_reason_is_recorded_with_why() {
 }
 
 #[test]
-fn a_skip_for_another_reason_than_the_last_is_recorded() {
+fn a_skip_for_another_reason_than_the_last_is_recorded_and_one_for_the_same_is_not() {
     block_on!(async {
         let (server, now, repo, dir) =
             asking("runs-reasons", writes_after_asking(), Shared::default()).await;
@@ -255,13 +255,13 @@ fn a_skip_for_another_reason_than_the_last_is_recorded() {
             (refused.status, refused.due),
             (RunStatus::Refused, at("2026-10-10T13:00:00Z"))
         );
-        // A run claimed before it is refused is settled in the ledger, the same reason or not.
         set(&now, "2026-10-10T14:00:00Z");
         server.tick().await.unwrap();
         let again = listed(&server).await[0].last.clone().unwrap();
         assert_eq!(
-            (again.status, again.due),
-            (RunStatus::Refused, at("2026-10-10T14:00:00Z"))
+            again.due,
+            at("2026-10-10T13:00:00Z"),
+            "the same reason once"
         );
     });
 }

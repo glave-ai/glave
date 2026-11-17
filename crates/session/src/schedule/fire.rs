@@ -2,41 +2,51 @@
 //! [`Server::run_scheduler`], which calls it when the next run is due): each due schedule, in
 //! every project whose tasks it runs, everyone's, adds one turn to its chat, run as a task with
 //! its budget, as whoever made it, that waits for them where it needs them, as a chat does.
-//! Each project's runs are found and started right after its ledger is read, organization by
-//! organization, each tick starting one organization further on, so none waits behind the
-//! others every time. A run is claimed in the ledger (`schedule.fired`) before its turn starts,
-//! and only the server whose claim lands starts it. A run due while the one before is still
-//! going in the chat, or while someone's turn is, is skipped and recorded so
-//! (`schedule.skipped`); a run refused for any other reason is recorded with its reason. A skip
-//! for the reason the latest skip had is recorded once, then only held back. A schedule that
-//! missed runs while no server ran it runs once, as soon as one does, never once per missed
-//! time (systemd's `Persistent=true`).
+//! One server on the store fires them, the holder of its scheduler lease; each run is claimed
+//! by its own `task.started`, so even two servers that both believe they hold it start it once
+//! (`tasks/run.rs`). Organization by organization, each tick starting one further on, a few
+//! projects' ledgers are read at once and each one's due runs started right after, for at most
+//! a share of the tick each organization, the next tick going on where it stopped. A run due
+//! while the one before is still going in the chat, or while someone's turn is, is skipped and
+//! recorded so (`schedule.skipped`); a run refused for any other reason is recorded with its
+//! reason. A skip for the reason the latest skip had is recorded once, then only held back. A
+//! schedule that missed runs while no server ran it runs once, as soon as one does, never once
+//! per missed time (systemd's `Persistent=true`).
 
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
-use glave_event::{At, Fired, PrincipalId, ScheduleCreated, ScheduleSkipped, Skipped, ThreadId};
+use glave_event::{
+    At, Fired, PrincipalId, ScheduleCreated, ScheduleSkipped, Skipped, ThreadId, When,
+};
 use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
+use tokio::task::JoinSet;
 
 use super::info::{due, next_fire};
 use crate::choice::Choice;
+use crate::cron::{Cron, SHORTEST_GAP};
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
-use crate::tasks::{Work, acting_for, whose};
+use crate::tasks::{Membership, Unstarted, Work, whose};
 use crate::words::Sentence;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
 const LOOK_AGAIN: Duration = Duration::from_secs(60);
-/// The shortest it sleeps, so a run due now that a tick did not start is not looked at again
-/// at once.
-const SOONEST: Duration = Duration::from_secs(1);
-/// How long the organization's scheduler lease lasts unless renewed: past the longest wait
-/// between ticks, so the server firing its schedules keeps it from tick to tick, and another
-/// takes over this long after one stops without letting go.
+/// The shortest time from one tick's start to the next's, so a run due now that a tick did not
+/// start is not looked at again at once.
+const SOONEST: SignedDuration = SignedDuration::from_secs(1);
+/// How long the store's scheduler lease lasts unless renewed: past the longest wait between
+/// ticks, so the server firing schedules keeps it from tick to tick, and another takes over
+/// this long after one stops without letting go.
 const SCHEDULING: Duration = Duration::from_secs(180);
+/// Projects' ledgers read at once.
+const READS: usize = 16;
+/// The longest one organization's projects take of a tick before the next organization's
+/// turn: the rest wait for the next tick, which goes on from there.
+const SHARE: SignedDuration = SignedDuration::from_secs(10);
 
 /// What came of a run that was due.
 enum Ran {
@@ -58,36 +68,67 @@ where
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale().await;
+        // One server on the store fires schedules: the holder of its lease.
+        if !self.fires().await? {
+            return Ok(Vec::new());
+        }
         let projects = self.task_projects().await?;
         let organizations: BTreeSet<OrgId> = projects.iter().map(|at| at.org).collect();
         let mut started = Vec::new();
         for org in in_turn(organizations, self.next_turn()) {
-            // One server fires each organization's schedules: the holder of its lease.
-            match self.fires(org).await {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(error) => {
-                    tracing::warn!(%error, %org, "could not take the organization's scheduler lease");
-                    continue;
-                }
-            }
-            for project in projects.iter().filter(|at| at.org == org) {
-                started.extend(self.fire_due(*project).await);
-            }
+            let theirs = projects.iter().filter(|at| at.org == org).copied();
+            started.extend(self.fire_in(org, theirs.collect()).await);
         }
         Ok(started)
+    }
+
+    /// Starts the runs due in `projects`, all `org`'s: from where the tick before stopped, a
+    /// few ledgers read at once and each one's runs started right after, for at most
+    /// [`SHARE`] of the tick; answers their chats.
+    async fn fire_in(&self, org: OrgId, mut projects: Vec<Located>) -> Vec<ThreadId> {
+        let from = self.resume_at(org, projects.len());
+        projects.rotate_left(from);
+        let clock = self.inner.harness.clock();
+        let until = clock.now().checked_add(SHARE).ok();
+        let (mut started, mut done) = (Vec::new(), 0usize);
+        for chunk in projects.chunks(READS) {
+            if until.is_some_and(|until| clock.now() >= until) {
+                let left = projects.len().saturating_sub(done);
+                tracing::warn!(%org, left, "the organization's schedules took their share of the tick");
+                break;
+            }
+            let mut reads = JoinSet::new();
+            for at in chunk.iter().copied() {
+                let server = self.clone();
+                reads.spawn(async move { (at, server.catch_up(at).await) });
+            }
+            let read: Vec<(Located, Result<(), ApiError>)> = reads.join_all().await;
+            // Each project's runs right after its ledger was read, in the chunk's order.
+            for at in chunk {
+                match read
+                    .iter()
+                    .find(|(read, _)| read == at)
+                    .map(|(_, result)| result)
+                {
+                    Some(Ok(())) => started.extend(self.fire_due(*at).await),
+                    // Read again on the next tick.
+                    Some(Err(error)) => {
+                        let project = at.project;
+                        tracing::warn!(%error, %project, "could not read the project's schedules");
+                    }
+                    None => {}
+                }
+            }
+            done = done.saturating_add(chunk.len());
+        }
+        self.stopped_at(org, from.saturating_add(done));
+        started
     }
 
     /// Starts every run due in `project`, found in its ledger as just read rather than in what
     /// this server keeps of ledgers, which forgets some past the most it keeps; answers their
     /// chats.
     async fn fire_due(&self, project: Located) -> Vec<ThreadId> {
-        // A ledger that cannot be read now is read again on the next tick.
-        if let Err(error) = self.catch_up(project).await {
-            let project = project.project;
-            tracing::warn!(%error, %project, "could not read the project's schedules");
-            return Vec::new();
-        }
         let now = self.inner.harness.clock().now();
         let mut due: Vec<(ScheduleCreated, Timestamp)> = (self.ledgers().get(&project))
             .map(|ledger| {
@@ -101,6 +142,7 @@ where
         due.sort_by_key(|(schedule, at)| (*at, schedule.schedule));
         let mut started = Vec::new();
         for (schedule, at) in due {
+            // Held back by its maker's task limit before it is claimed, so it starts later.
             if let Ok(maker) = whose(schedule.by.as_ref())
                 && self.at_task_limit(maker)
             {
@@ -118,22 +160,22 @@ where
         self.running_for(person) >= self.most_running()
     }
 
-    /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
-    /// [`SCHEDULING`]; none while another server holds it.
-    async fn fires(&self, org: OrgId) -> Result<bool, ApiError> {
-        let holder = self.holder()?;
+    /// Whether this server fires the store's schedules: it takes their lease, one for the
+    /// store, or renews it, for [`SCHEDULING`]; none while another server holds it.
+    async fn fires(&self) -> Result<bool, ApiError> {
+        let (holder, own) = (self.holder()?, self.inner.own);
         let taken = self
             .inner
             .leases
-            .acquire(org, Leased::Scheduler, holder, SCHEDULING)
+            .acquire(own, Leased::Scheduler, holder, SCHEDULING)
             .await
             .map_err(|error| ApiError::internal(&error))?;
         let mut scheduling = self.scheduling();
         if let Some(lease) = taken {
-            scheduling.insert(org, lease);
+            scheduling.insert(own, lease);
             Ok(true)
         } else {
-            scheduling.remove(&org);
+            scheduling.remove(&own);
             Ok(false)
         }
     }
@@ -150,23 +192,32 @@ where
     }
 
     /// Runs the schedules until `stop` finishes: a tick whenever the next run is due or a task
-    /// ends, at least every minute, for schedules other processes made, and at most every
-    /// second.
+    /// ends, at least every minute, for schedules other processes made, and never sooner than
+    /// a second after the tick before began.
     pub async fn run_scheduler(&self, stop: impl Future<Output = ()>) {
         let mut stop = std::pin::pin!(stop);
         loop {
+            let began = self.inner.harness.clock().now();
             // A failing tick is tried again on the next one.
             let _ = self.tick().await;
             let now = self.inner.harness.clock().now();
             let wait = self.next_due().map_or(LOOK_AGAIN, |next| {
-                let until = next.duration_since(now);
-                Duration::try_from(until).unwrap_or(SOONEST).min(LOOK_AGAIN)
+                Duration::try_from(next.duration_since(now)).unwrap_or(Duration::ZERO)
             });
+            let soonest = began
+                .checked_add(SOONEST)
+                .map_or(Duration::ZERO, |soonest| {
+                    Duration::try_from(soonest.duration_since(now)).unwrap_or(Duration::ZERO)
+                });
             tokio::select! {
                 () = &mut stop => return,
-                () = tokio::time::sleep(wait) => {}
-                // A run the task limit held back may start now.
-                () = self.inner.tasks_ended.notified() => {}
+                () = tokio::time::sleep(wait.min(LOOK_AGAIN).max(soonest)) => {}
+                // A run the task limit held back may start now, though not before a second
+                // since this tick began.
+                () = async {
+                    self.inner.tasks_ended.notified().await;
+                    tokio::time::sleep(soonest).await;
+                } => {}
             }
         }
     }
@@ -176,13 +227,12 @@ where
     /// again at once. One its maker's task limit holds back is left to the tick that follows a
     /// task ending, or the one at least every minute.
     pub fn next_due(&self) -> Option<Timestamp> {
+        if !self.scheduling().contains_key(&self.inner.own) {
+            return None;
+        }
         let now = self.inner.harness.clock().now();
-        let firing: BTreeSet<OrgId> = self.scheduling().keys().copied().collect();
-        let times: Vec<(Option<PrincipalId>, Timestamp)> = self
-            .ledgers()
-            .iter()
-            .filter(|(at, _)| firing.contains(&at.org))
-            .flat_map(|(_, ledger)| ledger.schedules.values())
+        let times: Vec<(Option<PrincipalId>, Timestamp)> = (self.ledgers().values())
+            .flat_map(|ledger| ledger.schedules.values())
             .filter_map(|scheduled| {
                 // One glave can't tell who made is refused at its time, whatever the limit.
                 let maker = whose(scheduled.created.by.as_ref()).ok().flatten();
@@ -193,17 +243,15 @@ where
             .filter(|(maker, next)| *next > now || !self.at_task_limit(*maker))
             .map(|(_, next)| next)
             .min()?;
-        let soonest = now
-            .checked_add(SignedDuration::try_from(SOONEST).ok()?)
-            .ok()?;
-        Some(next.max(soonest))
+        Some(next.max(now.checked_add(SOONEST).ok()?))
     }
 
     /// Starts `schedule`'s run that was due at `at`: a new turn in its chat in `project`, as
-    /// whoever made it, once this server's claim to it lands in the ledger; unless the run
-    /// before is still going there, on this server or another, or someone's turn is, or glave
-    /// can't tell who made it, or they are no longer in its organization. While its
-    /// organization's people can't be read, or the claim can't be written, it is held back.
+    /// whoever made it, once its claim lands in the ledger; unless the run before is still
+    /// going there, on this server or another, or someone's turn is, or glave can't tell who
+    /// made it, or they are no longer in its organization, or it runs more often than a
+    /// schedule may. While its maker's place in the organization can't be told, it is held
+    /// back.
     async fn fire(&self, project: Located, schedule: &ScheduleCreated, at: Timestamp) -> Ran {
         let Some(chat) = schedule.thread else {
             return Ran::NotStarted;
@@ -218,7 +266,7 @@ where
         let maker = if going {
             Err(crate::held::busy(chat))
         } else {
-            self.maker(project, schedule).await
+            self.run_as(project, schedule).await
         };
         let caller = match maker {
             Ok(Some(caller)) => caller,
@@ -232,23 +280,13 @@ where
                     .await;
             }
         };
-        // Only the server whose claim lands starts the run.
-        let there = |ledger: &crate::ledger::Ledger| ledger.settled(fired.schedule, fired.due);
-        match self.record_unless(project, &fired, there).await {
-            Ok(true) => {}
-            Ok(false) => return Ran::NotStarted,
-            Err(error) => {
-                tracing::warn!(%error, schedule = %schedule.schedule, "a run could not be claimed");
-                self.hold_back(project, schedule, at);
-                return Ran::NotStarted;
-            }
-        }
         let work = Work(schedule.prompt.clone(), Choice::default());
-        let budget = Some(schedule.budget);
-        match (self.start_task(&caller, chat, work, budget, Some(fired))).await {
-            Ok(_) => Ran::Started(chat),
-            Err(refused) => {
-                self.not_started(project, schedule, at, &refused, true)
+        match (self.start_run(&caller, chat, work, schedule.budget, fired)).await {
+            Ok(Some(_)) => Ran::Started(chat),
+            // Another server's claim landed first.
+            Ok(None) => Ran::NotStarted,
+            Err(Unstarted { refused, claimed }) => {
+                self.not_started(project, schedule, at, &refused, claimed)
                     .await
             }
         }
@@ -256,17 +294,24 @@ where
 
     /// Who `schedule`'s run in `project` acts as: whoever made it, in its project's
     /// organization, as glave acts for them on its own. Refused when glave can't tell who that
-    /// is, or they were removed from it; none, to hold the run back, while its people can't be
-    /// read, since being removed is what ends their runs.
-    async fn maker(
+    /// is, when they were removed from it, or when the schedule runs more often than one may
+    /// (made before that was refused); none, to hold the run back, while the organization's
+    /// people can't be read to tell them there, since being removed is what ends their runs.
+    async fn run_as(
         &self,
         project: Located,
         schedule: &ScheduleCreated,
     ) -> Result<Option<Caller>, ApiError> {
-        let caller = acting_for(whose(schedule.by.as_ref())?, project.org);
-        match self.removed_from_org(&caller).await {
-            Ok(false) => Ok(Some(caller)),
-            Ok(true) => Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerRemoved)),
+        if let When::Cron(text) = &schedule.when {
+            Cron::for_a_schedule(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
+        }
+        let caller = self.acting_as(whose(schedule.by.as_ref())?, project.org);
+        match self.membership(&caller).await {
+            Ok(Membership::Member) => Ok(Some(caller)),
+            Ok(Membership::Removed) => {
+                Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerRemoved))
+            }
+            Ok(Membership::Unknown) => Ok(None),
             Err(error) => {
                 let org = project.org;
                 tracing::warn!(%error, %org, "could not read the organization's people");
@@ -276,9 +321,9 @@ where
     }
 
     /// Records `schedule`'s run due at `at` skipped for `refused`, unclaimed once for the same
-    /// reason as the latest skip; held back when that can't be recorded. One this server `claimed` is recorded
-    /// whatever its claim says of it; any other only while the ledger shows nothing of it, so
-    /// servers on one store record it once.
+    /// reason as the latest skip; held back when that can't be recorded. One this server
+    /// `claimed` is recorded whatever its claim says of it; any other only while the ledger
+    /// shows nothing of it, so servers on one store record it once.
     async fn not_started(
         &self,
         project: Located,
@@ -332,11 +377,15 @@ where
 /// here or on another server; else for the refusal's reason, which each reader reads in their
 /// language.
 fn skipped_for(refused: &ApiError) -> Skipped {
+    let too_often = Sentence::CronTooOften {
+        minutes: SHORTEST_GAP,
+    };
     let reason = match refused.code {
         code::TURN_RUNNING | code::RUNNING_ELSEWHERE => return Skipped::Going,
-        // Finer than its code: whoever made it is gone, or can't be told.
+        // Finer than its code: whoever made it is gone, or can't be told, or it runs too often.
         _ if refused.message.is(&Sentence::MakerRemoved) => "MAKER_REMOVED",
         _ if refused.message.is(&Sentence::MakerUnknown) => "MAKER_UNKNOWN",
+        _ if refused.message.is(&too_often) => "TOO_OFTEN",
         other => code::name_of(other).unwrap_or_default(),
     };
     Skipped::Refused {
