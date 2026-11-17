@@ -163,15 +163,19 @@
       "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs (`specs/one-server.md`, owner decision 10).",
       "oneOf": [
         {
-          "description": "Never: a server, which does not sleep. There is nothing to choose.",
+          "description": "Not the caller's to choose, and `reason`, why: a server, which does not sleep, or only\nthe person on this computer chooses.",
           "properties": {
             "kind": {
               "const": "never",
               "type": "string"
+            },
+            "reason": {
+              "type": "string"
             }
           },
           "required": [
-            "kind"
+            "kind",
+            "reason"
           ],
           "type": "object"
         },
