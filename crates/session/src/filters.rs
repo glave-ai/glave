@@ -126,11 +126,8 @@ where
     /// The filters of `payer`'s person, or of the person this server works for when it names
     /// none: none when they chose none; refused when they cannot be read.
     async fn filters_of(&self, payer: Payer) -> Result<Option<Filters>, ProviderError> {
-        let caller = Caller {
-            person: payer.person,
-            org: Some(payer.org),
-            ..Caller::default()
-        };
+        // As glave acts for the person on its own, no one signed in.
+        let caller = self.acting_as(payer.person, payer.org);
         let filters = self.kept_filters(&caller).await.map_err(|error| {
             tracing::warn!(%error, "a person's filters among providers could not be read");
             unread("glave could not read them")
