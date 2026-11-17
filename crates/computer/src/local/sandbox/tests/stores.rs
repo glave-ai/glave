@@ -1,25 +1,25 @@
-//! Every credential store the sandbox names in the home folder, under the real sandbox: a
-//! command reads none of them, whether a store is a file or a folder, and a command outside
-//! reads them all.
+//! Every credential store the sandbox names, under the real sandbox: a command reads none of
+//! them, whether a store is a file or a folder, in the home folder or where the environment
+//! moves it, and a command outside reads them all.
 
-use super::super::secrets::HOME_SECRETS;
+use super::super::secrets::home_secrets;
 use super::*;
 
-/// What a command prints of `stores` in a home folder, each holding a canary: outside the
-/// sandbox, then inside it.
-fn read(name: &str, stores: &[PathBuf]) -> (String, String) {
-    let dir = scratch(name);
-    let (computers, sandbox) = computers(&dir);
-    let home = sandbox.home.clone().unwrap();
+/// What a command of `computers` prints of `files`, each given a canary: outside the sandbox,
+/// then inside `sandbox`.
+fn read(
+    dir: &Path,
+    (computers, sandbox): &(LocalComputers, Sandbox),
+    files: &[PathBuf],
+) -> (String, String) {
     let mut read = String::new();
-    for (index, store) in stores.iter().enumerate() {
-        let file = home.join(store);
+    for (index, file) in files.iter().enumerate() {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(&file, format!("canary-{index}\n")).unwrap();
+        std::fs::write(file, format!("canary-{index}\n")).unwrap();
         let _ = writeln!(read, "cat '{}' 2>/dev/null", file.display());
     }
     block_on!(async {
-        let workspace = open_app(&computers, &dir).await;
+        let workspace = open_app(computers, dir).await;
         let outside = Collect::default();
         computers
             .run(
@@ -31,26 +31,29 @@ fn read(name: &str, stores: &[PathBuf]) -> (String, String) {
             .await
             .unwrap();
         let outside = outside.0.lock().unwrap().clone();
-        let (_, inside) = run(&computers, workspace, &sandbox, &read).await;
+        let (_, inside) = run(computers, workspace, sandbox, &read).await;
         (outside, inside)
     })
 }
 
+/// The whole of this platform's list, the common one and its own, each store as the file it
+/// is or as a file of the folder it is.
 #[test]
 fn every_credential_store_in_the_home_folder_is_hidden_from_a_sandboxed_command() {
     if !enforced() {
         return;
     }
-    // Each store as the file it is, or as a file of the folder it is.
-    let stores: Vec<PathBuf> = HOME_SECRETS
-        .iter()
+    let dir = scratch("stores");
+    let made = computers(&dir);
+    let home = made.1.home.clone().unwrap();
+    let stores: Vec<PathBuf> = home_secrets()
         .enumerate()
         .map(|(index, store)| match index % 2 {
-            0 => PathBuf::from(store),
-            _ => Path::new(store).join("kept"),
+            0 => home.join(store),
+            _ => home.join(store).join("kept"),
         })
         .collect();
-    let (outside, inside) = read("stores", &stores);
+    let (outside, inside) = read(&dir, &made, &stores);
     assert_eq!(
         outside.matches("canary-").count(),
         stores.len(),
@@ -70,19 +73,22 @@ fn stores_once_missed_are_hidden_from_a_sandboxed_command() {
     if !enforced() {
         return;
     }
+    let dir = scratch("missed");
+    let made = computers(&dir);
+    let home = made.1.home.clone().unwrap();
     let stores = [
         ".config/git/credentials",
         ".cache/git/credential/socket",
-        ".config/pip/pip.conf",
         ".config/pypoetry/auth.toml",
         ".config/tea/config.yml",
         ".config/doctl/config.yaml",
         ".config/stripe/config.toml",
         ".my.cnf",
         ".claude.json",
+        ".claude.json.backup",
     ]
-    .map(PathBuf::from);
-    let (outside, inside) = read("missed", &stores);
+    .map(|store| home.join(store));
+    let (outside, inside) = read(&dir, &made, &stores);
     assert_eq!(
         outside.matches("canary-").count(),
         stores.len(),
@@ -92,4 +98,48 @@ fn stores_once_missed_are_hidden_from_a_sandboxed_command() {
         !inside.contains("canary-"),
         "a sandboxed command read a credential store: {inside}"
     );
+}
+
+/// A store the environment moves is hidden where it is: one kept under `~/.config`,
+/// `~/.local/share` or `~/.cache` is under `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or
+/// `XDG_CACHE_HOME` where the person set it. What else is kept there stays readable.
+#[test]
+fn a_store_the_environment_moves_is_hidden_from_a_sandboxed_command_where_it_is() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("moved");
+    let (config, data, cache) = (
+        dir.join("xdg/config"),
+        dir.join("xdg/data"),
+        dir.join("xdg/cache"),
+    );
+    let made = computers_saying(
+        &dir,
+        &[
+            ("XDG_CONFIG_HOME", config.to_str().unwrap()),
+            ("XDG_DATA_HOME", data.to_str().unwrap()),
+            ("XDG_CACHE_HOME", cache.to_str().unwrap()),
+        ],
+    );
+    let stores = [
+        config.join("gh/hosts.yml"),
+        config.join("git/credentials"),
+        data.join("atuin/history.db"),
+        cache.join("huggingface/token"),
+    ];
+    let (outside, inside) = read(&dir, &made, &stores);
+    assert_eq!(
+        outside.matches("canary-").count(),
+        stores.len(),
+        "{outside}"
+    );
+    assert!(
+        !inside.contains("canary-"),
+        "a sandboxed command read a store where the environment keeps it: {inside}"
+    );
+    // Not a store: a tool's settings beside them.
+    let settings = [config.join("app/settings.json")];
+    let (_, inside) = read(&dir, &made, &settings);
+    assert!(inside.contains("canary-0"), "{inside}");
 }

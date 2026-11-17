@@ -15,29 +15,9 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::computer::{PROTECTED, SandboxLevel};
 
-use super::super::secrets::HOME_SECRETS;
+use super::super::in_tmp::listeners;
+use super::super::secrets::home_secrets;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
-
-/// Under the home folder, on Linux besides the common list: keyrings, GNU screen's sessions
-/// where they are kept there, Docker Desktop's socket, and browser profiles (cookies are credentials), a snap's and a
-/// Flatpak's among them, as Ubuntu's own Firefox is.
-const LINUX_HOME_SECRETS: &[&str] = &[
-    ".local/share/keyrings",
-    ".local/share/kwalletd",
-    ".screen",
-    ".docker/desktop",
-    ".mozilla",
-    ".config/google-chrome",
-    ".config/chromium",
-    ".config/BraveSoftware",
-    ".config/microsoft-edge",
-    "snap/firefox/common/.mozilla",
-    "snap/chromium/common/chromium",
-    ".var/app/org.mozilla.firefox/.mozilla",
-    ".var/app/com.google.Chrome/config/google-chrome",
-    ".var/app/org.chromium.Chromium/config/chromium",
-    ".var/app/com.brave.Browser/config/BraveSoftware",
-];
 
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
 const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
@@ -198,7 +178,7 @@ pub(super) fn plan(
     for real in outermost(
         hidden_places(layout)
             .into_iter()
-            .chain(daemon_places(layout)),
+            .chain(daemon_places(layout)?),
     ) {
         hide(&real, &mut mounts);
     }
@@ -299,10 +279,12 @@ impl Protect<'_> {
 /// Where the person's daemons listen, which a command that may make Unix sockets, as one with
 /// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], tmux's
 /// servers (`/tmp/tmux-<uid>`), Zellij's sessions and Emacs's server where they are kept in
-/// `/tmp` (each runs what it is sent outside the sandbox), the ssh agent `agent` names, and the user's runtime folder
-/// whole, which holds the session bus (through which systemd starts anything outside the
-/// sandbox), the keyring's and gpg's agents, rootless Docker's and Podman's sockets and
-/// editors' servers. Hidden whether the network is on or not: one view of the machine.
+/// `/tmp` (each runs what it is sent outside the sandbox), the ssh agent `agent` names, and
+/// the user's runtime folder whole, which holds the session bus (through which systemd starts
+/// anything outside the sandbox), the keyring's and gpg's agents, rootless Docker's and
+/// Podman's sockets and editors' servers. Hidden whether the network is on or not: one view of
+/// the machine. What listens in `/tmp` under a name made as it starts is found before each
+/// command instead (`in_tmp.rs`).
 pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) -> Vec<PathBuf> {
     DAEMONS
         .iter()
@@ -317,9 +299,11 @@ pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) ->
         .collect()
 }
 
-/// The real paths of the daemons' places that exist, except one that holds a place commands
-/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders.
-fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
+/// The real paths of the daemons' places that exist, and of what listens in `/tmp` for the
+/// person's other programs just now (`in_tmp.rs`), except one that holds a place commands
+/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders. An error saying
+/// why where more listens in `/tmp` than the mounts hide.
+fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     let used: Vec<&Path> = [&layout.root, &layout.base]
         .into_iter()
         .chain(layout.home.iter())
@@ -328,31 +312,15 @@ fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
         .chain(layout.git_common.iter())
         .map(PathBuf::as_path)
         .collect();
-    layout
+    let in_tmp = listeners(Path::new("/tmp"), rustix::process::getuid().as_raw())?;
+    Ok(layout
         .daemons
         .iter()
         .cloned()
-        .chain(forwarded_agents(Path::new("/tmp")))
+        .chain(in_tmp)
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .filter(|real| !used.iter().any(|used| used.starts_with(real)))
-        .collect()
-}
-
-/// The folders in `tmp` where sshd keeps the sockets of agents forwarded to this machine
-/// (`ssh-XXXXXXXXXX/agent.<pid>`), each hidden whole. `$SSH_AUTH_SOCK` names the one of the
-/// session glave was started in, when it was started in one: a glave started as a service has
-/// none, while the agents of the person's own sessions still listen, and sign with their keys
-/// for whoever connects. Looked for at each command, so one forwarded since is hidden too.
-fn forwarded_agents(tmp: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(tmp) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("ssh-"))
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .map(|entry| entry.path())
-        .collect()
+        .collect())
 }
 
 /// `places` without those inside another of them: hiding the outer one hides them already, and
@@ -373,12 +341,10 @@ fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 /// The real paths of the home folder's credential folders and files, and of whatever else the
 /// computer hides, that exist, except one that holds the workspace. Blocking.
 pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
-    let in_home = layout.home.iter().flat_map(|home| {
-        HOME_SECRETS
-            .iter()
-            .chain(LINUX_HOME_SECRETS)
-            .map(move |secret| home.join(secret))
-    });
+    let in_home = layout
+        .home
+        .iter()
+        .flat_map(|home| home_secrets().map(move |secret| home.join(secret)));
     let in_runtime = layout.runtime.iter().flat_map(|runtime| {
         RUNTIME_SECRETS
             .iter()

@@ -8,49 +8,10 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
-use super::secrets::HOME_SECRETS;
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
 const NETWORK: &str = include_str!("network.sbpl");
-
-/// Under the home folder, on macOS besides the common list: the keychains, and browser
-/// profiles (cookies are credentials). Hiding the keychains is what keeps a command from them
-/// (`specs/invariants.md`, 24): a file keychain is read from disk by the process that opens it,
-/// and with the network on the security server stays reachable, since TLS roots are read
-/// through it; the data-protection keychain's service (`com.apple.securityd.xpc`) never is.
-const MACOS_HOME_SECRETS: &[&str] = &[
-    "Library/Keychains",
-    "Library/Cookies",
-    "Library/Safari",
-    "Library/Application Support/Google/Chrome",
-    "Library/Application Support/BraveSoftware",
-    "Library/Application Support/Microsoft Edge",
-    "Library/Application Support/Arc",
-    "Library/Application Support/Firefox",
-    "Library/Application Support/ngrok",
-    // Where tools that keep to macOS's own folders hold what the common list names.
-    "Library/Application Support/pip/pip.conf",
-    "Library/Application Support/pypoetry/auth.toml",
-    "Library/Application Support/com.vercel.cli",
-    "Library/Application Support/Bitwarden CLI",
-    "Library/Application Support/io.datasette.llm/keys.json",
-    "Library/Preferences/.wrangler",
-    "Library/Preferences/helm/registry/config.json",
-    "Library/Application Support/doctl",
-    "Library/Application Support/tea",
-    "Library/Application Support/dart/pub-credentials.json",
-    "Library/Application Support/Claude/claude_desktop_config.json",
-    "Library/Jupyter/runtime",
-];
-
-/// The home folder's credential stores, as paths: hidden whether they exist yet or not.
-pub(crate) fn home_secrets(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
-    HOME_SECRETS
-        .iter()
-        .chain(MACOS_HOME_SECRETS)
-        .map(move |secret| home.join(secret))
-}
 
 /// Every terminal's device but `/dev/tty`, the command's own controlling terminal, if it has
 /// one: another's (the person's Terminal tab, Terminal.app's windows, an ssh session's) would
@@ -303,6 +264,7 @@ fn allow_writes(profile: &mut Profile, what: &str, conditions: &[String]) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::secrets::{HOME_SECRETS, MACOS_HOME_SECRETS};
     use super::*;
 
     fn places() -> Places {
@@ -310,7 +272,11 @@ mod tests {
             root: PathBuf::from("/Users/me/my.project"),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
             kept: Vec::new(),
-            hidden: home_secrets(Path::new("/Users/me")).collect(),
+            hidden: HOME_SECRETS
+                .iter()
+                .chain(MACOS_HOME_SECRETS)
+                .map(|secret| Path::new("/Users/me").join(secret))
+                .collect(),
             cache: Some(PathBuf::from("/Users/me/.glave/sandbox-cache")),
             glave_on_path: Some(PathBuf::from("/Users/me/.glave/bin")),
             git_common: None,

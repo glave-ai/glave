@@ -191,10 +191,8 @@ if __name__ == '__main__':
         print('pooled', sum(pool.map(abs, [-1, -2])))
 ";
 
-/// A Unix socket listening in a folder where a daemon's does (tmux's servers', in
-/// `/tmp/tmux-<uid>`; GNU screen's sessions, in `/tmp/uscreens` among other places; an ssh
-/// agent forwarded here, in `/tmp/ssh-…`), removed when dropped, with the folder if this made
-/// it.
+/// Something listening at a Unix socket where a daemon's would be, removed when dropped, with
+/// its folder if this made it.
 struct Daemon {
     socket: PathBuf,
     made: Option<PathBuf>,
@@ -207,27 +205,34 @@ impl Daemon {
         Self::listen(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()))
     }
 
-    /// One of the places GNU screen keeps its sessions.
-    fn screen() -> Self {
-        Self::listen("/tmp/uscreens".to_owned())
-    }
-
-    /// Where sshd keeps an agent forwarded to this machine.
+    /// Where sshd keeps an agent it forwards to this machine: `ssh-` and ten letters and
+    /// digits, open to its owner alone.
     fn forwarded_agent() -> Self {
-        Self::listen(format!("/tmp/ssh-glave{}", std::process::id()))
+        Self::listen(format!("/tmp/ssh-glave{:05}", std::process::id() % 100_000))
     }
 
+    /// At a socket of this test's own in `folder`, made for its owner alone if it is not there.
     fn listen(folder: String) -> Self {
         use std::os::unix::fs::DirBuilderExt as _;
         let folder = PathBuf::from(folder);
-        let made = (!folder.exists()).then(|| folder.clone());
-        if made.is_some() {
-            std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&folder)
-                .unwrap();
-        }
+        let made = match std::fs::DirBuilder::new().mode(0o700).create(&folder) {
+            Ok(()) => Some(folder.clone()),
+            // There already: the person's own, as their tmux's is where they use it.
+            Err(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists, "{error}");
+                None
+            }
+        };
         let socket = folder.join(format!("glave-test-{}", std::process::id()));
+        Self::bound(socket, made)
+    }
+
+    /// At `socket` itself, a file in a folder that is there.
+    fn at(socket: String) -> Self {
+        Self::bound(PathBuf::from(socket), None)
+    }
+
+    fn bound(socket: PathBuf, made: Option<PathBuf>) -> Self {
         let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         Self {
             socket,
@@ -265,8 +270,7 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     let dir = scratch("seccomp");
     let socket = glave_ports::testing::SocketPath::new(&dir, "outside.sock").unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let (tmux, agent) = (Daemon::tmux(), Daemon::forwarded_agent());
-    let screen = Daemon::screen();
+    let tmux = Daemon::tmux();
     std::fs::write(dir.join("project/pool.py"), POOL).unwrap();
     let sandboxed = |network: bool, script: &str| {
         run(&dir, Some((SandboxLevel::Project, network)), None, script)
@@ -277,11 +281,6 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(open.contains("connected"), "{open}");
     let (_, open) = run(&dir, None, None, &connect(&tmux.socket)).unwrap();
     assert!(open.contains("connected"), "control, tmux's: {open}");
-    let (_, open) = run(&dir, None, None, &connect(&agent.socket)).unwrap();
-    assert!(
-        open.contains("connected"),
-        "control, a forwarded agent's: {open}"
-    );
 
     let offline = sandboxed(false, &connect(&socket));
     assert!(!offline.contains("connected"), "{offline}");
@@ -289,11 +288,6 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(online.contains("connected"), "{online}");
     let daemon = sandboxed(true, &connect(&tmux.socket));
     assert!(!daemon.contains("connected"), "tmux's: {daemon}");
-    let session = sandboxed(true, &connect(&screen.socket));
-    assert!(!session.contains("connected"), "screen's: {session}");
-    // No `SSH_AUTH_SOCK` names it: an agent forwarded to another session of the person's.
-    let forwarded = sandboxed(true, &connect(&agent.socket));
-    assert!(!forwarded.contains("connected"), "an agent's: {forwarded}");
     let pool = sandboxed(true, "python3 pool.py");
     assert_eq!(pool.trim(), "pooled 3");
 
@@ -303,30 +297,86 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     assert!(said.contains("ptrace -1"), "{said}");
 }
 
-/// The places a test cannot make, or need not: GNU screen's sessions wherever a system keeps
-/// them, tmux's, Zellij's and Emacs's (a command that reached one would run what it likes
-/// outside the sandbox), and the daemons that are root for whoever is in their group.
+/// Whether a command connects to `daemon`'s socket: in the project's sandbox with the network
+/// on, or outside any.
+fn reached(dir: &Path, sandboxed: bool, daemon: &Daemon) -> bool {
+    let sandbox = sandboxed.then_some((SandboxLevel::Project, true));
+    let (_, said) = run(dir, sandbox, None, &connect(&daemon.socket)).unwrap();
+    said.contains("connected")
+}
+
+/// What listens in `/tmp` for the person's other programs has no fixed name, so it is looked
+/// for before each command: an agent sshd forwarded (no `SSH_AUTH_SOCK` names it), a connection
+/// ssh shares, Neovim's and VS Code's servers. With the network on a command reaches none of
+/// them, and still reaches a folder that only looks like sshd's, which is someone's own.
 #[test]
-fn sessions_and_the_daemons_that_are_root_are_among_the_places_hidden() {
-    let hidden = super::mounts::daemons(None, 1000, None);
-    for place in [
-        "/run/screen",
-        "/tmp/screens",
-        "/tmp/uscreens",
-        "/tmp/tmux-1000",
-        "/tmp/zellij-1000",
-        "/tmp/emacs1000",
-        "/run/libvirt",
-        "/run/incus",
-        "/var/lib/incus",
-        "/var/lib/lxd",
-        "/var/snap/lxd/common/lxd",
-    ] {
-        assert!(
-            hidden.contains(&PathBuf::from(place)),
-            "{place}: {hidden:?}"
-        );
+fn bubblewrap_hides_what_listens_in_tmp_for_the_person_s_other_programs() {
+    if !bubblewrap() {
+        return;
     }
+    let dir = scratch("listening");
+    let pid = std::process::id();
+    let theirs = [
+        Daemon::forwarded_agent(),
+        Daemon::listen(format!("/tmp/nvim.glave{pid}")),
+        Daemon::at(format!("/tmp/ssh-glave@test:{pid}")),
+        Daemon::at(format!("/tmp/ssh_mux_test_{pid}_glave")),
+        Daemon::at(format!("/tmp/vscode-ipc-glave{pid}.sock")),
+        Daemon::at(format!("/tmp/vscode-git-glave{pid}.sock")),
+    ];
+    let unrelated = Daemon::listen(format!("/tmp/ssh-glave-notes-{pid}"));
+    for daemon in theirs.iter().chain([&unrelated]) {
+        let socket = daemon.socket.display();
+        assert!(reached(&dir, false, daemon), "control, {socket}");
+    }
+    for daemon in &theirs {
+        assert!(!reached(&dir, true, daemon), "{}", daemon.socket.display());
+    }
+    assert!(reached(&dir, true, &unrelated), "someone's own folder");
+}
+
+/// Every place a daemon or a session listens is hidden, proved where it can be: the ones kept
+/// in `/tmp`, made here with something listening (GNU screen's, Zellij's, Emacs's), and
+/// whichever of the rest this machine has, which only root could make: on CI's runners,
+/// Docker's socket and the system bus. tmux's is the test's above, which makes it while this
+/// one runs.
+#[test]
+fn bubblewrap_hides_every_place_a_daemon_or_a_session_listens() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("daemons");
+    let uid = rustix::process::getuid().as_raw();
+    let made = [
+        "/tmp/uscreens".to_owned(),
+        format!("/tmp/zellij-{uid}"),
+        format!("/tmp/emacs{uid}"),
+    ]
+    .map(Daemon::listen);
+    for daemon in &made {
+        let socket = daemon.socket.display();
+        assert!(reached(&dir, false, daemon), "control, {socket}");
+        assert!(!reached(&dir, true, daemon), "{socket}");
+    }
+    // Each place there is, a socket or a folder with something in it, shows as neither.
+    let tmux = PathBuf::from(format!("/tmp/tmux-{uid}"));
+    let look: Vec<String> = super::mounts::daemons(None, uid, None)
+        .iter()
+        .filter(|place| **place != tmux)
+        .map(|place| {
+            let place = place.display();
+            format!(
+                "if [ -S '{place}' ] || {{ [ -d '{place}' ] && \
+                 [ -n \"$(ls -A '{place}' 2>/dev/null)\" ]; }}; then echo 'reached {place}'; fi"
+            )
+        })
+        .chain(["true".to_owned()])
+        .collect();
+    let look = look.join("\n");
+    let (_, open) = run(&dir, None, None, &look).unwrap();
+    assert!(open.contains("reached /tmp/uscreens"), "control: {open}");
+    let (_, said) = run(&dir, Some((SandboxLevel::Project, true)), None, &look).unwrap();
+    assert!(!said.contains("reached"), "{said}");
 }
 
 #[test]
