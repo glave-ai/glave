@@ -2,7 +2,7 @@ import { THREAD, fakeApi } from './fake-api';
 import { MORE, madeTheFiles } from './fake-made';
 import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
-test('the files a chat made are cards after its reply, each saved under its name', async ({
+test('the files a chat made are cards: a sheet opens as a table in its panel, a PDF in a tab of its own', async ({
   page,
 }) => {
   const problems = watchForProblems(page);
@@ -18,11 +18,20 @@ test('the files a chat made are cards after its reply, each saved under its name
   );
   await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
   // Download saves the file under its name, in Chromium and in WebKit (Safari's engine).
-  const download = byTestId(page, 'made-file-download');
-  await expect(download.first()).toHaveAccessibleName('Download Trip budget');
   const saving = page.waitForEvent('download');
-  await download.first().click();
+  await byTestId(page, 'made-file-download').first().click();
   expect((await saving).suggestedFilename()).toBe('Trip budget.xlsx');
+  const open = byTestId(page, 'made-file-open');
+  await expect(open.first()).toHaveAccessibleName('Open Trip budget');
+  await open.first().click();
+  await expect(byTestId(page, 'file-preview-title')).toHaveText('Trip budget');
+  await expect(byTestId(page, 'file-preview').locator('table')).toContainText('Flights');
+  // The PDF opens in a tab of its own, where the browser's viewer pages through it (a browser
+  // with no viewer, as a headless one, saves it instead); the sheet stays in the panel.
+  const tab = page.waitForEvent('popup');
+  await open.last().click();
+  await tab;
+  await expect(byTestId(page, 'file-preview-title')).toHaveText('Trip budget');
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
@@ -30,7 +39,7 @@ test('the files a chat made are cards after its reply, each saved under its name
   expect(problems()).toEqual([]);
 });
 
-test('on a phone the cards fit the screen, and a file still saves under its name', async ({
+test('on a phone the whole card opens a file, and a PDF opens in a tab of its own', async ({
   page,
 }) => {
   const problems = watchForProblems(page);
@@ -40,11 +49,13 @@ test('on a phone the cards fit the screen, and a file still saves under its name
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   const cards = byTestId(page, 'made-file');
   await expect(cards).toHaveCount(2);
-  const width = await page.evaluate(() => document.documentElement.scrollWidth);
-  expect(width).toBeLessThanOrEqual(390);
-  const saving = page.waitForEvent('download');
-  await byTestId(page, 'made-file-download').last().click();
-  expect((await saving).suggestedFilename()).toBe('Lisbon plan.pdf');
+  const tab = page.waitForEvent('popup');
+  await cards.last().click();
+  await tab;
+  await expect(byTestId(page, 'file-preview')).toHaveCount(0);
+  await cards.first().click();
+  await expect(byTestId(page, 'file-preview').locator('table')).toContainText('Flights');
+  await expect(byTestId(page, 'file-preview-download-thumb')).toBeVisible();
   await expectAccessible(page);
   expect(problems()).toEqual([]);
 });

@@ -33,6 +33,9 @@ export const PLAN: MadeFile = {
   sentence: 'Made a PDF: Lisbon plan (1 page)',
 };
 
+/** The budget's sheets, as the server previews them. */
+const PREVIEW = '## Budget\n| Item | Total |\n|---|---|\n| Flights | 780 |\n| Hotel | 580 |';
+
 /** How a turn's end names `file`, kept. */
 function kept(file: MadeFile): unknown {
   return { blob: { sha256: file.sha256, bytes: file.bytes, media_type: file.media_type } };
@@ -86,6 +89,7 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   'thread/events': { events: MADE_HISTORY },
   'thread/turns': { events: MADE_HISTORY },
   'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN], note: MORE }] },
+  'file/preview': { preview: { markdown: PREVIEW } },
   // "%PDF-1.7", as the file's bytes.
   'file/read': {
     piece: { media_type: 'application/pdf', bytes: 9, offset: 0, data: 'JVBERi0xLjcK' },
@@ -94,7 +98,7 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
 
 /**
  * Answers, after `fakeApi`, as the server would for the thread whose turn made a budget and a
- * plan: its history, the files, and their bytes.
+ * plan: its history, the files, the budget's preview and the plan's bytes.
  */
 export async function madeTheFiles(page: Page): Promise<void> {
   await page.route('**/*', async (route: Route) => {
