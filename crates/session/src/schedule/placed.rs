@@ -15,12 +15,17 @@ use glave_event::{
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId, Scope};
 
-use crate::protocol::ApiError;
+use crate::protocol::{ApiError, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
-/// The most projects, and the most organizations, a server reads from the index: past it, a
-/// project's schedules fire once its person asks this server for anything, as before the index.
-const MOST_PLACED: usize = 100_000;
+/// The most organizations the store's list holds: past it, a schedule is refused in an
+/// organization not listed yet.
+const MOST_ORGANIZATIONS: usize = 100_000;
+/// The most projects with schedules one organization's index holds: past it, a schedule is
+/// refused in a project of theirs not listed yet. Each organization's own, so none crowds out
+/// another's.
+pub(crate) const MOST_PROJECTS: usize = 10_000;
 
 /// One stream of the index, as far as this server has read it: what it lists, in order.
 #[derive(Debug)]
@@ -62,23 +67,25 @@ impl<T: Copy + Eq + Hash> Listed<T> {
     }
 }
 
-/// The index as far as this server has read it, and how many ticks of the scheduler read it.
+/// The index as far as this server has read it; how many ticks of the scheduler read it, and
+/// where in each organization's projects the last tick stopped.
 #[derive(Debug, Default)]
 pub(crate) struct Placed {
     organizations: Listed<OrgId>,
     projects: HashMap<OrgId, Listed<ProjectId>>,
     ticks: usize,
+    stopped: HashMap<OrgId, usize>,
 }
 
 impl Placed {
-    /// Whether what `stream` lists has room for one more, as read so far: organizations, and
-    /// projects across every organization, up to [`MOST_PLACED`] each.
+    /// Whether what `stream` lists has room for one more, as read so far.
     fn room(&self, stream: Stream) -> bool {
-        let listed = match stream {
-            Stream::Organizations => self.organizations.items.len(),
-            Stream::Projects(_) => self.projects.values().map(|it| it.items.len()).sum(),
-        };
-        listed < MOST_PLACED
+        match stream {
+            Stream::Organizations => self.organizations.items.len() < MOST_ORGANIZATIONS,
+            Stream::Projects(org) => {
+                (self.projects.get(&org)).is_none_or(|listed| listed.items.len() < MOST_PROJECTS)
+            }
+        }
     }
 
     fn apply(&mut self, stream: Stream, raw: RawEvent) {
@@ -121,23 +128,42 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Every project the index lists, read up to now. An organization whose own index cannot
-    /// be read now is read again next time.
-    pub(crate) async fn placed(&self) -> Result<Vec<Located>, ApiError> {
-        self.catch_up_placed(Stream::Organizations).await?;
+    /// Every project the index lists, read up to now. What can't be read now, the list of
+    /// organizations or one organization's own index, is what was read before, and is read
+    /// again next time.
+    pub(crate) async fn placed(&self) -> Vec<Located> {
+        if let Err(error) = self.catch_up_placed(Stream::Organizations).await {
+            tracing::warn!(%error, "could not read which organizations have schedules");
+        }
         let organizations = self.held_placed(|held| held.organizations.items.clone());
         let mut placed = Vec::new();
         for org in organizations {
             if let Err(error) = self.catch_up_placed(Stream::Projects(org)).await {
                 tracing::warn!(%error, %org, "could not read where the organization's schedules are");
-                continue;
             }
             let projects = self.held_placed(|held| {
                 (held.projects.get(&org)).map_or_else(Vec::new, |listed| listed.items.clone())
             });
             placed.extend(projects.into_iter().map(|project| Located { org, project }));
         }
-        Ok(placed)
+        placed
+    }
+
+    /// Where in `org`'s `count` projects this tick of the scheduler starts: where the last one
+    /// stopped.
+    pub(crate) fn resume_at(&self, org: OrgId, count: usize) -> usize {
+        let stopped = self.held_placed(|held| held.stopped.get(&org).copied());
+        stopped.and_then(|at| at.checked_rem(count)).unwrap_or(0)
+    }
+
+    /// Notes where in `org`'s projects this tick stopped, for the next to go on from.
+    pub(crate) fn stopped_at(&self, org: OrgId, at: usize) {
+        self.held_placed(|held| {
+            // At most one place for each organization the index lists.
+            if held.stopped.len() < MOST_ORGANIZATIONS || held.stopped.contains_key(&org) {
+                held.stopped.insert(org, at);
+            }
+        });
     }
 
     /// Whether the project `at`'s organization's index lists it, read up to now: whether anyone
@@ -161,7 +187,9 @@ where
 
     /// Lists the project `at` in its organization's index, and the organization in the store's
     /// list, unless they are listed already: the organization first, so a listed project is
-    /// always found.
+    /// always found. Refused, in plain words, where its organization has as many projects with
+    /// schedules as one may, or the store as many organizations, so every server reads the
+    /// same.
     pub(crate) async fn place_schedules(&self, at: Located) -> Result<(), ApiError> {
         let organization = ScheduleOrganization {
             org: at.org.as_uuid(),
@@ -181,7 +209,21 @@ where
                 .map_or(room.then_some(1), |listed| listed.absent(at.project, room))
         };
         self.list_once(Stream::Projects(at.org), &placed, listed)
-            .await
+            .await?;
+        let found = self.held_placed(|held| {
+            held.organizations.held.contains(&at.org)
+                && (held.projects.get(&at.org))
+                    .is_some_and(|listed| listed.held.contains(&at.project))
+        });
+        if !found {
+            return Err(ApiError::new(
+                code::LIMIT,
+                Sentence::TooManyProjectsScheduled {
+                    most: MOST_PROJECTS,
+                },
+            ));
+        }
+        Ok(())
     }
 
     /// Appends `payload` to `stream`, after anything others wrote meanwhile, unless `absent`

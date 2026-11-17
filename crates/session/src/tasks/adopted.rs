@@ -55,15 +55,15 @@ where
         let Some(recorded) = open.filter(|task| task.started.schedule.is_some()) else {
             return Ok(false);
         };
-        // As whoever's run it is: never one of someone glave can't tell, or of someone removed
-        // from its organization, or whose people can't be read now to tell.
+        // As whoever's run it is: never one of someone glave can't tell, or of anyone its
+        // organization's people ledger doesn't list as there now, or can't be read to tell.
         let Ok(person) = super::whose(recorded.started.by.as_ref()) else {
             return Ok(false);
         };
-        let caller = super::acting_for(person, project.org);
-        match self.removed_from_org(&caller).await {
-            Ok(false) => {}
-            Ok(true) => return Ok(false),
+        let caller = self.acting_as(person, project.org);
+        match self.membership(&caller).await {
+            Ok(super::Membership::Member) => {}
+            Ok(super::Membership::Removed | super::Membership::Unknown) => return Ok(false),
             Err(error) => {
                 tracing::warn!(%error, org = %project.org, "could not read the organization's people");
                 return Ok(false);
