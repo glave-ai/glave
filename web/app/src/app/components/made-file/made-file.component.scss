@@ -1,4 +1,8 @@
 :host {
+  // The lines a line that gives a reason keeps, wrapped: two beside a wide column, three on a
+  // phone, where the server's reasons take three.
+  --app-reason-lines: 2;
+
   display: block;
 }
 
@@ -11,7 +15,7 @@
   gap: var(--glz-space-3);
   padding: var(--glz-inset-card-row);
   border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-strip);
+  border-radius: var(--glz-radius-card);
   background: var(--glz-surface-card);
   line-height: var(--glz-leading-tight);
 }
@@ -51,6 +55,16 @@
   font-size: var(--glz-text-sm);
 }
 
+// A line that gives a reason wraps rather than being cut, in as many lines as its room keeps.
+.reason {
+  display: -webkit-box;
+  min-block-size: calc(var(--app-reason-lines) * 1lh);
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--app-reason-lines);
+  line-clamp: var(--app-reason-lines);
+}
+
 .actions {
   display: flex;
   flex: none;
@@ -60,8 +74,13 @@
 }
 
 // On a phone the whole card opens the file: Open's own area covers the card, under the arrow
-// that downloads it, and its word is heard, not shown.
+// that downloads it, as large as a thumb needs, and its word is heard, not shown. Every card
+// keeps its height.
 @media (width <= 48rem) {
+  :host {
+    --app-reason-lines: 3;
+  }
+
   .open {
     position: static;
     inline-size: 0;
@@ -75,7 +94,7 @@
   .open::after {
     position: absolute;
     inset: 0;
-    border-radius: var(--glz-radius-strip);
+    border-radius: var(--glz-radius-card);
     content: '';
   }
 
@@ -84,10 +103,14 @@
     box-shadow: var(--glz-focus-ring);
   }
 
-  .download {
+  :host .download {
     position: relative;
     z-index: 1;
     min-block-size: var(--glz-control-height-touch);
     min-inline-size: var(--glz-control-height-touch);
+  }
+
+  .actions {
+    min-block-size: var(--glz-control-height-touch);
   }
 }

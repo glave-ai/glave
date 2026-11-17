@@ -11,8 +11,15 @@ test('the files a chat made are cards: a sheet opens as a table in its panel, a 
   await madeTheFiles(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   const cards = byTestId(page, 'made-file');
-  await expect(cards).toHaveCount(2);
-  await expect(byTestId(page, 'made-file-title')).toHaveText(['Trip budget', 'Lisbon plan']);
+  await expect(cards).toHaveCount(3);
+  await expect(byTestId(page, 'made-file-title')).toHaveText([
+    'Trip budget',
+    'Lisbon plan',
+    'All the photos',
+  ]);
+  await expect(byTestId(page, 'made-file-line').last()).toContainText(
+    'Not kept: larger than 10 MB',
+  );
   await expect(byTestId(page, 'made-file-line').first()).toHaveText(
     'Spreadsheet · 2 sheets · Kept with this chat',
   );
@@ -48,9 +55,9 @@ test('on a phone the whole card opens a file, and a PDF opens in a tab of its ow
   await madeTheFiles(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   const cards = byTestId(page, 'made-file');
-  await expect(cards).toHaveCount(2);
+  await expect(cards).toHaveCount(3);
   const tab = page.waitForEvent('popup');
-  await cards.last().click();
+  await cards.nth(1).click();
   await tab;
   await expect(byTestId(page, 'file-preview')).toHaveCount(0);
   await cards.first().click();

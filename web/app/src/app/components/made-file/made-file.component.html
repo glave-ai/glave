@@ -2,7 +2,7 @@
   <glz-icon class="mark" [icon]="mark()" />
   <span class="text">
     <span class="title" dir="auto" data-testid="made-file-title">{{ file().name }}</span>
-    <span class="line" data-testid="made-file-line">{{ line() }}</span>
+    <span class="line" data-testid="made-file-line" [class.reason]="reason()">{{ line() }}</span>
   </span>
   <span class="actions">
     @if (opens()) {
@@ -24,6 +24,7 @@
         class="download"
         data-testid="made-file-download"
         [label]="downloadLabel()"
+        [attr.aria-busy]="busy()"
         (click)="download()"
       >
         <glz-icon [icon]="icons.download" />

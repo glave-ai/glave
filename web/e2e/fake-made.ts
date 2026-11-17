@@ -36,9 +36,22 @@ export const PLAN: MadeFile = {
 /** The budget's sheets, as the server previews them. */
 const PREVIEW = '## Budget\n| Item | Total |\n|---|---|\n| Flights | 780 |\n| Hotel | 580 |';
 
-/** How a turn's end names `file`, kept. */
-function kept(file: MadeFile): unknown {
-  return { blob: { sha256: file.sha256, bytes: file.bytes, media_type: file.media_type } };
+/** A deck the same turn made, too large to keep, whose line says why. */
+export const PHOTOS: MadeFile = {
+  kind: 'deck',
+  name: 'All the photos',
+  file_name: 'All the photos.pptx',
+  media_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  bytes: 24_000_000,
+  previews: false,
+  kept: 'Not kept: larger than 10 MB, so it stays on the computer',
+  sentence: 'Made a deck: All the photos',
+};
+
+/** How a turn's end names `file`, kept and read into `parts`. */
+function kept(file: MadeFile, parts: unknown): Readonly<Record<string, unknown>> {
+  const blob = { sha256: file.sha256, bytes: file.bytes, media_type: file.media_type };
+  return { kept: { blob }, read: { parts } };
 }
 
 /** The turn after the one that made the files, which only talks: what moves would move it. */
@@ -59,8 +72,8 @@ function thanked(seq: number): readonly RawEvent[] {
 }
 
 /**
- * The thread's history: its first turn's end says it made the two files and left one more on the
- * computer, as the note under them says, and another turn follows it.
+ * The thread's history: its first turn's end says it made the three files, one too large to keep,
+ * and left one more on the computer, as the note under them says, and another turn follows it.
  */
 const MADE_HISTORY: readonly RawEvent[] = [
   ...HISTORY.map((each) =>
@@ -70,8 +83,9 @@ const MADE_HISTORY: readonly RawEvent[] = [
           data: {
             ...each.data,
             made: [
-              { path: 'out/Trip budget.xlsx', bytes: BUDGET.bytes, kept: kept(BUDGET) },
-              { path: 'Lisbon plan.pdf', bytes: PLAN.bytes, kept: kept(PLAN) },
+              { path: 'out/Trip budget.xlsx', bytes: BUDGET.bytes, ...kept(BUDGET, { sheets: 2 }) },
+              { path: 'Lisbon plan.pdf', bytes: PLAN.bytes, ...kept(PLAN, { pages: 1 }) },
+              { path: 'All the photos.pptx', bytes: PHOTOS.bytes, kept: 'too_large' },
             ],
             made_left: { kind: 'more', files: 1 },
           },
@@ -88,7 +102,7 @@ export const MORE = '1 more file was made than a chat keeps: it stays on the com
 const ANSWERS: Readonly<Record<string, unknown>> = {
   'thread/events': { events: MADE_HISTORY },
   'thread/turns': { events: MADE_HISTORY },
-  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN], note: MORE }] },
+  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN, PHOTOS], note: MORE }] },
   'file/preview': { preview: { markdown: PREVIEW } },
   // "%PDF-1.7", as the file's bytes.
   'file/read': {

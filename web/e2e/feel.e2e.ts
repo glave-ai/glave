@@ -108,27 +108,34 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   expectStill(await feltOn(page));
 });
 
-test('nothing moves on opening a thread as the files its turn made are described late', async ({
-  page,
-}) => {
-  await watchFeel(page);
-  await fakeApi(page);
-  await madeTheFiles(page);
-  const held = await hold(page, '/', 'thread/files');
-  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await held.sent;
-  await expect(byTestId(page, 'thread-message').last()).toBeVisible();
-  // Each card's room is kept, unseen, from the turn's end alone, and so is the note's, which it
-  // says leaves a file out; the turn below stays where it is.
-  await expect(byTestId(page, 'made-file')).toHaveCount(2);
-  await expect(byTestId(page, 'turn-made-note')).toHaveCount(1);
-  await atRest(page);
-  held.letGo();
-  await expect(byTestId(page, 'made-file-title').first()).toHaveText('Trip budget');
-  await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
-  await atRest(page);
-  expectStill(await feltOn(page));
-});
+for (const [width, height, on] of [
+  [1280, 1600, 'a wide screen'],
+  [390, 844, 'a phone'],
+] as const) {
+  test(`nothing moves on opening a thread as the files its turn made are described late, on ${on}`, async ({
+    page,
+  }) => {
+    await watchFeel(page);
+    await fakeApi(page);
+    await madeTheFiles(page);
+    await page.setViewportSize({ width, height });
+    const held = await hold(page, '/', 'thread/files');
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await held.sent;
+    await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+    // Each card's room is kept, unseen, from the turn's end alone (a line's that gives a reason
+    // among them), and so is the note's, which it says leaves a file out; the turn below stays
+    // where it is.
+    await expect(byTestId(page, 'made-file')).toHaveCount(3);
+    await expect(byTestId(page, 'turn-made-note')).toHaveCount(1);
+    await atRest(page);
+    held.letGo();
+    await expect(byTestId(page, 'made-file-title').first()).toHaveText('Trip budget');
+    await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
+    await atRest(page);
+    expectStill(await feltOn(page));
+  });
+}
 
 test('nothing moves on opening a thread as the images its agent read come in late, or turn out to be gone', async ({
   page,

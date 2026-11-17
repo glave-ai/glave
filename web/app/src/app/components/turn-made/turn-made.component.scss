@@ -13,3 +13,10 @@
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
+
+// On a phone the server's notes take two lines, so their room does too.
+@media (width <= 48rem) {
+  .note {
+    min-block-size: 2lh;
+  }
+}

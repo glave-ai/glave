@@ -1,3 +1,4 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -29,12 +30,14 @@ const MARKS = {
 /**
  * A file the thread made, as one compact card after its turn: its kind's mark, its name (the
  * server's), and under it its kind, its pages, sheets or slides (else its size) and where it is
- * kept, in the server's words. Open, whose label names the file, shows it in a tab of the chat's
- * panel (on a phone the whole card opens it), and a PDF in a tab of the browser's own, whose
- * viewer pages through it. The arrow saves the real file under its name. A file the server
- * doesn't preview only downloads, and one that was not kept does neither: its line says why. The
- * card of the file open in the panel is marked. Why it couldn't be opened or saved shows in its
- * line.
+ * kept, or why it only downloads, in the server's words. Open, whose label names the file, shows
+ * it in a tab of the chat's panel (on a phone the whole card opens it), and a PDF in a tab of the
+ * browser's own, whose viewer pages through it. The arrow saves the real file under its name,
+ * one save at a time. A file the server doesn't preview only downloads, and one that was not kept
+ * does neither: its line says why. The card of the file open in the panel is marked. Why it
+ * couldn't be opened or saved shows in its line, and is said aloud. A line that gives a reason
+ * wraps, and keeps the room of its lines whatever it says, so a card's room before the server
+ * describes it is as tall as the card.
  */
 @Component({
   selector: 'app-made-file',
@@ -50,6 +53,7 @@ export class MadeFileComponent {
   private readonly files = inject(FilesService);
   private readonly panel = inject(ThreadPanelService);
   private readonly thread = inject(ThreadService);
+  private readonly announcer = inject(LiveAnnouncer);
 
   protected readonly copy = {
     open: $localize`:@@madeFile.open:Open`,
@@ -58,6 +62,8 @@ export class MadeFileComponent {
   protected readonly mark = computed(() => MARKS[this.file().kind]);
   /** Why the file couldn't be opened or saved, last time; `null` when nothing went wrong. */
   protected readonly failed = signal<string | null>(null);
+  /** Whether it is being read to be saved now. */
+  protected readonly saving = signal(false);
   protected readonly line = computed(() => this.failed() ?? madeLine(this.file(), this.locale));
   /** Whether it was kept, so it can be saved. */
   protected readonly kept = computed(() => this.file().sha256 != null);
@@ -71,6 +77,11 @@ export class MadeFileComponent {
   protected readonly openLabel = computed(
     () => $localize`:@@madeFile.openNamed:Open ${this.file().name}:NAME:`,
   );
+  /** Whether its line gives a reason: why it wasn't kept or read, or why it couldn't be saved. */
+  protected readonly reason = computed(
+    () => this.failed() !== null || !this.kept() || this.file().unread != null,
+  );
+  protected readonly busy = computed(() => (this.saving() ? 'true' : null));
   protected readonly downloadLabel = computed(
     () => $localize`:@@madeFile.download:Download ${this.file().name}:NAME:`,
   );
@@ -83,7 +94,9 @@ export class MadeFileComponent {
       try {
         await this.files.openInTab(thread, file.sha256, file.media_type, file.file_name);
       } catch (error: unknown) {
-        this.failed.set(whyNot(error));
+        const why = whyNot(error);
+        this.failed.set(why);
+        void this.announcer.announce(why);
       }
       return;
     }
@@ -93,14 +106,19 @@ export class MadeFileComponent {
   protected async download(): Promise<void> {
     const thread = this.thread.thread();
     const file = this.file();
-    if (thread === null || file.sha256 == null) {
+    if (thread === null || file.sha256 == null || this.saving()) {
       return;
     }
     this.failed.set(null);
+    this.saving.set(true);
     try {
       await this.files.save(thread, file.sha256, file.media_type, file.file_name);
     } catch (error: unknown) {
-      this.failed.set(whyNot(error));
+      const why = whyNot(error);
+      this.failed.set(why);
+      void this.announcer.announce(why);
+    } finally {
+      this.saving.set(false);
     }
   }
 }
