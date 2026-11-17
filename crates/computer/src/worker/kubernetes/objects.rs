@@ -25,14 +25,38 @@ const SECRET: &str = "/opt/glave/secret";
 pub(crate) const TOKEN: &str = "opt/glave/secret/token";
 /// What the harness copies in last, so the computer knows everything else has arrived.
 const READY: &str = "opt/glave/ready";
+/// Where every program the server runs in a person's computer is found: the image's own
+/// folders, never the person's. The image's `PATH` puts their `~/.local/bin` and
+/// `~/.cargo/bin` first, on their disk, which a command let out of the sandbox, or their own
+/// Terminal, can fill; a `tar` planted there would run at the next wake, before glave and its
+/// fence (`specs/computers.md`, *The Pod*). Each script below sets it first.
+macro_rules! system_path {
+    () => {
+        "PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+    };
+}
 /// Run by `/bin/sh -c` in a person's computer, with the SHA-256 of the glave the server chose as
 /// `$0` and the token, as a tar archive, on standard input: puts the token in, then, only when
 /// the glave glave's computer image carries (`images/computer`, with its SHA-256 beside it) is
 /// that very glave, names it as the computer's and says everything has arrived. Fails
-/// otherwise, and the server copies glave in instead.
-const FROM_IMAGE: &str = "tar -x -f - -C / && \
+/// otherwise, and the server copies glave in instead. Its programs on `system_path!`.
+const FROM_IMAGE: &str = concat!(
+    system_path!(),
+    "; tar -x -f - -C / && \
 [ \"$(cat /usr/libexec/glave/glave.sha256 2>/dev/null)\" = \"$0\" ] && \
-ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready";
+ln -s /usr/libexec/glave/glave /opt/glave/glave && : > /opt/glave/ready"
+);
+/// Extracts the tar archive on standard input at `/`, its `tar` on `system_path!`: how the
+/// server copies glave and the token into a person's computer.
+pub(crate) const COPY_IN: [&str; 3] = [
+    "/bin/sh",
+    "-c",
+    concat!(system_path!(), "; exec tar -x -f - -C /"),
+];
+/// How glave in a person's computer ends when its fence never holds (`computer serve
+/// --fence`): the server, finding it ended so, tells the person their computer couldn't start
+/// safely, and keeps why for its own log.
+pub const UNFENCED: u8 = 3;
 /// The label a person's computer's objects carry, its key as the value.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
@@ -49,16 +73,28 @@ pub(crate) const IDLE_MINUTES: u32 = 120;
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// Where glave on a person's computer makes scratch folders: its folder in their home.
 pub(crate) const PERSON_SCRATCH: &str = "/home/glave/.glave/scratch";
+/// The variable that holds the address of the node a person's computer runs on.
+const NODE: &str = "GLAVE_NODE";
+/// What a person's computer must no longer reach before glave there serves: its node's
+/// kubelet, inside every cluster and answering anyone its network policy lets through, so a
+/// computer serves only once its policy holds (`specs/computers.md`, *The network*). Written
+/// as Kubernetes expands a variable in a command.
+const FENCE: &str = "$(GLAVE_NODE):10250";
 /// What a person's computer may write outside its disk (its container's layer, `/tmp`), asked
 /// for and limited alike: room for a large install's temporary files, never its own disk, and
 /// GKE Autopilot sets the limit to what is asked for anyway (owner, 2026-11-05).
 const OUTSIDE_THE_DISK: &str = "4Gi";
 
 /// Waits (up to ten minutes) for the harness to copy glave in, then becomes it. Run by
-/// `/bin/sh -c`, with glave's command line as its arguments.
-const WAIT: &str = "i=0; until [ -e /opt/glave/ready ]; do i=$((i+1)); \
+/// `/bin/sh -c`, with glave's command line as its arguments: its `sleep` on `system_path!`,
+/// and the image's `PATH` given back to glave, for the person's commands.
+const WAIT: &str = concat!(
+    "p=$PATH; ",
+    system_path!(),
+    "; i=0; until [ -e /opt/glave/ready ]; do i=$((i+1)); \
 if [ \"$i\" -gt 3000 ]; then echo 'glave never arrived in the computer' >&2; exit 1; fi; \
-sleep 0.2; done; exec \"$@\"";
+sleep 0.2; done; PATH=$p; exec \"$@\""
+);
 
 /// Where waiting containers are stuck for good: an image that cannot be had, or a container
 /// that cannot be made.
@@ -131,6 +167,11 @@ impl Shape<'_> {
             .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
         env.push(json!({"name": "HOME", "value": PERSON_HOME}));
+        // Its node's address, for the fence glave checks before it serves ([`FENCE`]).
+        env.push(json!({
+            "name": NODE,
+            "valueFrom": {"fieldRef": {"fieldPath": "status.hostIP"}}
+        }));
         let mut amounts = self.amounts();
         amounts.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
         // The root filesystem is read-only; `/tmp` is the one place outside the home a command
@@ -202,7 +243,8 @@ impl Shape<'_> {
 
     /// The container's command: the wait, then glave serving on [`SOCKET`] to the bridges
     /// that come in through the API server, each signed in with the token in [`SECRET`],
-    /// sleeping on its own once idle, servers or not (#558), and keeping its disk from filling.
+    /// sleeping on its own once idle, servers or not (#558), keeping its disk from filling, and
+    /// serving only once its network policy holds ([`FENCE`]).
     fn command(&self) -> Vec<Value> {
         let idle = self.home.idle_minutes.to_string();
         [
@@ -219,6 +261,8 @@ impl Shape<'_> {
             "--idle",
             &idle,
             "--keep-disk",
+            "--fence",
+            FENCE,
         ]
         .into_iter()
         .map(Value::from)
@@ -381,6 +425,20 @@ pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
     } else {
         Resized::Pending
     }
+}
+
+/// Whether the computer's container in `pod` (as the API server returns it) ended, and with
+/// [`UNFENCED`]: `None` while it hasn't ended.
+pub(crate) fn unfenced(pod: &Value) -> Option<bool> {
+    let ended = pod
+        .pointer("/status/containerStatuses")
+        .and_then(Value::as_array)
+        .and_then(|all| {
+            all.iter()
+                .find(|c| c.get("name") == Some(&json!(CONTAINER)))
+        })
+        .and_then(|status| status.pointer("/state/terminated"))?;
+    Some(ended.get("exitCode").and_then(Value::as_i64) == Some(i64::from(UNFENCED)))
 }
 
 /// How far a starting Pod has got.

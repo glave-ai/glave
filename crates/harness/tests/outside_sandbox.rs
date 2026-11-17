@@ -531,3 +531,50 @@ fn where_no_sandbox_runs_another_person_s_commands_never_run_and_the_person_s_ow
         assert!(dir.join("mine.txt").exists(), "the person's own runs");
     });
 }
+
+/// A subagent works for whoever its parent works for, never for the person the harness works
+/// for: another person's subagent is walled in as their own thread is. Its command asking to
+/// leave the sandbox does not run, no one is asked, and it is offered no way to ask.
+#[test]
+fn another_person_s_subagent_never_leaves_the_sandbox_either() {
+    let Some(base) = sandboxed("theirs-subagent") else {
+        return;
+    };
+    block_on!(async {
+        let brief = json!({"description": "write it", "prompt": "Write beside the project."});
+        let answers = vec![
+            answer(None, vec![("agent", brief)], StopReason::ToolUse),
+            answer(
+                None,
+                vec![outside(&base, "subagents.txt")],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Could not."), vec![], StopReason::EndTurn),
+            answer(Some("It could not."), vec![], StopReason::EndTurn),
+        ];
+        let person = Person::answering(Decision::AllowOnce);
+        let mut settings = in_the_sandbox();
+        settings.subagents = true;
+        let (harness, seen) = with_person(&base, answers, &person, settings).await;
+        let grace = grace();
+        let mut thread = harness.start_thread_as(scope(), &grace).await.unwrap();
+        let said = "have it written";
+        harness
+            .run_turn_as(&mut thread, said, &grace, &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert!(!base.join("subagents.txt").exists());
+        assert!(person.asked().is_empty(), "no one is asked");
+        // The model's calls, in order: the parent's, the subagent's two, the parent's last.
+        let seen = seen.lock().unwrap().clone();
+        let offered = format!("{:?}", seen[1].tools);
+        assert!(offered.contains("bash"), "{offered}");
+        assert!(!offered.contains("outside_sandbox"), "{offered}");
+        let refused = format!("{:?}", seen[2].messages);
+        assert!(
+            refused.contains("only its owner's commands may run outside the sandbox"),
+            "{refused}"
+        );
+    });
+    let _ = std::fs::remove_dir_all(&base);
+}
