@@ -267,12 +267,17 @@ mod tests {
         let pdf = format!("{}\n", PLAN.join("\n"));
         let starts: Vec<usize> = pdf
             .match_indices(" 0 obj\n")
-            .map(|(at, _)| pdf[..at].rfind('\n').map_or(0, |line| line + 1))
+            .map(|(at, _)| {
+                pdf.get(..at)
+                    .unwrap()
+                    .rfind('\n')
+                    .map_or(0, |line| line + 1)
+            })
             .collect();
         let indexed: Vec<usize> = PLAN
             .iter()
             .filter(|line| line.ends_with(" 00000 n "))
-            .map(|line| line[..10].parse().unwrap())
+            .map(|line| line.get(..10).unwrap().parse().unwrap())
             .collect();
         assert_eq!(starts, indexed);
         let index = pdf.find("xref\n").unwrap();
