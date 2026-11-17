@@ -62,12 +62,7 @@
     } @else if (item.made; as made) {
       <p class="repeats" data-testid="thread-repeat-made">
         <glz-icon [icon]="icons.repeat" [label]="copy.repeats" />
-        <a data-testid="thread-repeat-chat" [routerLink]="made.link">{{ made.repeats }}</a>
-      </p>
-    } @else if (item.refused; as refused) {
-      <p class="repeats refused" data-testid="thread-repeat-refused">
-        <glz-icon [icon]="icons.refused" />
-        <span>{{ refused }}</span>
+        <a data-testid="thread-repeat-chat" dir="auto" [routerLink]="made.link">{{ made.words }}</a>
       </p>
     }
   }

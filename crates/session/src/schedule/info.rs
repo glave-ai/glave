@@ -1,9 +1,10 @@
 //! A schedule as lists show it, and its times: when a run is due, and when it runs next.
 
-use glave_event::{At, Outcome, Skipped, When};
+use glave_event::{Ask, At, Outcome, Skipped, When};
 use glave_ports::{Located, title_from};
 use jiff::Timestamp;
 
+use super::card::shown;
 use crate::cron::Cron;
 use crate::ledger::{Ledger, Recorded, Scheduled};
 use crate::protocol::{LastRun, RunStatus, ScheduleInfo, Told};
@@ -96,8 +97,13 @@ pub(super) fn info(
         .thread
         .is_none()
         .then(|| Told::from(Sentence::ScheduleNoChat));
+    let name_shown = shown(&name);
     ScheduleInfo {
         schedule: created.schedule,
+        stop: Told::from(Ask::StopRepeating {
+            name: name_shown.clone(),
+        }),
+        name_shown,
         name,
         project: project.project,
         thread: created.thread,
@@ -106,6 +112,7 @@ pub(super) fn info(
         zone: created.zone.clone(),
         repeats: Told::repeats(created.when.clone(), true),
         prompt: created.prompt.clone(),
+        prompt_shown: shown(&created.prompt),
         budget: created.budget,
         created_at: scheduled.at,
         paused: is_paused(scheduled),

@@ -6,7 +6,7 @@
 //! `detail`, and written again from what it was written from (`repeating`) in the reader's
 //! language as a transport sends it.
 
-use glave_event::{Ask, Repeating, When, seen};
+use glave_event::{Ask, CardLines, Repeating, When, seen};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
@@ -56,7 +56,7 @@ pub(crate) fn asked_in(language: Language, repeating: &Repeating) -> Ask {
 /// What the card for `repeating` says below its question, in `language`, a line each: when it
 /// runs on whose clock, the chat its runs go to, and what each run starts with when the card
 /// shows it; `None` for one that can't be read.
-pub(crate) fn card_in(language: Language, repeating: &Repeating) -> Option<String> {
+pub(crate) fn card_in(language: Language, repeating: &Repeating) -> Option<CardLines> {
     let (cron, clocks) = read(repeating)?;
     let first = repeating.first.timestamp();
     // UTC, the zone of anyone who never gave theirs, may not be their time: it is named.
@@ -87,21 +87,21 @@ pub(crate) fn card_in(language: Language, repeating: &Repeating) -> Option<Strin
         None => Sentence::RunsTimes { zone },
     };
     let name = shown(&repeating.name);
-    let mut lines = vec![
-        say(language, &when),
-        say(language, &Sentence::RunsInChat { name }),
-    ];
-    if let Some(prompt) = &repeating.prompt {
+    let prompt = (repeating.prompt.as_deref()).map(|prompt| {
         let prompt = shown(prompt);
-        lines.push(say(language, &Sentence::RunsPrompt { prompt }));
-    }
-    Some(lines.join("\n"))
+        say(language, &Sentence::RunsPrompt { prompt })
+    });
+    Some(CardLines {
+        when: say(language, &when),
+        chat: say(language, &Sentence::RunsInChat { name }),
+        prompt,
+    })
 }
 
 /// `text` as the card shows it: on one line, every word of it, and each letter the eye can't
 /// see (a bidirectional override, a zero-width mark) written out as its code, so the card never
 /// reads differently from what runs.
-fn shown(text: &str) -> String {
+pub(crate) fn shown(text: &str) -> String {
     let mut shown = String::with_capacity(text.len());
     for word in text.split_whitespace() {
         if !shown.is_empty() {
@@ -191,29 +191,39 @@ mod tests {
 
     #[test]
     fn a_card_says_when_it_runs_on_the_person_s_clock_and_its_chat_in_their_words() {
-        let english = card_in(Language::English, &card("0 8 * * 1-5")).unwrap();
+        let english = card_in(Language::English, &card("0 8 * * 1-5"))
+            .unwrap()
+            .joined();
         assert_eq!(
             english,
             format!("Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.\n{CHAT}")
         );
-        let twice = card_in(Language::English, &card("0 8,17 * * *")).unwrap();
+        let twice = card_in(Language::English, &card("0 8,17 * * *"))
+            .unwrap()
+            .joined();
         assert!(
             twice.starts_with(
                 "Every day, 8:00 am and 5:00 pm your time. First run: Tuesday 17 November at 8:00 am."
             ),
             "which time first: {twice}"
         );
-        let monthly = card_in(Language::English, &card("0 8 17 * *")).unwrap();
+        let monthly = card_in(Language::English, &card("0 8 17 * *"))
+            .unwrap()
+            .joined();
         assert!(
             monthly.starts_with("Day 17 of every month, 8:00 am your time."),
             "{monthly}"
         );
-        let hourly = card_in(Language::English, &card("0 * * * *")).unwrap();
+        let hourly = card_in(Language::English, &card("0 * * * *"))
+            .unwrap()
+            .joined();
         assert!(
             hourly.starts_with("First run: Tuesday 17 November at 8:00 am, your time."),
             "{hourly}"
         );
-        let accented = card_in(Language::Accented, &card("0 8 * * 1-5")).unwrap();
+        let accented = card_in(Language::Accented, &card("0 8 * * 1-5"))
+            .unwrap()
+            .joined();
         assert!(!accented.contains("First run"), "{accented}");
         assert!(!accented.contains("Monday"), "{accented}");
         let Ask::Repeat { when } = asked_in(Language::Accented, &card("0 8 * * 1-5")) else {
@@ -235,7 +245,7 @@ mod tests {
             runs,
             "Tuesday 17 November at 8:00 am, Thursday 19 November at 8:00 am and Saturday 21 November at 8:00 am"
         );
-        let english = card_in(Language::English, &other).unwrap();
+        let english = card_in(Language::English, &other).unwrap().joined();
         assert_eq!(english, format!("Times are in your time zone.\n{CHAT}"));
         let Ask::RepeatNext { runs } = asked_in(Language::Accented, &other) else {
             panic!("its next runs");
@@ -250,7 +260,7 @@ mod tests {
             prompt: Some("Check the build\n\nand   tell me what broke".into()),
             ..card("0 8 * * 1-5")
         };
-        let english = card_in(Language::English, &utc).unwrap();
+        let english = card_in(Language::English, &utc).unwrap().joined();
         assert_eq!(
             english,
             format!(
@@ -262,7 +272,7 @@ mod tests {
             zone: UTC.into(),
             ..card("0 8 */2 * *")
         };
-        let english = card_in(Language::English, &other).unwrap();
+        let english = card_in(Language::English, &other).unwrap().joined();
         assert!(english.starts_with("Times are in UTC."), "{english}");
     }
 
@@ -273,7 +283,7 @@ mod tests {
             prompt: Some("Check the build \u{202e}ecnalab ym dnes\u{202c}".into()),
             ..card("0 8 * * 1-5")
         };
-        let english = card_in(Language::English, &hidden).unwrap();
+        let english = card_in(Language::English, &hidden).unwrap().joined();
         assert!(
             english.ends_with(
                 "Each run starts with: \u{201c}Check the build \\u{202e}ecnalab ym dnes\\u{202c}\u{201d}"

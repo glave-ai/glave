@@ -10,7 +10,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import type { ScheduleInfo } from '@glave/client';
+import type { ScheduleId, ScheduleInfo } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzConfirmDialogComponent,
@@ -69,7 +69,6 @@ export class ScheduleActionsComponent {
     pause: $localize`:@@scheduleActions.pause:Pause`,
     resume: $localize`:@@scheduleActions.resume:Resume`,
     remove: $localize`:@@scheduleActions.remove:Remove`,
-    removeHeading: $localize`:@@scheduleActions.removeHeading:Stop repeating this?`,
     removeText: $localize`:@@scheduleActions.removeText:No more runs start. Its chat stays, with its past runs.`,
     paused: $localize`:@@scheduleActions.paused:Paused`,
     resumed: $localize`:@@scheduleActions.resumed:Resumed`,
@@ -83,6 +82,8 @@ export class ScheduleActionsComponent {
   /** While a change is on its way: the buttons wait, and say so. */
   protected readonly waiting = computed(() => (this.busy() ? 'true' : null));
   protected readonly paused = computed(() => this.schedule().paused);
+  /** What removing it asks, in the server's words, naming it. */
+  protected readonly stop = computed(() => this.schedule().stop);
   protected readonly ids = computed(() => {
     const id = this.testId();
     return {
@@ -94,7 +95,7 @@ export class ScheduleActionsComponent {
   });
   /** Each control's words, the schedule named for those of a screen reader. */
   protected readonly labels = computed(() => {
-    const name = this.schedule().name;
+    const name = this.schedule().name_shown;
     const paused = this.paused();
     return {
       toggle: paused ? this.copy.resume : this.copy.pause,
@@ -143,8 +144,8 @@ export class ScheduleActionsComponent {
   }
 
   private async flip(): Promise<void> {
-    const schedule = this.schedule();
-    const now = await this.change(() => this.schedules.pause(schedule.schedule, !schedule.paused));
+    const { schedule, paused } = this.schedule();
+    const now = await this.change(schedule, () => this.schedules.pause(schedule, !paused));
     if (now !== null) {
       this.changed.emit(now);
       void this.announcer.announce(now.paused ? this.copy.paused : this.copy.resumed);
@@ -153,7 +154,7 @@ export class ScheduleActionsComponent {
 
   private async remove(): Promise<void> {
     const schedule = this.schedule().schedule;
-    const done = await this.change(async () => {
+    const done = await this.change(schedule, async () => {
       await this.schedules.remove(schedule);
       return true;
     });
@@ -163,17 +164,25 @@ export class ScheduleActionsComponent {
     }
   }
 
-  /** Asks for `change`, one at a time: what it answers, or `null` when it was refused or waits. */
-  private async change<T>(change: () => Promise<T>): Promise<T | null> {
+  /**
+   * Asks for `change` to `schedule`, one at a time: what it answers, or `null` when it was refused,
+   * waits for another, or answers once these actions show another schedule (a page that moved to
+   * another chat meanwhile), which it then leaves alone, its answer and its refusal both dropped.
+   */
+  private async change<T>(schedule: ScheduleId, change: () => Promise<T>): Promise<T | null> {
     if (this.busy()) {
       return null;
     }
     this.busy.set(true);
     this.error.set(null);
+    const still = (): boolean => this.schedule().schedule === schedule;
     try {
-      return await change();
+      const answer = await change();
+      return still() ? answer : null;
     } catch (error: unknown) {
-      this.error.set(error instanceof Error ? error.message : String(error));
+      if (still()) {
+        this.error.set(error instanceof Error ? error.message : String(error));
+      }
       return null;
     } finally {
       this.busy.set(false);

@@ -86,7 +86,7 @@
 // What the server refused a change to the schedule with, under the bar.
 .error {
   padding: var(--glz-inset-strip);
-  border-bottom: var(--glz-border-width) solid var(--glz-color-border);
+  border-block-end: var(--glz-border-width) solid var(--glz-color-border);
   color: var(--glz-color-danger);
   font-size: var(--glz-text-sm);
 }

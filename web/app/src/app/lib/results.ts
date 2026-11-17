@@ -12,7 +12,7 @@ import type {
 import { roomFor } from './files';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
-import type { Turn } from './turns';
+import type { Due, Turn } from './turns';
 
 /**
  * What waits for the person in a turn: an approval not yet decided, a question not answered, what
@@ -55,8 +55,11 @@ export interface Working {
  */
 export interface TurnResults {
   readonly key: string;
-  /** For a schedule's run, when it was due, as the server recorded it; `null` for any other turn. */
-  readonly scheduled: string | null;
+  /**
+   * For a schedule's run, when it was due and on whose clocks, as the server recorded them;
+   * `null` for any other turn.
+   */
+  readonly scheduled: Due | null;
   readonly prompt: MessageItem | null;
   /** What it did, in order, but for what waits for the person. */
   readonly parts: readonly TurnPart[];

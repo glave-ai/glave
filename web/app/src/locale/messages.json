@@ -644,7 +644,6 @@
     "scheduleActions.pauseNamed": "Pause {$NAME}",
     "scheduleActions.paused": "Paused",
     "scheduleActions.remove": "Remove",
-    "scheduleActions.removeHeading": "Stop repeating this?",
     "scheduleActions.removeNamed": "Remove {$NAME}",
     "scheduleActions.removeText": "No more runs start. Its chat stays, with its past runs.",
     "scheduleActions.removed": "Removed",

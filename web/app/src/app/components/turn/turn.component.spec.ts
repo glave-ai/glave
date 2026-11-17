@@ -1,6 +1,6 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { ChangedFile } from '@glave/client';
+import type { ChangedFile, ScheduleInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { NO_THOUGHT, type MessageItem } from '../../lib/conversation';
@@ -14,6 +14,7 @@ import { ThreadPanelService } from '../../services/thread-panel.service';
 import { READER_ZONE } from '../../services/zone.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { schedule, thread } from '../../testing/fixtures';
 import { TurnComponent } from './turn.component';
 
 /** What a thread view provides, which a turn's cards reach. */
@@ -107,6 +108,25 @@ const RESULTS: TurnResults = {
   ],
 };
 
+/** When the run below was due: 8:00 in Lisbon. */
+const RUN_AT = '2026-11-12T08:00:00.000Z';
+
+/** A schedule whose prompt the server shows with a letter the eye can't see as its code. */
+const SHOWN = { ...schedule('s1', null), prompt_shown: 'Check\\u{202e} the build' };
+
+/** A fake whose `thread-1` is the chat of `kept`. */
+function chatOf(kept: ScheduleInfo): FakeSession {
+  return new FakeSession().answer('thread/get', {
+    thread: thread('thread-1', 'Check', { schedule: kept }),
+  });
+}
+
+/** A schedule's run, due at 3 on New York's clocks, as its start recorded them. */
+const RUN: TurnResults = {
+  ...RESULTS,
+  scheduled: { at: '2026-11-12T08:00:00.000Z', zone: 'America/New_York' },
+};
+
 /** A turn that has just started work, with nothing of its own to show yet. */
 const WORKING: TurnResults = {
   ...RESULTS,
@@ -117,15 +137,22 @@ const WORKING: TurnResults = {
   waiting: [],
 };
 
-async function mount(results: TurnResults): Promise<ComponentFixture<TurnComponent>> {
+async function mount(
+  results: TurnResults,
+  fake = new FakeSession(),
+): Promise<ComponentFixture<TurnComponent>> {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      ...provideFakeSession(new FakeSession()),
+      ...provideFakeSession(fake),
       ...THREAD_VIEW,
       { provide: READER_ZONE, useValue: 'Europe/Lisbon' },
     ],
   });
+  if (results.scheduled !== null) {
+    // A schedule's run is in its chat, whose summary carries the schedule, while it has one.
+    await TestBed.inject(ThreadService).open('thread-1');
+  }
   const fixture = TestBed.createComponent(TurnComponent);
   fixture.componentRef.setInput('turn', results);
   await fixture.whenStable();
@@ -223,11 +250,13 @@ describe('TurnComponent', () => {
   });
 
   it('heads a schedule’s run with when it was due, what it was asked folded under that', async () => {
-    const root = await render({ ...RESULTS, scheduled: '2026-11-12T08:00:00.000Z' });
+    const fixture = await mount(RUN, chatOf(SHOWN));
+    const root = fixture.nativeElement as HTMLElement;
     expect(blocks(root).slice(0, 3)).toEqual(['turn-ran', 'turn-asked', 'thread-run']);
     const ran = root.querySelector('[data-testid="turn-ran"]');
     expect(ran?.tagName).toBe('H2');
-    expect(ran?.textContent.trim()).toBe('Thursday, November 12 · 8:00 AM');
+    // On the clocks it came due on, as its start recorded them, naming them to this reader.
+    expect(ran?.textContent.trim()).toBe('Thursday, November 12 · 3:00 AM EST');
     expect(ran?.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-12T08:00:00.000Z');
     // Its prompt is no message of the person's: it folds, shut, under the heading.
     const asked = root.querySelector('[data-testid="turn-asked"]');
@@ -235,7 +264,8 @@ describe('TurnComponent', () => {
       'What it was asked',
     );
     expect(asked?.querySelector('details')?.open).toBe(false);
-    expect(asked?.textContent).toContain('Fix the flaky test');
+    // As the server shows its schedule's prompt, each letter the eye can't see as its code.
+    expect(asked?.textContent).toContain('Check\\u{202e} the build');
     const messages = [...root.querySelectorAll('[data-testid="thread-message"]')];
     expect(messages.map((each) => each.textContent)).not.toContainEqual(
       expect.stringContaining('Fix the flaky test'),
@@ -248,8 +278,19 @@ describe('TurnComponent', () => {
     expect(blocks(plain)[0]).toBe('thread-message');
   });
 
+  it('shows no prompt raw once its schedule is gone, and its schedule’s clocks where its start named none', async () => {
+    const fake = new FakeSession().answer('thread/get', { thread: thread('thread-1', 'Gone') });
+    const fixture = await mount({ ...RUN, scheduled: { at: RUN_AT, zone: null } }, fake);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="turn-ran"]')?.textContent.trim()).toBe(
+      'Thursday, November 12 · 8:00 AM',
+    );
+    expect(root.querySelector('[data-testid="turn-asked"]')?.classList).toContain('unasked');
+    expect(root.textContent).not.toContain('Fix the flaky test');
+  });
+
   it('reads quieter as a schedule’s run before its latest', async () => {
-    const fixture = await mount({ ...RESULTS, scheduled: '2026-11-12T08:00:00.000Z' });
+    const fixture = await mount(RUN, chatOf(SHOWN));
     const root = fixture.nativeElement as HTMLElement;
     expect(root.classList).not.toContain('earlier');
     fixture.componentRef.setInput('earlier', true);

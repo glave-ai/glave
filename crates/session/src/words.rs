@@ -162,6 +162,7 @@ fn schedules_in(schedules: &mut [ScheduleInfo], language: Language) {
 /// its note.
 fn schedule_in(schedule: &mut ScheduleInfo, language: Language) {
     schedule.repeats.translate(language);
+    schedule.stop.translate(language);
     if let Some(last) = &mut schedule.last {
         last.said.translate(language);
     }

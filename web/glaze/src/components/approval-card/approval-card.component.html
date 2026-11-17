@@ -11,7 +11,7 @@
   }
 </p>
 @if (hasLines()) {
-  <ul class="lines" [attr.data-testid]="ids().lines">
+  <ul class="lines" [id]="linesId" [attr.data-testid]="ids().lines">
     @for (line of lines(); track $index) {
       <li>
         @if (line.icon; as drawing) {

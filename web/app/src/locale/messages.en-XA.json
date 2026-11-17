@@ -644,7 +644,6 @@
     "scheduleActions.pauseNamed": "[Þåûšé {$NAME} one]",
     "scheduleActions.paused": "[Þåûšéð one]",
     "scheduleActions.remove": "[Ŕéɱöṽé one]",
-    "scheduleActions.removeHeading": "[Šţöþ ŕéþéåţîñĝ ţĥîš? one two]",
     "scheduleActions.removeNamed": "[Ŕéɱöṽé {$NAME} one]",
     "scheduleActions.removeText": "[Ñö ɱöŕé ŕûñš šţåŕţ. Îţš çĥåţ šţåýš, ŵîţĥ îţš þåšţ ŕûñš. one two three]",
     "scheduleActions.removed": "[Ŕéɱöṽéð one]",

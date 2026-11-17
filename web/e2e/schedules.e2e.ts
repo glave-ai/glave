@@ -1,5 +1,5 @@
 import { fakeApi } from './fake-api';
-import { ASKING, MORNING, REFUSED, REPEATS, ZONE, schedules } from './fake-schedules';
+import { ASKING, MORNING, REPEATS, ZONE, schedules } from './fake-schedules';
 import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 /** Each width the card is tried at: beside a wide page, and on a phone. */
@@ -21,15 +21,14 @@ for (const view of VIEWS) {
       await page.goto(`/t/${ASKING}${SIGNED_IN}`);
       const card = byTestId(page, 'thread-repeat');
       await expect(card).toContainText('Repeat this every weekday at 8:00 am?');
-      await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
+      const lines = byTestId(page, 'thread-repeat-lines');
+      await expect(lines).toContainText(
         'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
       );
-      await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
+      await expect(lines).toContainText(
         'Each run is added to its own chat, “Morning email summary”.',
       );
-      await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
-        'Each run starts with: “Summarize my email”',
-      );
+      await expect(lines).toContainText('Each run starts with: “Summarize my email”');
       await expect(byTestId(page, 'thread-repeat-caution')).toHaveText(
         'It runs only while glave runs on this computer.',
       );
@@ -43,6 +42,7 @@ for (const view of VIEWS) {
       expect((yes?.x ?? Infinity) < (no?.x ?? 0)).toBe(true);
       await expectAccessible(page);
       await allow.click();
+      // The line is the server's words for the chat it made, when its schedule repeats.
       const line = byTestId(page, 'thread-repeat-chat');
       await expect(line).toHaveText(REPEATS);
       await expect(card).toHaveCount(0);
@@ -53,6 +53,24 @@ for (const view of VIEWS) {
       expect(problems()).toEqual([]);
     });
 
+    test('a card for a shape with no plain words is the same card, and folds the same', async ({
+      page,
+    }) => {
+      await fakeApi(page);
+      await schedules(page, { card: 'unplain' });
+      await page.goto(`/t/${ASKING}${SIGNED_IN}`);
+      const card = byTestId(page, 'thread-repeat');
+      await expect(card).toContainText('Repeat this, next on Monday 30 November');
+      await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
+        'Times are in your time zone.',
+      );
+      await expect(byTestId(page, 'thread-repeat-allow-thread')).toHaveCount(0);
+      await expect(byTestId(page, 'thread-approval')).toHaveCount(0);
+      await expectAccessible(page);
+      await byTestId(page, 'thread-repeat-allow-once').click();
+      await expect(byTestId(page, 'thread-repeat-chat')).toHaveText(REPEATS);
+    });
+
     test('Not now folds the card away, and makes nothing', async ({ page }) => {
       await fakeApi(page);
       const server = await schedules(page);
@@ -61,7 +79,6 @@ for (const view of VIEWS) {
       await expect(byTestId(page, 'thread-repeat')).toHaveCount(0);
       await expect(byTestId(page, 'thread-message').last()).toContainText('All right.');
       await expect(byTestId(page, 'thread-repeat-made')).toHaveCount(0);
-      await expect(byTestId(page, 'thread-repeat-refused')).toHaveCount(0);
       expect(server.decision).toBe('deny');
     });
 
@@ -81,8 +98,11 @@ for (const view of VIEWS) {
         'Friday, November 13 · 8:00 AM',
         'Monday, November 16 · 8:00 AM',
       ]);
-      // Each run's prompt folds under its heading, never the person's message.
+      // Each run's prompt folds under its heading, as the server shows it, never the person's.
+      const asked = byTestId(page, 'turn-asked').first();
       await expect(byTestId(page, 'turn-asked-summary').first()).toContainText('What it was asked');
+      await byTestId(page, 'turn-asked-summary').first().click();
+      await expect(asked).toContainText('Summarize my email');
       await expect(byTestId(page, 'thread-message').filter({ hasText: 'Summarize' })).toHaveCount(
         0,
       );
@@ -111,19 +131,27 @@ for (const view of VIEWS) {
         await expect(byTestId(page, 'thread-repeats-pause')).toHaveText('Resume');
       }
       await act('remove');
+      // Removing asks in the server's words, naming it.
+      await expect(byTestId(page, 'thread-repeats-confirm')).toContainText(
+        'Stop repeating Morning email summary?',
+      );
       await byTestId(page, 'thread-repeats-confirm-ok').click();
       await expect(line).toHaveCount(0);
       expect(server.removed).toBe(true);
       expect(problems()).toEqual([]);
     });
 
-    test('a repeat the server refuses after the yes says why, in its words', async ({ page }) => {
+    test('a repeat the server refuses after the yes folds away, its call saying how it went', async ({
+      page,
+    }) => {
       await fakeApi(page);
       await schedules(page, { outcome: 'refused' });
       await page.goto(`/t/${ASKING}${SIGNED_IN}`);
       await byTestId(page, 'thread-repeat-allow-once').click();
-      await expect(byTestId(page, 'thread-repeat-refused')).toHaveText(REFUSED);
-      await expect(byTestId(page, 'thread-repeat-chat')).toHaveCount(0);
+      await expect(byTestId(page, 'thread-repeat')).toHaveCount(0);
+      await expect(byTestId(page, 'thread-message').last()).toContainText('All right.');
+      await expect(byTestId(page, 'thread-repeat-made')).toHaveCount(0);
+      await expect(byTestId(page, 'thread-run-summary')).toContainText('Set up a schedule');
       await expectAccessible(page);
     });
   });

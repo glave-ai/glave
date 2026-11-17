@@ -3,7 +3,7 @@
 use std::fmt;
 use std::ops::Deref;
 
-use glave_event::{Caution, When, Worded};
+use glave_event::{Ask, Caution, When, Worded};
 use glave_ports::ProjectRefusal;
 use glave_ports::computer::{Reason, Refusal};
 use glave_ports::memories::MemoryRefusal;
@@ -52,6 +52,8 @@ enum Theirs {
     Memory(MemoryRefusal),
     /// What a project brings that waits for the person's trust.
     Brings(Brings),
+    /// What an approval asks, as one of an event's own.
+    Asks(Ask),
 }
 
 impl Theirs {
@@ -61,6 +63,7 @@ impl Theirs {
             Self::Project(refusal) => refusal,
             Self::Memory(refusal) => refusal,
             Self::Brings(brings) => brings,
+            Self::Asks(ask) => ask,
         }
     }
 }
@@ -157,6 +160,16 @@ impl From<&Reason> for Told {
             said: reason
                 .refusal()
                 .map(|refusal| Box::new(Said::Theirs(Theirs::Computer(refusal.clone())))),
+        }
+    }
+}
+
+/// What an approval asks, such as removing a schedule, written again in the caller's language.
+impl From<Ask> for Told {
+    fn from(ask: Ask) -> Self {
+        Self {
+            text: ask.english(),
+            said: Some(Box::new(Said::Theirs(Theirs::Asks(ask)))),
         }
     }
 }

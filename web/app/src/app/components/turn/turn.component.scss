@@ -44,7 +44,12 @@
   }
 }
 
-// What a schedule's run was asked, under its heading, as the person wrote it.
+// What a schedule's run was asked, under its heading, as the server shows it; once the schedule
+// is gone, not shown.
+.unasked {
+  display: none;
+}
+
 .asked {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
