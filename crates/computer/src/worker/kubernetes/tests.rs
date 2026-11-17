@@ -2,11 +2,11 @@
 //! elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A stub in
 //! glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the Pod without a
 //! Linux build of glave: its limits and hardening as the API server keeps them, its own service
-//! account, the network policy, the files copied in, the bridges into it (an exec each), and sleep.
-//! A runtime class the cluster lacks, or an isolation policy asks for that the cluster can't give,
-//! leaves nothing behind. Everything made carries `glave.test=<run>`, and each test checks by that
-//! label that nothing is left behind, Secrets included (there are none to leave). The whole path,
-//! with a real glave, is in `home/tests.rs` and `people/tests.rs`.
+//! account, the network policy, the files copied in, the bridges into it (an exec each), and
+//! sleep. A runtime class the cluster lacks, or an isolation policy asks for that the cluster
+//! can't give, leaves nothing behind. Everything made carries `glave.test=<run>`, and each test
+//! checks by that label that nothing is left behind, Secrets included (there are none to leave).
+//! The whole path, with a real glave, is in `home/tests.rs` and `people/tests.rs`.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
@@ -213,8 +213,7 @@ async fn through(computer: &PersonComputer) -> Result<Vec<String>, String> {
     Ok(said)
 }
 
-/// What a person's computer's Pod, its account, its policy and the stub in it showed, while
-/// awake.
+/// What a person's computer's Pod, its account, its policy and the stub in it showed, while awake.
 struct Seen {
     pod: Value,
     account: Value,
