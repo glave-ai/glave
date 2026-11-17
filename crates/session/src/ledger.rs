@@ -192,6 +192,21 @@ where
         Ok(projects)
     }
 
+    /// What the ledger of the project `at` says, read whole and apart from what this server
+    /// keeps of ledgers, which may forget one midway through a read: for what must see every
+    /// schedule there, as deleting them all does.
+    pub(crate) async fn ledger_apart(&self, at: Located) -> Result<Ledger, ApiError> {
+        let mut read = Ledger::default();
+        let log = self.inner.harness.log();
+        catch_up(log, &own_scope(at), Reserved::Tasks.id(), None, |page| {
+            for raw in page {
+                read.apply(raw);
+            }
+        })
+        .await?;
+        Ok(read)
+    }
+
     pub(crate) fn ledgers(&self) -> std::sync::MutexGuard<'_, Ledgers> {
         self.inner
             .ledgers

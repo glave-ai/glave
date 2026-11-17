@@ -8,10 +8,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use glave_event::{At, Opened, ScheduleId, When};
-use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
+use glave_event::{
+    At, Body, EventId, Header, Opened, Payload, Principal, PrincipalId, ScheduleCreated,
+    ScheduleDeleted, ScheduleId, Seq, When, decode, encode,
+};
+use glave_ports::stream::Reserved;
+use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock, TempDir};
 use glave_ports::{
-    Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, Leased, Leases, OrgId, ProjectId,
+    Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, InMemoryProjects, Leased, Leases, OrgId,
+    Project, ProjectId, ProjectKind, Projects, Scope,
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
@@ -238,6 +243,125 @@ fn removing_a_project_deletes_its_schedules_and_starts_no_more_runs_there() {
             panic!("a thread");
         };
         assert_eq!(summary.project, kept, "none in the removed project");
+    });
+}
+
+/// Writes `payload` at `seq` to the task ledger in `ledger`, as another server would.
+async fn written<T: Payload>(log: &InMemoryLog, ledger: &Scope, seq: u64, payload: &T) {
+    let mut random = [5; 10];
+    random[2..].copy_from_slice(&seq.to_be_bytes());
+    let at = At::from(Timestamp::from_millisecond(at("2026-10-10T10:00:00Z")).unwrap());
+    let id = EventId::new(at.timestamp(), random).unwrap();
+    let (thread, seq) = (Reserved::Tasks.id(), Seq::new(seq).unwrap());
+    let raw = encode(
+        Header {
+            id,
+            thread,
+            seq,
+            at,
+        },
+        payload,
+    )
+    .unwrap();
+    log.append(ledger, &[raw]).await.unwrap();
+}
+
+/// Runs the task ledger in `ledger` past one page of a read: 499 more schedules, then, on the
+/// second page, the deletion of one long gone.
+async fn past_a_page(log: &InMemoryLog, ledger: &Scope) {
+    let tasks = Reserved::Tasks.id();
+    let next = log
+        .read(ledger, tasks, None, usize::MAX)
+        .await
+        .unwrap()
+        .len();
+    let next = u64::try_from(next).unwrap();
+    for n in 1..=500u64 {
+        let schedule = ScheduleId::try_from(uuid::Uuid::from_u128(
+            0x0192_f5c1_0000_7000_8000_0000_0001_0000 + u128::from(n),
+        ))
+        .unwrap();
+        if n < 500 {
+            let created = ScheduleCreated {
+                schedule,
+                when: cron("0 11 * * *"),
+                prompt: "check the build".into(),
+                budget: 1_000,
+                by: None,
+            };
+            written(log, ledger, next + n, &created).await;
+        } else {
+            let gone = ScheduleDeleted { schedule, by: None };
+            written(log, ledger, next + n, &gone).await;
+        }
+    }
+}
+
+/// Keeps `count` projects of `person`'s in `projects`, the `batch`th lot of them.
+async fn many_projects(projects: &dyn Projects, person: PrincipalId, batch: u128, count: u32) {
+    for n in 0..count {
+        let project = Project {
+            id: ProjectId::from_uuid(uuid::Uuid::from_u128(
+                0x0192_f5c3_0000_7000_8000_0000_0000_0000 + (batch << 32) + u128::from(n),
+            )),
+            kind: ProjectKind::Project,
+            name: format!("project {n}"),
+            owner: Principal::person(person),
+            created_at: At::from(Timestamp::UNIX_EPOCH),
+            updated_at: At::from(Timestamp::UNIX_EPOCH),
+        };
+        projects.create(scope().org(), &project).await.unwrap();
+    }
+}
+
+#[test]
+fn removing_a_project_deletes_every_schedule_there_though_its_ledger_is_forgotten_meanwhile() {
+    block_on!(async {
+        let log = Arc::new(InMemoryLog::new());
+        let faulty = FaultyLog::over(Arc::clone(&log));
+        let projects: Arc<dyn Projects> = Arc::new(InMemoryProjects::new());
+        let mut first = setup();
+        first.projects = Some(Arc::clone(&projects));
+        let (server, _, repo, _dir) = first
+            .build_in_repository("schedule-removed-race", faulty.clone())
+            .await;
+        let others = repo.with_extension("others");
+        let removed = make_project(&server, "removed", &repository(&others, "removed")).await;
+        create_in(&server, Some(removed), cron("0 11 * * *"), 1_000)
+            .await
+            .unwrap();
+        let ledger = Scope::glaves_own(scope().org(), removed);
+        past_a_page(&log, &ledger).await;
+        // More projects than a server keeps ledgers of: the person's, and Grace's.
+        let grace = elsewhere();
+        many_projects(projects.as_ref(), server.person().unwrap(), 0, 1_000).await;
+        many_projects(projects.as_ref(), grace.person.unwrap(), 1, 100).await;
+        // The removal's read of the ledger is held at its second page while both list their
+        // schedules, which reads every project's ledger, forgetting the rest.
+        faulty.hold_read("schedule.deleted");
+        let removal = server.request(Request::ProjectRemove { project: removed });
+        let forgetting = async {
+            faulty.held().await;
+            server.request(Request::ScheduleList {}).await.unwrap();
+            server
+                .request_as(&grace, Request::ScheduleList {})
+                .await
+                .unwrap();
+            faulty.release();
+        };
+        let (done, ()) = tokio::join!(removal, forgetting);
+        assert!(matches!(done, Ok(Reply::Done {})), "{done:?}");
+        let deleted = (log
+            .read(&ledger, Reserved::Tasks.id(), None, usize::MAX)
+            .await
+            .unwrap()
+            .into_iter())
+        .filter(|raw| matches!(decode(raw.clone()).unwrap().body, Body::ScheduleDeleted(_)))
+        .count();
+        assert_eq!(
+            deleted, 501,
+            "every schedule there, read whole, and the one long gone"
+        );
     });
 }
 

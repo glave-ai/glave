@@ -154,19 +154,15 @@ where
     }
 
     /// Deletes every schedule of the project `project`, as `by` (absent: the project's person),
-    /// so none fires again, on this server or any other.
+    /// so none fires again, on this server or any other: its ledger read whole, apart from what
+    /// this server keeps, which may forget it midway.
     pub(crate) async fn delete_schedules_in(
         &self,
         project: Located,
         by: Option<&glave_event::Principal>,
     ) -> Result<(), ApiError> {
-        self.catch_up(project).await?;
-        let schedules: Vec<ScheduleId> = self
-            .ledgers()
-            .get(&project)
-            .map(|ledger| ledger.schedules.keys().copied().collect())
-            .unwrap_or_default();
-        for schedule in schedules {
+        let ledger = self.ledger_apart(project).await?;
+        for schedule in ledger.schedules.into_keys() {
             let deleted = ScheduleDeleted {
                 schedule,
                 by: by.cloned(),
