@@ -56,6 +56,7 @@ impl<P, L, B> Server<P, L, B> {
         // Turns waiting for the person are followed no more here, so stopping never waits on
         // them: a schedule's run among them stays open, for the next server to adopt.
         self.inner.followed.clear();
+        self.unfollow_tasks();
         let refreshing = self
             .inner
             .refreshing

@@ -17,17 +17,17 @@ use serde_json::json;
 
 use crate::support::*;
 
-fn at(text: &str) -> At {
+pub(crate) fn at(text: &str) -> At {
     At::from(text.parse::<Timestamp>().unwrap())
 }
 
-fn set(now: &ManualClock, text: &str) {
+pub(crate) fn set(now: &ManualClock, text: &str) {
     now.set_millis(at(text).timestamp().as_millisecond());
 }
 
 /// A server answering `answers`, in Ask first so a write asks, with clients to answer, on a
 /// repository of its own in `name`, its clock at 10:03.
-async fn asking(
+pub(crate) async fn asking(
     name: &str,
     answers: Vec<glave_ports::Completion>,
     log: Shared,
@@ -40,7 +40,7 @@ async fn asking(
 }
 
 /// A schedule of `server`'s, called `name`, running `cron` with `budget`.
-async fn schedule<L: EventLog + 'static>(
+pub(crate) async fn schedule<L: EventLog + 'static>(
     server: &Tested<L>,
     name: &str,
     cron: &str,
@@ -75,7 +75,7 @@ async fn turns<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> u
 
 /// The answers of a run that asks the person before it writes, then says it is done, each
 /// model call using 15 tokens.
-fn writes_after_asking() -> Vec<glave_ports::Completion> {
+pub(crate) fn writes_after_asking() -> Vec<glave_ports::Completion> {
     let write = json!({"path": "note.md", "content": "hi"});
     vec![
         costing(answer(None, Some(("write", write))), 10, 5, 1),
@@ -260,7 +260,7 @@ fn a_skip_for_another_reason_than_the_last_is_recorded_and_one_for_the_same_is_n
 }
 
 /// The tasks `server` lists as running, here or elsewhere.
-async fn open_tasks<L: EventLog + 'static>(server: &Tested<L>) -> usize {
+pub(crate) async fn open_tasks<L: EventLog + 'static>(server: &Tested<L>) -> usize {
     (tasks(server).await.iter())
         .filter(|task| task.status != TaskStatus::Finished)
         .count()
@@ -413,7 +413,7 @@ fn a_schedule_that_is_not_kept_leaves_no_chat() {
     block_on!(async {
         let log = Shared::default();
         let (server, _, _, _dir) = asking("runs-not-kept", Vec::new(), log.clone()).await;
-        log.fail_appends_of("schedule.created");
+        log.fail_on("schedule.created");
         assert!(server.request(daily_check()).await.is_err());
         assert_eq!(chats(&server).await, 0);
     });

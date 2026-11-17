@@ -83,11 +83,11 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/tasks/adopted.rs",
-        "match notes.recv().await {",
+        "note = notes.recv() => match note {",
         1,
-        "a schedule's run waiting for the person, followed by what its thread records until its \
-         turn ends: their answer, then the turn's model, tools and waits for them, bound it; \
-         stopping the task or the server drops the follower",
+        "a schedule's run waiting for the person, followed by what its thread records: raced \
+         against the look in the log every 30 seconds, which finds its end wherever it was \
+         recorded, and against its task's or the server's stop, either of which ends it",
     ),
     (
         "crates/session/src/held.rs",
