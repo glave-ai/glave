@@ -4,6 +4,8 @@
 //! seccomp filter, or Landlock with the same filter at the `read-only` level where bubblewrap
 //! cannot start. Elsewhere a sandboxed command is refused, never run unconfined.
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
+mod in_tmp;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -11,7 +13,6 @@ mod macos;
 #[cfg(any(target_os = "macos", test))]
 mod profile;
 mod run_temp;
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod secrets;
 #[cfg(test)]
 pub(super) mod tests;
@@ -37,6 +38,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{ComputerError, Sandbox, git_settings};
 
 use run_temp::RunTemp;
+pub(crate) use secrets::moved_stores;
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";

@@ -23,6 +23,8 @@ mod nested_repository;
 
 mod own_settings;
 
+mod stores;
+
 pub(super) mod terminals;
 
 /// Whether the sandbox runs here: where it must (`GLAVE_REQUIRE_SANDBOX`, as CI's sandbox
