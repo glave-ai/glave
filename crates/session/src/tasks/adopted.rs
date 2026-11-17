@@ -1,6 +1,8 @@
 //! A schedule's run that waits for the person when its server stops: the server that runs tasks
 //! next adopts it as it starts, rather than recording it interrupted, so its budget holds when
-//! the person answers and it goes on, and its end is recorded as any task's is.
+//! the person answers and it goes on, and its end is recorded as any task's is. One whose maker
+//! was removed from its organization, or whose people can't be read to tell, is not adopted, so
+//! it is recorded interrupted.
 
 use glave_event::{
     At, Body, Currency, Money, Nanos, Payload as _, ThreadId, TokenCounts, TurnResult, TurnStarted,
@@ -37,8 +39,20 @@ where
         let Some(recorded) = open.filter(|task| task.started.schedule.is_some()) else {
             return Ok(false);
         };
-        // As whoever's run it is.
-        let caller = super::acting_for(super::whose(recorded.started.by.as_ref()), project.org);
+        // As whoever's run it is: never one of someone glave can't tell, or of someone removed
+        // from its organization, or whose people can't be read now to tell.
+        let Ok(person) = super::whose(recorded.started.by.as_ref()) else {
+            return Ok(false);
+        };
+        let caller = super::acting_for(person, project.org);
+        match self.removed_from_org(&caller).await {
+            Ok(false) => {}
+            Ok(true) => return Ok(false),
+            Err(error) => {
+                tracing::warn!(%error, org = %project.org, "could not read the organization's people");
+                return Ok(false);
+            }
+        }
         let scope = self.authorize(&caller, thread).await?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let Some(view) = view else {

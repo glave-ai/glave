@@ -6,7 +6,7 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use glave_event::{At, ThreadId};
+use glave_event::ThreadId;
 use glave_harness::{Cancel, CaughtUp, HarnessError, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::watch;
@@ -220,13 +220,14 @@ where
             // Read in, so a turn that waits for an answer takes the message for when it goes on.
             self.load(thread).await?;
         }
+        let said = Said {
+            text: prompt,
+            files: &files,
+            key: key.map(IdempotencyKey::as_str),
+            scheduled,
+        };
         let sent = loop {
             if queue {
-                let said = Said {
-                    text: prompt,
-                    files: &files,
-                    key: key.map(IdempotencyKey::as_str),
-                };
                 match self.queue(caller, thread, said, &choice) {
                     Ok(Queue::Queued(queued)) => break Ok(Sent::Queued(queued)),
                     // Started again once it has ended; never, if its work went without ending.
@@ -242,13 +243,7 @@ where
                 Ok(watch) => watch,
                 Err(failed) => break Err(failed),
             };
-            let said = Said {
-                text: prompt,
-                files: &files,
-                key: key.map(IdempotencyKey::as_str),
-            };
-            let asked = (caller, &choice, unattended, scheduled);
-            let work = turn(thread, said, asked, finish.clone());
+            let work = turn(thread, said, (caller, &choice, unattended), finish.clone());
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
                 .await;
@@ -313,7 +308,7 @@ type TurnWork<P, L, B> = Box<
 fn turn<P, L, B>(
     thread: ThreadId,
     said: Said<'_>,
-    (caller, choice, unattended, scheduled): (&Caller, &Choice, bool, Option<At>),
+    (caller, choice, unattended): (&Caller, &Choice, bool),
     finish: Finish<TurnResult>,
 ) -> TurnWork<P, L, B>
 where
@@ -322,7 +317,7 @@ where
     B: BlobStore + 'static,
 {
     let (prompt, files) = (said.text.to_owned(), said.files.to_vec());
-    let key = said.key.map(str::to_owned);
+    let (key, scheduled) = (said.key.map(str::to_owned), said.scheduled);
     let (caller, choice) = (caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
@@ -341,7 +336,6 @@ where
             } else {
                 prompt
             };
-            held.run_due(scheduled);
             let ran = harness
                 .run_turn_with_files(
                     &mut held,
@@ -349,6 +343,7 @@ where
                         text: &prompt,
                         files: &files,
                         key: key.as_deref(),
+                        scheduled,
                     },
                     &caller,
                     &cancel,

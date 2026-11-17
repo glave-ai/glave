@@ -330,7 +330,7 @@ where
         let held = self.take_busy(thread, purpose, &cancel, finished)?;
         // Busy here, so its summary says it runs: lists are told, and again once it ends. Not
         // for a change to whether it is shown, which never shows as running.
-        let project = scope.project();
+        let project = scope.located();
         if purpose != Use::Manage {
             self.inner.hub.changed(project, thread);
         }

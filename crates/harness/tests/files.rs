@@ -76,6 +76,7 @@ fn an_image_and_a_pdf_go_inline_and_a_text_file_as_text() {
             text: "what is this?",
             files: &files,
             key: None,
+            scheduled: None,
         };
         harness
             .run_turn_with_files(
@@ -133,6 +134,7 @@ async fn ask_about<P: glave_ports::ModelProvider>(
         text: "what is this?",
         files,
         key: None,
+        scheduled: None,
     };
     harness
         .run_turn_with_files(

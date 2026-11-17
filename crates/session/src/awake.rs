@@ -186,7 +186,7 @@ where
         let Some(awake) = &self.inner.awake else {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::AwakeOnServer));
         };
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::AwakeOnlyHere));
         }
         if let AwakeInfo::Cannot { reason } = awake.info() {

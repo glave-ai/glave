@@ -269,6 +269,7 @@ fn an_edit_sends_its_image_first_and_what_goes_wrong_is_told_to_the_model() {
             text: "edit it",
             files: &sent,
             key: None,
+            scheduled: None,
         };
         let (caller, cancel) = (glave_ports::Caller::default(), Cancel::new());
         let mut heard = |_| {};

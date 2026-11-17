@@ -74,6 +74,19 @@ impl Ledger {
         self.next.max(1)
     }
 
+    /// Whether `schedule`'s run due at `due` is settled: claimed, started or skipped, or one
+    /// due later is, or the schedule was paused or deleted meanwhile.
+    pub(crate) fn settled(&self, schedule: ScheduleId, due: At) -> bool {
+        (self.schedules.get(&schedule)).is_none_or(|scheduled| {
+            scheduled.paused || scheduled.last.is_some_and(|last| last >= due)
+        })
+    }
+
+    /// Whether any of it was read yet.
+    fn read(&self) -> bool {
+        self.next > 0
+    }
+
     /// Takes in the event at the next `seq`; any other is already in, or not yet. Answers the
     /// chat of the schedule it changed, if it did: its next run, its last, or whether it is
     /// paused, which the chat's summary says.
@@ -109,6 +122,11 @@ impl Ledger {
             Body::ScheduleSkipped(skipped) => {
                 let scheduled = self.schedules.get_mut(&skipped.schedule)?;
                 scheduled.ran(skipped.due, Some(skipped.why));
+                scheduled.created.thread
+            }
+            Body::ScheduleFired(fired) => {
+                let scheduled = self.schedules.get_mut(&fired.schedule)?;
+                scheduled.ran(fired.due, None);
                 scheduled.created.thread
             }
             Body::TaskStarted(started) => {
@@ -168,17 +186,24 @@ where
     B: BlobStore + 'static,
 {
     /// Reads whatever was added to the ledger of the project `at` since this server last looked.
+    /// What was added since it was first read is told to the lists watching; what a first read
+    /// finds, after a start or once the ledger was forgotten, is not news.
     pub(crate) async fn catch_up(&self, at: Located) -> Result<(), ApiError> {
         // Glave's own: the project's task ledger.
         let scope = own_scope(at);
-        let next = self.ledgers().get(&at).map_or(1, Ledger::next_seq);
+        let (next, read_before) = (self.ledgers().get(&at))
+            .map_or((1, false), |ledger| (ledger.next_seq(), ledger.read()));
         let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
         let mut changed = Vec::new();
         catch_up(log, &scope, Reserved::Tasks.id(), after, |page| {
             let mut held = self.ledgers();
             let read = kept(&mut held, at);
-            changed.extend(page.into_iter().filter_map(|raw| read.apply(raw)));
+            for chat in page.into_iter().filter_map(|raw| read.apply(raw)) {
+                if read_before {
+                    changed.push(chat);
+                }
+            }
         })
         .await?;
         self.schedules_changed(at, changed);
@@ -189,7 +214,7 @@ where
     /// something new of their schedules.
     fn schedules_changed(&self, at: Located, changed: Vec<ThreadId>) {
         for chat in changed {
-            self.inner.hub.changed(at.project, chat);
+            self.inner.hub.changed(at, chat);
         }
     }
 
@@ -200,15 +225,35 @@ where
         at: Located,
         payload: &T,
     ) -> Result<(), ApiError> {
+        self.record_unless(at, payload, |_| false).await.map(|_| ())
+    }
+
+    /// Appends `payload` to the ledger of the project `at`, after anything others wrote
+    /// meanwhile, unless `there` says of the ledger, read up to then, that what it records is
+    /// there already: of servers on one store appending it at once, the one whose append lands
+    /// first is the only one that does. Says whether this one did.
+    pub(crate) async fn record_unless<T: Payload>(
+        &self,
+        at: Located,
+        payload: &T,
+        there: impl Fn(&Ledger) -> bool,
+    ) -> Result<bool, ApiError> {
         let ledger = Reserved::Tasks.id();
         // Glave's own: the project's task ledger.
         let scope = own_scope(at);
-        let this = self;
+        let (this, there) = (self, &there);
         let log = self.inner.harness.log();
         let appended = append_retrying(log, &scope, ledger, move || async move {
             this.catch_up(at).await?;
+            let next = {
+                let ledgers = this.ledgers();
+                let read = ledgers.get(&at);
+                if read.is_some_and(there) {
+                    return Ok(None);
+                }
+                read.map_or(1, Ledger::next_seq)
+            };
             let now = this.inner.harness.clock().now();
-            let next = this.ledgers().get(&at).map_or(1, Ledger::next_seq);
             let header = Header {
                 id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
                 thread: ledger,
@@ -219,15 +264,20 @@ where
             Ok::<_, ApiError>(Some((vec![raw], ())))
         })
         .await?;
+        let Some((events, ())) = appended else {
+            return Ok(false);
+        };
+        // What this server just wrote is new, whenever the ledger was first read.
         let changed: Vec<ThreadId> = {
             let mut held = self.ledgers();
             let read = kept(&mut held, at);
-            (appended.into_iter().flat_map(|(events, ())| events))
+            events
+                .into_iter()
                 .filter_map(|raw| read.apply(raw))
                 .collect()
         };
         self.schedules_changed(at, changed);
-        Ok(())
+        Ok(true)
     }
 
     /// The projects whose tasks and schedules this server runs: every project its person works

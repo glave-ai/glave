@@ -442,6 +442,8 @@ sentences! {
         "this chat works in its project's folder itself, and a task always works on a copy: start the task in a new chat, which gets a copy of its own",
     TooManyTasks { running: usize, most: usize } = "too-many-tasks"
         "{ $running } tasks are running, the most policy allows ([tasks] max_running = { $most }); stop one first",
+    TooManyTasksAtOnce { running: usize, most: usize } = "too-many-tasks-at-once"
+        "{ $running } of your tasks are running, the most at once here ({ $most }); stop one first",
     TaskStopped = "task-stopped" "the task stopped",
     NoTask { thread: String } = "no-task" "no task is running in chat { $thread } in this server",
     CronFields { text: String } = "cron-fields"
@@ -458,6 +460,10 @@ sentences! {
         "schedules don't run here: nothing on this server starts work at set times",
     MakerRemoved = "maker-removed"
         "whoever made it is no longer in this organization",
+    MakerUnknown = "maker-unknown"
+        "glave can't tell who made it, so it doesn't run it for anyone",
+    CronTooOften { minutes: u16 } = "cron-too-often"
+        "a schedule runs at most once every { $minutes } minutes: choose times further apart",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",

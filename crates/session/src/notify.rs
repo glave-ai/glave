@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, Payload as _, Seq, ServiceAsked, ThreadId, TurnResult, decode};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 use glave_push::{Message, Sent, Urgency};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::{JoinError, JoinSet};
@@ -225,11 +225,9 @@ where
         let Some((sentence, urgency)) = need.told(summary.title) else {
             return Ok(());
         };
-        let caller = Caller {
-            person: summary.for_.as_ref().and_then(|whose| whose.id),
-            org: Some(scope.org()),
-            ..Caller::default()
-        };
+        // As glave acts for the person on its own, no one signed in.
+        let person = summary.for_.as_ref().and_then(|whose| whose.id);
+        let caller = self.acting_as(person, scope.org());
         let (_, personal) = self.personal_project(&caller).await?;
         let devices = self.devices(&personal, self.person_of(&caller)?).await?;
         if devices.is_empty() {
