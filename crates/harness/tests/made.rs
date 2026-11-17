@@ -203,12 +203,12 @@ fn a_turn_shows_what_settled_at_once_and_what_a_command_may_still_write_once_it_
             vec![("bash", json!({"command": "sleep 30", "background": true}))],
             StopReason::ToolUse,
         );
-        // Changed later than now, as a file still being written may seem to be.
-        let late = "printf '%%PDF-1.7 late' > late.pdf && touch -t 203001010000 late.pdf";
-        let answers = vec![bash(late), running, done()];
+        let answers = vec![running, done()];
         let harness = harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "make it in the background").await;
+        // What the command writes after the turn's look-over, as one it was still writing is.
+        std::fs::write(dir.join("late.pdf"), "%PDF-1.7 late").unwrap();
         let logged = events(harness.log(), thread.id).await;
         let ended = logged.iter().find_map(|event| match &event.body {
             Body::TurnEnded(ended) => Some(ended.clone()),
@@ -263,11 +263,12 @@ fn what_a_command_glave_stopping_ended_had_made_is_its_turn_s_as_the_next_turn_s
             vec![("bash", json!({"command": "sleep 30", "background": true}))],
             StopReason::ToolUse,
         );
-        let late = "printf '%%PDF-1.7 late' > late.pdf && touch -t 203001010000 late.pdf";
-        let answers = vec![bash(late), running, done(), done()];
+        let answers = vec![running, done(), done()];
         let harness = harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "make it in the background").await;
+        // What the command wrote after the turn's look-over, before glave stopped.
+        std::fs::write(dir.join("late.pdf"), "%PDF-1.7 late").unwrap();
         // Glave stops, taking the command with it, and nothing records its end: read again from
         // its log, the thread still has it running.
         let ending = harness.resume_thread(scope(), thread.id).await.unwrap();
