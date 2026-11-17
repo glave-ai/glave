@@ -2236,20 +2236,6 @@
             "kind"
           ],
           "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "A command the thread started in the background still ran as the turn ended: the folder\nis looked over once it ends, and a `turn.made` names what it found.",
-          "properties": {
-            "kind": {
-              "const": "waits",
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
         }
       ]
     },
@@ -4710,7 +4696,16 @@
               "type": "null"
             }
           ],
-          "description": "What `made` leaves out, when it leaves something out: more files than a turn keeps, a\nfolder too large to look over, or a command still running in the background, which a\n`turn.made` follows up."
+          "description": "What `made` leaves out, when it leaves something out: more files than a turn keeps, or a\nfolder too large to look over."
+        },
+        "made_until_ns": {
+          "description": "Where its look-over stopped, a command of the thread's still running in the background,\nin nanoseconds since 1970 by the computer's clock: the next look-over starts there.\nAbsent when it looked up to its end, or did not look.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "model_calls": {
           "default": 0,

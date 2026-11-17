@@ -98,14 +98,14 @@ pub enum MadeLeft {
 pub struct TurnMade {
     /// The turn's `turn.started`.
     pub turn: Seq,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub made: Vec<FileMade>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub made_left: Option<MadeLeft>,
     /// Where this look-over stopped, a command of the thread's still running, in nanoseconds
     /// since 1970 by the computer's clock; absent when it looked up to its end.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub made_until_ns: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub made: Vec<FileMade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_left: Option<MadeLeft>,
 }
 
 impl Payload for TurnMade {

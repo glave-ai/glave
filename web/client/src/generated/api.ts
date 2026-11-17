@@ -790,8 +790,6 @@ export type MadeLeft = {
   readonly kind: "more";
 } | {
   readonly kind: "too_many";
-} | {
-  readonly kind: "waits";
 };
 
 /** A file's preview: Markdown, kept for the thread as the file is. */
@@ -1734,11 +1732,16 @@ export type TurnResult = {
    */
   readonly made?: readonly (FileMade)[];
   /**
-   * What `made` leaves out, when it leaves something out: more files than a turn keeps, a
-   * folder too large to look over, or a command still running in the background, which a
-   * `turn.made` follows up.
+   * What `made` leaves out, when it leaves something out: more files than a turn keeps, or a
+   * folder too large to look over.
    */
   readonly made_left?: MadeLeft | null;
+  /**
+   * Where its look-over stopped, a command of the thread's still running in the background,
+   * in nanoseconds since 1970 by the computer's clock: the next look-over starts there.
+   * Absent when it looked up to its end, or did not look.
+   */
+  readonly made_until_ns?: number | null;
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
