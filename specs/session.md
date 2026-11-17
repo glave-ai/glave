@@ -650,7 +650,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **The Library page** (owner decision, 2026-11-16): Library in the web app's side nav, its grid, newest first, reading each picture only as it comes into view and four at a time, one opened large with Download, Delete and Go to chat, filtered by kind and, beside the Chats, by project.
 - **Model accounts offered only where taken** (#1427): `server/discover`'s `model_accounts`, and the web app's Settings showing its Models card only then.
 - **Files it made, the server** (#1457): the folder looked over once as a turn that works there ends, bounded, a command in the background waited for (`turn.made`), files kept with the thread unless they hold a secret, as written or in a deflated part, each read in a reader of glave's own and named in `turn.ended` (`FileMade`) with its title, parts and kept preview; `thread/files` and `file/preview` from the log, `file/read` for them, and the terminal's line for each
-- **Files it made, the web app:** each file a turn made as a card after its reply, Open in a tab of the panel, or a PDF in a tab of the browser's own, Download and Share, room kept from `turn.ended`; `cargo xtask try-org`'s stand-in makes a spreadsheet when told to "make me" something.
+- **Files it made, the web app:** each file a turn made as a card after its reply, Open in a tab of the panel, or a PDF in a tab of the browser's own, Download and Share, room kept from `turn.ended`; `cargo xtask try-org`'s stand-in makes a spreadsheet and a PDF when told to "make me" something.
 
 ## Later
 

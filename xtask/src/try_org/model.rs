@@ -4,7 +4,7 @@
 //! chats answer, and receipts show a cost, with no account, network or cost. Told to [`ASK`],
 //! it calls the service's tool that asks the person something, so a person can try that card;
 //! told to [`DRAW`], it calls glave's own tool that makes an image; told to [`MAKE`], it makes a
-//! spreadsheet with `glave doc`, which shows as a file it made; told to [`LOOK_UP`], glave's
+//! spreadsheet with `glave doc` and a PDF, which show as files it made; told to [`LOOK_UP`], glave's
 //! own web search, whose search service it stands in for too, at [`SEARCH`], answering every
 //! query with one page as Brave's Search API would, so no key and no cost. Under [`OPENROUTER`] it
 //! answers as OpenRouter too (`router.rs`), for an OpenRouter account connected with any key,
@@ -28,16 +28,66 @@ pub(crate) const DRAW: &str = "draw me";
 /// glave's own tool that makes an image.
 const DRAWING_TOOL: &str = "image_generate";
 
-/// What, said in a message, has it make a spreadsheet with `glave doc` ([`MAKING`]).
+/// What, said in a message, has it make a spreadsheet with `glave doc` and a PDF ([`making`]).
 pub(crate) const MAKE: &str = "make me";
 
-/// The command it runs to make one: a workbook of two sheets, written by glave itself.
-const MAKING: &str = r#"glave doc write "Trip budget.xlsx" <<'EOF'
+/// The command that makes the spreadsheet: a workbook of two sheets, written by glave itself.
+const SHEET: &str = r#"glave doc write "Trip budget.xlsx" <<'EOF'
 {"sheets": [
   {"name": "Budget", "header": true, "rows": [["Item", "Total"], ["Flights", 780], ["Hotel", 580], ["Total", "=SUM(B2:B3)"]]},
   {"name": "Flights", "header": true, "rows": [["Leg", "Price"], ["Out", 390], ["Back", 390]]}
 ]}
 EOF"#;
+
+/// A PDF of one page titled "Lisbon plan", line by line, byte for byte: its index (`xref`) says
+/// where each of its objects starts, so its lines can't change.
+const PLAN: [&str; 36] = [
+    "%PDF-1.4",
+    "1 0 obj",
+    "<</Type/Catalog/Pages 2 0 R>>",
+    "endobj",
+    "2 0 obj",
+    "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+    "endobj",
+    "3 0 obj",
+    "<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+    "endobj",
+    "4 0 obj",
+    "<</Length 41>>",
+    "stream",
+    "BT /F1 24 Tf 40 60 Td (Lisbon plan) Tj ET",
+    "endstream",
+    "endobj",
+    "5 0 obj",
+    "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+    "endobj",
+    "6 0 obj",
+    "<</Title(Lisbon plan)>>",
+    "endobj",
+    "xref",
+    "0 7",
+    "0000000000 65535 f ",
+    "0000000009 00000 n ",
+    "0000000054 00000 n ",
+    "0000000105 00000 n ",
+    "0000000217 00000 n ",
+    "0000000306 00000 n ",
+    "0000000369 00000 n ",
+    "trailer",
+    "<</Size 7/Root 1 0 R/Info 6 0 R>>",
+    "startxref",
+    "408",
+    "%%EOF",
+];
+
+/// The command it runs when told to [`MAKE`] something: the spreadsheet, then the PDF.
+fn making() -> String {
+    let lines: Vec<String> = PLAN.iter().map(|line| format!("'{line}'")).collect();
+    format!(
+        "{SHEET}\nprintf '%s\\n' {} > 'Lisbon plan.pdf'",
+        lines.join(" ")
+    )
+}
 
 /// glave's own tool that runs a command.
 const RUNNING_TOOL: &str = "bash";
@@ -91,7 +141,7 @@ pub(crate) fn start() -> Result<FakeHttp, String> {
                 (200, calling(DRAWING_TOOL, &drawn))
             }
             None if told(request, MAKE, RUNNING_TOOL) => {
-                let made = json!({"command": MAKING}).to_string();
+                let made = json!({"command": making()}).to_string();
                 (200, calling(RUNNING_TOOL, &made))
             }
             None if told(request, LOOK_UP, SEARCHING_TOOL) => {
@@ -209,5 +259,24 @@ mod tests {
             found()["web"]["results"][0]["url"],
             "https://example.com/release-notes"
         );
+    }
+
+    /// The PDF it makes is one a reader opens: each object starts where its index says.
+    #[test]
+    fn the_pdf_it_makes_starts_each_object_where_its_index_says() {
+        let pdf = format!("{}\n", PLAN.join("\n"));
+        let starts: Vec<usize> = pdf
+            .match_indices(" 0 obj\n")
+            .map(|(at, _)| pdf[..at].rfind('\n').map_or(0, |line| line + 1))
+            .collect();
+        let indexed: Vec<usize> = PLAN
+            .iter()
+            .filter(|line| line.ends_with(" 00000 n "))
+            .map(|line| line[..10].parse().unwrap())
+            .collect();
+        assert_eq!(starts, indexed);
+        let index = pdf.find("xref\n").unwrap();
+        assert!(pdf.contains(&format!("startxref\n{index}\n")));
+        assert!(making().ends_with("> 'Lisbon plan.pdf'"));
     }
 }
