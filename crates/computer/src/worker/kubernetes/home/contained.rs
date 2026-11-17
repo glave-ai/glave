@@ -285,11 +285,11 @@ async fn probed(cluster: &Kubernetes, name: &str) -> Result<String, String> {
 }
 
 /// Another person's computer, listening on 8080 for anyone who gets in: the command, once it
-/// says it listens.
+/// says it listens, and what it said until then, which a read of its output takes.
 async fn listening(
     computers: &WorkerComputers,
     computer: ComputerId,
-) -> Result<(WorkspaceId, CommandId), String> {
+) -> Result<(WorkspaceId, CommandId, String), String> {
     let home = Sources::Folder {
         path: PERSON_HOME.into(),
     };
@@ -312,7 +312,7 @@ async fn listening(
             .map_err(|e| format!("{e:?}"))?;
         heard.push_str(&printed.text);
         if heard.contains("listening") {
-            return Ok((opened.id, started));
+            return Ok((opened.id, started, heard));
         }
         if printed.ended.is_some() {
             break;
@@ -375,7 +375,7 @@ async fn attempt(
     let (woke_a, woke_b) = tokio::join!(a.create(environment), b.create(environment));
     let woke_a = woke_a.map_err(|e| format!("wake: {e:?}"))?;
     let woke_b = woke_b.map_err(|e| format!("wake: {e:?}"))?;
-    let (listened_in, listener) = listening(b, woke_b.id).await?;
+    let (listened_in, listener, said) = listening(b, woke_b.id).await?;
     let another = address_of(cluster, &format!("glave-computer-{b_key}")).await?;
     targets["another_computer"] = json!(another);
     let Image::Oci(image) = &environment.image else {
@@ -394,7 +394,7 @@ async fn attempt(
     let another_heard = b
         .output(listened_in, listener, Duration::ZERO)
         .await
-        .map_or_else(|e| format!("{e:?}"), |printed| printed.text);
+        .map_or_else(|e| format!("{e:?}"), |printed| said + &printed.text);
     let server_heard = printed(cluster, server).await;
     let _ = tokio::join!(a.destroy(woke_a.id), b.destroy(woke_b.id));
     Ok(Tried {
