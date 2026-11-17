@@ -5,7 +5,7 @@
   gap: var(--glz-space-3);
 }
 
-// What changed, or the cards of what it made, unseen, keeping their room until they are read.
+// What changed, unseen, keeping its room until it is read.
 .room {
   visibility: hidden;
 }
@@ -26,10 +26,4 @@
     content: '';
     background: var(--glz-color-border);
   }
-}
-
-// What the files a turn made leave out, in the server's words, under their cards.
-.made-note {
-  color: var(--glz-color-text-muted);
-  font-size: var(--glz-text-sm);
 }

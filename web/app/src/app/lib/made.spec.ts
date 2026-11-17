@@ -1,4 +1,4 @@
-import { ApiError, ErrorCode, type AssetKind, type MadeFile } from '@glave/client';
+import { ApiError, ErrorCode, type AssetKind, type MadeFile, type RawEvent } from '@glave/client';
 
 import { kindName, madeCount, madeLine, madeRoom, whyNot } from './made';
 
@@ -34,7 +34,7 @@ describe('made', () => {
   });
 
   it('counts each time a log says what turns made, to read the files again', () => {
-    const event = (type: string, data: Record<string, unknown>) => ({
+    const event = (type: string, data: Record<string, unknown>): RawEvent => ({
       glave: 1,
       id: type,
       thread: 't',
