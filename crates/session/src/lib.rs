@@ -22,6 +22,7 @@ mod credentials;
 mod credits;
 mod cron;
 mod cursor;
+mod discover;
 mod dispatch;
 mod errors;
 mod files;
