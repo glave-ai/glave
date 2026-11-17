@@ -61,6 +61,9 @@ pub struct ScheduleInfo {
     pub schedule: ScheduleId,
     /// What it is called, as its chat is.
     pub name: String,
+    /// Its name as a client shows it: on one line, each letter the eye can't see (a
+    /// bidirectional override, a zero-width mark) written out as its code, as its card showed it.
+    pub name_shown: String,
     /// The project its chat is in.
     pub project: ProjectId,
     /// Its own chat, which each run adds a turn to; absent for one made before schedules had
@@ -76,6 +79,11 @@ pub struct ScheduleInfo {
     /// When it repeats, in the server's words: "Every weekday at 8:00 am".
     pub repeats: Told,
     pub prompt: String,
+    /// What each run starts with, shown as `name_shown` is.
+    pub prompt_shown: String,
+    /// What removing it asks the person, in the server's words, naming it: "Stop repeating
+    /// Morning check?".
+    pub stop: Told,
     pub budget: u64,
     pub created_at: At,
     /// Whether it is paused: no runs start until it is resumed.

@@ -278,6 +278,7 @@ where
             caution: Caution::of(caution.or(acts), lifted),
             outside_sandbox: outside,
             repeating: None,
+            lines: None,
         };
         let turn = &mut step.summary;
         if let Some(refused) = self.approve(thread, &request, turn, cancel, live).await? {

@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalRequested, Body, Event, Payload as _, RawEvent, ServiceAnswered, ServiceAsked,
-    ServiceOutcome, ThreadForked, decode,
+    ApprovalRequested, Body, CardLines, Event, Payload as _, RawEvent, ServiceAnswered,
+    ServiceAsked, ServiceOutcome, ThreadForked, decode,
 };
 
 use super::{Language, Sentence, caution_in, say, word};
@@ -41,9 +41,10 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
             // A schedule's card is written again from what it was written from: its question,
             // what that was written from, and its lines.
             if let Some(repeating) = asked.repeating.as_ref() {
-                let card = crate::schedule::card_in(language, repeating);
+                let lines = crate::schedule::card_in(language, repeating);
                 asked.asking = Some(crate::schedule::asked_in(language, repeating));
-                asked.detail = card.unwrap_or(asked.detail);
+                asked.detail = (lines.as_ref()).map_or(asked.detail, CardLines::joined);
+                asked.lines = lines.or(asked.lines);
             }
             let ask = asked.asking.as_ref().map(|ask| word(language, ask));
             let caution = asked
@@ -176,5 +177,13 @@ mod tests {
             detail.contains(prompt),
             "the model's words stay as they are: {detail}"
         );
+        // Its lines, typed, say what the detail says, a line each.
+        let lines = &data["lines"];
+        let typed: Vec<&str> = ["when", "chat", "prompt"]
+            .iter()
+            .filter_map(|line| lines[*line].as_str())
+            .collect();
+        assert_eq!(typed.len(), 3, "{lines}");
+        assert_eq!(typed.join("\n"), detail);
     }
 }

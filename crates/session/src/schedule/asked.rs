@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Weak};
 
-use glave_event::{Ask, At, Caution, Repeating, Risk, ScheduleId, When};
+use glave_event::{Ask, At, CardLines, Caution, Repeating, Risk, ScheduleId, When};
 use glave_harness::{Asked, Asker, Confirm, Done, Repeat, Schedules};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, title_from};
 use serde_json::json;
@@ -101,6 +101,7 @@ where
                     ..Caution::default()
                 }),
                 repeating: None,
+                lines: None,
             })
         })
     }
@@ -183,7 +184,8 @@ where
         };
         let english = Language::English;
         let ask = asked_in(english, &repeating);
-        let detail = card_in(english, &repeating).unwrap_or_default();
+        let lines = card_in(english, &repeating);
+        let detail = lines.as_ref().map(CardLines::joined).unwrap_or_default();
         // A schedule on a person's own computer runs only while glave does there.
         let caution = self.inner.awake.is_some().then(|| Caution {
             risk: Some(Risk::RunsWhileGlaveRuns),
@@ -194,6 +196,7 @@ where
             detail,
             caution,
             repeating: Some(repeating),
+            lines,
         })
     }
 

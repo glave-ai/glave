@@ -72,6 +72,34 @@ pub struct ApprovalRequested {
     /// question and its `detail` again in the reader's language (version 2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeating: Option<Repeating>,
+    /// For a schedule's card, its lines, typed, as `detail` holds them a line each, so a client
+    /// draws each by what it says; written again in the reader's language with `detail`
+    /// (version 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<CardLines>,
+}
+
+/// A schedule's card's lines, in the server's words: when it runs on whose clock, the chat its
+/// runs go to, and what each run starts with, when the card shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardLines {
+    /// "Monday to Friday, 8:00 am your time. First run: Tuesday 17 November."
+    pub when: String,
+    /// "Each run is added to its own chat, “Morning check”."
+    pub chat: String,
+    /// "Each run starts with: “Check the build.”", when the card shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+impl CardLines {
+    /// The lines as `detail` holds them, one after another.
+    pub fn joined(&self) -> String {
+        let mut lines = vec![self.when.as_str(), self.chat.as_str()];
+        lines.extend(self.prompt.as_deref());
+        lines.join("\n")
+    }
 }
 
 /// What a schedule's card was written from: when it repeats, on whose clocks, its chat's name,

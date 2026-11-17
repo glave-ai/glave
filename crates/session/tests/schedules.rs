@@ -519,6 +519,11 @@ fn a_schedule_repeats_on_the_clocks_of_the_person_s_time_zone() {
             .unwrap();
         assert_eq!(made.zone, "America/New_York");
         assert_eq!(made.repeats, "Every day at 8:00 am");
+        // What removing it asks, naming it, in the server's words.
+        assert_eq!(
+            made.stop,
+            format!("Stop repeating {}?", made.name_shown).as_str()
+        );
         let noon = At::from("2026-10-10T12:00:00Z".parse::<Timestamp>().unwrap());
         assert_eq!(made.next, Some(noon));
         let tokyo = create_zoned(&server, project, cron("0 8 * * *"), Some("Asia/Tokyo"), 10);
@@ -528,5 +533,28 @@ fn a_schedule_repeats_on_the_clocks_of_the_person_s_time_zone() {
         assert_eq!(tick(&server).await, 0);
         set(&now, "2026-10-10T12:00:00Z");
         assert_eq!(tick(&server).await, 1);
+    });
+}
+
+#[test]
+fn a_schedule_s_name_and_prompt_are_shown_with_each_letter_the_eye_can_t_see_as_its_code() {
+    block_on!(async {
+        let (server, _, _, _dir) = on_repository("schedule-shown").await;
+        let request = Request::ScheduleCreate {
+            project: Some(scope().project()),
+            name: Some("Nightly\u{202e}kcehc".into()),
+            when: cron("0 8 * * *"),
+            zone: None,
+            prompt: "check\u{200b} the\nbuild".into(),
+            budget: 10,
+        };
+        let Ok(Reply::Schedule { schedule }) = server.request(request).await else {
+            panic!("a schedule");
+        };
+        // The name as it is kept, and as a client shows it, on one line, as its card did.
+        assert_eq!(schedule.name, "Nightly\u{202e}kcehc");
+        assert_eq!(schedule.name_shown, "Nightly\\u{202e}kcehc");
+        assert_eq!(schedule.prompt_shown, "check\\u{200b} the build");
+        assert_eq!(schedule.stop, "Stop repeating Nightly\\u{202e}kcehc?");
     });
 }
