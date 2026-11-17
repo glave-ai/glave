@@ -56,16 +56,6 @@ impl KnownSecrets {
         redact(text, known.iter().map(|known| known.value.expose()))
     }
 
-    /// Whether `bytes` hold any secret's value as it is written, such as a file the agent made:
-    /// what is inside a compressed part (a Word document's text) is not looked for.
-    pub fn held_in(&self, bytes: &[u8]) -> bool {
-        let known = self.0.read().unwrap_or_else(PoisonError::into_inner);
-        known.iter().any(|known| {
-            let value = known.value.expose().as_bytes();
-            !value.is_empty() && bytes.windows(value.len()).any(|window| window == value)
-        })
-    }
-
     /// `output` with every secret's value in its texts and its record masked, before it is
     /// recorded or the model is shown it.
     pub fn masked(&self, mut output: ToolOutput) -> ToolOutput {

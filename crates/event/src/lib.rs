@@ -65,7 +65,7 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
-pub use payload::{FileMade, Kept};
+pub use payload::{FileMade, FileRead, Kept, MadeLeft, MadePreview, Parts, TurnMade};
 pub use payload::{
     InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
     PersonJoined, PersonRemoved, Profile, RoleSet,

@@ -1,47 +1,31 @@
 //! Files a thread's turns made for the person (`specs/session.md`, "Files it made"), read from
 //! its log: each `turn.ended` names the files its turn made (`glave_event::FileMade`), kept with
-//! the thread or left on the computer. `thread/files` gives them by turn, each described from its
-//! content by glave-office (its title, its pages, sheets or slides, whether it previews), the
-//! descriptions kept for the files read most lately; `file/preview` gives one as Markdown. Both
-//! read at most [`AT_ONCE`] files at a time, each within [`WAIT`].
+//! the thread or left on the computer, with what glave read of each in a process of its own,
+//! and a `turn.made` what a turn whose look-over waited made, once it was looked over.
+//! `thread/files` gives them by turn, `file/preview` a file's preview as its turn kept it.
+//! Nothing here reads a file the agent made.
 
-use std::collections::VecDeque;
-use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
-
-use glave_event::{AssetKind, Body, FileMade, Kept, RawEvent, Seq, Sha256, ThreadId, decode};
+use glave_event::{
+    AssetKind, Body, FileMade, Kept, MadeLeft, MadePreview, Parts, RawEvent, Seq, Sha256, ThreadId,
+    decode,
+};
 use glave_harness::MAX_FILE;
-use glave_office::{Described, Parts};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all, spoken};
-use tokio::sync::Semaphore;
+use glave_ports::{BlobStore, EventLog, ModelProvider, read_all};
 
 use crate::files::not_here;
 use crate::protocol::{ApiError, FilePreview, MadeFile, Reply, Told, TurnFiles, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// How many made files are described or previewed at once: each reads a file of up to 10 MB.
-const AT_ONCE: usize = 2;
+/// The most of a preview read back, in bytes: more than any preview holds (256 KB).
+const MOST_PREVIEW: u64 = 1024 * 1024;
 
-/// The longest a file is read for its description or its preview.
-const WAIT: Duration = Duration::from_secs(20);
-
-/// The most descriptions kept, by the file's hash.
-const KEPT: usize = 256;
-
-/// What reading made files shares: the turn to read one, and the descriptions read most lately.
-pub(crate) struct Reading {
-    permits: Semaphore,
-    described: Mutex<VecDeque<(Sha256, Described)>>,
-}
-
-impl Default for Reading {
-    fn default() -> Self {
-        Self {
-            permits: Semaphore::new(AT_ONCE),
-            described: Mutex::new(VecDeque::with_capacity(KEPT)),
-        }
-    }
+/// What a turn made, as the thread's log names it.
+struct Turn {
+    /// Its `turn.started`.
+    started: Seq,
+    files: Vec<FileMade>,
+    left: Option<MadeLeft>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -50,192 +34,185 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The files `thread`'s turns made, read from its log, each described.
+    /// The files `thread`'s turns made, as its log names them.
     pub(crate) async fn made_files(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let scope = self.scope_of(thread)?;
-        let mut turns: Vec<(Seq, Vec<FileMade>)> = Vec::new();
-        self.read_all(thread, |event| read(&mut turns, event))
-            .await?;
-        let mut made = Vec::with_capacity(turns.len());
-        for (turn, files) in turns.into_iter().filter(|(_, files)| !files.is_empty()) {
-            let mut described = Vec::with_capacity(files.len());
-            for file in files {
-                described.push(self.made_file(&scope, file).await);
-            }
-            made.push(TurnFiles {
-                turn,
-                files: described,
-            });
-        }
+        let made = self
+            .made_by_turns(thread)
+            .await?
+            .into_iter()
+            .filter(|turn| !turn.files.is_empty() || turn.left.is_some())
+            .map(|turn| TurnFiles {
+                turn: turn.started,
+                files: turn.files.into_iter().map(made_file).collect(),
+                note: turn.left.map(|left| Told::from(left_out(left))),
+            })
+            .collect();
         Ok(Reply::Files { made })
     }
 
-    /// Answers `file/preview`: the file `sha256` that `thread` holds, as Markdown, when it is a
-    /// spreadsheet, a CSV file, a document or a deck glave reads; refused otherwise.
+    /// Answers `file/preview`: the preview `thread`'s turn kept of the file `sha256` it made;
+    /// refused for a file it keeps none of.
     pub(crate) async fn preview_file(
         &self,
         thread: ThreadId,
         sha256: &Sha256,
     ) -> Result<Reply, ApiError> {
         let scope = self.holding(thread, sha256).await?;
-        let previewed = self
-            .read_made(&scope, sha256, |bytes, media_type| {
-                glave_office::preview(&bytes, &media_type).ok()
+        let no_preview = || ApiError::new(code::INVALID_PARAMS, Sentence::NoPreview);
+        let MadePreview { blob, cut } = self
+            .made_by_turns(thread)
+            .await?
+            .into_iter()
+            .flat_map(|turn| turn.files)
+            .find_map(|file| match (file.kept, file.read) {
+                (Kept::Blob(kept), Some(read)) if kept.sha256 == *sha256 => read.preview,
+                _ => None,
             })
-            .await?;
-        let preview =
-            previewed.ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::NoPreview))?;
+            .ok_or_else(no_preview)?;
+        let found = self.inner.harness.blobs().get(&scope, &blob.sha256).await;
+        let mut found = found
+            .map_err(|error| ApiError::internal(&error))?
+            .ok_or_else(not_here)?;
+        let bytes = read_all(found.bytes.as_mut(), MOST_PREVIEW).await;
+        let bytes = bytes.map_err(|error| ApiError::internal(&error))?;
+        let markdown = String::from_utf8(bytes).map_err(|_| no_preview())?;
         Ok(Reply::FilePreview {
             preview: FilePreview {
-                markdown: preview.markdown,
-                cut: preview.cut.then(|| Sentence::PreviewCut.into()),
+                markdown,
+                cut: cut.then(|| Sentence::PreviewCut.into()),
             },
         })
     }
 
-    /// `file` as `thread/files` gives it, described from its content when it was kept.
-    async fn made_file(&self, scope: &Scope, file: FileMade) -> MadeFile {
-        let file_name = file
-            .path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&file.path)
-            .to_owned();
-        let media_type = AssetKind::made_as(&file.path).unwrap_or_default();
-        let (sha256, kept) = match &file.kept {
-            Kept::Blob(blob) => (Some(blob.sha256.clone()), Sentence::KeptWithChat),
-            Kept::TooLarge => (
-                None,
-                Sentence::LeftTooLarge {
-                    megabytes: MAX_FILE / (1024 * 1024),
-                },
-            ),
-            Kept::Secret => (None, Sentence::LeftSecret),
-        };
-        let described = match &sha256 {
-            Some(sha256) => self.made_described(scope, sha256).await,
-            None => Described::default(),
-        };
-        let kind = AssetKind::of(media_type);
-        let name = described.title.clone().unwrap_or_else(|| stem(&file_name));
-        let (unit, count) = match described.parts {
-            Some(Parts::Pages(count)) => ("pages", count),
-            Some(Parts::Sheets(count)) => ("sheets", count),
-            Some(Parts::Slides(count)) => ("slides", count),
-            None => ("none", 0),
-        };
-        let sentence = Sentence::MadeLine {
-            kind: kind_word(kind).to_owned(),
-            name: name.clone(),
-            unit: unit.to_owned(),
-            count,
-        };
-        MadeFile {
-            kind,
-            name,
-            file_name,
-            media_type: media_type.to_owned(),
-            bytes: file.bytes,
-            previews: sha256.is_some() && described.previews,
-            sha256,
-            parts: described.parts.map(|_| {
-                Told::from(Sentence::FileParts {
-                    unit: unit.to_owned(),
-                    count,
-                })
-            }),
-            kept: kept.into(),
-            sentence: sentence.into(),
-        }
-    }
-
-    /// What the file `sha256` in `scope` is, described from its content: read once, then kept
-    /// among the [`KEPT`] read most lately. Nothing known when it can't be read.
-    async fn made_described(&self, scope: &Scope, sha256: &Sha256) -> Described {
-        let reading = &self.inner.reading;
-        let cached = {
-            let kept = reading
-                .described
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            let found = kept.iter().find(|(kept, _)| kept == sha256);
-            found.map(|(_, described)| described.clone())
-        };
-        if let Some(described) = cached {
-            return described;
-        }
-        let read = self.read_made(scope, sha256, |bytes, media_type| {
-            Some(glave_office::describe(&bytes, &media_type))
-        });
-        let described = read.await.ok().flatten().unwrap_or_default();
-        let mut kept = reading
-            .described
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if kept.len() >= KEPT {
-            kept.pop_front();
-        }
-        kept.push_back((sha256.clone(), described.clone()));
-        described
-    }
-
-    /// `reads` of the file `sha256` in `scope`, its bytes and media type, off the async
-    /// threads, one of at most [`AT_ONCE`] at a time and within [`WAIT`]. "No longer here" when
-    /// it is not kept; `None` when `reads` reads nothing.
-    async fn read_made<T: Send + 'static>(
-        &self,
-        scope: &Scope,
-        sha256: &Sha256,
-        reads: impl FnOnce(Vec<u8>, String) -> Option<T> + Send + 'static,
-    ) -> Result<Option<T>, ApiError> {
-        let too_slow = || {
-            let waited = spoken(WAIT);
-            ApiError::new(code::LIMIT, Sentence::PreviewTooSlow { waited })
-        };
-        let permits = &self.inner.reading.permits;
-        let _permit = tokio::time::timeout(WAIT, permits.acquire())
-            .await
-            .map_err(|_| too_slow())?;
-        let found = self.inner.harness.blobs().get(scope, sha256).await;
-        let found = found.map_err(|error| ApiError::internal(&error))?;
-        let mut found = found.ok_or_else(not_here)?;
-        let bytes = read_all(found.bytes.as_mut(), MAX_FILE).await;
-        let bytes = bytes.map_err(|error| ApiError::internal(&error))?;
-        let media_type = found.reference.media_type;
-        // Reading a workbook or a document's XML takes a while for a large one.
-        let reading = tokio::task::spawn_blocking(move || reads(bytes, media_type));
-        match tokio::time::timeout(WAIT, reading).await {
-            Ok(Ok(read)) => Ok(read),
-            Ok(Err(_)) => Ok(None),
-            Err(_) => Err(too_slow()),
-        }
+    /// What each of `thread`'s turns made, as its log names it, in order.
+    async fn made_by_turns(&self, thread: ThreadId) -> Result<Vec<Turn>, ApiError> {
+        let mut turns = Vec::new();
+        self.read_all(thread, |event| read(&mut turns, event))
+            .await?;
+        Ok(turns)
     }
 }
 
-/// Reads the next event of a thread's log into `turns`: each turn's start, and the files its
-/// end says it made.
-fn read(turns: &mut Vec<(Seq, Vec<FileMade>)>, event: RawEvent) {
-    let seq = event.seq;
-    if !matches!(event.kind.as_str(), "turn.started" | "turn.ended") {
+/// Reads the next event of a thread's log into `turns`: each turn's start, the files its end
+/// says it made, and what a turn whose look-over waited made, once looked over, with it.
+fn read(turns: &mut Vec<Turn>, event: RawEvent) {
+    let started = event.seq;
+    if !matches!(
+        event.kind.as_str(),
+        "turn.started" | "turn.ended" | "turn.made"
+    ) {
         return;
     }
     match decode(event).map(|event| event.body) {
-        Ok(Body::TurnStarted(_)) => turns.push((seq, Vec::new())),
+        Ok(Body::TurnStarted(_)) => turns.push(Turn {
+            started,
+            files: Vec::new(),
+            left: None,
+        }),
         Ok(Body::TurnEnded(ended)) => {
-            if let Some((_, files)) = turns.last_mut() {
-                *files = ended.made;
+            if let Some(last) = turns.last_mut() {
+                last.files = ended.made;
+                last.left = ended.made_left;
+            }
+        }
+        Ok(Body::TurnMade(made)) => {
+            // Every turn that waited until now was looked over with it.
+            for waited in turns
+                .iter_mut()
+                .filter(|turn| turn.left == Some(MadeLeft::Waits))
+            {
+                waited.left = None;
+            }
+            if let Some(first) = turns.iter_mut().find(|turn| turn.started == made.turn) {
+                first.files.extend(made.made);
+                first.left = made.made_left;
             }
         }
         _ => {}
     }
 }
 
-/// `file_name` without the end that says its kind: `Trip budget.xlsx` is `Trip budget`.
-fn stem(file_name: &str) -> String {
-    file_name
+/// `file` as `thread/files` gives it: named by its title, else its file's name, and said where
+/// it is kept, or why it isn't, and why it can't be shown when glave couldn't read it.
+fn made_file(file: FileMade) -> MadeFile {
+    let file_name = file
+        .path
+        .rsplit('/')
+        .next()
+        .unwrap_or(&file.path)
+        .to_owned();
+    let media_type = AssetKind::made_as(&file.path).unwrap_or_default();
+    let kind = AssetKind::of(media_type);
+    let (sha256, kept) = match &file.kept {
+        Kept::Blob(blob) => (Some(blob.sha256.clone()), Sentence::KeptWithChat),
+        Kept::TooLarge => (
+            None,
+            Sentence::LeftTooLarge {
+                megabytes: MAX_FILE / (1024 * 1024),
+            },
+        ),
+        Kept::Secret => (None, Sentence::LeftSecret),
+        Kept::Unchecked => (None, Sentence::LeftUnchecked),
+    };
+    let unread = sha256.is_some() && file.read.is_none();
+    let read = file.read.unwrap_or_default();
+    let name = read.title.unwrap_or_else(|| cleaned(&file_name));
+    let (unit, count) = match read.parts {
+        Some(Parts::Pages(count)) => ("pages", count),
+        Some(Parts::Sheets(count)) => ("sheets", count),
+        Some(Parts::Slides(count)) => ("slides", count),
+        None => ("none", 0),
+    };
+    let sentence = Sentence::MadeLine {
+        kind: kind_word(kind).to_owned(),
+        name: name.clone(),
+        unit: unit.to_owned(),
+        count,
+    };
+    // A PDF is drawn by the browser; any other file opens as the preview its turn kept.
+    let shown = read.preview.is_some() || kind == AssetKind::Pdf;
+    MadeFile {
+        kind,
+        name,
+        file_name,
+        media_type: media_type.to_owned(),
+        bytes: file.bytes,
+        previews: sha256.is_some() && !unread && shown,
+        sha256,
+        parts: read.parts.map(|_| {
+            Told::from(Sentence::FileParts {
+                unit: unit.to_owned(),
+                count,
+            })
+        }),
+        kept: kept.into(),
+        unread: unread.then(|| Sentence::MadeUnread.into()),
+        sentence: sentence.into(),
+    }
+}
+
+/// What the files a turn made leave out, in a sentence.
+fn left_out(left: MadeLeft) -> Sentence {
+    match left {
+        MadeLeft::More { files } => Sentence::MadeMore { files },
+        MadeLeft::TooMany => Sentence::MadeTooMany,
+        MadeLeft::Waits => Sentence::MadeWaits,
+    }
+}
+
+/// `file_name` as a name to call a file by: without the end that says its kind, its
+/// underscores spaces, each space single (`Trip_budget  2026.xlsx` is `Trip budget 2026`).
+fn cleaned(file_name: &str) -> String {
+    let stem = file_name
         .rsplit_once('.')
         .map_or(file_name, |(stem, _)| stem)
-        .to_owned()
+        .replace('_', " ");
+    let cleaned = stem.split_whitespace().collect::<Vec<_>>().join(" ");
+    if cleaned.is_empty() {
+        file_name.to_owned()
+    } else {
+        cleaned
+    }
 }
 
 /// The word a sentence chooses its kind of file by.

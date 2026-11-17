@@ -472,8 +472,16 @@ sentences! {
         "Made { $kind ->\n    [document] a document\n    [spreadsheet] a spreadsheet\n    [deck] a deck\n    [pdf] a PDF\n   *[other] a file\n }: { $name }{ $unit ->\n    [pages] { $count ->\n        [1] {\" (1 page)\"}\n       *[other] {\" (\"}{ $count }{\" pages)\"}\n    }\n    [sheets] { $count ->\n        [1] {\" (1 sheet)\"}\n       *[other] {\" (\"}{ $count }{\" sheets)\"}\n    }\n    [slides] { $count ->\n        [1] {\" (1 slide)\"}\n       *[other] {\" (\"}{ $count }{\" slides)\"}\n    }\n   *[none] {\"\"}\n }",
     PreviewCut = "preview-cut"
         "This shows the start of the file: download it to see the rest.",
-    PreviewTooSlow { waited: String } = "preview-too-slow"
-        "the preview took longer than { $waited }: download the file to open it",
+    LeftUnchecked = "left-unchecked"
+        "Not kept: it unpacks too large to check for your secrets, so it stays on the computer",
+    MadeUnread = "made-unread" "glave couldn't read this file to show it: download it to open it",
+    // What the files a turn made leave out.
+    MadeMore { files: u64 } = "made-more"
+        "{ $files ->\n    [1] 1 more file was made than a chat keeps: it stays on the computer\n   *[other] { $files } more files were made than a chat keeps: they stay on the computer\n }",
+    MadeTooMany = "made-too-many"
+        "This folder has too many files to look over, so what was made isn't shown",
+    MadeWaits = "made-waits"
+        "A command is still running: what was made shows here once it ends",
 
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"

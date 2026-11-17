@@ -17,7 +17,7 @@ use glave_ports::computer::{ComputerId, WorkspaceId};
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
-use glave_ports::{Clock, Entropy, Payer, Standing};
+use glave_ports::{Clock, Entropy, Payer, ReadMade, Standing};
 use jiff::Timestamp;
 
 use crate::approval::Approver;
@@ -107,6 +107,9 @@ pub struct Harness<P, L, B, A> {
     /// Where the commands on each person's own computer ask for credentials: theirs. None by
     /// default, so only the harness's person's computer gets the workspace's.
     pub(crate) credentials_of: Option<CredentialsOf>,
+    /// What reads each file a turn made apart from glave, for its title, parts and preview;
+    /// none by default, so files are kept unread.
+    pub(crate) reader: Option<ReadMade>,
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
@@ -193,9 +196,11 @@ pub struct Thread {
     /// How its log, as it was read, left its turn: waiting, or left open by a glave that
     /// stopped (`waits.rs`); `None` when no turn was open.
     pub(crate) opened: Option<Opened>,
-    /// What its folder held of the files that count as made before its turn.s first call that
-    /// changes files, kept while the turn stops at a wait; `None` until then (`made.rs`).
-    pub(crate) seen: Option<crate::made::Seen>,
+    /// The turn open on it, as what the turn made is told (`made.rs`): as its log has it.
+    pub(crate) turn_open: Option<crate::made::TurnOpen>,
+    /// The first of its turns whose look-over waits for its commands in the background to end
+    /// (`made.rs`): as its log has it.
+    pub(crate) made_waits: Option<crate::made::Waiting>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
     /// Where it works on its person's own computer, when it does: opened there again at a
@@ -333,6 +338,7 @@ where
             learned_windows: LearnedWindows::default(),
             homes: None,
             credentials_of: None,
+            reader: None,
             memory: None,
             project_folders: None,
             lingering: Mutex::default(),
@@ -383,6 +389,14 @@ where
         let sandbox = homes.as_ref().and_then(|homes| homes.sandbox());
         self.change_defaults(|defaults| defaults.home_sandbox = sandbox);
         self.homes = homes;
+        self
+    }
+
+    /// Reads each file a turn made with `reader`, apart from glave, for its title, its parts
+    /// and its preview.
+    #[must_use]
+    pub fn with_reader(mut self, reader: Option<ReadMade>) -> Self {
+        self.reader = reader;
         self
     }
 
@@ -621,7 +635,8 @@ where
             inbox: Inbox::default(),
             commands: Arc::default(),
             opened: None,
-            seen: None,
+            turn_open: None,
+            made_waits: None,
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,

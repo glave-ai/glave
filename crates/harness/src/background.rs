@@ -310,10 +310,12 @@ where
         Ok(staged)
     }
 
-    /// Records what the thread's commands are waiting to have recorded, now.
+    /// Records what the thread's commands are waiting to have recorded, now: once the last has
+    /// ended, with what the first turn that waited for them made (`made.rs`).
     pub async fn record_commands(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
+        self.stage_waited(thread, &mut events, false).await?;
         self.commit(thread, events).await?;
         staged.recorded(thread);
         Ok(())

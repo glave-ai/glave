@@ -22,11 +22,12 @@ use crate::payload::{
     SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted,
     TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked,
     ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
-    ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
-    connector, credential, credits, filters, fork, grouping, hook, instructions, language, library,
-    memory, message, model, passkey, people, plan, project, provider, push, remembering, search,
-    secrets, service, signup, standing, task, thread, tool, trust, turn, workspace,
+    ToolCallStarted, TrustDecided, TurnMade, TurnResult, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, appearance, approval, awake, browser, catalog, certificate, chosen, command,
+    connection, connector, credential, credits, filters, fork, grouping, hook, instructions,
+    language, library, made, memory, message, model, passkey, people, plan, project, provider,
+    push, remembering, search, secrets, service, signup, standing, task, thread, tool, trust, turn,
+    workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -133,6 +134,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (push::CLAIMED, 1),
     (library::KEPT, 1),
     (library::REMOVED, 1),
+    (made::TURN_MADE, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -219,6 +221,7 @@ pub enum Body {
     PushClaimed(PushClaimed),
     LibraryKept(LibraryKept),
     LibraryRemoved(LibraryRemoved),
+    TurnMade(TurnMade),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
     OrganizationMade(OrganizationMade),
@@ -438,6 +441,7 @@ impl Event {
             Body::PushClaimed(payload) => encode(header, payload),
             Body::LibraryKept(payload) => encode(header, payload),
             Body::LibraryRemoved(payload) => encode(header, payload),
+            Body::TurnMade(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
             Body::OrganizationMade(payload) => encode(header, payload),
@@ -582,7 +586,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
 type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
 
 /// The decoders of the ledgers whose events are not named one by one above.
-const LEDGERS: [Decoder; 7] = [
+const LEDGERS: [Decoder; 8] = [
     people::decode,
     signup::decode,
     credits::decode,
@@ -590,6 +594,7 @@ const LEDGERS: [Decoder; 7] = [
     secrets::decode,
     push::decode,
     library::decode,
+    made::decode,
 ];
 
 /// Parses a payload's bytes as one specific version of one type.

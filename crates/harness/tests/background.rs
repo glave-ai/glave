@@ -153,9 +153,10 @@ fn archiving_a_thread_stops_its_commands_first() {
             .unwrap();
         let events = events(harness.log(), thread.id).await;
         let kinds = kinds(&events);
+        // Its last command ended, what the turn that waited for it made is looked over.
         assert_eq!(
-            kinds[kinds.len() - 2..],
-            ["command.ended", "thread.archived"]
+            kinds[kinds.len() - 3..],
+            ["command.ended", "turn.made", "thread.archived"]
         );
         assert_eq!(endings(&events), [CommandEnding::Released]);
     });

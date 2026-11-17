@@ -38,6 +38,10 @@ pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
 /// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
 /// its disk (`specs/computers.md`, decision 12).
 const PERSON_USER: u32 = 65_532;
+/// Where a person's computer asks for names: Google's public resolvers (Docker's own, where a
+/// host names none), reached through its policy's rule for the internet like any other
+/// address, so it asks nothing of the cluster's DNS or the metadata server's (#393).
+const RESOLVERS: [&str; 3] = ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888"];
 /// How long a person's computer goes unasked, with nothing running in the background, before
 /// it ends on its own: asleep after 2 hours idle (`specs/computers.md`, decision 4).
 pub(crate) const IDLE_MINUTES: u32 = 120;
@@ -116,7 +120,8 @@ impl Shape<'_> {
     /// The Pod: the image running the wait, then glave serving on [`SOCKET`], the person's disk
     /// as its home. Limits as requests too, so the computer gets what it is allowed; no
     /// service account token; no privilege; every capability dropped; the runtime's seccomp
-    /// profile; never root; a read-only root filesystem; and a runtime class when one is set.
+    /// profile; never root; a read-only root filesystem; names from the internet's resolvers,
+    /// never the cluster's; and a runtime class when one is set.
     pub(crate) fn pod(&self) -> Value {
         let mut env: Vec<Value> = self
             .spec
@@ -179,6 +184,10 @@ impl Shape<'_> {
                 // The Pod's pause process is its first, and reaps what glave's commands leave.
                 "shareProcessNamespace": true,
                 "terminationGracePeriodSeconds": 5,
+                // Names from the internet's resolvers (`RESOLVERS`): a computer reaches
+                // nothing inside, so the cluster's names are no use to it.
+                "dnsPolicy": "None",
+                "dnsConfig": {"nameservers": RESOLVERS},
                 "runtimeClassName": self.runtime_class,
                 "nodeSelector": nodes,
                 // Its disk owned by its group, set only when it differs, so a large home is
@@ -232,8 +241,8 @@ impl Shape<'_> {
     /// through the API server, which no policy sees), and nothing goes out unless the computer
     /// has the network, which then reaches the internet alone: never where clouds serve their
     /// machines' credentials ([`CLOUD_METADATA`]), nor anything that is not the internet
-    /// ([`INSIDE`]), so no other Pod, server or database in the cluster; DNS on port 53 is
-    /// still allowed.
+    /// ([`INSIDE`]), so no other Pod, server, database or DNS server in the cluster. Its names
+    /// come from the internet too ([`RESOLVERS`]).
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
             let except = |v4: bool| -> Vec<String> {
@@ -248,8 +257,7 @@ impl Shape<'_> {
                 {"to": [
                     {"ipBlock": {"cidr": "0.0.0.0/0", "except": except(true)}},
                     {"ipBlock": {"cidr": "::/0", "except": except(false)}}
-                ]},
-                {"ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
+                ]}
             ])
         } else {
             json!([])

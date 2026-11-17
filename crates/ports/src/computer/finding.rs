@@ -24,7 +24,7 @@ pub struct Stat {
 }
 
 /// Which files to find (`files/glob`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Glob {
     /// A file pattern: without a `/` (`*.rs`) it matches file names in any folder; with one
     /// (`src/**/*.rs`) it matches paths from the folder searched.
@@ -33,6 +33,16 @@ pub struct Glob {
     pub path: String,
     /// The most files returned.
     pub limit: usize,
+    /// Only files changed since then, in nanoseconds since 1970, as the computer's clock says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_since_ns: Option<u64>,
+    /// Leaves out what is hidden (a name that starts with `.`): its folders are not looked in.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub visible: bool,
+    /// The most entries looked at, folders too, and with it a few seconds' look: past either,
+    /// the look stops and says so ([`Globbed::stopped`]). No limit when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub most_looked_at: Option<usize>,
 }
 
 /// Files found, newest first, leaving out what git ignores and the `.git` folder.
@@ -44,18 +54,10 @@ pub struct Globbed {
     pub files: Vec<String>,
     /// How many matched in all.
     pub total: u64,
-    /// Each of `files`' size and when it last changed, in the same order: what tells that a
-    /// file changed without reading it. Empty from a computer that doesn't say.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stamps: Vec<Stamp>,
-}
-
-/// A file's size and when it last changed, as a computer's clock says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Stamp {
-    pub size: u64,
-    /// When it last changed, in nanoseconds since 1970.
-    pub modified_ns: u64,
+    /// Whether the look stopped at [`Glob::most_looked_at`] or its time before it looked
+    /// everywhere, so `files` and `total` are not all there is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stopped: bool,
 }
 
 /// Which lines to find (`files/search`).

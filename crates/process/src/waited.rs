@@ -53,16 +53,20 @@ impl Processes {
         Ok(self.waited(program, None, limit, None).await?.status)
     }
 
-    /// [`Processes::output`], with `input` written to its standard input, which is then
-    /// closed.
+    /// [`Processes::output_at_most`], with `input` written to its standard input, which is
+    /// then closed: a helper of glave's own reading a file, say.
     pub async fn output_with(
         &self,
         program: &mut Program,
         input: &[u8],
         limit: Duration,
+        most: usize,
     ) -> Result<Output, ProcessError> {
-        program.piped_input();
-        self.waited(program, Some(input), limit, None).await
+        program
+            .piped_input()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        self.waited(program, Some(input), limit, Some(most)).await
     }
 
     /// Starts `program`, `input` written to it first when there is some, and waits for it

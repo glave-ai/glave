@@ -1,10 +1,12 @@
 //! Logs and telemetry from the real binary: `--log` records turns, model calls, tool calls and
-//! appends with their counts and timings, and never the content: not the prompt, the answer,
-//! a tool's arguments or output, a file, or the key. With the `otlp` feature, the same holds
-//! for what reaches an OpenTelemetry collector.
+//! appends with their counts and timings, to a file or as JSON lines on standard error, and
+//! never the content: not the prompt, the answer, a tool's arguments or output, a file, or the
+//! key. With the `otlp` feature, the same holds for what reaches an OpenTelemetry collector.
+
+use std::process::Output;
 
 use glave_provider_openai::fake::{FakeServer, Reply};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::support::*;
 
@@ -34,22 +36,14 @@ fn replies() -> Vec<Reply> {
     ]
 }
 
-#[test]
-fn the_log_has_spans_and_metrics_and_never_content() {
-    let place = place("log");
+/// The turn of [`replies`], its spans and metrics logged to `log` at the finest level: what it
+/// printed, once it showed the answer and sent the prompt.
+fn logged_turn(place: &Place, log: &str) -> Output {
     let server = FakeServer::start(replies()).unwrap();
-    let log = place.home.join("logs/glave.log");
-    let log_arg = log.to_string_lossy().into_owned();
     let mut child = start_with(
-        &place,
+        place,
         &server,
-        &[
-            "--model",
-            "fake-model",
-            "--log",
-            &log_arg,
-            "do it PROMPT-c0ffee",
-        ],
+        &["--model", "fake-model", "--log", log, "do it PROMPT-c0ffee"],
         &[("GLAVE_LOG", "trace")],
     );
     drop(child.stdin.take());
@@ -59,7 +53,40 @@ fn the_log_has_spans_and_metrics_and_never_content() {
     assert!(shown.contains("ANSWER-f00d"), "{shown}");
     let first = &server.received()[0].body;
     assert!(said(first, "user")[0].contains("PROMPT-c0ffee"));
+    output
+}
+
+#[test]
+fn the_log_has_spans_and_metrics_and_never_content() {
+    let place = place("log");
+    let log = place.home.join("logs/glave.log");
+    logged_turn(&place, &log.to_string_lossy());
     let written = std::fs::read_to_string(&log).unwrap();
+    has_spans_and_metrics_and_never_content(&written, &place.key);
+}
+
+#[test]
+fn the_log_on_standard_error_is_json_lines_with_spans_and_metrics_and_never_content() {
+    let place = place("log-stderr");
+    let output = logged_turn(&place, "-");
+    let shown = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = shown.lines().filter(|line| line.starts_with('{')).collect();
+    for line in &lines {
+        let entry: Value = serde_json::from_str(line).unwrap();
+        assert!(entry["time"].is_string(), "{line}");
+        let severity = entry["severity"].as_str().unwrap_or_default();
+        assert!(
+            ["ERROR", "WARNING", "INFO", "DEBUG", "TRACE"].contains(&severity),
+            "{line}"
+        );
+        let target = entry["target"].as_str().unwrap_or_default();
+        assert!(target.starts_with("glave"), "{line}");
+    }
+    has_spans_and_metrics_and_never_content(&lines.join("\n"), &place.key);
+}
+
+/// `written` has the turn's spans and metrics, and none of its content or the key.
+fn has_spans_and_metrics_and_never_content(written: &str, key: &str) {
     for span in [
         "session.request",
         "turn",
@@ -82,7 +109,7 @@ fn the_log_has_spans_and_metrics_and_never_content() {
     for (what, content) in CONTENT {
         assert!(!written.contains(content), "{what} in the log:\n{written}");
     }
-    assert!(!written.contains(&place.key), "the key in the log");
+    assert!(!written.contains(key), "the key in the log");
 }
 
 #[test]

@@ -545,9 +545,9 @@ export type FileInfo = {
 };
 
 /**
- * A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
- * content kept for the thread, or why it was not. The model never sees it; the person opens
- * and downloads it.
+ * A file a turn made, as its `turn.ended` records it: where it was made, its size, its content
+ * kept for the thread or why it was not, and what glave read of it. The model never sees it;
+ * the person opens and downloads it.
  */
 export type FileMade = {
   /** Its size on the computer. */
@@ -555,6 +555,8 @@ export type FileMade = {
   readonly kept: Kept;
   /** Where it was made, relative to the thread's folder. */
   readonly path: string;
+  /** What glave read of it apart from itself, once kept; absent when it couldn't be read. */
+  readonly read?: FileRead | null;
 };
 
 /**
@@ -579,6 +581,16 @@ export type FilePreview = {
   /** What was left out, in the server's sentence, when the preview is not the whole file. */
   readonly cut?: string | null;
   readonly markdown: string;
+};
+
+/** What glave read of a file a turn made, in a process of its own. */
+export type FileRead = {
+  /** How many pages, sheets or slides it has, when that is known. */
+  readonly parts?: Parts | null;
+  /** Its preview, when glave previews a file of its kind. */
+  readonly preview?: MadePreview | null;
+  /** The title its own properties give it, when they give one that names it. */
+  readonly title?: string | null;
 };
 
 /**
@@ -672,7 +684,7 @@ export type JoinWay = "passkey" | "company" | "accept" | "member";
 /** Whether a file a turn made was kept for the thread. */
 export type Kept = {
   readonly blob: BlobRef;
-} | "too_large" | "secret";
+} | "too_large" | "secret" | "unchecked";
 
 /** The chat a Library item was made in. */
 export type LibraryChat = {
@@ -757,7 +769,8 @@ export type MadeFile = {
   readonly parts?: string | null;
   /**
    * Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck
-   * glave reads), or a client draws it (a PDF); false for any other, which only downloads.
+   * glave read), or a client draws it (a PDF glave read); false for any other, which only
+   * downloads.
    */
   readonly previews: boolean;
   /** What was made, in one line: "Made a spreadsheet: Trip budget (2 sheets)". */
@@ -767,6 +780,25 @@ export type MadeFile = {
    * was not kept.
    */
   readonly sha256?: string | null;
+  /** Why it can't be shown, only downloaded, when glave kept it but couldn't read it. */
+  readonly unread?: string | null;
+};
+
+/** What the files a turn made leave out. */
+export type MadeLeft = {
+  readonly files: number;
+  readonly kind: "more";
+} | {
+  readonly kind: "too_many";
+} | {
+  readonly kind: "waits";
+};
+
+/** A file's preview: Markdown, kept for the thread as the file is. */
+export type MadePreview = {
+  readonly blob: BlobRef;
+  /** Whether it leaves out some of the file. */
+  readonly cut?: boolean;
 };
 
 /** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
@@ -936,6 +968,15 @@ export type OriginKind = string;
 
 /** How a turn ended. */
 export type Outcome = "completed" | "cancelled" | "failed" | "interrupted" | "limit_reached";
+
+/** How many of its parts a file has: a document's pages, a workbook's sheets, a deck's slides. */
+export type Parts = {
+  readonly pages: number;
+} | {
+  readonly sheets: number;
+} | {
+  readonly slides: number;
+};
 
 /** A passkey that signs the person in. */
 export type PasskeySummary = {
@@ -1656,6 +1697,11 @@ export type TurnChanges = {
 /** The files one turn made, in path order, by the `seq` of its `turn.started`. */
 export type TurnFiles = {
   readonly files: readonly (MadeFile)[];
+  /**
+   * What `files` leave out, in a sentence, when they leave something out: more than a turn
+   * keeps, a folder too large to look over, or what a command still running may make.
+   */
+  readonly note?: string | null;
   readonly turn: Seq;
 };
 
@@ -1682,11 +1728,17 @@ export type TurnResult = {
    */
   readonly estimated?: boolean;
   /**
-   * The files it made for the person: each document, spreadsheet, deck or PDF new or changed
-   * in the thread's folder between its start and its end, in path order, kept for the thread
-   * or said why not (`session.md`, "Files it made"). Absent when it made none.
+   * The files it made for the person: each document, spreadsheet, deck or PDF in no hidden
+   * folder of the thread's, changed since it started, in path order, kept for the thread or
+   * said why not (`session.md`, "Files it made"). Absent when it made none.
    */
   readonly made?: readonly (FileMade)[];
+  /**
+   * What `made` leaves out, when it leaves something out: more files than a turn keeps, a
+   * folder too large to look over, or a command still running in the background, which a
+   * `turn.made` follows up.
+   */
+  readonly made_left?: MadeLeft | null;
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */

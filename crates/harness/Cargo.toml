@@ -17,6 +17,9 @@ path = "tests/main.rs"
 [dependencies]
 # Images sent to the model inline, in base64 (already in the tree).
 base64.workspace = true
+# The parts of a zip file a turn made, inflated to look through them for secrets (already in
+# the tree).
+flate2.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
 glave-shell.workspace = true
@@ -38,8 +41,6 @@ uuid.workspace = true
 glave-computer.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
-# The two whole transcripts of a reply that looped, kept small (`looping/tests.rs`).
-flate2.workspace = true
 
 [lints]
 workspace = true

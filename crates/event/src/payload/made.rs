@@ -1,15 +1,32 @@
 //! Files a turn made for the person (`specs/session.md`, "Files it made"): a document, a
-//! spreadsheet, a deck or a PDF new or changed in the thread's folder over the turn, kept for
-//! the thread so it outlives the computer, and named in its `turn.ended`, under `made`.
+//! spreadsheet, a deck or a PDF changed in the thread's folder over the turn, kept for the
+//! thread so it outlives the computer, and named in its `turn.ended`, under `made`, with what
+//! glave read of it apart from itself: its title, its pages, sheets or slides, and its preview.
+//! A turn whose look-over waited for a command in the background has what it made named later,
+//! in a `turn.made`, once the command ended.
 
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 use crate::blob::BlobRef;
+use crate::codec::{Body, Payload, parse};
+use crate::envelope::Seq;
 use crate::payload::library::AssetKind;
 
-/// A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
-/// content kept for the thread, or why it was not. The model never sees it; the person opens
-/// and downloads it.
+pub(crate) const TURN_MADE: &str = "turn.made";
+
+/// How many of its parts a file has: a document's pages, a workbook's sheets, a deck's slides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Parts {
+    Pages(u64),
+    Sheets(u64),
+    Slides(u64),
+}
+
+/// A file a turn made, as its `turn.ended` records it: where it was made, its size, its content
+/// kept for the thread or why it was not, and what glave read of it. The model never sees it;
+/// the person opens and downloads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileMade {
@@ -18,6 +35,34 @@ pub struct FileMade {
     /// Its size on the computer.
     pub bytes: u64,
     pub kept: Kept,
+    /// What glave read of it apart from itself, once kept; absent when it couldn't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read: Option<FileRead>,
+}
+
+/// What glave read of a file a turn made, in a process of its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FileRead {
+    /// The title its own properties give it, when they give one that names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// How many pages, sheets or slides it has, when that is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Parts>,
+    /// Its preview, when glave previews a file of its kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<MadePreview>,
+}
+
+/// A file's preview: Markdown, kept for the thread as the file is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MadePreview {
+    pub blob: BlobRef,
+    /// Whether it leaves out some of the file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
 }
 
 /// Whether a file a turn made was kept for the thread.
@@ -30,6 +75,48 @@ pub enum Kept {
     TooLarge,
     /// Left on the computer: it holds the value of one of the person's secrets.
     Secret,
+    /// Left on the computer: its parts inflate past what is looked through for secrets.
+    Unchecked,
+}
+
+/// What the files a turn made leave out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MadeLeft {
+    /// More were made than a turn keeps: these many more stayed on the computer, unnamed.
+    More { files: u64 },
+    /// The folder held too many files to look over in time, so none are named.
+    TooMany,
+    /// A command the thread started in the background still ran as the turn ended: the folder
+    /// is looked over once it ends, and a `turn.made` names what it found.
+    Waits,
+}
+
+/// What a turn whose look-over waited made (`turn.made`), named once the last command the
+/// thread ran in the background ended: the files changed since that turn started.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TurnMade {
+    /// The turn's `turn.started`.
+    pub turn: Seq,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub made: Vec<FileMade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_left: Option<MadeLeft>,
+}
+
+impl Payload for TurnMade {
+    const TYPE: &'static str = TURN_MADE;
+    const VERSION: u32 = 1;
+}
+
+/// Decodes `turn.made`; `None` for any other type or version.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    (kind == TURN_MADE && version == 1).then(|| parse(data).map(Body::TurnMade))
 }
 
 /// The files counted as made, by the end of their name: each one's media type and kind.
@@ -117,6 +204,16 @@ mod tests {
     use crate::blob::Sha256;
 
     #[test]
+    fn parts_are_written_by_what_they_count() {
+        let written = serde_json::to_string(&Parts::Sheets(2)).unwrap();
+        assert_eq!(written, r#"{"sheets":2}"#);
+        assert_eq!(
+            serde_json::from_str::<Parts>(&written).unwrap(),
+            Parts::Sheets(2)
+        );
+    }
+
+    #[test]
     fn a_file_counts_as_made_by_the_end_of_its_name() {
         let sheet = AssetKind::made_as("out/Trip Budget.XLSX");
         assert_eq!(sheet.map(AssetKind::of), Some(AssetKind::Spreadsheet));
@@ -149,22 +246,34 @@ mod tests {
     }
 
     #[test]
-    fn a_made_file_says_whether_it_was_kept() {
+    fn a_made_file_says_whether_it_was_kept_and_what_was_read_of_it() {
+        let blob = BlobRef {
+            sha256: Sha256::new("a".repeat(64)).unwrap(),
+            bytes: 3,
+            media_type: "application/pdf".into(),
+        };
         let kept = FileMade {
             path: "out/plan.pdf".into(),
             bytes: 3,
-            kept: Kept::Blob(BlobRef {
-                sha256: Sha256::new("a".repeat(64)).unwrap(),
-                bytes: 3,
-                media_type: "application/pdf".into(),
+            kept: Kept::Blob(blob),
+            read: Some(FileRead {
+                title: Some("Lisbon plan".into()),
+                parts: Some(Parts::Pages(1)),
+                preview: None,
             }),
         };
         let json = serde_json::to_value(&kept).unwrap();
         assert_eq!(json["kept"]["blob"]["bytes"], 3);
+        assert_eq!(json["read"]["parts"]["pages"], 1);
         let left = FileMade {
-            kept: Kept::TooLarge,
+            kept: Kept::Unchecked,
+            read: None,
             ..kept
         };
-        assert_eq!(serde_json::to_value(&left).unwrap()["kept"], "too_large");
+        let json = serde_json::to_value(&left).unwrap();
+        assert_eq!(json["kept"], "unchecked");
+        assert!(json.get("read").is_none());
+        let more = serde_json::to_value(MadeLeft::More { files: 3 }).unwrap();
+        assert_eq!(more, serde_json::json!({"kind": "more", "files": 3}));
     }
 }

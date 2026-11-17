@@ -7,8 +7,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{
-    Body, Kept, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId, ToolCallCompleted,
-    TurnResult, decode,
+    Body, FileMade, Kept, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId,
+    ToolCallCompleted, TurnMade, TurnResult, decode,
 };
 use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
@@ -22,11 +22,12 @@ use crate::server::{MAX_PAGE, Server, no_thread};
 const PIECE: usize = 8 * 1024 * 1024;
 
 /// The events that name the files a thread holds: its messages, its tools' results, and its
-/// turns' ends, which name the files they made.
-const NAMING: [&str; 3] = [
+/// turns' ends and later look-overs, which name the files they made.
+const NAMING: [&str; 4] = [
     MessageAdded::TYPE,
     ToolCallCompleted::TYPE,
     TurnResult::TYPE,
+    TurnMade::TYPE,
 ];
 
 impl<P, L, B> Server<P, L, B>
@@ -134,17 +135,13 @@ where
 }
 
 /// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`, or it is a
-/// turn's end that made it and kept it.
+/// turn's end or later look-over that made it and kept it.
 fn names(event: RawEvent, sha256: &Sha256) -> bool {
     let parts = match decode(event).map(|event| event.body) {
         Ok(Body::MessageAdded(message)) => message.parts,
         Ok(Body::ToolCallCompleted(done)) => done.output,
-        Ok(Body::TurnEnded(ended)) => {
-            return ended
-                .made
-                .iter()
-                .any(|file| matches!(&file.kept, Kept::Blob(blob) if blob.sha256 == *sha256));
-        }
+        Ok(Body::TurnEnded(ended)) => return kept(&ended.made, sha256),
+        Ok(Body::TurnMade(made)) => return kept(&made.made, sha256),
         _ => return false,
     };
     parts.iter().any(|part| match part {
@@ -153,4 +150,10 @@ fn names(event: RawEvent, sha256: &Sha256) -> bool {
         }
         Part::Text { .. } | Part::Reasoning { .. } => false,
     })
+}
+
+/// Whether one of `made`, the files a turn made, is `sha256`, kept.
+fn kept(made: &[FileMade], sha256: &Sha256) -> bool {
+    made.iter()
+        .any(|file| matches!(&file.kept, Kept::Blob(blob) if blob.sha256 == *sha256))
 }

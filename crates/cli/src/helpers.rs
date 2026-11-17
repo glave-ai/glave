@@ -2,7 +2,8 @@
 //! once glave ends however it ends (`specs/one-server.md`, "No orphaned processes"), the
 //! Linux sandbox's, which confines itself and then becomes a command (`specs/sandbox.md`), and
 //! a terminal's, which takes its terminal in a session of its own and runs the person's shell
-//! in it, staying the session's leader (`specs/computers.md`, "Terminals").
+//! in it, staying the session's leader (`specs/computers.md`, "Terminals"), and a reader of a
+//! file a turn made, which prints what it found (`reading.rs`).
 //! Each is run first thing in `main`, before glave starts a thread. And this glave, first on
 //! every command's `PATH`, so the `glave doc` a skill teaches is the glave that taught it.
 
@@ -22,6 +23,9 @@ const ON_PATH: &str = "bin";
 pub(crate) fn run() -> Option<ExitCode> {
     let args: Vec<OsString> = std::env::args_os().collect();
     if let Some(code) = glave_process::lifeline_helper(&args) {
+        return Some(code);
+    }
+    if let Some(code) = crate::reading::helper(&args) {
         return Some(code);
     }
     if let Some(failure) = glave_computer::terminal_helper(&args) {
