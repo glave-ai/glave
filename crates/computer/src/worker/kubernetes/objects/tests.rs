@@ -133,6 +133,39 @@ fn a_persons_computer_mounts_its_disk_as_home() {
     assert!(parsed.spec.is_some());
 }
 
+/// A person's computer runs as a service account of its own, bound to nothing, with no token:
+/// never the namespace's `default`, where a role or a cloud identity bound to it would reach
+/// every computer (#1505).
+#[test]
+fn a_persons_computer_runs_as_an_account_of_its_own_with_no_token() {
+    let labels = BTreeMap::from([("glave.test".to_owned(), "run".to_owned())]);
+    let spec = spec(true);
+    let computer = shape(&spec, &labels);
+    let pod = computer.pod();
+    assert_eq!(
+        pod["spec"]["serviceAccountName"],
+        json!("glave-computer-k1")
+    );
+    assert_eq!(pod["spec"]["automountServiceAccountToken"], json!(false));
+    let account = computer.service_account();
+    assert_eq!(
+        account,
+        json!({
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {
+                "name": "glave-computer-k1",
+                "labels": {"glave.test": "run", "glave.computer": "k1"}
+            },
+            "automountServiceAccountToken": false
+        }),
+        "labelled as the computer's other objects, and no token mounted from it"
+    );
+    let parsed: k8s_openapi::api::core::v1::ServiceAccount =
+        serde_json::from_value(account).unwrap();
+    assert_eq!(parsed.automount_service_account_token, Some(false));
+}
+
 #[test]
 fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
     let labels = BTreeMap::new();
