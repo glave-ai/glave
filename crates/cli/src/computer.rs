@@ -214,7 +214,8 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
-    let processes = home::reaped().await?;
+    // `glave computer serve` writes no log of its own: it says things plainly.
+    let processes = home::reaped(crate::said::Said::Plainly).await?;
     let largest = Largest::default();
     let keeping = Keeping {
         processes: processes.clone(),

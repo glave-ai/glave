@@ -19,6 +19,7 @@ use glave_ports::{
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
 
+use crate::said::Said;
 use crate::system::random_uuid;
 use crate::{home, keys};
 
@@ -31,12 +32,17 @@ pub(crate) enum Data {
 
 impl Data {
     /// The store `url` names, or the local SQLite file when it names none; blobs' bytes in the
-    /// bucket `bucket` names, or the folder in glave's folder.
-    pub(crate) async fn open(url: Option<&str>, bucket: Option<&str>) -> anyhow::Result<Self> {
+    /// bucket `bucket` names, or the folder in glave's folder. What it warns of, it says as
+    /// `said`.
+    pub(crate) async fn open(
+        url: Option<&str>,
+        bucket: Option<&str>,
+        said: Said,
+    ) -> anyhow::Result<Self> {
         // Made first when it is not there yet: the key file may be kept in it.
         let database = home::database().await?;
         let folder = home::folder()?;
-        let keys = keys::settings(&folder, home::relocated()).await?;
+        let keys = keys::settings(&folder, home::relocated(), said).await?;
         let bucket: Arc<dyn Objects> = match bucket {
             Some(bucket) => Arc::new(Bucket::s3(bucket, std::env::vars())?),
             None => Arc::new(Bucket::folder(&home::blobs().await?).await?),
@@ -57,7 +63,10 @@ impl Data {
 
     /// The store the choices name: `[store] url` or GLAVE_STORE_URL, else the local file; and
     /// `[store] bucket` or GLAVE_STORE_BUCKET, else the folder.
-    pub(crate) async fn chosen(choices: &glave_config::policy::Choices) -> anyhow::Result<Self> {
+    pub(crate) async fn chosen(
+        choices: &glave_config::policy::Choices,
+        said: Said,
+    ) -> anyhow::Result<Self> {
         if let Some(file) = choices.store.as_ref().and_then(password_in_file) {
             tracing::warn!(
                 file = %file.display(),
@@ -67,7 +76,7 @@ impl Data {
         }
         let url = choices.store.as_ref().map(|url| url.value.as_str());
         let bucket = choices.bucket.as_ref().map(|bucket| bucket.value.as_str());
-        Self::open(url, bucket).await
+        Self::open(url, bucket, said).await
     }
 
     /// The store for a command that reads no project settings: GLAVE_STORE_URL and
@@ -87,7 +96,8 @@ impl Data {
         let set = environment().unwrap_or_default();
         let url = set.url.or(file.url);
         let bucket = set.bucket.or(file.bucket);
-        Self::open(url.as_deref(), bucket.as_deref()).await
+        // A command's, at a terminal.
+        Self::open(url.as_deref(), bucket.as_deref(), Said::Plainly).await
     }
 
     pub(crate) fn log(&self) -> DataLog {

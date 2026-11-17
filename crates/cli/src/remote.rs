@@ -50,7 +50,6 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         );
     };
     let remote = Remote::new(url, token)?;
-    let _telemetry = crate::telemetry::start(args.log.as_deref(), None)?;
     let elsewhere = Session::Elsewhere(&remote);
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
         bail!("{url} is not a glave session server");

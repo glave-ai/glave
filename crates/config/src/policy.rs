@@ -11,6 +11,7 @@ mod provider;
 mod rules;
 #[cfg(test)]
 pub(crate) mod tests;
+mod unreadable;
 mod web;
 mod workers;
 
