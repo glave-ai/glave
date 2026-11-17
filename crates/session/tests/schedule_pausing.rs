@@ -54,21 +54,27 @@ fn a_paused_schedule_starts_no_runs_and_resumed_counts_from_then() {
     });
 }
 
+/// A schedule of `server`'s that runs once, at 11:00.
+async fn once_at_11(server: &Tested<Shared>) -> ScheduleInfo {
+    let request = Request::ScheduleCreate {
+        project: Some(scope().project()),
+        name: Some("Once".into()),
+        when: When::At(at("2026-10-10T11:00:00Z")),
+        zone: None,
+        prompt: "check the build".into(),
+        budget: 10_000,
+    };
+    match server.request(request).await.unwrap() {
+        Reply::Schedule { schedule } => schedule,
+        other => panic!("a schedule, not {other:?}"),
+    }
+}
+
 #[test]
 fn a_one_off_whose_time_passed_while_paused_says_it_was_missed() {
     block_on!(async {
         let (server, now, _, _dir) = asking("runs-missed", Vec::new(), Shared::default()).await;
-        let request = Request::ScheduleCreate {
-            project: Some(scope().project()),
-            name: Some("Once".into()),
-            when: When::At(at("2026-10-10T11:00:00Z")),
-            zone: None,
-            prompt: "check the build".into(),
-            budget: 10_000,
-        };
-        let Reply::Schedule { schedule } = server.request(request).await.unwrap() else {
-            panic!("a schedule");
-        };
+        let schedule = once_at_11(&server).await;
         pause(&server, schedule.schedule, true).await;
         set(&now, "2026-10-10T11:30:00Z");
         let resumed = pause(&server, schedule.schedule, false).await;
@@ -104,17 +110,7 @@ fn a_one_off_due_before_it_was_paused_is_not_missed() {
     block_on!(async {
         let answers = vec![answer(Some("Done."), None)];
         let (server, now, _, _dir) = asking("runs-not-missed", answers, Shared::default()).await;
-        let request = Request::ScheduleCreate {
-            project: Some(scope().project()),
-            name: Some("Once".into()),
-            when: When::At(at("2026-10-10T11:00:00Z")),
-            zone: None,
-            prompt: "check the build".into(),
-            budget: 10_000,
-        };
-        let Reply::Schedule { schedule } = server.request(request).await.unwrap() else {
-            panic!("a schedule");
-        };
+        let schedule = once_at_11(&server).await;
         // Its time comes while no server ticks, then it is paused and resumed.
         set(&now, "2026-10-10T11:30:00Z");
         pause(&server, schedule.schedule, true).await;
