@@ -36,6 +36,20 @@ pub struct TurnStarted {
     /// When the turn is a schedule's run, when that run was due (v2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduled: Option<At>,
+    /// With `scheduled`, the time zone the schedule's clocks were read in as it came due, by its
+    /// IANA name, so the run says when it was due on them however the schedule changes later
+    /// (v2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
+}
+
+/// When a schedule's run was due, and on whose clocks: what its turn records (`scheduled`,
+/// `zone`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Due {
+    pub at: At,
+    /// The schedule's time zone, by its IANA name.
+    pub zone: String,
 }
 
 /// A W3C trace id: 32 lowercase hex digits, not all zero.

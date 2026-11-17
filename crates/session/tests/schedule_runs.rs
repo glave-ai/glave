@@ -668,13 +668,15 @@ fn each_run_s_turn_says_when_it_was_due() {
         set(&now, "2026-10-10T11:00:30Z");
         assert_eq!(server.tick().await.unwrap(), vec![chat]);
         settle(&server).await;
-        let due: Vec<Option<At>> = (events(&server, chat).await.into_iter())
+        let due: Vec<(Option<At>, Option<String>)> = (events(&server, chat).await.into_iter())
             .filter_map(|raw| match glave_event::decode(raw).unwrap().body {
-                glave_event::Body::TurnStarted(started) => Some(started.scheduled),
+                glave_event::Body::TurnStarted(started) => Some((started.scheduled, started.zone)),
                 _ => None,
             })
             .collect();
-        assert_eq!(due, vec![Some(at("2026-10-10T11:00:00Z"))]);
+        // On the schedule's own clocks, which the run keeps whatever comes of the schedule.
+        let zone = Some(made.zone.clone());
+        assert_eq!(due, vec![(Some(at("2026-10-10T11:00:00Z")), zone)]);
     });
 }
 

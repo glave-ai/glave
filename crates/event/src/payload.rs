@@ -49,7 +49,7 @@ pub(crate) mod zone;
 
 pub use appearance::{Accent, AppearanceSet, BrandSet, Color, HeldLogo};
 pub use approval::{
-    ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Repeating, Verdict,
+    ApprovalDecided, ApprovalRequested, Ask, CardLines, Lifted, OutsideSandbox, Repeating, Verdict,
 };
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
@@ -108,7 +108,7 @@ pub use tool::{
     Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolError, ToolKind, WebPage,
 };
 pub use trust::{Decision, TrustDecided};
-pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
+pub use turn::{Auth, AuthMethod, Due, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{
     ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
 };

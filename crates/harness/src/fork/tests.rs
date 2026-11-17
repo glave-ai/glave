@@ -53,6 +53,7 @@ fn turn_started() -> Body {
         auth: None,
         missing: Vec::new(),
         scheduled: None,
+        zone: None,
     })
 }
 

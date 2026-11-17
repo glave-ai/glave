@@ -143,6 +143,7 @@ async fn approval<L: EventLog>(
         reason: None,
         outside_sandbox: None,
         repeating: None,
+        lines: None,
     };
     let asked = writer.next(45, &ask)?;
     let asked_at = asked.seq;
@@ -218,6 +219,7 @@ async fn service<L: EventLog>(
         reason: None,
         outside_sandbox: None,
         repeating: None,
+        lines: None,
     };
     let decided = ApprovalDecided {
         call_id: call("call_7")?,
