@@ -327,6 +327,9 @@ methods! {
     /// changes with its own, read from the logs: each file with the lines added and taken out
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
+    /// The files a thread's turns made for the person, read from its log, by turn: each with
+    /// its kind, name and size, and whether it was kept.
+    "thread/files" => ThreadFiles { thread: ThreadId } -> [Files],
     /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
     /// between them, its calls and what they did in a line, and which message is each turn's
     /// reply.

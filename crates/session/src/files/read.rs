@@ -1,13 +1,14 @@
 //! A file a thread holds, read back through the server (`file/read`): a piece at a time, so a
 //! client draws an image the agent made, or saves any file, over every transport. Only a file
-//! one of the thread's own messages or tool results names is given: never what glave keeps
-//! beside them (a turn's configuration, what a service keeps while it asks), nor another
-//! thread's.
+//! one of the thread's own messages or tool results names, or one of its turns made, is given:
+//! never what glave keeps beside them (a turn's configuration, what a service keeps while it
+//! asks), nor another thread's.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{
-    Body, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId, ToolCallCompleted, decode,
+    Body, FileMade, Kept, MessageAdded, Part, Payload as _, RawEvent, Sha256, ThreadId,
+    ToolCallCompleted, TurnMade, TurnResult, decode,
 };
 use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
@@ -20,8 +21,14 @@ use crate::server::{MAX_PAGE, Server, no_thread};
 /// may be on every transport.
 const PIECE: usize = 8 * 1024 * 1024;
 
-/// The events whose parts name the files a thread holds: its messages and its tools' results.
-const NAMING: [&str; 2] = [MessageAdded::TYPE, ToolCallCompleted::TYPE];
+/// The events that name the files a thread holds: its messages, its tools' results, and its
+/// turns' ends and later look-overs, which name the files they made.
+const NAMING: [&str; 4] = [
+    MessageAdded::TYPE,
+    ToolCallCompleted::TYPE,
+    TurnResult::TYPE,
+    TurnMade::TYPE,
+];
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -38,11 +45,22 @@ where
         sha256: &Sha256,
         offset: u64,
     ) -> Result<Reply, ApiError> {
+        let scope = self.holding(thread, sha256).await?;
+        self.read_piece(&scope, sha256, offset).await
+    }
+
+    /// The project `thread` is in, when it holds the file `sha256`: one its messages or tool
+    /// results name, or one of its turns made. Any other is "no longer here", as one never kept.
+    pub(crate) async fn holding(
+        &self,
+        thread: ThreadId,
+        sha256: &Sha256,
+    ) -> Result<Scope, ApiError> {
         let scope = self.scope_of(thread)?;
         if !self.names_file(&scope, thread, sha256).await? {
             return Err(not_here());
         }
-        self.read_piece(&scope, sha256, offset).await
+        Ok(scope)
     }
 
     /// The piece of the file `sha256` names in `scope` that starts at `offset`; "no longer here"
@@ -85,9 +103,9 @@ where
     }
 
     /// Whether a `file` part of `thread`'s messages or tool results names `sha256`, as the file
-    /// or the copy of an image the model is sent: read back from the thread's end, where the
-    /// images a client draws are, a page at a time until it is found. A deleted thread is no
-    /// such thread.
+    /// or the copy of an image the model is sent, or one of its turns made it and kept it: read
+    /// back from the thread's end, where the files a client draws are, a page at a time until it
+    /// is found. A deleted thread is no such thread.
     async fn names_file(
         &self,
         scope: &Scope,
@@ -116,11 +134,14 @@ where
     }
 }
 
-/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`.
+/// Whether `event`, a message or a tool's result, has a `file` part naming `sha256`, or it is a
+/// turn's end or later look-over that made it and kept it.
 fn names(event: RawEvent, sha256: &Sha256) -> bool {
     let parts = match decode(event).map(|event| event.body) {
         Ok(Body::MessageAdded(message)) => message.parts,
         Ok(Body::ToolCallCompleted(done)) => done.output,
+        Ok(Body::TurnEnded(ended)) => return kept(&ended.made, sha256),
+        Ok(Body::TurnMade(made)) => return kept(&made.made, sha256),
         _ => return false,
     };
     parts.iter().any(|part| match part {
@@ -129,4 +150,10 @@ fn names(event: RawEvent, sha256: &Sha256) -> bool {
         }
         Part::Text { .. } | Part::Reasoning { .. } => false,
     })
+}
+
+/// Whether one of `made`, the files a turn made, is `sha256`, kept.
+fn kept(made: &[FileMade], sha256: &Sha256) -> bool {
+    made.iter()
+        .any(|file| matches!(&file.kept, Kept::Blob(blob) if blob.sha256 == *sha256))
 }

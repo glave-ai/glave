@@ -46,6 +46,26 @@ pub use secret::{any_key, any_secret, fake_secret};
 pub use socket::SocketPath;
 pub use temp::TempDir;
 
+/// The event of `kind`, at its first version, with `data`, as the `seq`th of one thread's log
+/// holds it, at a fixed time: for a test that reads a log it writes by hand.
+pub fn logged(
+    seq: u64,
+    kind: &str,
+    data: &serde_json::Value,
+) -> Result<glave_event::RawEvent, glave_event::DecodeError> {
+    let line = serde_json::json!({
+        "glave": 1,
+        "id": format!("0192d6a0-0000-7000-8000-{seq:012}"),
+        "thread": "0192d6a0-0000-7000-8000-000000000000",
+        "seq": seq,
+        "at": "2026-11-16T12:00:00Z",
+        "type": kind,
+        "v": 1,
+        "data": data,
+    });
+    glave_event::RawEvent::from_json(&line.to_string())
+}
+
 /// One person's anonymous id in one organization, under a secret of the tests' own, for a
 /// model call to send.
 pub fn an_end_user() -> Result<EndUser, glave_event::InvalidValue> {

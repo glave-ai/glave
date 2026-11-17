@@ -50,7 +50,7 @@ export type ApiError = {
 export type AssetId = string;
 
 /** What kind of thing a Library item is, which a client filters by. */
-export type AssetKind = "picture";
+export type AssetKind = "pdf" | "picture" | "document" | "spreadsheet" | "deck" | "other";
 
 /**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
@@ -78,6 +78,13 @@ export type AwakeInfo = {
 } | {
   readonly kind: "cannot";
   readonly reason: string;
+};
+
+/** Points to content held in the blob store instead of inside an event. */
+export type BlobRef = {
+  readonly bytes: number;
+  readonly media_type: string;
+  readonly sha256: string;
 };
 
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
@@ -538,6 +545,19 @@ export type FileInfo = {
 };
 
 /**
+ * A file a turn made, as its `turn.ended` records it: where it was made, its size, and its
+ * content kept for the thread or why it was not. The model never sees it; the person downloads
+ * it.
+ */
+export type FileMade = {
+  /** Its size on the computer. */
+  readonly bytes: number;
+  readonly kept: Kept;
+  /** Where it was made, relative to the thread's folder. */
+  readonly path: string;
+};
+
+/**
  * A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
  * file of any size comes within the 16 MiB a message may be on every transport.
  */
@@ -642,6 +662,11 @@ export type InviteInfo = {
 /** How the one who holds an invite joins the organization it is to. */
 export type JoinWay = "passkey" | "company" | "accept" | "member";
 
+/** Whether a file a turn made was kept for the thread. */
+export type Kept = {
+  readonly blob: BlobRef;
+} | "too_large" | "secret" | "unchecked";
+
 /** The chat a Library item was made in. */
 export type LibraryChat = {
   readonly thread: ThreadId;
@@ -703,6 +728,36 @@ export type Logo = {
   readonly data: string;
   readonly media_type: string;
   readonly sha256: string;
+};
+
+/**
+ * A file a turn made for the person: kept with the thread, so it downloads after the computer
+ * that made it is gone, or left there, said why.
+ */
+export type MadeFile = {
+  /** Its size. */
+  readonly bytes: number;
+  /** The name its file is saved as. */
+  readonly file_name: string;
+  /** Where it is kept, or why it was not, in a sentence: "Kept with this chat". */
+  readonly kept: string;
+  readonly kind: AssetKind;
+  /** Its media type, such as `application/pdf`. */
+  readonly media_type: string;
+  /** What it is called: its file's name without its end. */
+  readonly name: string;
+  /** What was made, in one line: "Made a spreadsheet: Trip budget". */
+  readonly sentence: string;
+  /** Its content's SHA-256, which `file/read` reads it by; absent when it was not kept. */
+  readonly sha256?: string | null;
+};
+
+/** What the files a turn made leave out. */
+export type MadeLeft = {
+  readonly files: number;
+  readonly kind: "more";
+} | {
+  readonly kind: "too_many";
 };
 
 /** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
@@ -1589,6 +1644,17 @@ export type TurnChanges = {
   readonly turn: Seq;
 };
 
+/** The files one turn made, in path order, by the `seq` of its `turn.started`. */
+export type TurnFiles = {
+  readonly files: readonly (MadeFile)[];
+  /**
+   * What `files` leave out, in a sentence, when they leave something out: more than a turn
+   * keeps, or a folder too large to look over.
+   */
+  readonly note?: string | null;
+  readonly turn: Seq;
+};
+
 /**
  * A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
  * It is what a client that ran the turn is answered with too, so every client reads the same.
@@ -1611,6 +1677,27 @@ export type TurnResult = {
    * reported it.
    */
   readonly estimated?: boolean;
+  /**
+   * The files it made for the person: each document, spreadsheet, deck or PDF in no hidden
+   * folder of the thread's, changed since it started, in path order, kept for the thread or
+   * said why not (`session.md`, "Files it made"). Absent when it made none.
+   */
+  readonly made?: readonly (FileMade)[];
+  /**
+   * What `made` leaves out, when it leaves something out: more files than a turn keeps, or a
+   * folder too large to look over.
+   */
+  readonly made_left?: MadeLeft | null;
+  /**
+   * Where its look-over stopped, in nanoseconds since 1970 by the computer's clock: the
+   * next look-over starts no earlier. Absent when it did not look.
+   */
+  readonly made_until_ns?: number | null;
+  /**
+   * Whether what was made after `made_until_ns` is still to be looked over: a command of the
+   * thread's still ran in the background, or the folder couldn't be looked over.
+   */
+  readonly made_waits?: boolean;
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
@@ -3018,6 +3105,15 @@ export type ThreadEventsResult = {
   readonly next?: Seq | null;
 };
 
+export type ThreadFilesParams = {
+  readonly thread: ThreadId;
+};
+
+/** The files a thread's turns made for the person. */
+export type ThreadFilesResult = {
+  readonly made: readonly (TurnFiles)[];
+};
+
 export type ThreadForkParams = {
   readonly at?: Seq | null;
   readonly thread: ThreadId;
@@ -3379,6 +3475,7 @@ export interface Methods {
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
+  readonly "thread/files": { readonly params: ThreadFilesParams; readonly result: ThreadFilesResult };
   readonly "thread/fork": { readonly params: ThreadForkParams; readonly result: ThreadForkResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };
