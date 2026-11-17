@@ -13,7 +13,7 @@ use glave_computer::{Grow, LocalComputers, Lost, Peek, Wake, Waking};
 use glave_event::{Body, CommandEnding, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Harness, Homes, Place, Thread};
 use glave_ports::computer::{Command, ComputerError, Home, Sandbox};
-use glave_ports::testing::{Captured, TempDir};
+use glave_ports::testing::{Captured, ManualClock, TempDir};
 use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, NeverCancelled, OrgId};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -125,7 +125,14 @@ impl Moving {
             Box::pin(std::future::ready(lost))
         });
         let scratch = folder.join("scratch").to_string_lossy().into_owned();
-        let planned = Waking::home((wake, peek), Some((grow, is_lost)), planned_home, &scratch);
+        let still = Arc::new(ManualClock::at_second(1_791_001_000));
+        let planned = Waking::home(
+            (wake, peek),
+            Some((grow, is_lost)),
+            planned_home,
+            &scratch,
+            still,
+        );
         Arc::new(Self {
             planned,
             machine,

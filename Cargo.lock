@@ -2201,6 +2201,7 @@ name = "glave-office"
 version = "0.0.0"
 dependencies = [
  "calamine",
+ "glave-event",
  "glave-ports",
  "lopdf",
  "proptest",

@@ -249,3 +249,33 @@ fn a_watch_on_this_computer_sends_an_approval_in_the_persons_language() {
         serving.abort();
     });
 }
+
+/// A request with no sign-in reads no one's choice: the person on the server's computer chose
+/// a language, and what anyone not signed in is told is still in their own client's, else
+/// English, so the answer says nothing of that person.
+#[test]
+fn with_no_sign_in_the_answer_is_in_no_one_s_chosen_language() {
+    block_on!(async {
+        let dir = folder("languages-open");
+        let here = server(&dir, Vec::new(), Answering::Clients).await;
+        let chosen = Request::LanguageSet {
+            language: Some("en-XA".into()),
+        };
+        here.request(chosen).await.unwrap();
+        let signin = SignIn::local(LocalToken::new([23; 32]), Box::new(fixed_clock()));
+        let served = serve_with(here, signin, None).await;
+        // Open to anyone: what an invite's code opens, here nothing.
+        let show = Request::InviteShow {
+            code: glave_event::Secret::new("no-such-invite"),
+        };
+        let told = said(&Web::new(&served, None).call(&show).await);
+        assert!(
+            !told.starts_with('[') && told.is_ascii(),
+            "in the language the person here chose: {told}"
+        );
+        let mut theirs = Web::new(&served, None).reading("ar-XB");
+        let told = said(&theirs.call(&show).await);
+        assert!(told.contains('\u{202e}'), "their own client's: {told}");
+        served.close().await;
+    });
+}
