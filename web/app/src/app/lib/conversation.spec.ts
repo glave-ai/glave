@@ -315,6 +315,7 @@ describe('conversation', () => {
     const lines = [
       'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
       'Each run is added to its own chat, “Morning check”.',
+      'Each run starts with: “Check the build.”',
     ];
     const asked = event('approval.requested', {
       call_id: 'c1',
@@ -329,6 +330,7 @@ describe('conversation', () => {
         zone: 'Europe/Lisbon',
         name: 'Morning check',
         first: '2026-11-17T08:00:00.000Z',
+        prompt: 'Check the build.',
       },
     });
     const yes = event('approval.decided', { call_id: 'c1', decision: 'allow_once' });

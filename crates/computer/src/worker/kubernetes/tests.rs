@@ -1,19 +1,19 @@
-//! People's computers on a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind` job sets
-//! it; elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A
-//! stub in glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the
-//! Pod without a Linux build of glave: its limits and hardening as the API server keeps them,
-//! the network policy, the files copied in, the bridges into it (an exec each), and sleep. A
-//! runtime class the cluster lacks, or an isolation policy asks for that the cluster can't
-//! give, leaves nothing behind. Everything made carries `glave.test=<run>`, and each test
-//! checks by that label that nothing is left behind, Secrets included (there are none to
-//! leave). The whole path, with a real glave, is in `home/tests.rs` and `people/tests.rs`.
+//! People's computers on a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind` job sets it;
+//! elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A stub in
+//! glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the Pod without a
+//! Linux build of glave: its limits and hardening as the API server keeps them, its own service
+//! account, the network policy, the files copied in, the bridges into it (an exec each), and sleep.
+//! A runtime class the cluster lacks, or an isolation policy asks for that the cluster can't give,
+//! leaves nothing behind. Everything made carries `glave.test=<run>`, and each test checks by that
+//! label that nothing is left behind, Secrets included (there are none to leave). The whole path,
+//! with a real glave, is in `home/tests.rs` and `people/tests.rs`.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{ComputerError, Computers as _, Environment, Image, Isolation, Limits};
 use glave_ports::{Clock as _, SystemClock, block_on};
-use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret};
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret, ServiceAccount};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
 use kube::api::ListParams;
@@ -34,6 +34,13 @@ const IMAGE: &str =
 /// then echoes its input back, like a server answering through it.
 const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncase \"$2\" in bridge) exec cat ;; esac\n\
 ls -l /opt/glave/secret/token\nexec sleep 300\n";
+
+/// A stub that never serves, as glave ends when its fence never holds: serving, it says why in
+/// the computer's log, with an address inside, and ends with glave's code for it (3,
+/// `UNFENCED`); as a bridge, it ends without a word, as a bridge to a glave that never served
+/// does.
+const NEVER_SERVES: &[u8] = b"#!/bin/sh\ncase \"$2\" in bridge) exit 1 ;; esac\n\
+echo 'glave: this computer still reaches 10.0.0.1:10250 inside the cluster'\nexit 3\n";
 
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
@@ -114,8 +121,8 @@ fn mine(cluster: &Kubernetes) -> ListParams {
     ListParams::default().labels(&labels.join(","))
 }
 
-/// What this test left: Pods, network policies, disks and Secrets with its label, waited for (a
-/// removed Pod takes a moment to go).
+/// What this test left: Pods, network policies, service accounts, disks and Secrets with its
+/// label, waited for (a removed Pod takes a moment to go).
 pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
     let label = mine(cluster);
     let mut left = Vec::new();
@@ -133,6 +140,13 @@ pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
                 .items
                 .iter()
                 .map(|p| format!("policy {:?}", p.metadata.name)),
+        );
+        let accounts = cluster.accounts().list(&label).await.unwrap();
+        left.extend(
+            accounts
+                .items
+                .iter()
+                .map(|a| format!("service account {:?}", a.metadata.name)),
         );
         let claims: Api<PersistentVolumeClaim> =
             Api::namespaced(cluster.client.clone(), &cluster.namespace);
@@ -199,9 +213,11 @@ async fn through(computer: &PersonComputer) -> Result<Vec<String>, String> {
     Ok(said)
 }
 
-/// What a person's computer's Pod, its policy and the stub in it showed, while awake.
+/// What a person's computer's Pod, its account, its policy and the stub in it showed, while
+/// awake.
 struct Seen {
     pod: Value,
+    account: Value,
     policy: Value,
     said: String,
     bridges: (Vec<String>, Vec<String>),
@@ -210,12 +226,14 @@ struct Seen {
 /// Looks at the awake computer `name`, as `computer` reaches it.
 async fn seen(cluster: &Kubernetes, computer: &PersonComputer, name: &str) -> Result<Seen, String> {
     let pod = object::<Pod>(&cluster.pods(), name).await?;
+    let account = object::<ServiceAccount>(&cluster.accounts(), name).await?;
     let policy = object::<NetworkPolicy>(&cluster.policies(), name).await?;
     let said = printed(cluster, name, 2).await;
     // Each connection is a bridge of its own, the computer going on between them.
     let bridges = (through(computer).await?, through(computer).await?);
     Ok(Seen {
         pod,
+        account,
         policy,
         said,
         bridges,
@@ -262,8 +280,9 @@ fn a_persons_computer_is_limited_hardened_reached_and_put_to_sleep() {
     });
 }
 
-/// `seen`'s Pod and policy, as the API server kept them for a computer woken from `wanted` under
-/// `class`: limited, hardened, the token nowhere in them, nothing let in.
+/// `seen`'s Pod, account and policy, as the API server kept them for a computer woken from
+/// `wanted` under `class`: limited, hardened, running as its own account with no token, the
+/// token nowhere in them, nothing let in.
 fn limited_and_hardened(seen: &Seen, wanted: &Spec, class: Option<&str>) {
     let (pod, policy) = (&seen.pod, &seen.policy);
     let container = &pod["spec"]["containers"][0];
@@ -274,6 +293,13 @@ fn limited_and_hardened(seen: &Seen, wanted: &Spec, class: Option<&str>) {
     );
     assert_eq!(container["resources"]["requests"], amounts);
     assert_eq!(pod["spec"]["automountServiceAccountToken"], json!(false));
+    let account = &seen.account;
+    assert_eq!(
+        pod["spec"]["serviceAccountName"],
+        account["metadata"]["name"]
+    );
+    assert_eq!(account["metadata"]["name"], pod["metadata"]["name"]);
+    assert_eq!(account["automountServiceAccountToken"], json!(false));
     let security = &container["securityContext"];
     assert_eq!(security["capabilities"]["drop"], json!(["ALL"]));
     assert_eq!(security["allowPrivilegeEscalation"], json!(false));
@@ -308,9 +334,13 @@ fn served_and_reached(seen: &Seen) {
     assert!(
         said.contains(
             "args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret --idle \
-             120 --keep-disk"
+             120 --keep-disk --fence "
         ),
         "{said}"
+    );
+    assert!(
+        said.contains(":10250\n"),
+        "the fence is its node's kubelet, its address filled in: {said}"
     );
     assert!(
         said.contains("-rw-------"),
@@ -321,6 +351,51 @@ fn served_and_reached(seen: &Seen) {
         "hello".to_owned(),
     ];
     assert_eq!(seen.bridges, (echoed.clone(), echoed));
+}
+
+/// A computer that wakes but never serves, as one whose fence never holds ends, tells the person
+/// plainly that it couldn't start safely, and nothing of the cluster: its node's address and
+/// its plugin's ways stay in the server's log.
+#[test]
+fn a_computer_whose_fence_never_holds_says_so_plainly() {
+    let Ok(image) = std::env::var("GLAVE_TEST_COMPUTER_IMAGE") else {
+        eprintln!("skipped: set GLAVE_TEST_COMPUTER_IMAGE to wake a person's computer");
+        return;
+    };
+    block_on!(async {
+        let class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+        let Some(cluster) = cluster(class.as_deref(), "never-serves").await else {
+            return;
+        };
+        let folder = glave_ports::testing::TempDir::new("stub").unwrap();
+        let key = key("never");
+        let stubbed = with_glave(&cluster, &folder, NEVER_SERVES);
+        let person = PersonComputer::new(stubbed, &key, 1).unwrap();
+        let limits = Limits {
+            isolation: cluster.isolation(),
+            ..Limits::default()
+        };
+        let environment = Environment {
+            image: Image::Oci(image),
+            ..Environment::host()
+        };
+        let woke = WorkerComputers::new(person, limits)
+            .create(&environment)
+            .await;
+        let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
+            .unwrap()
+            .destroy()
+            .await;
+        let left = left_behind(&cluster).await;
+        let message = woke.map(|_| ()).unwrap_err().message().to_owned();
+        assert_eq!(
+            message, "your computer couldn't start safely; it will try again",
+            "one plain sentence, no address or policy"
+        );
+        assert_eq!(super::objects::UNFENCED, 3, "the stub ends as glave does");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
 }
 
 #[test]

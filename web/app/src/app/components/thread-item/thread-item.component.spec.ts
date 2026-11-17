@@ -32,6 +32,7 @@ async function render(
 const LINES = [
   'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
   'Each run is added to its own chat, “Morning check”.',
+  'Each run starts with: “Check the build.”',
 ];
 
 /** A card asking to repeat work, answered `decision`, with what its call came to. */
@@ -210,8 +211,9 @@ describe('ThreadItemComponent', () => {
     );
     const lines = [...(card?.querySelectorAll('[data-testid="thread-repeat-lines"] li') ?? [])];
     expect(lines.map((line) => line.textContent.trim())).toEqual(LINES);
-    // Each line after its icon: when it runs, then its chat; the question after the repeat's.
-    expect(lines.map((line) => line.querySelectorAll('glz-icon').length)).toEqual([1, 1]);
+    // Each line after its icon: when it runs, its chat, what it starts with; the question after
+    // the repeat's.
+    expect(lines.map((line) => line.querySelectorAll('glz-icon').length)).toEqual([1, 1, 1]);
     expect(card?.querySelector('.summary glz-icon')).not.toBeNull();
     expect(card?.querySelector('code')).toBeNull();
     expect(card?.querySelector('[data-testid="thread-repeat-caution"]')?.textContent).toBe(

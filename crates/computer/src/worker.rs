@@ -25,7 +25,9 @@ use crate::token::Token;
 use kubernetes::{PersonComputer, Spec};
 use reconnect::Connection;
 
-pub use kubernetes::{Holding, Kubernetes, KubernetesSettings, Leasing, People, person_sandbox};
+pub use kubernetes::{
+    Holding, Kubernetes, KubernetesSettings, Leasing, People, UNFENCED, person_sandbox,
+};
 
 /// How long a computer's token opens connections: long enough for it to start.
 const TOKEN_LIFETIME: Duration = Duration::from_mins(10);
@@ -114,11 +116,15 @@ impl WorkerComputers {
             self.held()?.computers.insert(info.id, Arc::new(connection));
             Ok(info)
         };
-        let reached = reached.await;
-        if reached.is_err() {
-            let _ = self.computer.sleep().await;
+        match reached.await {
+            Err(error) => {
+                // Why it never served, from its log, before sleep takes the log with it.
+                let error = self.computer.never_served(error).await;
+                let _ = self.computer.sleep().await;
+                Err(error)
+            }
+            reached => reached,
         }
-        reached
     }
 
     /// Reaches the computer the Pod `pod` is, awake and served, which another server, or this

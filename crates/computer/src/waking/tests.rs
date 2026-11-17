@@ -2,7 +2,8 @@
 //! folder or a project's folder, listing its commands and closing it never wake it; the first
 //! call does, once, with the folder where it was planned, or says plainly that it is gone; a
 //! computer woken again since opens it again; one let go of with a command running is kept for
-//! it until the computer sleeps.
+//! it until the computer sleeps; one a call went through on is taken as awake for 30 seconds on
+//! its clock.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use glave_ports::NeverCancelled;
 use glave_ports::block_on;
 use glave_ports::computer::Ending;
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{ManualClock, TempDir};
 
 use super::*;
 use crate::LocalComputers;
@@ -34,15 +35,22 @@ impl Output for Said {
 /// woken again is.
 fn waking(base: &Path, wakes: &Arc<AtomicUsize>, again: &Arc<AtomicUsize>) -> Home {
     let scratch = base.canonicalize().unwrap().join("scratch");
-    planned_at(base, wakes, again, &scratch.to_string_lossy())
+    planned_at(base, wakes, again, &scratch.to_string_lossy(), still())
 }
 
-/// [`waking`], with scratch folders planned in `planned` wherever the computer makes them.
+/// A clock that stands still, so a computer a call went through on stays taken as awake.
+fn still() -> Arc<dyn Clock> {
+    Arc::new(ManualClock::at_second(1_791_001_000))
+}
+
+/// [`waking`], with scratch folders planned in `planned` wherever the computer makes them, and
+/// how lately a call went through read on `clock`.
 fn planned_at(
     base: &Path,
     wakes: &Arc<AtomicUsize>,
     again: &Arc<AtomicUsize>,
     planned: &str,
+    clock: Arc<dyn Clock>,
 ) -> Home {
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -98,7 +106,7 @@ fn planned_at(
         temp: None,
         at: None,
     };
-    Waking::home((wake, peek), None, home, planned)
+    Waking::home((wake, peek), None, home, planned, clock)
 }
 
 /// The scratch folder `name`, planned on `home`.
@@ -187,6 +195,43 @@ fn a_computer_woken_again_opens_its_workspaces_again_however_lately_a_call_went_
     });
 }
 
+/// Taken as awake for 30 seconds on its clock after a call went through on it, however long
+/// they take on this machine's: past them, what changed is not asked, since asking could wake
+/// it, until a call goes through again.
+#[test]
+fn a_computer_is_taken_as_awake_for_30_seconds_on_its_clock_after_a_call() {
+    let (_dir, base) = folder("waking-trusted");
+    let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
+    let clock = Arc::new(ManualClock::at_second(1_791_001_000));
+    let scratch = base.canonicalize().unwrap().join("scratch");
+    let on = Arc::clone(&clock) as Arc<dyn Clock>;
+    block_on!(async {
+        let home = planned_at(&base, &wakes, &again, &scratch.to_string_lossy(), on);
+        let at = home.home.id;
+        run(&home, at, "true").await;
+        clock.advance_millis(29_999);
+        let lately = home.computers.changes(at, None).await;
+        assert!(
+            lately.is_ok(),
+            "a call went through 29.999 s ago: {lately:?}"
+        );
+        clock.advance_millis(30_000);
+        let quiet = home.computers.changes(at, None).await;
+        assert!(
+            matches!(quiet, Err(ComputerError::Unsupported(_))),
+            "30 s since a call went through, so it may be asleep: {quiet:?}"
+        );
+        run(&home, at, "true").await;
+        let again = home.computers.changes(at, None).await;
+        assert!(again.is_ok(), "a call went through just now: {again:?}");
+        assert_eq!(
+            wakes.load(Ordering::SeqCst),
+            1,
+            "never woken again meanwhile"
+        );
+    });
+}
+
 #[test]
 fn a_project_s_folder_is_planned_asleep_and_opened_there_by_its_first_call() {
     let (_dir, base) = folder("waking-folder");
@@ -230,7 +275,7 @@ fn a_folder_not_where_it_was_planned_is_refused() {
     let (_dir, base) = folder("waking-moved");
     let (wakes, again) = (Arc::default(), Arc::default());
     block_on!(async {
-        let home = planned_at(&base, &wakes, &again, "/nowhere/scratch");
+        let home = planned_at(&base, &wakes, &again, "/nowhere/scratch", still());
         let chat = planned(&home, "chat").await;
         let refused = home.computers.read(chat.id, "a.txt").await;
         assert!(

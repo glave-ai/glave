@@ -26,7 +26,8 @@ pub trait ProjectFolders: Send + Sync {
     /// `project`: the person's own instructions, the folder's AGENTS.md, and what the project
     /// brings that stays off and why. `None` for `project` when the folder is a scratch folder
     /// of the thread's own. `trusting`: the thread is the person's whose trust turns a
-    /// project's own on; for anyone else's, everything the project brings stays off.
+    /// project's own on; for anyone else's, everything the project brings stays off, and the
+    /// person's own instructions are left out.
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,

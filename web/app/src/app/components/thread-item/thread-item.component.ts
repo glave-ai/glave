@@ -20,7 +20,7 @@ import {
   GlzReceiptComponent,
   GlzServiceCardComponent,
 } from '@glave/glaze';
-import { CircleAlert, Clock, MessageSquare, Repeat } from 'lucide';
+import { CircleAlert, Clock, MessageSquare, Repeat, TextQuote } from 'lucide';
 
 import { sizeOf } from '../../lib/attachments';
 import type {
@@ -61,8 +61,11 @@ interface ShownService extends ServiceItem {
   readonly sendLabel: string;
 }
 
-/** The icons a card asking to repeat work draws before its lines, in the server's order. */
-const LINE_ICONS = [Clock, MessageSquare] as const;
+/**
+ * The icons a card asking to repeat work draws before its lines, in the server's order: when it
+ * runs, the chat its runs go to, and what each run starts with.
+ */
+const LINE_ICONS = [Clock, MessageSquare, TextQuote] as const;
 
 /**
  * A card asking to repeat work, as the thread shows it: the server's question, its lines and

@@ -1,22 +1,23 @@
 //! The agent's `schedule` tool through the session API: it is offered in a chat someone can
 //! answer in, where schedules run, and never in a task; setting one up asks the person with the
-//! server's own card (its question, its first run on their clock, its chat), in every mode, Full
-//! access included, refused before asking for whatever would refuse it, and refused in plan
-//! mode; only their yes makes the schedule, under the server's own budget, in their time zone,
-//! remembering the chat it was asked in; "Not now" makes nothing; and the agent lists and
-//! removes schedules when asked, removing one asking as any change does.
+//! server's own card (its question, when it runs on their clock, its chat, what each run starts
+//! with), in every mode, Full access included, refused before asking for whatever would refuse
+//! it, and refused in plan mode; only their yes makes the schedule, under the server's own
+//! budget, in the time zone its card showed, remembering the chat it was asked in; "Not now"
+//! makes nothing; and the agent lists and removes schedules when asked, removing one asking as
+//! any change does.
 
 use glave_event::{Ask, Body, Permissions, ThreadId, decode};
 use glave_ports::testing::ManualClock;
-use glave_ports::{EventLog, InMemoryLog};
+use glave_ports::{Caller, EventLog, InMemoryLog};
 use glave_session::protocol::{Answer, Reply, Request, ScheduleInfo};
 use glave_session::{Answering, KeepAwake, Unawake};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::support::*;
 
 /// What the model calls to set up a schedule every weekday at 8.
-fn create() -> serde_json::Value {
+pub(crate) fn create() -> Value {
     json!({
         "action": "create", "name": "Morning check", "prompt": "check the build",
         "cron": "0 8 * * 1-5"
@@ -25,7 +26,7 @@ fn create() -> serde_json::Value {
 
 /// A setup in `mode`, whose model makes each of `calls` then says it is done, on a clock at
 /// Monday 16 November 2026, 10:00 UTC.
-fn setup(mode: Permissions, calls: Vec<serde_json::Value>) -> Setup {
+pub(crate) fn setup(mode: Permissions, calls: Vec<Value>) -> Setup {
     let mut answers: Vec<_> = (calls.into_iter())
         .map(|call| answer(None, Some(("schedule", call))))
         .collect();
@@ -38,30 +39,30 @@ fn setup(mode: Permissions, calls: Vec<serde_json::Value>) -> Setup {
 
 /// A server in `mode` on a repository of its own, whose model makes each of `calls` then says
 /// it is done; what its model was sent; and the folder.
-async fn server(
+pub(crate) async fn server(
     name: &str,
     mode: Permissions,
-    calls: Vec<serde_json::Value>,
+    calls: Vec<Value>,
 ) -> (Tested, Seen, glave_ports::testing::TempDir) {
     let setup = setup(mode, calls);
     let (server, seen, _, dir) = setup.build_in_repository(name, InMemoryLog::new()).await;
     (server, seen, dir)
 }
 
-async fn schedules<L: EventLog + 'static>(server: &Tested<L>) -> Vec<ScheduleInfo> {
+pub(crate) async fn schedules<L: EventLog + 'static>(server: &Tested<L>) -> Vec<ScheduleInfo> {
     match server.request(Request::ScheduleList {}).await.unwrap() {
         Reply::Schedules { schedules } => schedules,
         other => panic!("schedules, not {other:?}"),
     }
 }
 
-/// Lets `thread`'s turn run until it has ended.
-async fn ended<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) {
+/// Lets `caller`'s `thread`'s turn run until it has ended.
+async fn ended<L: EventLog + 'static>(server: &Tested<L>, caller: &Caller, thread: ThreadId) {
     for _ in 0..100_000 {
-        if kinds(server, thread)
-            .await
+        let events = events_as(server, caller, thread).await;
+        if events
             .iter()
-            .any(|kind| kind == "turn.ended")
+            .any(|event| event.kind.as_str() == "turn.ended")
         {
             return;
         }
@@ -72,27 +73,62 @@ async fn ended<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) {
 
 /// The person answers `thread`'s waiting approval with `decision`, and the turn goes on to
 /// its end.
-async fn decide<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId, decision: Answer) {
-    let approval = asked_in(server, thread).await;
+pub(crate) async fn decide<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+    decision: Answer,
+) {
+    decide_as(server, &Caller::default(), thread, decision).await;
+}
+
+/// `caller` answers their `thread`'s waiting approval with `decision`, and the turn goes on to
+/// its end.
+pub(crate) async fn decide_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+    decision: Answer,
+) {
+    let approval = asked_in_as(server, caller, thread).await;
     let decided = Request::ApprovalDecide {
         thread,
         approval,
         decision,
     };
-    let answered = server.request(decided).await;
+    let answered = server.request_as(caller, decided).await;
     assert!(answered.is_ok(), "{answered:?}");
-    ended(server, thread).await;
+    ended(server, caller, thread).await;
 }
 
 /// What `thread` asked the person, recorded.
-async fn asked<L: EventLog + 'static>(
+pub(crate) async fn asked<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
 ) -> Option<glave_event::ApprovalRequested> {
-    (events(server, thread).await.into_iter()).find_map(|raw| match decode(raw).ok()?.body {
+    asked_of(server, &Caller::default(), thread).await
+}
+
+/// What `caller`'s `thread` asked them, recorded.
+pub(crate) async fn asked_of<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> Option<glave_event::ApprovalRequested> {
+    let events = events_as(server, caller, thread).await;
+    (events.into_iter()).find_map(|raw| match decode(raw).ok()?.body {
         Body::ApprovalRequested(asked) => Some(asked),
         _ => None,
     })
+}
+
+/// The structured result of `thread`'s first tool call that has one.
+async fn structured<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> Value {
+    (events(server, thread).await.into_iter())
+        .find_map(|raw| match decode(raw).ok()?.body {
+            Body::ToolCallCompleted(done) => done.structured,
+            _ => None,
+        })
+        .unwrap()
 }
 
 #[test]
@@ -125,20 +161,21 @@ fn the_agent_sets_up_a_schedule_only_once_the_person_says_yes_to_the_server_s_ca
                 when: "every weekday at 8:00 am".into()
             })
         );
-        let repeating = asked.repeating.clone().unwrap();
+        let card = asked.repeating.clone().unwrap();
+        let from = (card.cron.as_str(), card.zone.as_str(), card.name.as_str());
+        let want = ("0 8 * * 1-5", "America/New_York", "Morning check");
         assert_eq!(
-            (
-                repeating.cron.as_str(),
-                repeating.zone.as_str(),
-                repeating.name.as_str()
-            ),
-            ("0 8 * * 1-5", "America/New_York", "Morning check"),
-            "what the card was written from, to write it again in another language"
+            from, want,
+            "what the card was written from, to write it again"
         );
+        let detail = "Monday to Friday, 8:00 am your time. First run: Monday 16 November.\n\
+             Each run is added to its own chat, \u{201c}Morning check\u{201d}.\n\
+             Each run starts with: \u{201c}check the build\u{201d}";
+        assert_eq!(asked.detail, detail);
         assert_eq!(
-            asked.detail,
-            "First run: Monday 16 November at 8:00 am, your time.\n\
-             Each run is added to its own chat, \u{201c}Morning check\u{201d}."
+            asked.summary,
+            format!("schedule: {detail}"),
+            "what would run, whole"
         );
         assert_eq!(asked.caution, None, "no laptop caveat on a server");
         assert_eq!(
@@ -154,18 +191,17 @@ fn the_agent_sets_up_a_schedule_only_once_the_person_says_yes_to_the_server_s_ca
         assert_eq!(made[0].zone, "America/New_York");
         assert_eq!(made[0].budget, 200_000, "the server's own budget");
         assert_ne!(made[0].thread, Some(thread), "a chat of its own");
-        let result = (events(&server, thread).await.into_iter())
-            .find_map(|raw| match decode(raw).ok()?.body {
-                Body::ToolCallCompleted(done) => done.structured,
-                _ => None,
-            })
-            .unwrap();
+        let result = structured(&server, thread).await;
         assert_eq!(
             result["schedule"],
             json!(made[0].schedule),
             "the client finds the schedule"
         );
         assert_eq!(result["chat"], json!(made[0].thread));
+        assert_eq!(
+            result["repeats"], "Every weekday at 8:00 am",
+            "the folded card's line, the server's own"
+        );
         let told = json(&seen);
         assert!(
             told[1].contains("Set up \\\"Morning check\\\""),
@@ -194,7 +230,10 @@ fn not_now_sets_up_nothing_and_full_access_still_asks() {
 fn what_would_refuse_a_schedule_refuses_it_before_anyone_is_asked() {
     block_on!(async {
         let blank = json!({"action": "create", "name": "x", "prompt": "  ", "cron": "0 8 * * *"});
-        let mut full = setup(Permissions::Auto, vec![blank, create()]);
+        let at =
+            |cron: &str| json!({"action": "create", "name": "x", "prompt": "hi", "cron": cron});
+        let calls = vec![blank, at("*/30 * * * *"), at("0 8 30 2 *"), create()];
+        let mut full = setup(Permissions::Auto, calls);
         full.limits.max_schedules = Some(0);
         let (server, seen, _, _dir) = full
             .build_in_repository("tool-refused", InMemoryLog::new())
@@ -206,7 +245,17 @@ fn what_would_refuse_a_schedule_refuses_it_before_anyone_is_asked() {
         assert_eq!(asked(&server, thread).await, None, "no one was asked");
         let told = json(&seen);
         assert!(told[1].contains("a schedule needs a prompt"), "{}", told[1]);
-        assert!(told[2].contains("max_schedules"), "{}", told[2]);
+        assert!(
+            told[2].contains("at most once every 60 minutes"),
+            "the agent proposes nothing more often than hourly: {}",
+            told[2]
+        );
+        assert!(
+            told[3].contains("never runs"),
+            "the 30th of February: {}",
+            told[3]
+        );
+        assert!(told[4].contains("max_schedules"), "{}", told[4]);
     });
 }
 

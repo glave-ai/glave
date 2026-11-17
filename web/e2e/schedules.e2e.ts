@@ -27,6 +27,9 @@ for (const view of VIEWS) {
       await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
         'Each run is added to its own chat, “Morning email summary”.',
       );
+      await expect(byTestId(page, 'thread-repeat-lines')).toContainText(
+        'Each run starts with: “Summarize my email”',
+      );
       await expect(byTestId(page, 'thread-repeat-caution')).toHaveText(
         'It runs only while glave runs on this computer.',
       );

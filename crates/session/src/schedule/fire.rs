@@ -6,10 +6,11 @@
 //! organization, each tick starting one organization further on, so none waits behind the
 //! others every time. A run is claimed in the ledger (`schedule.fired`) before its turn starts,
 //! and only the server whose claim lands starts it. A run due while the one before is still
-//! going in the chat, or while someone's turn is, is skipped and recorded so once
-//! (`schedule.skipped`); a run refused for any other reason is recorded with why. A schedule
-//! that missed runs while no server ran it runs once, as soon as one does, never once per
-//! missed time (systemd's `Persistent=true`).
+//! going in the chat, or while someone's turn is, is skipped and recorded so
+//! (`schedule.skipped`); a run refused for any other reason is recorded with its reason. A skip
+//! for the reason the latest skip had is recorded once, then only held back. A schedule that
+//! missed runs while no server ran it runs once, as soon as one does, never once per missed
+//! time (systemd's `Persistent=true`).
 
 use std::collections::BTreeSet;
 use std::future::Future;
@@ -29,8 +30,8 @@ use crate::words::Sentence;
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
 const LOOK_AGAIN: Duration = Duration::from_secs(60);
-/// The shortest it sleeps: a run due now that the next tick would not start, held back by the
-/// task limit, waits at least this long rather than being looked at again at once.
+/// The shortest it sleeps, so a run due now that a tick did not start is not looked at again
+/// at once.
 const SOONEST: Duration = Duration::from_secs(1);
 /// How long the organization's scheduler lease lasts unless renewed: past the longest wait
 /// between ticks, so the server firing its schedules keeps it from tick to tick, and another
@@ -148,8 +149,9 @@ where
         }
     }
 
-    /// Runs the schedules until `stop` finishes: a tick whenever the next run is due, at least
-    /// every minute, for schedules other processes made, and at most every second.
+    /// Runs the schedules until `stop` finishes: a tick whenever the next run is due or a task
+    /// ends, at least every minute, for schedules other processes made, and at most every
+    /// second.
     pub async fn run_scheduler(&self, stop: impl Future<Output = ()>) {
         let mut stop = std::pin::pin!(stop);
         loop {
@@ -163,14 +165,16 @@ where
             tokio::select! {
                 () = &mut stop => return,
                 () = tokio::time::sleep(wait) => {}
+                // A run the task limit held back may start now.
+                () = self.inner.tasks_ended.notified() => {}
             }
         }
     }
 
     /// When the next tick would start a run, of the schedules this server fires: never sooner
     /// than a second from now, so a run due now that a tick would not start is not looked at
-    /// again at once. One its maker's task limit holds back is left to the tick at least every
-    /// minute, which finds it once a task of theirs ends.
+    /// again at once. One its maker's task limit holds back is left to the tick that follows a
+    /// task ending, or the one at least every minute.
     pub fn next_due(&self) -> Option<Timestamp> {
         let now = self.inner.harness.clock().now();
         let firing: BTreeSet<OrgId> = self.scheduling().keys().copied().collect();
@@ -271,8 +275,8 @@ where
         }
     }
 
-    /// Records `schedule`'s run due at `at` skipped for `refused`, once while the same run
-    /// still goes; held back when that can't be recorded. One this server `claimed` is recorded
+    /// Records `schedule`'s run due at `at` skipped for `refused`, unclaimed once for the same
+    /// reason as the latest skip; held back when that can't be recorded. One this server `claimed` is recorded
     /// whatever its claim says of it; any other only while the ledger shows nothing of it, so
     /// servers on one store record it once.
     async fn not_started(
@@ -283,14 +287,10 @@ where
         refused: &ApiError,
         claimed: bool,
     ) -> Ran {
-        let why = match refused.code {
-            code::TURN_RUNNING => Skipped::Going,
-            _ => Skipped::Refused {
-                why: refused.message.to_string(),
-            },
-        };
-        // Once while the same run still goes: then only held back.
-        if why == Skipped::Going && self.skipped_going(project, schedule) {
+        let why = skipped_for(refused);
+        // Once for the same reason as the latest skip, then only held back; but a run this
+        // server claimed is settled in the ledger whatever its reason.
+        if !claimed && self.skipped_for_the_same(project, schedule, &why) {
             self.hold_back(project, schedule, at);
             return Ran::NotStarted;
         }
@@ -315,11 +315,32 @@ where
         Ran::NotStarted
     }
 
-    /// Whether `schedule`'s latest run was skipped as the one before still went.
-    fn skipped_going(&self, project: Located, schedule: &ScheduleCreated) -> bool {
+    /// Whether `schedule`'s latest run was skipped, for `why`.
+    fn skipped_for_the_same(
+        &self,
+        project: Located,
+        schedule: &ScheduleCreated,
+        why: &Skipped,
+    ) -> bool {
         (self.ledgers().get(&project))
             .and_then(|ledger| ledger.schedules.get(&schedule.schedule))
-            .is_some_and(|scheduled| scheduled.skipped == Some(Skipped::Going))
+            .is_some_and(|scheduled| scheduled.skipped.as_ref() == Some(why))
+    }
+}
+
+/// Why a run `refused` was skipped: as the one before still goes when a turn runs in its chat,
+/// here or on another server; else for the refusal's reason, which each reader reads in their
+/// language.
+fn skipped_for(refused: &ApiError) -> Skipped {
+    let reason = match refused.code {
+        code::TURN_RUNNING | code::RUNNING_ELSEWHERE => return Skipped::Going,
+        // Finer than its code: whoever made it is gone, or can't be told.
+        _ if refused.message.is(&Sentence::MakerRemoved) => "MAKER_REMOVED",
+        _ if refused.message.is(&Sentence::MakerUnknown) => "MAKER_UNKNOWN",
+        other => code::name_of(other).unwrap_or_default(),
+    };
+    Skipped::Refused {
+        reason: reason.to_owned(),
     }
 }
 
