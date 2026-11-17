@@ -1,4 +1,8 @@
 :host {
+  // The lines a line that gives a reason keeps, wrapped: two beside a wide column, three on a
+  // phone, where the server's reasons take three.
+  --app-reason-lines: 2;
+
   display: block;
 }
 
@@ -10,7 +14,7 @@
   gap: var(--glz-space-3);
   padding: var(--glz-inset-card-row);
   border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-strip);
+  border-radius: var(--glz-radius-card);
   background: var(--glz-surface-card);
   line-height: var(--glz-leading-tight);
 }
@@ -44,6 +48,16 @@
   font-size: var(--glz-text-sm);
 }
 
+// A line that gives a reason wraps rather than being cut, in as many lines as its room keeps.
+.reason {
+  display: -webkit-box;
+  min-block-size: calc(var(--app-reason-lines) * 1lh);
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--app-reason-lines);
+  line-clamp: var(--app-reason-lines);
+}
+
 .actions {
   display: flex;
   flex: none;
@@ -52,10 +66,18 @@
   min-block-size: var(--glz-control-height-sm);
 }
 
-// On a phone the arrow is as large as a thumb needs.
+// On a phone the arrow is as large as a thumb needs, and every card keeps its height.
 @media (width <= 48rem) {
-  .download {
+  :host {
+    --app-reason-lines: 3;
+  }
+
+  :host .download {
     min-block-size: var(--glz-control-height-touch);
     min-inline-size: var(--glz-control-height-touch);
+  }
+
+  .actions {
+    min-block-size: var(--glz-control-height-touch);
   }
 }

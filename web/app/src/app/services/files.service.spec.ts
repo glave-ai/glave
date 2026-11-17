@@ -167,6 +167,21 @@ describe('FilesService', () => {
     expect(urls.revoked).toEqual(urls.made);
   });
 
+  it('lets go of a download’s address as the page goes, before its minute is up', async () => {
+    const urls = objectUrls();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await files.save('t1', SHA, 'text/csv', 'budget.csv');
+    TestBed.resetTestingModule();
+    expect(urls.revoked).toEqual(urls.made);
+    vi.runAllTimers();
+    expect(urls.revoked).toEqual(urls.made);
+  });
+
   it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {
     const urls = objectUrls();
     const piece = { media_type: 'image/png', bytes: 4, offset: 0, data: 'b2s=' };

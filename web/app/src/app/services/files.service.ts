@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import type { FilePiece } from '@glave/client';
 
+import { UnreadableFile } from '../lib/files';
 import { fromBase64url } from '../lib/passkeys';
 import { SessionService } from './session.service';
 
@@ -116,6 +117,8 @@ export class FilesService {
   private reading = 0;
   /** The reads waiting their turn, the first asked for first. */
   private readonly waiting: (() => void)[] = [];
+  /** Each download's address, with what lets go of it a minute after the download started. */
+  private readonly saving = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -123,6 +126,11 @@ export class FilesService {
         revoke(url);
       }
       this.kept.clear();
+      for (const [url, letGo] of this.saving) {
+        clearTimeout(letGo);
+        URL.revokeObjectURL(url);
+      }
+      this.saving.clear();
     });
   }
 
@@ -142,9 +150,11 @@ export class FilesService {
     link.href = url;
     link.download = name;
     link.click();
-    setTimeout(() => {
+    const letGo = setTimeout(() => {
+      this.saving.delete(url);
       URL.revokeObjectURL(url);
     }, KEPT_FOR_SAVING);
+    this.saving.set(url, letGo);
   }
 
   /** How the file `sha256` that `thread` holds is read, a piece at a time. */
@@ -261,7 +271,7 @@ export class FilesService {
  */
 async function read(readPiece: ReadPiece, mediaType: string): Promise<Blob> {
   const unreadable = (): Error =>
-    new Error($localize`:@@files.unreadable:This file could not be read`);
+    new UnreadableFile($localize`:@@files.unreadable:This file could not be read`);
   const pieces: Uint8Array<ArrayBuffer>[] = [];
   let offset: number | null = 0;
   while (offset !== null) {

@@ -1,3 +1,4 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ApiError, ErrorCode, type MadeFile } from '@glave/client';
@@ -53,6 +54,8 @@ describe('MadeFileComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
     expect(part(root, 'title')?.textContent).toBe('Packing list');
     expect(part(root, 'line')?.textContent).toBe('Document · 3 pages · Kept with this chat');
+    // A plain line stays one line; only a reason wraps.
+    expect(part(root, 'line')?.classList.contains('reason')).toBe(false);
     expect(part(root, 'download')?.getAttribute('aria-label')).toBe('Download Packing list');
     await expectAccessible(root);
   });
@@ -62,6 +65,7 @@ describe('MadeFileComponent', () => {
     const fixture = await render(new FakeSession(), { ...PACKING, parts: null, unread });
     const root = fixture.nativeElement as HTMLElement;
     expect(part(root, 'line')?.textContent).toBe(`Document · 8 kB · ${unread}`);
+    expect(part(root, 'line')?.classList.contains('reason')).toBe(true);
     expect(part(root, 'download')).not.toBeNull();
     fixture.componentRef.setInput('file', {
       ...PACKING,
@@ -71,6 +75,7 @@ describe('MadeFileComponent', () => {
     await settle(fixture);
     expect(part(root, 'download')).toBeNull();
     expect(part(root, 'line')?.textContent).toContain('Not kept: larger than 10 MB');
+    expect(part(root, 'line')?.classList.contains('reason')).toBe(true);
   });
 
   it('saves the real file under its name, read back through the server', async () => {
@@ -83,19 +88,39 @@ describe('MadeFileComponent', () => {
     ) {
       clicked.push(this.download);
     });
-    part(fixture.nativeElement as HTMLElement, 'download')?.click();
+    const download = part(fixture.nativeElement as HTMLElement, 'download');
+    download?.click();
+    fixture.detectChanges();
+    // Busy while it reads, and a second click meanwhile saves nothing more.
+    expect(download?.getAttribute('aria-busy')).toBe('true');
+    download?.click();
     await settle(fixture);
     expect(fake.paramsOf('file/read')).toEqual([{ thread: 'thread-1', sha256: PACKING.sha256 }]);
     expect(clicked).toEqual(['Packing list.docx']);
+    expect(download?.getAttribute('aria-busy')).toBeNull();
   });
 
-  it('says why in its line when the file can’t be saved', async () => {
+  it('says why in its line, and aloud, when the file can’t be saved', async () => {
     objectUrls();
     const gone = new ApiError({ code: ErrorCode.NO_FILE, message: 'this file is no longer here' });
     const fixture = await render(new FakeSession().answer('file/read', () => gone));
+    const said = vi.spyOn(TestBed.inject(LiveAnnouncer), 'announce').mockResolvedValue();
     const root = fixture.nativeElement as HTMLElement;
     part(root, 'download')?.click();
     await settle(fixture);
     expect(part(root, 'line')?.textContent).toBe('This file is no longer here.');
+    expect(said).toHaveBeenCalledWith('This file is no longer here.');
+  });
+
+  it('says only that glave wasn’t reached when the browser’s own read fails', async () => {
+    objectUrls();
+    const fetching = new TypeError('Failed to fetch');
+    const fixture = await render(
+      new FakeSession().answer('file/read', () => Promise.reject(fetching)),
+    );
+    const root = fixture.nativeElement as HTMLElement;
+    part(root, 'download')?.click();
+    await settle(fixture);
+    expect(part(root, 'line')?.textContent).toBe('glave could not be reached. Try again.');
   });
 });

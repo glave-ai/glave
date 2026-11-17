@@ -1,11 +1,10 @@
-import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { MadeFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
-import { ThreadPanelService } from '../../services/thread-panel.service';
+import { type MadeShown, NO_MADE, madeCards } from '../../lib/made';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnMadeComponent } from './turn-made.component';
@@ -23,26 +22,13 @@ const PLAN: MadeFile = {
   sentence: 'Made a PDF: Lisbon plan (1 page)',
 };
 
-/** The files `files` drawn, unseen while only `room`, with `note` under them. */
-async function render(
-  files: readonly MadeFile[],
-  room: boolean,
-  note: string | null,
-): Promise<HTMLElement> {
-  // The chat's panel as the cards see it: nothing open in it.
-  const panel = { file: signal(null), visible: signal(false), openFile: () => undefined };
+/** What a turn shows of the files it made, drawn. */
+async function render(made: MadeShown): Promise<HTMLElement> {
   TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      ...provideFakeSession(new FakeSession()),
-      ThreadService,
-      { provide: ThreadPanelService, useValue: panel },
-    ],
+    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
   });
   const fixture = TestBed.createComponent(TurnMadeComponent);
-  fixture.componentRef.setInput('files', files);
-  fixture.componentRef.setInput('room', room);
-  fixture.componentRef.setInput('note', note);
+  fixture.componentRef.setInput('made', made);
   await settle(fixture);
   return fixture.nativeElement as HTMLElement;
 }
@@ -50,16 +36,32 @@ async function render(
 describe('TurnMadeComponent', () => {
   it('draws a card for each file, then what they leave out in the server’s words', async () => {
     const note = '1 more file was made than a chat keeps: it stays on the computer';
-    const root = await render([PLAN], false, note);
+    const root = await render({ ...NO_MADE, files: madeCards([PLAN]), note });
     const cards = root.querySelectorAll('[data-testid="made-file"]');
     expect(cards).toHaveLength(1);
+    expect(root.querySelector('app-made-file')?.classList.contains('room')).toBe(false);
     expect(root.querySelector('[data-testid="turn-made-note"]')?.textContent).toBe(note);
     await expectAccessible(root);
   });
 
-  it('keeps each card’s room, unseen, and says nothing when nothing is left out', async () => {
-    const root = await render([PLAN], true, null);
-    expect(root.querySelector('app-made-file')?.classList.contains('room')).toBe(true);
+  it('keeps the room of the cards and the note not described yet, unseen, after those drawn', async () => {
+    const root = await render({
+      files: madeCards([PLAN]),
+      room: madeCards([{ ...PLAN, file_name: 'deck.pptx' }]),
+      note: ' ',
+      noteRoom: true,
+    });
+    const rooms = [...root.querySelectorAll('app-made-file')].map((card) =>
+      card.classList.contains('room'),
+    );
+    expect(rooms).toEqual([false, true]);
+    expect(root.querySelector('[data-testid="turn-made-note"]')?.classList.contains('room')).toBe(
+      true,
+    );
+  });
+
+  it('says nothing when nothing is left out', async () => {
+    const root = await render({ ...NO_MADE, files: madeCards([PLAN]) });
     expect(root.querySelector('[data-testid="turn-made-note"]')).toBeNull();
   });
 });

@@ -1,11 +1,4 @@
-import type {
-  ChangedFile,
-  MadeFile,
-  Outcome,
-  ReplySources,
-  TurnFiles,
-  TurnResult,
-} from '@glave/client';
+import type { ChangedFile, Outcome, ReplySources, TurnFiles, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type {
@@ -17,7 +10,7 @@ import type {
   ThreadItem,
 } from './conversation';
 import { roomFor } from './files';
-import { type MadeLater, madeRoom } from './made';
+import { type MadeLater, type MadeShown, NO_MADE, madeShown } from './made';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
@@ -83,14 +76,10 @@ export interface TurnResults {
    */
   readonly room: readonly ChangedFile[];
   /**
-   * The files it made for the person, as the server describes them; until it has, a card's
-   * room for each its end named (`madeRoom`).
+   * The files it made for the person, as the server describes them, and until it has, the room
+   * of those its log names (`madeShown`).
    */
-  readonly made: readonly MadeFile[];
-  /** Whether `made` is only room kept for the cards, drawn unseen. */
-  readonly madeRoom: boolean;
-  /** What the files it made leave out, in the server's sentence; `null` when nothing. */
-  readonly madeNote: string | null;
+  readonly made: MadeShown;
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -215,7 +204,10 @@ export interface TurnFacts {
   /** What later look-overs said each turn made, by the `seq` of its start, before the server
    * describes it. */
   readonly madeLater: ReadonlyMap<number, MadeLater>;
-  /** Whether the server couldn't say what the turns made: no room is kept for them then. */
+  /**
+   * Whether the server couldn't say what the turns made, the last time it was asked: what it
+   * described before stays, and no room is kept.
+   */
   readonly madeFailed: boolean;
   /** Each run of calls in a line, and each turn's reply. */
   readonly steps: Steps;
@@ -242,24 +234,17 @@ function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFil
 }
 
 /**
- * The files `turn` made, as the server describes them by the `seq` of its start, whether they are
- * only room, and what they leave out: until the server has described them, a card's room for
- * each file its end and later look-overs named, and a note's when they leave something out; none
- * once the server couldn't say.
+ * The files `turn` made, as the server describes them by the `seq` of its start, and the room of
+ * those its end and later look-overs name that it hasn't described yet (`madeShown`).
  */
-function madeBy(turn: Turn, told: TurnFacts): [readonly MadeFile[], boolean, string | null] {
-  if (told.madeFailed || turn.startSeq === null) {
-    return [[], false, null];
-  }
-  const described = told.made?.get(turn.startSeq);
-  if (described !== undefined) {
-    return [described.files, false, described.note ?? null];
+function madeBy(turn: Turn, told: TurnFacts): MadeShown {
+  if (turn.startSeq === null) {
+    return NO_MADE;
   }
   const later = told.madeLater.get(turn.startSeq);
-  const files = [...(turn.result?.made ?? []), ...(later?.files ?? [])];
+  const named = [...(turn.result?.made ?? []), ...(later?.files ?? [])];
   const left = turn.result?.made_left != null || later?.left === true;
-  // A note's room is a line the note will fill: a space that doesn't collapse, so it keeps one.
-  return [madeRoom(files), files.length > 0 || left, left ? '\u00a0' : null];
+  return madeShown(named, left, told.made?.get(turn.startSeq), told.madeFailed);
 }
 
 /**
@@ -293,7 +278,6 @@ export function turnResults(
   const timed = turn.took !== null && turn.took !== 0 && working === null;
   const model = turn.model === null ? undefined : told.models.get(turn.model);
   const result = turn.result;
-  const [madeFiles, roomOnly, madeNote] = madeBy(turn, told);
   const facts = [
     ...(timed ? [formatDuration(turn.took, locale)] : []),
     ...(result === null ? [] : [spent(result, locale)]),
@@ -308,9 +292,7 @@ export function turnResults(
     working,
     files: filesOf(turn, told.changed),
     room: told.changed === null ? roomFor(result?.changed ?? []) : [],
-    made: madeFiles,
-    madeRoom: roomOnly,
-    madeNote,
+    made: madeBy(turn, told),
     receipt:
       calls > 0
         ? {

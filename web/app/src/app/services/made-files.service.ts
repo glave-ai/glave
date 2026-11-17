@@ -1,17 +1,17 @@
 import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
 import type { ThreadId, TurnFiles } from '@glave/client';
 
-import { type MadeLater, madeCount, madeLater } from '../lib/made';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
 /**
  * The files the open thread's turns made for the person (`thread/files`), by the `seq` of each
  * turn's start, with what each turn's files leave out, as the server reads them from the
- * thread's log: read once the thread's history says what a turn made, and again each time it
- * says more (another turn's end, or a later look-over). Until they are first known, `null`, so a
- * turn keeps its cards' room from what its log says it made; when they cannot be read, the turns
- * show without them, and keep no room. Each thread view provides its own.
+ * thread's log: read once the thread has opened, if its history says a turn made one, and again
+ * each time it says more (another turn's end that made one, or a later look-over), and never on
+ * anything else. Until they are first known, `null`, so a turn keeps its cards' room from what its
+ * log says it made; when they cannot be read, what was read before stays, and no room is kept.
+ * Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class MadeFilesService {
@@ -27,10 +27,12 @@ export class MadeFilesService {
     source: this.thread.thread,
     computation: () => false,
   });
-  /** What later look-overs said each turn made, from the thread's log. */
-  readonly later = computed<ReadonlyMap<number, MadeLater>>(() => madeLater(this.thread.events()));
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
+  /** Whether a read is in flight. */
+  private reading = false;
+  /** Whether a read was asked for since the one in flight began. */
+  private again = false;
   /**
    * The files each turn made, and what they leave out, by the `seq` of its start; `null` until
    * first known.
@@ -43,33 +45,60 @@ export class MadeFilesService {
   constructor() {
     effect(() => {
       const thread = this.thread.thread();
-      const making = madeCount(this.thread.events());
-      if (thread !== null && making > 0) {
-        untracked(() => void this.refresh());
-      }
+      const making = this.thread.making();
+      untracked(() => {
+        if (thread !== null && making !== null) {
+          void this.refresh();
+        }
+      });
     });
   }
 
-  /** Reads the files the thread's turns made. */
+  /**
+   * Reads the files the thread's turns made: at once, or, while a read is in flight, once more
+   * after it, however often it was asked meanwhile.
+   */
   async refresh(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return;
+    }
+    this.reading = true;
+    this.again = false;
+    try {
+      do {
+        await this.read();
+      } while (this.asked());
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  /** Whether a read was asked for since the last began, taking it as begun. */
+  private asked(): boolean {
+    const asked = this.again;
+    this.again = false;
+    return asked;
+  }
+
+  /** Reads the files the thread's turns made, once. */
+  private async read(): Promise<void> {
     const thread = this.thread.thread();
     if (thread === null) {
       return;
     }
     this.latest += 1;
     const ticket = this.latest;
-    try {
-      const { made } = await this.session.call('thread/files', { thread });
-      if (ticket === this.latest && this.thread.thread() === thread) {
-        this.made.set(made);
-        this.failed.set(false);
-      }
-    } catch {
-      // The files only add to a turn, which stands without them, and without their room; the next
-      // turn's end asks again.
-      if (ticket === this.latest && this.thread.thread() === thread) {
-        this.failed.set(true);
-      }
+    // The files only add to a turn, which stands without them; the next that says more asks again.
+    const read = await this.session.call('thread/files', { thread }).catch(() => null);
+    if (ticket !== this.latest || this.thread.thread() !== thread) {
+      return;
+    }
+    if (read === null) {
+      this.failed.set(true);
+    } else {
+      this.made.set(read.made);
+      this.failed.set(false);
     }
   }
 }

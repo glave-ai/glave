@@ -1,7 +1,43 @@
-import type { AssetKind, FileMade, MadeFile, MadeLeft, RawEvent } from '@glave/client';
+import {
+  ApiError,
+  type AssetKind,
+  type FileMade,
+  type MadeFile,
+  type MadeLeft,
+  type RawEvent,
+  type TurnFiles,
+} from '@glave/client';
 
 import { sizeOf } from './attachments';
+import { UnreadableFile } from './files';
 import { sentence, unreached } from './text';
+
+/**
+ * The room a note's line keeps until the server's words fill it: a space that doesn't collapse,
+ * so its line keeps its height.
+ */
+const NOTE_ROOM = '\u00a0';
+
+/** A file a turn made, as its card is drawn, with what tells it from the others. */
+export interface MadeCard {
+  readonly key: string;
+  readonly file: MadeFile;
+}
+
+/** What a turn shows of the files it made, after its reply. */
+export interface MadeShown {
+  /** Each file the server described, a card each. */
+  readonly files: readonly MadeCard[];
+  /** Each file its log names that the server hasn't described yet: a card's room, unseen. */
+  readonly room: readonly MadeCard[];
+  /** What they leave out, in the server's sentence, or a line's room for it; `null` when nothing. */
+  readonly note: string | null;
+  /** Whether `note` is only a line's room, unseen, until the server says what was left out. */
+  readonly noteRoom: boolean;
+}
+
+/** A turn that made nothing, or whose files the server couldn't say. */
+export const NO_MADE: MadeShown = { files: [], room: [], note: null, noteRoom: false };
 
 /** What a file of `kind` is called, for a person. */
 export function kindName(kind: AssetKind): string {
@@ -32,20 +68,22 @@ export function madeLine(file: MadeFile, locale: string): string {
 }
 
 /**
- * How many times `events` say what turns made: each turn's end that made a file or left one out,
- * and each later look-over. Each new one is a reason to read the files again.
+ * The `seq` of the latest of `events` that says what a turn made: a turn's end that made a file
+ * or left one out, or a later look-over (`turn.made`); `null` when none does. Each new one is a
+ * reason to read the files again.
  */
-export function madeCount(events: readonly RawEvent[]): number {
-  return events.filter((event) => {
-    if (event.type === 'turn.made') {
-      return true;
-    }
-    if (event.type !== 'turn.ended') {
-      return false;
-    }
+export function lastMaking(events: readonly RawEvent[]): number | null {
+  let last: number | null = null;
+  for (const event of events) {
     const made: unknown = event.data['made'];
-    return (Array.isArray(made) && made.length > 0) || event.data['made_left'] != null;
-  }).length;
+    const ended =
+      event.type === 'turn.ended' &&
+      ((Array.isArray(made) && made.length > 0) || event.data['made_left'] != null);
+    if (ended || event.type === 'turn.made') {
+      last = event.seq;
+    }
+  }
+  return last;
 }
 
 /**
@@ -99,9 +137,14 @@ export function madeLater(events: readonly RawEvent[]): ReadonlyMap<number, Made
   return later;
 }
 
-/** Why a file couldn't be read, from what `error` says: the server's words, or unreached. */
+/**
+ * Why a file couldn't be read: the server's words, or the page's own when what it read back
+ * wasn't whole; anything else, a browser's own words among them, as not reached.
+ */
 export function whyNot(error: unknown): string {
-  return error instanceof Error ? sentence(error.message) : unreached();
+  return error instanceof ApiError || error instanceof UnreadableFile
+    ? sentence(error.message)
+    : unreached();
 }
 
 /** The name a file is saved as, from where a turn made it: `out/Trip budget.xlsx`'s last part. */
@@ -111,17 +154,61 @@ function fileName(path: string): string {
 
 /**
  * The cards a turn's end says it made, before the server has described them: each card's room,
- * kept unseen so nothing below moves when the real ones come in.
+ * kept unseen so nothing below moves when the real ones come in. Each is kept or not, and read
+ * or not, as its card will be, so a card whose line will give a reason keeps that line's room.
  */
 export function madeRoom(made: readonly FileMade[]): readonly MadeFile[] {
-  return made.map((file) => ({
-    kind: 'other',
-    name: fileName(file.path),
-    file_name: fileName(file.path),
-    media_type: '',
-    bytes: file.bytes,
-    previews: false,
-    kept: ' ',
-    sentence: '',
-  }));
+  return made.map((file) => {
+    const blob = typeof file.kept === 'object' ? file.kept.blob : null;
+    return {
+      kind: 'other',
+      name: fileName(file.path),
+      file_name: fileName(file.path),
+      media_type: '',
+      bytes: file.bytes,
+      sha256: blob?.sha256 ?? null,
+      previews: false,
+      kept: '\u00a0',
+      unread: blob !== null && file.read == null ? '\u00a0' : null,
+      sentence: '',
+    };
+  });
+}
+
+/**
+ * `files` as cards, each with a key of its own: its file's name and hash, and how many before it
+ * had the same, so two copies of one file are two cards.
+ */
+export function madeCards(files: readonly MadeFile[]): readonly MadeCard[] {
+  const seen = new Map<string, number>();
+  return files.map((file) => {
+    const named = `${file.file_name}/${file.sha256 ?? ''}`;
+    const before = seen.get(named) ?? 0;
+    seen.set(named, before + 1);
+    return { key: `${named}/${String(before)}`, file };
+  });
+}
+
+/**
+ * What a turn shows of the files it made: those the server described (`described`), then a
+ * card's room for each file its log names (`named`) that it hasn't described yet, as a later
+ * look-over's are until it does, and the server's note, or a line's room for it while the log
+ * says something was left out (`left`) and the server hasn't said what. Once the server couldn't
+ * say (`failed`), what it described stays, and no room is kept.
+ */
+export function madeShown(
+  named: readonly FileMade[],
+  left: boolean,
+  described: TurnFiles | undefined,
+  failed: boolean,
+): MadeShown {
+  const unseen = failed ? [] : named.slice(described?.files.length ?? 0);
+  const note = described?.note ?? null;
+  const noteRoom = note === null && left && !failed;
+  return {
+    files: madeCards(described?.files ?? []),
+    room: madeCards(madeRoom(unseen)),
+    note: noteRoom ? NOTE_ROOM : note,
+    noteRoom,
+  };
 }

@@ -201,7 +201,7 @@ export class ThreadComponent {
     sourced: this.sources.byReply(),
     changed: this.changed.byTurn(),
     made: this.madeFiles.byTurn(),
-    madeLater: this.madeFiles.later(),
+    madeLater: this.service.madeLater(),
     madeFailed: this.madeFiles.failed(),
     steps: this.steps.steps(),
     models: this.modelNames(),

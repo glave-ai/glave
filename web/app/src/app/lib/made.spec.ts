@@ -1,13 +1,23 @@
-import { ApiError, ErrorCode, type AssetKind, type MadeFile, type RawEvent } from '@glave/client';
+import {
+  ApiError,
+  ErrorCode,
+  type AssetKind,
+  type FileMade,
+  type MadeFile,
+  type RawEvent,
+} from '@glave/client';
 
+import { UnreadableFile } from './files';
 import {
   kindName,
-  madeCount,
+  lastMaking,
+  madeCards,
   madeLater,
   madeLeftOf,
   madeLine,
   madeOf,
   madeRoom,
+  madeShown,
   whyNot,
 } from './made';
 
@@ -47,15 +57,13 @@ describe('made', () => {
     expect(madeLine({ ...DECK, parts: null, unread }, 'en')).toBe(`Slides · 3.3 MB · ${unread}`);
   });
 
-  it('counts each time a log says what turns made, to read the files again', () => {
-    const events = [
-      event('turn.ended', { outcome: 'completed' }),
-      event('turn.ended', { outcome: 'completed', made: [{ path: 'a.pdf' }] }),
-      event('turn.ended', { outcome: 'completed', made_left: { kind: 'more', files: 1 } }),
-      event('turn.made', { turn: 3 }),
-      event('message.added', {}),
-    ];
-    expect(madeCount(events)).toBe(3);
+  it('reads the files again on what last said what turns made, and on nothing else', () => {
+    const ended = event('turn.ended', { outcome: 'completed', made: [{ path: 'a.pdf' }] }, 2);
+    const left = event('turn.ended', { made_left: { kind: 'more', files: 1 } }, 3);
+    expect(lastMaking([event('turn.ended', { outcome: 'completed', made: [] }, 1)])).toBeNull();
+    expect(lastMaking([ended, event('message.added', {}, 5)])).toBe(2);
+    expect(lastMaking([ended, left, event('turn.ended', { outcome: 'completed' }, 4)])).toBe(3);
+    expect(lastMaking([ended, event('turn.made', { turn: 1 }, 6)])).toBe(6);
   });
 
   it('says its size where the server knows no parts', () => {
@@ -69,6 +77,48 @@ describe('made', () => {
     ]);
     expect(room.map((file) => file.file_name)).toEqual(['Trip budget.xlsx', 'plan.pdf']);
     expect(room.every((file) => !file.previews && file.sha256 == null)).toBe(true);
+    // Kept and read, or kept and not read, as its card will be, so its line keeps its room.
+    const blob = { sha256: 'b'.repeat(64), bytes: 9, media_type: 'application/pdf' };
+    const read = { parts: { pages: 1 } };
+    const [shown, unread] = madeRoom([
+      { path: 'plan.pdf', bytes: 9, kept: { blob }, read },
+      { path: 'deck.pptx', bytes: 9, kept: { blob } },
+    ]);
+    expect([shown?.sha256, shown?.unread]).toEqual([blob.sha256, null]);
+    expect([unread?.sha256, unread?.unread]).toEqual([blob.sha256, '\u00a0']);
+  });
+
+  it('keys each card by its file, two copies of one file apart', () => {
+    const keys = madeCards([DECK, DECK, { ...DECK, sha256: null }]).map((card) => card.key);
+    expect(new Set(keys).size).toBe(3);
+  });
+
+  it('shows what the server described, the room of what it hasn’t yet, and the note’s room', () => {
+    const plan: FileMade = { path: 'plan.pdf', bytes: 9, kept: 'too_large' };
+    const deck: FileMade = { path: 'deck.pptx', bytes: 4, kept: 'secret' };
+    const files = (shown: ReturnType<typeof madeShown>): readonly string[] =>
+      [...shown.files, ...shown.room].map((card) => card.file.file_name);
+    // Before the server describes them, a card's room for each, and the note's line.
+    const before = madeShown([plan], true, undefined, false);
+    expect([files(before), before.room.length, before.note, before.noteRoom]).toEqual([
+      ['plan.pdf'],
+      1,
+      '\u00a0',
+      true,
+    ]);
+    // Described, then a later look-over names one more: its room after the cards drawn.
+    const described = { turn: 1, files: [{ ...DECK, file_name: 'plan.pdf' }], note: 'One more' };
+    const later = madeShown([plan, deck], true, described, false);
+    expect([files(later), later.files.length, later.note, later.noteRoom]).toEqual([
+      ['plan.pdf', 'deck.pptx'],
+      1,
+      'One more',
+      false,
+    ]);
+    // A read that fails after one that didn't keeps the cards drawn, and no room.
+    const failed = madeShown([plan, deck], true, described, true);
+    expect([files(failed), failed.note]).toEqual([['plan.pdf'], 'One more']);
+    expect(madeShown([plan], true, undefined, true).room).toEqual([]);
   });
 
   it('reads the files a log names, and what they leave out, leaving out what is not one', () => {
@@ -101,6 +151,13 @@ describe('made', () => {
   it('says why a file couldn’t be read in the server’s words', () => {
     const gone = new ApiError({ code: ErrorCode.NO_FILE, message: 'this file is no longer here' });
     expect(whyNot(gone)).toBe('This file is no longer here.');
-    expect(whyNot('nothing')).toBe('glave could not be reached. Try again.');
+    expect(whyNot(new UnreadableFile('This file could not be read'))).toBe(
+      'This file could not be read.',
+    );
+    // A browser's own words never reach the card.
+    const unreached = 'glave could not be reached. Try again.';
+    expect(whyNot(new TypeError('Failed to fetch'))).toBe(unreached);
+    expect(whyNot(new DOMException('The operation was aborted.', 'AbortError'))).toBe(unreached);
+    expect(whyNot('nothing')).toBe(unreached);
   });
 });
