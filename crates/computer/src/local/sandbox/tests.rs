@@ -27,6 +27,8 @@ mod stores;
 
 pub(super) mod terminals;
 
+pub(super) mod token;
+
 /// Whether the sandbox runs here: where it must (`GLAVE_REQUIRE_SANDBOX`, as CI's sandbox
 /// jobs say), a test that finds none fails instead of passing by doing nothing.
 pub(in crate::local) fn enforced() -> bool {
