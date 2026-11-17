@@ -27,3 +27,9 @@
     background: var(--glz-color-border);
   }
 }
+
+// What the files a turn made leave out, in the server's words, under their cards.
+.made-note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

@@ -1,15 +1,16 @@
 import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
-import type { MadeFile, ThreadId, TurnFiles } from '@glave/client';
+import type { ThreadId, TurnFiles } from '@glave/client';
 
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
 /**
  * The files the open thread's turns made for the person (`thread/files`), by the `seq` of each
- * turn's start, as the server reads them from the thread's log and describes them: read once
- * the thread's history holds a turn that ended having made one, and again each time another
- * does. Until they are first known, `null`, so a turn keeps its cards' room from its end alone;
- * when they cannot be read, the turns show without them. Each thread view provides its own.
+ * turn's start, with what each turn's files leave out, as the server reads them from the
+ * thread's log: read once the thread's history says what a turn made, and again each time it
+ * says more (another turn's end, or a later look-over). Until they are first known, `null`, so a
+ * turn keeps its cards' room from its end alone; when they cannot be read, the turns show
+ * without them. Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class MadeFilesService {
@@ -22,21 +23,19 @@ export class MadeFilesService {
   });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
-  /** How many of the thread's turns ended having made a file: each new one reads them again. */
-  private readonly making = computed(
-    () => this.thread.turns().filter((turn) => (turn.result?.made ?? []).length > 0).length,
-  );
-
-  /** The files each turn made, by the `seq` of its start; `null` until first known. */
-  readonly byTurn = computed<ReadonlyMap<number, readonly MadeFile[]> | null>(() => {
+  /**
+   * The files each turn made, and what they leave out, by the `seq` of its start; `null` until
+   * first known.
+   */
+  readonly byTurn = computed<ReadonlyMap<number, TurnFiles> | null>(() => {
     const made = this.made();
-    return made === null ? null : new Map(made.map((turn) => [turn.turn, turn.files]));
+    return made === null ? null : new Map(made.map((turn) => [turn.turn, turn]));
   });
 
   constructor() {
     effect(() => {
       const thread = this.thread.thread();
-      const making = this.making();
+      const making = this.thread.madeCount();
       if (thread !== null && making > 0) {
         untracked(() => void this.refresh());
       }

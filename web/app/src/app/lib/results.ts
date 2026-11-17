@@ -1,4 +1,11 @@
-import type { ChangedFile, MadeFile, Outcome, ReplySources, TurnResult } from '@glave/client';
+import type {
+  ChangedFile,
+  MadeFile,
+  Outcome,
+  ReplySources,
+  TurnFiles,
+  TurnResult,
+} from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type {
@@ -82,6 +89,8 @@ export interface TurnResults {
   readonly made: readonly MadeFile[];
   /** Whether `made` is only room kept for the cards, drawn unseen. */
   readonly madeRoom: boolean;
+  /** What the files it made leave out, in the server's sentence; `null` when nothing. */
+  readonly madeNote: string | null;
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -198,8 +207,11 @@ export interface TurnFacts {
    * as the thread opens.
    */
   readonly changed: ReadonlyMap<number, readonly ChangedFile[]> | null;
-  /** The files each turn made, by the `seq` of its start; `null` until the server has said. */
-  readonly made: ReadonlyMap<number, readonly MadeFile[]> | null;
+  /**
+   * The files each turn made, and what they leave out, by the `seq` of its start; `null` until the
+   * server has said.
+   */
+  readonly made: ReadonlyMap<number, TurnFiles> | null;
   /** Each run of calls in a line, and each turn's reply. */
   readonly steps: Steps;
   /** Each model's name as the server gives it, by the id a turn records. */
@@ -223,16 +235,20 @@ function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFil
 }
 
 /**
- * The files `turn` made, as `made` describes them by the `seq` of its start, and whether they are
- * only room: until the server has described them, a card's room for each its end named.
+ * The files `turn` made, as `made` describes them by the `seq` of its start, whether they are only
+ * room, and what they leave out: until the server has described them, a card's room for each its
+ * end named.
  */
-function madeBy(turn: Turn, made: TurnFacts['made']): [readonly MadeFile[], boolean] {
+function madeBy(
+  turn: Turn,
+  made: TurnFacts['made'],
+): [readonly MadeFile[], boolean, string | null] {
   const ended = turn.result?.made ?? [];
   const described = turn.startSeq === null ? undefined : made?.get(turn.startSeq);
   if (described !== undefined) {
-    return [described, false];
+    return [described.files, false, described.note ?? null];
   }
-  return ended.length > 0 ? [madeRoom(ended), true] : [[], false];
+  return ended.length > 0 ? [madeRoom(ended), true, null] : [[], false, null];
 }
 
 /**
@@ -266,7 +282,7 @@ export function turnResults(
   const timed = turn.took !== null && turn.took !== 0 && working === null;
   const model = turn.model === null ? undefined : told.models.get(turn.model);
   const result = turn.result;
-  const [madeFiles, roomOnly] = madeBy(turn, told.made);
+  const [madeFiles, roomOnly, madeNote] = madeBy(turn, told.made);
   const facts = [
     ...(timed ? [formatDuration(turn.took, locale)] : []),
     ...(result === null ? [] : [spent(result, locale)]),
@@ -283,6 +299,7 @@ export function turnResults(
     room: told.changed === null ? roomFor(result?.changed ?? []) : [],
     made: madeFiles,
     madeRoom: roomOnly,
+    madeNote,
     receipt:
       calls > 0
         ? {

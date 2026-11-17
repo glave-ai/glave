@@ -172,22 +172,26 @@ export class FilesService {
   /**
    * Opens the file `sha256` that `thread` holds, of `mediaType`, in a tab of its own, where the
    * browser's own viewer draws it (a PDF pages through there). The tab opens as the person
-   * asks, so the browser lets it, and shows the file once it is read; at most `MOST_IN_TABS`
-   * addresses are kept for such tabs. Rejects, saying why, when it can't be read.
+   * asks, so the browser lets it, can't reach back to this page, and shows the file once it is
+   * read; at most `MOST_IN_TABS` addresses are kept for such tabs. A browser that opens no tab
+   * saves the file under `name` instead. Rejects, saying why, when it can't be read.
    */
-  async openInTab(thread: string, sha256: string, mediaType: string): Promise<void> {
+  async openInTab(thread: string, sha256: string, mediaType: string, name: string): Promise<void> {
     const tab = this.document.defaultView?.open('', '_blank') ?? null;
+    if (tab === null) {
+      await this.save(thread, sha256, mediaType, name);
+      return;
+    }
+    tab.opener = null;
     try {
       const url = URL.createObjectURL(await this.blob(thread, sha256, mediaType));
       this.inTabs.push(url);
       while (this.inTabs.length > MOST_IN_TABS) {
         URL.revokeObjectURL(this.inTabs.shift() ?? '');
       }
-      if (tab !== null) {
-        tab.location.href = url;
-      }
+      tab.location.href = url;
     } catch (error: unknown) {
-      tab?.close();
+      tab.close();
       throw error;
     }
   }

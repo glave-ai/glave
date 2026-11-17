@@ -51,6 +51,32 @@ describe('FilePreviewComponent', () => {
     await expectAccessible(root);
   });
 
+  it('reads the file as it opens where the browser shares files, so the tap shares it at once', async () => {
+    const shared: ShareData[] = [];
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: (data: ShareData) => {
+        shared.push(data);
+        return Promise.resolve();
+      },
+    });
+    try {
+      const piece = { piece: { media_type: 'text/csv', bytes: 3, offset: 0, data: 'YSxi' } };
+      const fake = new FakeSession()
+        .answer('file/preview', { preview: { markdown: 'a,b' } })
+        .answer('file/read', piece);
+      const fixture = await render(fake, BUDGET);
+      const root = fixture.nativeElement as HTMLElement;
+      part(root, 'share')?.click();
+      await settle(fixture);
+      expect(shared.map((data) => data.files?.[0]?.name)).toEqual(['budget.csv']);
+    } finally {
+      Reflect.deleteProperty(navigator, 'canShare');
+      Reflect.deleteProperty(navigator, 'share');
+    }
+  });
+
   it('says why in the server’s words when it can’t be shown, beside Download', async () => {
     const refused = new ApiError({
       code: ErrorCode.INVALID_PARAMS,

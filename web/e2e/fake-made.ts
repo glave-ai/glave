@@ -55,11 +55,14 @@ const MADE_HISTORY: readonly RawEvent[] = HISTORY.map((event) =>
     : event,
 );
 
+/** What the turn's files leave out, in the server's words. */
+export const MORE = '1 more file was made than a chat keeps: it stays on the computer';
+
 /** What the server answers about the files, by the method it is asked. */
 const ANSWERS: Readonly<Record<string, unknown>> = {
   'thread/events': { events: MADE_HISTORY },
   'thread/turns': { events: MADE_HISTORY },
-  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN] }] },
+  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN], note: MORE }] },
   'file/preview': { preview: { markdown: PREVIEW } },
   // "%PDF-1.7", as the PDF's bytes.
   'file/read': {

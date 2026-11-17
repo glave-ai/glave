@@ -81,7 +81,7 @@ export class MadeFileComponent {
     if (file.kind === 'pdf' && thread !== null && file.sha256 != null) {
       this.failed.set(null);
       try {
-        await this.files.openInTab(thread, file.sha256, file.media_type);
+        await this.files.openInTab(thread, file.sha256, file.media_type, file.file_name);
       } catch (error: unknown) {
         this.failed.set(whyNot(error));
       }

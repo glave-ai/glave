@@ -1,6 +1,6 @@
 import { ApiError, ErrorCode, type AssetKind, type MadeFile } from '@glave/client';
 
-import { kindName, madeLine, madeRoom, whyNot } from './made';
+import { kindName, madeCount, madeLine, madeRoom, whyNot } from './made';
 
 const DECK: MadeFile = {
   kind: 'deck',
@@ -26,6 +26,32 @@ describe('made', () => {
     expect(madeLine({ ...DECK, kept: 'Saved to your Library' }, 'en')).toBe(
       'Slides · 8 slides · Saved to your Library',
     );
+  });
+
+  it('says why a file only downloads where the server couldn’t read it', () => {
+    const unread = 'glave couldn’t read this file to show it: download it to open it';
+    expect(madeLine({ ...DECK, parts: null, unread }, 'en')).toBe(`Slides · 3.3 MB · ${unread}`);
+  });
+
+  it('counts each time a log says what turns made, to read the files again', () => {
+    const event = (type: string, data: Record<string, unknown>) => ({
+      glave: 1,
+      id: type,
+      thread: 't',
+      seq: 1,
+      at: '2026-11-16T12:00:00Z',
+      type,
+      v: 1,
+      data,
+    });
+    const events = [
+      event('turn.ended', { outcome: 'completed' }),
+      event('turn.ended', { outcome: 'completed', made: [{ path: 'a.pdf' }] }),
+      event('turn.ended', { outcome: 'completed', made_left: { kind: 'waits' } }),
+      event('turn.made', { turn: 3 }),
+      event('message.added', {}),
+    ];
+    expect(madeCount(events)).toBe(3);
   });
 
   it('says its size where the server knows no parts', () => {

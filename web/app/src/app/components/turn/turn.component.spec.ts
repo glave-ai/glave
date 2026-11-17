@@ -82,6 +82,7 @@ const RESULTS: TurnResults = {
   room: [],
   made: [],
   madeRoom: false,
+  madeNote: null,
   receipt: {
     status: 'done',
     facts: ['4m 02s', 'Claude Haiku 5.5'],
@@ -196,6 +197,12 @@ describe('TurnComponent', () => {
       'via OpenRouter (Anthropic)',
     );
     await expectAccessible(root);
+  });
+
+  it('says what the files it made leave out, in the server’s words, under them', async () => {
+    const note = 'A command is still running: what was made shows here once it ends';
+    const root = await render({ ...RESULTS, madeNote: note });
+    expect(root.querySelector('[data-testid="turn-made-note"]')?.textContent).toBe(note);
   });
 
   it('opened at it from its end’s notification, shows the line above its reply, in view', async () => {

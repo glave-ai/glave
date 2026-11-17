@@ -67,6 +67,6 @@ describe('MadeFilesService', () => {
     await thread.open('thread-1');
     await settle();
     expect(fake.paramsOf('thread/files')).toEqual([{ thread: 'thread-1' }]);
-    expect(made.byTurn()?.get(1)).toEqual([PLAN]);
+    expect(made.byTurn()?.get(1)?.files).toEqual([PLAN]);
   });
 });

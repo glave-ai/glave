@@ -79,6 +79,11 @@
     content: '';
   }
 
+  // The whole card is what is focused, so the ring goes round it.
+  .open:focus-visible::after {
+    box-shadow: var(--glz-focus-ring);
+  }
+
   .download {
     position: relative;
     z-index: 1;

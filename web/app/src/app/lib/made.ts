@@ -1,4 +1,4 @@
-import type { AssetKind, FileMade, MadeFile } from '@glave/client';
+import type { AssetKind, FileMade, MadeFile, RawEvent } from '@glave/client';
 
 import { sizeOf } from './attachments';
 import { sentence, unreached } from './text';
@@ -23,12 +23,29 @@ export function kindName(kind: AssetKind): string {
 
 /**
  * The line under a file's name on its card, for a reader in `locale`: its kind, how many pages,
- * sheets or slides it has in the server's words (else its size), and where it is kept, in the
- * server's words: `Spreadsheet · 2 sheets · Kept with this chat`.
+ * sheets or slides it has in the server's words (else its size), and where it is kept, or why it
+ * only downloads, in the server's words: `Spreadsheet · 2 sheets · Kept with this chat`.
  */
 export function madeLine(file: MadeFile, locale: string): string {
   const size = file.parts ?? sizeOf(file.bytes, locale);
-  return [kindName(file.kind), size, file.kept].join(' · ');
+  return [kindName(file.kind), size, file.unread ?? file.kept].join(' · ');
+}
+
+/**
+ * How many times `events` say what turns made: each turn's end that made a file or left one out,
+ * and each later look-over. Each new one is a reason to read the files again.
+ */
+export function madeCount(events: readonly RawEvent[]): number {
+  return events.filter((event) => {
+    if (event.type === 'turn.made') {
+      return true;
+    }
+    if (event.type !== 'turn.ended') {
+      return false;
+    }
+    const made: unknown = event.data['made'];
+    return (Array.isArray(made) && made.length > 0) || event.data['made_left'] != null;
+  }).length;
 }
 
 /** Why a file couldn't be read, from what `error` says: the server's words, or unreached. */

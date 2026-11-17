@@ -22,8 +22,9 @@ import { ThreadService } from '../../services/thread.service';
  * screen): its name, then the server's preview of it (`file/preview`), Markdown drawn as a
  * reply is, with the server's sentence when it leaves the rest out, and Download across the top
  * beside a computer's panel and Download and Share at the thumb on a phone (Share where the
- * browser can share the file itself). A PDF never opens here: the browser's own viewer draws it
- * in a tab of its own. Why it can't be shown is said in the server's words.
+ * browser can share the file itself, the file read as it opens, so the tap that shares it goes
+ * straight to the Share sheet, as iOS asks). A PDF never opens here: the browser's own viewer
+ * draws it in a tab of its own. Why it can't be shown is said in the server's words.
  */
 @Component({
   selector: 'app-file-preview',
@@ -51,6 +52,8 @@ export class FilePreviewComponent {
   protected readonly cut = signal<string | null>(null);
   /** Why the file can't be shown, shared or saved; `null` when nothing went wrong. */
   protected readonly failed = signal<string | null>(null);
+  /** The file itself, read for the Share sheet where the browser shares files; `null` until. */
+  protected readonly shared = signal<File | null>(null);
   /** Whether this browser can share the file itself, as a phone's Share sheet does. */
   protected readonly shareable = computed(() => {
     const file = this.file();
@@ -67,10 +70,12 @@ export class FilePreviewComponent {
     effect((onCleanup) => {
       const thread = this.threads.thread();
       const file = this.file();
+      const shareable = this.shareable();
       untracked(() => {
         this.markdown.set(null);
         this.cut.set(null);
         this.failed.set(null);
+        this.shared.set(null);
       });
       if (thread === null || file.sha256 == null) {
         return;
@@ -79,6 +84,17 @@ export class FilePreviewComponent {
       onCleanup(() => {
         live = false;
       });
+      if (shareable) {
+        this.files.blob(thread, file.sha256, file.media_type).then(
+          (blob) => {
+            if (live) {
+              this.shared.set(new File([blob], file.file_name, { type: file.media_type }));
+            }
+          },
+          // Share stays away; Download says why when it is tapped.
+          () => undefined,
+        );
+      }
       this.session.call('file/preview', { thread, sha256: file.sha256 }).then(
         ({ preview }) => {
           if (live) {
@@ -108,18 +124,18 @@ export class FilePreviewComponent {
     }
   }
 
-  /** Hands the file itself to the phone's Share sheet; nothing when the person closes it. */
+  /**
+   * Hands the file itself, read as it opened, to the phone's Share sheet, straight from the tap;
+   * nothing when the person closes it.
+   */
   protected async share(): Promise<void> {
-    const thread = this.threads.thread();
-    const file = this.file();
+    const shared = this.shared();
     const navigator = this.document.defaultView?.navigator;
-    if (thread === null || file.sha256 == null || navigator === undefined) {
+    if (shared === null || navigator === undefined) {
       return;
     }
     try {
-      const blob = await this.files.blob(thread, file.sha256, file.media_type);
-      const shared = new File([blob], file.file_name, { type: file.media_type });
-      await navigator.share({ files: [shared], title: file.name });
+      await navigator.share({ files: [shared], title: this.file().name });
     } catch (error: unknown) {
       // Closing the Share sheet is the person's choice, not a failure.
       if (!(error instanceof DOMException && error.name === 'AbortError')) {

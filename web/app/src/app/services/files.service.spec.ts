@@ -184,6 +184,28 @@ describe('FilesService', () => {
     expect(urls.revoked).toEqual(urls.made);
   });
 
+  it('opens a file in a tab that can’t reach back to the page, or saves it where none opens', async () => {
+    const urls = objectUrls();
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    onTestFinished(() => {
+      open.mockRestore();
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(tab.opener).toBeNull();
+    expect(tab.location.href).toBe(urls.made[0]);
+    open.mockReturnValue(null);
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved.push(this.download);
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(saved).toEqual(['plan.pdf']);
+  });
+
   it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {
     const urls = objectUrls();
     const piece = { media_type: 'image/png', bytes: 4, offset: 0, data: 'b2s=' };

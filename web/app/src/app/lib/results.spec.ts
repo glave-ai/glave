@@ -296,12 +296,14 @@ describe('results', () => {
   it('keeps a card’s room for each file a turn’s end names until the server describes them', () => {
     const made = [{ path: 'out/plan.pdf', bytes: 9, kept: 'too_large' as const }];
     const items = [ask, call(8), say(9, 'Done')];
-    const shown = (facts: ReturnType<typeof told>): readonly [readonly string[], boolean] => {
+    const shown = (
+      facts: ReturnType<typeof told>,
+    ): readonly [readonly string[], boolean, string | null] => {
       const result = turn(items, { startSeq: 7, result: ended('completed', { made }) });
       const drawn = turnResults(result, null, null, false, 'en-US', facts);
-      return [drawn.made.map((file) => file.file_name), drawn.madeRoom];
+      return [drawn.made.map((file) => file.file_name), drawn.madeRoom, drawn.madeNote];
     };
-    expect(shown(told([], [], { made: null }))).toEqual([['plan.pdf'], true]);
+    expect(shown(told([], [], { made: null }))).toEqual([['plan.pdf'], true, null]);
     const described: MadeFile = {
       kind: 'pdf',
       name: 'Lisbon plan',
@@ -312,9 +314,12 @@ describe('results', () => {
       kept: 'Kept with this chat',
       sentence: 'Made a PDF: Lisbon plan',
     };
-    expect(shown(told([], [], { made: new Map([[7, [described]]]) }))).toEqual([
+    const note = '2 more files were made than a chat keeps: they stay on the computer';
+    const files = { turn: 7, files: [described], note };
+    expect(shown(told([], [], { made: new Map([[7, files]]) }))).toEqual([
       ['plan.pdf'],
       false,
+      note,
     ]);
     expect(turnResults(turn(items), null, null, false, 'en-US', told([])).made).toEqual([]);
   });

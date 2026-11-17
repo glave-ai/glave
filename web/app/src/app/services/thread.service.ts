@@ -26,6 +26,7 @@ import type { GlzDecision } from '@glave/glaze';
 import { NO_DRAFT, applyUpdate, stepsAfter, type Draft } from '../lib/conversation';
 import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
+import { madeCount } from '../lib/made';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
@@ -116,6 +117,8 @@ export class ThreadService {
   });
   /** The thread's turns, each with its items, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
+  /** How many times its log said what turns made: each a reason to read the files again. */
+  readonly madeCount = computed(() => madeCount(this.events()));
   /**
    * The turns this view asked for, each by the `seq` of the last event it had read as it asked:
    * the turn is the first recorded after it.

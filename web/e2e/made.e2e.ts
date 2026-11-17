@@ -1,5 +1,5 @@
 import { THREAD, fakeApi } from './fake-api';
-import { madeTheFiles } from './fake-made';
+import { MORE, madeTheFiles } from './fake-made';
 import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 test('the files a chat made are cards: a sheet opens as a table in its panel, a PDF in a tab of its own', async ({
@@ -16,6 +16,11 @@ test('the files a chat made are cards: a sheet opens as a table in its panel, a 
   await expect(byTestId(page, 'made-file-line').first()).toHaveText(
     'Spreadsheet · 2 sheets · Kept with this chat',
   );
+  await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
+  // Download saves the file under its name, in Chromium and in WebKit (Safari's engine).
+  const saving = page.waitForEvent('download');
+  await byTestId(page, 'made-file-download').first().click();
+  expect((await saving).suggestedFilename()).toBe('Trip budget.xlsx');
   const open = byTestId(page, 'made-file-open');
   await expect(open.first()).toHaveAccessibleName('Open Trip budget');
   await open.first().click();

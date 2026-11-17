@@ -30,7 +30,7 @@
     >
       {{ copy.download }}
     </button>
-    @if (shareable()) {
+    @if (shared()) {
       <button glzButton data-testid="file-preview-share" (click)="share()">
         {{ copy.share }}
       </button>
