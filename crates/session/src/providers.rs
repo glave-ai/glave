@@ -99,7 +99,13 @@ where
     pub(crate) fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
         let providers = self.inner.providers.as_deref();
         let elsewhere = Sentence::ModelAccountsOnItsComputer;
-        theirs(caller, self.inner.person, providers, Sentence::ModelsNotHere, elsewhere)
+        theirs(
+            caller,
+            self.inner.person,
+            providers,
+            Sentence::ModelsNotHere,
+            elsewhere,
+        )
     }
 
     /// Answers `provider/connect`.
@@ -198,5 +204,48 @@ where
         let catalog = crate::models::catalog(&default.0, models.offered);
         self.inner.harness.set_default_model(default.0, default.1);
         self.set_catalog(catalog);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::Auth;
+
+    use super::*;
+
+    fn person(n: u128) -> PrincipalId {
+        let base = 0x0192_f5c0_0000_7000_8000_0000_0000_0000;
+        PrincipalId::try_from(uuid::Uuid::from_u128(base + n)).unwrap()
+    }
+
+    /// `who` calling with `method`, or with no sign-in at all.
+    fn naming(who: PrincipalId, method: Option<AuthMethod>) -> Caller {
+        Caller {
+            person: Some(who),
+            auth: method.map(|method| Auth {
+                method,
+                issuer: None,
+                subject: None,
+                session: None,
+            }),
+            ..Caller::default()
+        }
+    }
+
+    #[test]
+    fn only_the_person_on_this_computer_is_local_however_someone_else_calls() {
+        let own = Some(person(1));
+        assert!(local(&Caller::default(), own), "over a local transport");
+        assert!(local(&naming(person(1), Some(AuthMethod::Local)), own));
+        // A subagent's thread for someone else names them with no sign-in at all, as the
+        // harness starts one for its parent's person.
+        assert!(!local(&naming(person(2), None), own));
+        assert!(!local(&naming(person(2), Some(AuthMethod::Local)), own));
+        assert!(!local(&naming(person(2), Some(AuthMethod::OnBehalf)), own));
+        assert!(!local(&naming(person(1), Some(AuthMethod::OnBehalf)), own));
+        assert!(
+            !local(&naming(person(2), None), None),
+            "a server with no person"
+        );
     }
 }

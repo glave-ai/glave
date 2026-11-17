@@ -266,9 +266,26 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
         setup.limits.max_schedules = Some(1);
         let (server, _) = setup.build(&dir).await;
         assert_eq!(
-            create(&server, cron("* * * * *"), 0).await.unwrap_err(),
+            create(&server, cron("*/5 * * * *"), 0).await.unwrap_err(),
             code::INVALID_PARAMS
         );
+        // Never more often than every five minutes, said plainly.
+        for often in ["* * * * *", "*/2 * * * *"] {
+            let request = Request::ScheduleCreate {
+                project: None,
+                name: None,
+                when: cron(often),
+                zone: None,
+                prompt: "check the build".into(),
+                budget: 10,
+            };
+            let refused = server.request(request).await.unwrap_err();
+            assert_eq!(refused.code, code::INVALID_PARAMS);
+            assert_eq!(
+                refused.message.to_string(),
+                "a schedule runs at most once every 5 minutes: choose times further apart"
+            );
+        }
         assert_eq!(
             create(&server, cron("every day"), 10).await.unwrap_err(),
             code::INVALID_PARAMS

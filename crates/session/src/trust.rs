@@ -256,11 +256,13 @@ where
         let scope = self.scope_of(thread)?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
         let Some(asked) = self.asked_at(caller, scope.located()).await? else {
-            return Err(if local(caller, self.inner.person) || self.inner.homes.is_some() {
-                nothing_waits()
-            } else {
-                ApiError::new(code::NOT_ALLOWED, Sentence::TrustOnlyHere)
-            });
+            return Err(
+                if local(caller, self.inner.person) || self.inner.homes.is_some() {
+                    nothing_waits()
+                } else {
+                    ApiError::new(code::NOT_ALLOWED, Sentence::TrustOnlyHere)
+                },
+            );
         };
         let current = match &asked {
             Asked::Here(folder) => host.ask(Path::new(folder)).await?,

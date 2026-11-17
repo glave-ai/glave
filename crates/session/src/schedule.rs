@@ -64,7 +64,7 @@ where
             ));
         }
         if let When::Cron(text) = &new.when {
-            Cron::parse(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
+            Cron::for_a_schedule(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
         if new.budget == 0 {
             return Err(ApiError::new(

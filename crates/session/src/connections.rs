@@ -161,7 +161,13 @@ where
     fn connections_for(&self, caller: &Caller) -> Result<&dyn Connections, ApiError> {
         let connections = self.inner.connections.as_deref();
         let elsewhere = Sentence::ConnectionsOnItsComputer;
-        theirs(caller, self.inner.person, connections, Sentence::ConnectionsNotHere, elsewhere)
+        theirs(
+            caller,
+            self.inner.person,
+            connections,
+            Sentence::ConnectionsNotHere,
+            elsewhere,
+        )
     }
 
     /// What `caller` may connect here (`server/discover`): each where it would not be refused;

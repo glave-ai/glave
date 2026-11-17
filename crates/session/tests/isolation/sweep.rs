@@ -1,7 +1,9 @@
 //! The sweep: every person calls every method of the table with every other person's ids, and
 //! each answer must be the one an id nobody has gets, with the ids put back as placeholders,
-//! and must name nothing of anyone else's. What each person sees of their own is the same
-//! before the sweep and after it.
+//! and must name nothing of anyone else's; so does glave acting on its own for each person but
+//! the one on a server's computer, as a schedule's run does, which is also refused all that only
+//! that person may do. What each person sees of their own is the same before the sweep and
+//! after it.
 
 use std::collections::BTreeSet;
 
@@ -162,8 +164,112 @@ fn normalized(answer: &Value, filled: &[(String, String, &'static str)], nobody:
 
 /// Every person calls every method with every other person's ids.
 pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
+    sweep_by(world, |person| Some(person.caller.clone())).await
+}
+
+/// What only the person on a server's computer may do, the session's `local` check: folders
+/// there, web search, keeping it awake, credits, answering what a folder asks to be trusted,
+/// gone folders, model accounts, connections, secrets, the memory switch and sign-up links.
+const LOCAL_ONLY: &[&str] = &[
+    "folder/list",
+    "search/set",
+    "awake/set",
+    "credits/list",
+    "credits/add",
+    "trust/answer",
+    "project/folder/set",
+    "project/remove",
+    "provider/connect",
+    "provider/list",
+    "provider/refresh",
+    "provider/remove",
+    "connection/start",
+    "connection/list",
+    "connection/remove",
+    "secret/add",
+    "secret/list",
+    "secret/remove",
+    "memory/set",
+    "signup/link",
+];
+
+/// `person` as glave acts for them on its own, as a schedule's run does: signed in by no one
+/// (`on_behalf`), in their organization; none for the person on a server's computer, whom glave
+/// acts as as they call.
+fn on_behalf_of(person: &super::world::Person) -> Option<Caller> {
+    let who = person.caller.person?;
+    let org = person.caller.org.or_else(|| {
+        let n = u128::try_from(person.org).ok()? + 1;
+        Some(glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(n)))
+    });
+    Some(Caller {
+        person: Some(who),
+        auth: Some(Auth {
+            method: AuthMethod::OnBehalf,
+            issuer: None,
+            subject: None,
+            session: None,
+        }),
+        org,
+        ..Caller::default()
+    })
+}
+
+/// Everyone but the person on a server's computer, as glave acts for them on its own: they
+/// reach no one else's, as the sweep finds of everyone, and each method only the person on the
+/// computer may use refuses them, as it refuses them signed in from elsewhere.
+pub(super) async fn on_behalf<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
+    let mut found = sweep_by(world, on_behalf_of).await;
+    let methods: BTreeSet<&str> = table().iter().map(|(method, _)| *method).collect();
+    for method in LOCAL_ONLY
+        .iter()
+        .filter(|method| !methods.contains(*method))
+    {
+        found.push(format!(
+            "{method}, only the person on the computer's, is no method"
+        ));
+    }
+    for person in &world.people {
+        let Some(behalf) = on_behalf_of(person) else {
+            continue;
+        };
+        let org = &world.orgs[person.server];
+        let gated = table().into_iter().filter(|(m, _)| LOCAL_ONLY.contains(m));
+        for (method, templates) in gated {
+            for template in templates {
+                let mut params = template.as_object().cloned().unwrap_or_default();
+                for (param, kind) in placeholders(&template) {
+                    let own = person.own(kind).cloned();
+                    params.insert(param, own.unwrap_or_else(|| kind.nobodys()));
+                }
+                let (theirs, as_them) = split(method, params.clone(), &behalf);
+                let theirs = ask(org, &as_them, theirs).await;
+                let (signed, as_signed) = split(method, params, &person.caller);
+                let signed = ask(org, &as_signed, signed).await;
+                let refused = theirs.get("error").is_some();
+                if !refused || (signed.get("error").is_some() && theirs != signed) {
+                    found.push(format!(
+                        "{method} {template} for {} on their behalf, not refused as signed in \
+                         from elsewhere:\n  on their behalf: {theirs}\n  signed in: {signed}",
+                        person.name
+                    ));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The sweep, each person calling as `calls` makes them, or not at all.
+async fn sweep_by<L: EventLog + Clone + 'static>(
+    world: &World<L>,
+    calls: impl Fn(&super::world::Person) -> Option<Caller>,
+) -> Vec<Finding> {
     let mut found = Vec::new();
     for (a, attacker) in world.people.iter().enumerate() {
+        let Some(calling) = calls(attacker) else {
+            continue;
+        };
         let org = &world.orgs[attacker.server];
         let others = ids_of_others(world, a);
         for victim in world.people.iter().filter(|v| v.name != attacker.name) {
@@ -179,7 +285,7 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                     // belong to several, and in their own for anyone a company login signs in.
                     let joins = named(&[Kind::InviteCode])
                         && method == "invite/accept"
-                        && with_account(&attacker.caller);
+                        && with_account(&calling);
                     if (named(&[Kind::Code]) && victim.server == attacker.server)
                         || (named(&[Kind::Person, Kind::Invite, Kind::InviteCode])
                             && victim.org == attacker.org)
@@ -191,8 +297,8 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                     // from a code's that opens nothing; it still names no one else's ids.
                     let shown_to_holder = named(&[Kind::InviteCode]) && method == "invite/show";
                     for variant in variants(template, attacker, victim) {
-                        let (theirs, caller) = split(method, variant.params, &attacker.caller);
-                        let (nobodys, _) = split(method, variant.nobodys, &attacker.caller);
+                        let (theirs, caller) = split(method, variant.params, &calling);
+                        let (nobodys, _) = split(method, variant.nobodys, &calling);
                         let theirs = ask(org, &caller, theirs).await;
                         let nobodys = ask(org, &caller, nobodys).await;
                         let shown = normalized(&theirs, &variant.filled, false);
@@ -200,9 +306,10 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                         let named = others.iter().find(|id| shown.contains(id.as_str()));
                         if (shown != expected && !shown_to_holder) || named.is_some() {
                             found.push(format!(
-                                "{method} {template} by {} with {}'s ids {:?}:\n  \
+                                "{method} {template} by {} ({:?}) with {}'s ids {:?}:\n  \
                                  theirs: {shown}\n  nobody's: {expected}",
                                 attacker.name,
+                                calling.auth.as_ref().map(|auth| &auth.method),
                                 victim.name,
                                 variant.filled.iter().map(|f| &f.0).collect::<Vec<_>>(),
                             ));
