@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::PrincipalId;
-use glave_ports::OrgId;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Sandbox, SandboxLevel,
     SandboxNetwork, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{OrgId, SystemClock};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -221,7 +221,7 @@ impl People {
             .idle_after(self.idle_minutes);
         let computers = WorkerComputers::new(computer.clone(), self.limits.clone());
         let home = planned_home(key)?;
-        let ceiling = self.ceiling;
+        let (ceiling, time) = (self.ceiling, Arc::new(SystemClock));
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
             let grows = std::sync::Weak::clone(me);
             let grow: Grow = Arc::new(move |short| {
@@ -266,7 +266,7 @@ impl People {
                 leasing: self.leasing.clone(),
                 held: Mutex::new(None),
                 renewing: Mutex::new(None),
-                planned: Waking::home((wake, peek), Some((grow, lost)), home, PERSON_SCRATCH),
+                planned: Waking::home((wake, peek), Some((grow, lost)), home, PERSON_SCRATCH, time),
                 pod: computer,
                 ceiling,
                 growing: tokio::sync::Mutex::new(()),
