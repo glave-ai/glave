@@ -12,7 +12,7 @@ use base64::engine::general_purpose::STANDARD;
 use glave_event::{AssetKind, Parts};
 use glave_ports::{MadeRead, ReadMade};
 use glave_session::Answering;
-use glave_session::protocol::{Answer, Reply, Request, code};
+use glave_session::protocol::{Answer, MadeFile, Reply, Request, code};
 use serde_json::json;
 
 use crate::support::*;
@@ -99,6 +99,17 @@ fn script() -> Vec<glave_ports::Completion> {
     ]
 }
 
+/// Each of `files` by its file's name, its kind, its line and whether it previews.
+fn told(files: &[MadeFile]) -> Vec<(&str, AssetKind, &str, bool)> {
+    files
+        .iter()
+        .map(|file| {
+            let line = &*file.sentence;
+            (file.file_name.as_str(), file.kind, line, file.previews)
+        })
+        .collect()
+}
+
 #[test]
 fn what_a_turn_and_its_worker_made_is_listed_read_back_and_previewed() {
     let dir = folder("made");
@@ -121,20 +132,8 @@ fn what_a_turn_and_its_worker_made_is_listed_read_back_and_previewed() {
         let [turn] = made.as_slice() else {
             panic!("one turn, not {made:?}")
         };
-        let told: Vec<(&str, AssetKind, &str, bool)> = turn
-            .files
-            .iter()
-            .map(|file| {
-                (
-                    file.file_name.as_str(),
-                    file.kind,
-                    &*file.sentence,
-                    file.previews,
-                )
-            })
-            .collect();
         assert_eq!(
-            told,
+            told(&turn.files),
             [
                 (
                     "budget.csv",

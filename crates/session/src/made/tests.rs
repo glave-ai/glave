@@ -4,17 +4,7 @@ use super::*;
 
 /// The event of `kind` with `data` at `seq`, as a thread's log holds it.
 fn raw(seq: u64, kind: &str, data: &Value) -> RawEvent {
-    let line = json!({
-        "glave": 1,
-        "id": format!("0192d6a0-0000-7000-8000-{seq:012}"),
-        "thread": "0192d6a0-0000-7000-8000-000000000000",
-        "seq": seq,
-        "at": "2026-11-16T12:00:00Z",
-        "type": kind,
-        "v": 1,
-        "data": data,
-    });
-    RawEvent::from_json(&line.to_string()).unwrap()
+    glave_ports::testing::logged(seq, kind, data).unwrap()
 }
 
 /// What `turns` name, by turn: each file's path, and whether something is left out.
@@ -23,7 +13,7 @@ fn told(turns: &[Turn]) -> Vec<(u64, Vec<&str>, Option<MadeLeft>)> {
         .iter()
         .map(|turn| {
             let paths = turn.files.iter().map(|file| file.path.as_str()).collect();
-            (turn.turn.get(), paths, turn.left)
+            (turn.started.get(), paths, turn.left)
         })
         .collect()
 }

@@ -23,7 +23,7 @@ const MOST_PREVIEW: u64 = 1024 * 1024;
 /// What a turn made, as the thread's log names it.
 struct Turn {
     /// Its `turn.started`.
-    turn: Seq,
+    started: Seq,
     files: Vec<FileMade>,
     left: Option<MadeLeft>,
 }
@@ -42,7 +42,7 @@ where
             .into_iter()
             .filter(|turn| !turn.files.is_empty() || turn.left.is_some())
             .map(|turn| TurnFiles {
-                turn: turn.turn,
+                turn: turn.started,
                 files: turn.files.into_iter().map(made_file).collect(),
                 note: turn.left.map(|left| Told::from(left_out(left))),
             })
@@ -96,7 +96,7 @@ where
 /// Reads the next event of a thread's log into `turns`: each turn's start, the files its end
 /// says it made, and what a turn whose look-over waited made, once looked over, with it.
 fn read(turns: &mut Vec<Turn>, event: RawEvent) {
-    let turn = event.seq;
+    let started = event.seq;
     if !matches!(
         event.kind.as_str(),
         "turn.started" | "turn.ended" | "turn.made"
@@ -105,7 +105,7 @@ fn read(turns: &mut Vec<Turn>, event: RawEvent) {
     }
     match decode(event).map(|event| event.body) {
         Ok(Body::TurnStarted(_)) => turns.push(Turn {
-            turn,
+            started,
             files: Vec::new(),
             left: None,
         }),
@@ -123,7 +123,7 @@ fn read(turns: &mut Vec<Turn>, event: RawEvent) {
             {
                 waited.left = None;
             }
-            if let Some(first) = turns.iter_mut().find(|turn| turn.turn == made.turn) {
+            if let Some(first) = turns.iter_mut().find(|turn| turn.started == made.turn) {
                 first.files.extend(made.made);
                 first.left = made.made_left;
             }

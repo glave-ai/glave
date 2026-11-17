@@ -2,7 +2,7 @@ use std::io::Write as _;
 
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
-use glave_event::{RawEvent, decode};
+use glave_event::decode;
 use glave_ports::testing::any_secret;
 use serde_json::{Value, json};
 
@@ -72,17 +72,7 @@ fn a_part_that_inflates_past_what_is_looked_through_can_t_be_told() {
 
 /// The event of `kind` with `data` at `seq`, as a thread's log holds it, decoded.
 fn event(seq: u64, kind: &str, data: &Value) -> Event {
-    let line = json!({
-        "glave": 1,
-        "id": format!("0192d6a0-0000-7000-8000-{seq:012}"),
-        "thread": "0192d6a0-0000-7000-8000-000000000000",
-        "seq": seq,
-        "at": "2026-11-16T12:00:00Z",
-        "type": kind,
-        "v": 1,
-        "data": data,
-    });
-    decode(RawEvent::from_json(&line.to_string()).unwrap()).unwrap()
+    decode(glave_ports::testing::logged(seq, kind, data).unwrap()).unwrap()
 }
 
 #[test]

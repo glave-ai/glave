@@ -276,6 +276,15 @@ pub(crate) fn changes_files(name: &str, at_home: bool) -> bool {
     ) || (!at_home && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT))
 }
 
+/// The turn `events` open, its `turn.started` the last of them: nothing called yet.
+pub(crate) fn opened_by(events: &[RawEvent]) -> Option<TurnOpen> {
+    events.last().map(|event| TurnOpen {
+        turn: event.seq,
+        at: event.at,
+        works: false,
+    })
+}
+
 /// Where a thread read from `events` stands, as what its turns made is told: the turn open
 /// now, and the first turn whose look-over waits for the thread's commands in the background.
 pub(crate) fn from_log(events: &[Event], at_home: bool) -> (Option<TurnOpen>, Option<Waiting>) {
@@ -292,8 +301,9 @@ pub(crate) fn from_log(events: &[Event], at_home: bool) -> (Option<TurnOpen>, Op
                 });
             }
             Body::ToolCallRequested(call) => {
+                let works = changes_files(&call.tool, at_home);
                 if let Some(open) = open.as_mut() {
-                    open.works |= changes_files(&call.tool, at_home);
+                    open.works |= works;
                 }
             }
             Body::TurnEnded(ended) => {
@@ -302,10 +312,10 @@ pub(crate) fn from_log(events: &[Event], at_home: bool) -> (Option<TurnOpen>, Op
                 }
                 open = None;
             }
-            Body::TurnMade(made) => {
-                if waiting.is_some_and(|waits: Waiting| waits.turn == made.turn) {
-                    waiting = None;
-                }
+            Body::TurnMade(made)
+                if waiting.is_some_and(|waits: Waiting| waits.turn == made.turn) =>
+            {
+                waiting = None;
             }
             _ => {}
         }
