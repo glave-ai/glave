@@ -110,7 +110,7 @@ where
                     .find(|(read, _)| read == at)
                     .map(|(_, result)| result)
                 {
-                    Some(Ok(())) => started.extend(self.fire_due(*at).await),
+                    Some(Ok(())) => started.extend(self.recover_and_fire(*at).await),
                     // Read again on the next tick.
                     Some(Err(error)) => {
                         let project = at.project;
@@ -123,6 +123,16 @@ where
         }
         self.stopped_at(org, from.saturating_add(done));
         started
+    }
+
+    /// Recovers the runs `project`'s ledger, just read, has open that a stopped server left,
+    /// then starts its runs due.
+    async fn recover_and_fire(&self, project: Located) -> Vec<ThreadId> {
+        if let Err(error) = self.recover_in(project).await {
+            let project = project.project;
+            tracing::warn!(%error, %project, "could not recover the project's runs left open");
+        }
+        self.fire_due(project).await
     }
 
     /// Starts every run due in `project`, found in its ledger as just read rather than in what

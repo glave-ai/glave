@@ -176,42 +176,58 @@ fn two_servers_that_both_fire_start_someone_else_s_run_once() {
     });
 }
 
+/// A daily schedule at 11:00 in the server's own project, which a server started since
+/// recovers too.
+async fn own_daily(server: &Tested<Shared>) -> ScheduleInfo {
+    let request = Request::ScheduleCreate {
+        project: Some(scope().project()),
+        name: None,
+        when: When::Cron("0 11 * * *".into()),
+        zone: None,
+        prompt: "check the build".into(),
+        budget: 5_000,
+    };
+    let Ok(Reply::Schedule { schedule }) = server.request(request).await else {
+        panic!("a schedule");
+    };
+    schedule
+}
+
+/// Records `made`'s 11:00 run claimed, as a server that stopped before its turn began left it.
+async fn claim_left(log: &Shared, made: &ScheduleInfo) {
+    let fired = Fired {
+        schedule: made.schedule,
+        due: At::try_from("2026-10-10T11:00:00.000Z".to_owned()).unwrap(),
+    };
+    let claim = TaskStarted {
+        thread: made.thread.unwrap(),
+        title: "check the build".into(),
+        model: "test-model".into(),
+        budget: Some(5_000),
+        schedule: Some(fired),
+        by: None,
+    };
+    let ledger = Scope::glaves_own(scope().org(), made.project);
+    let next = u64::try_from(ledger_of(log, made.project).await.len()).unwrap() + 1;
+    append(log, &ledger, Reserved::Tasks.id(), next, &claim).await;
+}
+
+/// Whether `made`'s ledger records a task of it interrupted.
+async fn interrupted(log: &Shared, made: &ScheduleInfo) -> bool {
+    (ledger_of(log, made.project).await.into_iter())
+        .any(|body| matches!(body, Body::TaskEnded(ended) if ended.outcome == Outcome::Interrupted))
+}
+
 #[test]
 fn a_run_claimed_by_a_server_that_stopped_before_starting_it_is_recorded_lost() {
     block_on!(async {
         let log = Shared::default();
         let (server, projects, now, repo, _dir) = on_a_store("firing-lost", &log).await;
-        // In the server's own project, which a server started since recovers.
-        let request = Request::ScheduleCreate {
-            project: Some(scope().project()),
-            name: None,
-            when: When::Cron("0 11 * * *".into()),
-            zone: None,
-            prompt: "check the build".into(),
-            budget: 5_000,
-        };
-        let Ok(Reply::Schedule { schedule: made }) = server.request(request).await else {
-            panic!("a schedule");
-        };
+        let made = own_daily(&server).await;
         let person = server.person();
         server.shutdown().await;
         drop(server);
-        // Its claim landed, and its server stopped before the turn began.
-        let fired = Fired {
-            schedule: made.schedule,
-            due: At::try_from("2026-10-10T11:00:00.000Z".to_owned()).unwrap(),
-        };
-        let claim = TaskStarted {
-            thread: made.thread.unwrap(),
-            title: "check the build".into(),
-            model: "test-model".into(),
-            budget: Some(5_000),
-            schedule: Some(fired),
-            by: None,
-        };
-        let ledger = Scope::glaves_own(scope().org(), made.project);
-        let next = u64::try_from(ledger_of(&log, made.project).await.len()).unwrap() + 1;
-        append(&log, &ledger, Reserved::Tasks.id(), next, &claim).await;
+        claim_left(&log, &made).await;
         set(&now, "2026-10-10T11:00:30Z");
         let mut later = setup();
         later.clock = now.clone();
@@ -231,10 +247,24 @@ fn a_run_claimed_by_a_server_that_stopped_before_starting_it_is_recorded_lost() 
             Vec::new(),
             "never run twice"
         );
-        let ended = (ledger_of(&log, made.project).await.into_iter()).any(
-            |body| matches!(body, Body::TaskEnded(ended) if ended.outcome == Outcome::Interrupted),
+        assert!(interrupted(&log, &made).await);
+    });
+}
+
+#[test]
+fn a_server_already_running_recovers_a_claim_left_open_at_its_next_tick() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, _, now, _, _dir) = on_a_store("firing-left", &log).await;
+        let made = own_daily(&server).await;
+        // Another server's claim, its task's lease long lapsed.
+        claim_left(&log, &made).await;
+        set(&now, "2026-10-10T11:00:30Z");
+        assert_eq!(server.tick().await.unwrap(), Vec::new(), "never run twice");
+        assert!(
+            interrupted(&log, &made).await,
+            "recorded interrupted, no restart needed"
         );
-        assert!(ended);
     });
 }
 
