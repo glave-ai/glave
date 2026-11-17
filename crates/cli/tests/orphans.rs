@@ -86,6 +86,30 @@ fn commands(pids: &[u32]) -> Vec<String> {
         .collect()
 }
 
+/// What `glave` said and was asked, once it did not get as far as a test waited for, so the
+/// failure says why (#1533): whether it had ended, all it printed and logged to `log`, and the
+/// tool results it sent the model with each request. It is stopped first.
+fn told(mut glave: Running, model: &FakeServer, log: &Path) -> String {
+    let ended = match glave.try_wait() {
+        Ok(Some(status)) => format!("glave had ended ({status})"),
+        _ => "glave still ran".to_owned(),
+    };
+    let _ = glave.kill();
+    let printed = glave
+        .wait_with_output()
+        .map_or_else(|error| error.to_string(), |output| text(&output));
+    let logged = std::fs::read_to_string(log).unwrap_or_default();
+    let results: Vec<String> = model
+        .received()
+        .iter()
+        .map(|asked| said(&asked.body, "tool").concat())
+        .collect();
+    format!(
+        "{ended}; it printed:\n{printed}\nits log:\n{logged}\nthe tool results it sent the \
+         model, request by request: {results:?}"
+    )
+}
+
 /// No sandbox, and nothing asks: the mode, as `config.toml` writes it.
 const FULL_ACCESS: &str = "\"full-access\"";
 
@@ -118,13 +142,15 @@ fn mid_turn(
         Reply::text("never reached"),
     ])
     .unwrap();
-    let args = ["--model", "m", "go"];
+    let log = place.home.with_file_name("glave.log");
+    let args = ["--model", "m", "--log", &log.to_string_lossy(), "go"];
     let glave = start(place, &model, &args);
     let running = until(HUNG, || recorded(&place.home).len() == 3);
     let entries = recorded(&place.home);
     assert!(
         running,
-        "the server, the background command and the command: {entries:?}"
+        "the server, the background command and the command: {entries:?}\n{}",
+        told(glave, &model, &log)
     );
     let mut owners: Vec<&str> = entries.iter().map(|(_, owner)| owner.as_str()).collect();
     owners.sort_unstable();
