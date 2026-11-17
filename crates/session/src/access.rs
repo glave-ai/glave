@@ -93,7 +93,7 @@ impl Access {
 
     /// Why the caller may no longer follow anything, once the clock has reached when their
     /// sign-in stops being taken.
-    fn expired(&self) -> Option<ApiError> {
+    pub(crate) fn expired(&self) -> Option<ApiError> {
         let (until, clock) = self.until.as_ref()?;
         (clock.now() >= *until).then(|| ApiError::new(code::NO_SIGN_IN, Sentence::TokenExpired))
     }
