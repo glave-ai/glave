@@ -155,8 +155,48 @@ pub struct ScheduleSkipped {
 pub enum Skipped {
     /// The run before was still going in its chat, or someone's turn was.
     Going,
-    /// It was refused, with why, in the server's words as it recorded them.
-    Refused { why: String },
+    /// It was refused: `reason` names why, as the session API's error codes name a refusal
+    /// (`ARCHIVED`), so it is said in each reader's language when it is read. Empty for one
+    /// recorded before refusals had reasons (v1).
+    Refused { reason: String },
+}
+
+/// `schedule.skipped` as version 1 wrote it: a refusal in the server's English.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScheduleSkippedBefore {
+    schedule: ScheduleId,
+    due: At,
+    why: SkippedBefore,
+}
+
+/// Why a run did not start, as version 1 wrote it: a refusal's English, which is read and
+/// dropped, since no other language can say it.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum SkippedBefore {
+    Going,
+    Refused {
+        #[serde(rename = "why")]
+        _why: String,
+    },
+}
+
+impl From<ScheduleSkippedBefore> for ScheduleSkipped {
+    /// A refusal with no reason.
+    fn from(old: ScheduleSkippedBefore) -> Self {
+        let why = match old.why {
+            SkippedBefore::Going => Skipped::Going,
+            SkippedBefore::Refused { .. } => Skipped::Refused {
+                reason: String::new(),
+            },
+        };
+        Self {
+            schedule: old.schedule,
+            due: old.due,
+            why,
+        }
+    }
 }
 
 /// A schedule was deleted: it starts no more runs.
@@ -186,7 +226,7 @@ impl Payload for ScheduleCreated {
 
 impl Payload for ScheduleSkipped {
     const TYPE: &'static str = SKIPPED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ScheduleDeleted {
@@ -220,7 +260,11 @@ pub(crate) fn decode_skipped(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleSkipped>> {
-    (version == 1).then(|| parse(data))
+    match version {
+        1 => Some(parse::<ScheduleSkippedBefore>(data).map(ScheduleSkipped::from)),
+        2 => Some(parse(data)),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_deleted(
@@ -245,6 +289,28 @@ mod tests {
             (read.thread, read.name.as_str()),
             (None, ""),
             "no chat: it runs no more"
+        );
+    }
+
+    #[test]
+    fn a_run_refused_before_refusals_had_reasons_reads_with_none() {
+        let old = r#"{"schedule":"0192f5c1-0000-7000-8000-000000000002","due":"2026-11-19T08:00:00.000Z","why":{"kind":"refused","why":"the chat is archived"}}"#;
+        let raw = RawValue::from_string(old.to_owned()).unwrap();
+        let read = decode_skipped(1, &raw).unwrap().unwrap();
+        assert_eq!(
+            read.why,
+            Skipped::Refused {
+                reason: String::new()
+            }
+        );
+        let going = old.replace(
+            r#"{"kind":"refused","why":"the chat is archived"}"#,
+            r#"{"kind":"going"}"#,
+        );
+        let raw = RawValue::from_string(going).unwrap();
+        assert_eq!(
+            decode_skipped(1, &raw).unwrap().unwrap().why,
+            Skipped::Going
         );
     }
 }

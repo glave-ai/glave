@@ -264,6 +264,8 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
     block_on!(async {
         let mut setup = setup();
         setup.limits.max_schedules = Some(1);
+        // Copies are kept, so a folder that is no repository is worked in itself.
+        setup.worktrees = Some(dir.join("worktrees"));
         let (server, _) = setup.build(&dir).await;
         assert_eq!(
             create(&server, cron("* * * * *"), 0).await.unwrap_err(),
@@ -311,7 +313,9 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
 fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
     let dir = folder("schedule-ledger");
     block_on!(async {
-        let (server, _) = setup().build(&dir).await;
+        let mut setup = setup();
+        setup.worktrees = Some(dir.join("worktrees"));
+        let (server, _) = setup.build(&dir).await;
         let made = create(&server, cron("0 9 * * *"), 10).await.unwrap();
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
