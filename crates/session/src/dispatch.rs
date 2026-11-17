@@ -14,7 +14,7 @@ use crate::connectors::Narrowed;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
 use crate::protocol::{ApiError, LinkKind, Reply, Request, ServerInfo, code};
-use crate::providers::NewProvider;
+use crate::providers::{NewProvider, unsigned};
 use crate::schedule::NewSchedule;
 use crate::server::Server;
 use crate::signups::Emailed;
@@ -127,7 +127,11 @@ where
         };
         Answered::Reply(match request {
             Request::Discover {} => {
-                boxed(|| self.reread()).await;
+                // Someone not signed in reads nothing of the person here: neither their settings,
+                // where reading makes their Chats, nor their secrets, nor a refresh at their word.
+                if !unsigned(caller) {
+                    boxed(|| self.reread()).await;
+                }
                 let organization = match boxed(|| self.organization_shown(caller)).await {
                     Ok(shown) => shown,
                     Err(failed) => return Answered::Reply(Err(failed)),
