@@ -17,7 +17,7 @@ const MOST_TIMES: usize = 4;
 enum Days {
     Every,
     Weekdays,
-    /// These weekdays, Sunday as 0.
+    /// These weekdays, Monday first, Sunday as 0.
     Weekly(Vec<u8>),
     /// This day of every month.
     Monthly(u8),
@@ -99,7 +99,9 @@ fn plainly(language: Language, cron: &Cron, start: String) -> Option<Sentence> {
 /// field is written with `*`, a day must be in both; when both are restricted, in either.
 fn days_of(cron: &Cron) -> Option<Days> {
     let days = values(cron.days, 1, 31);
-    let weekdays = values(cron.weekdays, 0, 6);
+    let mut weekdays = values(cron.weekdays, 0, 6);
+    // Monday first: Sunday ends the week.
+    weekdays.sort_by_key(|day| (day + 6) % 7);
     let every_date = days.len() == 31;
     let every_weekday = weekdays.len() == 7;
     let either = !cron.any_day && !cron.any_weekday;
@@ -122,13 +124,10 @@ fn values(set: u64, low: u8, high: u8) -> Vec<u8> {
         .collect()
 }
 
-/// `hour`:`minute` on a clock, in `language`: `8:00 am`.
+/// `hour` (0 to 23):`minute` on a clock, in `language`: `8:00 am`, or `20:00` in a language
+/// whose clocks run to 24, as its catalog says.
 pub(crate) fn clock_in(language: Language, hour: u8, minute: u8) -> String {
     let half = if hour < 12 { "am" } else { "pm" }.to_owned();
-    let hour = match hour % 12 {
-        0 => 12,
-        other => other,
-    };
     let clock = Sentence::Clock {
         hour: u64::from(hour),
         minute: format!("{minute:02}"),
@@ -174,8 +173,10 @@ mod tests {
             ),
             (
                 "0 9,17 * * 6,7",
-                "Every Sunday and Saturday at 9:00 am and 5:00 pm",
+                "Every Saturday and Sunday at 9:00 am and 5:00 pm",
             ),
+            ("0 9 * * 0,6", "Every Saturday and Sunday at 9:00 am"),
+            ("0 9 * * 0,1", "Every Monday and Sunday at 9:00 am"),
             ("0 8 1 * *", "On day 1 of every month at 8:00 am"),
             ("0 8 1-31 * *", "Every day at 8:00 am"),
             ("0 8 * * 0-6", "Every day at 8:00 am"),
@@ -197,6 +198,20 @@ mod tests {
         assert_eq!(inside, "every weekday at 8:00 am");
         let at = When::At(glave_event::At::from(jiff::Timestamp::UNIX_EPOCH));
         assert_eq!(repeats_in(Language::English, &at, true), "Once");
+    }
+
+    #[test]
+    fn the_catalog_gets_the_hour_of_the_day_and_english_says_it_on_a_12_hour_clock() {
+        let said: Vec<String> = [0, 1, 11, 12, 13, 23]
+            .into_iter()
+            .map(|hour| clock_in(Language::English, hour, 5))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                "12:05 am", "1:05 am", "11:05 am", "12:05 pm", "1:05 pm", "11:05 pm"
+            ]
+        );
     }
 
     #[test]

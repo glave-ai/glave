@@ -13,6 +13,7 @@ use globset::Glob;
 
 use crate::policy::memory::{MemoryRules, ProjectChoice};
 use crate::policy::provider::ProviderFile;
+use crate::policy::unreadable::unreadable;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{ComputersFile, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -106,8 +107,9 @@ fn least_precision<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Precision>, D::Error> {
     let name = String::deserialize(reader)?;
     match Precision::of(Some(&name)) {
+        // In backticks, which a settings error keeps: what it quotes it leaves out.
         Precision::Unstated => Err(serde::de::Error::custom(format!(
-            "{name:?} is not a precision: name one such as \"fp8\" ({})",
+            "`{name}` is not a precision: name one such as `fp8` ({})",
             Precision::FourBit.at_least().join(", ")
         ))),
         precision => Ok(Some(precision)),
@@ -128,7 +130,7 @@ fn countries<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Vec<String>,
         .find(|place| place.len() != 2 || !place.bytes().all(|b| b.is_ascii_uppercase()))
     {
         Some(place) => Err(serde::de::Error::custom(format!(
-            "{place:?} is not a country's two-letter code, such as \"US\""
+            "`{place}` is not a country's two-letter code, such as `US`"
         ))),
         None => Ok(places),
     }
@@ -584,8 +586,7 @@ fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<M
 
 /// `config.toml` at `path`, from its `text`.
 pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
-    let file: ConfigFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: ConfigFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if let Some(hooks) = &file.hooks {
         Hooks::new(hooks.hooks())
             .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
@@ -647,8 +648,7 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.
 pub(super) fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
-    let file: PolicyFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: PolicyFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if file.version != POLICY_VERSION {
         invalid!(
             "{}: version = {} is not one this glave knows: use version = {POLICY_VERSION}",

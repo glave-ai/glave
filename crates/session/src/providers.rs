@@ -162,10 +162,12 @@ where
                 },
             };
             if let Some(failed) = &refreshed.failed {
-                tracing::warn!("could not refresh the models' catalogs: {}", failed.message);
+                let error = &failed.message;
+                tracing::warn!(%error, "could not refresh the models' catalogs");
             }
             if let Err(error) = server.rerun(providers.as_ref(), refreshed.changed).await {
-                tracing::warn!("could not run the refreshed models: {}", error.message);
+                let error = error.message;
+                tracing::warn!(%error, "could not run the refreshed models");
             }
         });
         let before = self
