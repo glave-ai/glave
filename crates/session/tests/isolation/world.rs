@@ -224,24 +224,52 @@ pub(super) async fn ask<L: EventLog + 'static>(
     }
 }
 
-/// `method` with `params`.
+/// `method` with `params`. One that does not read is said by its method alone: the params may
+/// hold a secret, and what would not read in them may be quoted.
 pub(super) fn request(method: &str, params: Value) -> Request {
-    let shown = params.to_string();
     let mut message = serde_json::Map::new();
     message.insert("method".to_owned(), Value::String(method.to_owned()));
     message.insert("params".to_owned(), params);
     serde_json::from_value(Value::Object(message))
-        .unwrap_or_else(|e| panic!("{method} {shown}: {e}"))
+        .unwrap_or_else(|_| panic!("{method}'s params do not read as its request"))
+}
+
+/// What `method` with `params` answers `caller`, who may call it. A refusal is said by its
+/// method and code alone: the params may hold a secret, and an answer may repeat one.
+pub(super) async fn called<L: EventLog + 'static>(
+    org: &Org<L>,
+    caller: &Caller,
+    method: &str,
+    params: Value,
+) -> Value {
+    let answer = ask(org, caller, request(method, params)).await;
+    let refused = &answer["error"]["code"];
+    assert!(refused.is_null(), "{method} was refused: {refused}");
+    answer["result"].clone()
+}
+
+/// Threads `person` copied and put away in their project, theirs alone as any: a fork, one
+/// archived and one deleted.
+async fn put_away<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
+    let caller = person.caller.clone();
+    let project = json!({"project": person.own(Kind::Project)});
+    let start = async || {
+        let started = called(org, &caller, "thread/start", project.clone()).await;
+        started["thread"]["id"].clone()
+    };
+    let (spare, deleted) = (start().await, start().await);
+    let forked = called(org, &caller, "thread/fork", json!({"thread": spare})).await;
+    called(org, &caller, "thread/archive", json!({"thread": spare})).await;
+    called(org, &caller, "thread/delete", json!({"thread": deleted})).await;
+    for thread in [forked["thread"]["id"].clone(), spare, deleted] {
+        person.keep(Kind::Thread, thread);
+    }
 }
 
 /// What `person` made, as they would.
 async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: bool) {
     let caller = person.caller.clone();
-    let call = async |method: &str, params: Value| {
-        let answer = ask(org, &caller, request(method, params.clone())).await;
-        assert!(answer.get("error").is_none(), "{method} {params}: {answer}");
-        answer["result"].clone()
-    };
+    let call = async |method: &str, params: Value| called(org, &caller, method, params).await;
     let name = format!("{}'s work", person.name);
     let project = call("project/create", json!({"name": name})).await["project"]["id"].clone();
     person.keep(Kind::Project, project.clone());
@@ -250,10 +278,15 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     let chat = call("thread/start", json!({})).await["thread"].clone();
     person.keep(Kind::Thread, chat["id"].clone());
     person.keep(Kind::Project, chat["project"].clone());
-    let budget = json!({"project": project, "when": {"cron": "0 9 * * *"}, "prompt": "triage", "budget": 1000});
+    // Their own words in what they ask for, which no one else may be shown (`words_of`).
+    let (triage, tidy) = (
+        format!("triage {}'s inbox", person.name),
+        format!("tidy {}'s desk", person.name),
+    );
+    let budget = json!({"project": project, "when": {"cron": "0 9 * * *"}, "prompt": triage, "budget": 1000});
     let schedule = call("schedule/create", budget).await["schedule"]["schedule"].clone();
     person.keep(Kind::Schedule, schedule);
-    let task = json!({"thread": thread, "prompt": "tidy", "background": true, "budget": 1000});
+    let task = json!({"thread": thread, "prompt": tidy, "background": true, "budget": 1000});
     call("turn/start", task).await;
     let notes = format!("{}'s notes", person.name);
     let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, notes);
@@ -261,11 +294,13 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
         json!({"project": project, "name": "notes.txt", "media_type": "text/plain", "data": data});
     let file = call("file/upload", upload).await["file"]["sha256"].clone();
     person.keep(Kind::Files, super::table::files(file.as_str().unwrap()));
+    person.keep(Kind::Sha, file);
     let saved = json!({"text": format!("{} likes tea", person.name), "scope": "project", "project": project});
     let saved = call("memory/save", saved).await;
     person.keep(Kind::Memory, saved["memories"][0]["memory"].clone());
     let endpoint = format!("https://fcm.googleapis.com/fcm/send/{}", person.name);
-    let browser = json!({"endpoint": endpoint, "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", "auth": "BTBZMqHH6r4Tts7J_aSIgg", "device": "Firefox"});
+    let device = format!("{}'s Firefox", person.name);
+    let browser = json!({"endpoint": endpoint, "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", "auth": "BTBZMqHH6r4Tts7J_aSIgg", "device": device});
     let subscribed = call("push/subscribe", browser).await;
     person.keep(Kind::Device, subscribed["push"]["devices"][0]["id"].clone());
     if !local {
@@ -302,33 +337,44 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
         person.keep(Kind::Flow, flow);
         let secret = json!({"name": "STRIPE_KEY", "value": any_secret()});
         call("secret/add", secret).await;
+        // One named as theirs, which the table's own calls never touch.
+        let named = format!("{}S_KEY", person.name.to_uppercase());
+        call("secret/add", json!({"name": named, "value": any_secret()})).await;
     }
+}
+
+/// Words only `name`'s own things hold: what they named and asked for (their project, task,
+/// schedule, memory, browser and picture), and their secret's name. An answer to anyone else
+/// that holds one shows them something of `name`'s, whatever id it names.
+pub(super) fn words_of(name: &str) -> [String; 7] {
+    [
+        format!("{name}'s work"),
+        format!("{name}'s desk"),
+        format!("{name}'s inbox"),
+        format!("{name} likes tea"),
+        format!("{name}'s Firefox"),
+        format!("{name}'s fox"),
+        format!("{}S_KEY", name.to_uppercase()),
+    ]
 }
 
 /// A picture `person` has glave draw in their Chats, its call approved as they would, kept in
 /// their Library.
 async fn draw<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
     let chat = person.ids[&Kind::Thread][1].clone();
-    let drawn = request(
-        "turn/start",
-        json!({"thread": chat, "prompt": "draw a fox"}),
-    );
+    let prompt = format!("draw {}'s fox", person.name);
+    let drawn = request("turn/start", json!({"thread": chat, "prompt": prompt}));
     let Ok(Sent::Started(mut stream)) = org.server.start_streaming(&person.caller, drawn).await
     else {
         panic!("{} draws in a turn of its own", person.name);
     };
     let approval = waiting(&mut stream).await;
     let allow = json!({"thread": chat, "approval": approval, "decision": "allow_once"});
-    let decided = ask(org, &person.caller, request("approval/decide", allow)).await;
-    assert!(decided.get("error").is_none(), "{decided}");
+    called(org, &person.caller, "approval/decide", allow).await;
     stream.finish().await.unwrap();
-    let listed = ask(org, &person.caller, request("library/list", json!({}))).await;
-    let asset = listed["result"]["items"][0]["asset"].clone();
-    assert!(
-        asset.is_string(),
-        "{} drew a picture: {listed}",
-        person.name
-    );
+    let listed = called(org, &person.caller, "library/list", json!({})).await;
+    let asset = listed["items"][0]["asset"].clone();
+    assert!(asset.is_string(), "{} drew no picture", person.name);
     person.keep(Kind::Asset, asset);
 }
 
@@ -349,12 +395,18 @@ impl<L: EventLog + Clone + 'static> World<L> {
             Person::new("ken", 2, 0, in_third("ken")),
             Person::new("barbara", 2, 0, in_third("barbara")),
         ];
+        let mut organizations = std::collections::BTreeSet::new();
         for person in &mut people {
             let n = u128::try_from(person.org).unwrap() + 1;
             let id = person.caller.person.unwrap_or(home(n).1);
             person.keep(Kind::Person, json!(id));
             let local = person.caller.auth.is_none();
             make(&orgs[person.server], person, local).await;
+            // One person of each organization, which keeps the sweep short: the others reach
+            // for theirs from inside the organization and from the other two.
+            if organizations.insert(person.org) {
+                put_away(&orgs[person.server], person).await;
+            }
         }
         let mut world = Self {
             orgs,

@@ -15,30 +15,30 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::computer::{PROTECTED, SandboxLevel};
 
-use super::super::secrets::HOME_SECRETS;
+use super::super::in_tmp::listeners;
+use super::super::secrets::home_secrets;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
-
-/// Under the home folder, on Linux besides the common list: keyrings and browser profiles
-/// (cookies are credentials).
-const LINUX_HOME_SECRETS: &[&str] = &[
-    ".local/share/keyrings",
-    ".mozilla",
-    ".config/google-chrome",
-    ".config/chromium",
-    ".config/BraveSoftware",
-    ".config/microsoft-edge",
-];
 
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
 const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
 
 /// Where the system's daemons and the person's X server listen: `docker.sock` is root on the
 /// machine, Podman's socket the same for its user, and the system bus asks only that its caller
-/// be the person at the computer.
+/// be the person at the computer; LXD's, Incus's and libvirt's are root for whoever is in their
+/// group, as Ubuntu's first user is in LXD's. And GNU screen's sessions, wherever a system
+/// keeps them: a command that reached one would type into a shell outside the sandbox.
 const DAEMONS: &[&str] = &[
     "/run/docker.sock",
     "/run/podman",
     "/run/dbus",
+    "/run/libvirt",
+    "/run/incus",
+    "/var/lib/incus",
+    "/var/lib/lxd",
+    "/var/snap/lxd/common/lxd",
+    "/run/screen",
+    "/tmp/screens",
+    "/tmp/uscreens",
     "/tmp/.X11-unix",
 ];
 
@@ -178,7 +178,7 @@ pub(super) fn plan(
     for real in outermost(
         hidden_places(layout)
             .into_iter()
-            .chain(daemon_places(layout)),
+            .chain(daemon_places(layout)?),
     ) {
         hide(&real, &mut mounts);
     }
@@ -278,23 +278,32 @@ impl Protect<'_> {
 
 /// Where the person's daemons listen, which a command that may make Unix sockets, as one with
 /// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], tmux's
-/// servers (`/tmp/tmux-<uid>`), the ssh agent `agent` names, and the user's runtime folder
-/// whole, which holds the session bus (through which systemd starts anything outside the
-/// sandbox), the keyring's and gpg's agents, rootless Docker's and Podman's sockets and
-/// editors' servers. Hidden whether the network is on or not: one view of the machine.
+/// servers (`/tmp/tmux-<uid>`), Zellij's sessions and Emacs's server where they are kept in
+/// `/tmp` (each runs what it is sent outside the sandbox), the ssh agent `agent` names, and
+/// the user's runtime folder whole, which holds the session bus (through which systemd starts
+/// anything outside the sandbox), the keyring's and gpg's agents, rootless Docker's and
+/// Podman's sockets and editors' servers. Hidden whether the network is on or not: one view of
+/// the machine. What listens in `/tmp` under a name made as it starts is found before each
+/// command instead (`in_tmp.rs`).
 pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) -> Vec<PathBuf> {
     DAEMONS
         .iter()
         .map(PathBuf::from)
-        .chain([PathBuf::from(format!("/tmp/tmux-{uid}"))])
+        .chain([
+            PathBuf::from(format!("/tmp/tmux-{uid}")),
+            PathBuf::from(format!("/tmp/zellij-{uid}")),
+            PathBuf::from(format!("/tmp/emacs{uid}")),
+        ])
         .chain(agent.map(Path::to_path_buf))
         .chain(runtime.map(Path::to_path_buf))
         .collect()
 }
 
-/// The real paths of the daemons' places that exist, except one that holds a place commands
-/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders.
-fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
+/// The real paths of the daemons' places that exist, and of what listens in `/tmp` for the
+/// person's other programs just now (`in_tmp.rs`), except one that holds a place commands
+/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders. An error saying
+/// why where more listens in `/tmp` than the mounts hide.
+fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     let used: Vec<&Path> = [&layout.root, &layout.base]
         .into_iter()
         .chain(layout.home.iter())
@@ -303,12 +312,15 @@ fn daemon_places(layout: &Layout) -> Vec<PathBuf> {
         .chain(layout.git_common.iter())
         .map(PathBuf::as_path)
         .collect();
-    layout
+    let in_tmp = listeners(Path::new("/tmp"), rustix::process::getuid().as_raw())?;
+    Ok(layout
         .daemons
         .iter()
+        .cloned()
+        .chain(in_tmp)
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .filter(|real| !used.iter().any(|used| used.starts_with(real)))
-        .collect()
+        .collect())
 }
 
 /// `places` without those inside another of them: hiding the outer one hides them already, and
@@ -329,12 +341,10 @@ fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 /// The real paths of the home folder's credential folders and files, and of whatever else the
 /// computer hides, that exist, except one that holds the workspace. Blocking.
 pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
-    let in_home = layout.home.iter().flat_map(|home| {
-        HOME_SECRETS
-            .iter()
-            .chain(LINUX_HOME_SECRETS)
-            .map(move |secret| home.join(secret))
-    });
+    let in_home = layout
+        .home
+        .iter()
+        .flat_map(|home| home_secrets().map(move |secret| home.join(secret)));
     let in_runtime = layout.runtime.iter().flat_map(|runtime| {
         RUNTIME_SECRETS
             .iter()

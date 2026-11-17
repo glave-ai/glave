@@ -54,12 +54,12 @@ async fn signed_in(dir: &std::path::Path, answers: Vec<Completion>) -> (Tested, 
 }
 
 /// How an ended sign-in ends what was followed.
-fn no_sign_in(ended: &Result<impl std::fmt::Debug, ApiError>) {
+fn no_sign_in<T>(ended: &Result<T, ApiError>) {
     let refused = ended.as_ref().err();
     assert_eq!(
         refused.map(|refused| refused.code),
         Some(code::NO_SIGN_IN),
-        "{ended:?}"
+        "what was followed ends as an ended sign-in"
     );
 }
 
@@ -84,7 +84,7 @@ fn a_thread_watch_ends_when_its_browser_signs_out() {
         );
         signed_out.unwrap();
         let Some(Watched::Ended(ended)) = came else {
-            panic!("the watch ended, not {came:?}");
+            panic!("the watch went on, or ended some other way");
         };
         no_sign_in(&ended);
         let renamed = Request::ThreadRename {
@@ -116,7 +116,7 @@ fn a_turn_stream_ends_when_its_browser_is_signed_out_elsewhere() {
         let (came, signed_out) = tokio::join!(stream.next(), server.request(everyone));
         signed_out.unwrap();
         let Some(TurnItem::Ended(ended)) = came else {
-            panic!("the stream ended, not {came:?}");
+            panic!("the stream went on, or ended some other way");
         };
         no_sign_in(&ended);
         assert!(stream.next().await.is_none(), "nothing more after");
@@ -143,7 +143,7 @@ fn a_list_watch_ends_when_its_browser_signs_out() {
         );
         signed_out.unwrap();
         let Some(Watched::Ended(ended)) = came else {
-            panic!("the watch ended, not {came:?}");
+            panic!("the watch went on, or ended some other way");
         };
         no_sign_in(&ended);
         start(&server, false).await;
