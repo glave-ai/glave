@@ -38,6 +38,22 @@ fn a_program_that_ends_in_time_gives_what_it_printed() {
 }
 
 #[test]
+fn a_program_that_ends_before_reading_its_input_is_answered_as_it_ended() {
+    let processes = Processes::unrecorded();
+    // More than a pipe holds, so writing it meets the end of a program that read none of it.
+    let given = vec![b'x'; 4 << 20];
+    let refused = glave_ports::block_on!(processes.output_with(
+        Program::new("sh").args(["-c", "echo why >&2; exit 3"]),
+        &given,
+        AMPLE,
+        100,
+    ));
+    let refused = refused.unwrap();
+    assert_eq!(refused.status.code(), Some(3));
+    assert_eq!(refused.stderr, b"why\n", "what it said of why");
+}
+
+#[test]
 fn a_program_kept_to_a_few_bytes_is_ended_when_it_writes_more() {
     let processes = Processes::unrecorded();
     let (short, endless) = glave_ports::block_on!(async {
